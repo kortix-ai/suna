@@ -52,28 +52,30 @@ describe('settings tabs', () => {
 });
 
 describe('resolveLegacyCustomizeHref — no functionality removed', () => {
-  /**
-   * The guarantee for the whole migration. Customize had 24 sections; if a new
-   * one is added, or an existing one loses its home, this fails.
-   */
-  test('every one of the 24 legacy sections resolves to a route', () => {
-    const orphans = CUSTOMIZE_SECTIONS.filter((s) => resolveLegacyCustomizeHref(P, s) === null);
-    expect(orphans).toEqual([]);
-  });
-
-  test('every resolved route starts with the project and a known segment', () => {
-    const prefix = `/projects/${P}/`;
+  test('every section resolves', () => {
+    // The guarantee: a section without a home fails here rather than silently
+    // becoming unreachable, which is how Computers was lost.
     for (const section of CUSTOMIZE_SECTIONS) {
-      const href = resolveLegacyCustomizeHref(P, section) ?? '';
-      expect(href).toStartWith(prefix);
-      const segment = href.slice(prefix.length).split(/[?/]/)[0];
-      expect(PROJECT_ROUTE_SEGMENTS).toContain(segment);
+      expect(resolveLegacyCustomizeHref(P, section)).not.toBeNull();
     }
   });
 
-  test('no resolved route still points at the overlay', () => {
+  test('every section resolves into the one Customize surface', () => {
     for (const section of CUSTOMIZE_SECTIONS) {
-      expect(resolveLegacyCustomizeHref(P, section)).not.toContain('customize');
+      expect(resolveLegacyCustomizeHref(P, section)).toStartWith(`/projects/${P}/customize/`);
+    }
+  });
+
+  test('each section gets its own distinct href', () => {
+    const hrefs = CUSTOMIZE_SECTIONS.map((s) => resolveLegacyCustomizeHref(P, s));
+    expect(new Set(hrefs).size).toBe(CUSTOMIZE_SECTIONS.length);
+  });
+
+  test('no href carries a query param nothing reads', () => {
+    // `?group=channels` resolved to a param connectors-view never read, so
+    // three sections silently landed on the wrong screen.
+    for (const section of CUSTOMIZE_SECTIONS) {
+      expect(resolveLegacyCustomizeHref(P, section)).not.toContain('group=');
     }
   });
 });
@@ -81,75 +83,48 @@ describe('resolveLegacyCustomizeHref — no functionality removed', () => {
 describe('resolveLegacyCustomizeHref — section mapping', () => {
   const at = (section: string) => resolveLegacyCustomizeHref(P, section);
 
-  test('the four promoted sections land on their own routes', () => {
-    expect(at('connectors')).toBe('/projects/proj-1/connectors');
-    expect(at('skills')).toBe('/projects/proj-1/skills');
-    expect(at('agents')).toBe('/projects/proj-1/agents');
-    expect(at('schedules')).toBe('/projects/proj-1/automations');
+  test('a section is named by its own segment', () => {
+    expect(at('agents')).toBe(`/projects/${P}/customize/agents`);
+    expect(at('connectors')).toBe(`/projects/${P}/customize/connectors`);
+    expect(at('settings')).toBe(`/projects/${P}/customize/settings`);
   });
 
-  test('commands become a Skills tab, restoring a section that renders nothing today', () => {
-    expect(at('commands')).toBe('/projects/proj-1/skills?tab=commands');
+  test('sections that were folded away have their own home again', () => {
+    for (const section of ['channels', 'computers', 'voice', 'commands', 'git']) {
+      expect(at(section)).toBe(`/projects/${P}/customize/${section}`);
+    }
   });
 
-  test('webhooks share the Automations page behind a filter', () => {
-    expect(at('webhooks')).toBe('/projects/proj-1/automations?type=webhook');
+  test('schedules and webhooks stay distinct sections', () => {
+    expect(at('schedules')).toBe(`/projects/${P}/customize/schedules`);
+    expect(at('webhooks')).toBe(`/projects/${P}/customize/webhooks`);
   });
 
-  test('channels, computers and voice fold into Connectors', () => {
-    // Each must name a pane connectors-view resolves. `?group=` was never read
-    // there, so these three silently landed on the catalogue instead.
-    expect(at('channels')).toBe('/projects/proj-1/connectors?c=add');
-    expect(at('computers')).toBe('/projects/proj-1/connectors?c=computers');
-    expect(at('voice')).toBe('/projects/proj-1/connectors?c=add');
-  });
-
-  test('config sections become Settings tabs', () => {
-    expect(at('settings')).toBe('/projects/proj-1/settings/general');
-    expect(at('members')).toBe('/projects/proj-1/settings/members');
-    expect(at('secrets')).toBe('/projects/proj-1/settings/environment');
-    expect(at('git')).toBe('/projects/proj-1/settings/repository');
-    expect(at('sandbox')).toBe('/projects/proj-1/settings/sandbox');
-    expect(at('upgrade')).toBe('/projects/proj-1/settings/upgrades');
-  });
-
-  test('all seven llm sections collapse onto the Models tab', () => {
-    expect(at('llm-management')).toBe('/projects/proj-1/settings/models');
-    expect(at('llm-overview')).toBe('/projects/proj-1/settings/models?llm=overview');
-    expect(at('llm-providers')).toBe('/projects/proj-1/settings/models?llm=providers');
-    expect(at('llm-logs')).toBe('/projects/proj-1/settings/models?llm=logs');
-    expect(at('llm-budgets')).toBe('/projects/proj-1/settings/models?llm=budgets');
-    expect(at('llm-keys')).toBe('/projects/proj-1/settings/models?llm=keys');
-    expect(at('llm-api')).toBe('/projects/proj-1/settings/models?llm=api');
-  });
-
-  test('marketplace and review get their own routes, not Settings', () => {
-    expect(at('marketplace')).toBe('/projects/proj-1/marketplace');
-    expect(at('review')).toBe('/projects/proj-1/review');
-    expect(at('marketplace')).not.toContain('/settings/');
-    expect(at('review')).not.toContain('/settings/');
+  test('every llm section keeps its own href', () => {
+    const llm = CUSTOMIZE_SECTIONS.filter((s) => s.startsWith('llm-'));
+    expect(llm.length).toBeGreaterThan(0);
+    for (const section of llm) {
+      expect(at(section)).toBe(`/projects/${P}/customize/${section}`);
+    }
   });
 });
 
 describe('resolveLegacyCustomizeHref — sub-state', () => {
   test('carries the members invite tab across', () => {
     expect(resolveLegacyCustomizeHref(P, 'members', { membersTab: 'invite' })).toBe(
-      '/projects/proj-1/settings/members?tab=invite',
+      `/projects/${P}/customize/members?tab=invite`,
     );
   });
 
   test('ignores a members tab that is not invite', () => {
-    expect(resolveLegacyCustomizeHref(P, 'members', { membersTab: 'roster' })).toBe(
-      '/projects/proj-1/settings/members',
-    );
-    expect(resolveLegacyCustomizeHref(P, 'members', { membersTab: null })).toBe(
-      '/projects/proj-1/settings/members',
+    expect(resolveLegacyCustomizeHref(P, 'members', { membersTab: 'list' })).toBe(
+      `/projects/${P}/customize/members`,
     );
   });
 
   test('options on an unrelated section change nothing', () => {
     expect(resolveLegacyCustomizeHref(P, 'agents', { membersTab: 'invite' })).toBe(
-      '/projects/proj-1/agents',
+      `/projects/${P}/customize/agents`,
     );
   });
 });
@@ -173,23 +148,5 @@ describe('resolveLegacyCustomizeHref — files and unknowns', () => {
     // A crafted section must never escape the project scope.
     expect(resolveLegacyCustomizeHref(P, '../admin')).toBeNull();
     expect(resolveLegacyCustomizeHref(P, '//evil.com')).toBeNull();
-  });
-});
-
-describe('folded-in sections land on a pane that exists', () => {
-  // `?group=` was never read by connectors-view, so these resolved to the
-  // catalogue and Computers had no route in at all.
-  test('computers opens the Computers pane', () => {
-    expect(resolveLegacyCustomizeHref('p1', 'computers')).toBe(
-      '/projects/p1/connectors?c=computers',
-    );
-  });
-
-  test('channels and voice open a pane rather than a dead query param', () => {
-    for (const section of ['channels', 'voice'] as const) {
-      const href = resolveLegacyCustomizeHref('p1', section);
-      expect(href).not.toContain('group=');
-      expect(href).toContain('c=');
-    }
   });
 });

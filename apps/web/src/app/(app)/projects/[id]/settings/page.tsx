@@ -1,21 +1,11 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-import { DEFAULT_PROJECT_SETTINGS_TAB, projectSettingsHref } from '@/lib/project-nav';
-
-/** /settings with no tab lands on General. */
-export default function ProjectSettingsIndexPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const projectId = params?.id ?? '';
-
-  useEffect(() => {
-    if (projectId) {
-      router.replace(projectSettingsHref(projectId, DEFAULT_PROJECT_SETTINGS_TAB));
-    }
-  }, [projectId, router]);
-
-  return null;
+/**
+ * Retired route. Customize is one surface again, so this section lives in its
+ * rail rather than at its own top-level URL. Kept as a redirect because these
+ * URLs were shipped and are linked from the command palette and menu registry.
+ */
+export default async function RetiredSectionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/settings`);
 }

@@ -117,10 +117,10 @@ describe('the catalogue uses the shared shell', () => {
 });
 
 describe('the route', () => {
-  test('hands the tab strip to the view so the shell can render it', () => {
-    expect(ROUTE).toContain(
-      'navTabs={<ProjectSectionTabs projectId={projectId} active="connectors" />}',
-    );
-    expect(ROUTE).not.toContain('components/ui/page-header');
+  test('the retired route redirects into the one Customize surface', () => {
+    // Connectors is a section of Customize again, not a top-level page. The
+    // URL stays valid because it shipped and is linked from the palette.
+    expect(ROUTE).toContain('redirect(');
+    expect(ROUTE).toContain('customize/connectors');
   });
 });

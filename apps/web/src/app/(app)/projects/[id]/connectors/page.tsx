@@ -1,26 +1,11 @@
-'use client';
-
-import { useParams } from 'next/navigation';
-
-import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
-import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
+import { redirect } from 'next/navigation';
 
 /**
- * Route for the connectors section.
- *
- * The tab strip is handed to the view rather than stacked above it, so the
- * catalogue can render it through ProjectSectionPage's `navTabs` slot and the
- * whole screen keeps one scroll container.
+ * Retired route. Customize is one surface again, so this section lives in its
+ * rail rather than at its own top-level URL. Kept as a redirect because these
+ * URLs were shipped and are linked from the command palette and menu registry.
  */
-export default function ConnectorsSectionPage() {
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? '';
-  if (!projectId) return null;
-
-  return (
-    <ConnectorsView
-      projectId={projectId}
-      navTabs={<ProjectSectionTabs projectId={projectId} active="connectors" />}
-    />
-  );
+export default async function RetiredSectionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/connectors`);
 }

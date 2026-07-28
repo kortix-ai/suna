@@ -72,10 +72,11 @@ describe('the Skills | Commands tabs', () => {
     expect(section).toContain('SKILL_KIND_ORDER.map');
   });
 
-  test('the route holds the active tab in ?tab= so it deep-links', () => {
-    expect(route).toContain('parseSkillKind');
-    expect(route).toContain("searchParams?.get('tab')");
-    expect(route).toContain('skillKindQuery');
+  test('the retired route redirects into the one Customize surface', () => {
+    // Skills and Commands are sections of Customize again; the surface passes
+    // `initialKind` rather than the route parsing ?tab=.
+    expect(route).toContain('redirect(');
+    expect(route).toContain('customize/skills');
   });
 
   test('switching tabs clears the selection so the modal cannot open a stale file', () => {

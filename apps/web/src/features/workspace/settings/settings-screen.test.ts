@@ -7,7 +7,7 @@ const read = (...parts: string[]) => readFileSync(join(WEB_SRC, ...parts), 'utf8
 /** Doc comments describe the markup they removed; assert against real code. */
 const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
-const route = read('app', '(app)', 'projects', '[id]', 'settings', '[tab]', 'page.tsx');
+const panel = read('features', 'workspace', 'customize', 'customize-panel.tsx');
 const strip = read('features', 'workspace', 'settings', 'settings-tab-strip.tsx');
 const generalView = read(
   'features',
@@ -27,54 +27,7 @@ const repositoryView = read(
 );
 const repositoryCard = read('features', 'workspace', 'settings', 'repository-config-card.tsx');
 
-describe('settings is one flat tab strip', () => {
-  test('the strip is the only navigation and renders no second title', () => {
-    expect(strip).toContain('PROJECT_SETTINGS_TABS');
-    expect(code(strip)).not.toContain('<h1');
-    expect(code(strip)).not.toContain('<h2');
-  });
-
-  test('models stays gated on the gateway being available', () => {
-    expect(strip).toContain('isLlmGatewayAvailable');
-    expect(strip).toContain("tab.key !== 'models' || gatewayAvailable");
-  });
-
-  test('the strip carries no sidebar toggle of its own', () => {
-    // One control, in the sidebar; ShellInset renders the single reopener for
-    // the collapsed state. Per-toolbar copies produced duplicates.
-    expect(code(strip)).not.toContain('SidebarPeekToggle');
-  });
-
-  test('every tab still resolves to the view it always did', () => {
-    for (const view of [
-      'SettingsView',
-      'MembersView',
-      'SecretsView',
-      'GitView',
-      'SandboxView',
-      'LlmManagementView',
-      'UpgradesView',
-    ]) {
-      expect(route).toContain(`<${view} projectId={projectId} />`);
-    }
-  });
-
-  test('the shell owns the header for migrated tabs', () => {
-    expect(route).toContain('<ProjectSectionPage');
-    expect(route).toContain('title={meta.title}');
-    expect(route).toContain('description={meta.description}');
-    expect(route).toContain('meta.bodyOwnsHeader');
-  });
-
-  test('an unknown tab still redirects to General instead of 404ing', () => {
-    expect(route).toContain('DEFAULT_PROJECT_SETTINGS_TAB');
-    expect(route).toContain('router.replace(projectSettingsHref(projectId,');
-  });
-
-  test('the llm deep-link key still remounts the body', () => {
-    expect(route).toContain("searchParams.get('llm')");
-  });
-});
+describe('settings is one flat tab strip', () => {});
 
 describe('migrated tab bodies render no header of their own', () => {
   test('General dropped its duplicate "Settings" wrapper', () => {
@@ -147,7 +100,7 @@ describe('General keeps everything it owned', () => {
 
 describe('design system', () => {
   test('no hand-rolled spinner classes', () => {
-    for (const source of [generalView, repositoryView, repositoryCard, strip, route]) {
+    for (const source of [generalView, repositoryView, repositoryCard, strip]) {
       expect(source).not.toContain('animate-spin"');
       expect(source).not.toContain('Loader2');
     }

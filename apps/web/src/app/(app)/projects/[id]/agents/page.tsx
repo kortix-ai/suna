@@ -1,25 +1,11 @@
-'use client';
-
-import { useParams } from 'next/navigation';
-
-import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
-import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
+import { redirect } from 'next/navigation';
 
 /**
- * Route for the agents section. The screen is a ProjectSectionPage now, and
- * that shell owns the whole frame — including the section tab strip, which it
- * renders above its own header. So the route hands the tabs down instead of
- * stacking its own wrapper around the view.
+ * Retired route. Customize is one surface again, so this section lives in its
+ * rail rather than at its own top-level URL. Kept as a redirect because these
+ * URLs were shipped and are linked from the command palette and menu registry.
  */
-export default function AgentsSectionPage() {
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? '';
-  if (!projectId) return null;
-
-  return (
-    <AgentsView
-      projectId={projectId}
-      navTabs={<ProjectSectionTabs projectId={projectId} active="agents" />}
-    />
-  );
+export default async function RetiredSectionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/agents`);
 }

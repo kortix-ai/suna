@@ -14,7 +14,11 @@
  * a home.
  */
 
-import { type CustomizeSection, legacyCustomizeFilesRedirect } from '@/lib/customize-sections';
+import {
+  CUSTOMIZE_SECTIONS,
+  type CustomizeSection,
+  legacyCustomizeFilesRedirect,
+} from '@/lib/customize-sections';
 
 export { legacyCustomizeFilesRedirect };
 
@@ -120,79 +124,18 @@ export function resolveLegacyCustomizeHref(
   if (!rawSection) return null;
 
   const base = `/projects/${projectId}`;
-  const settings = (tab: ProjectSettingsTab, query = '') =>
-    `${projectSettingsHref(projectId, tab)}${query}`;
+  const section = rawSection as CustomizeSection;
+  if (!CUSTOMIZE_SECTIONS.includes(section)) return null;
 
-  switch (rawSection as CustomizeSection) {
-    /* The four promoted sections. */
-    case 'connectors':
-      return `${base}/connectors`;
-    case 'agents':
-      return `${base}/agents`;
-
-    case 'skills':
-      return `${base}/skills`;
-    // Commands render nothing today — the overlay's switch has no `commands`
-    // case, so the rail item opens a blank pane. Folding them into Skills as a
-    // tab restores them.
-    case 'commands':
-      return `${base}/skills?tab=commands`;
-
-    // Schedules and webhooks are one resource with one set of IAM leaves; they
-    // become one page with a filter rather than two rail entries.
-    case 'schedules':
-      return `${base}/automations`;
-    case 'webhooks':
-      return `${base}/automations?type=webhook`;
-
-    /* Folded into Connectors. These MUST name a pane connectors-view actually
-       resolves — `?group=` was never read, so these three links silently landed
-       on the catalogue and Computers became unreachable. */
-    case 'channels':
-      return `${base}/connectors?c=add`;
-    case 'computers':
-      return `${base}/connectors?c=computers`;
-    case 'voice':
-      return `${base}/connectors?c=add`;
-
-    /* Settings tabs. */
-    case 'settings':
-      return settings('general');
-    case 'members':
-      return settings('members', options.membersTab === 'invite' ? '?tab=invite' : '');
-    case 'secrets':
-      return settings('environment');
-    case 'git':
-      return settings('repository');
-    case 'sandbox':
-      return settings('sandbox');
-    case 'upgrade':
-      return settings('upgrades');
-
-    /* The LLM console keeps its own internal tab bar; each legacy section
-       becomes one query value on the Models tab. */
-    case 'llm-management':
-      return settings('models');
-    case 'llm-overview':
-      return settings('models', '?llm=overview');
-    case 'llm-providers':
-      return settings('models', '?llm=providers');
-    case 'llm-logs':
-      return settings('models', '?llm=logs');
-    case 'llm-budgets':
-      return settings('models', '?llm=budgets');
-    case 'llm-keys':
-      return settings('models', '?llm=keys');
-    case 'llm-api':
-      return settings('models', '?llm=api');
-
-    /* Not settings: installing is an acquisition flow, review is an inbox. */
-    case 'marketplace':
-      return `${base}/marketplace`;
-    case 'review':
-      return `${base}/review`;
-
-    default:
-      return null;
-  }
+  // ONE surface. Every section lives in the Customize rail again, so this is a
+  // path join rather than a per-section table.
+  //
+  // The table it replaces mapped each section onto one of eight promoted
+  // routes, and that mapping is where the dead links came from: `?group=`
+  // params nothing read, sections folded into screens that did not render
+  // them, and Computers with no route in at all. A section cannot be
+  // mis-filed if there is only one place to file it.
+  const href = `${base}/customize/${section}`;
+  if (section === 'members' && options.membersTab === 'invite') return `${href}?tab=invite`;
+  return href;
 }

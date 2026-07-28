@@ -1,30 +1,11 @@
-'use client';
-
-import { useParams, useSearchParams } from 'next/navigation';
-
-import { AutomationsView } from '@/features/workspace/automations/automations-view';
-import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
+import { redirect } from 'next/navigation';
 
 /**
- * Automations — schedules and webhooks on one page.
- *
- * They were two rail entries over one API resource with one set of IAM leaves.
- * `?type=webhook` preselects the webhook filter for old deep links.
+ * Retired route. Customize is one surface again, so this section lives in its
+ * rail rather than at its own top-level URL. Kept as a redirect because these
+ * URLs were shipped and are linked from the command palette and menu registry.
  */
-export default function AutomationsSectionPage() {
-  const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const projectId = params?.id ?? '';
-  const initialFilter = searchParams.get('type') === 'webhook' ? 'webhook' : 'all';
-
-  if (!projectId) return null;
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ProjectSectionTabs projectId={projectId} active="automations" />
-      <div className="min-h-0 flex-1">
-        <AutomationsView projectId={projectId} initialFilter={initialFilter} />
-      </div>
-    </div>
-  );
+export default async function RetiredSectionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/automations`);
 }

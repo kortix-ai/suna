@@ -1,6 +1,5 @@
 'use client';
 
-import { ScheduleView } from '@/components/projects/schedule-view';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
@@ -8,6 +7,7 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { AutomationsView } from '@/features/workspace/automations/automations-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
@@ -17,8 +17,8 @@ import { MembersView } from '@/features/workspace/customize/sections/view/member
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
-import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
+import { SkillsSection } from '@/features/workspace/skills/skills-section';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -493,7 +493,11 @@ function SectionContent({
     case 'agents':
       return <AgentsView projectId={projectId} />;
     case 'skills':
-      return <SkillsView projectId={projectId} />;
+      return <SkillsSection projectId={projectId} initialKind="skill" />;
+    case 'commands':
+      // Commands had no case at all, so the rail entry rendered a blank pane.
+      // It is the same screen as Skills, on its other tab.
+      return <SkillsSection projectId={projectId} initialKind="command" />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'connectors':
@@ -507,9 +511,9 @@ function SectionContent({
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'schedules':
-      return <ScheduleView projectId={projectId} type="cron" />;
+      return <AutomationsView projectId={projectId} initialFilter="cron" />;
     case 'webhooks':
-      return <ScheduleView projectId={projectId} type="webhook" />;
+      return <AutomationsView projectId={projectId} initialFilter="webhook" />;
     case 'git':
       // Both views dropped CustomizeSectionWrapper when they moved to the
       // /settings/[tab] route, which owns their header and scrolling. This

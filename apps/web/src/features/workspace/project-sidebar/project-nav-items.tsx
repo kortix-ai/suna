@@ -13,6 +13,7 @@
  */
 
 import { ChevronRight } from 'lucide-react';
+import { SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 
 import { usePathname } from 'next/navigation';
@@ -35,46 +36,38 @@ import { CUSTOMIZE_SECTION_ACCESS } from '@/lib/project-actions';
 import { PROJECT_NAV_ITEMS, type ProjectNavItem, projectSettingsHref } from '@/lib/project-nav';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 export function ProjectNavItems({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
+  const openCustomize = useCustomizeStore((state) => state.openCustomize);
 
-  // The hook keys its queries on this array — memoize it or every render
-  // remounts the probes.
-  const gateActions = useMemo(
-    () =>
-      Array.from(
-        new Set(PROJECT_NAV_ITEMS.map((item) => CUSTOMIZE_SECTION_ACCESS[item.gateSection].read)),
-      ),
-    [],
-  );
-  const cans = useProjectCans(projectId, gateActions);
-
-  const visible = PROJECT_NAV_ITEMS.filter((item) => {
-    const probe = cans[CUSTOMIZE_SECTION_ACCESS[item.gateSection].read];
-    // Fail open while loading or on error — a slow probe must not blank the nav.
-    return probe?.allowed !== false;
-  });
-
-  if (visible.length === 0) return null;
-
-  const close = () => {
-    if (isMobile) setOpenMobile(false);
-  };
+  // ONE row. Customize is a single surface again, so the sidebar names it once
+  // instead of listing its sections — those live in the surface's own rail,
+  // where every section is reachable rather than the four that were promoted.
+  const isActive = !!pathname?.includes(`/projects/${projectId}/customize`);
 
   return (
-    <ProjectNavGroup
-      items={visible}
-      hrefFor={(item) => `/projects/${projectId}/${item.segment}`}
-      isActive={(item) => !!pathname?.startsWith(`/projects/${projectId}/${item.segment}`)}
-      onNavigate={close}
-      filesHref={`/projects/${projectId}/files`}
-      filesActive={!!pathname?.startsWith(`/projects/${projectId}/files`)}
-      settingsHref={projectSettingsHref(projectId, 'general')}
-      settingsActive={!!pathname?.startsWith(`/projects/${projectId}/settings`)}
-    />
+    <SidebarGroup className="py-0">
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            isActive={isActive}
+            tooltip="Customize"
+            className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+            onClick={() => {
+              openCustomize();
+              if (isMobile) setOpenMobile(false);
+            }}
+          >
+            <SlidersHorizontal />
+            Customize
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 

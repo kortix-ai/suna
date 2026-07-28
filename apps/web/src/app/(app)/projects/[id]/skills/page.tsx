@@ -1,46 +1,11 @@
-'use client';
-
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-
-import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
-import { parseSkillKind, skillKindQuery } from '@/features/workspace/skills/skill-entities';
-import { SkillsSection } from '@/features/workspace/skills/skills-section';
+import { redirect } from 'next/navigation';
 
 /**
- * Route for the Skills section — skills AND commands, one screen.
- *
- * The active tab lives in `?tab=`, so `?tab=commands` is a real deep link (it
- * is where `resolveLegacyCustomizeHref` sends the legacy `commands` section)
- * and the back button walks between the two.
+ * Retired route. Customize is one surface again, so this section lives in its
+ * rail rather than at its own top-level URL. Kept as a redirect because these
+ * URLs were shipped and are linked from the command palette and menu registry.
  */
-function SkillsRoute({ projectId }: { projectId: string }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const kind = parseSkillKind(searchParams?.get('tab'));
-
-  return (
-    <SkillsSection
-      projectId={projectId}
-      kind={kind}
-      onKindChange={(next) =>
-        router.replace(`/projects/${projectId}/skills${skillKindQuery(next)}`, { scroll: false })
-      }
-      navTabs={<ProjectSectionTabs projectId={projectId} active="skills" />}
-    />
-  );
-}
-
-export default function SkillsSectionPage() {
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? '';
-  if (!projectId) return null;
-
-  // useSearchParams needs a Suspense boundary to keep the route statically
-  // renderable; without it the whole segment opts into client rendering.
-  return (
-    <Suspense fallback={null}>
-      <SkillsRoute projectId={projectId} />
-    </Suspense>
-  );
+export default async function RetiredSectionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/skills`);
 }
