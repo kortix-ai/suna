@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { DelegateShowcase } from '@/features/home/delegate-showcase';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
@@ -14,14 +15,14 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@kortix/sdk/react';
-import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
+import type { Command } from '@kortix/sdk/react';
+import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { GridFileCard } from './grid-file-card';
 
 /**
@@ -216,6 +217,15 @@ export function InstantSessionShell({
               projectId={projectId}
               onPickSuggestion={applySuggestion}
               composer={composerEl}
+              // A brand-new session has nothing to show, which is exactly the
+              // empty state the showcase is for. No CTA — the composer right
+              // below it already is the call to action.
+              showcase={
+                <DelegateShowcase
+                  title="Delegate work to Kortix"
+                  description="Describe the outcome you want. Kortix works in its own sandbox and brings back finished work."
+                />
+              }
             />
           </div>
         )}

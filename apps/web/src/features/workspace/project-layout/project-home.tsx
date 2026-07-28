@@ -253,12 +253,13 @@ export function ProjectHomeWelcomeBody({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
+      {/* The empty state owns the middle; the composer is pinned to the
+          bottom. It used to be centred together with the heading, which left
+          the composer floating mid-page and no room for an empty state above
+          it. See ux-references/perplexity/11-workflow-run-modal.png and the
+          Computer sessions empty state. */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
-          {/* The showcase replaces the heading when there is nothing to show
-              yet. Same rule on both surfaces — the signed-out home always
-              qualifies, so this is one rule applied to different data rather
-              than the two shells diverging. */}
           {showcase ?? (
             <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
               {heading ?? (
@@ -271,39 +272,29 @@ export function ProjectHomeWelcomeBody({
               )}
             </h1>
           )}
-
-          {composer ? (
-            <div className="flex w-full flex-col items-center">
-              {composer}
-              {/* TODO(starter-prompts): hidden on purpose. These six chips are a
-                  hardcoded generic list — the same "Build a landing page" /
-                  "Draft a contract" slop for every project, regardless of what
-                  the project is or what the user has ever done in it. Generic
-                  suggestions read as filler and make the product look dumber
-                  than it is.
-
-                  Bring them back only when they are generated per project —
-                  from its actual memory, skills, connectors, and recent
-                  sessions — so each suggestion is something THIS user would
-                  plausibly ask next. Until then, an empty space under the
-                  composer is better than fake personalisation.
-
-                  Component + data are still in place (StarterPromptChips below,
-                  src/lib/starter-prompts.ts), so re-enabling is one line once
-                  there is a real generator behind it.
-
-              {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
-              */}
-            </div>
-          ) : null}
         </div>
       </div>
 
-      {setupTiles ? (
-        <div className="relative z-10 flex shrink-0 justify-center px-4 pb-6">
-          <ProjectHomeSections projectId={projectId} hrefFor={tileHrefFor} />
-        </div>
-      ) : null}
+      <div className="relative z-10 flex shrink-0 flex-col items-center gap-3 px-4 pb-6">
+        {setupTiles ? <ProjectHomeSections projectId={projectId} hrefFor={tileHrefFor} /> : null}
+        {composer ? <div className="flex w-full flex-col items-center">{composer}</div> : null}
+        {/* TODO(starter-prompts): hidden on purpose. These six chips are a
+            hardcoded generic list — the same "Build a landing page" / "Draft a
+            contract" slop for every project, regardless of what the project is
+            or what the user has ever done in it. Generic suggestions read as
+            filler and make the product look dumber than it is.
+
+            Bring them back only when they are generated per project — from its
+            actual memory, skills, connectors, and recent sessions — so each
+            suggestion is something THIS user would plausibly ask next.
+
+            Component + data are still in place (StarterPromptChips below,
+            src/lib/starter-prompts.ts), so re-enabling is one line once there
+            is a real generator behind it.
+
+        {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
+        */}
+      </div>
     </div>
   );
 }

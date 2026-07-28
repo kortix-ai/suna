@@ -71,15 +71,18 @@ export function DelegateShowcase({ title, description, action, className }: Dele
     <div className={cn('flex w-full flex-col items-center gap-6', className)}>
       {/* The card stack. The bars behind read as earlier sessions, which is
           what a Kortix project actually accumulates. */}
-      <div className="from-muted/60 to-muted/20 relative w-full max-w-lg overflow-hidden rounded-2xl bg-gradient-to-b px-6 pt-10 pb-8 sm:px-10">
+      {/* Opaque on purpose. Translucent fills let the dotted SessionWelcome
+          backdrop bleed through the card and the stack behind it, which reads
+          as a stray layer floating over the page rather than as a card. */}
+      <div className="border-border/60 bg-muted/40 relative w-full max-w-lg overflow-hidden rounded-2xl border px-6 pt-10 pb-8 backdrop-blur-sm sm:px-10">
         <div className="relative mx-auto w-full max-w-sm">
           <div
             aria-hidden
-            className="bg-background/40 absolute -top-5 right-6 left-6 h-8 rounded-t-xl border border-b-0"
+            className="bg-background/60 border-border/50 absolute -top-5 right-6 left-6 h-8 rounded-t-xl border border-b-0"
           />
           <div
             aria-hidden
-            className="bg-background/70 absolute -top-2.5 right-3 left-3 h-8 rounded-t-xl border border-b-0"
+            className="bg-background/85 border-border/60 absolute -top-2.5 right-3 left-3 h-8 rounded-t-xl border border-b-0"
           />
 
           <div className="bg-background relative rounded-xl border p-3 shadow-sm">
