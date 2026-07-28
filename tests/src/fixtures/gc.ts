@@ -3,8 +3,8 @@
  * domain, so reclaiming those users (+ their cascade) is the primary leak guard.
  * Runs by email-domain prefix + age so it never touches an in-flight run.
  *
- * Uses the Supabase admin API (service-role). A DB/Daytona fallback for orphaned
- * sandboxes can be layered on later via KE2E_DATABASE_URL.
+ * Uses the direct database when available so cleanup selects only test users.
+ * Falls back to the paginated Supabase admin API when direct access is absent.
  */
 import { Client } from "../core/client";
 import { mapWithConcurrency } from "../core/concurrency";
@@ -52,7 +52,10 @@ async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
   const conn = env.databaseUrl!;
   const local = conn.includes("localhost") || conn.includes("127.0.0.1");
   const { Client } = await import("pg");
-  const client = new Client({ connectionString: conn, ssl: local ? false : true });
+  const client = new Client({
+    connectionString: conn,
+    ssl: local ? false : true,
+  });
   await client.connect();
   try {
     const r = await client.query(
@@ -70,14 +73,8 @@ async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
 }
 
 async function listTestUsers(env: Env): Promise<SupaUser[]> {
-  let users: SupaUser[];
-  try {
-    users = await listTestUsersViaApi(env);
-  } catch (err) {
-    if (!env.databaseUrl) throw err;
-    log.warn(`admin list failed (${String((err as Error).message).slice(0, 90)}) — falling back to read-only DB query`);
-    users = await listTestUsersViaDb(env);
-  }
+  if (env.databaseUrl) return listTestUsersViaDb(env);
+  const users = await listTestUsersViaApi(env);
   return users.filter((u) => (u.email ?? "").endsWith(`@${env.testEmailDomain}`));
 }
 
