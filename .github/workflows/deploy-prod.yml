@@ -814,6 +814,8 @@ jobs:
       ARGO_APP: kortix-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
+      - uses: actions/checkout@v7
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -864,6 +866,13 @@ jobs:
               -p '{"spec":{"source":{"targetRevision":"prod"}}}'
           fi
           kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
+
+      - name: Reconcile Argo CD Application from repo (code is source of truth)
+        if: steps.guard.outputs.exists == 'true'
+        run: |
+          kubectl apply -f infra/k8s/argocd/applications/prod.yaml
+          kubectl -n argocd annotate application "$ARGO_APP" \
+            argocd.argoproj.io/refresh=hard --overwrite
 
       # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
       # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
@@ -917,6 +926,8 @@ jobs:
       ARGO_APP: kortix-gateway-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
+      - uses: actions/checkout@v7
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:

@@ -23,7 +23,9 @@ spec:
     targetRevision: prod
     path: infra/k8s/charts/kortix-api
     helm:
-      releaseName: kortix-api
+      # Keep the original Helm release name. The live Deployment selector uses
+      # app.kubernetes.io/instance=kortix-prod, and selectors are immutable.
+      releaseName: kortix-prod
       valueFiles:
         - ../../envs/prod/values.yaml
   destination:
