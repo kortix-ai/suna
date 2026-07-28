@@ -29,13 +29,9 @@ export function splitFrontmatter(raw: string): { frontmatter: string; body: stri
   };
 }
 
-
-
-
 export function formatMode(mode: string): string {
   const m = mode.toLowerCase();
   if (m === 'primary') return 'Primary';
   if (m === 'subagent') return 'Subagent';
   return mode;
 }
-

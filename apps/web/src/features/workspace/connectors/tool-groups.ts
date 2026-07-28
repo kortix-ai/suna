@@ -62,7 +62,10 @@ export function toolGroups(actions: readonly ConnectorAction[]): ToolGroup[] {
  */
 export function toolLabel(action: ConnectorAction): string {
   const raw = action.path.split(/[/.]/).pop() ?? action.path;
-  const words = raw.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').trim();
+  const words = raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim();
   if (!words) return action.path;
   return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase();
 }

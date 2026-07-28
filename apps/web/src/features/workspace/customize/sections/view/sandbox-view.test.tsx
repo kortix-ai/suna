@@ -4,8 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ProjectSnapshotBuild } from '@kortix/sdk';
 
-import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
 import type { SandboxProviderMode } from './sandbox-provider-coverage';
+import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
 
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
   build_id: 'build-1',
@@ -58,7 +58,10 @@ describe('project accelerator build presentation', () => {
   });
 });
 
-function renderBuildRow(providerMode: SandboxProviderMode, overrides?: Partial<ProjectSnapshotBuild>) {
+function renderBuildRow(
+  providerMode: SandboxProviderMode,
+  overrides?: Partial<ProjectSnapshotBuild>,
+) {
   return renderToStaticMarkup(createElement(BuildRow, { build: build(overrides), providerMode }));
 }
 

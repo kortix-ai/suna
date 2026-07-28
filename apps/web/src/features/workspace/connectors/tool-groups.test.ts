@@ -2,11 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import type { ConnectorAction, ConnectorPolicyAction } from '@kortix/sdk';
 
 import {
+  TOOL_GROUP_LABEL,
   filterTools,
   groupPolicy,
   groupToolsByRisk,
   matchesToolSearch,
-  TOOL_GROUP_LABEL,
   toolGroups,
   toolLabel,
 } from './tool-groups';
@@ -51,10 +51,7 @@ describe('groupToolsByRisk', () => {
 describe('toolGroups', () => {
   it('labels the groups the way the detail screen renders them', () => {
     const groups = toolGroups([action('a', 'read'), action('b', 'write')]);
-    expect(groups.map((g) => g.label)).toEqual([
-      TOOL_GROUP_LABEL.readOnly,
-      TOOL_GROUP_LABEL.write,
-    ]);
+    expect(groups.map((g) => g.label)).toEqual([TOOL_GROUP_LABEL.readOnly, TOOL_GROUP_LABEL.write]);
   });
 
   it('drops an empty group instead of rendering an empty heading', () => {

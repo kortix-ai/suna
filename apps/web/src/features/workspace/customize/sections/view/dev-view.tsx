@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
+import { type ComponentType, type FormEvent, type ReactNode, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,10 +23,10 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {

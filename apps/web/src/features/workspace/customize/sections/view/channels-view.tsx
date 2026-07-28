@@ -62,16 +62,12 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import {
-  type Agent,
-  useRuntimeProviders,
-  useVisibleAgents,
-} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
+import { type Agent, useRuntimeProviders, useVisibleAgents } from '@kortix/sdk/react';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
@@ -525,7 +521,11 @@ function SlackChannelRow({
       <TableCell className="text-muted-foreground text-sm">
         <span
           className="block max-w-[240px] truncate"
-          title={connected ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined) : undefined}
+          title={
+            connected
+              ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined)
+              : undefined
+          }
         >
           {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
         </span>

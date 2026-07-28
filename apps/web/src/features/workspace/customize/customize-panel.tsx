@@ -13,12 +13,12 @@ import { AgentsView } from '@/features/workspace/customize/sections/view/agents-
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
-import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
+import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -210,7 +210,13 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled)
+      railGroups(
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        voiceEnabled,
+        reviewEnabled,
+      )
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
@@ -449,6 +455,23 @@ function RailButton({
   );
 }
 
+/**
+ * The scroll + padding region CustomizeSectionWrapper used to provide. Only the
+ * views that stopped rendering their own wrapper need it; the rest still bring
+ * their own.
+ */
+function OverlaySectionScroll({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-10 pb-20 lg:py-20">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SectionContent({
   section,
   projectId,
@@ -488,7 +511,12 @@ function SectionContent({
     case 'webhooks':
       return <ScheduleView projectId={projectId} type="webhook" />;
     case 'git':
-      return <GitView projectId={projectId} />;
+      // Both views dropped CustomizeSectionWrapper when they moved to the
+      // /settings/[tab] route, which owns their header and scrolling. This
+      // overlay is still mounted (project-shell.tsx) and supplies neither, so
+      // without this the content is clipped flush to the panel edge with no
+      // scrollbar. Goes away with the overlay.
+      return <OverlaySectionScroll>{<GitView projectId={projectId} />}</OverlaySectionScroll>;
     case 'review':
       return <ReviewView projectId={projectId} />;
     case 'sandbox':
@@ -496,7 +524,7 @@ function SectionContent({
     case 'members':
       return <MembersView projectId={projectId} />;
     case 'settings':
-      return <SettingsView projectId={projectId} />;
+      return <OverlaySectionScroll>{<SettingsView projectId={projectId} />}</OverlaySectionScroll>;
     case 'upgrade':
       return <UpgradesView projectId={projectId} />;
     default:

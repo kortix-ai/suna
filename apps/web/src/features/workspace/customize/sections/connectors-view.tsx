@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,6 +79,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
+  ConnectorOverview,
+  connectorHeadline,
+} from '@/features/workspace/connectors/connector-overview';
+import {
+  type ConnectorToolSelection,
+  ConnectorTools,
+} from '@/features/workspace/connectors/connector-tools';
+import {
+  POLICY_LABEL,
+  PermissionPicker,
+  type PolicyChoice,
+} from '@/features/workspace/connectors/policy-picker';
+import {
   type EmailInstallation,
   type EmailSenderPolicy,
   type SlackInstallation,
@@ -103,6 +117,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
+  type ConnectionProfile,
   type ConnectorAction,
   type ConnectorAuthDiscovery,
   type ConnectorConfig,
@@ -110,59 +125,52 @@ import {
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   type ConnectorRequestAuthType,
+  type OAuth2DeviceAuthorizationStartResult,
   createConnector,
   deleteConnector,
-  discoverConnectorAuth,
   discoverConnectionProfileOAuth2,
+  discoverConnectorAuth,
   ensureProjectConnectorProfile,
+  getConnectStatus,
+  getConnectionPolicies,
   getConnectorConfig,
   getConnectorPolicies,
-  getConnectStatus,
   getProjectDetail,
   listAllConnectionProfiles,
-  getConnectionPolicies,
   listConnectionProfiles,
   listConnectors,
-  listProjectAccess,
   listPipedreamApps,
-  type OAuth2DeviceAuthorizationStartResult,
+  listProjectAccess,
   pipedreamConnect,
+  pipedreamConnectConnectionProfile,
   pipedreamFinalize,
+  pipedreamFinalizeConnectionProfile,
   pollConnectionProfileOAuth2DeviceAuthorization,
   putConnectionProfileOAuth2Application,
-  type ConnectionProfile,
-  pipedreamConnectConnectionProfile,
-  pipedreamFinalizeConnectionProfile,
   reconcileConnectionProfile,
-  setConnectionPolicies,
-  setDefaultConnectionProfile,
   revokeConnectionProfile,
+  setConnectionPolicies,
   setConnectorCredential,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
+  setDefaultConnectionProfile,
   startConnectionProfileOAuth2Authorization,
   startConnectionProfileOAuth2DeviceAuthorization,
   syncConnectors,
 } from '@kortix/sdk';
 import {
-  buildOAuth2ApplicationInput,
-  buildOAuth2CredentialInput,
-  createConnectorWithOptionalOAuth2,
   EMPTY_OAUTH2_APPLICATION_FORM,
   EMPTY_OAUTH2_CREDENTIAL_FORM,
   type OAuth2ApplicationForm,
+  type OAuth2CredentialForm,
+  buildOAuth2ApplicationInput,
+  buildOAuth2CredentialInput,
+  createConnectorWithOptionalOAuth2,
   mergeOAuth2DiscoveryMetadata,
   oauth2ApplicationFormValid,
-  type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
-import {
-  PermissionPicker,
-  POLICY_CHOICES,
-  POLICY_LABEL,
-  type PolicyChoice,
-} from '@/features/workspace/connectors/policy-picker';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -1199,7 +1207,9 @@ function ConnectionsList({
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
             <ModalTitle>
-              {addScope === 'project' ? `Add a team ${displayName} connection` : `Add your own ${displayName}`}
+              {addScope === 'project'
+                ? `Add a team ${displayName} connection`
+                : `Add your own ${displayName}`}
             </ModalTitle>
             <ModalDescription>
               {addScope === 'project'
@@ -1224,9 +1234,7 @@ function ConnectionsList({
                   maxLength={255}
                   autoFocus
                 />
-                <FieldDescription>
-                  You'll authorize the account in the next step.
-                </FieldDescription>
+                <FieldDescription>You'll authorize the account in the next step.</FieldDescription>
               </Field>
             </ModalBody>
             <ModalFooter className="sm:justify-between">
@@ -1423,17 +1431,16 @@ function ConnectorDetail({
   const showConnections = isPipedream && !isChannel && !isComputer;
   const showProfileTab = !isPipedream && !isManaged;
   const showRoster = showConnections && canManageProfiles;
-  const defaultDetailTab = showConnections
-    ? 'connections'
-    : showProfileTab
-      ? 'profile'
-      : 'permissions';
-  // Permissions is always present; the other three are conditional.
+  // Overview is always present; the other three are conditional.
   const detailTabCount =
     1 + (showConnections ? 1 : 0) + (showProfileTab ? 1 : 0) + (showRoster ? 1 : 0);
-  const [detailTab, setDetailTab] = useState(defaultDetailTab);
-  // Re-pin when the user switches to a connector whose tab set differs.
-  useEffect(() => setDetailTab(defaultDetailTab), [defaultDetailTab, connector.slug]);
+  // Overview — what it is, and what the agent may do with it — is the screen.
+  // The other three answer follow-up questions and stay one click away.
+  const [detailTab, setDetailTab] = useState('overview');
+  // Re-pin when the user switches connector: the tab set differs between them,
+  // so a tab carried over could be one this connector does not have.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the connector, not on the setter
+  useEffect(() => setDetailTab('overview'), [connector.slug]);
 
   // Same query key + filter as ConnectionsList, so the badge can never disagree
   // with the rows it counts (react-query dedupes the fetch).
@@ -1476,9 +1483,34 @@ function ConnectorDetail({
 
   const toolCount = connector.actions.length;
 
+  // Who this connector runs as by default. A labelled connection when there is
+  // one; otherwise the single shared credential, which has no label of its own.
+  const connectedAs = connectionProfile?.label?.trim()
+    ? connectionProfile.label
+    : connected
+      ? 'Shared credential'
+      : null;
+
+  const copyProfileId = (profileId: string) => {
+    // The Clipboard API is absent in insecure contexts (navigator.clipboard is
+    // undefined -> a synchronous throw) and writeText can also reject.
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clipboard) {
+      errorToast('Could not copy — select the ID and copy it manually.');
+      return;
+    }
+    clipboard.writeText(profileId).then(
+      () => successToast('Connection ID copied'),
+      () => errorToast('Could not copy — select the ID and copy it manually.'),
+    );
+  };
+
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-7">
-      {/* Header */}
+    <div className="mx-auto w-full max-w-5xl px-6 py-7">
+      {/* Header: the icon, the name (renamed in place), ONE line saying what
+          this connector is, and ONE primary action. Provider / status / slug /
+          tool count used to crowd in here as badges; they are facts, so they
+          moved into the Overview list below where facts belong. */}
       <div className="flex items-start gap-3.5">
         <ConnectorAppIcon connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
@@ -1543,49 +1575,52 @@ function ConnectorDetail({
               )}
             </div>
           )}
-          <div className="mt-1.5 flex items-center gap-2">
-            <Badge variant="outline" size="sm">
-              {providerLabel(connector.provider)}
-            </Badge>
-            <ConnectorStatusBadge connector={connector} />
-            <InlineMeta>
-              <code className="font-mono">{connector.slug}</code>
-              {toolCount > 0 ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : null}
-            </InlineMeta>
-          </div>
+          <p className="text-muted-foreground mt-1 text-sm text-pretty">
+            {connectorHeadline(providerLabel(connector.provider), toolCount)}
+          </p>
         </div>
-        {/* When connected, a compact Reconnect/Replace lives in the header.
-            When NOT connected, the connect action is a big CTA below — not a
-            small header button buried next to the title. (Channel connectors
-            are managed from the Channels tab, so neither shows.) */}
+        {/* One primary action, whatever the connector needs next: connect it,
+            reconnect it, or replace its credential. Channel connectors are
+            connected from the Channels tab, so they get none. */}
         {canWrite &&
           connector.authSecret &&
-          connected &&
           !isChannel &&
-          (isPipedream ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => reconnect.mutate()}
-              disabled={reconnect.isPending}
-            >
-              {reconnect.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
+          (connected ? (
+            isPipedream ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => reconnect.mutate()}
+                disabled={reconnect.isPending}
+              >
+                {reconnect.isPending ? (
+                  <Loading className="size-4 shrink-0" />
+                ) : (
+                  <KeyRound className="h-4 w-4" />
+                )}
+                Reconnect
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => setCredOpen(true)}
+              >
                 <KeyRound className="h-4 w-4" />
-              )}
-              Reconnect
-            </Button>
+                Replace credential
+              </Button>
+            )
           ) : (
             <Button
               size="sm"
-              variant="outline"
               className="shrink-0"
-              onClick={() => setCredOpen(true)}
+              onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+              disabled={isPipedream && reconnect.isPending}
             >
-              <KeyRound className="h-4 w-4" />
-              Replace credential
+              {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
+              {isPipedream ? 'Connect for the team' : 'Set shared credential'}
             </Button>
           ))}
       </div>
@@ -1615,55 +1650,31 @@ function ConnectorDetail({
             you control who can use it and review its tools.
           </InfoBanner>
         )}
-        {/* Prominent connect CTA — the first thing you see on an unconnected
-            connector. This is the SHARED (team) connection: everyone on the
-            project uses it. The private, per-user alternative is the banner
-            below — the two are labelled as an explicit either/or so nobody
-            connects a personal account thinking it stays personal. */}
+        {/* What the header's primary button will do, and — the part that
+            matters — that it connects a SHARED account everyone on the project
+            uses, not a personal one. The button itself is in the header now, so
+            this is the explanation and nothing else. */}
         {connector.authSecret && !connected && !isChannel && (
-          <InfoBanner
-            tone="info"
-            icon={Users}
-            title={`Connect ${displayName} for the whole team`}
-            action={
-              canWrite ? (
-                <Button
-                  size="lg"
-                  className="h-11 shrink-0 gap-2 px-5 font-semibold"
-                  onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-                  disabled={isPipedream && reconnect.isPending}
-                >
-                  {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
-                  {isPipedream ? 'Connect for the team' : 'Set shared credential'}
-                </Button>
-              ) : undefined
-            }
-          >
+          <InfoBanner tone="info" icon={Users} title={`Connect ${displayName} for the whole team`}>
             {isPipedream
               ? `One shared ${displayName} account that everyone on this project uses — the agent and your triggers run on it. To connect your own account instead, use the private option below.`
               : `One shared credential that everyone on this project uses — the agent and your triggers run on it.`}
           </InfoBanner>
         )}
-        {/* One tab per question this page answers: what can I use (Connections),
-            what may the agent do with it (Permissions), who on the team has
-            connected their own (Team members). Before this, everything stacked
-            into one long scroll above a lone "Permissions" tab, because the only
-            other trigger — Profile — is hidden for Pipedream connectors. */}
-        <Tabs
-          value={detailTab}
-          onValueChange={setDetailTab}
-          className="gap-3"
-        >
+        {/* One tab per question this page answers: what is this and what may the
+            agent do with it (Overview), what accounts can I use (Connections),
+            who on the team has connected their own (Team members). */}
+        <Tabs value={detailTab} onValueChange={setDetailTab} className="gap-3">
           {/* A single trigger is not a choice — it reads as a broken tab bar.
-              Computer connectors are managed in Computers, so Permissions is
+              Computer connectors are managed in Computers, so Overview is
               all they have left here. */}
           <TabsList
             type="underline"
-            className={cn(
-              'flex w-full items-center justify-start',
-              detailTabCount < 2 && 'hidden',
-            )}
+            className={cn('flex w-full items-center justify-start', detailTabCount < 2 && 'hidden')}
           >
+            <TabsTrigger value="overview" className="w-fit flex-none">
+              Overview
+            </TabsTrigger>
             {showConnections && (
               <TabsTrigger value="connections" className="w-fit flex-none gap-2">
                 Connections
@@ -1679,15 +1690,36 @@ function ConnectorDetail({
                 Connection
               </TabsTrigger>
             )}
-            <TabsTrigger value="permissions" className="w-fit flex-none">
-              Permissions
-            </TabsTrigger>
             {showRoster && (
               <TabsTrigger value="roster" className="w-fit flex-none">
                 Team members
               </TabsTrigger>
             )}
           </TabsList>
+          {/* The screen itself: reference on the left, the decision on the
+              right. Two columns from lg up, stacked below it — Overview first,
+              because you read what a connector is before granting it. */}
+          <TabsContent value="overview">
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+              <ConnectorOverview
+                slug={connector.slug}
+                providerLabel={providerLabel(connector.provider)}
+                tools={connector.actions}
+                connectedAs={connectedAs}
+                profileId={connectionProfile?.profile_id ?? null}
+                onCopyProfileId={copyProfileId}
+                status={<ConnectorStatusBadge connector={connector} />}
+              />
+              <PermissionsSection
+                projectId={projectId}
+                connector={connector}
+                onChanged={onChanged}
+                canWrite={canWrite}
+                connectionCount={connectionCount}
+                onOpenConnections={showConnections ? () => setDetailTab('connections') : undefined}
+              />
+            </div>
+          </TabsContent>
           {/* Every connection under this connector — the team's shared accounts and
               this member's own. A connector can hold several of each; the DEFAULT
               in each scope is what a session uses when it names no connection. */}
@@ -1728,18 +1760,6 @@ function ConnectorDetail({
               )}
             </TabsContent>
           )}
-          <TabsContent value="permissions" className="space-y-5">
-            <PermissionsSection
-              projectId={projectId}
-              connector={connector}
-              onChanged={onChanged}
-              canWrite={canWrite}
-              connectionCount={connectionCount}
-              onOpenConnections={
-                showConnections ? () => setDetailTab('connections') : undefined
-              }
-            />
-          </TabsContent>
           {showRoster && (
             <TabsContent value="roster" className="space-y-5">
               <ConnectionRoster
@@ -3005,8 +3025,6 @@ function PermissionsSection({
   const [rules, setRules] = useState<
     { id: string; match: string; action: ConnectorPolicyAction }[]
   >([]);
-  const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [serverSig, setServerSig] = useState('');
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -3024,13 +3042,6 @@ function PermissionsSection({
     setShowRules(rl.length > 0);
     setServerSig(policiesSig(pt, rl));
   }, [policiesQuery.data, toolPaths]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q
-      ? tools.filter((t) => `${t.path} ${t.description ?? ''}`.toLowerCase().includes(q))
-      : tools;
-  }, [tools, search]);
 
   const dirty = policiesSig(perTool, rules) !== serverSig;
 
@@ -3055,11 +3066,15 @@ function PermissionsSection({
     onError: (e: Error) => errorToast(e.message || 'Failed to save permissions'),
   });
 
-  const setChoice = (path: string, choice: PolicyChoice) =>
+  const setChoice = (path: string, choice: PolicyChoice) => setChoices([path], choice);
+  /** One choice across many tools — the group control and the bulk bar share it. */
+  const setChoices = (paths: readonly string[], choice: PolicyChoice) =>
     setPerTool((m) => {
       const next = { ...m };
-      if (choice === 'default') delete next[path];
-      else next[path] = choice;
+      for (const path of paths) {
+        if (choice === 'default') delete next[path];
+        else next[path] = choice;
+      }
       return next;
     });
   const governingRule = (path: string) =>
@@ -3076,35 +3091,31 @@ function PermissionsSection({
     }
     return decided;
   }, [policiesQuery.data]);
+  const governedPathSet = useMemo(() => new Set(projectDecided.keys()), [projectDecided]);
 
   // ── Multi-select + bulk apply ──
-  const filteredPaths = useMemo(() => filtered.map((t) => t.path), [filtered]);
-  const allFilteredSelected =
-    filteredPaths.length > 0 && filteredPaths.every((p) => selected.has(p));
-  const someFilteredSelected = filteredPaths.some((p) => selected.has(p));
-  const toggleSel = (path: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(path)) n.delete(path);
-      else n.add(path);
-      return n;
-    });
-  const toggleAllFiltered = () =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (allFilteredSelected) filteredPaths.forEach((p) => n.delete(p));
-      else filteredPaths.forEach((p) => n.add(p));
-      return n;
-    });
-  const applyBulk = (choice: PolicyChoice) => {
-    setPerTool((m) => {
-      const next = { ...m };
-      for (const p of selected) {
-        if (choice === 'default') delete next[p];
-        else next[p] = choice;
-      }
-      return next;
-    });
+  // Hand-picking an arbitrary subset is not something the group-level control
+  // can express, so the selection survives the move into <ConnectorTools>; only
+  // its chrome changed (hover checkbox + a bar that exists once you pick).
+  const selection: ConnectorToolSelection = {
+    selected,
+    onToggle: (path) =>
+      setSelected((s) => {
+        const n = new Set(s);
+        if (n.has(path)) n.delete(path);
+        else n.add(path);
+        return n;
+      }),
+    onSetAll: (paths, select) =>
+      setSelected((s) => {
+        const n = new Set(s);
+        for (const p of paths) {
+          if (select) n.add(p);
+          else n.delete(p);
+        }
+        return n;
+      }),
+    onApply: (choice) => setChoices([...selected], choice),
   };
 
   const reset = () => {
@@ -3122,29 +3133,6 @@ function PermissionsSection({
 
   return (
     <section className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-medium">Permissions</h3>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
-            )}
-          </p>
-        </div>
-        {tools.length > 6 ? (
-          <div className="relative w-48 shrink-0">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderFiltere5f64efb',
-              )}
-              className="h-8 pl-8 text-sm"
-            />
-          </div>
-        ) : null}
-      </div>
       {/* These are CONNECTOR-wide. With several connections under one connector
           people come here looking for per-connection permissions (it is the tab
           literally called Permissions) and find no way to differ — so point at
@@ -3181,9 +3169,14 @@ function PermissionsSection({
         </InfoBanner>
       )}
       <div className="bg-popover rounded-md border px-4 py-5">
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="space-y-2">
             <Label>Default</Label>
+            <p className="text-muted-foreground -mt-1 text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
+              )}
+            </p>
             <RadioGroup
               value={connector.sensitive ? 'ask_first' : 'follow_rules'}
               onValueChange={(v) => canWrite && sensitiveMut.mutate(v === 'ask_first')}
@@ -3230,222 +3223,101 @@ function PermissionsSection({
               )}
             </InfoBanner>
           ) : (
-            <div className="border-border/60 overflow-hidden rounded-2xl border">
-              {/* Select-all + bulk apply */}
-              <div className="border-border/60 bg-muted/30 flex h-9 items-center gap-2 border-b px-3">
-                {canWrite && (
-                  <Checkbox
-                    checked={
-                      allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
-                    }
-                    onCheckedChange={toggleAllFiltered}
-                    aria-label={tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
-                    )}
-                    className="size-3.5"
-                  />
-                )}
-                {canWrite && selected.size > 0 ? (
+            <ConnectorTools
+              tools={tools}
+              perTool={perTool}
+              onChange={setChoice}
+              onChangeGroup={setChoices}
+              canWrite={canWrite}
+              governedPaths={governedPathSet}
+              selection={selection}
+              renderToolBadge={(t) => {
+                const ruled = !perTool[t.path] ? governingRule(t.path) : undefined;
+                const projectAction = projectDecided.get(t.path);
+                return (
                   <>
-                    <span className="text-foreground text-xs font-medium">
-                      {selected.size} selected
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetToff934ec7',
-                      )}
-                    </span>
-                    {POLICY_CHOICES.map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => applyBulk(c.value)}
-                        className={cn(
-                          'hover:bg-muted rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
-                          c.value === 'default'
-                            ? 'text-muted-foreground'
-                            : POLICY_LABEL[c.value].tint,
-                        )}
+                    {ruled && (
+                      <span
+                        className={cn('text-xs opacity-80', POLICY_LABEL[ruled.action].tint)}
+                        title={`From pattern rule: ${ruled.match}`}
                       >
-                        {c.label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setSelected(new Set())}
-                      className="text-muted-foreground hover:text-foreground ml-auto text-xs transition-colors"
-                    >
-                      Clear
-                    </button>
+                        {POLICY_LABEL[ruled.action].label}{' '}
+                        {tI18nHardcoded.raw(
+                          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextRulebbcba279',
+                        )}
+                      </span>
+                    )}
+                    {projectAction && (
+                      <Hint
+                        label={`A project-wide rule sets this to "${POLICY_LABEL[projectAction].label}". Project rules are evaluated first and win — anything you set here is ignored for this tool.`}
+                      >
+                        <Badge variant="outline" size="sm" className="shrink-0 gap-1">
+                          <Lock className="size-3 shrink-0" />
+                          <span className={POLICY_LABEL[projectAction].tint}>
+                            {POLICY_LABEL[projectAction].label}
+                          </span>
+                          by project
+                        </Badge>
+                      </Hint>
+                    )}
                   </>
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    {filtered.length} {filtered.length === 1 ? 'tool' : 'tools'}{' '}
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTapA9c38f324',
+                );
+              }}
+              renderToolDetail={(t) => (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={RISK_VARIANT[t.risk]} size="sm">
+                      {t.risk}
+                    </Badge>
+                    <code className="text-muted-foreground font-mono text-xs">{t.path}</code>
+                  </div>
+                  <CodeSnippet code={tsSignature(connector.slug, t)} language="typescript" />
+                  <CodeSnippet
+                    code={JSON.stringify(
+                      t.inputSchema ?? { type: 'object', properties: {} },
+                      null,
+                      2,
                     )}
-                  </span>
-                )}
-              </div>
-
-              <div className="max-h-[52vh] overflow-y-auto">
-                {filtered.map((t) => {
-                  const explicit = perTool[t.path];
-                  const ruled = !explicit ? governingRule(t.path) : undefined;
-                  const projectAction = projectDecided.get(t.path);
-                  const isOpen = expanded === t.path;
-                  const isSel = selected.has(t.path);
-                  return (
-                    <div key={t.path} className="border-border/60 border-t first:border-t-0">
-                      <div
-                        className={cn(
-                          'group flex items-center gap-2.5 px-3 py-1.5 transition-colors',
-                          isSel ? 'bg-primary/[0.05]' : 'hover:bg-muted/30',
-                        )}
-                      >
-                        {canWrite && (
-                          <Checkbox
-                            checked={isSel}
-                            onCheckedChange={() => toggleSel(t.path)}
-                            aria-label={`Select ${t.path}`}
-                            className={cn(
-                              'size-3.5 shrink-0 transition-opacity',
-                              isSel
-                                ? ''
-                                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                            )}
-                          />
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setExpanded(isOpen ? null : t.path)}
-                          className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
-                        >
-                          <span className="text-foreground shrink-0 font-mono text-xs">
-                            {t.path}
-                          </span>
-                          {t.description && (
-                            <span className="text-muted-foreground/70 truncate text-xs">
-                              {t.description}
-                            </span>
-                          )}
-                        </button>
-                        {ruled && (
-                          <span
-                            className={cn(
-                              'shrink-0 text-xs opacity-80',
-                              POLICY_LABEL[ruled.action].tint,
-                            )}
-                            title={`From pattern rule: ${ruled.match}`}
-                          >
-                            {POLICY_LABEL[ruled.action].label}{' '}
-                            {tI18nHardcoded.raw(
-                              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextRulebbcba279',
-                            )}
-                          </span>
-                        )}
-                        {projectAction && (
-                          <Hint
-                            label={`A project-wide rule sets this to "${POLICY_LABEL[projectAction].label}". Project rules are evaluated first and win — anything you set here is ignored for this tool.`}
-                          >
-                            <Badge variant="outline" size="sm" className="shrink-0 gap-1">
-                              <Lock className="size-3 shrink-0" />
-                              <span className={POLICY_LABEL[projectAction].tint}>
-                                {POLICY_LABEL[projectAction].label}
-                              </span>
-                              by project
-                            </Badge>
-                          </Hint>
-                        )}
-                        <ChevronRight
-                          className={cn(
-                            'size-3 shrink-0 transition',
-                            isOpen
-                              ? 'text-muted-foreground/70 rotate-90'
-                              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100',
-                          )}
-                        />
-                        {/* Still editable — a project rule can be lifted later, and
-                            staging a connector rule for that is legitimate. Dimmed
-                            so it never reads as the thing currently in force. */}
-                        <div className={cn(projectAction && 'opacity-40')}>
-                          <PermissionPicker
-                            value={explicit ?? 'default'}
-                            onChange={(c) => setChoice(t.path, c)}
-                            readOnly={!canWrite}
-                          />
-                        </div>
-                      </div>
-                      {isOpen && (
-                        <div className="bg-muted/20 space-y-3 px-4 pt-1 pb-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={RISK_VARIANT[t.risk]} size="sm">
-                              {t.risk}
-                            </Badge>
-                            {t.description && (
-                              <span className="text-muted-foreground text-xs">{t.description}</span>
-                            )}
-                          </div>
-                          <CodeSnippet
-                            code={tsSignature(connector.slug, t)}
-                            language="typescript"
-                          />
-                          <CodeSnippet
-                            code={JSON.stringify(
-                              t.inputSchema ?? { type: 'object', properties: {} },
-                              null,
-                              2,
-                            )}
-                            language="json"
-                            className="max-h-56 overflow-auto"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filtered.length === 0 && (
-                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoTools69d22076',
-                    )}
-                    {search}”.
-                  </p>
-                )}
-              </div>
-            </div>
+                    language="json"
+                    className="max-h-56 overflow-auto"
+                  />
+                </div>
+              )}
+            />
           )}
 
-          {/* Advanced pattern rules */}
+          {/* ONE collapsed Advanced disclosure per screen. Pattern rules are the
+              power case — they still do everything they did, they just no longer
+              compete with the tool list for the reader's attention. */}
           {tools.length > 0 && (
-            <div className="border-border/60 rounded-2xl border">
-              <button
-                type="button"
-                onClick={() => setShowRules((s) => !s)}
-                className="text-foreground hover:bg-muted/40 flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium"
-              >
-                <ChevronRight
-                  className={cn(
-                    'text-muted-foreground h-4 w-4 transition-transform',
-                    showRules && 'rotate-90',
+            <Disclosure
+              open={showRules}
+              onOpenChange={setShowRules}
+              variant="outline"
+              className="bg-popover overflow-hidden"
+            >
+              <DisclosureTrigger>
+                <div className="text-foreground hover:bg-muted/40 flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left text-sm font-medium">
+                  Advanced
+                  <span className="text-muted-foreground text-xs font-normal">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPatternRules6a07e5a7',
+                    )}
+                  </span>
+                  {rules.length > 0 && (
+                    <Badge variant="secondary" size="sm">
+                      {rules.length}
+                    </Badge>
                   )}
-                />
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPatternRules6a07e5a7',
-                )}
-                {rules.length > 0 && (
-                  <Badge variant="secondary" size="sm">
-                    {rules.length}
-                  </Badge>
-                )}
-                <span className="text-muted-foreground ml-auto text-xs font-normal">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCoverMany170203ce',
-                  )}
-                </span>
-              </button>
-              {showRules && (
-                <div className="border-border/60 space-y-2 border-t px-3 py-3">
+                  <span className="text-muted-foreground ml-auto text-xs font-normal">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCoverMany170203ce',
+                    )}
+                  </span>
+                </div>
+              </DisclosureTrigger>
+              <DisclosureContent contentClassName="border-border/60 border-t">
+                <div className="space-y-2 px-3 py-3">
                   <p className="text-muted-foreground text-xs">
                     {tI18nHardcoded.raw(
                       'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMatchBy60561318',
@@ -3540,8 +3412,8 @@ function PermissionsSection({
                     </Button>
                   )}
                 </div>
-              )}
-            </div>
+              </DisclosureContent>
+            </Disclosure>
           )}
         </div>
 

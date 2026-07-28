@@ -36,8 +36,18 @@ export function MigrateToV2ButtonView({
 }) {
   if (!visible) return null;
   return (
-    <Button size={size} variant={variant} className={className} disabled={pending} onClick={onClick}>
-      {pending ? <Loading className="size-3.5 shrink-0" /> : <ArrowUpCircle className="size-3.5 shrink-0" />}
+    <Button
+      size={size}
+      variant={variant}
+      className={className}
+      disabled={pending}
+      onClick={onClick}
+    >
+      {pending ? (
+        <Loading className="size-3.5 shrink-0" />
+      ) : (
+        <ArrowUpCircle className="size-3.5 shrink-0" />
+      )}
       Migrate to v2
     </Button>
   );

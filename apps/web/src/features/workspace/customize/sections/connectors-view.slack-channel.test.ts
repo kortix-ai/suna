@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 const sourcePath = join(import.meta.dir, 'connectors-view.tsx');
 const source = [
@@ -36,7 +36,9 @@ describe('Slack channel connector catalogue', () => {
     expect(source).toContain('App manifest');
     expect(source).toContain('copyManifest');
     expect(source).toContain('https://api.slack.com/apps?new_app=1');
-    expect(source).toContain('Click Open Slack, choose "From a manifest", paste the JSON, confirm.');
+    expect(source).toContain(
+      'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+    );
     expect(source).toContain('On the next screen, click Install to Workspace and approve.');
     expect(source).toContain('Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.');
   });
@@ -44,7 +46,9 @@ describe('Slack channel connector catalogue', () => {
 
 describe('Email channel connector catalogue', () => {
   test('keeps Email profiles behind the experimental flag', () => {
-    expect(source).toContain('{emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}');
+    expect(source).toContain(
+      '{emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}',
+    );
   });
 
   test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {

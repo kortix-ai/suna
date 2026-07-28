@@ -11,7 +11,8 @@ describe('feature-flagged Discover connector marketplace', () => {
     expect(connectorsSource).toContain(
       'projectQuery.data?.project?.experimental?.connectors_api_discover === true',
     );
-    expect(connectorsSource).toContain('<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',
+    expect(connectorsSource).toContain(
+      '<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',
     );
     expect(connectorsSource).toContain(
       '{discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}',
@@ -40,14 +41,14 @@ describe('feature-flagged Discover connector marketplace', () => {
   });
 
   test('opens direct records as source variants instead of routing through Pipedream', () => {
-    expect(discoverSource).toContain(
-      'getDiscoverIntegration(projectId, selectedIntegration.id)');
+    expect(discoverSource).toContain('getDiscoverIntegration(projectId, selectedIntegration.id)');
     expect(discoverSource).toContain('variant.connector');
     expect(discoverSource).toContain('Configure manually');
   });
 
   test('does not mislabel a domain card as only its feed-provided MCP surface', () => {
-    expect(discoverSource).toContain("const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';",
+    expect(discoverSource).toContain(
+      "const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';",
     );
     expect(discoverSource).not.toContain(
       "const subtitle = isOAuth ? 'Pipedream OAuth' : integrationKindLabel(card.item.kind);",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -19,16 +19,13 @@ import {
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { cn } from '@/lib/utils';
 import {
   useDeleteGatewayBudget,
   useGatewayBudgets,
   useSetGatewayBudget,
 } from '@/hooks/projects/use-project-gateway';
-import type {
-  GatewayBudgetRow,
-  GatewayMemberSpend,
-} from '@/lib/projects-gateway-client';
+import type { GatewayBudgetRow, GatewayMemberSpend } from '@/lib/projects-gateway-client';
+import { cn } from '@/lib/utils';
 
 const PERIODS: { value: 'day' | 'week' | 'month'; label: string }[] = [
   { value: 'day', label: 'Daily' },
@@ -61,7 +58,10 @@ function Meter({ spent, limit, className }: { spent: number; limit: number; clas
   return (
     <div className={cn('h-2 overflow-hidden rounded-full bg-primary/[0.06]', className)}>
       <div
-        className={cn('h-full rounded-full transition-[width] duration-700 ease-out', meterTone(pct))}
+        className={cn(
+          'h-full rounded-full transition-[width] duration-700 ease-out',
+          meterTone(pct),
+        )}
         style={{ width: `${Math.min(100, pct)}%` }}
       />
     </div>
@@ -98,7 +98,11 @@ export function GatewayBudgets({
     });
 
   const alerts: { label: string; pct: number }[] = [];
-  if (projectBudget && projectBudget.limit_usd > 0 && projectSpend / projectBudget.limit_usd >= 0.8) {
+  if (
+    projectBudget &&
+    projectBudget.limit_usd > 0 &&
+    projectSpend / projectBudget.limit_usd >= 0.8
+  ) {
     alerts.push({ label: 'Project', pct: (projectSpend / projectBudget.limit_usd) * 100 });
   }
   for (const m of members) {
@@ -138,7 +142,8 @@ export function GatewayBudgets({
         >
           {projectBudget ? (
             (() => {
-              const pct = projectBudget.limit_usd > 0 ? (projectSpend / projectBudget.limit_usd) * 100 : 0;
+              const pct =
+                projectBudget.limit_usd > 0 ? (projectSpend / projectBudget.limit_usd) * 100 : 0;
               const remaining = Math.max(0, projectBudget.limit_usd - projectSpend);
               return (
                 <div className="space-y-3">
@@ -179,8 +184,12 @@ export function GatewayBudgets({
           ) : (
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-2xl font-semibold tabular-nums text-foreground">{fmtUsd(projectSpend)}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">spent this month · no cap set</div>
+                <div className="text-2xl font-semibold tabular-nums text-foreground">
+                  {fmtUsd(projectSpend)}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  spent this month · no cap set
+                </div>
               </div>
             </div>
           )}
@@ -192,7 +201,9 @@ export function GatewayBudgets({
           description="Spend per member this month — set a cap on anyone"
         >
           {members.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No member activity yet.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No member activity yet.
+            </p>
           ) : (
             <div className="space-y-4">
               {members.map((m) => (
@@ -270,7 +281,8 @@ function MemberRow({
           <span className="truncate text-sm text-foreground">{label}</span>
           <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
             {fmtUsd(member.cost)}
-            {budget ? ` / ${fmtUsd(budget.limit_usd)}` : ''} · {member.requests.toLocaleString()} req
+            {budget ? ` / ${fmtUsd(budget.limit_usd)}` : ''} · {member.requests.toLocaleString()}{' '}
+            req
           </span>
         </div>
         {budget ? (
@@ -323,8 +335,7 @@ function BudgetDialog({
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>(existing?.period ?? 'month');
   const [action, setAction] = useState<'block' | 'warn'>(existing?.action ?? 'block');
 
-  const who =
-    target.scope === 'project' ? 'this project' : (target.email ?? 'this member');
+  const who = target.scope === 'project' ? 'this project' : (target.email ?? 'this member');
   const amount = Number(limit);
   const valid = Number.isFinite(amount) && amount > 0;
 

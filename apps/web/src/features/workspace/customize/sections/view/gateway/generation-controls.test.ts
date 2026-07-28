@@ -29,7 +29,13 @@ describe('catalogModelForGateway — client-side capability lookup', () => {
     expect(model?.id).toBe('claude-opus-4-8');
     expect(model?.reasoning).toBe(true);
     expect(model?.temperature).toBe(false);
-    expect(model?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(model?.reasoning_options?.[0]?.values).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
   });
 
   test('resolves claude-sonnet-4.6 to its REAL catalog entry, not the synthetic fallback', () => {

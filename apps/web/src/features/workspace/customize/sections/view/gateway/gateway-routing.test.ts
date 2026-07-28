@@ -13,10 +13,7 @@ import {
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
 const modelDefaultsSource = readFileSync(
-  join(
-    import.meta.dir,
-    '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts',
-  ),
+  join(import.meta.dir, '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts'),
   'utf8',
 );
 
@@ -195,9 +192,7 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
-    expect(routingSource).toContain(
-      "from './generation-controls'",
-    );
+    expect(routingSource).toContain("from './generation-controls'");
     expect(routingSource).toContain('<GenerationControlsPanel');
     expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
   });

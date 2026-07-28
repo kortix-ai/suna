@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { GatewayPlaygroundResult } from '@/lib/projects-gateway-client';
 
-import { fmtLatency, PlaygroundResultCard } from './gateway-playground';
+import { PlaygroundResultCard, fmtLatency } from './gateway-playground';
 
 const result = (overrides: Partial<GatewayPlaygroundResult> = {}): GatewayPlaygroundResult => ({
   model: 'gpt-4o',

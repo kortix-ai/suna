@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 // Regression test for the Better Stack chunk-22256 cluster:
 //   5af76e2b… / c80ef19c… / bb2da889… —

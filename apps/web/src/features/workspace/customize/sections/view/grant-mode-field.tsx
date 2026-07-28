@@ -7,11 +7,11 @@
  * them twice.
  */
 
-import { Segmented } from './agent-editor-primitives';
-import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 import { cn } from '@/lib/utils';
 import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { type ReactNode, useState } from 'react';
+import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
+import { Segmented } from './agent-editor-primitives';
 
 type GrantMode = 'all' | 'pick' | 'none';
 
@@ -32,7 +32,11 @@ function GrantModeField({
     value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
   const [wantPick, setWantPick] = useState(Array.isArray(value) && value.length > 0);
   const effectiveMode: GrantMode =
-    value === 'all' ? 'all' : Array.isArray(value) && (value.length > 0 || wantPick) ? 'pick' : mode;
+    value === 'all'
+      ? 'all'
+      : Array.isArray(value) && (value.length > 0 || wantPick)
+        ? 'pick'
+        : mode;
   const selected = new Set(Array.isArray(value) ? value : []);
 
   const pick = (m: GrantMode) => {
@@ -103,7 +107,9 @@ export function GrantSetField({
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
-        const orphans = [...selected].filter((id) => !optionIds.has(id)).map((id) => ({ id, label: id }));
+        const orphans = [...selected]
+          .filter((id) => !optionIds.has(id))
+          .map((id) => ({ id, label: id }));
         const rows = [...options, ...orphans];
         return rows.length === 0 ? (
           <p className="text-muted-foreground/60 text-[11px]">{emptyLabel}</p>
@@ -128,7 +134,9 @@ export function GrantSetField({
                   <span
                     className={cn(
                       'flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border text-[9px]',
-                      isSel ? 'border-foreground bg-foreground text-background' : 'border-border/70',
+                      isSel
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-border/70',
                     )}
                   >
                     {isSel ? '✓' : ''}

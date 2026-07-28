@@ -21,28 +21,22 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
-import { getProject, type ProjectCommit } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  Check,
-  CheckCircleSolid,
-  ChevronRight,
-  Refresh,
-  XCircleSolid,
-} from '@mynaui/icons-react';
-import { FileDiff, History } from 'lucide-react';
+import { type ProjectCommit, getProject } from '@kortix/sdk';
+import { Check, CheckCircleSolid, ChevronRight, Refresh, XCircleSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { FileDiff, History } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
+  type TimelineItem,
   buildTimeline,
   commitTime,
   groupTimeline,
   isKortixAgent,
-  type TimelineItem,
 } from './changes-timeline';
 
 const LIST_CLASS = 'bg-popover overflow-hidden divide-y divide-border rounded-md border';
@@ -371,7 +365,9 @@ function ChangesTimeline({
           {(commitsFailed || crsFailed) && (
             <ErrorState
               size="sm"
-              title={commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"}
+              title={
+                commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"
+              }
               description="Showing what loaded. Retry to refresh."
               action={
                 <Button

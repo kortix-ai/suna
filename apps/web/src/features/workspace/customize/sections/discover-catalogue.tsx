@@ -1,6 +1,5 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import {
   type ConnectorDraftInput,
   type DiscoverIntegration,
@@ -12,12 +11,12 @@ import {
   listDiscoverIntegrations,
   listPipedreamApps,
 } from '@kortix/sdk';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { Boxes, ChevronRight, ExternalLink, Globe, Plus, Search, Zap } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { useDebounce } from '@/hooks/use-debounce';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -34,6 +33,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { isConnectorsEnabled } from '@/lib/config';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);

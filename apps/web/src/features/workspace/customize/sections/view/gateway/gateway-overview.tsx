@@ -1,11 +1,10 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
+import { type ReactNode, useMemo, useState } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { listProjectSessions } from '@kortix/sdk';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -13,17 +12,18 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
+import { listProjectSessions } from '@kortix/sdk';
 
-import { displayModel, modelAccent } from './_shared';
 import {
   MeterRow,
   RangeSelector,
   StatCard,
   UsageChart,
-  chartConfig,
+  type chartConfig,
   fmtCompact,
   fmtUsd,
 } from './_metrics';
+import { displayModel, modelAccent } from './_shared';
 
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
 
@@ -34,9 +34,19 @@ const METRICS: {
   fmt: (v: number) => string;
 }[] = [
   { key: 'cost', label: 'Spend', keys: ['cost'], fmt: fmtUsd },
-  { key: 'traffic', label: 'Requests', keys: ['requests', 'errors'], fmt: (v) => v.toLocaleString() },
+  {
+    key: 'traffic',
+    label: 'Requests',
+    keys: ['requests', 'errors'],
+    fmt: (v) => v.toLocaleString(),
+  },
   { key: 'tokens', label: 'Tokens', keys: ['input_tokens', 'output_tokens'], fmt: fmtCompact },
-  { key: 'latency', label: 'Latency', keys: ['p50', 'p95', 'p99'], fmt: (v) => `${fmtCompact(v)}ms` },
+  {
+    key: 'latency',
+    label: 'Latency',
+    keys: ['p50', 'p95', 'p99'],
+    fmt: (v) => `${fmtCompact(v)}ms`,
+  },
 ];
 
 /**
@@ -125,7 +135,9 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
           <StatCard
             label="Errors"
             value={errors.toLocaleString()}
-            sub={requests ? `${((errors / requests) * 100).toFixed(1)}% error rate` : 'no requests yet'}
+            sub={
+              requests ? `${((errors / requests) * 100).toFixed(1)}% error rate` : 'no requests yet'
+            }
             icon={AlertTriangle}
             accent="var(--destructive)"
             spark={sparkSeries}
@@ -207,14 +219,12 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                       rank={i + 1}
                       accent={modelAccent(s.session_id)}
                       label={
-                        name ? (
-                          <span className="font-sans">{name}</span>
-                        ) : (
-                          s.session_id.slice(0, 8)
-                        )
+                        name ? <span className="font-sans">{name}</span> : s.session_id.slice(0, 8)
                       }
                       value={
-                        <span className="font-semibold text-foreground">{fmtUsd(s.total_cost)}</span>
+                        <span className="font-semibold text-foreground">
+                          {fmtUsd(s.total_cost)}
+                        </span>
                       }
                       sub={
                         <>

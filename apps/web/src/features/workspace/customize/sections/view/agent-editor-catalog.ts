@@ -50,7 +50,10 @@ export const PERMISSION_ACTION_ONLY_KEYS = [
   'doom_loop',
 ] as const;
 
-export const PERMISSION_RULE_GROUPS: { label: string; keys: (typeof PERMISSION_RULE_KEYS)[number][] }[] = [
+export const PERMISSION_RULE_GROUPS: {
+  label: string;
+  keys: (typeof PERMISSION_RULE_KEYS)[number][];
+}[] = [
   { label: 'Files & search', keys: ['read', 'edit', 'glob', 'grep', 'list'] },
   { label: 'Execution', keys: ['bash', 'task', 'external_directory', 'lsp'] },
 ];

@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type OAuth2ApplicationForm,
+  type OAuth2CredentialForm,
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
   createConnectorWithOptionalOAuth2,
   mergeOAuth2DiscoveryMetadata,
   oauth2ApplicationFormValid,
   oauth2CredentialFormValid,
-  type OAuth2ApplicationForm,
-  type OAuth2CredentialForm,
 } from './connector-oauth2';
 
 const SECRET_FORM: OAuth2CredentialForm = {

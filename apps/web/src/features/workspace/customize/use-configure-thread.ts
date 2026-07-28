@@ -16,8 +16,8 @@
 import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { writeStartStash } from '@kortix/sdk/react';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { writeStartStash } from '@kortix/sdk/react';
 
 export type ConfigureKind = 'agent' | 'skill' | 'command';
 

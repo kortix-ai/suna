@@ -17,7 +17,8 @@ export function VoiceView({ projectId }: { projectId: string }) {
   const setBotName = useSetVoiceBotName();
   // Read-only unless the role can write customize settings; fails closed while
   // the probe resolves.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+  const canWrite =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
   const [name, setName] = useState('');
 
   const dirty = name.trim().length > 0;
@@ -51,7 +52,10 @@ export function VoiceView({ projectId }: { projectId: string }) {
               if (e.key === 'Enter') void onSave();
             }}
           />
-          <Button onClick={() => void onSave()} disabled={!canWrite || !dirty || setBotName.isPending}>
+          <Button
+            onClick={() => void onSave()}
+            disabled={!canWrite || !dirty || setBotName.isPending}
+          >
             Save
           </Button>
         </div>

@@ -26,11 +26,7 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
-import {
-  type ProjectConfigSummary,
-  getProjectDetail,
-  readProjectFile,
-} from '@kortix/sdk';
+import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, type LucideIcon, Plus } from 'lucide-react';

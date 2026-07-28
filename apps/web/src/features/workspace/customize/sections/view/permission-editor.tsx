@@ -6,6 +6,10 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
+import type { PermissionAction, PermissionConfig, PermissionRule } from '@kortix/sdk';
+import { Plus, Sliders, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
 import {
   PERMISSION_ACTION_ONLY_KEYS,
   PERMISSION_KEY_HELP,
@@ -13,10 +17,6 @@ import {
   PERMISSION_RULE_KEYS,
 } from './agent-editor-catalog';
 import { Segmented } from './agent-editor-primitives';
-import type { PermissionAction, PermissionConfig, PermissionRule } from '@kortix/sdk';
-import { AnimatePresence, motion } from 'motion/react';
-import { Plus, Sliders, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 
 type PermObject = Record<string, PermissionRule | PermissionAction | undefined>;
 

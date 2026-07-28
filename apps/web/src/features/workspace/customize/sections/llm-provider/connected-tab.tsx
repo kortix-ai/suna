@@ -8,14 +8,14 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
 import {
-  deleteProjectSecret,
   type GatewayProviderVerifyResult,
+  deleteProjectSecret,
   verifyGatewayProvider,
 } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -86,11 +86,7 @@ export function ConnectedTab({
     mutationFn: async (provider: LlmProviderEntry) => {
       const names =
         provider.id === 'openai' || provider.id === 'codex'
-          ? [
-              ...provider.envVars,
-              CODEX_AUTH_JSON_SECRET_NAME,
-              LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
-            ]
+          ? [...provider.envVars, CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME]
           : provider.envVars;
       await Promise.all(
         names.map((envVar) => deleteProjectSecret(projectId, envVar).catch(() => undefined)),

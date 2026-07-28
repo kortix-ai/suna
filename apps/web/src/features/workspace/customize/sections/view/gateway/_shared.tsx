@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
 import { getManagedModel } from '@kortix/llm-catalog';
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -20,7 +20,7 @@ export function modelLabel(id: string): string {
 }
 
 export function displayModel(id: string): string {
-  return getManagedModel(id)?.name ?? (id.split('/').pop() ?? id);
+  return getManagedModel(id)?.name ?? id.split('/').pop() ?? id;
 }
 
 export function tint(accent: string, pct: number): string {
@@ -68,7 +68,9 @@ export function MetricBar({
           style={{ width: `${Math.max(3, Math.min(100, pct))}%`, backgroundColor: accent }}
         />
       </div>
-      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{value}</span>
+      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+        {value}
+      </span>
     </div>
   );
 }

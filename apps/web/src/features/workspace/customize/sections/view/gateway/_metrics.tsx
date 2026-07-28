@@ -1,17 +1,17 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis } from 'recharts';
 
 import {
+  type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from '@/components/ui/chart';
-import { cn } from '@/lib/utils';
 import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
+import { cn } from '@/lib/utils';
 
 export const RANGES = [
   { days: 7, label: '7d' },
@@ -28,7 +28,10 @@ export const chartConfig = {
   input_tokens: { label: 'Input', color: 'var(--kortix-blue)' },
   output_tokens: { label: 'Output', color: 'var(--muted-foreground)' },
   p50: { label: 'p50', color: 'var(--muted-foreground)' },
-  p95: { label: 'p95', color: 'color-mix(in oklch, var(--kortix-blue) 55%, var(--muted-foreground))' },
+  p95: {
+    label: 'p95',
+    color: 'color-mix(in oklch, var(--kortix-blue) 55%, var(--muted-foreground))',
+  },
   p99: { label: 'p99', color: 'var(--kortix-blue)' },
 } satisfies ChartConfig;
 
@@ -59,7 +62,12 @@ export function RangeSelector({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5', className)}>
+    <div
+      className={cn(
+        'flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5',
+        className,
+      )}
+    >
       {RANGES.map((r) => (
         <button
           key={r.days}
@@ -67,7 +75,9 @@ export function RangeSelector({
           onClick={() => setDays(r.days)}
           className={cn(
             'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-            days === r.days ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+            days === r.days
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {r.label}
@@ -136,7 +146,9 @@ export function StatCard({
           <Icon className="size-3.5" />
         </div>
       </div>
-      <div className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-foreground">
+        {value}
+      </div>
       <div className="mt-1 flex items-end justify-between gap-2">
         <span className="min-h-4 text-xs text-muted-foreground">{sub ?? ''}</span>
         {spark && sparkKey && <MiniSpark data={spark} dataKey={sparkKey} color={accent} />}
@@ -228,9 +240,13 @@ export function MeterRow({
   return (
     <div className="group -mx-2 rounded-lg px-2 py-2 transition-colors duration-150 hover:bg-muted/40">
       <div className="flex items-center gap-3">
-        <span className="w-3 shrink-0 text-right text-xs tabular-nums text-muted-foreground/40">{rank}</span>
+        <span className="w-3 shrink-0 text-right text-xs tabular-nums text-muted-foreground/40">
+          {rank}
+        </span>
         <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">{label}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">
+          {label}
+        </span>
         <div className="flex h-1 w-20 shrink-0 overflow-hidden rounded-full bg-foreground/[0.07] sm:w-32">
           {segments.map((s, i) => (
             <div
@@ -240,9 +256,15 @@ export function MeterRow({
             />
           ))}
         </div>
-        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{value}</span>
+        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+          {value}
+        </span>
       </div>
-      {sub && <div className="mt-1 flex items-center gap-3 pl-7 text-xs tabular-nums text-muted-foreground/60">{sub}</div>}
+      {sub && (
+        <div className="mt-1 flex items-center gap-3 pl-7 text-xs tabular-nums text-muted-foreground/60">
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

@@ -29,13 +29,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { useModelDefaults } from '@kortix/sdk/react';
-import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import type {
   GatewayFallbackChain,
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
+import { useModelDefaults } from '@kortix/sdk/react';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 

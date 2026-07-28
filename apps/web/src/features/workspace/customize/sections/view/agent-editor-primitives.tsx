@@ -71,7 +71,9 @@ export function SectionHeader({ icon: Icon, title }: { icon: typeof Bot; title: 
   return (
     <div className="flex items-center gap-2">
       <Icon className="text-muted-foreground/70 size-3.5 shrink-0" />
-      <span className="text-foreground/80 text-xs font-medium tracking-wide uppercase">{title}</span>
+      <span className="text-foreground/80 text-xs font-medium tracking-wide uppercase">
+        {title}
+      </span>
     </div>
   );
 }
@@ -101,7 +103,12 @@ export function LayerHeader({
           tone === 'kortix' ? 'bg-kortix-base/20' : 'bg-muted',
         )}
       >
-        <Icon className={cn('size-3.5', tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground')} />
+        <Icon
+          className={cn(
+            'size-3.5',
+            tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground',
+          )}
+        />
       </span>
       <Badge variant={tone} size="sm" className="shrink-0 tracking-wide uppercase">
         {label}

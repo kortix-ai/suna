@@ -6,10 +6,10 @@ import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
+import { useModelStore } from '@kortix/sdk/react';
 // Full gateway catalog, independent of which providers are actually
 // connected — used ONLY to give `useModelStore` a canonical universe for
 // default/heuristic visibility resolution (see `catalogModels` below). Must

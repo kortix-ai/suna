@@ -73,12 +73,12 @@ describe('isKortixAgent', () => {
   });
 
   test('matches legacy display names case-insensitively', () => {
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Kortix Agent' }))).toBe(
-      true,
-    );
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' }))).toBe(
-      true,
-    );
+    expect(
+      isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Kortix Agent' })),
+    ).toBe(true);
+    expect(
+      isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' })),
+    ).toBe(true);
   });
 
   test('does not match human authors', () => {

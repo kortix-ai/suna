@@ -1,5 +1,21 @@
 'use client';
 
+/**
+ * Settings: one flat tab strip, one screen per tab.
+ *
+ * There is no rail and no nested tab bar. `SettingsTabStrip` is the only
+ * navigation on the screen, and the header — the `<h1>` and its single line of
+ * description — comes from `ProjectSectionPage` via `settings-tab-meta`, so a
+ * tab body renders only its body.
+ *
+ * Five bodies still predate that split (`bodyOwnsHeader`): Members,
+ * Environment, Sandbox, Models and Upgrades each still render their own
+ * `CustomizeSectionWrapper` heading. Wrapping those in `ProjectSectionPage`
+ * today would stack two titles and nest two scroll containers, so they render
+ * under the same strip with their own header until they are migrated. Every tab
+ * still resolves to exactly the view it always did.
+ */
+
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -10,7 +26,9 @@ import { MembersView } from '@/features/workspace/customize/sections/view/member
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
-import { ProjectSettingsTabs } from '@/features/workspace/project-section/project-settings-tabs';
+import { ProjectSectionPage } from '@/features/workspace/project-section/project-section-page';
+import { settingsTabMeta } from '@/features/workspace/settings/settings-tab-meta';
+import { SettingsTabStrip } from '@/features/workspace/settings/settings-tab-strip';
 import {
   DEFAULT_PROJECT_SETTINGS_TAB,
   PROJECT_SETTINGS_TABS,
@@ -60,12 +78,30 @@ export default function ProjectSettingsTabPage() {
 
   if (!projectId || !tab) return null;
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ProjectSettingsTabs projectId={projectId} active={tab} />
-      <div className="min-h-0 flex-1" key={`${tab}-${searchParams.get('llm') ?? ''}`}>
-        <TabBody tab={tab} projectId={projectId} />
+  const meta = settingsTabMeta(tab);
+  const bodyKey = `${tab}-${searchParams.get('llm') ?? ''}`;
+  const strip = <SettingsTabStrip projectId={projectId} active={tab} />;
+
+  if (meta.bodyOwnsHeader) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {strip}
+        <div className="min-h-0 flex-1" key={bodyKey}>
+          <TabBody tab={tab} projectId={projectId} />
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <ProjectSectionPage
+      navTabs={strip}
+      title={meta.title}
+      description={meta.description}
+      state="ready"
+      key={bodyKey}
+    >
+      <TabBody tab={tab} projectId={projectId} />
+    </ProjectSectionPage>
   );
 }

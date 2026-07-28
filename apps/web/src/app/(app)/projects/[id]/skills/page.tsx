@@ -1,26 +1,46 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
-import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
+import { parseSkillKind, skillKindQuery } from '@/features/workspace/skills/skill-entities';
+import { SkillsSection } from '@/features/workspace/skills/skills-section';
 
 /**
- * Route for the skills section. Renders the existing view for now — the screen
- * itself migrates to ProjectSectionPage in its own change, so this step is a
- * pure "the URL exists" move with no visual diff below the tab strip.
+ * Route for the Skills section — skills AND commands, one screen.
+ *
+ * The active tab lives in `?tab=`, so `?tab=commands` is a real deep link (it
+ * is where `resolveLegacyCustomizeHref` sends the legacy `commands` section)
+ * and the back button walks between the two.
  */
+function SkillsRoute({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const kind = parseSkillKind(searchParams?.get('tab'));
+
+  return (
+    <SkillsSection
+      projectId={projectId}
+      kind={kind}
+      onKindChange={(next) =>
+        router.replace(`/projects/${projectId}/skills${skillKindQuery(next)}`, { scroll: false })
+      }
+      navTabs={<ProjectSectionTabs projectId={projectId} active="skills" />}
+    />
+  );
+}
+
 export default function SkillsSectionPage() {
   const params = useParams<{ id: string }>();
   const projectId = params?.id ?? '';
   if (!projectId) return null;
 
+  // useSearchParams needs a Suspense boundary to keep the route statically
+  // renderable; without it the whole segment opts into client rendering.
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ProjectSectionTabs projectId={projectId} active="skills" />
-      <div className="min-h-0 flex-1">
-        <SkillsView projectId={projectId} />
-      </div>
-    </div>
+    <Suspense fallback={null}>
+      <SkillsRoute projectId={projectId} />
+    </Suspense>
   );
 }

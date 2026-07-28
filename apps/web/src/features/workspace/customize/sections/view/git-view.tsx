@@ -1,5 +1,19 @@
 'use client';
 
+/**
+ * The Repository tab of Settings.
+ *
+ * One tab, one repository. This surface used to be "Git" (read-only provider /
+ * repo / branch summary plus the clone commands) while a separate "Repository"
+ * card in General edited the default branch, the manifest path and the GitHub
+ * collaborators — the same repository described in two places. The editable
+ * card now renders here, between the connection summary and the local-dev
+ * commands. Nothing moved out of the product; it moved one tab over.
+ *
+ * Headerless on purpose: `ProjectSectionPage` (driven by `settings-tab-meta`)
+ * owns the `<h1>` and the single line under it.
+ */
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -8,13 +22,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
 import { getKortixCliInstallCommand } from '@/lib/kortix-cli';
-import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
+import { type KortixProject, type ProjectGitConnection, getProjectDetail } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, GitBranch, GitFork, Github, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import CustomizeSectionWrapper from '../component/section-wrapper';
+import { RepositoryConfigCard } from '@/features/workspace/settings/repository-config-card';
 import { providerLabel, repositoryWebUrl } from './git-view-helpers';
 
 type ProjectWithOrigin = KortixProject & { git_origin_url?: string };
@@ -112,11 +126,12 @@ function ConnectionSummary({
         }
         href={webUrl}
       />
-      <SummaryRow
-        label="Default branch"
-        value={connection?.default_branch || 'main'}
-        icon={<GitBranch className="size-4" />}
-      />
+      {/* No "Default branch" row here. RepositoryConfigCard below carries the
+          editable one, and the two read different columns — this one is
+          project_git_connections.default_branch, the Select writes
+          projects.default_branch, and PATCH /v1/projects never touches the
+          connection row. Showing both put two contradicting values on one
+          screen where editing one never moved the other. */}
       <div className="flex items-center justify-between gap-4 px-3.5 py-3">
         <span className="text-muted-foreground text-sm">Connection health</span>
         <Badge variant={connected ? 'success' : 'secondary'} size="sm">
@@ -175,10 +190,7 @@ export function GitView({ projectId }: { projectId: string }) {
   });
 
   return (
-    <CustomizeSectionWrapper
-      title="Git"
-      description="Repository hosting, authenticated local development, and synchronization."
-    >
+    <div className="space-y-8">
       {detail.isLoading ? (
         <div className="space-y-3">
           <Skeleton className="h-48 w-full" />
@@ -209,6 +221,8 @@ export function GitView({ projectId }: { projectId: string }) {
             </div>
             <ConnectionSummary connection={detail.data.git_connection} />
           </section>
+
+          <RepositoryConfigCard projectId={projectId} />
 
           <section className="space-y-3">
             <div>
@@ -242,6 +256,6 @@ export function GitView({ projectId }: { projectId: string }) {
           </section>
         </div>
       ) : null}
-    </CustomizeSectionWrapper>
+    </div>
   );
 }

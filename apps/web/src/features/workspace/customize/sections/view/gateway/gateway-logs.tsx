@@ -11,12 +11,12 @@ import {
   DollarSign,
   ScrollText,
 } from 'lucide-react';
-import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, forwardRef, useEffect, useRef, useState } from 'react';
 
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
@@ -454,9 +454,15 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
 
       {logs.length > 0 && (
         <div className="flex shrink-0 items-center gap-3 border-t border-border/50 px-4 py-1.5 text-xs text-muted-foreground/60">
-          <span><kbd className="font-sans">↑↓</kbd> navigate</span>
-          <span><kbd className="font-sans">↵</kbd> open</span>
-          <span><kbd className="font-sans">esc</kbd> back</span>
+          <span>
+            <kbd className="font-sans">↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-sans">↵</kbd> open
+          </span>
+          <span>
+            <kbd className="font-sans">esc</kbd> back
+          </span>
         </div>
       )}
     </div>

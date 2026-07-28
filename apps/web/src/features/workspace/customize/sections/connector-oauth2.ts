@@ -150,8 +150,7 @@ export function mergeOAuth2DiscoveryMetadata(
     ...form,
     authorizationUrl: form.authorizationUrl || metadata.authorization_url || '',
     tokenUrl: form.tokenUrl || metadata.token_url || '',
-    deviceAuthorizationUrl:
-      form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
+    deviceAuthorizationUrl: form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
     revocationUrl: form.revocationUrl || metadata.revocation_url || '',
     scopes: form.scopes || metadata.scopes?.join(' ') || '',
   };

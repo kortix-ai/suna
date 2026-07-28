@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { ConnectorAction, ConnectorPolicyAction } from '@kortix/sdk';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ConnectorTools } from './connector-tools';
 
@@ -120,5 +122,123 @@ describe('empty states', () => {
 
   test('search is offered when the connector has tools', () => {
     expect(render()).toContain('Search tools');
+  });
+});
+
+describe('row badges', () => {
+  test('nothing extra renders when the caller supplies no badge', () => {
+    expect(render()).not.toContain('data-testid="badge"');
+  });
+
+  test('a caller badge rides alongside the picker', () => {
+    // Used by the connector detail to say a pattern rule or a project-wide rule
+    // already decides a tool — the picker's own value cannot express that.
+    const html = render({
+      renderToolBadge: (t: ConnectorAction) =>
+        t.path === 'send_email' ? <span>Allow · rule</span> : null,
+    });
+    expect(html).toContain('Allow · rule');
+  });
+});
+
+describe('multi-select', () => {
+  const selection = {
+    selected: new Set<string>(),
+    onToggle: () => {},
+    onSetAll: () => {},
+    onApply: () => {},
+  };
+
+  test('no checkboxes and no bulk bar when the caller wants no selection', () => {
+    const html = render({ canWrite: true });
+    expect(html).not.toContain('Select Search emails');
+    expect(html).not.toContain('selected');
+  });
+
+  test('every row is selectable once a selection API is supplied', () => {
+    const html = render({ canWrite: true, selection });
+    expect(html).toContain('Select Search emails');
+    expect(html).toContain('Select Send email');
+  });
+
+  test('selection is refused without write access, like every other mutation', () => {
+    const html = render({ canWrite: false, selection });
+    expect(html).not.toContain('Select Search emails');
+  });
+
+  test('the bulk bar stays out of the way until something is picked', () => {
+    expect(render({ canWrite: true, selection })).not.toContain('Set to');
+  });
+
+  test('picking a tool reveals the bulk bar with every policy choice', () => {
+    const html = render({
+      canWrite: true,
+      selection: { ...selection, selected: new Set(['send_email']) },
+    });
+    expect(html).toContain('1 selected');
+    expect(html).toContain('Set to');
+    expect(html).toContain('Block');
+    expect(html).toContain('Clear');
+  });
+
+  test('a partial selection offers select-all over what the search left visible', () => {
+    const html = render({
+      canWrite: true,
+      selection: { ...selection, selected: new Set(['send_email']) },
+    });
+    expect(html).toContain('Select all 4');
+  });
+
+  test('Clear drops the whole selection, not just the visible part', () => {
+    // Apply operates on the whole selection. A search-scoped Clear would let a
+    // user filter, "clear", and then apply a policy to tools they believed were
+    // deselected and can no longer see — silently widening access.
+    const cleared: string[][] = [];
+    renderToStaticMarkup(
+      <ConnectorTools
+        tools={TOOLS}
+        perTool={{}}
+        onChange={() => {}}
+        canWrite
+        selection={{
+          ...selection,
+          selected: new Set(['send_email', 'delete_thread']),
+          onSetAll: (paths, select) => {
+            if (!select) cleared.push(paths);
+          },
+        }}
+      />,
+    );
+    // Rendering alone does not fire it; assert the handler is wired to the
+    // selection rather than to visiblePaths by checking the source contract.
+    const src = readFileSync(
+      fileURLToPath(new URL('./connector-tools.tsx', import.meta.url)),
+      'utf8',
+    );
+    expect(src).toContain('onSetAll([...selecting.selected], false)');
+    expect(src).not.toContain('onSetAll(visiblePaths, false)');
+  });
+
+  test('select-all disappears once everything visible is already picked', () => {
+    const html = render({
+      canWrite: true,
+      selection: {
+        ...selection,
+        selected: new Set(TOOLS.map((t) => t.path)),
+      },
+    });
+    expect(html).toContain('4 selected');
+    expect(html).not.toContain('Select all');
+  });
+});
+
+describe('group header', () => {
+  test('the bulk picker is nested inside the trigger, not a sibling of it', () => {
+    // DisclosureTrigger clones EVERY direct child with its own onClick, which
+    // would overwrite the picker wrapper's stopPropagation and collapse the
+    // group whenever the bulk control is used. One child keeps it intact.
+    const html = render({ canWrite: true, onChangeGroup: () => {} });
+    const triggers = html.match(/aria-expanded="true"/g) ?? [];
+    expect(triggers).toHaveLength(2);
   });
 });

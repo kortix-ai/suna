@@ -38,25 +38,22 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  useAgentConfig,
-  useUpdateAgentConfig,
-} from '@/hooks/projects/use-agent-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
-  listConnectors,
-  listProjectSecrets,
-  listProjectSandboxTemplates,
-  type RuntimeAgentConfig,
   type ProjectConfigSummary,
+  type RuntimeAgentConfig,
+  listConnectors,
+  listProjectSandboxTemplates,
+  listProjectSecrets,
 } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
 import { Bot, Cpu, Layers } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
-import { SectionHeader, LayerHeader } from './agent-editor-primitives';
+import { LayerHeader, SectionHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { RuntimeLayerFields } from './runtime-layer-fields';
 
@@ -94,7 +91,10 @@ function AgentEditorModal({
 }) {
   const [draft, setDraft] = useState<AgentConfigBlock>(initial);
   const [baseline] = useState<AgentConfigBlock>(initial);
-  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  const isDirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(baseline),
+    [draft, baseline],
+  );
   const update = useUpdateAgentConfig(projectId, agentName);
 
   const secretsQuery = useQuery({

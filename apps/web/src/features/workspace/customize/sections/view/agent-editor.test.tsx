@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   KORTIX_CLI_CATALOG,
@@ -14,7 +14,10 @@ import {
   grantSummary,
 } from './agent-editor';
 
-const editorSource = readFileSync(fileURLToPath(new URL('./agent-editor.tsx', import.meta.url)), 'utf8');
+const editorSource = readFileSync(
+  fileURLToPath(new URL('./agent-editor.tsx', import.meta.url)),
+  'utf8',
+);
 const kortixFieldsSource = readFileSync(
   fileURLToPath(new URL('./kortix-layer-fields.tsx', import.meta.url)),
   'utf8',

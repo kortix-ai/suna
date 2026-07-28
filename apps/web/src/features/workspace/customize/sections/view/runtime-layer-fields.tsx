@@ -14,12 +14,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useRuntimeProviders } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
+import type { PermissionConfig, RuntimeAgentConfig } from '@kortix/sdk';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import type { RuntimeAgentConfig, PermissionConfig } from '@kortix/sdk';
 import { Gauge, Sliders } from 'lucide-react';
-import { AGENT_MODE_HELP, AGENT_MODES, THEME_COLORS } from './agent-editor-catalog';
+import { AGENT_MODES, AGENT_MODE_HELP, THEME_COLORS } from './agent-editor-catalog';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { PermissionEditor } from './permission-editor';
 
@@ -44,7 +44,11 @@ export function RuntimeLayerFields({
         <SectionHeader icon={Gauge} title="Behavior" />
         <FieldRow
           label="Description"
-          hint={oc.mode === 'subagent' ? 'required for subagents' : 'shown to other agents when picking a subagent'}
+          hint={
+            oc.mode === 'subagent'
+              ? 'required for subagents'
+              : 'shown to other agents when picking a subagent'
+          }
         >
           <Textarea
             value={oc.description ?? ''}
@@ -214,16 +218,11 @@ export function RuntimeLayerFields({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-foreground/80 text-xs font-medium">Hidden</p>
-            <p className="text-muted-foreground/60 text-[11px]">
-              Keep this agent out of pickers.
-            </p>
+            <p className="text-muted-foreground/60 text-[11px]">Keep this agent out of pickers.</p>
           </div>
           <Switch checked={!!oc.hidden} onCheckedChange={(v) => setOc('hidden', v || undefined)} />
         </div>
-        <FieldRow
-          label="System prompt"
-          hint={`saved to .kortix/opencode/agents/${agentName}.md`}
-        >
+        <FieldRow label="System prompt" hint={`saved to .kortix/opencode/agents/${agentName}.md`}>
           <Textarea
             value={oc.prompt ?? ''}
             placeholder="You are..."

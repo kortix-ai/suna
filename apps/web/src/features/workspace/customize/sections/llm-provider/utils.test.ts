@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  formatPricePerMillion,
-  formatTokenCount,
-  gatewayModelId,
-  pickInitialTab,
-} from './utils';
+import { formatPricePerMillion, formatTokenCount, gatewayModelId, pickInitialTab } from './utils';
 
 describe('pickInitialTab', () => {
   test('opens Add provider by default when providers are connected', () => {

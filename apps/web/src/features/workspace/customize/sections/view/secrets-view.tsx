@@ -48,7 +48,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -60,6 +59,7 @@ import {
   listProjectSecrets,
   upsertProjectSecret,
 } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { DangerTriangleSolid, Pencil, Search, TrashSolid } from '@mynaui/icons-react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
