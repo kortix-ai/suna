@@ -157,6 +157,12 @@ import {
   type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
+import {
+  PermissionPicker,
+  POLICY_CHOICES,
+  POLICY_LABEL,
+  type PolicyChoice,
+} from '@/features/workspace/connectors/policy-picker';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -2905,74 +2911,6 @@ function ConnectionSection({
         )}
       </div>
     </section>
-  );
-}
-
-type PolicyChoice = 'default' | ConnectorPolicyAction;
-
-const POLICY_CHOICES: { value: PolicyChoice; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'always_run', label: 'Allow' },
-  { value: 'require_approval', label: 'Ask' },
-  { value: 'block', label: 'Block' },
-];
-
-const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string }> = {
-  always_run: { label: 'Allow', tint: 'text-kortix-green' },
-  require_approval: { label: 'Ask', tint: 'text-kortix-yellow' },
-  block: { label: 'Block', tint: 'text-destructive' },
-};
-
-function PermissionPicker({
-  value,
-  onChange,
-  readOnly = false,
-}: {
-  value: PolicyChoice;
-  onChange: (c: PolicyChoice) => void;
-  readOnly?: boolean;
-}) {
-  const meta =
-    value === 'default'
-      ? { label: 'Default', tint: 'text-muted-foreground' }
-      : { label: POLICY_LABEL[value].label, tint: POLICY_LABEL[value].tint };
-  if (readOnly) {
-    return (
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium',
-          meta.tint,
-        )}
-      >
-        {meta.label}
-      </span>
-    );
-  }
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'hover:bg-muted inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
-            meta.tint,
-          )}
-        >
-          {meta.label}
-          <ChevronDown className="size-3 opacity-40" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-28">
-        {POLICY_CHOICES.map((c) => (
-          <DropdownMenuItem key={c.value} onClick={() => onChange(c.value)} className="text-xs">
-            <span className={cn(c.value !== 'default' && POLICY_LABEL[c.value].tint)}>
-              {c.label}
-            </span>
-            {c.value === value && <Check className="ml-auto size-3.5" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
