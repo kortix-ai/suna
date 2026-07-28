@@ -55,3 +55,34 @@ describe('remintDecisionFor', () => {
     ).toEqual({ action: 'skip' });
   });
 });
+
+describe('remintDecisionFor — the REVERT case (regression)', () => {
+  const grantFor = (agent: string, extra: Partial<AgentGrant> = {}): AgentGrant => ({
+    agent,
+    kortixCli: 'all',
+    connectors: 'all',
+    env: 'all',
+    ...extra,
+  });
+
+  test('switching BACK to the narrow agent must re-narrow the token', () => {
+    // The escalation this closes: create with `support` (connectors: [zendesk]),
+    // switch once to `ops` (connectors: all) — which correctly re-mints to ops —
+    // then switch back. The first version skipped whenever the requested agent
+    // equalled `project_sessions.agent_name`, which NEVER changes, so the token
+    // kept ops' grant while support ran. Every later call from that box passed
+    // agentMayUseConnector unconditionally.
+    const storedOps = grantFor('ops');
+    const runningSupport = grantFor('support', { connectors: ['zendesk'], kortixCli: [] });
+    expect(remintDecisionFor(storedOps, runningSupport)).toEqual({
+      action: 'write',
+      grant: runningSupport,
+    });
+  });
+
+  test('the grant carries WHICH agent it represents — that is what makes revert detectable', () => {
+    // agent_name is the create-time agent; the stored grant's own `agent` field
+    // is the only record of where the token currently points.
+    expect(grantFor('ops').agent).toBe('ops');
+  });
+});

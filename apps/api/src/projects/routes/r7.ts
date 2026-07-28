@@ -56,6 +56,7 @@ import {
 } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { resolveEndUserRef } from '../lib/end-user-ref';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 
@@ -758,7 +759,7 @@ projectsApp.openapi(
     subject,
     grantsBySession,
     runtimeStatusBySession,
-    callerSessionId: c.get('sessionId') ?? null,
+    callerSessionId: callerKortixSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -1258,7 +1259,7 @@ projectsApp.openapi(
           targetSessionOrigin: s.origin ?? null,
           targetSessionCreatedBy: s.createdBy,
           callerUserId: loaded.userId,
-          callerSessionId: c.get('sessionId') ?? null,
+          callerSessionId: callerKortixSessionId(c),
         })
       ) {
         continue;
@@ -1373,7 +1374,7 @@ projectsApp.openapi(
       targetSessionOrigin: targetOrigin,
       targetSessionCreatedBy: targetCreatedBy,
       callerUserId: loaded.userId,
-      callerSessionId: c.get('sessionId') ?? null,
+      callerSessionId: callerKortixSessionId(c),
     });
     if (!verdict.allowed) {
       return c.json(
