@@ -210,6 +210,7 @@ export function ProjectHomeWelcomeBody({
   setupTiles = true,
   tileHrefFor,
   heading,
+  showcase,
 }: {
   /** Empty on the signed-out homepage, which has no project to name yet. */
   projectId: string;
@@ -226,6 +227,11 @@ export function ProjectHomeWelcomeBody({
   tileHrefFor?: (section: CustomizeSection) => string | null;
   /** Replaces the "Give <project> something to do" line. */
   heading?: ReactNode;
+  /**
+   * Shown instead of the heading when the surface has nothing to show yet —
+   * the animated capability showcase. Takes precedence over `heading`.
+   */
+  showcase?: ReactNode;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const detail = useQuery({
@@ -249,16 +255,22 @@ export function ProjectHomeWelcomeBody({
       </div>
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
-          <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-            {heading ?? (
-              <>
-                Give <span className="text-foreground">{displayName}</span>{' '}
-                {tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
-                )}
-              </>
-            )}
-          </h1>
+          {/* The showcase replaces the heading when there is nothing to show
+              yet. Same rule on both surfaces — the signed-out home always
+              qualifies, so this is one rule applied to different data rather
+              than the two shells diverging. */}
+          {showcase ?? (
+            <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+              {heading ?? (
+                <>
+                  Give <span className="text-foreground">{displayName}</span>{' '}
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+                  )}
+                </>
+              )}
+            </h1>
+          )}
 
           {composer ? (
             <div className="flex w-full flex-col items-center">
