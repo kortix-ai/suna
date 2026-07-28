@@ -158,6 +158,12 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: plan -detailed-exitcode
+        # The EKS roots declare a Cloudflare provider and fall back to a dummy
+        # token when none is supplied, which fails the plan with Cloudflare's
+        # auth error 10000 before any drift is reported. Read-only here: plan
+        # never writes DNS.
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -uo pipefail
           terraform -chdir="${{ matrix.root }}" init -input=false -no-color
