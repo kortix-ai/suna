@@ -38,6 +38,8 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - name: terraform fmt
         run: terraform fmt -check -recursive infra/terraform
+      - name: nacl auditor unit tests
+        run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
       - name: terraform validate (every root)
         run: |
           set -euo pipefail
@@ -95,6 +97,26 @@ jobs:
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov-terraform
+
+  nacl-audit:
+    name: nacl admin-port audit
+    # Terraform governs the VPCs it creates; this checks what is actually
+    # deployed, so a hand-edited ACL or a new region cannot drift past the
+    # control. Hard gate — unlike drift detection, a finding is a real exposure.
+    if: github.event_name != 'pull_request' && vars.TF_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+      - name: audit every region for public SSH/RDP
+        run: python3 infra/terraform/scripts/audit-nacl-admin-ports.py
 
   drift:
     name: drift detection
