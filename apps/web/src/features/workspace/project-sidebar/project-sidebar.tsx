@@ -31,16 +31,11 @@ import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
-import {
-  ProjectFilesNavItem,
-  useCustomizeKeyboardShortcut,
-} from '@/features/workspace/project-sidebar/footer/project-customize-nav';
+import { useCustomizeKeyboardShortcut } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
-import {
-  ProjectNavItems,
-  ProjectSettingsNavItem,
-} from '@/features/workspace/project-sidebar/project-nav-items';
+import { ProjectDestinations } from '@/features/workspace/project-sidebar/project-destinations';
+import { ProjectNavItems } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import {
@@ -178,6 +173,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           onClick={handleNewSession}
         />
 
+        {/* Places you go, above the session list. Configuration lives in the
+            Customize group below them. */}
+        <ProjectDestinations projectId={projectId} />
+
+        {/* Customize sits with the destinations, not stranded under the
+            session list — it is navigation, not a footer. */}
+        <ProjectNavItems projectId={projectId} />
+
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
           {/* Sessions are always expanded — no collapse toggle. The header
                 label opens the full sessions page and carries the active
@@ -240,11 +243,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </div>
         </SidebarGroup>
 
-        {/* The four promoted sections, as a quiet label with plain-text
-              children. That lightness is the whole point — see
-              ux-references/perplexity/01-home-search.png. */}
-        <ProjectNavItems projectId={projectId} />
-
         <SidebarGroup className="mt-auto py-0.5">
           <SidebarMenu>
             <ProjectSandboxAlert projectId={projectId} />
@@ -255,8 +253,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
             <ProjectManifestUpgradeAlert projectId={projectId} />
-            <ProjectFilesNavItem />
-            <ProjectSettingsNavItem projectId={projectId} />
             <ProjectChatGptConnectNavItem projectId={projectId} />
             {/* Persistent rails, not toasts: a dismissible banner is what
                   users miss, and this is the surface that converts. */}

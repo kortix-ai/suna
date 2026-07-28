@@ -21,23 +21,15 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
-import { FolderOpen, Settings } from 'lucide-react';
-
 import { Button } from '@/components/ui/button';
-import {
-  SidebarGroup,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-} from '@/components/ui/sidebar';
+import { SidebarGroup, SidebarInset, SidebarMenu, SidebarProvider } from '@/components/ui/sidebar';
 import { AnonymousSectionPreview } from '@/features/home/anonymous-section-preview';
 import { AnonymousSectionTabs } from '@/features/home/anonymous-section-tabs';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { ComposerChatInput } from '@/features/session/composer-chat-input';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import { ShellInset } from '@/features/workspace/project-layout/shell-inset';
+import { ProjectDestinationsGroup } from '@/features/workspace/project-sidebar/project-destinations';
 import { ProjectNavGroup } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import {
@@ -74,6 +66,17 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
             of the tells that these were two different apps. */}
         <SidebarNewButton label="New session" onClick={() => gate('/')} />
 
+        {/* The same destination rows and the same Customize group as the
+            signed-in sidebar, gated. Anything hand-rolled here drifts. */}
+        <ProjectDestinationsGroup onSelect={() => gate('/')} />
+
+        <ProjectNavGroup
+          items={PROJECT_NAV_ITEMS}
+          hrefFor={(item) => `/?view=${item.key}`}
+          isActive={(item) => item.key === activeSection}
+          onSelectSettings={() => gate('/')}
+        />
+
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0">
           <div className="flex min-h-0 flex-1 flex-col space-y-2">
             <SidebarSectionLabel className="mt-1 px-0">
@@ -87,43 +90,7 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
           </div>
         </SidebarGroup>
 
-        {/* Real links, so a visitor can look at each surface before signing
-            up. The screens render in their empty state with actions gated. */}
-        <ProjectNavGroup
-          items={PROJECT_NAV_ITEMS}
-          hrefFor={(item) => `/?view=${item.key}`}
-          isActive={(item) => item.key === activeSection}
-        />
-
-        {/* Files and Settings sit exactly where the signed-in shell puts them,
-            gated like everything else. Omitting them left a visibly shorter
-            sidebar than the real one. */}
         <SidebarGroup className="mt-auto py-0.5">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => gate('/')}
-                tooltip="Files"
-                className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
-              >
-                <FolderOpen />
-                Files
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => gate('/')}
-                tooltip="Settings"
-                className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
-              >
-                <Settings />
-                Settings
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-
-        <SidebarGroup className="py-0.5">
           <SidebarSectionLabel>Product</SidebarSectionLabel>
           <SidebarMenu>
             {MARKETING_LINKS.map((link) => (
