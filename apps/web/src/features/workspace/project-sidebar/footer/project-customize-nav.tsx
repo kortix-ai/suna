@@ -8,7 +8,6 @@ import { useCallback, useEffect } from 'react';
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { SidebarNavRow } from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { useDevice } from '@/hooks/use-device';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -123,7 +122,19 @@ export function ProjectFilesNavItem() {
 
   if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
 
-  return <SidebarNavRow icon={FolderOpen} label="Files" onClick={onClick} isActive={isActive} />;
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        onClick={onClick}
+        isActive={isActive}
+        tooltip="Files"
+        className="text-sm! font-medium [&_svg]:size-4! flex items-center gap-2"
+      >
+        <FolderOpen />
+        Files
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
 }
 
 export function ProjectFilesRailItem() {

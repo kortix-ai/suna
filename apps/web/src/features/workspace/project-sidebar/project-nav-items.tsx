@@ -13,8 +13,6 @@
  * the probe is in flight.
  */
 
-import { Config } from '@mynaui/icons-react';
-import { Settings as LucideSettings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
@@ -28,8 +26,8 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import {
-  SidebarNavRow,
   SidebarPlainLink,
+  SidebarSectionLabel,
 } from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { useIsMobile } from '@/hooks/utils';
 import { CUSTOMIZE_SECTION_ACCESS } from '@/lib/project-actions';
@@ -100,13 +98,8 @@ export function ProjectNavGroup({
 
   return (
     <SidebarGroup className="py-0">
+      <SidebarSectionLabel>Customize</SidebarSectionLabel>
       <SidebarMenu>
-        {/* A real row, not a caption — same family as Files and Settings. */}
-        <SidebarNavRow
-          icon={Config}
-          label="Customize"
-          isActive={items.some((i) => isActive?.(i))}
-        />
         {items.map((item) => (
           <SidebarPlainLink
             key={item.key}
@@ -134,14 +127,22 @@ export function ProjectSettingsNavItem({ projectId }: { projectId: string }) {
   const isActive = !!pathname?.startsWith(`/projects/${projectId}/settings`);
 
   return (
-    <SidebarNavRow
-      icon={LucideSettings}
-      label="Settings"
-      href={href}
-      isActive={isActive}
-      onClick={() => {
-        if (isMobile) setOpenMobile(false);
-      }}
-    />
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={isActive}
+        tooltip="Settings"
+        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+      >
+        <Link
+          href={href}
+          onClick={() => {
+            if (isMobile) setOpenMobile(false);
+          }}
+        >
+          Settings
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }

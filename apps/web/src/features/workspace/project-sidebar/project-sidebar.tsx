@@ -47,7 +47,6 @@ import {
   SidebarBody,
   SidebarBrandHeader,
   SidebarFooterSlot,
-  SidebarNavRow,
   SidebarNewButton,
   SidebarShell,
 } from '@/features/workspace/project-sidebar/sidebar-chrome';
@@ -183,56 +182,56 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           {/* Sessions are always expanded — no collapse toggle. The header
                 label opens the full sessions page and carries the active
                 filter; the ⋯ button opens the filter menu. */}
-          <div className="flex min-h-0 flex-1 flex-col space-y-1">
-            <SidebarMenu>
-              <SidebarNavRow
-                icon={MessagesSquare}
-                href={`/projects/${projectId}/sessions`}
-                label={
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate">Sessions</span>
-                    {sessionFilter !== 'all' && (
-                      <span className="text-muted-foreground/90 truncate text-xs font-normal">
-                        · {activeFilterOption.label}
-                      </span>
-                    )}
-                  </span>
-                }
-                trailing={
-                  <DropdownMenu onOpenChange={holdPeek}>
-                    <DropdownMenuContent align="start" className="w-44 p-1">
-                      {SESSION_FILTER_OPTIONS.map((option) => {
-                        const OptionIcon = SESSION_FILTER_ICONS[option.value];
-                        return (
-                          <DropdownMenuItem
-                            key={option.value}
-                            className="cursor-pointer"
-                            onClick={() => setSessionFilter(projectId, option.value)}
-                          >
-                            <OptionIcon className="h-4 w-4" />
-                            {option.label}
-                            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                              {sessionFilterCounts.get(option.value) ?? 0}
-                            </span>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton
-                        type="button"
-                        aria-label={tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
-                        )}
-                        className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
-                      >
-                        <HiDotsHorizontal className="size-3" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                  </DropdownMenu>
-                }
-              />
-            </SidebarMenu>
+          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+            <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
+              <div className="flex w-full flex-row items-center gap-0.5">
+                <Link
+                  href={`/projects/${projectId}/sessions`}
+                  className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
+                >
+                  <span>Sessions</span>
+                  {sessionFilter !== 'all' && (
+                    <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
+                      )}{' '}
+                      {activeFilterOption.label}
+                    </span>
+                  )}
+                </Link>
+                <DropdownMenu onOpenChange={holdPeek}>
+                  <DropdownMenuContent align="start" className="w-44 p-1">
+                    {SESSION_FILTER_OPTIONS.map((option) => {
+                      const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                      return (
+                        <DropdownMenuItem
+                          key={option.value}
+                          className="cursor-pointer"
+                          onClick={() => setSessionFilter(projectId, option.value)}
+                        >
+                          <OptionIcon className="h-4 w-4" />
+                          {option.label}
+                          <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                            {sessionFilterCounts.get(option.value) ?? 0}
+                          </span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton
+                      type="button"
+                      aria-label={tI18nHardcoded.raw(
+                        'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                      )}
+                      className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                    >
+                      <HiDotsHorizontal className="size-3" />
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                </DropdownMenu>
+              </div>
+            </SidebarGroupLabel>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="flex h-full min-h-0 flex-col">
                 <ProjectSessionList projectId={projectId} filter={sessionFilter} />
@@ -241,30 +240,23 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </div>
         </SidebarGroup>
 
-        {/* Files sits with the other places you GO, not down in the alerts.
-            Customize is a row of the same family, with plain-text children
-            indented under it — see ux-references/perplexity/01-home-search.png. */}
-        <SidebarGroup className="py-0">
-          <SidebarMenu>
-            <ProjectFilesNavItem />
-          </SidebarMenu>
-        </SidebarGroup>
-
+        {/* The four promoted sections, as a quiet label with plain-text
+              children. That lightness is the whole point — see
+              ux-references/perplexity/01-home-search.png. */}
         <ProjectNavItems projectId={projectId} />
 
-        <SidebarGroup className="py-0">
-          <SidebarMenu>
-            <ProjectSettingsNavItem projectId={projectId} />
-          </SidebarMenu>
-        </SidebarGroup>
-
-        {/* Bottom cluster is alerts and billing only — things that appear when
-            something needs attention, not permanent destinations. */}
         <SidebarGroup className="mt-auto py-0.5">
           <SidebarMenu>
             <ProjectSandboxAlert projectId={projectId} />
+            {/* Change requests are work in flight, not setup — they sit with
+                  the alerts rather than in the Customize group. */}
             <ProjectChangeRequestsNavItem projectId={projectId} />
+            {/* Sits directly above Files/Settings so a still-on-v1 manifest
+                  is impossible to miss — one click starts the migration session
+                  end-to-end. Self-hides once the project is on v2. */}
             <ProjectManifestUpgradeAlert projectId={projectId} />
+            <ProjectFilesNavItem />
+            <ProjectSettingsNavItem projectId={projectId} />
             <ProjectChatGptConnectNavItem projectId={projectId} />
             {/* Persistent rails, not toasts: a dismissible banner is what
                   users miss, and this is the surface that converts. */}
