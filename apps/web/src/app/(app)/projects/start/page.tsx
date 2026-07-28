@@ -3,7 +3,11 @@
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ensureFirstProject, isAutoProjectSuppressed } from '@/lib/onboarding/ensure-first-project';
+import {
+  ensureFirstProject,
+  isAutoProjectSuppressed,
+  navigationMayCreateProject,
+} from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@kortix/sdk';
@@ -11,6 +15,10 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+/** Transient failures get retried here rather than bounced to the list. */
+const MAX_RESOLVE_ATTEMPTS = 3;
+const RETRY_DELAY_MS = [400, 1200];
 
 /**
  * `/projects/start` — the id-free door into the product.
@@ -26,38 +34,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * starter push inside the auth callback, so a new user watched a blank callback
  * page for the entire provision.
  */
-/** Transient failures get retried here rather than bounced to the list. */
-const MAX_RESOLVE_ATTEMPTS = 3;
-const RETRY_DELAY_MS = [400, 1200];
-
-/**
- * Whether this navigation may CREATE a project, as opposed to just opening an
- * existing one.
- *
- * Provisioning mints a real managed git repository, so a cross-site link must
- * not be able to trigger it just because the visitor happens to be signed in.
- * Opening an existing project stays allowed from anywhere — only creation is
- * gated.
- *
- * A same-origin referrer covers the real entry points (`/auth/callback`, `/`,
- * the in-app links). An EMPTY referrer covers a typed URL or a bookmark, which
- * is genuine user intent. A referrer naming someone else's origin is the case
- * we refuse. This is defense in depth, not a complete control: an attacker can
- * send `referrerpolicy="no-referrer"` and look like a typed navigation. The
- * blast radius behind it is one project on an account that has none, and the
- * free tier caps that account at one project anyway.
- */
-function navigationMayCreateProject(): boolean {
-  if (typeof document === 'undefined') return false;
-  const referrer = document.referrer;
-  if (!referrer) return true;
-  try {
-    return new URL(referrer).origin === window.location.origin;
-  } catch {
-    return false;
-  }
-}
-
 export default function ProjectStartPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();

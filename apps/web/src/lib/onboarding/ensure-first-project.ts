@@ -53,6 +53,38 @@ export function clearAutoProjectSuppression(): void {
   safeSessionStorage()?.removeItem(SUPPRESS_AUTO_PROJECT_KEY);
 }
 
+/**
+ * Whether this navigation may CREATE a project, as opposed to only opening one
+ * that already exists.
+ *
+ * Provisioning mints a real managed git repository, so a cross-site link must
+ * not trigger it just because the visitor happens to be signed in (CWE-352).
+ * Both auto-provisioning entry points — the landing door and the empty projects
+ * list — gate creation on this. Opening an EXISTING project stays allowed from
+ * anywhere.
+ *
+ * A same-origin referrer covers the real entry points (`/auth/callback`, `/`,
+ * in-app links). An EMPTY referrer covers a typed URL or a bookmark, which is
+ * genuine user intent. A referrer naming another origin is what we refuse.
+ *
+ * This is defense in depth, not a complete control: an attacker can send
+ * `referrerpolicy="no-referrer"` and be indistinguishable from a typed
+ * navigation. What bounds the residual risk is that creation only ever fires
+ * for an account with ZERO projects, and the free tier caps such an account at
+ * one project anyway — so the worst case is the user getting the project that
+ * sign-up would have created for them regardless.
+ */
+export function navigationMayCreateProject(): boolean {
+  if (typeof document === 'undefined') return false;
+  const referrer = document.referrer;
+  if (!referrer) return true;
+  try {
+    return new URL(referrer).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export function isProjectLimitError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? '');
   return (

@@ -30,6 +30,7 @@ import {
   ensureFirstProject,
   isAutoProjectSuppressed,
   isManagedGitUnavailableError,
+  navigationMayCreateProject,
   shouldAutoCreateFirstProject,
   suppressAutoProjectAfterDelete,
 } from '@/lib/onboarding/ensure-first-project';
@@ -297,7 +298,12 @@ export default function ProjectsPage() {
 
     autoCreateAttempted.current.add(accountId);
     setAutoCreating(true);
-    ensureFirstProject(accountId, { preferredProjectId: readLastProjectId() })
+    ensureFirstProject(accountId, {
+      preferredProjectId: readLastProjectId(),
+      // Same CWE-352 gate as the landing door: a cross-site link must not be
+      // able to mint a managed git repo just because the visitor is signed in.
+      allowCreate: navigationMayCreateProject(),
+    })
       .then((project) => {
         if (!project) {
           setAutoCreating(false);
