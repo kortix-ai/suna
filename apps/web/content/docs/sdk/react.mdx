@@ -76,6 +76,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | Option | Default | What it does |
 |---|---|---|
 | `waitMs` | `15000` | The long-poll budget sent to `/start`. |
+| `runtimeTransport` | (unset) | Override the server-selected transport (`'rest'` \| `'acp'`) for page-scoped diagnostics. Omit to use `/start`'s `runtime_transport`. |
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
