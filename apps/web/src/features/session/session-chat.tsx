@@ -205,6 +205,7 @@ import {
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -4197,15 +4198,55 @@ export function SessionChat({
     working: isBusy && !hasActiveQuestion,
     hasContent: messageCount > 0,
   });
+  // Older history loads by scrolling, not by clicking: a sentinel above the
+  // first turn pulls the previous page as it nears the top of the viewport.
+  // A pull always prepends content above the reader, so every one is wrapped
+  // in the turn anchor — capture where the topmost visible turn sits, restore
+  // it after the prepended turns render, and the viewport never jumps.
+  const [olderPullFailed, setOlderPullFailed] = useState(false);
+  useEffect(() => {
+    setOlderPullFailed(false);
+  }, [sessionId]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
     const anchor = node ? captureTurnScrollAnchor(node) : null;
-    await loadOlder();
+    try {
+      await loadOlder();
+      setOlderPullFailed(false);
+    } catch {
+      // Surface a retry instead of letting the sentinel re-arm into a loop.
+      setOlderPullFailed(true);
+    }
     if (!node) return;
     requestAnimationFrame(() => {
       restoreTurnScrollAnchor(node, anchor);
     });
   }, [loadOlder, scrollRef]);
+  const olderSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = olderSentinelRef.current;
+    if (!node || !hasOlder) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (
+          shouldLoadOlderHistory({
+            isIntersecting: !!entry?.isIntersecting,
+            hasOlder,
+            isLoadingOlder,
+            lastPullFailed: olderPullFailed,
+          })
+        ) {
+          void handleLoadOlder();
+        }
+      },
+      // Pull before the reader reaches the top so history is already there.
+      { root: scrollRef.current, rootMargin: '400px 0px 0px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+    // sessionId is a dep because switching sessions swaps the scroll
+    // container the observer is rooted in.
+  }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -5507,16 +5548,27 @@ export function SessionChat({
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
                 {hasOlder && (
-                  <div className="mb-6 flex justify-center">
-                    <Button
-                      type="button"
-                      variant="outline-ghost"
-                      size="sm"
-                      disabled={isLoadingOlder}
-                      onClick={() => void handleLoadOlder()}
-                    >
-                      {isLoadingOlder ? <Loading /> : 'Load older messages'}
-                    </Button>
+                  <div className="mb-6 flex flex-col items-center gap-2">
+                    {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                    <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                    {isLoadingOlder && <Loading />}
+                    {olderPullFailed && !isLoadingOlder && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground text-xs">
+                          Couldn&apos;t load older messages.
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline-ghost"
+                          size="sm"
+                          onClick={() => void handleLoadOlder()}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
                 <ToolActivateContext.Provider value={toolActivate}>
