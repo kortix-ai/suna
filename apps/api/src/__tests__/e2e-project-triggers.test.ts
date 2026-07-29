@@ -112,7 +112,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {
