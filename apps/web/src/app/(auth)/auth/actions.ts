@@ -2,7 +2,11 @@
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
-import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  isInviteReturnUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
 import {
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
@@ -138,7 +142,7 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
  */
 export async function sendEmailCode(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const referralCode = formData.get('referralCode') as string | undefined;
@@ -157,6 +161,15 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   if (flowMode === 'sso') {
     return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
   }
+
+  // `flowMode === 'signup'` means the API just confirmed this address has no
+  // account, so resolve the return URL against the signup rule HERE — before it
+  // is baked into the email link. That link can be opened minutes or days
+  // later, long after the "created in the last 60s?" heuristic the callback
+  // uses stops being true, and a stale link is precisely how a fresh account
+  // ends up staring at a stranger's "Request access" page.
+  const returnUrl =
+    flowMode === 'signup' ? resolveNewAccountReturnUrl(requestedReturnUrl) : requestedReturnUrl;
 
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
@@ -318,8 +331,11 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
 
-  // Return success — let the client redirect after auth state hydrates.
-  const finalReturnUrl = returnUrl;
+  // Return success — let the client redirect after auth state hydrates. An
+  // account this young signed up moments ago (the sign-up form ends in a
+  // password sign-in), so it gets the signup destination rule, not a return URL
+  // pointing at a resource that predates it.
+  const finalReturnUrl = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
@@ -354,7 +370,11 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  // This is the sign-up form: unless the account turns out to already exist
+  // (`alreadyExists` below), the identity about to be created cannot own
+  // anything the visitor was looking at before they got here.
+  const newAccountReturnUrl = resolveNewAccountReturnUrl(requestedReturnUrl);
   const origin = formData.get('origin') as string;
   const mobileState = mobileCallbackState(formData);
 
@@ -383,7 +403,9 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
     origin,
-    returnUrl,
+    // The confirmation link outlives the "new user" heuristic downstream, so
+    // the signup rule has to be applied before it is minted, not after.
+    returnUrl: newAccountReturnUrl,
     email,
     mobileState,
   });
@@ -433,11 +455,14 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
-  // `returnUrl` already defaults to PROJECT_LANDING_PATH, which paints
-  // instantly and provisions the first project behind the UI. This action used
-  // to await a managed git repo create + a full starter push here (up to 90s)
-  // before it could return a redirect, which blocked the sign-up form itself.
-  const redirectTo = returnUrl;
+  // A signup enters through the landing door, which paints instantly and
+  // provisions the first project behind the UI. This action used to await a
+  // managed git repo create + a full starter push here (up to 90s) before it
+  // could return a redirect, which blocked the sign-up form itself.
+  //
+  // `alreadyExists` means the address had an account and the password was
+  // right — that is a sign-IN, so the visitor's own return URL still stands.
+  const redirectTo = alreadyExists ? requestedReturnUrl : newAccountReturnUrl;
 
   return {
     success: true,
@@ -527,7 +552,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   // repo-first app surface starts from /projects; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  let finalDestination = returnUrl;
+  // `sendEmailCode` already applied this rule when the API could tell us the
+  // address was new. Re-applying it here covers the case where it could not
+  // (a fail-open 'unknown' flow mode), so a fresh account never rides a
+  // pre-signup return URL into a project it cannot open.
+  let finalDestination = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
 
   // Invited users (returnUrl → /invites/:id) must land on the accept/decline
   // dialog verbatim — skip the billing-aware landing (account page or a freshly

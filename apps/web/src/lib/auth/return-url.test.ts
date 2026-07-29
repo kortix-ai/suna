@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from './return-url';
+import {
+  isInviteReturnUrl,
+  isSignupSafeReturnUrl,
+  resolveAuthRedirectBaseUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from './return-url';
 
 describe('sanitizeAuthReturnUrl', () => {
   test('preserves an invite URL verbatim (must survive to reach the dialog)', () => {
@@ -49,6 +55,91 @@ describe('isInviteReturnUrl', () => {
 
   test('the sanitized invite URL is recognized end-to-end', () => {
     expect(isInviteReturnUrl(sanitizeAuthReturnUrl('/invites/xyz'))).toBe(true);
+  });
+});
+
+describe('resolveNewAccountReturnUrl', () => {
+  test('drops a foreign project deep link — the reported bug', () => {
+    // Live repro: opening a private project link while logged out sends the
+    // path through /auth as ?redirect=. Creating an account there landed the
+    // brand-new user on "Request access to this project" for a stranger's
+    // project — an account seconds old cannot own something older than itself.
+    expect(resolveNewAccountReturnUrl('/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c')).toBe(
+      PROJECT_LANDING_PATH,
+    );
+  });
+
+  test('drops every account-scoped destination', () => {
+    for (const path of [
+      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/sessions/abc',
+      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/files',
+      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/customize',
+      '/accounts/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/accounts',
+      '/connectors',
+      '/review',
+      '/checkout',
+      '/setup',
+    ]) {
+      expect(resolveNewAccountReturnUrl(path)).toBe(PROJECT_LANDING_PATH);
+    }
+  });
+
+  test('keeps join/authorize flows — the signup happened FOR these', () => {
+    // Dropping any of these strands the flow that sent the user to sign up.
+    expect(resolveNewAccountReturnUrl('/invites/abc-123')).toBe('/invites/abc-123');
+    expect(resolveNewAccountReturnUrl('/oauth/authorize?client_id=x')).toBe(
+      '/oauth/authorize?client_id=x',
+    );
+    expect(resolveNewAccountReturnUrl('/cli/authorize?code=x')).toBe('/cli/authorize?code=x');
+    expect(resolveNewAccountReturnUrl('/tunnel/authorize/abc')).toBe('/tunnel/authorize/abc');
+    expect(resolveNewAccountReturnUrl('/slack/login/tok')).toBe('/slack/login/tok');
+    expect(resolveNewAccountReturnUrl('/teams/login/tok')).toBe('/teams/login/tok');
+    expect(resolveNewAccountReturnUrl('/github/setup?installation_id=1')).toBe(
+      '/github/setup?installation_id=1',
+    );
+  });
+
+  test('keeps public pages — the CTA that started the signup', () => {
+    expect(resolveNewAccountReturnUrl('/use-cases/research-agent')).toBe('/use-cases/research-agent');
+    expect(resolveNewAccountReturnUrl('/marketplace/acme/tool')).toBe('/marketplace/acme/tool');
+  });
+
+  test('keeps the landing door itself', () => {
+    expect(resolveNewAccountReturnUrl(PROJECT_LANDING_PATH)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveNewAccountReturnUrl(undefined)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveNewAccountReturnUrl(null)).toBe(PROJECT_LANDING_PATH);
+    // The bare list is rewritten to the door by the sanitizer, and stays safe.
+    expect(resolveNewAccountReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('still rejects everything sanitizeAuthReturnUrl rejects', () => {
+    expect(resolveNewAccountReturnUrl('https://evil.example.com')).toBe(PROJECT_LANDING_PATH);
+    expect(resolveNewAccountReturnUrl('//evil.example.com')).toBe(PROJECT_LANDING_PATH);
+    expect(resolveNewAccountReturnUrl('javascript:alert(1)')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('matches on segment boundaries, not raw string prefixes', () => {
+    // A lookalike path must not inherit an allowlisted prefix's exemption.
+    expect(isSignupSafeReturnUrl('/marketplace-evil')).toBe(false);
+    expect(isSignupSafeReturnUrl('/invitesomething')).toBe(false);
+    expect(isSignupSafeReturnUrl('/projects/startle')).toBe(false);
+    expect(isSignupSafeReturnUrl('/marketplace')).toBe(true);
+    expect(isSignupSafeReturnUrl('/marketplace/acme')).toBe(true);
+    expect(isSignupSafeReturnUrl('/marketplace?q=1')).toBe(true);
+  });
+
+  test('is default-deny: an unknown route is not signup-safe', () => {
+    // A route added later must fail into the user's own project, never into
+    // whatever the visitor had open before they had an account.
+    expect(isSignupSafeReturnUrl('/some-future-route/123')).toBe(false);
+    expect(resolveNewAccountReturnUrl('/some-future-route/123')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('is nullish-safe', () => {
+    expect(isSignupSafeReturnUrl(null)).toBe(false);
+    expect(isSignupSafeReturnUrl(undefined)).toBe(false);
+    expect(isSignupSafeReturnUrl('')).toBe(false);
   });
 });
 

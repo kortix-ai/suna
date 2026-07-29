@@ -1,6 +1,11 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  isInviteReturnUrl,
+  resolveAuthRedirectBaseUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
 import {
   LAST_PROJECT_COOKIE,
   PROJECT_LANDING_PATH,
@@ -169,6 +174,12 @@ export async function GET(request: NextRequest) {
         const isNewUser = now - createdAt < 60000; // Created within last 60 seconds
         authEvent = isNewUser ? 'signup' : 'login';
         authMethod = data.user.app_metadata?.provider || 'email';
+
+        // OAuth/SSO signups reach this handler seconds after the account is
+        // created, so this is where a provider signup gets the rule the
+        // email flows already applied when they minted their link: a return
+        // URL the new account cannot own does not survive the signup.
+        if (isNewUser) finalDestination = resolveNewAccountReturnUrl(next);
 
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value;
         if (pendingReferralCode) {
