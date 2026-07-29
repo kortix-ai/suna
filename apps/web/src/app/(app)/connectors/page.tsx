@@ -35,7 +35,7 @@ function ConnectorResult() {
   const connectorsEnabled = isConnectorsEnabled();
 
   useEffect(() => {
-    if (!connectorsEnabled) router.replace(latestProjectPath());
+    if (!connectorsEnabled) router.replace(latestProjectPath(null));
   }, [connectorsEnabled, router]);
 
   const ok = params.get('connected') === 'true';
@@ -71,7 +71,7 @@ function ConnectorResult() {
             <Plug className="h-4 w-4" />
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextCloseWindowa183ed6a')}
           </Button>
-          <Button variant="ghost" onClick={() => router.replace(latestProjectPath())}>
+          <Button variant="ghost" onClick={() => router.replace(latestProjectPath(null))}>
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad')}
           </Button>
         </div>

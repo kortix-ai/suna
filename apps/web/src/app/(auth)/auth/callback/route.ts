@@ -4,6 +4,7 @@ import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } 
 import {
   LAST_PROJECT_COOKIE,
   PROJECT_LANDING_PATH,
+  parseLastProjectForUser,
   projectPathFromId,
 } from '@/lib/onboarding/landing-destination';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
@@ -238,8 +239,15 @@ export async function GET(request: NextRequest) {
         // browser already told us which project they had open last. Reading a
         // cookie costs nothing, so this is a strictly free hop to remove.
         if (finalDestination === PROJECT_LANDING_PATH) {
+          // Scoped to THIS user. The cookie survives sign-out, so an unscoped
+          // read sent the next account to sign in on this browser straight into
+          // the previous account's project — i.e. onto "Request access to this
+          // project", on every login.
           const lastProjectPath = projectPathFromId(
-            request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+            parseLastProjectForUser(
+              request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+              data.user.id,
+            ),
           );
           if (lastProjectPath) finalDestination = lastProjectPath;
         }

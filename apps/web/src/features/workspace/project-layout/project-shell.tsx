@@ -85,8 +85,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // would send them into a 404 bounce loop on their next visit.
   useEffect(() => {
     if (!projectDetail) return;
-    writeLastProjectId(projectId);
-  }, [projectDetail, projectId]);
+    writeLastProjectId(user?.id, projectId);
+  }, [projectDetail, projectId, user?.id]);
 
   // Self-heal a stale remembered project. The cookie outlives the project it
   // names (deleted project, signed into a different account on the same
@@ -97,10 +97,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     if (!projectDetailError) return;
     const status = (projectDetailError as { status?: number }).status;
     if (status !== 403 && status !== 404) return;
-    if (readLastProjectId() !== projectId) return;
+    if (readLastProjectId(user?.id) !== projectId) return;
     clearLastProjectId();
     router.replace(PROJECT_LANDING_PATH);
-  }, [projectDetailError, projectId, router]);
+  }, [projectDetailError, projectId, router, user?.id]);
 
   useEffect(() => {
     // Files graduated out of Customize into its own page — send legacy

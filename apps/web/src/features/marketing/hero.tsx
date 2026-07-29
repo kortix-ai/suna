@@ -22,7 +22,7 @@ const Hero = () => {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? latestProjectPath() : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   return (

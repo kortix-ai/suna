@@ -67,7 +67,7 @@ function GitHubSetup() {
     if (setupAction === 'uninstall') {
       setState('done');
       setMessage('GitHub App removed from your account.');
-      redirectTimer.current = window.setTimeout(() => router.replace(latestProjectPath()), 900);
+      redirectTimer.current = window.setTimeout(() => router.replace(latestProjectPath(null)), 900);
       return;
     }
 
@@ -268,7 +268,7 @@ function GitHubSetup() {
                 size="lg"
                 variant="outline"
                 className="w-full"
-                onClick={() => router.replace(consumeGitHubSetupReturn() ?? latestProjectPath())}
+                onClick={() => router.replace(consumeGitHubSetupReturn() ?? latestProjectPath(null))}
               >
                 Back
               </Button>
@@ -276,7 +276,7 @@ function GitHubSetup() {
           </Rise>
         ) : state === 'error' ? (
           <Rise delay={0.06}>
-            <Button size="lg" className="w-full" onClick={() => router.replace(latestProjectPath())}>
+            <Button size="lg" className="w-full" onClick={() => router.replace(latestProjectPath(null))}>
               Back to Kortix
             </Button>
           </Rise>

@@ -3,6 +3,7 @@ import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import {
   LAST_PROJECT_COOKIE,
+  PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
@@ -270,9 +271,11 @@ export async function middleware(request: NextRequest) {
     if (!isAllowed) {
       // Into the latest project, not the list — the desktop shell has no
       // marketing surface, so this bounce IS the user's default destination.
-      return NextResponse.redirect(
-        new URL(resolveDefaultLandingPath(request.cookies.get(LAST_PROJECT_COOKIE)?.value), request.url),
-      );
+      // The landing door, not the remembered project: this gate runs BEFORE the
+      // Supabase user is fetched below, so there is no identity here to check
+      // the cookie against — and an unowned cookie read is exactly the bug that
+      // sent one account into another account's project. The door re-resolves.
+      return NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url));
     }
   }
 
@@ -417,6 +420,7 @@ export async function middleware(request: NextRequest) {
   // only accepts a well-formed project id and falls back to the door.
   const defaultLandingPath = resolveDefaultLandingPath(
     request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+    user?.id,
   );
 
   // FAST PATH: authenticated users hitting the homepage go straight to a project.

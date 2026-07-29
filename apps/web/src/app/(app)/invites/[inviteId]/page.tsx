@@ -110,7 +110,7 @@ export default function InvitePage() {
             {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
           </StateHeading>
           <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
-          <GhostAction onClick={() => router.replace(latestProjectPath())}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -143,7 +143,7 @@ export default function InvitePage() {
           <p className="text-foreground/30 mt-4 text-xs">
             {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
           </p>
-          <GhostAction onClick={() => router.replace(latestProjectPath())}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -165,7 +165,7 @@ export default function InvitePage() {
               'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
             )}
           </StateBody>
-          <GhostAction onClick={() => router.replace(latestProjectPath())}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>

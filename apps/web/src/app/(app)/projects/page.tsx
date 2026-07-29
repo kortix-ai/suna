@@ -299,7 +299,7 @@ export default function ProjectsPage() {
     autoCreateAttempted.current.add(accountId);
     setAutoCreating(true);
     ensureFirstProject(accountId, {
-      preferredProjectId: readLastProjectId(),
+      preferredProjectId: readLastProjectId(user?.id),
       // Same CWE-352 gate as the landing door: a cross-site link must not be
       // able to mint a managed git repo just because the visitor is signed in.
       allowCreate: navigationMayCreateProject(),
@@ -309,7 +309,7 @@ export default function ProjectsPage() {
           setAutoCreating(false);
           return;
         }
-        writeLastProjectId(project.project_id);
+        writeLastProjectId(user?.id, project.project_id);
         queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
         router.replace(`/projects/${project.project_id}`);
       })
@@ -351,7 +351,7 @@ export default function ProjectsPage() {
       if ((projectsQuery.data?.length ?? 0) <= 1) {
         suppressAutoProjectAfterDelete();
       }
-      if (readLastProjectId() === projectId) clearLastProjectId();
+      if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');

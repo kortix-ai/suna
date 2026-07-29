@@ -71,12 +71,12 @@ export default function ProjectStartPage() {
 
     try {
       const project = await ensureFirstProject(account.account_id, {
-        preferredProjectId: readLastProjectId(),
+        preferredProjectId: readLastProjectId(user?.id),
         allowCreate: canCreate && !isAutoProjectSuppressed() && navigationMayCreateProject(),
       });
 
       if (project) {
-        writeLastProjectId(project.project_id);
+        writeLastProjectId(user?.id, project.project_id);
         router.replace(`/projects/${project.project_id}`);
         return;
       }
@@ -103,7 +103,7 @@ export default function ProjectStartPage() {
     } finally {
       if (attempts.current >= MAX_RESOLVE_ATTEMPTS) resolving.current = false;
     }
-  }, [accountsQuery.data, selectedAccountId, router]);
+  }, [accountsQuery.data, selectedAccountId, router, user?.id]);
 
   useEffect(() => {
     if (attempts.current > 0) return;

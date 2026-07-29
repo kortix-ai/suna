@@ -17,7 +17,8 @@ import {
   recordPlatformLogout,
   submitAccessRequest,
 } from '@kortix/sdk';
-import { headers } from 'next/headers';
+import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -482,6 +483,11 @@ export async function signOut() {
   if (error) {
     return { message: error.message || 'Could not sign out' };
   }
+
+  // Forget the remembered project. Ownership binding already stops the next
+  // account from following it, but leaving one user's project id sitting in a
+  // shared browser after they sign out is needless.
+  (await cookies()).delete(LAST_PROJECT_COOKIE);
 
   return redirect('/');
 }

@@ -24,11 +24,47 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * The cookie is written by the browser, so treat it as untrusted input. Only a
  * well-formed UUID is ever interpolated into a redirect path — that keeps a
  * tampered cookie from turning the `/` redirect into an open redirect or a
- * path-traversal. A cookie naming a project the user cannot read still fails
- * closed: the project page 404s and bounces back to `PROJECT_LANDING_PATH`.
+ * path-traversal.
  */
 export function isValidProjectId(value: string | null | undefined): value is string {
   return typeof value === 'string' && UUID_RE.test(value);
+}
+
+/**
+ * The cookie stores `<userId>:<projectId>`, NOT a bare project id.
+ *
+ * One browser outlives one session. Signing out of account A and into account B
+ * left A's cookie in place, and a bare project id gave B a redirect straight
+ * into A's project — landing on "Request access to this project" on EVERY
+ * login, because an access-denied screen is a legitimate 403 surface and not an
+ * error the stale-cookie self-heal catches.
+ *
+ * Binding the id to its owner makes that state unrepresentable: a cookie whose
+ * user does not match the authenticated user is ignored. That holds for
+ * sign-out, session expiry, a closed tab, and two accounts sharing a browser —
+ * none of which "clear it on sign-out" covers on its own.
+ */
+export function serializeLastProject(userId: string, projectId: string): string | null {
+  if (!isValidProjectId(userId) || !isValidProjectId(projectId)) return null;
+  return `${userId}:${projectId}`;
+}
+
+/**
+ * The project id in the cookie, but ONLY when it belongs to `currentUserId`.
+ * Returns null for a mismatch, a malformed value, or a legacy bare-project-id
+ * cookie written before this binding existed.
+ */
+export function parseLastProjectForUser(
+  cookieValue: string | null | undefined,
+  currentUserId: string | null | undefined,
+): string | null {
+  if (!cookieValue || !isValidProjectId(currentUserId)) return null;
+  const separator = cookieValue.indexOf(':');
+  if (separator === -1) return null; // legacy bare id — unowned, so never trusted
+  const ownerId = cookieValue.slice(0, separator);
+  const projectId = cookieValue.slice(separator + 1);
+  if (ownerId !== currentUserId) return null;
+  return isValidProjectId(projectId) ? projectId : null;
 }
 
 /** `/projects/<id>` for a trusted-shaped id, else null. */
@@ -39,7 +75,15 @@ export function projectPathFromId(projectId: string | null | undefined): string 
 /**
  * The default destination for an authenticated user, given whatever the browser
  * remembered. Falls back to the instant landing door, never to the list.
+ *
+ * `currentUserId` is required for the remembered project to be used at all —
+ * callers without it get the door, which re-resolves correctly.
  */
-export function resolveDefaultLandingPath(lastProjectId: string | null | undefined): string {
-  return projectPathFromId(lastProjectId) ?? PROJECT_LANDING_PATH;
+export function resolveDefaultLandingPath(
+  cookieValue: string | null | undefined,
+  currentUserId: string | null | undefined,
+): string {
+  return (
+    projectPathFromId(parseLastProjectForUser(cookieValue, currentUserId)) ?? PROJECT_LANDING_PATH
+  );
 }

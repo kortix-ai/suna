@@ -46,16 +46,34 @@ describe('projectPathFromId', () => {
 });
 
 describe('resolveDefaultLandingPath', () => {
-  test('sends a remembered project straight to its page', () => {
-    expect(resolveDefaultLandingPath(VALID)).toBe(`/projects/${VALID}`);
+  const USER_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const USER_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const cookie = (userId: string, projectId: string) => `${userId}:${projectId}`;
+
+  test('sends a remembered project straight to its page for its OWNER', () => {
+    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/projects/${VALID}`);
+  });
+
+  test('REGRESSION: a different user never inherits the previous account\'s project', () => {
+    // The shipped bug: sign out of A, sign in as B in the same browser, and the
+    // post-auth redirect followed A's cookie straight into A's project — so B
+    // landed on "Request access to this project" on every single login.
+    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_B)).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('a legacy unowned cookie (bare project id) is never trusted', () => {
+    // Cookies written before the binding existed carry no owner, so they could
+    // belong to anyone who used this browser.
+    expect(resolveDefaultLandingPath(VALID, USER_A)).toBe(PROJECT_LANDING_PATH);
   });
 
   test('falls back to the landing door, never to the projects list', () => {
-    // The regression this guards: the default destination silently reverting to
-    // the `/projects` list, which is the manual-selection step we removed.
-    expect(resolveDefaultLandingPath(null)).toBe(PROJECT_LANDING_PATH);
-    expect(resolveDefaultLandingPath('nonsense')).toBe(PROJECT_LANDING_PATH);
-    expect(resolveDefaultLandingPath(PROJECT_LANDING_PATH)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveDefaultLandingPath(null, USER_A)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveDefaultLandingPath('nonsense', USER_A)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), null)).toBe(PROJECT_LANDING_PATH);
+    expect(resolveDefaultLandingPath(cookie(USER_A, 'not-a-uuid'), USER_A)).toBe(
+      PROJECT_LANDING_PATH,
+    );
   });
 
   test('a tampered cookie can never produce an off-origin redirect', () => {
@@ -64,8 +82,10 @@ describe('resolveDefaultLandingPath', () => {
       '//evil.example.com',
       '/admin',
       '../admin',
+      `${USER_A}://evil.example.com`,
+      `${USER_A}:../../admin`,
     ]) {
-      expect(resolveDefaultLandingPath(hostile)).toBe(PROJECT_LANDING_PATH);
+      expect(resolveDefaultLandingPath(hostile, USER_A)).toBe(PROJECT_LANDING_PATH);
     }
   });
 });

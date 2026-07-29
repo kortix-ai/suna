@@ -76,7 +76,7 @@ export function ConnectingScreen({
   const runtimeSummary = 'Runtime services degraded';
 
   const handleSwitch = () => {
-    router.push(backHref || latestProjectPath());
+    router.push(backHref || latestProjectPath(null));
   };
 
   const serverLabel = labelOverride?.trim() || 'workspace';

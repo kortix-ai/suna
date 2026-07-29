@@ -35,7 +35,7 @@ export default function PreviewPage({
     if (tabs[tabId]) {
       setActiveTab(tabId);
     } else {
-      router.replace(latestProjectPath());
+      router.replace(latestProjectPath(null));
     }
   }, [port, tabs, setActiveTab, router]);
 
