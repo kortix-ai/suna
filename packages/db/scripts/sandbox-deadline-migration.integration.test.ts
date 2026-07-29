@@ -576,6 +576,66 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
     expect(plan).toContain('idx_session_sandboxes_deadline');
   });
 
+  // ── The remediation script's SELECTION RULE ────────────────────────────────
+
+  test('the remediation plan never selects a box that is doing work', async () => {
+    // The one-off drain for the existing backlog. Its safety rule is that a box
+    // with billed OR relayed progress inside the progress grant is NEVER a
+    // candidate at any age, and that no flag can override it. Tested here, on
+    // real rows, because the rule is entirely SQL — a mocked driver would
+    // confirm nothing.
+    psql(`
+      INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, external_id, status, metadata, created_at)
+      VALUES
+        (gen_random_uuid(), 'rem-wedged',  '${ACC_A}', '${ACC_A}', 'daytona',  'box-rem-wedged',  'active', '{"source":"trigger:cron"}'::jsonb, now() - interval '208 hours'),
+        -- 90h old and gateway-silent for 90h, but it billed a call 3 minutes
+        -- ago: working, and must survive.
+        (gen_random_uuid(), 'rem-working', '${ACC_A}', '${ACC_A}', 'daytona',  'box-rem-working', 'active', '{"source":"ui"}'::jsonb,           now() - interval '90 hours'),
+        -- The BYOK case: NO usage_events exist for it anywhere, by
+        -- construction. A usage-only rule would have killed it.
+        (gen_random_uuid(), 'rem-byok',    '${ACC_A}', '${ACC_A}', 'platinum', 'box-rem-byok',    'active', '{"source":"ui"}'::jsonb,           now() - interval '100 hours');
+      INSERT INTO kortix.project_sessions (session_id) VALUES ('rem-wedged'), ('rem-working'), ('rem-byok');
+      INSERT INTO kortix.usage_events (account_id, session_id, input_tokens, output_tokens, created_at)
+      VALUES ('${ACC_A}', 'rem-working', 10, 10, now() - interval '3 minutes');
+      INSERT INTO kortix.acp_session_envelopes (session_id, created_at)
+      VALUES ('rem-byok', now() - interval '2 minutes');
+    `);
+
+    const script = await Bun.file(
+      resolve(
+        import.meta.dir,
+        '..',
+        '..',
+        '..',
+        'apps',
+        'api',
+        'scripts',
+        'remediate-wedged-sandboxes.ts',
+      ),
+    ).text();
+    const block = script.match(/sql`([\s\S]*?)`\)/)?.[1] ?? '';
+    expect(block).toContain('per_account_rank');
+    const statement = block
+      .replace(/\$\{options\.minAgeHours\}/g, '12')
+      .replace(/\$\{PROGRESS_GRANT_MS\}/g, '7200000')
+      .replace(/\$\{options\.requireNoUsage\}/g, 'false')
+      .replace(/\$\{options\.accountId\}/g, 'NULL')
+      // Caps deliberately lifted: the safety rule must hold even when an
+      // operator has removed every other limit.
+      .replace(/\$\{options\.perAccount\}/g, '1000')
+      .replace(/\$\{options\.max\}/g, '1000');
+    expect(statement).not.toContain('${');
+
+    const selected = scalar(
+      `SELECT coalesce(string_agg(t.external_id, ',' ORDER BY t.external_id), '') FROM (${statement}) t
+        WHERE t.external_id LIKE 'box-rem-%'`,
+    );
+    expect(selected).toBe('box-rem-wedged');
+
+    psql(`DELETE FROM kortix.session_sandboxes WHERE session_id LIKE 'rem-%'`);
+    psql(`DELETE FROM kortix.project_sessions WHERE session_id LIKE 'rem-%'`);
+  });
+
   // ── The two monitors, against real rows ────────────────────────────────────
 
   test('M1 counts boxes alive past their deadline — the leak, as one number', async () => {

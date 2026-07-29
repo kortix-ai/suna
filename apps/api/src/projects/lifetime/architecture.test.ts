@@ -40,6 +40,14 @@ import {
 } from './architecture';
 
 const API_SRC = resolve(import.meta.dir, '..', '..');
+/**
+ * apps/api/scripts is scanned too. It is not application code, but it runs
+ * against PRODUCTION with a prod DATABASE_URL — the remediation drain lives
+ * there — so a one-off script that hands a customer's box another week is
+ * exactly as damaging as a route that does, and strictly more likely to be
+ * written in a hurry.
+ */
+const API_SCRIPTS = resolve(import.meta.dir, '..', '..', '..', 'scripts');
 const MIGRATIONS = resolve(import.meta.dir, '..', '..', '..', '..', '..', 'packages/db/migrations');
 
 function walk(dir: string, filter: (path: string) => boolean): string[] {
@@ -74,9 +82,15 @@ describe('layer 2 — one writer, over the REAL tree', () => {
   test('A1: exactly one production module can write the lifetime columns', () => {
     // A file-set assertion, not a hit count: a count fails noisily on a harmless
     // refactor and then gets relaxed by the first person it annoys.
-    expect(findLifetimeColumnWriters(excludeGuardSelf(load(API_SRC, PRODUCTION_TS)))).toEqual(
-      ALLOWED_LIFETIME_WRITERS,
-    );
+    expect(
+      findLifetimeColumnWriters([
+        ...excludeGuardSelf(load(API_SRC, PRODUCTION_TS)),
+        ...load(API_SCRIPTS, PRODUCTION_TS).map((file) => ({
+          ...file,
+          path: `scripts/${file.path}`,
+        })),
+      ]),
+    ).toEqual(ALLOWED_LIFETIME_WRITERS);
   });
 
   test('A2: exactly the known MIGRATIONS write them', () => {
