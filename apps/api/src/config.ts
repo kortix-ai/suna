@@ -143,10 +143,12 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
-  // Kortix-owned session titles: on a session's first prompt, generate the
-  // title ourselves via the internal LLM gateway (using the session's own
-  // model) instead of relying on the harness summarizer. On by default; the
-  // kill-switch falls the whole path back to the OpenCode title sync.
+  // Kortix-owned session titles: the moment a session's first prompt text is
+  // known server-side (at create when it carries one, else on the first HTTP
+  // prompt), generate the title ourselves via the internal LLM gateway instead
+  // of relying on the harness summarizer. On by default; the kill-switch
+  // disables title generation entirely — nothing else writes `metadata.name`,
+  // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
   // Per-project model enablement: when on, the gateway rejects a model a project
   // has disabled and the picker hides it. On by default (empty disabled-set =

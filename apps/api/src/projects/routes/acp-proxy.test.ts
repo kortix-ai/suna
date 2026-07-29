@@ -101,6 +101,17 @@ mock.module('../lib/acp-sse-proxy', () => ({
   createPersistedAcpSseProxy: (body: ReadableStream<Uint8Array>) => body,
 }));
 
+// Keep the REAL envelope parsing — that is the part this route decides — and
+// capture only the generator call.
+let titleCalls: Array<Record<string, unknown>> = [];
+const realTitleGenerate = await import('../session-title-generate');
+mock.module('../session-title-generate', () => ({
+  ...realTitleGenerate,
+  generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
+    titleCalls.push(input);
+  },
+}));
+
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input, init) => {
   upstreamFetchCount += 1;
@@ -143,6 +154,7 @@ beforeEach(() => {
   upstreamStatuses = [];
   upstreamFetchCount = 0;
   envSyncStatuses = [];
+  titleCalls = [];
 });
 
 afterAll(() => {
@@ -203,6 +215,43 @@ test('session/prompt syncs env with provider headers and no user context', async
   expect(syncedProviderHeaders).toEqual({
     'x-daytona-preview-token': 'preview',
   });
+});
+
+test('session/prompt titles the session — but only once the box ACCEPTED the prompt', async () => {
+  const send = (id: string) =>
+    projectsApp.request(`/${PROJECT_ID}/sessions/${SESSION_ID}/acp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/prompt',
+        params: {
+          sessionId: 'native-session',
+          prompt: [{ type: 'text', text: 'set up the MS Graph connector' }],
+          model: { providerID: 'kortix', modelID: 'glm-5.2' },
+        },
+      }),
+    });
+
+  const accepted = await send('rpc-title');
+  expect(accepted.status).toBe(200);
+  expect(titleCalls).toMatchObject([
+    {
+      sessionId: SESSION_ID,
+      projectId: PROJECT_ID,
+      firstPromptText: 'set up the MS Graph connector',
+      modelHint: 'glm-5.2',
+    },
+  ]);
+
+  // A prompt the agent never saw must not name the session — the user retypes
+  // it, and `needsTitle` would already be false by then.
+  titleCalls = [];
+  upstreamStatuses = [502, 502];
+  const rejected = await send('rpc-title-failed');
+  expect(rejected.status).toBe(502);
+  expect(titleCalls).toEqual([]);
 });
 
 test('session/prompt refreshes stale ingress credentials when env sync rejects authentication', async () => {

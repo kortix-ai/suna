@@ -256,4 +256,51 @@ test.describe.serial('17 — ACP session title synchronization', () => {
       expect(persisted.find((item) => item.session_id === sessionId)?.name).toBe(renderedTitle);
     }
   });
+
+  // The two cases above only ever create EMPTY sessions, so they exercise the
+  // proxy hooks. A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT
+  // and executed inside the sandbox — it never crosses the API as HTTP, which is
+  // exactly how every trigger/channel-created session used to stay untitled.
+  // This is the only end-to-end proof that gap is closed.
+  test('titles a session created WITH an initial_prompt, which never crosses the proxy', async () => {
+    for (const transport of ['acp', 'rest'] as const) {
+      await api(auth.access_token, 'PATCH', `/projects/${projectId}/experimental`, {
+        feature: 'acp_runtime',
+        enabled: transport === 'acp',
+      });
+      const session = await api<{ session_id: string }>(
+        auth.access_token,
+        'POST',
+        `/projects/${projectId}/sessions`,
+        {
+          opencode_model: 'kortix/claude-sonnet-4.6',
+          initial_prompt: 'Set up the MS Graph OAuth2 connector for the reporting pipeline.',
+        },
+        201,
+      );
+      const sessionId = session.session_id;
+      sessionIds.push(sessionId);
+
+      // No browser, no proxy prompt, no session start — the title must land
+      // purely from the create-time hook.
+      let title: string | null = null;
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        const sessions = await api<ProjectSession[]>(
+          auth.access_token,
+          'GET',
+          `/projects/${projectId}/sessions`,
+        );
+        title = sessions.find((item) => item.session_id === sessionId)?.name ?? null;
+        if (title) break;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+
+      expect(
+        title,
+        `no title generated for the ${transport} create-with-prompt session`,
+      ).toBeTruthy();
+      expect(title).not.toMatch(/^new session\b/i);
+    }
+  });
 });

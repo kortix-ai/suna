@@ -10,3 +10,11 @@
 export function isPlaceholderOpencodeTitle(title: string | null | undefined): boolean {
   return typeof title === 'string' && /^new session\b/i.test(title.trim());
 }
+
+/**
+ * POSIX-regex twin of `isPlaceholderOpencodeTitle`, for the compare-and-set
+ * predicate in the title UPDATE (`trim(metadata->>'name') ~* pattern`).
+ * `[^[:alnum:]_]` is the POSIX spelling of JavaScript's `\b` word boundary.
+ * Kept in lockstep by unit test.
+ */
+export const PLACEHOLDER_TITLE_SQL_PATTERN = '^new session([^[:alnum:]_]|$)';

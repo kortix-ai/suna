@@ -196,6 +196,9 @@ async function createThreadSession(
       connector_bindings: {
         email: { profile_id: emailProfileId },
       },
+      // Email delivers its prompt via postCreate, so create is the only moment
+      // this session has any user text — title from the subject.
+      title_source: messageSubject(event) ?? messageSummary(event),
     },
     enforceAccountCap: false,
     mayManageSystemConnectorProfiles: true,

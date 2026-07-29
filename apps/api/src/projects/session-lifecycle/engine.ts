@@ -17,6 +17,7 @@ import { createProjectSession } from '../lib/sessions';
 import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
 import { appendAcpEnvelope } from '../lib/acp-transcript';
 import { openSession } from '../routes/shared';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
@@ -385,6 +386,18 @@ export async function continueSession(
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
   }
+
+  // Server-side delivery is the FIRST prompt for any session created without
+  // one (email, warm/UI sessions a trigger later reuses). Titling here rather
+  // than at the transport makes it identical for REST and ACP; already-titled
+  // sessions no-op.
+  void generateSessionTitleFromFirstPrompt({
+    sessionId,
+    projectId: session.projectId,
+    accountId: session.accountId,
+    userId,
+    firstPromptText: text,
+  });
 
   const [project] = await db
     .select()

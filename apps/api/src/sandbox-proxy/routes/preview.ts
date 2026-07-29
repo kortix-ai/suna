@@ -333,13 +333,14 @@ function acpPromptSessionId(
   if (!match) return null;
   try {
     const routeSessionId = decodeURIComponent(match[1]);
-    const envelope = JSON.parse(new TextDecoder().decode(body)) as {
-      method?: unknown;
-      params?: { sessionId?: unknown };
-    };
-    return envelope.method === 'session/prompt' && envelope.params?.sessionId === routeSessionId
-      ? routeSessionId
-      : null;
+    const envelope = JSON.parse(new TextDecoder().decode(body)) as { method?: unknown };
+    // Keyed on the ROUTE id — the ACP server binding, which for a managed ACP
+    // session is the project session itself. The envelope's `params.sessionId`
+    // is the HARNESS-issued session, which persistAcpSessionIdentity forbids
+    // from equalling the server id: requiring the two to match made this return
+    // null for every managed ACP prompt, silently disabling prompt dedupe, the
+    // retry budget, the snapshot sync and titling on that path.
+    return envelope.method === 'session/prompt' ? routeSessionId : null;
   } catch {
     return null;
   }

@@ -4,6 +4,7 @@ import { projectSessions } from '@kortix/db';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import type { ProjectSessionRow } from './lib/serializers';
+import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 import {
   type OpencodeSessionLite,
   listSandboxOpencodeSessions,
@@ -142,10 +143,18 @@ export async function syncOpencodeSessionSnapshot(input: {
   const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
   if (sameSessions(metadata.opencode_sessions, scopedSessions)) return input.row;
 
+  // Merge in-SQL, never write back the whole object read above: this pass is
+  // scheduled off the SAME prompt that fires title generation, so a
+  // read-modify-write here drops the `metadata.name` the title CAS committed in
+  // between — permanently, for a one-shot automation session with no later
+  // prompt to re-trigger titling.
   const nextMetadata = { ...metadata, opencode_sessions: scopedSessions };
   const [updated] = await db
     .update(projectSessions)
-    .set({ metadata: nextMetadata, updatedAt: new Date() })
+    .set({
+      metadata: projectSessionMetadataMerge({ opencode_sessions: scopedSessions }),
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(projectSessions.sessionId, input.row.sessionId),

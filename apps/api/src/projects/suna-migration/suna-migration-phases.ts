@@ -208,6 +208,10 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
         agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
         metadata: {
+          // Carry the legacy thread's own title over; nothing ever re-titles a
+          // migrated session (it serves no first prompt), so without this every
+          // migrated thread displays as untitled forever.
+          ...(s.title ? { name: s.title } : {}),
           legacy_migration: {
             run_id: ctx.runId,
             // Reuse the legacy on-open ship: archive is keyed by projectId.

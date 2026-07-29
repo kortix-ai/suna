@@ -1604,6 +1604,17 @@ describe('project session API contract', () => {
         message: 'metadata key is server-managed: deletedBy',
       },
       {
+        // metadata.name is owned by the title generator; planting a non
+        // placeholder value pre-empts titling forever. Renaming is `name` →
+        // metadata.custom_name.
+        body: { metadata: { name: 'zzz' } },
+        message: 'metadata key is server-managed: name',
+      },
+      {
+        body: { metadata: { title_source: 'zzz' } },
+        message: 'metadata key is server-managed: title_source',
+      },
+      {
         body: { random: 'field' },
         message: 'field is not user-editable: random',
       },

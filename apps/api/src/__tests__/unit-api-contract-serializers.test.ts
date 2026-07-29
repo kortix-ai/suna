@@ -213,6 +213,18 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
+
+  test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
+    const placeholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),
+    );
+    expect(placeholder.name).toBeNull();
+
+    const real = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
+    );
+    expect(real.name).toBe('Set Up MS Graph');
+  });
 });
 
 describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {

@@ -14,9 +14,15 @@ import { appendAcpEnvelope, loadAcpTranscript } from '../lib/acp-transcript';
 import { projectsApp } from '../lib/app';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { sandboxRuntimeEndpoint } from '../runtime-inspection';
+import {
+  type PromptInfo,
+  generateSessionTitleFromFirstPrompt,
+  promptInfoFromEnvelope,
+} from '../session-title-generate';
 
 type AcpSessionBinding = {
   projectId: string;
+  accountId: string;
   sessionId: string;
   acpServerId: string;
   runtimeHarness: 'claude' | 'codex' | 'opencode' | 'pi';
@@ -55,6 +61,7 @@ async function resolveAcpBinding(
   }
   return {
     projectId,
+    accountId: loaded.row.accountId,
     sessionId,
     acpServerId: metadata.acp_server_id,
     runtimeHarness: metadata.runtime_harness,
@@ -194,6 +201,13 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
       return c.json({ error: 'request body must be JSON' }, 400);
     }
 
+    // The web UI's send path for every managed-ACP session. It does not go
+    // through the sandbox proxy, so this is where its first prompt becomes
+    // known server-side — but only ONCE the box has accepted it. Titling a
+    // prompt the agent never saw would name the session after a message the
+    // user is about to retype, permanently (the proxy hook holds the same
+    // contract).
+    let titlePrompt: PromptInfo | null = null;
     if (envelope.method === 'session/prompt') {
       try {
         target = await syncPromptEnvWithIngressRefresh(target);
@@ -206,6 +220,7 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
           502,
         );
       }
+      titlePrompt = promptInfoFromEnvelope(envelope);
     }
 
     await appendAcpEnvelope({
@@ -226,6 +241,16 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
         signal: c.req.raw.signal,
       };
     });
+    if (upstream.ok && titlePrompt?.text) {
+      void generateSessionTitleFromFirstPrompt({
+        sessionId: target.sessionId,
+        projectId: target.projectId,
+        accountId: target.accountId,
+        userId: target.userId,
+        firstPromptText: titlePrompt.text,
+        modelHint: titlePrompt.model ?? undefined,
+      });
+    }
     if (upstream.ok && upstream.status !== 202 && upstream.status !== 204) {
       const body = await upstream.text();
       try {

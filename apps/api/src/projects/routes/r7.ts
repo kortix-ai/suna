@@ -1668,11 +1668,18 @@ projectsApp.openapi(
   // PUT /sessions/{id}/model, which validates it against the account. Planting
   // it through metadata skipped that check entirely, so a retired or
   // account-forbidden model could be stored and booted by the next cold provision.
+  // name / title_source are owned by the title generator (the SINGLE writer of
+  // metadata.name — see projects/session-title-generate.ts). A client that plants
+  // a non-placeholder name pre-empts titling permanently, since `needsTitle` and
+  // the CAS both then refuse; renaming is `body.name` → metadata.custom_name,
+  // which is the supported, non-destructive override.
   const SERVER_MANAGED_METADATA_KEYS = [
     'deletedAt',
     'deletedBy',
     'opencode_model',
     'opencode_model_source',
+    'name',
+    'title_source',
   ];
   const metadataInput = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? (body.metadata as Record<string, unknown>)

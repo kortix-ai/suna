@@ -76,6 +76,11 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import {
+  TITLE_SOURCE_MAX_CHARS,
+  generateSessionTitleFromFirstPrompt,
+  titleSourceForCreate,
+} from '../session-title-generate';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { resolveEndUserRef } from './end-user-ref';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
@@ -1238,11 +1243,21 @@ export async function createProjectSession(input: {
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
   const sessionName = normalizeString(body.name);
+  // An explicit `title_source` means the baked prompt is a rendered envelope
+  // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
+  // are the user's actual words. Store it so a LATER fallback hook — which only
+  // ever sees the envelope — titles from the same clean text the create hook
+  // would have used, instead of leaking the scaffolding into a project-visible
+  // title when this create-time attempt fails.
+  const explicitTitleSource = normalizeString(body.title_source ?? body.titleSource);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(explicitTitleSource
+      ? { title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS) }
+      : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     runtime_transport: acpRuntimeEnabled ? 'acp' : 'rest',
@@ -1337,6 +1352,20 @@ export async function createProjectSession(input: {
         body: { error: 'Session insert returned no row', retry: true },
       },
     };
+  }
+
+  // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
+  // inside the box — it never crosses the API again, so this is the only moment
+  // it can be titled. No modelHint: the row already carries `opencode_model`.
+  const titleSource = titleSourceForCreate(body);
+  if (titleSource) {
+    void generateSessionTitleFromFirstPrompt({
+      sessionId,
+      projectId,
+      accountId,
+      userId,
+      firstPromptText: titleSource,
+    });
   }
 
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
@@ -1473,7 +1502,10 @@ export async function createProjectSession(input: {
           .set({
             status: 'failed',
             error: message,
-            metadata: { ...metadata, provisioning_error: message },
+            // Merge, never re-write the create-time snapshot: by the time
+            // provisioning fails the row may already carry a generated title,
+            // acp_session_id, remote_branch or the start timeline.
+            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
             updatedAt: new Date(),
           })
           .where(eq(projectSessions.sessionId, sessionId));
