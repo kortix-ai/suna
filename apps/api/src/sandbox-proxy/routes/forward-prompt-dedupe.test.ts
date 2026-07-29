@@ -65,6 +65,12 @@ mock.module('../backend', () => ({
   markSandboxUsed: () => {},
   markSandboxErrored: async () => {},
   wakeSandbox: async () => {},
+  // Bounded sandbox lifetime: the auto-resume turn-intent gate consults the
+  // idle-quiesce marker. `mock.module` REPLACES the module, so every named
+  // import preview.ts uses must appear here or the import throws at load.
+  // Only reached when KORTIX_SANDBOX_DEADLINE_RESUME_GATE is on, which it is
+  // not by default; false keeps this suite on today's behaviour either way.
+  isSandboxQuiesced: async () => false,
 }));
 
 const { forwardToSandbox } = await import('./preview');
