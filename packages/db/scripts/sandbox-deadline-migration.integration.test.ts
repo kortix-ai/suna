@@ -132,6 +132,7 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
         session_id text NOT NULL UNIQUE,
         account_id uuid NOT NULL,
         project_id uuid NOT NULL,
+        provider text NOT NULL DEFAULT 'daytona',
         external_id text,
         status kortix.session_sandbox_status NOT NULL DEFAULT 'provisioning',
         metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -147,6 +148,19 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
         created_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX idx_usage_events_session ON kortix.usage_events (session_id);
+      -- The shadow reporter joins these two. Minimal shapes: it reads only
+      -- project_sessions.metadata (for the harness bucket) and
+      -- acp_session_envelopes.created_at (the BYOK progress signal that has no
+      -- usage_events counterpart).
+      CREATE TABLE kortix.project_sessions (
+        session_id text PRIMARY KEY,
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+      );
+      CREATE TABLE kortix.acp_session_envelopes (
+        ordinal bigserial PRIMARY KEY,
+        session_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
     `);
 
     // ── Prod-shaped population, seeded BEFORE the backfill, mirroring the live
@@ -506,6 +520,49 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
     expect(
       scalar(`SELECT count(*) FROM kortix.usage_events WHERE session_id='sess-does-not-exist'`),
     ).toBe('1');
+  });
+
+  // ── The shadow reporter's real SQL ─────────────────────────────────────────
+
+  test('the SHIPPED shadow kill query parses and runs against the real objects', async () => {
+    // Reads the statement out of apps/api rather than duplicating it. A
+    // hand-copied SQL twin in a test drifts from the code silently, which is
+    // the one failure mode a query test exists to prevent — and a shadow pass
+    // whose query throws every tick logs a warning nobody reads and reports a
+    // reassuring zero.
+    const source = await Bun.file(
+      resolve(import.meta.dir, '..', '..', '..', 'apps', 'api', 'src', 'projects', 'lifetime', 'shadow-queries.ts'),
+    ).text();
+    const blocks = [...source.matchAll(/sql`([\s\S]*?)`\)/g)].map((m) => m[1] ?? '');
+    expect(blocks.length).toBe(2);
+    for (const block of blocks) {
+      // Substitute the two bound parameters with literals. Everything else in
+      // these statements is static text by construction.
+      const statement = block
+        .replace(/\$\{opts\.perAccountCap\}/g, '5')
+        .replace(/\$\{opts\.limit\}/g, '25')
+        .replace(/\$\{seconds\}/g, '300');
+      expect(statement).not.toContain('${');
+      psql(statement);
+    }
+  });
+
+  test('the kill query uses the partial deadline index, not a sequential scan', () => {
+    // Postgres will happily seq-scan a tiny test table, so force the choice to
+    // be about whether the index is USABLE for this predicate rather than about
+    // row counts. SET must share the session with EXPLAIN — each psql call here
+    // is its own connection.
+    const plan = scalar(`
+      SET enable_seqscan = off;
+      EXPLAIN (COSTS OFF)
+      SELECT sandbox_id FROM kortix.session_sandboxes
+       WHERE status IN ('active','provisioning')
+         AND external_id IS NOT NULL
+         AND deadline_at <= now()`);
+    // The partial index's predicate is `status IN ('active','provisioning')`,
+    // so this also proves Postgres can prove the implication — a partial index
+    // the planner cannot match is an index that silently never runs.
+    expect(plan).toContain('idx_session_sandboxes_deadline');
   });
 
   // ── The kill query the reaper will run ─────────────────────────────────────

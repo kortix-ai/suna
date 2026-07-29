@@ -6,6 +6,8 @@ import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
+import { sandboxDeadlineKillBatch, sandboxDeadlinePerAccountCap } from './lifetime/flags';
+import { EMPTY_SHADOW_RESULT, runSandboxDeadlineShadowPass } from './lifetime/shadow';
 import {
   EMPTY_REAP_RESULT,
   countBillingInvariantViolations,
@@ -325,6 +327,30 @@ export async function runProjectMaintenance(): Promise<void> {
         };
       }),
     ]);
+    // BOUNDED SANDBOX LIFETIME — SHADOW MODE.
+    //
+    // Runs AFTER the Promise.all above, NOT inside it, and that ordering is the
+    // whole point: the divergence half of the report asks "did the OLD model
+    // just stop a box the new model would have kept", which is only answerable
+    // once this tick's reaper has finished acting.
+    //
+    // Sequential rather than concurrent for the same reason, and because it is
+    // an observer — it must never contend with the sweeps it is measuring.
+    //
+    // It STOPS NOTHING. There is no provider call anywhere in that module,
+    // which is a stronger guarantee than a flag check.
+    const deadlineShadow = await runSandboxDeadlineShadowPass({
+      perAccountCap: sandboxDeadlinePerAccountCap(),
+      limit: sandboxDeadlineKillBatch(),
+      divergenceWindowMs: maintenanceIntervalMs(),
+    }).catch((err) => {
+      console.warn(
+        '[project-maintenance] deadline shadow pass failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { ...EMPTY_SHADOW_RESULT };
+    });
+
     const hadAction = Boolean(
       idle.stopped ||
         idle.hardStopped ||
@@ -382,8 +408,33 @@ export async function runProjectMaintenance(): Promise<void> {
       `idle_busy_vetoed=${idle.busyVetoed}`,
       `idle_warm_skipped=${idle.warmSkipped}`,
       `compute_rows_closed=${orphanCompute.closed}`,
+      // Bounded sandbox lifetime, shadow mode. `deadline_would_stop` is the
+      // leak measured directly: it should read 150+ on the first pass after the
+      // backfill and then converge. `deadline_would_keep` is the OTHER
+      // direction — boxes the old model stopped that the deadline model would
+      // have kept — and a persistently non-zero value means deleting the probe
+      // / lease / idle countdown loses a killer we still depend on.
+      `deadline_matching=${deadlineShadow.matching}`,
+      `deadline_would_stop=${deadlineShadow.wouldStop}`,
+      `deadline_would_keep=${deadlineShadow.wouldKeep}`,
+      `deadline_with_recent_progress=${deadlineShadow.withRecentUsage}`,
+      `deadline_overdue_max_h=${deadlineShadow.overdueMaxHours}`,
+      `deadline_enforced_stops=${deadlineShadow.stopped}`,
+      `deadline_shadow_errors=${deadlineShadow.errors}`,
       `action=${hadAction}`,
     );
+    if (deadlineShadow.matching > 0) {
+      console.log('[lifetime] shadow_pass_summary', {
+        matching: deadlineShadow.matching,
+        would_stop: deadlineShadow.wouldStop,
+        would_keep: deadlineShadow.wouldKeep,
+        with_recent_progress: deadlineShadow.withRecentUsage,
+        overdue_max_h: deadlineShadow.overdueMaxHours,
+        by_cohort: deadlineShadow.byCohort,
+        by_progress_channel: deadlineShadow.byProgressChannel,
+        by_source: deadlineShadow.bySource,
+      });
+    }
 
     // Invariant monitor: in steady state, every `active` compute session has a
     // running box. A non-zero count means billing is leaking — make it loud so a
