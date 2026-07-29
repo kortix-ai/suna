@@ -9,6 +9,7 @@ import {
   upsertResourceGrant,
 } from '../../iam';
 import { assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
+import { approvalPageUrl } from '../../setup-links/token';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
@@ -1015,6 +1016,15 @@ projectsApp.openapi(
         result_summary: r.resultSummary ?? null,
         at: r.createdAt.toISOString(),
         resolved_at: r.resolvedAt?.toISOString() ?? null,
+        // For an UNRESOLVED row, the standalone page where a human reviews the
+        // full (redacted) arguments and decides. Minted here so the in-session
+        // notice can link straight to it without a second round trip. Only for
+        // pending rows: a resolved row has nothing left to decide, and a
+        // settled decision shouldn't carry a live link around.
+        approval_url:
+          r.status === 'pending_approval' && !r.resolvedAt
+            ? approvalPageUrl(projectId, r.executionId, sessionId)
+            : null,
       })),
     });
   },
@@ -1313,15 +1323,19 @@ projectsApp.openapi(
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
-    // 'once' (default) = approve just this call; 'session' = also stop asking for
-    // THIS connector+action for the rest of the session; 'session_all' = stop
-    // asking for ANY gated action for the rest of the session (a `*` wildcard
-    // grant per enabled connector). Only meaningful on approve. (A policy
-    // `block` never reaches this endpoint as pending, so a session grant can
-    // only ever widen require_approval → run.)
-    const scopeRaw = normalizeString(body.scope);
-    const scope =
-      scopeRaw === 'session' ? 'session' : scopeRaw === 'session_all' ? 'session_all' : 'once';
+    // NO SCOPES. A decision applies to exactly the call that asked for it.
+    //
+    // This used to accept 'session' ("stop asking for this tool") and
+    // 'session_all' ("stop asking for anything"), surfaced as one-click buttons.
+    // Both defeated the gate they were attached to: the reflex click that clears
+    // today's prompt also silently pre-authorises every later call, including
+    // ones with completely different arguments — a mail send to a different
+    // recipient never asks again. An approval that can be waived in one click is
+    // not a control. A legitimately unattended tool belongs in an explicit
+    // `always_run` policy rule, authored deliberately in the Policies panel,
+    // where the full rule set is visible.
+    //
+    // A stale client may still POST `scope` — it is ignored, not honoured.
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -1430,70 +1444,6 @@ projectsApp.openapi(
       return c.json({ error: 'Approval already resolved' }, 409);
     }
 
-    // "Allow for this session": record (session, connector, action) so the
-    // gateway auto-runs the same tool for the rest of the session. Best-effort +
-    // idempotent — a failure here doesn't undo the (already-committed) approval.
-    // The execution row's actionPath is the QUALIFIED audit form
-    // (`google_drive.create_folder`); the gateway's session-allow check matches
-    // the CONNECTOR-RELATIVE form (`create_folder`) — strip the slug prefix or
-    // the grant never matches and "Allow for session" keeps re-asking (the bug
-    // this comment is a headstone for).
-    if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
-      try {
-        const [conn] = await db
-          .select({ slug: executorConnectors.slug })
-          .from(executorConnectors)
-          .where(eq(executorConnectors.connectorId, row.connectorId))
-          .limit(1);
-        const relativeActionPath =
-          conn && row.actionPath.startsWith(`${conn.slug}.`)
-            ? row.actionPath.slice(conn.slug.length + 1)
-            : row.actionPath;
-        await recordSessionToolApproval({
-          sessionId: row.sessionId,
-          projectId,
-          connectorId: row.connectorId,
-          actionPath: relativeActionPath,
-          grantedBy: loaded.userId,
-        });
-      } catch (err) {
-        console.warn('[approvals] failed to record session allow', {
-          executionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    // "Allow everything for this session": one `*` wildcard grant per enabled
-    // connector (the gateway's session check matches `*` against any action).
-    // Enumerated per connector — instead of a schema-level "all connectors"
-    // marker — so a connector added AFTER this grant still asks. Best-effort +
-    // idempotent, same as the single-action grant above.
-    if (decision === 'approve' && scope === 'session_all' && row.sessionId) {
-      try {
-        const conns = await db
-          .select({ connectorId: executorConnectors.connectorId })
-          .from(executorConnectors)
-          .where(
-            and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.enabled, true)),
-          );
-        for (const conn of conns) {
-          await recordSessionToolApproval({
-            sessionId: row.sessionId,
-            projectId,
-            connectorId: conn.connectorId,
-            actionPath: '*',
-            grantedBy: loaded.userId,
-          });
-        }
-      } catch (err) {
-        console.warn('[approvals] failed to record session allow-all', {
-          executionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
     // Server-side resume — the reliability backstop. A LIVE gated call (the
     // sandbox CLI/MCP pause loop, or an approve within the gateway's 45s hold)
     // picks this decision out of the DB within ~1s, marks it consumed, and the
@@ -1539,7 +1489,7 @@ projectsApp.openapi(
       }
     }
 
-    return c.json({ ok: true, scope });
+    return c.json({ ok: true });
   },
 );
 

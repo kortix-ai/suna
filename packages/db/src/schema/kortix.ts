@@ -4363,6 +4363,26 @@ export const executorConnectorActions = kortixSchema.table(
 );
 
 /** Connector-scoped tool-call policies, materialized from [[connectors.policies]]. */
+/**
+ * One ARGUMENT condition on a tool-call policy.
+ *
+ * A `match` pattern can only gate a tool NAME ("may the agent call
+ * `gmail.send_email`"). It cannot gate the call's target ("…but only to these
+ * addresses"), which is what a real guardrail needs to express. A policy row
+ * carrying `conditions` applies only when its tool pattern matches AND every
+ * condition holds.
+ *
+ * `arg` is a dot path into the call arguments; `match` uses the same
+ * glob-or-`/regex/` grammar as the tool pattern. Semantics (including how an
+ * unevaluable condition fails closed) live in apps/api/src/executor/policy.ts —
+ * this is only the stored shape.
+ */
+export interface ExecutorPolicyCondition {
+  arg: string;
+  match: string;
+  negate?: boolean;
+}
+
 export const executorConnectorPolicies = kortixSchema.table(
   'executor_connector_policies',
   {
@@ -4375,6 +4395,8 @@ export const executorConnectorPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_executor_connector_policies_connector').on(table.connectorId)],
@@ -4407,6 +4429,8 @@ export const executorConnectionPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -4440,6 +4464,8 @@ export const executorProjectPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_executor_project_policies_project').on(table.projectId)],

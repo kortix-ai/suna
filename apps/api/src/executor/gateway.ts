@@ -1,4 +1,5 @@
 import { logger } from '../lib/logger';
+import { buildArgsPreview, summarizeArgsPreview } from './args-preview';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -144,10 +145,9 @@ export interface GatewayDeps {
     timeoutMs: number,
     expect?: { sessionId: string | null; connectorId: string; actionPath: string },
   ): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'>;
-  /** "Allow for this session" check: has this session already approved THIS
-   *  connector + action for the rest of the session? A hit turns a
-   *  `require_approval` into a silent run (no hold, no re-prompt). Only ever
-   *  widens ask→run; never consulted for a policy `block`. */
+  /** @deprecated NO LONGER CONSULTED for a decision — session-wide grants were
+   *  removed (see the "SESSION-WIDE GRANTS" note in handleCall for why). Kept on
+   *  interface so historical grant rows remain readable for display/audit. */
   isSessionToolApproved?(
     sessionId: string,
     connectorId: string,
@@ -167,6 +167,16 @@ export interface GatewayDeps {
    *  resumed on it, so the same grant can't ALSO be carried over by a later
    *  fresh call (best-effort — a failure only risks one extra silent run). */
   markApprovalConsumed?(executionId: string): Promise<void>;
+  /**
+   * Mint the standalone page URL where a human signs in and decides. Injected
+   * (rather than imported) so the gateway stays unit-testable without config or
+   * project-key material. Returns null when the deployment can't mint one.
+   */
+  mintApprovalLink?(input: {
+    projectId: string;
+    executionId: string;
+    sessionId: string | null;
+  }): string | null;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -263,6 +273,15 @@ export type CallResult =
       executionId?: string | null;
       /** true = still unresolved after the hold; poll again to keep pausing. */
       retryable?: boolean;
+      /**
+       * Standalone page where a human signs in and decides. Handed to the agent
+       * so it can relay the decision request wherever the human actually is
+       * (chat, email) instead of assuming someone is watching the session.
+       * Null when the deployment can't mint one.
+       */
+      approvalUrl?: string | null;
+      /** One-line redacted "what is this?" — safe to paste alongside the link. */
+      approvalSummary?: string | null;
     }
   | { status: 'error'; reason: string };
 
@@ -451,6 +470,29 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ? deps.loadConnectionPolicies(connector.profileId)
         : Promise.resolve([] as Policy[]),
     ]);
+    // Built once per gated call: the redacted preview goes in the audit row and
+    // the one-liner rides alongside the link, so an out-of-band relay ("approve
+    // this: <url>") is still specific about what is being approved.
+    const argsPreview = buildArgsPreview(executionArgs);
+    // Keys are OMITTED when empty rather than set to null: the pending_approval
+    // result is a wire shape other code compares against, and a key that carries
+    // no information shouldn't change it.
+    const approvalExtras = (executionId: string | null | undefined) => {
+      const url =
+        executionId && deps.mintApprovalLink
+          ? deps.mintApprovalLink({
+              projectId: input.projectId,
+              executionId,
+              sessionId: input.sessionId ?? null,
+            })
+          : null;
+      const summary = summarizeArgsPreview(argsPreview);
+      return {
+        ...(url ? { approvalUrl: url } : {}),
+        ...(summary ? { approvalSummary: summary } : {}),
+      };
+    };
+
     const decision = resolveEffectiveAction({
       fullPath,
       relPath: input.actionPath,
@@ -460,33 +502,42 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       risk: action.risk,
       defaultMode,
       sensitive: connector.sensitive,
+      // Rules may also condition on the ARGUMENTS ("only to these addresses"),
+      // so the engine needs the real payload. This is the post-context-injection
+      // form — the same args the call will actually execute with — so a rule
+      // can't be dodged by a field the gateway fills in later.
+      args: executionArgs,
+      argsAvailable: true,
     });
     if (decision.action === 'block') {
       await audit(deps, input, connector, 'denied', action.risk, {
         reason: 'policy_block',
         policy_source: decision.source,
+        // A block is only auditable if you can see WHAT was blocked — otherwise
+        // "denied gmail.send_email" can't be told apart from a false positive.
+        args_preview: argsPreview,
       });
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      // "Allow for this session": if a human already said allow-for-the-session
-      // for THIS connector + action, skip the gate — run it silently, no hold,
-      // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
-      // still shows the call happened + why it wasn't asked.
-      // PATH FORM MATTERS: session grants store the CONNECTOR-RELATIVE path
-      // (`create_folder`) — the same form `input.actionPath` carries for any
-      // call that got past loadAction. The audit trail (executor_executions)
-      // stores the QUALIFIED form (`google_drive.create_folder`), so the
-      // carry-over lookup below must use that. Mixing the two silently breaks
-      // matching — it's exactly the bug that made "Allow for session" a no-op.
-      const sessionAllowed =
-        input.sessionId && deps.isSessionToolApproved
-          ? await deps.isSessionToolApproved(
-              input.sessionId,
-              connector.connectorId,
-              input.actionPath,
-            )
-          : false;
+      // SESSION-WIDE GRANTS ARE NO LONGER HONOURED.
+      //
+      // "Allow for this session" / "Allow everything" used to let one click
+      // pre-authorise every later call of a tool, whatever its arguments — so a
+      // mail send approved for one recipient silently covered a send to any
+      // other. The gate has to see each call, because the ARGUMENTS are what
+      // make a call safe or not, and they change per call.
+      //
+      // Deliberately dropped at the ENFORCEMENT point, not just in the UI: rows
+      // written before this change still exist in session_tool_approvals, and
+      // reading them would keep those old grants silently bypassing the gate.
+      // `isSessionToolApproved` is left on GatewayDeps (still used to display
+      // history) but is no longer consulted for a decision.
+      //
+      // What REMAINS below is approval carry-over, which is a different thing:
+      // it claims a human's approval of THIS very call when the gated request
+      // that asked is no longer waiting (the 45s hold expired). It authorises
+      // one already-approved call, not future ones.
       // Approval carry-over: the human approved this exact (session, connector,
       // action) recently, but the gated call that asked is no longer waiting —
       // the 45s hold expired and the client never re-polled (e.g. an older
@@ -494,7 +545,6 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // consumed. Claim that grant now: this fresh attempt IS the approved call,
       // run it instead of stacking a second ask for the same thing.
       const carriedOver =
-        !sessionAllowed &&
         input.sessionId &&
         !input.approvalExecutionId &&
         deps.consumeApprovedExecution
@@ -505,9 +555,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               actionPath: `${input.connectorSlug}.${input.actionPath}`,
             })
           : false;
-      if (sessionAllowed || carriedOver) {
+      if (carriedOver) {
         await audit(deps, input, connector, 'ok', action.risk, {
-          reason: sessionAllowed ? 'session_allow' : 'approval_carryover',
+          reason: 'approval_carryover',
           policy_source: decision.source,
         });
       } else {
@@ -519,6 +569,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           (await audit(deps, input, connector, 'pending_approval', action.risk, {
             reason: 'policy_require_approval',
             policy_source: decision.source,
+            // WITHOUT THIS the approval prompt can name the tool but not its
+            // target — a human was being asked to authorise `gmail.send_email`
+            // with no way to see who it emails. Redacted (see args-preview.ts):
+            // credential-shaped fields never reach the audit trail.
+            args_preview: argsPreview,
           }));
         // HOLD the call so the agent's turn pauses in-session — the sandbox's
         // synchronous executor.call blocks on this request instead of erroring.
@@ -540,12 +595,14 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
             const freshId = await audit(deps, input, connector, 'pending_approval', action.risk, {
               reason: 'policy_require_approval',
               policy_source: decision.source,
+              args_preview: argsPreview,
             });
             return {
               status: 'pending_approval',
               reason: 'policy_require_approval',
               executionId: freshId ?? undefined,
               retryable: true,
+              ...approvalExtras(freshId),
             };
           }
           if (outcome === 'denied') {
@@ -563,6 +620,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               reason: 'policy_require_approval',
               executionId,
               retryable: true,
+              ...approvalExtras(executionId),
             };
           }
           // approved → fall through to execute the call below. Mark the grant
@@ -576,6 +634,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
             reason: 'policy_require_approval',
             executionId,
             retryable: false,
+            ...approvalExtras(executionId),
           };
         }
       }

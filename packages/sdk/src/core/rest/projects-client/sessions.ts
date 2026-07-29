@@ -369,9 +369,19 @@ export interface SessionAuditAction {
    *  still awaiting a decision. */
   resolved_by: string | null;
   resolved_by_email: string | null;
+  /**
+   * Redacted detail the gateway recorded. For a gated call this carries
+   * `args_preview` — the (secret-stripped) arguments the call would run with,
+   * which is what makes an approval decidable rather than a guess.
+   */
   result_summary: Record<string, unknown> | null;
   at: string;
   resolved_at: string | null;
+  /**
+   * Standalone page for reviewing and deciding this call. Non-null only while
+   * the row is unresolved; a settled decision carries no live link.
+   */
+  approval_url?: string | null;
 }
 
 export interface SessionAudit {
