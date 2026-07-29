@@ -4078,5 +4078,14 @@ Live dev Platinum acceptance:
 
 **SDK package shippable to production: YES.**
 
-**Repository delivery shippable to production: NOT YET.** PR merge, Deploy Dev,
-and deployed SHA proof remain.
+Repository delivery evidence:
+
+- PR `#5848` merged as
+  `d6979ad99241ebd8baeb00391dc186ce007b63e1`.
+- All PR checks completed successfully.
+- Deploy Dev run `30487926127` completed successfully for the merge SHA.
+- `https://dev-api.kortix.com/v1/health` reported version
+  `0.11.1-dev.d6979ad9` and commit
+  `d6979ad99241ebd8baeb00391dc186ce007b63e1`.
+
+**Repository delivery shippable to production: YES.**
