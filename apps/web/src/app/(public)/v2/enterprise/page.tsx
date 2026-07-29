@@ -47,7 +47,7 @@ export default function EnterprisePage() {
           'Advanced RBAC — roles and per-resource permissions, scoped per agent.',
           'Project access — owners, managers, editors, and members, invited by email or inherited from a group.',
         ]}
-        visual="none"
+        visual="/images/product/members.png"
       />
 
       <SplitSection

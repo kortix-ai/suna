@@ -132,7 +132,7 @@ export const LANDING: SectionSpec[] = [
       'Improving one goes through the same reviewed change as everything else.',
       'What a session learns lands in memory, so the next one starts where the last one stopped.',
     ],
-    visual: 'none',
+    visual: '/images/product/skills.png',
     tone: 'muted',
   },
   {
@@ -146,7 +146,7 @@ export const LANDING: SectionSpec[] = [
       'A trigger can start the same session on a cron or a signed webhook, with no one asking.',
       'Output comes back to the channel, and durable work comes back as a change request.',
     ],
-    visual: 'none',
+    visual: '/images/product/channels.png',
     reversed: true,
   },
   {
@@ -218,7 +218,7 @@ const ENTERPRISE: SectionSpec[] = [
       'Permissions down to the network. Each agent gets only the tools, secrets, and files it needs, with allow, ask first, or block rules per action. Risky operations pause for human sign-off before they run.',
       'Every change is a commit. Policy, agents, and config live in kortix.yaml inside a git repo. Every modification — by a person, an admin, or an agent — is a diff.',
     ],
-    visual: 'none',
+    visual: '/images/product/members.png',
   },
   {
     id: 'identity',
@@ -307,7 +307,7 @@ const SECURITY: SectionSpec[] = [
       'It is written down. Who started it, what it touched, what it produced, and who approved it.',
     ],
     columns: 2,
-    visual: 'none',
+    visual: '/images/product/members.png',
   },
   {
     id: 'approval',
@@ -401,7 +401,7 @@ const SELF_HOSTED: SectionSpec[] = [
       'Air-gapped networks. Teams in fully isolated environments with no public internet access.',
     ],
     columns: 4,
-    visual: 'none',
+    visual: '/images/product/members.png',
   },
   {
     id: 'same-product',
@@ -450,7 +450,7 @@ const AGENTS: SectionSpec[] = [
     kind: 'hero',
     heading: 'An agent is a file you can read.',
     body: 'A markdown persona with a prompt, a model, and a tightly scoped reach into your tools. Install one, fork it, or write your own — it lands in your repo as a file you can diff and review.',
-    visual: 'none',
+    visual: '/images/product/agents.png',
   },
   {
     id: 'anatomy',
@@ -512,7 +512,7 @@ const AUTOMATIONS: SectionSpec[] = [
       'With the same rules. A triggered session is still isolated, still scoped, and still needs a person to merge.',
     ],
     columns: 2,
-    visual: 'none',
+    visual: '/images/product/schedules.png',
   },
   {
     id: 'declared',
@@ -559,7 +559,7 @@ const SANDBOXES: SectionSpec[] = [
       'Torn down after. The machine is destroyed at the end. What survives is the change request.',
     ],
     columns: 4,
-    visual: 'none',
+    visual: '/images/product/command-center.png',
   },
   {
     id: 'spec',
@@ -596,7 +596,7 @@ const CONNECTORS: SectionSpec[] = [
     kind: 'hero',
     heading: 'One token. 3,000+ apps.',
     body: 'A connector is one-click reach into the tools your company already runs on — plus anything that speaks MCP, OpenAPI, GraphQL, or plain HTTP. Credentials are brokered server-side and never enter a sandbox.',
-    visual: 'none',
+    visual: '/images/product/connectors.png',
   },
   {
     id: 'how-reach-works',
@@ -643,7 +643,7 @@ const AGENT_TEMPLATES: SectionSpec[] = [
     kind: 'hero',
     heading: 'Templates for the work you already repeat.',
     body: 'Install a working agent in a click, then edit it like any other file in your repo. Every template is markdown, so there is nothing hidden to reverse-engineer.',
-    visual: 'none',
+    visual: '/images/product/marketplace.png',
   },
   {
     id: 'popular',
@@ -785,7 +785,7 @@ const CUSTOMERS: SectionSpec[] = [
       'Operations. The recurring reports and reconciliations, on a trigger instead of a memory.',
     ],
     columns: 4,
-    visual: 'none',
+    visual: '/images/product/command-center.png',
   },
   {
     id: 'no-logo-wall',
@@ -896,7 +896,7 @@ const DOWNLOAD: SectionSpec[] = [
     kind: 'hero',
     heading: 'Kortix, everywhere you work.',
     body: 'The command center in the browser, the CLI in your terminal, and your sessions in your pocket. Same projects, same agents, same permissions.',
-    visual: 'none',
+    visual: '/images/product/command-center.png',
   },
   {
     id: 'surfaces',
@@ -1076,7 +1076,7 @@ const USE_CASES_INDEX: SectionSpec[] = [
       'Company digest. The weekly business summary, drawn from your own data instead of retyped by hand.',
       'Support triage. The inbox read, grouped, and answered from your own documentation.',
     ],
-    visual: 'none',
+    visual: '/images/product/marketplace.png',
   },
   {
     id: 'cta',

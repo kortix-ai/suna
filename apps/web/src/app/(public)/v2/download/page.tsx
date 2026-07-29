@@ -93,7 +93,7 @@ export default function DownloadPage() {
         id="hero"
         heading="Kortix, everywhere you work."
         body="The command center in the browser, the CLI in your terminal, and your sessions in your pocket. Same projects, same agents, same permissions."
-        visual="none"
+        visual="/images/product/command-center.png"
       />
 
       <Section id="surfaces">

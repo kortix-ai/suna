@@ -25,7 +25,7 @@ export default function Page() {
         <GridSection
           {...twoWays}
           columns={2}
-          visual="none"
+          visual="/images/product/schedules.png"
         />
       )}
       {/* Config rows, not steps — so the rail stays unnumbered. */}

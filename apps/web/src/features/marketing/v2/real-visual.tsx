@@ -35,6 +35,52 @@ type Shot = { alt: string; ratio: string };
  * remaining entries are photographs and artifacts, not UI, so they stay true.
  */
 const SHOTS: Record<string, Shot> = {
+  /* Captured from a live project on 2026-07-29 at 2x. Retake these whenever the
+     surfaces move — the previous set was two months stale and showed a product
+     that no longer existed. */
+  '/images/product/command-center.png': {
+    alt: 'The Kortix command center: a project, its sessions, and the composer',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/skills.png': {
+    alt: 'The skills library, showing a skill and the markdown file behind it',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/agents.png': { alt: 'Agents in a Kortix project', ratio: '3360 / 1882' },
+  '/images/product/connectors.png': {
+    alt: 'Adding a connector from the catalogue of 3,000+ apps',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/channels.png': {
+    alt: 'Channels connected to a Kortix project',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/schedules.png': {
+    alt: 'Scheduled triggers in a Kortix project',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/members.png': {
+    alt: 'Members and roles in a Kortix project',
+    ratio: '3360 / 1882',
+  },
+  '/images/product/marketplace.png': {
+    alt: 'The Kortix marketplace: installable projects and skills',
+    ratio: '3360 / 1882',
+  },
+
+  /* Artifacts and photographs — these do not depict UI, so they do not date. */
+  '/images/landing-showcase/research.png': {
+    alt: 'A research memo produced by a Kortix session',
+    ratio: '2 / 1',
+  },
+  '/images/landing-showcase/data.png': {
+    alt: 'A financial model produced by a Kortix session',
+    ratio: '2 / 1',
+  },
+  '/images/landing-showcase/slides.png': {
+    alt: 'A slide deck produced by a Kortix session',
+    ratio: '2 / 1',
+  },
   '/images/team.webp': { alt: 'The Kortix team', ratio: '16 / 9' },
   '/images/careers/shackleton.png': {
     alt: 'The Shackleton advertisement that hangs in the Kortix office',
