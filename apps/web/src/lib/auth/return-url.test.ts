@@ -21,9 +21,10 @@ describe('sanitizeAuthReturnUrl', () => {
     expect(sanitizeAuthReturnUrl('//evil.example.com')).toBe(PROJECT_LANDING_PATH);
   });
 
-  test('still honours an explicit deep link to the projects list', () => {
-    // The list stays reachable — it just stops being the default.
-    expect(sanitizeAuthReturnUrl('/projects')).toBe('/projects');
+  test('does not return from auth to the projects list', () => {
+    // Middleware sends an unauthenticated /projects request through /auth.
+    // Returning to the list exposes it while first-project provisioning runs.
+    expect(sanitizeAuthReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
   });
 });
 
