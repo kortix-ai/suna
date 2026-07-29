@@ -3989,3 +3989,38 @@ Rebased local acceptance on `origin/main` `d627167f`:
 
 **Repository delivery shippable to production: NOT YET.** PR merge, Deploy Dev,
 deployed SHA proof, and deployed isolation verification remain.
+
+---
+
+### 2026-07-29 — session `sdk-inherited-session-defaults` follow-up claim
+
+Claimed the live inherited OpenCode session default compatibility follow-up.
+
+Live dev evidence on merge `7a7bb4f16`:
+
+- Three distinct Platinum sandboxes inherited
+  `ses_050fadf1dffeb2XyPZiu0qloal`.
+- SDK routing kept each user marker in its own sandbox transcript.
+- The first SDK prompt used the stale snapshot model
+  `opencode/big-pickle` and produced no assistant message.
+- A direct prompt with the persisted project-session model
+  `kortix/glm-5.2` unblocked each session.
+- Both sessions then passed follow-up, restart, and post-restart SDK sends.
+
+Scope:
+
+- Resolve the persisted project-session model and agent before a default SDK
+  `send`.
+- Keep explicit per-call and handle-level SDK overrides authoritative.
+- Accept an equal inherited OpenCode ID when sandbox and transcript ownership
+  remain isolated.
+- Make the disposable live smoke tolerate project manifest convergence without
+  hiding product failures.
+
+The required `tdd` skill is unavailable in this session.
+The implementation will use the same RED, GREEN, and REFACTOR sequence
+directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
