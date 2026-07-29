@@ -201,7 +201,7 @@ describe('getStarterFiles', () => {
   test('no SKILL.md is nested inside another skill', () => {
     const nested = getStarterFiles({ projectName: 'X' })
       .map((f) => f.path.match(/^\.kortix\/opencode\/skills\/(.+)\/SKILL\.md$/)?.[1])
-      .filter((slug): slug is string => Boolean(slug) && slug.includes('/'));
+      .filter((slug): slug is string => typeof slug === 'string' && slug.includes('/'));
     expect(nested).toEqual([]);
   });
 
