@@ -13,12 +13,12 @@ import { AgentsView } from '@/features/workspace/customize/sections/view/agents-
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
-import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
+import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -28,113 +28,16 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { ArrowLeft, ChatMessages, Sparkles } from '@mynaui/icons-react';
+import { ArrowLeft } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  AlarmClock,
-  ArrowUpCircle,
-  AudioLines,
-  Bot,
-  Boxes,
-  Command,
-  Container,
-  GitFork,
-  Inbox,
-  KeyRound,
-  LucideSettings,
-  LucideUsersRound,
-  Monitor,
-  Plug,
-  Store,
-  Webhook,
-} from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
-import { isRailItemActive } from './rail';
+import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
-import type { RailGroup, RailItem } from './type';
-
-const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
-
-const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
-
-const VOICE_ITEM: RailItem = { section: 'voice', label: 'Voice', icon: AudioLines };
-
-const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
-
-// The Upgrades section is always reachable (it hosts the one-off prompt runner)
-// and lives pinned at the very bottom of the rail — out of the scrolling nav (see
-// the desktop footer / mobile tail below). When a registry upgrade is actually
-// applicable (e.g. the project is still on a v1 manifest) it carries a small
-// attention dot instead of claiming a more prominent slot.
-const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
-
-const GROUPS: readonly RailGroup[] = [
-  {
-    label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
-  },
-  {
-    label: 'Connect',
-    items: [
-      { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
-      { section: 'channels', label: 'Channels', icon: ChatMessages },
-    ],
-  },
-  {
-    label: 'Automate',
-    items: [
-      { section: 'schedules', label: 'Schedules', icon: AlarmClock },
-      { section: 'webhooks', label: 'Webhooks', icon: Webhook },
-    ],
-  },
-  {
-    label: 'Manage',
-    items: [
-      { section: 'git', label: 'Git', icon: GitFork },
-      { section: 'sandbox', label: 'Sandbox templates', icon: Container },
-      { section: 'members', label: 'Members', icon: LucideUsersRound },
-      { section: 'settings', label: 'Settings', icon: LucideSettings },
-    ],
-  },
-];
-
-const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
-
-function railGroups(
-  tunnelEnabled: boolean,
-  marketplaceEnabled: boolean,
-  llmGatewayAvailable: boolean,
-  voiceEnabled: boolean,
-  reviewEnabled: boolean,
-): readonly RailGroup[] {
-  return GROUPS.map((g) => {
-    if (g.label === 'Build' && marketplaceEnabled) {
-      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
-    }
-    if (g.label === 'Connect') {
-      const items = [...g.items];
-      if (voiceEnabled) items.push(VOICE_ITEM);
-      if (tunnelEnabled) items.push(COMPUTERS_ITEM);
-      if (llmGatewayAvailable) items.push(LLM_ITEM);
-      return { ...g, items };
-    }
-    if (g.label === 'Build' && reviewEnabled) {
-      const items = [...g.items];
-      items.push(REVIEW_ITEM);
-      return { ...g, items };
-    }
-    return g;
-  });
-}
+import type { RailItem } from './type';
 
 export function CustomizPanel({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
@@ -210,7 +113,13 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled)
+      railGroups({
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        voiceEnabled,
+        reviewEnabled,
+      })
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
