@@ -719,6 +719,194 @@ test('two session handles resolve independent runtimes: A.send never crosses to 
   expect(aAbortCall?.url).not.toContain('sb-B');
 });
 
+test('send applies persisted session defaults when the OpenCode pin came from a snapshot', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-INHERITED/start')) {
+      return jsonResponse(sessionStartPayload('sb-inherited', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-INHERITED')) {
+      return jsonResponse({
+        session_id: 'SESS-INHERITED',
+        agent_name: 'kortix',
+        metadata: { opencode_model: 'kortix/glm-5.2' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
+
+  const promptCall = calls.find((call) => call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(promptCall?.body).toMatchObject({
+    agent: 'kortix',
+    model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    parts: [{ type: 'text', text: 'hello from inherited state' }],
+  });
+});
+
+test('changeModel invalidates the persisted default before the next send', async () => {
+  let persistedModel = 'kortix/glm-5.2';
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    const body = bodyText ? JSON.parse(bodyText) : undefined;
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body,
+    });
+    if (url.includes('/sessions/SESS-MODEL-CHANGE/start')) {
+      return jsonResponse(sessionStartPayload('sb-model-change', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
+      persistedModel = body.opencode_model;
+      return jsonResponse({
+        opencode_model: persistedModel,
+        applied_live: true,
+      });
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE')) {
+      return jsonResponse({
+        session_id: 'SESS-MODEL-CHANGE',
+        agent_name: 'kortix',
+        metadata: { opencode_model: persistedModel },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-MODEL-CHANGE');
+  await handle.send('before change');
+  await handle.changeModel('kortix/gpt-5.6-mini');
+  await handle.send('after change');
+
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts.map((call) => call.body)).toEqual([
+    expect.objectContaining({
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    }),
+    expect.objectContaining({
+      model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
+    }),
+  ]);
+});
+
+test('per-call and handle prompt choices override persisted session defaults', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-OVERRIDES/start')) {
+      return jsonResponse(sessionStartPayload('sb-overrides', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES')) {
+      return jsonResponse({
+        session_id: 'SESS-OVERRIDES',
+        agent_name: 'persisted-agent',
+        metadata: { opencode_model: 'persisted/model' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-OVERRIDES');
+  await handle.send('persisted');
+  handle.setModel({ providerID: 'sticky', modelID: 'model' });
+  handle.setAgent('sticky-agent');
+  await handle.send('sticky');
+  await handle.send('per-call', {
+    model: { providerID: 'per-call', modelID: 'model' },
+    agent: 'per-call-agent',
+  });
+
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts.map((call) => call.body)).toEqual([
+    expect.objectContaining({
+      model: { providerID: 'persisted', modelID: 'model' },
+      agent: 'persisted-agent',
+    }),
+    expect.objectContaining({
+      model: { providerID: 'sticky', modelID: 'model' },
+      agent: 'sticky-agent',
+    }),
+    expect.objectContaining({
+      model: { providerID: 'per-call', modelID: 'model' },
+      agent: 'per-call-agent',
+    }),
+  ]);
+  expect(calls.filter((call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET')).toHaveLength(1);
+});
+
+test('a failed persisted-default read is retried by the next send', async () => {
+  let sessionReads = 0;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-DEFAULT-RETRY/start')) {
+      return jsonResponse(sessionStartPayload('sb-default-retry', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY')) {
+      sessionReads += 1;
+      if (sessionReads <= 3) throw new TypeError('transient session read failure');
+      return jsonResponse({
+        session_id: 'SESS-DEFAULT-RETRY',
+        agent_name: 'persisted-agent',
+        metadata: { opencode_model: 'persisted/model' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-DEFAULT-RETRY');
+  await expect(handle.send('first')).rejects.toThrow('transient session read failure');
+  await handle.send('second');
+
+  expect(sessionReads).toBe(4);
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]?.body).toMatchObject({
+    model: { providerID: 'persisted', modelID: 'model' },
+    agent: 'persisted-agent',
+    parts: [{ type: 'text', text: 'second' }],
+  });
+});
+
 test('previewUrl uses the handle\'s own sandbox id, not whichever session resolved last', async () => {
   globalThis.fetch = mockTwoSessionRuntimes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });

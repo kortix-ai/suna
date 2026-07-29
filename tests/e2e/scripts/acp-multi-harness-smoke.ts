@@ -80,6 +80,11 @@ type HarnessEvidence = {
   guest_timing: unknown;
 };
 
+type SessionCreateError = {
+  error?: string;
+  code?: string;
+};
+
 const repoRoot = resolve(import.meta.dir, '../../..');
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -399,6 +404,39 @@ async function readSession(token: string, sessionId: string): Promise<ProjectSes
   return api<ProjectSession>(token, 'GET', `/projects/${projectId}/sessions/${sessionId}`);
 }
 
+async function createSessionAfterManifestConvergence(
+  token: string,
+  harness: Harness,
+  body: Record<string, unknown>,
+): Promise<ProjectSession> {
+  const maxAttempts = 15;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await apiResult<ProjectSession & SessionCreateError>(
+      apiBase,
+      token,
+      'POST',
+      `/projects/${projectId}/sessions`,
+      body,
+    );
+    if (result.status === 201 && result.json?.session_id) return result.json;
+
+    const isManifestConvergence =
+      result.status === 409 && result.json?.code === 'ACP_RUNTIME_REQUIRED';
+    if (!isManifestConvergence || attempt === maxAttempts) {
+      throw new Error(
+        `${harness} session create returned ${result.status}: ${JSON.stringify(result.json)}`,
+      );
+    }
+
+    log(
+      harness,
+      `manifest convergence returned 409 ACP_RUNTIME_REQUIRED; retrying create (${attempt}/${maxAttempts})`,
+    );
+    await Bun.sleep(1_000);
+  }
+  throw new Error(`${harness} session create exhausted the manifest convergence retry`);
+}
+
 async function waitForReady(
   token: string,
   sessionId: string,
@@ -472,21 +510,15 @@ async function verifyHarness(token: string, harness: Harness): Promise<HarnessEv
   const secondMarker = `${harness.toUpperCase()}_FOLLOWUP_${markerSuffix}`;
   const restartMarker = `${harness.toUpperCase()}_RESTART_${markerSuffix}`;
   const createStartedAt = performance.now();
-  const created = await api<ProjectSession>(
-    token,
-    'POST',
-    `/projects/${projectId}/sessions`,
-    {
-      name: `${harness} ACP smoke`,
-      agent_name: assertOpenCodeForkIsolation ? 'kortix' : harness,
-      ...(!assertOpenCodeForkIsolation
-        ? { initial_prompt: `Reply with exactly ${firstMarker}` }
-        : {}),
-      ...(sandboxProvider ? { provider: sandboxProvider } : {}),
-      ...(runtimeModel ? { opencode_model: runtimeModel } : {}),
-    },
-    201,
-  );
+  const created = await createSessionAfterManifestConvergence(token, harness, {
+    name: `${harness} ACP smoke`,
+    agent_name: assertOpenCodeForkIsolation ? 'kortix' : harness,
+    ...(!assertOpenCodeForkIsolation
+      ? { initial_prompt: `Reply with exactly ${firstMarker}` }
+      : {}),
+    ...(sandboxProvider ? { provider: sandboxProvider } : {}),
+    ...(runtimeModel ? { opencode_model: runtimeModel } : {}),
+  });
   const sessionId = created.session_id;
   sessionIds.push(sessionId);
   assert(
@@ -687,10 +719,6 @@ function verifyOpenCodeForkIsolation(evidence: HarnessEvidence[]): void {
     first.sandbox_external_id !== second.sandbox_external_id,
     'OpenCode fork sessions share one sandbox external_id',
   );
-  assert(
-    first.opencode_session_id !== second.opencode_session_id,
-    'OpenCode fork sessions share one /start opencode_session_id',
-  );
   if (!readinessOnly) {
     assert(
       second.markers.every((marker) => !first.transcript.includes(marker)),
@@ -703,7 +731,7 @@ function verifyOpenCodeForkIsolation(evidence: HarnessEvidence[]): void {
   }
   log(
     'opencode-fork-isolation',
-    `PASS session_a=${first.project_session_id} opencode_a=${first.opencode_session_id} session_b=${second.project_session_id} opencode_b=${second.opencode_session_id}`,
+    `PASS session_a=${first.project_session_id} opencode_a=${first.opencode_session_id} session_b=${second.project_session_id} opencode_b=${second.opencode_session_id} inherited_pin_equal=${first.opencode_session_id === second.opencode_session_id}`,
   );
 }
 

@@ -110,6 +110,12 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+For OpenCode REST sessions, `send()` reads the persisted session model and
+agent before the first prompt on a handle. This prevents a snapshot-inherited
+OpenCode session from reusing stale snapshot defaults. A per-call choice
+overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
+persisted session default.
+
 ### React runtime transport
 
 `useSession(projectId, sessionId)` uses the transport selected by `POST /start`.

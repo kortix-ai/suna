@@ -128,8 +128,9 @@ prompt dispatch and model latency.
 Set `E2E_ACP_OPENCODE_FORK_ISOLATION=1` to create two OpenCode sessions in
 parallel from one version 2 compatibility-project snapshot. Version 3 projects
 use ACP identity instead of `opencode_session_id`. This mode verifies distinct
-Kortix session, sandbox, provider, and OpenCode identities. It also sends unique
-markers and rejects cross-session transcript content. The public
+Kortix session and sandbox identities. It accepts an equal snapshot-inherited
+`opencode_session_id` only when the sandbox-scoped transcripts remain isolated.
+It sends unique markers and rejects cross-session transcript content. The public
 `createKortix().session().ensureReady()` result must match each authoritative
 `/start` `opencode_session_id`.
 

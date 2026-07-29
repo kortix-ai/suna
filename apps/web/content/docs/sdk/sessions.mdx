@@ -92,6 +92,16 @@ await s.send('One-off task', { model, agent }); // overrides for this call only
 await s.abort(); // stop the current run
 ```
 
+For OpenCode REST sessions, the first `send()` on a handle reads the model and
+agent persisted on the Kortix session. This prevents a snapshot-inherited
+OpenCode session from reusing stale snapshot defaults.
+
+Prompt choice precedence is:
+
+1. The `send()` call.
+2. The handle's `setModel()` or `setAgent()` value.
+3. The persisted Kortix session default.
+
 `setModel` only chooses what the next local `send` asks for — it never leaves the
 handle. To **persist** a new model for a running session server-side, use
 `changeModel`:
