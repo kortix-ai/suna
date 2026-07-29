@@ -200,5 +200,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --filter "kortix-api..."
 
+      # Not test:coverage. Writing an lcov report across 459 isolated processes
+      # made bun die with "An internal error occurred (WriteFailed)" AFTER the
+      # last test finished — which swallowed the `Ran N tests` summary and left
+      # a failure that had nothing to do with any test. Nothing in this repo
+      # consumes apps/api/coverage, so the report was pure cost. `COVERAGE=1`
+      # still works locally.
       - name: Run api unit + e2e suite
-        run: pnpm --filter kortix-api test:coverage
+        run: pnpm --filter kortix-api test
