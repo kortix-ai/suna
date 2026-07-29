@@ -1,5 +1,9 @@
-// Post-auth landing goes to the projects list.
-const DEFAULT_AUTH_RETURN_URL = '/projects';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+
+// Post-auth landing goes to a project, never to the projects list. The landing
+// door paints immediately and resolves (or provisions) the project behind the
+// UI, so no auth path has to block on the backend to build this redirect.
+const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',

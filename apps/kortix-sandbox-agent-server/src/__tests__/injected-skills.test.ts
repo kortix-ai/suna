@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ensureInjectedManagedSkills } from '../injected-skills'
+import {
+  ensureInjectedManagedSkills,
+  managedSkillConfigDirs,
+} from '../injected-skills'
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -60,5 +63,56 @@ describe('ensureInjectedManagedSkills', () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('managedSkillConfigDirs', () => {
+  it('returns every native project skill directory for the selected harness', () => {
+    expect(
+      managedSkillConfigDirs({
+        workspace: '/workspace',
+        opencodeConfigDir: '/workspace/.kortix/opencode',
+        harness: 'claude',
+        runtimeConfigDir: '.claude',
+      }),
+    ).toEqual([
+      '/workspace/.kortix/opencode',
+      '/workspace/.claude',
+    ])
+
+    expect(
+      managedSkillConfigDirs({
+        workspace: '/workspace',
+        opencodeConfigDir: '/workspace/.kortix/opencode',
+        harness: 'codex',
+        runtimeConfigDir: '.codex',
+      }),
+    ).toEqual([
+      '/workspace/.kortix/opencode',
+      '/workspace/.agents',
+    ])
+
+    expect(
+      managedSkillConfigDirs({
+        workspace: '/workspace',
+        opencodeConfigDir: '/workspace/.kortix/opencode',
+        harness: 'pi',
+        runtimeConfigDir: '.pi',
+      }),
+    ).toEqual([
+      '/workspace/.kortix/opencode',
+      '/workspace/.pi',
+    ])
+  })
+
+  it('deduplicates OpenCode and resolves an absolute runtime config directory', () => {
+    expect(
+      managedSkillConfigDirs({
+        workspace: '/workspace',
+        opencodeConfigDir: '/workspace/.kortix/opencode',
+        harness: 'opencode',
+        runtimeConfigDir: '/workspace/.kortix/opencode',
+      }),
+    ).toEqual(['/workspace/.kortix/opencode'])
   })
 })

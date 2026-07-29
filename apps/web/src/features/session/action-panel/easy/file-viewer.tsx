@@ -24,9 +24,12 @@ import { DocMarkdown } from '@/components/markdown/doc-markdown';
 import { Button } from '@/components/ui/button';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast } from '@/components/ui/toast';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import {
+  RuntimeNotBoundError,
   downloadFile,
   isBrowserViewable,
   openFileInNewTab,
@@ -41,13 +44,13 @@ import {
   Download,
   ExternalLink,
   Eye,
-  Loader2,
   Maximize2,
   MessageSquarePlus,
   Minimize2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import { type ShareContext, ShareFileButton } from './viewer-actions';
 
 type View = 'preview' | 'source';
 
@@ -145,7 +148,7 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {downloading ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="size-3.5 shrink-0" />
         ) : (
           <Download className="size-3.5" />
         )}
@@ -169,8 +172,11 @@ export function OpenInNewTabButton({ path }: { path: string }) {
     setOpening(true);
     try {
       await openFileInNewTab(path);
-    } catch {
-      // The browser reports its own failure; the button just needs to recover.
+    } catch (error) {
+      // A blob URL could only ever fail in the browser, which reported it
+      // itself. A real URL can fail because the runtime has no sandbox bound,
+      // and only we know that — so say so instead of looking like a dead button.
+      if (error instanceof RuntimeNotBoundError) errorToast(error.message);
     } finally {
       setOpening(false);
     }
@@ -188,7 +194,7 @@ export function OpenInNewTabButton({ path }: { path: string }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {opening ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="size-3.5 shrink-0" />
         ) : (
           <ExternalLink className="size-3.5" />
         )}
@@ -201,6 +207,7 @@ export function FileViewer({
   content,
   fileName,
   path,
+  shareContext,
   onClose,
   onAskForChanges,
   className,
@@ -209,6 +216,11 @@ export function FileViewer({
   fileName: string;
   /** Sandbox path — needed to download the real bytes. */
   path?: string;
+  /** Forwarded to the toolbar's share control, exactly as `PreviewShell` does.
+   *  This toolbar and `PreviewShell`'s are required to render the same controls
+   *  (see the contract in `viewer-actions.tsx`); omitting it here is what left
+   *  every text and markdown file with no way to produce a public link. */
+  shareContext?: ShareContext;
   onClose?: () => void;
   /** Seeds the composer with a starter line about this file and closes the
    *  detail (W12). Omitted entirely (not disabled) where there's no session
@@ -285,6 +297,7 @@ export function FileViewer({
           )}
           <CopyButton code={content} />
           {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
+          <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
           {path && <DownloadButton path={path} fileName={fileName} />}
           {/* The store flip is a no-op on mobile — the drawer never reads
               `isExpanded` — so the control was dead weight there. */}

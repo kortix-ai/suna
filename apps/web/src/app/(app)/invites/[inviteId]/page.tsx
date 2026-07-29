@@ -20,6 +20,8 @@ import {
   describeAccountInvite,
   type AccountInviteDescribe,
 } from '@kortix/sdk';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
@@ -59,9 +61,11 @@ export default function InvitePage() {
       return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
     },
     onSuccess: () => {
-      // Land a newly-joined member on their projects, not the account settings
-      // page — they came here to start working, not to manage the account.
-      router.replace('/projects');
+      // Land a newly-joined member straight in a project of the account they
+      // just joined, not the account settings page and not the projects list.
+      // The door (not the remembered project) because that cookie still names a
+      // project in the account they came from.
+      router.replace(PROJECT_LANDING_PATH);
     },
   });
 
@@ -82,9 +86,9 @@ export default function InvitePage() {
     const inv = item?.invite;
     // Only auto-redirect the actual recipient. Strangers with a link hit the
     // "wrong account" state instead. Auto-claimed invites (already accepted on
-    // first sign-in) land on /projects too — same destination as a manual accept.
+    // first sign-in) use the same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace('/projects');
+    router.replace(PROJECT_LANDING_PATH);
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {
@@ -106,7 +110,7 @@ export default function InvitePage() {
             {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
           </StateHeading>
           <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -139,7 +143,7 @@ export default function InvitePage() {
           <p className="text-foreground/30 mt-4 text-xs">
             {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
           </p>
-          <GhostAction onClick={() => router.replace('/projects')}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -161,7 +165,7 @@ export default function InvitePage() {
               'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
             )}
           </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
+          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>

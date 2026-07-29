@@ -28,9 +28,17 @@ import { fireConfetti } from '@/lib/confetti';
 import { isBillingEnabled } from '@/lib/config';
 import {
   ensureFirstProject,
-  hasFirstProjectBootstrapSignal,
+  isAutoProjectSuppressed,
+  isManagedGitUnavailableError,
+  navigationMayCreateProject,
   shouldAutoCreateFirstProject,
+  suppressAutoProjectAfterDelete,
 } from '@/lib/onboarding/ensure-first-project';
+import {
+  clearLastProjectId,
+  readLastProjectId,
+  writeLastProjectId,
+} from '@/lib/onboarding/last-project-cookie';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import {
@@ -94,9 +102,6 @@ export default function ProjectsPage() {
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
   const [cloneSourceItemId, setCloneSourceItemId] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const [firstProjectBootstrapRequested, setFirstProjectBootstrapRequested] = useState(() => {
-    return hasFirstProjectBootstrapSignal(searchParams);
-  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -255,9 +260,11 @@ export default function ProjectsPage() {
         .filter((group) => group.projects.length > 0)
     : [];
 
-  // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
-  // first project. A normal empty projects list can come from deleting the last
-  // project, and must stay empty instead of recreating it.
+  // ── Onboarding: an empty account provisions its first project automatically,
+  // so "create your first project" is never a step the user has to perform. The
+  // one exception is the empty list you get by deleting your last project —
+  // `suppressAutoProjectAfterDelete` marks that so the app does not immediately
+  // undo the delete.
   const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,
@@ -269,7 +276,6 @@ export default function ProjectsPage() {
     const accountId = activeAccountId;
     if (
       !shouldAutoCreateFirstProject({
-        bootstrapRequested: firstProjectBootstrapRequested,
         activeAccountId: accountId,
         canCreateProjects,
         autoCreateAttempted: accountId ? autoCreateAttempted.current.has(accountId) : false,
@@ -283,6 +289,7 @@ export default function ProjectsPage() {
         billingEnabled: isBillingEnabled(),
         accountStateLoading,
         canRun: !!accountState?.credits?.can_run,
+        suppressedAfterDelete: isAutoProjectSuppressed(),
       })
     ) {
       return;
@@ -290,22 +297,33 @@ export default function ProjectsPage() {
     if (!accountId) return;
 
     autoCreateAttempted.current.add(accountId);
-    setFirstProjectBootstrapRequested(false);
     setAutoCreating(true);
-    ensureFirstProject(accountId)
+    ensureFirstProject(accountId, {
+      preferredProjectId: readLastProjectId(user?.id),
+      // Same CWE-352 gate as the landing door: a cross-site link must not be
+      // able to mint a managed git repo just because the visitor is signed in.
+      allowCreate: navigationMayCreateProject(),
+    })
       .then((project) => {
         if (!project) {
           setAutoCreating(false);
-          setCreateAccountId(accountId);
-          setModalOpen(true);
           return;
         }
+        writeLastProjectId(user?.id, project.project_id);
         queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
         router.replace(`/projects/${project.project_id}`);
       })
       .catch((err) => {
         autoCreateAttempted.current.delete(accountId);
         setAutoCreating(false);
+        // Managed git not configured (self-host with no MANAGED_GIT_*) is an
+        // operator state, not a user error: fall back to the manual create flow
+        // so the BYO-repo path stays reachable instead of dead-ending.
+        if (isManagedGitUnavailableError(err)) {
+          setCreateAccountId(accountId);
+          setModalOpen(true);
+          return;
+        }
         console.error('[onboarding] auto-create first project failed', err);
       });
   }, [
@@ -315,7 +333,6 @@ export default function ProjectsPage() {
     projectsQuery.isLoading,
     projectsQuery.isError,
     projectsQuery.data,
-    firstProjectBootstrapRequested,
     accountStateLoading,
     accountState?.credits?.can_run,
     queryClient,
@@ -327,6 +344,14 @@ export default function ProjectsPage() {
     onMutate: (projectId) => setArchivingId(projectId),
     onSettled: () => setArchivingId(null),
     onSuccess: (_data, projectId) => {
+      // Archiving the LAST project must leave the account empty. Without this
+      // the auto-provision effect below would see projectCount === 0 and
+      // immediately recreate a project, undoing the delete the user just
+      // confirmed. Scoped to this tab — see suppressAutoProjectAfterDelete.
+      if ((projectsQuery.data?.length ?? 0) <= 1) {
+        suppressAutoProjectAfterDelete();
+      }
+      if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');

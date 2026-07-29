@@ -42,6 +42,45 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('an end-user-filtered project scope drops rows the manager cannot open', () => {
+    // scope=project normally returns inaccessible rows with the end-user label
+    // redacted. Pairing that with ?end_user_ref= would turn it into an oracle:
+    // send a guessed handle, count the rows, learn whether that end-user exists
+    // here. An end-user-scoped question gets end-user-scoped rows.
+    const privateOther = row('private-other', { createdBy: OTHER_ID });
+    const mine = row('mine', { createdBy: VIEWER_ID });
+
+    const filtered = selectSessionRowsForViewer({
+      rows: [privateOther, mine],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: true,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(filtered.items.map((item) => item.row.sessionId)).toEqual(['mine']);
+
+    // ...and the unfiltered inventory is unchanged — a manager asking for the
+    // whole project still gets the whole project.
+    const unfiltered = selectSessionRowsForViewer({
+      rows: [privateOther, mine],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: false,
+      runtimeStatusBySession: new Map(),
+    });
+    expect(unfiltered.items.map((item) => item.row.sessionId)).toEqual([
+      'private-other',
+      'mine',
+    ]);
+  });
+
   test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
@@ -60,6 +99,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      endUserRefFiltered: false,
     runtimeStatusBySession: new Map(),
     });
 
@@ -92,6 +132,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      endUserRefFiltered: false,
     runtimeStatusBySession: new Map(),
     });
 
@@ -114,6 +155,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      endUserRefFiltered: false,
     runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
@@ -198,6 +240,7 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject: wrapperSubject,
       grantsBySession: new Map(),
       callerSessionId,
+      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
 
@@ -236,6 +279,7 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: mine.sessionId,
+      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
     expect(selected.items.every((item) => item.canAccess)).toBe(true);

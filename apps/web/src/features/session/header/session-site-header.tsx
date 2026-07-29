@@ -20,7 +20,6 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
-import { useChatDetail } from '@/features/session/activity/chat-detail';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -45,11 +44,9 @@ import {
   MoreHorizontal,
   PanelLeft,
   PanelRight,
-  ListTree,
   RotateCcw,
   Square,
   SquareTerminal,
-  Text,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -135,7 +132,6 @@ export function SessionSiteHeader({
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
   const readyChip = useReadyChip();
-  const { detail: chatDetail, toggle: toggleChatDetail } = useChatDetail();
 
   return (
     <>
@@ -278,23 +274,6 @@ export function SessionSiteHeader({
                   the first two groups always have at least Rename and
                   Restart, and the transcript group is unconditional. */}
               <DropdownMenuContent align="end" className="w-56">
-                {/* Reading depth. It lived as a persistent button above the
-                    transcript, which spent permanent chat real estate on a
-                    setting most people touch once. It belongs with the other
-                    per-session view actions. */}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    toggleChatDetail();
-                  }}
-                >
-                  {chatDetail === 'full' ? <Text /> : <ListTree />}
-                  {chatDetail === 'full' ? 'Hide full history' : 'Show full history'}
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator />
-
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem

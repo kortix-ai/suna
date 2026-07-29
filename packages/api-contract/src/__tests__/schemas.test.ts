@@ -235,6 +235,20 @@ describe('ProjectSessionSchema', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
 
+  test('accepts immutable ACP runtime identity', () => {
+    expect(() =>
+      ProjectSessionSchema.strict().parse(
+        sessionFixture({
+          runtime_transport: 'acp',
+          runtime_harness: 'codex',
+          native_agent: 'reviewer',
+          acp_server_id: 'server-1',
+          acp_session_id: 'native-1',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   test.each([
     { mode: 'project' },
     { mode: 'private', ownerId: 'u1' },
@@ -282,10 +296,9 @@ describe('warm project session schemas', () => {
         sandbox_slug: 'default',
       }).success,
     ).toBe(true);
-    expect(
-      ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' })
-        .success,
-    ).toBe(false);
+    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
+      false,
+    );
   });
 });
 

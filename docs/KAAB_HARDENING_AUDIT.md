@@ -1,5 +1,9 @@
 # KaaB hardening audit
 
+> **Historical audit scope.** This audit predates v3 multi-harness delivery.
+> OpenCode-specific findings remain compatibility evidence. They do not define
+> Claude Code, Codex, or Pi runtime behavior.
+
 Method: a 35-agent adversarial audit of every Kortix-as-a-Backend edge case
 (plan `docs/KORTIX_AS_BACKEND_V1_PLAN.md` §4.1–4.11) against current `main` plus
 the 6 open hardening PRs (#5259, #5267, #5271, #5272, #5273, #5275). Every

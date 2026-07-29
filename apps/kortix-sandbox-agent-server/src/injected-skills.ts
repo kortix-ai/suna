@@ -1,5 +1,6 @@
-import { access, constants, cp, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { constants, access, cp, readdir } from 'node:fs/promises'
+import { isAbsolute, join, resolve } from 'node:path'
+import type { AcpHarnessId } from './acp/harness-registry'
 import { logger } from './logger'
 
 /**
@@ -9,6 +10,34 @@ import { logger } from './logger'
  * work. Each subdirectory is a skill folder (`<name>/SKILL.md`, references, …).
  */
 const BAKED_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
+
+export interface ManagedSkillConfigDirsInput {
+  workspace: string
+  opencodeConfigDir: string
+  harness: AcpHarnessId | null
+  runtimeConfigDir?: string | null
+}
+
+/**
+ * Return the native config directories that must receive managed Kortix skills.
+ *
+ * OpenCode reads `<config>/skills`. Claude Code reads `<CLAUDE_CONFIG_DIR>/skills`.
+ * Pi reads `<PI_CODING_AGENT_DIR>/skills`. Codex reads repo-scoped skills from
+ * `<workspace>/.agents/skills`, independently of `CODEX_HOME`.
+ */
+export function managedSkillConfigDirs(input: ManagedSkillConfigDirsInput): string[] {
+  const dirs = [input.opencodeConfigDir]
+  if (input.harness === 'codex') {
+    dirs.push(join(input.workspace, '.agents'))
+  } else if (
+    (input.harness === 'claude' || input.harness === 'pi') &&
+    input.runtimeConfigDir?.trim()
+  ) {
+    const configDir = input.runtimeConfigDir.trim()
+    dirs.push(isAbsolute(configDir) ? configDir : resolve(input.workspace, configDir))
+  }
+  return [...new Set(dirs)]
+}
 
 async function pathExists(p: string): Promise<boolean> {
   try {
@@ -20,7 +49,7 @@ async function pathExists(p: string): Promise<boolean> {
 }
 
 /**
- * Always-inject the Kortix system skills into the session's OpenCode skills dir.
+ * Inject the Kortix system skills into one harness-native config directory.
  *
  * `kortix-cli` (and the rest of the `kortix-*` family) is the one thing Kortix
  * guarantees to every agent: it must be present AND current no matter what the

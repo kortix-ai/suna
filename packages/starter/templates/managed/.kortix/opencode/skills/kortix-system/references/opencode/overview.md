@@ -1,7 +1,11 @@
 # OpenCode reference — overview
 
-OpenCode is the agent runtime that powers every Kortix session. The
-same `.kortix/opencode/` config dir drives both surfaces:
+OpenCode is one supported Kortix runtime harness. Version 2 uses OpenCode REST.
+Version 3 can select OpenCode ACP, Claude Code, Codex, or Pi. This directory is
+the complete OpenCode-specific reference. It does not define other harnesses.
+
+When a project selects OpenCode, the same `.kortix/opencode/` config directory
+can drive both surfaces:
 
 - **Remote** — when a Kortix session boots, the platform points OpenCode
   at this dir via `OPENCODE_CONFIG_DIR=.kortix/opencode` and launches
@@ -9,8 +13,9 @@ same `.kortix/opencode/` config dir drives both surfaces:
 - **Local** — when you (or anyone) runs `opencode` in this repo on
   their machine, the same config dir drives that session too.
 
-So whatever you add here works in both places — no two parallel sets
-of configs to keep in sync.
+OpenCode-specific files can therefore serve both local and remote OpenCode.
+Claude Code, Codex, and Pi use their own native configuration directories. See
+`../kortix/runtime-harnesses.md` for the multi-harness contract.
 
 This folder mirrors the upstream OpenCode docs as standalone Markdown
 files so an agent can read them without a network fetch. Pages are
@@ -49,8 +54,9 @@ rooted there.
 
 ## The contract with Kortix
 
-OpenCode owns everything under `.kortix/opencode/`. The Kortix platform
-never reads any of it — those files only matter to OpenCode itself.
+OpenCode owns the behavior under `.kortix/opencode/`. Kortix can inspect agent
+metadata and overlays current managed system skills, but it does not reinterpret
+OpenCode prompts, permissions, tools, providers, or plugins.
 
 Conversely, Kortix-specific config (triggers, secrets schema, sandbox
 image, project metadata) lives in `kortix.yaml` at

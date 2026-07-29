@@ -92,7 +92,8 @@ exact dev command or interaction in the final response.
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-OpenCode runtime, SSE streaming, model state, and auth-token plumbing. The apps
+session runtime, OpenCode REST compatibility, ACP, SSE streaming, model state,
+and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
@@ -118,13 +119,14 @@ these as standing rules whenever you touch the data/runtime layer:
   JWT for the logged-in web app. Hosts never instantiate a second client.
 - **A whole session is one hook.** `useSession(projectId, sessionId)` owns the
   entire runtime lifecycle — `/start`, the sandbox switch, the live SSE stream,
-  readiness seeding, the canonical OpenCode id, and message sync. Hosts don't
+  readiness seeding, immutable runtime identity, the native conversation id,
+  and message sync. Hosts don't
   hand-roll the mount, drive a server-store "switch", or mount a separate event
   provider.
-- **Session-scoped + provider-agnostic.** The public API is session-scoped
+- **Session-scoped + harness/provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  "Sandbox" and the provider (daytona / …) are server-side
-  concerns; client code must never branch on them.
+  The sandbox provider and selected OpenCode, Claude Code, Codex, or Pi harness
+  are server-side concerns. Host code must not branch on them.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/stores/server-store`, `lib/projects-client`, and
   `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).
@@ -181,9 +183,10 @@ mocked internals when a real surface exists.
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
 - **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
   Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
-  session gets its own sandbox; `session_id == sandbox_id`. The OpenCode runtime inside a sandbox is reached via the API
-  proxy: `http://localhost:8008/v1/p/<external_id>/8000/...` (SSE event stream
-  at `…/event`).
+  session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
+  reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
+  OpenCode REST uses the compatibility proxy. ACP sessions use
+  `/kortix/acp/<acp_server_id>` for JSON-RPC and SSE.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 

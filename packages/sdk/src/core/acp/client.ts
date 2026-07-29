@@ -1,13 +1,14 @@
 import { authenticatedFetch } from '../http/auth';
 import {
-  AcpRpcError,
-  AcpTransportError,
   type AcpContentBlock,
   type AcpEnvelope,
   type AcpJsonRpcId,
   type AcpResponse,
+  AcpRpcError,
   type AcpStreamEvent,
   type AcpStreamHandle,
+  type AcpTranscript,
+  AcpTransportError,
 } from './types';
 
 export { AcpRpcError, AcpTransportError } from './types';
@@ -162,6 +163,24 @@ export class AcpClient {
     });
   }
 
+  initialize() {
+    return this.request<Record<string, unknown>>('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: {
+        fs: { readTextFile: true, writeTextFile: true },
+        terminal: true,
+      },
+      clientInfo: { name: '@kortix/sdk', version: '0.3.0' },
+    });
+  }
+
+  newSession(input: { cwd: string; mcpServers?: unknown[] }) {
+    return this.request<{ sessionId: string } & Record<string, unknown>>('session/new', {
+      ...input,
+      mcpServers: input.mcpServers ?? [],
+    });
+  }
+
   loadSession(input: { sessionId: string; cwd: string; mcpServers?: unknown[] }) {
     return this.request<Record<string, unknown>>('session/load', {
       ...input,
@@ -199,6 +218,20 @@ export class AcpClient {
       configId,
       value,
     });
+  }
+
+  async transcript(after?: number): Promise<AcpTranscript> {
+    const response = await this.fetcher(
+      `${this.endpoint}/transcript${after ? `?after=${after}` : ''}`,
+    );
+    if (!response.ok) {
+      throw new AcpTransportError(
+        `ACP transcript failed with HTTP ${response.status}`,
+        response.status,
+        isTerminalStatus(response.status),
+      );
+    }
+    return response.json() as Promise<AcpTranscript>;
   }
 
   connect(options: {

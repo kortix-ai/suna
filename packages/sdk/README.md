@@ -93,7 +93,7 @@ await s.rewind(userMessageId);        // stages a reversible rollback on this se
 await s.restoreRewind();              // restores the removed path before the next prompt
 await s.previews();
 
-// Lower level: the typed opencode client for THIS session's runtime.
+// Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
 // `.runtime` throws until the runtime is resolved, and the runtime is keyed by
 // the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
 const { opencodeSessionId } = await s.ensureReady();
@@ -104,12 +104,16 @@ await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 
 `useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
 The default is the OpenCode REST client. A project with the `acp_runtime`
-experiment uses OpenCode ACP through the authenticated sandbox bridge.
-The hook keeps one return shape for both transports. It routes messages,
-message rewind and restore, cancellation, commands, permissions, and questions
-inside the SDK. A host does not construct ACP routes or branch on the selected
-transport. Disable `acp_runtime` to return that project to REST without a
-frontend deployment.
+experiment uses ACP through the authenticated sandbox bridge. A v3 session can
+select OpenCode, Claude Code, Codex, or Pi. The hook keeps one return shape
+across transports and harnesses. It routes messages, message rewind and restore,
+cancellation, commands, permissions, and questions inside the SDK. A host does
+not construct ACP routes or branch on `runtime_harness`.
+
+`POST /start` also returns the immutable runtime identity:
+`runtime_name`, `runtime_harness`, `native_agent`, `acp_server_id`, and
+`acp_session_id`. Restart and resume keep that identity. Disable `acp_runtime`
+to use OpenCode REST for new compatible sessions.
 
 ## The facade surface
 
@@ -124,8 +128,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
-| `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -201,7 +205,8 @@ restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.
 
-`session.stream()` is a thin facade over the framework-free `openEventStream`
+For OpenCode REST sessions, `session.stream()` is a thin facade over the
+framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
 themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
 to that runtime's SSE endpoint, and hands you a `close()`-able handle. No React
@@ -216,6 +221,10 @@ const handle = await kortix.session(pid, sid).stream({
 // later, to stop:
 handle.close();
 ```
+
+`session.stream()` emits OpenCode v2 events. It is not the harness-neutral ACP
+stream. Use `useSession()` in React. Framework-free ACP consumers can build an
+`AcpSessionController` through the public ACP exports.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -447,6 +456,6 @@ pnpm --filter @kortix/sdk typecheck  # package + examples/ (examples/tsconfig.js
 pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript, session url/health, projects-client domains
 ```
 
-See **`API-MAP.md`** for the complete endpoint catalogue (REST + opencode runtime)
-and per-domain SDK coverage status, and **`CHANGELOG.md`** for what changed per
-release.
+See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
+REST API, ACP, and OpenCode REST compatibility. See **`CHANGELOG.md`** for
+per-release changes.

@@ -4,6 +4,7 @@ import {
   Res,
   isKe2eRetryableError,
   isKe2eTransientGatewayResponse,
+  ke2eRetryDelayMs,
 } from '../src/core/client';
 import { waitFor } from '../src/core/poll';
 import type { Captured } from '../src/core/result';
@@ -186,6 +187,49 @@ describe('release gate transient failure resilience', () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it('marks an unexpected host-level gateway status for a clean flow retry', () => {
+    const response = capturedResponse(503, {
+      'content-type': 'application/json',
+      'retry-after': '30',
+      'x-maintenance-mode': 'blocking',
+    });
+
+    let error: unknown;
+    try {
+      response.status(200);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(isKe2eRetryableError(error)).toBe(true);
+    expect(ke2eRetryDelayMs(error)).toBe(15_000);
+  });
+
+  it('caps a host-requested retry delay at 15 seconds', () => {
+    const error = Object.assign(new Error('transient gateway status 503'), {
+      ke2eRetryable: true,
+      ke2eRetryAfterMs: 180_000,
+    });
+
+    expect(ke2eRetryDelayMs(error)).toBe(15_000);
+  });
+
+  it('does not mark an API contract 503 for retry', () => {
+    const response = capturedResponse(503, {
+      'content-type': 'application/json',
+      'x-request-id': 'request-1',
+    });
+
+    let error: unknown;
+    try {
+      response.status(200);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(isKe2eRetryableError(error)).toBe(false);
   });
 
   it('retries an opted-in host-level 502 response', async () => {

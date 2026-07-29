@@ -25,6 +25,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 interface NavItem {
   href: string;
@@ -95,7 +96,7 @@ export function AdminSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={tHardcodedUi.raw('appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole')}
-              onClick={() => router.push('/projects')}
+              onClick={() => router.push(PROJECT_LANDING_PATH)}
             >
               <ArrowLeft />
               <span>{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}</span>

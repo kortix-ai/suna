@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 
 import { CANONICAL_SKILL, wireCodingAgents } from '../agents';
 
@@ -20,10 +29,10 @@ afterEach(() => {
 });
 
 describe('wireCodingAgents', () => {
-  test('all agents → symlinks for opencode/claude/codex(.agents) + a single AGENTS.md', () => {
+  test('all agents → native skill links for opencode/claude/codex/pi + one AGENTS.md', () => {
     const result = wireCodingAgents({
       repoRoot: dir,
-      agents: ['opencode', 'claude', 'codex', 'cursor'],
+      agents: ['opencode', 'claude', 'codex', 'pi', 'cursor'],
       overwrite: false,
     });
 
@@ -33,13 +42,14 @@ describe('wireCodingAgents', () => {
         '.agents → .kortix/opencode',
         '.claude → .kortix/opencode',
         '.opencode → .kortix/opencode',
+        '.pi → .kortix/opencode',
         'AGENTS.md',
       ].sort(),
     );
 
     // Each link is a real symlink pointing straight at the OpenCode config dir.
     // codex wires `.agents` (its documented, cross-tool skills dir), not `.codex`.
-    for (const link of ['.opencode', '.claude', '.agents']) {
+    for (const link of ['.opencode', '.claude', '.agents', '.pi']) {
       expect(lstatSync(join(dir, link)).isSymbolicLink()).toBe(true);
       expect(readlinkSync(join(dir, link))).toBe('.kortix/opencode');
       // …and it resolves all the way to the canonical skill.

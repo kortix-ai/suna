@@ -1,5 +1,10 @@
 # Session boot — 1-second threshold gap analysis + attack sequence
 
+> **Historical runtime scope.** This analysis measures the v2 OpenCode
+> compatibility boot path. A v3 session also starts an immutable OpenCode,
+> Claude Code, Codex, or Pi ACP harness. Use harness-specific readiness marks
+> and `tests/e2e/scripts/acp-multi-harness-smoke.ts` for current acceptance.
+
 > Goal §1: *Performance: Kortix minimal harness + session boot optimization —
 > **1-second threshold**.* This doc is the grounded scoping step before any
 > code: where are we today, what's the 1s target, and what's the attack

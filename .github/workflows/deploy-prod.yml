@@ -566,7 +566,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version]
+    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -1240,6 +1240,21 @@ jobs:
             echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  frontend-auth-proof:
+    name: Prod frontend auth configuration
+    needs: [version, frontend-note]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the released frontend and verify its EU Supabase configuration
+        run: |
+          node apps/web/scripts/validate-production-supabase-env.mjs \
+            --runtime-url https://kortix.com/api/runtime-config \
+            --expected-version "${{ needs.version.outputs.version }}" \
+            --attempts 30 \
+            --interval-ms 20000
+
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
   # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
   # merge). After a release publishes, advance main's VERSION to the NEXT dev
@@ -1353,7 +1368,7 @@ jobs:
   # rollout banner.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version]
+    needs: [verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

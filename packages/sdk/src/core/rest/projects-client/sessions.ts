@@ -4,6 +4,8 @@ import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
+
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
@@ -29,6 +31,11 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  runtime_transport?: 'acp' | 'rest';
+  runtime_harness?: SessionRuntimeHarness;
+  native_agent?: string | null;
+  acp_server_id?: string | null;
+  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.
@@ -171,11 +178,21 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/**
+ * @param options.scope - `project` asks for the manager-only full inventory.
+ * @param options.end_user_ref - Kortix-as-a-Backend: return only the sessions
+ *   this wrapper created for ONE of its end-users. Filtered server-side, so a
+ *   wrapper never has to fetch the whole project to answer "show me this
+ *   customer's sessions".
+ */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: { scope?: 'visible' | 'project'; end_user_ref?: string },
 ) {
-  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.end_user_ref) params.set('end_user_ref', options.end_user_ref);
+  const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
@@ -302,10 +319,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
 
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(
-      `/projects/${projectId}/sessions/warm`,
-      {},
-    ),
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
   );
   markSessionFresh(result.session.session_id);
   return result;
@@ -316,11 +330,9 @@ export async function claimWarmProjectSession(
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(
-      `/projects/${projectId}/sessions/warm/claim`,
-      input,
-      { showErrors: false },
-    ),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
+      showErrors: false,
+    }),
   );
   markSessionFresh(session.session_id);
   return session;

@@ -342,7 +342,22 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes a v2 compatibility `kortix.yaml`, `.kortix/Dockerfile`, the canonical skill source, the default agent, and the `kortix-system` skill. For local coding tools, it links `.opencode`, `.claude`, `.agents`, or `.pi` to that source. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer. Cloud sessions can migrate the manifest to v3 and select OpenCode, Claude Code, Codex, or Pi. |
+
+### System skills
+
+System skills are the live agent manual for the deployed Kortix host. The
+command works from every runtime harness.
+
+| Command | Effect |
+| --- | --- |
+| `kortix system-skills` | List system skill names and routing descriptions. |
+| `kortix system-skills get <name>` | Print the current `SKILL.md`. |
+| `kortix system-skills get <name> --full` | Print `SKILL.md` and every referenced file. |
+| `kortix system-skills path [name]` | Print the local project path. |
+
+`kortix skills` is a permanent alias. Optional project skills use
+`kortix marketplace`, not `system-skills`.
 
 ## Token scope
 
@@ -499,15 +514,17 @@ warns.
   works against your instance — just point it at your own URL.
 - **Not a `git` replacement.** `kortix cr` is the change-request
   surface; it composes with `git` rather than wrapping it.
-- **Not the runtime.** The thing executing the agent in the sandbox is
-  OpenCode. The CLI is the *control plane* — start sessions, manage
-  secrets, fire triggers, review CRs. See the OpenCode reference
-  files alongside this one for what runs *inside* a session.
+- **Not the runtime.** OpenCode, Claude Code, Codex, or Pi executes the agent
+  inside the sandbox. The CLI is the control plane for sessions, secrets,
+  triggers, system instructions, and change requests. See
+  `runtime-harnesses.md` for the runtime selection model.
 
 ## See also
 
 - `.kortix/opencode/skills/kortix-system/SKILL.md` — entry point for
   the kortix-system skill. Mention the CLI from there.
+- `runtime-harnesses.md` — ACP, OpenCode, Claude Code, Codex, Pi, and the
+  canonical four-harness smoke.
 - `change-requests.md` (alongside this file) — full CR data model,
   lifecycle, REST API, and the "MUST open a CR" agent mandate.
 - `kortix.yaml` — the manifest the dashboard + the CLI both read.

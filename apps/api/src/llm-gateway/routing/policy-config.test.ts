@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseFallbackPolicies } from './policy-config';
+import {
+  DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
+  parseFallbackPolicies,
+} from './policy-config';
 
 describe('gateway fallback policy configuration', () => {
   test('accepts arbitrary operator-defined model ids and ordered fallbacks', () => {
@@ -42,5 +45,14 @@ describe('gateway fallback policy configuration', () => {
         fallbackOn: 'any-error',
       },
     ]))).toThrow('shared/model');
+  });
+
+  test('routes the platform default to an independent managed fallback', () => {
+    expect(parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)).toContainEqual({
+      id: 'platform-default-resilience',
+      models: ['glm-5.2'],
+      fallbackModels: ['deepseek-v4-flash'],
+      fallbackOn: 'transient',
+    });
   });
 });

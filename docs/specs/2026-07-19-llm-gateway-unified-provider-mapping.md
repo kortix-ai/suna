@@ -1,5 +1,9 @@
 # LLM Gateway — unified, catalog-driven, type-checked provider mapping
 
+> **Runtime update on 2026-07-28.** The normalized gateway contract now serves
+> managed OpenCode, Claude Code, Codex, and Pi sessions. The OpenCode request
+> body below is one compatibility input, not the complete harness surface.
+
 **Status:** proposed (scoping) · **Date:** 2026-07-19 · **Owner:** platform/llm-gateway
 
 ## Problem

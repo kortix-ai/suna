@@ -78,7 +78,9 @@ layers, and the core belongs to the inner two.
 - **Layer 1 (Runtime floor):** the absolute minimum every project must have to
   function. **Baked into the starter, installed offline by `kortix init`.** It
   must never require a live registry — otherwise project creation depends on a
-  service being up. This is the floor.
+  service being up. The sandbox image also carries the deployed managed copy.
+  At boot, the daemon injects that copy into the selected OpenCode, Claude Code,
+  Codex, or Pi skill discovery path.
 - **Layer 2 (Standard library):** the official `@kortix/*` registry. The core
   *is also published here* so an existing project can **update** it
   through the managed update workflow and so the same files have a single
@@ -119,21 +121,20 @@ or `updatePolicy: "kortix-managed"` until the update workflow owns them.
 
 ### Kortix-managed update policy
 
-Kortix-managed updates should be **git-level change requests**, not silent
-sandbox-start mutations.
+The deployed system-skill overlay and project-owned files use separate update
+paths.
 
-1. A project records installed/managed files in `registry-lock.json`.
-2. A scheduled updater or explicit command compares the lock hash/source to the
-   current Kortix-managed source.
-3. If files changed, Kortix creates a normal branch and commit containing only
-   the managed file updates.
-4. Kortix opens a change request with the diff, source ref, changed file list,
-   and any migration notes.
-5. The project only changes when that CR is merged.
+1. The daemon overlays host-managed system skills at sandbox boot. This gives
+   every selected harness instructions that match the deployed API and CLI.
+2. `kortix system-skills get <name> --full` retrieves the same deployed source
+   through the authenticated API.
+3. Project-owned or optional marketplace files remain git state. Updates to
+   those files use a normal branch, commit, and change request.
+4. Runtime injection does not rewrite the checked-out repository or create a
+   commit.
 
-Sandbox start may detect and report that a managed update is available, but it
-must not rewrite project files. Runtime boot must stay deterministic from the
-checked-out git state.
+This split keeps platform instructions current while preserving project-owned
+configuration as reviewable git state.
 
 ---
 

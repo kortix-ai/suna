@@ -61,6 +61,7 @@ export {
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  acpSessionEnvelopes,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,
@@ -197,6 +198,11 @@ export {
   executorProjectSettingsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
+export type {
+  SecretEgressPolicy,
+  SecretEgressRule,
+  SecretInjectionSlot,
+} from './schema/kortix';
 
 export type {
   TunnelMachineInfo,
@@ -226,6 +232,8 @@ export type {
   NewChatThread,
   ProjectSession,
   NewProjectSession,
+  AcpSessionEnvelope,
+  NewAcpSessionEnvelope,
   ProjectSnapshotBuild,
   NewProjectSnapshotBuild,
   SandboxTemplate as DbSandboxTemplate,

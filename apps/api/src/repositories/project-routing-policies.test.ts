@@ -37,6 +37,7 @@ test('reads current routing policy from the shared DB on every request', async (
       defaultFallbackModels: ['glm-5.2'],
       defaultFallbackOn: 'any-error',
       rules: [],
+      disabledModels: ['codex/gpt-5.4'],
     },
   ];
   expect(await getProjectRoutingPolicy('multi-replica-project')).toEqual({
@@ -44,6 +45,7 @@ test('reads current routing policy from the shared DB on every request', async (
     defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
     rules: [],
     modelGenerationConfig: {},
+    disabledModels: ['codex/gpt-5.4'],
   });
   expect(selectCalls).toBe(2);
 });

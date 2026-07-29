@@ -20,7 +20,14 @@ import type { NextRequest } from 'next/server';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function upstreamBase(): string {
-  return process.env.KORTIX_API_URL ?? 'https://api.kortix.com/v1';
+  // KORTIX_UPSTREAM first, like the proxy and every other server route. Reading
+  // only KORTIX_API_URL sent the model control to the PUBLIC api on any
+  // deployment that configures the documented variable, so every change 404'd.
+  return (
+    process.env.KORTIX_UPSTREAM ??
+    process.env.KORTIX_API_URL ??
+    'https://api.kortix.com/v1'
+  ).replace(/\/+$/, '');
 }
 
 async function scoped(req: NextRequest) {

@@ -7,6 +7,7 @@ import { Suspense, useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { isConnectorsEnabled } from '@/lib/config';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /**
  * Post-OAuth landing for connector 1-click connect (Pipedream). The connect
@@ -34,7 +35,7 @@ function ConnectorResult() {
   const connectorsEnabled = isConnectorsEnabled();
 
   useEffect(() => {
-    if (!connectorsEnabled) router.replace('/projects');
+    if (!connectorsEnabled) router.replace(latestProjectPath(null));
   }, [connectorsEnabled, router]);
 
   const ok = params.get('connected') === 'true';
@@ -70,7 +71,7 @@ function ConnectorResult() {
             <Plug className="h-4 w-4" />
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextCloseWindowa183ed6a')}
           </Button>
-          <Button variant="ghost" onClick={() => router.replace('/projects')}>
+          <Button variant="ghost" onClick={() => router.replace(latestProjectPath(null))}>
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad')}
           </Button>
         </div>

@@ -55,6 +55,7 @@ import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useAcpSessionRuntime } from './use-acp-session-runtime';
+import { hasSessionRuntimeIdentity } from './session-runtime-identity';
 import { resolveSessionBusy } from './session-busy';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
@@ -491,8 +492,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const ocSessionId = rootSessionId ?? '';
   const runtimeUrl = sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : null;
   const acpRuntime = useAcpSessionRuntime({
+    projectId,
     runtimeUrl,
-    sessionId: rootSessionId,
+    sessionId,
+    acpServerId: startData?.acp_server_id ?? null,
+    acpSessionId: startData?.acp_session_id ?? null,
+    runtimeHarness: startData?.runtime_harness ?? null,
+    nativeAgent: startData?.native_agent ?? null,
+    legacySessionId: rootSessionId,
     enabled: enabled && switched && usesAcp,
   });
   const acpSessionTitle = readAcpSessionTitle(acpRuntime.projection.sessionInfo);
@@ -636,7 +643,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       directory?: string | null;
     },
   ): Promise<void> => {
-    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!hasSessionRuntimeIdentity({ usesAcp, opencodeSessionId: rootSessionId })) {
+      throw new RuntimeNotReadyError();
+    }
     titleRefreshAbortRef.current?.abort();
     const titleRefreshAbort = new AbortController();
     titleRefreshAbortRef.current = titleRefreshAbort;
@@ -693,7 +702,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       variant?: string | null;
     },
   ) => {
-    if (!ocSessionId) return;
+    if (!hasSessionRuntimeIdentity({ usesAcp, opencodeSessionId: rootSessionId })) return;
     pendingBaseCount.current = userMsgCount;
     if (!usesAcp) beginRestPromptObservation(ocSessionId);
     setSendState(sendStateOnStart(text));
@@ -709,7 +718,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     args: string,
     options: SessionCommandOptions = {},
   ): Promise<void> => {
-    if (!ocSessionId) return Promise.resolve();
+    if (!hasSessionRuntimeIdentity({ usesAcp, opencodeSessionId: rootSessionId })) {
+      return Promise.resolve();
+    }
     if (usesAcp) {
       return acpRuntime.runCommand(command, args, {
         model: options.model ? formatModelString(options.model) : null,
@@ -722,7 +733,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   };
 
   const rewind = async (messageId: string): Promise<void> => {
-    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!hasSessionRuntimeIdentity({ usesAcp, opencodeSessionId: rootSessionId })) {
+      throw new RuntimeNotReadyError();
+    }
     if (!messageId) throw new Error('Session rewind requires a message id');
     if (sync.isBusy || pending || rewindPending) {
       throw new Error('Cannot rewind a busy session');
@@ -768,7 +781,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
 
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
   const cancel = () => {
-    if (ocSessionId) {
+    if (hasSessionRuntimeIdentity({ usesAcp, opencodeSessionId: rootSessionId })) {
       if (usesAcp) void acpRuntime.cancel();
       else {
         endRestPromptObservation(ocSessionId);

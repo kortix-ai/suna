@@ -12,10 +12,12 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { Agent } from '@kortix/sdk/react';
+import type { RuntimeAgent } from '@kortix/sdk/react';
 import { Check, ChevronDown } from 'lucide-react';
+import { getAgentHarnessLabel } from './agent-selector-label';
 
 // ============================================================================
 // Agent Selector
@@ -27,7 +29,7 @@ export function AgentSelector({
   onSelect,
   disabled = false,
 }: {
-  agents: Agent[];
+  agents: RuntimeAgent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
@@ -73,6 +75,7 @@ export function AgentSelector({
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
   const displayName = currentAgent?.name || 'Agent';
+  const currentHarnessLabel = getAgentHarnessLabel(currentAgent?.harness);
 
   return (
     // When locked we keep the trigger hoverable (no native `disabled`, which
@@ -97,6 +100,11 @@ export function AgentSelector({
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
+              {currentHarnessLabel && (
+                <span className="text-muted-foreground/60 hidden max-w-[88px] truncate sm:inline">
+                  {currentHarnessLabel}
+                </span>
+              )}
               <ChevronDown
                 className={cn(
                   'size-3 opacity-50 transition-transform duration-200',
@@ -141,6 +149,7 @@ export function AgentSelector({
               {filteredPrimary.map((agent) => {
                 const isSelected =
                   selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+                const harnessLabel = getAgentHarnessLabel(agent.harness);
                 return (
                   <CommandItem
                     key={agent.name}
@@ -153,6 +162,7 @@ export function AgentSelector({
                     }}
                   >
                     <div className="min-w-0 flex-1 py-0.5">
+                      <div className="flex min-w-0 items-center gap-2">
                       <div
                         className={cn(
                           'truncate text-sm leading-tight capitalize',
@@ -162,6 +172,12 @@ export function AgentSelector({
                         )}
                       >
                         {agent.name}
+                      </div>
+                        {harnessLabel && (
+                          <Badge variant="outline" size="xs" className="shrink-0 normal-case">
+                            {harnessLabel}
+                          </Badge>
+                        )}
                       </div>
                       {agent.description && (
                         <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">

@@ -1,5 +1,35 @@
-import { describe, expect, test } from 'bun:test';
-import { isBrowserViewable, uniqueZipNames } from './runtime-files';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+
+let staticFileUrl = '';
+
+mock.module('@kortix/sdk/react', () => ({
+  getActiveStaticFilePreviewUrl: () => staticFileUrl,
+}));
+
+const { isBrowserViewable, openFileInNewTab, RuntimeNotBoundError, uniqueZipNames } = await import(
+  './runtime-files'
+);
+
+const originalWindow = globalThis.window;
+const originalFetch = globalThis.fetch;
+let opened: string[] = [];
+
+beforeEach(() => {
+  opened = [];
+  staticFileUrl = '';
+  globalThis.window = {
+    open: (url: string) => {
+      opened.push(url);
+      return null;
+    },
+  } as unknown as Window & typeof globalThis;
+  globalThis.fetch = (async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.window = originalWindow;
+  globalThis.fetch = originalFetch;
+});
 
 describe('isBrowserViewable (W4)', () => {
   test('inert-as-a-top-level-document formats open in a new tab', () => {
@@ -7,7 +37,7 @@ describe('isBrowserViewable (W4)', () => {
       expect(isBrowserViewable(f)).toBe(true);
     }
   });
-  test('HTML and SVG are excluded — a same-origin blob URL would execute them (XSS)', () => {
+  test('HTML and SVG are excluded — a top-level tab has no sandbox attribute', () => {
     for (const f of ['a.html', 'a.htm', 'a.svg']) {
       expect(isBrowserViewable(f)).toBe(false);
     }
@@ -47,5 +77,38 @@ describe('uniqueZipNames (W15)', () => {
       'Pitch- v1.pptx',
       'Pitch- v1-2.pptx',
     ]);
+  });
+});
+
+describe('openFileInNewTab', () => {
+  test('opens the addressable proxy URL, never a blob', async () => {
+    staticFileUrl = 'https://api.kortix.com/v1/p/sbx1/3211/open?path=/workspace/a.md';
+
+    await openFileInNewTab('/workspace/a.md');
+
+    expect(opened).toEqual(['https://api.kortix.com/v1/p/sbx1/3211/open?path=/workspace/a.md']);
+    expect(opened[0].startsWith('blob:')).toBe(false);
+  });
+
+  test('opens the local-dev subdomain form, which only looks localhost-ish', async () => {
+    staticFileUrl = 'http://p3211-sbx1.localhost:8008/open?path=/workspace/a.md';
+
+    await openFileInNewTab('/workspace/a.md');
+
+    expect(opened).toEqual(['http://p3211-sbx1.localhost:8008/open?path=/workspace/a.md']);
+  });
+
+  test('refuses to open a localhost URL when the runtime has not bound', async () => {
+    staticFileUrl = 'http://localhost:3211/open?path=/workspace/a.md';
+
+    await expect(openFileInNewTab('/workspace/a.md')).rejects.toBeInstanceOf(RuntimeNotBoundError);
+    expect(opened).toEqual([]);
+  });
+
+  test('refuses to open when no URL can be built at all', async () => {
+    staticFileUrl = '';
+
+    await expect(openFileInNewTab('/workspace/a.md')).rejects.toBeInstanceOf(RuntimeNotBoundError);
+    expect(opened).toEqual([]);
   });
 });

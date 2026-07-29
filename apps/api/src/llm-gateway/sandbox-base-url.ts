@@ -25,5 +25,5 @@ export function resolveLlmGatewayBaseUrl(origin: string): string {
   if (config.LLM_GATEWAY_BASE_URL) return config.LLM_GATEWAY_BASE_URL;
   const trimmedOrigin = origin.replace(/\/+$/, '');
   const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  return llmProxyMode ? `${trimmedOrigin}/v1/llm-gateway/v1/llm` : `${trimmedOrigin}/v1/llm`;
+  return llmProxyMode ? `${trimmedOrigin}/v1/llm-gateway` : `${trimmedOrigin}/v1/llm`;
 }

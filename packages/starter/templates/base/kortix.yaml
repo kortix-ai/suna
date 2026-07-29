@@ -1,8 +1,23 @@
 # yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
 #
 # Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
+# lives in git alongside the code. `kortix_version` pins the schema.
+#
+# This starter uses version 2 because the ACP & Multi-Harness project
+# experiment defaults to disabled. Version 2 runs OpenCode through the
+# compatibility transport. To use OpenCode ACP, Claude Code, Codex, or Pi:
+#
+# 1. Enable the project experiment named "ACP & Multi-Harness"
+#    (`acp_runtime`).
+# 2. Change the schema URL and `kortix_version` to 3.
+# 3. Replace `opencode:` with `runtimes:`.
+# 4. Add `runtime` to every logical-agent block.
+#
+# Run `kortix system-skills get kortix-system --full` for the current
+# platform instructions. Run `kortix schema --version 3` for the exact
+# v3 schema.
+#
+# v2 manifests are YAML-only, with one
 # `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
 # kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
 # model, mode, temperature, permission, the prompt itself, …) lives
@@ -22,8 +37,8 @@ project:
   name: "{{projectName}}"
   description: A Kortix project.
 
-# Env vars the runtime needs. Required values must be set in the Kortix
-# Secrets Manager before a session can start.
+# Env vars the runtime needs. `required` is advisory. The dashboard displays
+# missing values, but session bootstrap does not block on them.
 env:
   required: []
   optional: [STRIPE_API_KEY]
@@ -72,6 +87,46 @@ env:
 # single opencode config across multiple Kortix repos.
 opencode:
   config_dir: .kortix/opencode
+
+# ─── Version 3 runtime profiles ─────────────────────────────────────────
+# Version 3 replaces the `opencode:` block above with `runtimes:`. The
+# selected runtime profile becomes immutable when a session starts. An
+# in-place restart keeps the same harness. Start a new session to change it.
+#
+# runtimes:
+#   opencode:
+#     harness: opencode
+#     config_dir: .kortix/opencode
+#   claude:
+#     harness: claude
+#     config_dir: .claude
+#   codex:
+#     harness: codex
+#     config_dir: .codex
+#   pi:
+#     harness: pi
+#     config_dir: .pi
+#
+# Each v3 logical agent must reference one profile:
+#
+# agents:
+#   reviewer:
+#     runtime: codex
+#     connectors: all
+#     secrets: all
+#     skills: all
+#     kortix_cli: all
+#
+# Direct credentials differ by harness:
+# - Claude Code: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
+#   CLAUDE_CODE_OAUTH_TOKEN.
+# - Codex: CODEX_API_KEY or OPENAI_API_KEY.
+# - Pi: OPENAI_API_KEY or CODEX_API_KEY.
+# Managed Kortix model access needs no project key when the platform gateway
+# supports the selected harness and model.
+#
+# Do not use a generic provider verification result as proof. Send a real
+# prompt through the selected harness and model.
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/

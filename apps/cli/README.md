@@ -6,8 +6,8 @@ Create a new Kortix project.
 kortix init my-project
 ```
 
-Makes `./my-project/`, runs `git init -b main`, drops the full OpenCode
-runtime scaffold at the repo root (`kortix.yaml`, `README.md`,
+Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
+project floor at the repo root (`kortix.yaml`, `README.md`,
 `.kortix/opencode/`, `.kortix/memory/MEMORY.md`), stages every file, and
 makes an initial commit.
 
@@ -45,14 +45,28 @@ my-project/
     └── opencode/                      ← OpenCode native config dir
         ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
         ├── agents/{kortix,memory-reflector}.md
-        └── skills/kortix-cli/SKILL.md (+ other bundled skills)
+        └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
 ```
 
-The coding agent(s) you wire up (`--primary`/`--agents`, default OpenCode)
-each get their native discovery directory symlinked straight at
+The local coding tools you wire up (`--primary`/`--agents`, default Codex)
+each get their native discovery directory linked to
 `.kortix/opencode/` — `.opencode` for OpenCode, `.claude` for Claude Code,
-`.agents` for Codex — so skills and agents stay shared from one source
-of truth. Codex and Cursor also get a root `AGENTS.md` pointer.
+`.agents` for Codex, and `.pi` for Pi. Codex, Pi, and Cursor also get a root
+`AGENTS.md` pointer.
+
+This local tool choice does not select the cloud session harness. The starter
+uses `kortix_version: 2` and OpenCode REST. Enable **ACP & Multi-Harness**, then
+migrate to `kortix_version: 3` to select OpenCode, Claude Code, Codex, or Pi
+for cloud sessions.
+
+Agents can retrieve the deployed platform manual from any harness:
+
+```sh
+kortix system-skills
+kortix system-skills get kortix-system --full
+```
+
+`kortix skills` is a permanent alias.
 
 After the scaffold lands, one commit is made:
 

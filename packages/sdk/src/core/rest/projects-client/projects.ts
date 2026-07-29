@@ -86,6 +86,12 @@ export interface ProjectConfigSummary {
     enabled?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
+    /** Immutable runtime profile selected for this logical agent. */
+    runtime?: string | null;
+    /** ACP harness selected by the runtime profile. */
+    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+    /** Harness-native agent or mode name. */
+    native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -147,6 +153,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Wire-model ids the project has turned OFF (server-owned enablement). Only
+   *  populated by the `/model-picker` endpoint. Absent → treat as none. */
+  disabledModels?: string[];
 }
 
 export interface ProjectInput {

@@ -928,7 +928,7 @@ export async function provisionSessionSandbox(opts: {
       // are transient outages, not session failures. Log them as a warning so
       // they don't read as code bugs in the console, and present a friendly
       // message to the user instead of the SDK stack trace.
-      const isCapacity = /no available runner|no runners available|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
+      const isCapacity = /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
       // Git auth / repo-access failures. These are NOT a provider fault — the
       // sandbox provider is fine; we couldn't clone the project's repo. Reporting
       // them as "Provisioning failed via daytona" actively misdirects debugging

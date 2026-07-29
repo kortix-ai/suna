@@ -94,20 +94,20 @@ flow(
   "PROJ-18",
   {
     domain: "projects",
-    // `stripe` ⇒ the target enforces billing, so a free account is capped at 3
+    // `stripe` ⇒ the target enforces billing, so a free account is capped at 1
     // project; `managedGit` ⇒ managed provisioning is available to reach the cap.
     requires: ["managedGit", "stripe"],
     serial: true,
     routes: ["GET /v1/projects", "POST /v1/projects/provision"],
   },
   async (ctx) => {
-    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 3.
+    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 1.
     const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
 
-    for (let index = existing; index < 3; index += 1) {
-      await ctx.step(`free account: project ${index + 1} of 3 allowed (201)`, async () => {
+    for (let index = existing; index < 1; index += 1) {
+      await ctx.step(`free account: project ${index + 1} of 1 allowed (201)`, async () => {
         let r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post("/v1/projects/provision", {
@@ -128,16 +128,16 @@ flow(
       });
     }
 
-    await ctx.step("free account: 4th project rejected (403 project_limit_reached)", async () => {
+    await ctx.step("free account: 2nd project rejected (403 project_limit_reached)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-4") });
+        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
       // The quota gate runs before any repository is provisioned.
       r.status(403)
         .body()
         .has("$.code", "project_limit_reached")
-        .has("$.limit", 3)
-        .has("$.count", 3);
+        .has("$.limit", 1)
+        .has("$.count", 1);
     });
   },
 );

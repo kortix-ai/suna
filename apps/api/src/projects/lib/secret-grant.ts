@@ -30,6 +30,7 @@
  * single I/O entry point both call sites use.
  */
 
+import type { AgentGrant } from '@kortix/db';
 import {
   DEFAULT_AGENT_SENTINEL,
   type LoadedAgents,
@@ -121,6 +122,61 @@ export function secretGrantEnvDiffers(
 }
 
 /**
+ * The same collapse for a grant's `connectors` / `kortixCli` lists.
+ *
+ * Deliberately NOT case-folded, unlike `grantEnvKey`. Each list is compared by
+ * its own gate with an exact `includes()` (`agentMayUseConnector`,
+ * `agentMayPerform`), so folding case here would call two lists equal that those
+ * gates treat as different — and the whole point of this comparison is to
+ * predict what those gates will do.
+ */
+function grantListKey(list: string[] | 'all' | undefined): string {
+  if (list === undefined || list === 'all') return '*all*';
+  return [...new Set(list)].sort().join(',');
+}
+
+/**
+ * True when running `requestedAgent` instead of `sessionAgent` would change ANY
+ * part of the authorization grant — secrets, connectors, or Kortix CLI actions.
+ *
+ * This is the RE-MINT predicate, not a refusal. A session's `agentGrant` is
+ * written onto its token row ONCE, at mint (`account_tokens.agent_grant`), from
+ * the agent the session was created with. Nothing re-mints it, and nothing
+ * updates `project_sessions.agent_name` either — but a prompt may name a
+ * different agent and the proxy forwards that untouched. So an agent reached by
+ * SWITCHING ran with the boot agent's connector and CLI grants:
+ *
+ *     create session with agent A (connectors: all)
+ *     prompt {"agent": "B"} where B declares connectors: [calendar]
+ *       -> opencode runs B
+ *       -> the token still carries A's grant
+ *       -> B calls A's connectors, including ones its own manifest denies it
+ *
+ * The inverse is a functional bug rather than an escalation: a broad agent
+ * reached from a narrow session gets 403 CONNECTOR_NOT_ASSIGNED with nothing in
+ * the manifest to explain it.
+ *
+ * Why re-mint here where secrets REFUSE: a secret is already disclosed by the
+ * time a switch is observed — it is in the box's tmpfs env file, in every shell
+ * the previous agent spawned, and in its own context — so narrowing later
+ * cannot un-read it. Connector and CLI grants are different: they are checked
+ * against the token row at CALL time, so rewriting the row genuinely re-scopes
+ * every subsequent call. Refusing those instead would 409 the most ordinary
+ * manifest shape there is — per-agent `connectors:` with no `secrets:` declared
+ * at all — on a switch the dashboard's own UI offers.
+ */
+export function agentGrantDiffers(
+  sessionGrant: AgentGrant | null,
+  requestedGrant: AgentGrant | null,
+): boolean {
+  return (
+    secretGrantEnvDiffers(sessionGrant?.env, requestedGrant?.env) ||
+    grantListKey(sessionGrant?.connectors) !== grantListKey(requestedGrant?.connectors) ||
+    grantListKey(sessionGrant?.kortixCli) !== grantListKey(requestedGrant?.kortixCli)
+  );
+}
+
+/**
  * Pure policy over an already-loaded manifest — exported for tests. Throws
  * `AgentSecretGrantMismatchError` when the switch crosses a secret boundary.
  *
@@ -174,7 +230,30 @@ export interface SessionSecretGrantInput {
 export async function resolveSessionSecretGrant(
   input: SessionSecretGrantInput,
 ): Promise<string[] | 'all' | undefined> {
-  if (!input.defaultBranch) return undefined;
+  return (await loadGrantForRunningAgent(input)).env;
+}
+
+/**
+ * The FULL grant of the agent a prompt will actually run — secrets, connectors
+ * and Kortix CLI actions.
+ *
+ * Same resolution, same failure modes, same refusal as
+ * `resolveSessionSecretGrant` (which is this function's `env` leg): callers get
+ * `SecretGrantResolutionError` on an unreadable manifest and
+ * `AgentSecretGrantMismatchError` on a secret-boundary switch. The extra legs
+ * exist for the token re-mint, which needs to know what the running agent may
+ * reach, not just what it may read.
+ */
+export async function resolveSessionAgentGrant(
+  input: SessionSecretGrantInput,
+): Promise<AgentGrant | null> {
+  return (await loadGrantForRunningAgent(input)).grant;
+}
+
+async function loadGrantForRunningAgent(
+  input: SessionSecretGrantInput,
+): Promise<{ grant: AgentGrant | null; env: string[] | 'all' | undefined }> {
+  if (!input.defaultBranch) return { grant: null, env: undefined };
 
   const runningAgent = effectiveRunningAgent(input.requestedAgent, input.sessionAgent);
 
@@ -200,10 +279,13 @@ export async function resolveSessionSecretGrant(
     throw new SecretGrantResolutionError(runningAgent, err);
   }
 
-  return secretGrantEnvForRunningAgent(
+  // Runs the secret-boundary refusal FIRST, so a switch that must be refused is
+  // never also re-minted — one switch cannot half-succeed.
+  const env = secretGrantEnvForRunningAgent(
     loaded,
     input.sessionAgent,
     runningAgent,
     input.enforceGrantLock ?? true,
   );
+  return { grant: grantFromLoadedAgents(runningAgent, loaded), env };
 }

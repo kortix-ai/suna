@@ -70,6 +70,19 @@ await s.send('One-off task', { model, agent }); // overrides for this call only
 await s.abort(); // stop the current run
 ```
 
+`setModel` only chooses what the next local `send` asks for — it never leaves the
+handle. To **persist** a new model for a running session server-side, use
+`changeModel`:
+
+```ts
+const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
+```
+
+Restarting the runtime is how the change takes effect, so an in-flight turn ends.
+`applied_live` is `true` when a running session took it now, `false` when it
+applies at the next start. Only the session owner or a project manager may change
+the model; anyone else gets `403`.
+
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.
 
@@ -97,12 +110,15 @@ Use `s.stream()` to receive live events in a script or server. In a React
 app, use [`useSession`](/docs/sdk/react) instead — it manages the whole
 session lifecycle for you.
 
-A session's events come from the OpenCode runtime inside its sandbox. The
-Kortix API proxies them to you. There is no separate WebSocket endpoint. The
+`s.stream()` is the OpenCode REST compatibility event stream. The Kortix API
+proxies it from the sandbox. There is no separate WebSocket endpoint. The
 transport is `fetch` with a streaming response body, read through
 `ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
-backoff, and a heartbeat check inside the event-stream layer. A dropped
-connection resumes on its own.
+backoff, and a heartbeat check.
+
+For ACP sessions, use `useSession()` in React. It selects ACP from
+`POST /start` and supports OpenCode, Claude Code, Codex, and Pi through one
+projected message model. A host must not branch on `runtime_harness`.
 
 Stream a session:
 
@@ -203,9 +219,10 @@ the full method list.
 
 ## The raw runtime
 
-`s.runtime` is the typed OpenCode client, scoped to this session. Use it only
-for calls that `send`, `abort`, and `stream` do not cover. It requires a
-resolved runtime — call `s.ensureReady()` first.
+`s.runtime` is the typed OpenCode REST compatibility client. It is not the
+selected ACP harness client. Use it only for OpenCode REST calls that `send`,
+`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
+call `s.ensureReady()` first.
 
 ```ts
 const { opencodeSessionId } = await s.ensureReady();
@@ -218,6 +235,10 @@ await s.runtime.session.prompt({
 The OpenCode `sessionID` here is not the session ID you pass to
 `kortix.session(projectId, sessionId)`. The SDK resolves it during
 `ensureReady()` and caches it on the handle.
+
+For an ACP session, use `useSession()` in React. Framework-free hosts can use
+`createAcpSessionController()` with `buildProjectAcpEndpoint()`. Both surfaces
+support OpenCode, Claude Code, Codex, and Pi without host-side harness branches.
 
 ## Warm a project session
 

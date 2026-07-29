@@ -4,19 +4,10 @@ import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
-import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-// Full gateway catalog, independent of which providers are actually
-// connected — used ONLY to give `useModelStore` a canonical universe for
-// default/heuristic visibility resolution (see `catalogModels` below). Must
-// match what other surfaces (e.g. the session model picker) resolve
-// visibility against, or the same model silently defaults to a different
-// visibility depending on which tab/picker last computed it.
-import { flattenModels as flattenGatewayCatalog, useRuntimeProviders } from '@kortix/sdk/react';
+import { useModelEnablement } from '@kortix/sdk/react';
 import { ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
@@ -31,68 +22,33 @@ import {
 } from './utils';
 
 export function ModelsTab({
+  projectId,
   connectedProviders,
   search,
-  llmGatewayEnabled,
 }: {
+  projectId: string;
   connectedProviders: LlmProviderEntry[];
   search: string;
-  llmGatewayEnabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pricingLookup = useModelPricingLookup(undefined);
 
+  // Enablement is SERVER-owned (the gateway enforces it): each switch persists
+  // to `PUT /projects/:id/model-enablement`, not localStorage. `gatewayModelId`
+  // gives each row its wire id — the key the server stores.
+  const enablement = useModelEnablement(projectId);
+
   const rows = useMemo(
-    () =>
-      connectedProviders.flatMap((p) =>
-        p.models.map((m) => ({
-          provider: p,
-          model: m,
-          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
-        })),
-      ),
-    [connectedProviders, llmGatewayEnabled],
+    () => connectedProviders.flatMap((p) => p.models.map((m) => ({ provider: p, model: m }))),
+    [connectedProviders],
   );
-
-  const flatModels = useMemo<FlatModel[]>(
-    () =>
-      rows.map(({ provider, model, storeKey }) => ({
-        providerID: storeKey.providerID,
-        providerName: provider.label,
-        modelID: storeKey.modelID,
-        modelName: model.name,
-        releaseDate: model.released ?? undefined,
-      })),
-    [rows],
-  );
-
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return undefined;
-    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
-  }, [connectedProviders, llmGatewayEnabled]);
-
-  // Same route-scoped snapshot `useConnectedProviders` already reads (see
-  // use-connected-providers.ts) — reused here ONLY to give `useModelStore`
-  // the FULL gateway catalog as its default-resolution universe. `flatModels`
-  // above stays scoped to `connectedProviders` (what this tab actually
-  // renders); `catalogModels` must NOT be narrowed the same way, or a model
-  // present in the full catalog but outside this narrower list resolves a
-  // different (heuristic-default) visibility here than on other surfaces —
-  // the root cause of toggles reading differently between this tab and the
-  // session model picker.
-  const { data: ocProviders } = useRuntimeProviders();
-  const catalogModels = useMemo(() => flattenGatewayCatalog(ocProviders), [ocProviders]);
-
-  const modelStore = useModelStore(flatModels, {
-    connectedProviderIds,
-    catalogModels,
-  });
 
   const enabledCount = useMemo(
-    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
-    [rows, modelStore],
+    () =>
+      rows.filter((row) => enablement.isEnabled(gatewayModelId(row.provider, row.model.id))).length,
+    [rows, enablement],
   );
-  const hasOverrides = modelStore.userPrefs.length > 0;
+  const hasOverrides = enablement.disabledModels.size > 0;
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -139,7 +95,7 @@ export function ModelsTab({
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {flatModels.length}{' '}
+            {enabledCount} of {rows.length}{' '}
             {tHardcodedUi.raw(
               'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
             )}
@@ -149,7 +105,7 @@ export function ModelsTab({
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => modelStore.resetVisibility()}
+              onClick={() => void enablement.enableAll()}
             >
               {tHardcodedUi.raw(
                 'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
@@ -182,9 +138,9 @@ export function ModelsTab({
                 </span>
               </div>
               <div className="bg-popover overflow-hidden rounded-md border">
-                {providerRows.map(({ model, storeKey }, i) => {
-                  const visible = modelStore.isVisible(storeKey);
+                {providerRows.map(({ model }, i) => {
                   const wireId = gatewayModelId(provider, model.id);
+                  const visible = enablement.isEnabled(wireId);
                   const rates = pricingLookup(provider.id, model.id);
                   const ctx = formatTokenCount(model.limit?.context);
                   const out = formatTokenCount(model.limit?.output);
@@ -225,7 +181,8 @@ export function ModelsTab({
                       </div>
                       <Switch
                         checked={visible}
-                        onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
+                        disabled={enablement.isUpdating}
+                        onCheckedChange={(c) => void enablement.setEnabled(wireId, c)}
                         className="mt-0.5 shrink-0"
                       />
                     </label>

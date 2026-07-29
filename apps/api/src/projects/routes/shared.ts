@@ -13,7 +13,9 @@ import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import { inspectSandboxRuntime, readManagedAcpSessionIdentity } from '../runtime-inspection';
 import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
@@ -112,9 +114,13 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId, null, row.provider as SandboxProviderName).catch((err) =>
-    console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
-  );
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+    null,
+    row.provider as SandboxProviderName,
+  ).catch((err) => console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err));
 
   const provider = getProvider(row.provider as SandboxProviderName);
   void provider
@@ -252,6 +258,9 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
+        compiledRuntimeConfig:
+          (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
   });
@@ -805,6 +814,81 @@ export async function openSession(args: {
   const runningExternalId = row.externalId;
   if (!runningExternalId) {
     throw new Error(`Provider-running sandbox ${row.sandboxId} has no external_id`);
+  }
+
+  const sessionMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+  const managedAcpIdentity = readManagedAcpSessionIdentity(sessionMetadata);
+  if (managedAcpIdentity) {
+    const expectedServerId = managedAcpIdentity.acpServerId;
+    const expectedHarness = managedAcpIdentity.runtimeHarness;
+    const health = await inspectSandboxRuntime(runningExternalId, loaded.userId);
+    const identityMatches =
+      !!expectedServerId &&
+      !!expectedHarness &&
+      health?.runtime === 'acp' &&
+      health.acpServerId === expectedServerId &&
+      health.runtimeHarness === expectedHarness;
+    const runtimeReady = identityMatches && health?.runtimeReady === true;
+
+    if (health?.bootError) {
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: health.bootError,
+      };
+    }
+
+    if (!runtimeReady) {
+      const reason = !health
+        ? 'unreachable'
+        : !identityMatches
+          ? 'acp_runtime_identity_mismatch'
+          : 'not_ready';
+      const staleBoot = staleOpencodeReadyReason(
+        sandboxMetadata(row),
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+        Date.now(),
+        STALE_OPENCODE_READY_MS,
+      );
+      if (staleBoot) {
+        return preserveEstablishedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          staleBoot,
+        );
+      }
+      await markOpencodeReadyWaitStarted(
+        row,
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+      );
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason,
+      };
+    }
+
+    await clearRuntimeReadinessClocks(row);
+    return {
+      stage: 'ready',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: visible.row.opencodeSessionId,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: 'acp_ready',
+    };
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin

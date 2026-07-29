@@ -1,5 +1,11 @@
 # ACP runtime status quo and handoff
 
+> **Superseded on 2026-07-28.** This document preserves the OpenCode-only
+> status before ACP multi-harness support. PR #5762 added runtime profiles and
+> OpenCode, Claude Code, Codex, and Pi harness selection. Use
+> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md` and the current
+> `kortix-system` runtime-harness reference for the active contract.
+
 **Date:** 2026-07-26
 
 **Status:** Current implementation and operational reference

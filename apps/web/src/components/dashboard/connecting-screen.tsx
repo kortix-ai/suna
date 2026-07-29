@@ -24,6 +24,7 @@ import {
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
 import { type SandboxRecoveryPhase, useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -75,7 +76,7 @@ export function ConnectingScreen({
   const runtimeSummary = 'Runtime services degraded';
 
   const handleSwitch = () => {
-    router.push(backHref || '/projects');
+    router.push(backHref || latestProjectPath(null));
   };
 
   const serverLabel = labelOverride?.trim() || 'workspace';

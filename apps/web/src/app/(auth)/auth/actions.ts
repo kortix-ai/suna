@@ -1,7 +1,6 @@
 'use server';
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
-import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import {
@@ -18,7 +17,8 @@ import {
   recordPlatformLogout,
   submitAccessRequest,
 } from '@kortix/sdk';
-import { headers } from 'next/headers';
+import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -433,35 +433,11 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
-  const runtimeEnv = getServerPublicEnv();
-  const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  let redirectTo = returnUrl;
-
-  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
-  // dialog verbatim; don't override with a freshly-provisioned first project.
-  if (
-    billingEnabled &&
-    !alreadyExists &&
-    !isInviteReturnUrl(returnUrl) &&
-    signInData.session?.access_token
-  ) {
-    try {
-      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
-        /\/v1\/?$/,
-        '',
-      );
-      if (backendUrl) {
-        const projectPath = await resolveFirstProjectPathForNewUser({
-          backendUrl,
-          accessToken: signInData.session.access_token,
-          isNewUser: true,
-        });
-        if (projectPath) redirectTo = projectPath;
-      }
-    } catch {
-      // Fall back to the default return URL.
-    }
-  }
+  // `returnUrl` already defaults to PROJECT_LANDING_PATH, which paints
+  // instantly and provisions the first project behind the UI. This action used
+  // to await a managed git repo create + a full starter push here (up to 90s)
+  // before it could return a redirect, which blocked the sign-up form itself.
+  const redirectTo = returnUrl;
 
   return {
     success: true,
@@ -507,6 +483,11 @@ export async function signOut() {
   if (error) {
     return { message: error.message || 'Could not sign out' };
   }
+
+  // Forget the remembered project. Ownership binding already stops the next
+  // account from following it, but leaving one user's project id sitting in a
+  // shared browser after they sign out is needless.
+  (await cookies()).delete(LAST_PROJECT_COOKIE);
 
   return redirect('/');
 }
@@ -563,17 +544,12 @@ export async function verifyOtp(prevState: any, formData: FormData) {
           accessToken: data.session.access_token,
           timeoutMs: 5000,
         });
-        if (accountState) {
-          if (!accountHasAppAccess(accountState)) {
-            finalDestination = '/accounts';
-          } else {
-            const projectPath = await resolveFirstProjectPathForNewUser({
-              backendUrl,
-              accessToken: data.session.access_token,
-              isNewUser: true,
-            });
-            if (projectPath) finalDestination = projectPath;
-          }
+        // Entitlement is the only reason to override the destination here.
+        // First-project provisioning used to run on this path too and blocked
+        // the OTP form for the length of a managed git repo create plus a full
+        // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
+        if (accountState && !accountHasAppAccess(accountState)) {
+          finalDestination = '/accounts';
         }
       }
     } catch {

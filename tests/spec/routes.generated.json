@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 507,
+  "count": 517,
   "routes": [
     {
       "method": "GET",
@@ -1275,6 +1275,10 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/default"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
     },
@@ -1303,8 +1307,20 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/all"
     },
     {
       "method": "POST",
@@ -1623,6 +1639,26 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp-identity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp/transcript"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
@@ -1633,6 +1669,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",

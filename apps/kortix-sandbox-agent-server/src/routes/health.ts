@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
+import type { AcpHarnessId } from '../acp/harness-registry'
+import type { AcpRuntime } from '../acp/runtime'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -51,6 +53,11 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
+  /** Immutable selected ACP process binding for a multi-harness session. */
+  acpHarness?: AcpHarnessId | null
+  acpServerId?: string | null
+  acpRuntimeReady?: boolean
+  acpRuntimeError?: string | null
 }
 
 /**
@@ -79,6 +86,7 @@ export function createHealthRouter(
   bootTime: number,
   bootState: SandboxBootState,
   staticWebPort: number | null = null,
+  acpRuntime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
@@ -99,22 +107,47 @@ export function createHealthRouter(
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-    const runtimeReady =
-      repoReady &&
-      !bootState.repoMaterializationError &&
-      !initialSessionError &&
-      opencodeState === 'ok' &&
-      initialSessionReady
+    const managedAcp =
+      !!bootState.acpHarness &&
+      !!bootState.acpServerId
+    const acpProcess = managedAcp
+      ? acpRuntime?.get(bootState.acpServerId as string) ?? null
+      : null
+    const acpRuntimeError =
+      bootState.acpRuntimeError ??
+      (bootState.acpRuntimeReady && !acpProcess
+        ? 'ACP harness process is not currently running'
+        : null)
+    const runtimeReady = managedAcp
+      ? repoReady &&
+        !bootState.repoMaterializationError &&
+        !acpRuntimeError &&
+        !!bootState.acpRuntimeReady &&
+        !!acpProcess
+      : repoReady &&
+        !bootState.repoMaterializationError &&
+        !initialSessionError &&
+        opencodeState === 'ok' &&
+        initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError
+      : bootState.repoMaterializationError || initialSessionError || acpRuntimeError
         ? 'error'
-        : opencodeState
+        : managedAcp
+          ? 'starting'
+          : opencodeState
 
     return c.json({
       daemon: 'ok',
       status,
       runtimeReady,
+      runtime: managedAcp ? 'acp' : 'opencode-rest',
+      runtime_harness: bootState.acpHarness ?? 'opencode',
+      acp_harness: bootState.acpHarness ?? null,
+      acp_server_id: bootState.acpServerId ?? null,
+      acp_ready: managedAcp ? runtimeReady : false,
+      acp_busy: acpProcess?.busy ?? false,
+      runtime_pid: acpProcess?.pid ?? null,
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
@@ -126,7 +159,10 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      boot_error:
+        bootState.repoMaterializationError ??
+        initialSessionError ??
+        acpRuntimeError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

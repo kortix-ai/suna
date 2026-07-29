@@ -63,6 +63,18 @@ export function claimPromptDelivery(key: string, now: number = Date.now()): bool
   return true;
 }
 
+// Release a claim taken by claimPromptDelivery when the delivery PROVABLY never
+// reached opencode (the sandbox refused every connection, or the daemon returned
+// "opencode not ready") — so a client retry with the same key re-attempts instead
+// of short-circuiting to a bogus 200 "duplicate", which would silently drop the
+// prompt (message loss). Only call this on a certain-not-delivered failure: on an
+// AMBIGUOUS failure (5xx/timeout/reset where opencode may already hold the
+// message) the claim must stay so a retry can't double-enqueue. A no-op for a key
+// that was never claimed or already evicted.
+export function releasePromptDelivery(key: string): void {
+  seen.delete(key);
+}
+
 // Test-only: drop all cached claims so cases don't leak into one another.
 export function __resetPromptDedupe(): void {
   seen.clear();

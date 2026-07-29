@@ -1,5 +1,10 @@
 # Session-start latency benchmark
 
+> **Benchmark scope:** The OpenCode timing stages below measure the v2 REST
+> compatibility path. The v3 runtime contract also supports OpenCode, Claude
+> Code, Codex, and Pi through ACP. Use
+> `tests/e2e/scripts/acp-multi-harness-smoke.ts` for harness acceptance.
+
 End-to-end timing for **creating a session in a project** — the "why does a new
 session take so long" question. Drives the exact client flow the dashboard uses
 against the **running local stack** (real Daytona/Platinum provisioning, real

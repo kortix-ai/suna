@@ -19,6 +19,12 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { desktopShellPlatform } from '@/lib/desktop';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import {
+  clearLastProjectId,
+  readLastProjectId,
+  writeLastProjectId,
+} from '@/lib/onboarding/last-project-cookie';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -61,7 +67,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
 
-  const { data: projectDetail } = useQuery({
+  const { data: projectDetail, error: projectDetailError } = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
@@ -72,6 +78,29 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
+
+  // Remember the project so the next `/` hit and the next sign-in land straight
+  // back here instead of going through the id-free landing door. Gated on a
+  // successful detail fetch: recording a project the user cannot actually read
+  // would send them into a 404 bounce loop on their next visit.
+  useEffect(() => {
+    if (!projectDetail) return;
+    writeLastProjectId(user?.id, projectId);
+  }, [projectDetail, projectId, user?.id]);
+
+  // Self-heal a stale remembered project. The cookie outlives the project it
+  // names (deleted project, signed into a different account on the same
+  // browser), and it drives the `/` and post-auth redirects — so left alone it
+  // would send the user to an unreadable project on every single visit. Drop it
+  // and re-resolve through the landing door.
+  useEffect(() => {
+    if (!projectDetailError) return;
+    const status = (projectDetailError as { status?: number }).status;
+    if (status !== 403 && status !== 404) return;
+    if (readLastProjectId(user?.id) !== projectId) return;
+    clearLastProjectId();
+    router.replace(PROJECT_LANDING_PATH);
+  }, [projectDetailError, projectId, router, user?.id]);
 
   useEffect(() => {
     // Files graduated out of Customize into its own page — send legacy

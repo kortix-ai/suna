@@ -1039,6 +1039,28 @@ smoke evidence.
 
 ---
 
+### 2026-07-28 — session `acp-multi-harness` claim
+
+Claimed project-gated ACP multi-harness support.
+
+The existing `acp_runtime` project experiment will become the single rollout
+gate for ACP transport and Claude Code, Codex, OpenCode, and Pi harness
+selection.
+
+The implementation will port the behavioral contract from PR #4510 onto the
+current session-scoped SDK architecture. It will not restore PR #4510's removed
+SDK refactor or host-local runtime logic.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused API, SDK, daemon, manifest, and web tests, API and
+SDK typechecks, the full SDK suite, packed-install smoke, local browser proof,
+real multi-harness sandbox proof, PR merge, Deploy Dev, deployed SHA proof, and
+deployed browser plus protocol verification.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-07-13 — session `personal-session-branch` (abandoned)
 
 Abandoned the personal/group session-branch preference claim by explicit product
@@ -3565,3 +3587,161 @@ the full SDK suite, packed-install smoke, local browser proof, PR merge,
 Deploy Dev, deployed SHA proof, and deployed session-name synchronization.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness` local completion
+
+Implemented project-gated ACP transport and OpenCode, Claude Code, Codex, and Pi
+harness support.
+
+The existing `acp_runtime` experiment is the single rollout gate.
+The visible experiment name is `ACP & Multi-Harness`.
+Project manifests use `kortix_version: 3` runtime profiles and logical agents.
+Project-session ACP identity is immutable.
+ACP envelopes persist in PostgreSQL with database ordinals as SSE cursors.
+Upstream deduplication is scoped by runtime instance.
+Triggers and automations deliver ACP prompts through the durable session
+lifecycle queue.
+
+A cold Daytona snapshot took `379,773 ms`.
+The previous detached initial-prompt delivery stopped after `300,000 ms`.
+The durable queue fix now survives this cold-build window.
+
+Local verification:
+
+- Daemon suite: exit `0`.
+- Daemon typecheck: exit `0`.
+- API ACP tests: **28 pass / 0 fail** with **77** assertions.
+- API typecheck: exit `0`.
+- SDK typecheck: exit `0`.
+- SDK suite: **1347 pass / 0 fail** with **5855** assertions across **113**
+  files.
+- SDK packed-install smoke: pass.
+- Manifest, shared, API-contract, CLI schema, and web helper gates: exit `0`.
+- Route coverage: **507/517** routes, **10** allowlisted, **0** uncovered.
+- `COV-10`: **1/1** passed against `http://localhost:19108/v1`.
+- Real Daytona smoke: **4/4** harnesses passed.
+- Smoke cleanup: OpenCode, Claude Code, Codex, and Pi sessions are `stopped`
+  with `deletedAt`.
+- Touched web ESLint: exit `0`.
+- `git diff --check`: exit `0`.
+
+The connected-provider row no longer renders the model-dependent provider-key
+verification action.
+The backend verification route remains available for existing SDK consumers.
+
+The in-app browser runtime returned no available browsers.
+Rendered agent selection and provider-row verification remain unexecuted.
+
+**SDK shippable to production: YES.**
+
+**Feature delivery status: NOT YET.**
+PR merge, Deploy Dev, deployed SHA proof, and deployed protocol verification
+remain.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness` deployed completion
+
+Completed repository delivery and deployed protocol verification.
+
+PR #5749 merged as `239cda8a2c7b8e3862cae5d968224c1baf1d0a02`.
+Its 25 executed checks passed.
+The superseding Deploy Dev run `30402685106` deployed API and frontend commit
+`8e86e27d045b8349eaf7dc9cfba47086e93cfaf8`.
+Git confirmed that the feature merge is an ancestor of that deployed commit.
+
+The first deployed smoke found two environment and restart conditions:
+
+- The dev platform OpenAI key returned `401 invalid_api_key`.
+- A Daytona stop/start changed its preview ingress credential.
+  Another API replica could retain the old credential for five minutes.
+
+The smoke runner now accepts a disposable project model override and an optional
+temporary OpenAI key.
+The local encrypted OpenAI key returned HTTP `200` from `GET /v1/models`.
+PR #5759 added one ACP ingress refresh-and-retry after `401` or `403`.
+It also retries prompt env synchronization after the same authentication
+rejection.
+PR #5759 merged as `35d4063c954176338e809abc4329e43410786122`.
+Its 15 executed checks passed.
+Deploy Dev run `30406252134` completed successfully for that exact SHA.
+`GET https://dev-api.kortix.com/v1/health` reported:
+
+- `environment`: `dev`
+- `version`: `0.11.1-dev.35d4063c`
+- `commit`: `35d4063c954176338e809abc4329e43410786122`
+
+Deployed Daytona protocol smoke against
+`https://dev-api.kortix.com/v1` reported:
+
+- OpenCode: pass.
+- Claude Code: pass.
+- Codex: pass.
+- Pi: pass.
+- Final result: **4/4 harnesses passed**.
+
+Each harness verified its headless prompt, follow-up prompt, transcript reload,
+immutable harness identity, in-place restart, post-restart prompt, and persisted
+ACP identity.
+
+The disposable fixture project was
+`196ff19b-dfa1-4aae-98eb-9fa5138446b6`.
+Cleanup verification found:
+
+- Project status: `archived`.
+- OpenCode, Claude Code, Codex, and Pi session status: `stopped`.
+- Four session sandbox rows: `archived`.
+- Matching sandbox rows: `0`.
+
+The connected-provider row no longer exposes the model-dependent verification
+action.
+The SDK verification route remains compatible.
+The in-app browser runtime exposed no browser.
+Rendered provider-row verification remains unexecuted.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.** Local suites, CI, merge, deployed SHA,
+deployed four-harness protocol behavior, restart recovery, and fixture cleanup
+all pass.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness-system-docs` claim
+
+Claimed the multi-harness documentation and agent-discovery follow-up.
+
+The SDK change is documentation-only. It will replace the stale statement that
+ACP uses only OpenCode. It will document the server-selected OpenCode, Claude
+Code, Codex, or Pi harness without changing the public SDK surface.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness-system-docs` local completion
+
+Completed the SDK documentation update for the server-selected OpenCode,
+Claude Code, Codex, or Pi harness.
+
+No SDK export or runtime implementation changed.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1356 pass`, `0 fail`,
+  `5929 expect() calls`, `116 files`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarball imported and
+  constructed successfully.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** Main integration,
+PR merge, Deploy Dev, deployed SHA proof, and deployed four-harness verification
+remain.

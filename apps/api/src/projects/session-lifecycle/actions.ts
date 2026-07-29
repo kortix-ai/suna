@@ -5,12 +5,15 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { revokeSessionExecutorTokens } from '../../repositories/account-tokens';
 import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
+import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -103,6 +106,18 @@ export async function deleteSession(input: {
   void pauseComputeSession(sessionId).catch((err) =>
     console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
   );
+
+  // The provider sandbox is being removed above, so this session's executor
+  // token can never be used legitimately again — but nothing expired it, so it
+  // stayed a valid bearer forever. Awaited (not fire-and-forget) so the
+  // credential is dead before we report the session gone; a failure is logged at
+  // error level rather than failing the delete, since the box is already going.
+  await revokeSessionExecutorTokens(sessionId, accountId).catch((err) => {
+    console.error(
+      `[projects] FAILED to revoke executor tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
+      err,
+    );
+  });
 
   return { ok: true };
 }
@@ -200,6 +215,9 @@ export async function restartSession(input: {
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+          acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
+          compiledRuntimeConfig:
+            (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });
@@ -287,7 +305,11 @@ export async function restartSession(input: {
     void (async () => {
       try {
         await provider.stop(externalId).catch(() => {});
+        invalidateProviderCache(externalId);
         await provider.start(externalId);
+        // Provider ingress credentials can change on every stop/start cycle.
+        // Remove any link resolved while the sandbox was stopped.
+        invalidateProviderCache(externalId);
         // A provider may acknowledge start before discovering that the backing
         // runtime is gone (observed live with Platinum: POST start succeeded,
         // the next GET returned removed). Never mark the DB running from command

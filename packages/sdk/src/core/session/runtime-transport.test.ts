@@ -2,9 +2,16 @@ import { expect, test } from 'bun:test';
 
 import {
   buildAcpBridgeEndpoint,
+  buildProjectAcpEndpoint,
   createSessionRuntimePolicy,
   resolveSessionRuntimeTransport,
 } from './runtime-transport';
+
+test('buildProjectAcpEndpoint targets the authenticated project-session proxy', () => {
+  expect(buildProjectAcpEndpoint('https://api.kortix.test/v1/', 'project /1', 'session /1')).toBe(
+    'https://api.kortix.test/v1/projects/project%20%2F1/sessions/session%20%2F1/acp',
+  );
+});
 
 test('runtime transport defaults to REST and selects ACP only from server metadata', () => {
   expect(resolveSessionRuntimeTransport(undefined)).toBe('rest');
@@ -23,6 +30,12 @@ test('the ACP bridge trims a slash-heavy runtime URL suffix', () => {
   expect(buildAcpBridgeEndpoint(runtimeUrl, 'ses_1')).toBe(
     'https://api.kortix.test/v1/p/box/8000/kortix/acp/ses_1',
   );
+});
+
+test('the ACP bridge selects a managed harness without changing the server id', () => {
+  expect(
+    buildAcpBridgeEndpoint('https://api.kortix.test/v1/p/box/8000', 'project-session-1', 'codex'),
+  ).toBe('https://api.kortix.test/v1/p/box/8000/kortix/acp/project-session-1?agent=codex');
 });
 
 test('missing runtime transport keeps every OpenCode REST client path enabled', () => {

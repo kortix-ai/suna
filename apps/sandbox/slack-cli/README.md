@@ -1,6 +1,6 @@
 # slack-cli
 
-In-sandbox command-line tools the agent (opencode) invokes from inside a
+In-sandbox command-line tools any supported runtime harness invokes from inside a
 session. They ship as PATH shims baked into the Daytona sandbox image, auth via
 env vars injected at sandbox spawn, and emit **JSON only** so the agent can parse
 results.

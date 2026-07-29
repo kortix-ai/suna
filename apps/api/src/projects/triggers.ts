@@ -72,10 +72,14 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
- * this ceiling is genuinely unknown to the platform and still refused.
+ * `extractAgents` in `./agents.ts` is the v2-aware consumer).
+ *
+ * Version 3 keeps the same governance grant fields. It adds runtime profiles
+ * that `compileRuntimeConfig` consumes. This reader must accept v3 so the
+ * mandatory declared-agent gate and runtime compiler read one manifest.
+ * A version above this ceiling is unknown and remains refused.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -503,8 +507,13 @@ interface ParseErr {
   error: GitTriggerParseError;
 }
 
-function parseTriggerEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
-  const err = (slug: string, message: string): ParseErr => makeTriggerError(slug, message, filename);
+function parseTriggerEntry(
+  entry: unknown,
+  index: number,
+  filename: string = MANIFEST_FILENAME,
+): ParseOk | ParseErr {
+  const err = (slug: string, message: string): ParseErr =>
+    makeTriggerError(slug, message, filename);
 
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return err('(invalid)', `[[triggers]] entry #${index + 1} is not a table`);
@@ -747,7 +756,11 @@ function coerceBool(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function makeTriggerError(slug: string, message: string, filename: string = MANIFEST_FILENAME): ParseErr {
+function makeTriggerError(
+  slug: string,
+  message: string,
+  filename: string = MANIFEST_FILENAME,
+): ParseErr {
   return {
     ok: false,
     error: { slug, path: `${filename}#triggers.${slug}`, error: message },

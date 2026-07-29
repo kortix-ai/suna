@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -34,7 +34,7 @@ const optStr = z.string().optional().default('');
 const optStrDefault = (def: string) => z.string().optional().default(def);
 
 /** Optional URL string with a custom default. Not required, just validated if present. */
-  const optUrl = (def: string) =>
+const optUrl = (def: string) =>
   z
     .string()
     .optional()
@@ -48,8 +48,22 @@ const optInt = (def: number) =>
     .optional()
     .default(String(def))
     .transform((v) => {
-      const n = parseInt(v, 10);
+      const n = Number.parseInt(v, 10);
       return Number.isNaN(n) ? def : n;
+    });
+
+/** Optional decimal with a default — money, unlike optInt's counts. A
+ *  non-numeric or negative value falls back to the default rather than
+ *  silently becoming a cap of NaN (which compares false against everything and
+ *  would disable the limit it was set to enforce). */
+const optNum = (def: number) =>
+  z
+    .string()
+    .optional()
+    .default(String(def))
+    .transform((v) => {
+      const n = Number.parseFloat(v);
+      return Number.isFinite(n) && n >= 0 ? n : def;
     });
 
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
@@ -129,6 +143,15 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Kortix-owned session titles: on a session's first prompt, generate the
+  // title ourselves via the internal LLM gateway (using the session's own
+  // model) instead of relying on the harness summarizer. On by default; the
+  // kill-switch falls the whole path back to the OpenCode title sync.
+  SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
+  // Per-project model enablement: when on, the gateway rejects a model a project
+  // has disabled and the picker hides it. On by default (empty disabled-set =
+  // no behavior change); kill-switch drops back to catalog-only gating.
+  MODEL_ENABLEMENT_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -557,6 +580,10 @@ const envSchema = z.object({
    *  0 / unset = disabled, which is the default: the account-wide cap still
    *  applies. Opt-in because the right number is wrapper-specific. */
   KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: optInt(0),
+  /** Per-END-USER spend ceiling in USD over a rolling window. 0/unset = off. */
+  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: optNum(0),
+  /** The rolling window the spend ceiling is measured over. */
+  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: optInt(30),
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
@@ -870,6 +897,8 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
+  MODEL_ENABLEMENT_ENABLED: env.MODEL_ENABLEMENT_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
@@ -1091,6 +1120,8 @@ export const config = {
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
   KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: env.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT,
+  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: env.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD,
+  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: env.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS,
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
@@ -1283,7 +1314,7 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
 };
 
-export function getToolCost(toolName: string, resultCount: number = 0): number {
+export function getToolCost(toolName: string, resultCount = 0): number {
   const pricing = TOOL_PRICING[toolName];
   if (!pricing) {
     return 0.01;

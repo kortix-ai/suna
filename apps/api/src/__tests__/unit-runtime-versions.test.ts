@@ -44,6 +44,10 @@ describe('runtime version drift guards', () => {
     const dockerfile = readRepoFile('apps/sandbox/Dockerfile');
     expect(dockerfile).toContain('COPY packages/shared/src/runtime-versions.json');
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').opencode");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').claudeAgentAcp");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').codexAcp");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').piAcp");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').piCodingAgent");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').agentBrowser");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");

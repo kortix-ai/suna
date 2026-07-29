@@ -9,6 +9,7 @@ import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { ErrorStrip } from '@/features/auth/auth-primitives';
 import { createClient } from '@/lib/supabase/client';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 interface AuthMessage {
   type: 'github-auth-success' | 'github-auth-error';
@@ -29,7 +30,7 @@ export default function GitHubOAuthPopup() {
     let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
-    const returnUrl = sessionStorage.getItem('github-returnUrl') || '/projects';
+    const returnUrl = sessionStorage.getItem('github-returnUrl') || latestProjectPath(null);
 
     const postMessage = (message: AuthMessage) => {
       try {

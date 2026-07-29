@@ -4,7 +4,7 @@
  *
  * ONE validator reference, three surfaces:
  *
- *   1. `https://kortix.com/schema/kortix{,.v1,.v2}.schema.json` — the same
+ *   1. `https://kortix.com/schema/kortix{,.v1,.v2,.v3}.schema.json` — the same
  *      documents published at `apps/web/public/schema/` for editor
  *      `$schema` integration.
  *   2. This command — the CLI-local copy, for scripting / offline use /
@@ -21,13 +21,13 @@ import { C, help, status } from '../style.ts';
 const HELP = help`Usage: kortix schema [options]
 
 Print the canonical JSON Schema for kortix.toml / kortix.yaml — the same
-document served at ${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json (and the
-v1 / combined variants). Point an editor's "$schema" at that URL for live
+document served at ${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json (and the
+v1 / v2 / combined variants). Point an editor's "$schema" at that URL for live
 validation + autocomplete, or pipe this command's output into ajv or any
 other JSON Schema validator.
 
 Options:
-  --version <1|2>   Print only that schema version (default: the combined
+  --version <1|2|3> Print only that schema version (default: the combined
                      document, which dispatches on kortix_version).
   --url             Print the canonical URL for the selected version instead
                      of the schema body.
@@ -35,7 +35,7 @@ Options:
 `;
 
 interface Flags {
-  version?: 1 | 2;
+  version?: 1 | 2 | 3;
   url: boolean;
   help: boolean;
 }
@@ -46,10 +46,10 @@ function parseFlags(argv: string[]): Flags {
     const arg = argv[i];
     if (arg === '--version') {
       const next = argv[++i];
-      if (next !== '1' && next !== '2') {
-        throw new Error(`--version must be "1" or "2" (got ${JSON.stringify(next)}).`);
+      if (next !== '1' && next !== '2' && next !== '3') {
+        throw new Error(`--version must be "1", "2", or "3" (got ${JSON.stringify(next)}).`);
       }
-      flags.version = next === '1' ? 1 : 2;
+      flags.version = Number(next) as 1 | 2 | 3;
     } else if (arg === '--url') {
       flags.url = true;
     } else if (arg === '-h' || arg === '--help') {
@@ -61,9 +61,10 @@ function parseFlags(argv: string[]): Flags {
   return flags;
 }
 
-function schemaFilename(version?: 1 | 2): string {
+function schemaFilename(version?: 1 | 2 | 3): string {
   if (version === 1) return 'kortix.v1.schema.json';
   if (version === 2) return 'kortix.v2.schema.json';
+  if (version === 3) return 'kortix.v3.schema.json';
   return 'kortix.schema.json';
 }
 

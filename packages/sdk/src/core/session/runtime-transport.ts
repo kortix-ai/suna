@@ -1,4 +1,5 @@
 export type SessionRuntimeTransport = 'acp' | 'rest';
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
 
 export function resolveSessionRuntimeTransport(
   value: SessionRuntimeTransport | undefined,
@@ -42,6 +43,23 @@ function trimTrailingSlashes(value: string): string {
 /** Build the authenticated, session-scoped ACP bridge endpoint.
  *  Hosts receive the completed URL through `useSession`; they never construct
  *  or import this runtime path. */
-export function buildAcpBridgeEndpoint(runtimeUrl: string, sessionId: string): string {
-  return `${trimTrailingSlashes(runtimeUrl)}/kortix/acp/${encodeURIComponent(sessionId)}`;
+export function buildAcpBridgeEndpoint(
+  runtimeUrl: string,
+  acpServerId: string,
+  runtimeHarness?: SessionRuntimeHarness,
+): string {
+  const endpoint = `${trimTrailingSlashes(runtimeUrl)}/kortix/acp/${encodeURIComponent(acpServerId)}`;
+  return runtimeHarness ? `${endpoint}?agent=${encodeURIComponent(runtimeHarness)}` : endpoint;
+}
+
+/** Build the authenticated platform bridge that persists one project session. */
+export function buildProjectAcpEndpoint(
+  backendUrl: string,
+  projectId: string,
+  sessionId: string,
+): string {
+  return (
+    `${trimTrailingSlashes(backendUrl)}/projects/${encodeURIComponent(projectId)}` +
+    `/sessions/${encodeURIComponent(sessionId)}/acp`
+  );
 }

@@ -278,7 +278,7 @@ const agiReadyArchitecture: BlogPostEntry = {
 kortix_version: 2
 
 project:
-  name: acme-ops
+  name: acme-security-audit
 
 # A tool the agent can use. Credentials stay in the platform,
 # never in this file. The policy decides what needs a human.
@@ -290,10 +290,10 @@ connectors:
 
 # Run work on a schedule — nobody has to kick it off.
 triggers:
-  - slug: weekly-health-report
+  - slug: nightly-access-review
     type: cron
-    cron: "0 0 9 * * 1"
-    prompt: Draft the weekly customer health report for review.`,
+    cron: "0 0 2 * * *"
+    prompt: Audit last night's access logs and flag any out-of-policy connector calls for review.`,
     },
     {
       type: 'p',

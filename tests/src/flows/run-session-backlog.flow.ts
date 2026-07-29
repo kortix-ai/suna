@@ -82,7 +82,7 @@ async function bootSandbox(
   ctx: FlowContext,
   opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  const project = await ctx.fixtures.project({ seed: true });
+  const project = await ctx.fixtures.sharedSeededProject();
   const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
   const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
 
@@ -589,7 +589,7 @@ flow(
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
+    const project = await ctx.fixtures.sharedSeededProject();
     const clientSessionId = crypto.randomUUID();
     await ctx.step(
       'create session with client-minted id + branch_already_created → 201',

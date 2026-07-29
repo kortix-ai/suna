@@ -73,10 +73,7 @@ function looksLikeToolName(value: string): boolean {
   return /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value);
 }
 
-function nativeToolName(
-  update: Record<string, unknown>,
-  previous: ToolPart | null,
-): string {
+function nativeToolName(update: Record<string, unknown>, previous: ToolPart | null): string {
   if (previous) return previous.tool;
   const title = asString(update.title);
   if (title && looksLikeToolName(title)) return title;
@@ -128,9 +125,8 @@ function createAssistantMessage(
   messageId?: string | null,
 ): AcpMessageWithParts {
   const id = messageId ?? nextGeneratedId(state, 'assistant');
-  const parent = [...state.messages]
-    .reverse()
-    .find((message) => message.info.role === 'user')?.info.id;
+  const parent = [...state.messages].reverse().find((message) => message.info.role === 'user')
+    ?.info.id;
   const info = {
     id,
     sessionID: state.sessionId,
@@ -173,10 +169,7 @@ function completeAssistantMessage(
         status: 'completed',
         input: state.input,
         output: '',
-        title:
-          state.status === 'running' && state.title
-            ? state.title
-            : toolInfo(part.tool).label,
+        title: state.status === 'running' && state.title ? state.title : toolInfo(part.tool).label,
         metadata: state.status === 'running' ? (state.metadata ?? {}) : {},
         time: { start, end: completed },
       },
@@ -199,8 +192,7 @@ function withAssistant(
 ): AcpProjection {
   if (messageId) {
     const existingIndex = state.messages.findIndex(
-      (message) =>
-        message.info.role === 'assistant' && message.info.id === messageId,
+      (message) => message.info.role === 'assistant' && message.info.id === messageId,
     );
     if (existingIndex >= 0) {
       const messages = [...state.messages];
@@ -210,20 +202,14 @@ function withAssistant(
   }
 
   const last = state.messages.at(-1);
-  if (
-    !messageId &&
-    last?.info.role === 'assistant' &&
-    !last.info.time.completed
-  ) {
+  if (!messageId && last?.info.role === 'assistant' && !last.info.time.completed) {
     const messages = [...state.messages];
     messages[messages.length - 1] = mutate(last);
     return { ...state, messages, status: { type: 'busy' } };
   }
 
   const completed = Date.now();
-  const messages = state.messages.map((message) =>
-    completeAssistantMessage(message, completed),
-  );
+  const messages = state.messages.map((message) => completeAssistantMessage(message, completed));
   const created = createAssistantMessage({ ...state, messages }, messageId);
   return {
     ...state,
@@ -240,14 +226,11 @@ function appendText(
   messageId: string | null,
 ): AcpProjection {
   if (!text) return state;
-  return withAssistant(state, messageId, (message) => {
+  const append = (message: AcpMessageWithParts): AcpMessageWithParts => {
     const parts = [...message.parts];
     const existingIndex = parts.findIndex((part) => part.type === type);
     if (existingIndex >= 0) {
-      const previous = parts[existingIndex] as Extract<
-        Part,
-        { type: 'text' | 'reasoning' }
-      >;
+      const previous = parts[existingIndex] as Extract<Part, { type: 'text' | 'reasoning' }>;
       parts[existingIndex] = { ...previous, text: previous.text + text };
     } else {
       parts.push({
@@ -260,7 +243,19 @@ function appendText(
       } as Part);
     }
     return { ...message, parts };
-  });
+  };
+  const last = state.messages.at(-1);
+  if (
+    !messageId &&
+    last?.info.role === 'assistant' &&
+    last.info.time.completed &&
+    last.parts.some((part) => part.type === 'step-finish')
+  ) {
+    const messages = [...state.messages];
+    messages[messages.length - 1] = append(last);
+    return { ...state, messages };
+  }
+  return withAssistant(state, messageId, append);
 }
 
 function applyUserText(
@@ -285,6 +280,23 @@ function applyUserText(
       messages[existingIndex] = { ...existing, parts };
       return { ...state, messages };
     }
+    const syntheticIndex = [...state.messages]
+      .map((message, index) => ({ message, index }))
+      .reverse()
+      .find(
+        ({ message }) =>
+          message.info.role === 'user' &&
+          message.info.id.startsWith('acp-user-') &&
+          message.parts
+            .filter((part) => part.type === 'text')
+            .map((part) => part.text)
+            .join('') === text,
+      )?.index;
+    if (syntheticIndex !== undefined) {
+      const messages = [...state.messages];
+      messages[syntheticIndex] = createUserMessage(state, text, messageId);
+      return { ...state, messages };
+    }
   }
   const last = state.messages.at(-1);
   if (!messageId && last?.info.role === 'user') {
@@ -292,6 +304,7 @@ function applyUserText(
     const index = parts.findIndex((part) => part.type === 'text');
     if (index >= 0) {
       const previous = parts[index] as Extract<Part, { type: 'text' }>;
+      if (previous.text === text) return state;
       parts[index] = { ...previous, text: previous.text + text };
     }
     const messages = [...state.messages];
@@ -305,39 +318,25 @@ function applyUserText(
   };
 }
 
-function projectTool(
-  state: AcpProjection,
-  update: Record<string, unknown>,
-): AcpProjection {
+function projectTool(state: AcpProjection, update: Record<string, unknown>): AcpProjection {
   const callId = asString(update.toolCallId);
   if (!callId) return state;
   const owner = state.messages.find((message) =>
-    message.parts.some(
-      (part) => part.type === 'tool' && part.callID === callId,
-    ),
+    message.parts.some((part) => part.type === 'tool' && part.callID === callId),
   );
-  const ownerId =
-    owner?.info.role === 'assistant' ? owner.info.id : null;
+  const ownerId = owner?.info.role === 'assistant' ? owner.info.id : null;
   return withAssistant(state, ownerId, (message) => {
     const parts = [...message.parts];
-    const index = parts.findIndex(
-      (part) => part.type === 'tool' && part.callID === callId,
-    );
-    const previous =
-      index >= 0 ? (parts[index] as ToolPart) : null;
-    const input = isObject(update.rawInput)
-      ? update.rawInput
-      : previous?.state.input ?? {};
+    const index = parts.findIndex((part) => part.type === 'tool' && part.callID === callId);
+    const previous = index >= 0 ? (parts[index] as ToolPart) : null;
+    const input = isObject(update.rawInput) ? update.rawInput : (previous?.state.input ?? {});
     const status = asString(update.status) ?? previous?.state.status ?? 'pending';
     const tool = nativeToolName(update, previous);
     const title = projectedToolTitle(tool, asString(update.title));
-    const previousTitle =
-      previous?.state.status === 'running' ? previous.state.title : undefined;
+    const previousTitle = previous?.state.status === 'running' ? previous.state.title : undefined;
     const rawOutput = update.rawOutput;
     const outputMetadata =
-      isObject(rawOutput) && isObject(rawOutput.metadata)
-        ? rawOutput.metadata
-        : {};
+      isObject(rawOutput) && isObject(rawOutput.metadata) ? rawOutput.metadata : {};
     const now = Date.now();
     let part: ToolPart;
     if (status === 'completed') {
@@ -355,10 +354,7 @@ function projectTool(
           title: title ?? previousTitle ?? tool,
           metadata: outputMetadata,
           time: {
-            start:
-              previous?.state.status === 'running'
-                ? previous.state.time.start
-                : now,
+            start: previous?.state.status === 'running' ? previous.state.time.start : now,
             end: now,
           },
         },
@@ -376,10 +372,7 @@ function projectTool(
           input,
           error: toolOutput(rawOutput) || title || 'Tool call failed',
           time: {
-            start:
-              previous?.state.status === 'running'
-                ? previous.state.time.start
-                : now,
+            start: previous?.state.status === 'running' ? previous.state.time.start : now,
             end: now,
           },
         },
@@ -397,10 +390,7 @@ function projectTool(
           input,
           title,
           time: {
-            start:
-              previous?.state.status === 'running'
-                ? previous.state.time.start
-                : now,
+            start: previous?.state.status === 'running' ? previous.state.time.start : now,
           },
         },
       };
@@ -436,9 +426,7 @@ function normalizeQuestion(params: Record<string, unknown>): QuestionInfo[] {
   const fromExplicit = explicit.flatMap((candidate) => {
     if (!isObject(candidate)) return [];
     const question =
-      asString(candidate.question) ??
-      asString(candidate.label) ??
-      asString(params.message);
+      asString(candidate.question) ?? asString(candidate.label) ?? asString(params.message);
     if (!question) return [];
     const options = Array.isArray(candidate.options)
       ? candidate.options.flatMap((option) => {
@@ -473,19 +461,14 @@ function normalizeQuestion(params: Record<string, unknown>): QuestionInfo[] {
     : isObject(params.schema)
       ? params.schema
       : null;
-  const properties = schema && isObject(schema.properties)
-    ? schema.properties
-    : {};
+  const properties = schema && isObject(schema.properties) ? schema.properties : {};
   const fromSchema = Object.entries(properties).flatMap(([key, raw]) => {
     if (!isObject(raw)) return [];
     const values = Array.isArray(raw.enum) ? raw.enum : [];
     return [
       {
         question:
-          asString(raw.title) ??
-          asString(raw.description) ??
-          asString(params.message) ??
-          key,
+          asString(raw.title) ?? asString(raw.description) ?? asString(params.message) ?? key,
         header: key.slice(0, 30),
         options: values.map((value) => ({
           label: String(value),
@@ -516,15 +499,27 @@ function applyRequest(
 ): AcpProjection {
   const params = isObject(rawParams) ? rawParams : {};
   if (asString(params.sessionId) !== state.sessionId) return state;
+  if (method === 'session/prompt') {
+    const prompt = Array.isArray(params.prompt) ? params.prompt : [];
+    const text = prompt
+      .flatMap((part) =>
+        isObject(part) && part.type === 'text' && typeof part.text === 'string' ? [part.text] : [],
+      )
+      .join('');
+    if (!text) return state;
+    return {
+      ...state,
+      nextId: state.nextId + 1,
+      messages: [...state.messages, createUserMessage(state, text, `acp-user-${String(id)}`)],
+      status: { type: 'busy' },
+    };
+  }
   if (method === 'session/request_permission') {
     const toolCall = isObject(params.toolCall) ? params.toolCall : {};
     const request: PermissionRequest = {
       id: String(id),
       sessionID: state.sessionId,
-      permission:
-        asString(toolCall.title) ??
-        asString(params.permission) ??
-        'tool',
+      permission: asString(toolCall.title) ?? asString(params.permission) ?? 'tool',
       patterns: [],
       metadata: { acp: params },
       always: [],
@@ -539,10 +534,7 @@ function applyRequest(
     };
     return {
       ...state,
-      permissions: [
-        ...state.permissions.filter((item) => item.id !== request.id),
-        request,
-      ],
+      permissions: [...state.permissions.filter((item) => item.id !== request.id), request],
     };
   }
   if (
@@ -557,19 +549,13 @@ function applyRequest(
     };
     return {
       ...state,
-      questions: [
-        ...state.questions.filter((item) => item.id !== request.id),
-        request,
-      ],
+      questions: [...state.questions.filter((item) => item.id !== request.id), request],
     };
   }
   return state;
 }
 
-function finishPrompt(
-  state: AcpProjection,
-  result: Record<string, unknown>,
-): AcpProjection {
+function finishPrompt(state: AcpProjection, result: Record<string, unknown>): AcpProjection {
   const last = state.messages.at(-1);
   if (!last || last.info.role !== 'assistant') {
     return { ...state, status: { type: 'idle' } };
@@ -627,17 +613,9 @@ export function createAcpProjection(sessionId: string): AcpProjection {
   };
 }
 
-export function applyAcpEnvelope(
-  state: AcpProjection,
-  envelope: AcpEnvelope,
-): AcpProjection {
+export function applyAcpEnvelope(state: AcpProjection, envelope: AcpEnvelope): AcpProjection {
   if ('method' in envelope && 'id' in envelope) {
-    return applyRequest(
-      state,
-      envelope.id,
-      envelope.method,
-      envelope.params,
-    );
+    return applyRequest(state, envelope.id, envelope.method, envelope.params);
   }
 
   if ('method' in envelope && envelope.method === 'session/update') {
@@ -678,10 +656,7 @@ export function applyAcpEnvelope(
         configOptions: update.configOptions.filter(isObject),
       };
     }
-    if (
-      kind === 'available_commands_update' &&
-      Array.isArray(update.availableCommands)
-    ) {
+    if (kind === 'available_commands_update' && Array.isArray(update.availableCommands)) {
       return {
         ...state,
         availableCommands: update.availableCommands.filter(isObject),
