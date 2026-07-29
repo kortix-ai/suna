@@ -60,6 +60,11 @@ function principal(): ExecutorPrincipal {
     projectId: PROJECT,
     sessionId: 'sess-faces',
     subject: { userId: USER, groupIds: [] },
+    agentGrant: {
+      agent: 'test-agent',
+      connectors: ['echo'],
+      kortixCli: 'all',
+    },
   };
 }
 
@@ -227,6 +232,62 @@ describe('CLI face', () => {
     const call = await runCli(['call', 'echo', 'get', '{"q":"cli"}']);
     expect(call).toMatchObject({ ok: true, risk: 'read' });
     expect(call.data.url).toBe('https://example.test/anything?q=cli');
+  });
+
+  test('calls the dotted tool reference returned by discover and describe', async () => {
+    const call = await runCli(['call', 'echo.get', '{"q":"cli-dotted"}']);
+    expect(call).toMatchObject({ ok: true, risk: 'read' });
+    expect(call.data.url).toBe('https://example.test/anything?q=cli-dotted');
+  });
+});
+
+describe('HTTP call validation', () => {
+  test('rejects a dotted tool reference before the connector assignment gate', async () => {
+    const response = await fetch(`${apiUrl}/v1/executor/call`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        connector: 'echo.get',
+        action: '{"q":"wrong-position"}',
+        args: {},
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      ok: false,
+      status: 'error',
+      reason: 'invalid_tool_reference',
+      message:
+        'The connector field contains a dotted tool reference. Send the connector and action separately.',
+      connector: 'echo',
+      action: 'get',
+    });
+  });
+
+  test('keeps connector_not_assigned for a valid connector outside the agent grant', async () => {
+    const response = await fetch(`${apiUrl}/v1/executor/call`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        connector: 'other',
+        action: 'get',
+        args: {},
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      ok: false,
+      status: 'denied',
+      reason: 'connector_not_assigned',
+    });
   });
 });
 

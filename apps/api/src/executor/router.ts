@@ -22,6 +22,7 @@ import {
   type UpdateConnectionProfileCredentialInput,
 } from '@kortix/api-contract';
 import type { AgentGrant } from '@kortix/db';
+import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
@@ -375,6 +376,37 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     const actionPath = typeof body?.action === 'string' ? body.action.trim() : '';
     if (!connectorSlug || !actionPath) {
       return c.json({ error: 'connector and action are required' }, 400);
+    }
+    // Validate request shape before authorization. CLI discovery and describe
+    // expose tools as `connector.action`, so a client can accidentally put that
+    // complete reference in the connector field. Reporting that syntax error as
+    // connector_not_assigned falsely blames the session grant.
+    if (!SLUG_RE.test(connectorSlug)) {
+      const separator = connectorSlug.indexOf('.');
+      if (separator > 0 && separator < connectorSlug.length - 1) {
+        return c.json(
+          {
+            ok: false,
+            status: 'error',
+            reason: 'invalid_tool_reference',
+            message:
+              'The connector field contains a dotted tool reference. Send the connector and action separately.',
+            connector: connectorSlug.slice(0, separator),
+            action: connectorSlug.slice(separator + 1),
+          },
+          400,
+        );
+      }
+      return c.json(
+        {
+          ok: false,
+          status: 'error',
+          reason: 'invalid_connector_slug',
+          message:
+            'The connector field must be a lowercase connector slug containing only letters, digits, underscores, or hyphens.',
+        },
+        400,
+      );
     }
     // Per-agent connector assignment: a scoped agent may call only the connector
     // profiles its kortix.yaml overlay lists. Default-deny otherwise.

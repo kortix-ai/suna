@@ -16,7 +16,7 @@ The default agent interface is the **`kortix executor` CLI**:
 - `kortix executor connectors` - list usable connectors and their tools.
 - `kortix executor discover "<intent>"` - search tools by natural-language need.
 - `kortix executor describe <connector>.<action>` - inspect one tool schema.
-- `kortix executor call <connector> <action> '<json-args>'` - run a tool.
+- `kortix executor call <connector>.<action> '<json-args>'` - run a tool.
 - `kortix executor add/rm/connect` - manage connectors and setup links.
 
 The same Executor core is also available as:
@@ -75,18 +75,18 @@ kortix executor describe email_email_inbox_bjgk.reply_message
 4. Run the tool:
 
 ```sh
-kortix executor call email_email_inbox_bjgk reply_message \
+kortix executor call email_email_inbox_bjgk.reply_message \
   '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
 ```
 
-`call` takes `<connector> <action> <json-args>`. The `<action>` is the part after
-the connector slug in the tool path. For `email_email_inbox_bjgk.reply_message`,
-the connector is `email_email_inbox_bjgk` and the action is `reply_message`.
+`call` takes the same `<connector>.<action>` tool reference returned by
+`connectors`, `discover`, and `describe`. The legacy split form,
+`<connector> <action> <json-args>`, remains supported.
 
 For GraphQL tools, pass selected fields inside `args.__select`, for example:
 
 ```sh
-kortix executor call internal_graph query.user \
+kortix executor call internal_graph.query.user \
   '{"id":"1","__select":"id name email"}'
 ```
 </cli-first-loop>
@@ -143,7 +143,7 @@ server-side credentials. Use named actions when they fit; use `request` when the
 named catalog is missing the endpoint you need.
 
 ```sh
-kortix executor call github request '{
+kortix executor call github.request '{
   "method": "POST",
   "url": "https://api.github.com/repos/kortix-ai/suna/issues/1234/comments",
   "body": { "body": "Review note..." }
