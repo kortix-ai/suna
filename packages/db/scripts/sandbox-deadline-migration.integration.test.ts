@@ -92,6 +92,20 @@ async function applySql(filename: string): Promise<void> {
 const ACC_A = '11111111-1111-1111-1111-111111111111';
 const ACC_B = '22222222-2222-2222-2222-222222222222';
 
+/**
+ * The disposable server's image tag matches the one CI already runs as a
+ * service container and the one the sibling migration tests use. That is not
+ * cosmetic: on a cold runner an unmatched tag means a registry PULL inside the
+ * hook, which is exactly what blew bun's default 5s hook budget the first time
+ * this ran in CI (it passes locally forever, because the image is cached).
+ * The explicit hook timeouts below are the real fix; sharing the tag makes the
+ * pull unnecessary in the common case.
+ */
+const POSTGRES_IMAGE = 'postgres:16-alpine';
+
+/** Generous enough to absorb a cold `docker pull` on a fresh runner. */
+const CONTAINER_BOOT_TIMEOUT_MS = 180_000;
+
 describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreSQL', () => {
   beforeAll(async () => {
     const started = Bun.spawnSync([
@@ -105,7 +119,7 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
       'POSTGRES_PASSWORD=test',
       '-e',
       'POSTGRES_DB=testdb',
-      'postgres:17-alpine',
+      POSTGRES_IMAGE,
     ]);
     if (started.exitCode !== 0) throw new Error(started.stderr.toString());
 
@@ -189,11 +203,11 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
     await applySql('20260730090000004_validate_sandbox_deadline_check.sql');
     await applySql('20260730090000005_sandbox_anchor_guard.sql');
     await applySql('20260730090000006_usage_extends_sandbox_deadline.sql');
-  });
+  }, CONTAINER_BOOT_TIMEOUT_MS);
 
   afterAll(() => {
     Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
-  });
+  }, 60_000);
 
   // ── Step 1: the columns ────────────────────────────────────────────────────
 
