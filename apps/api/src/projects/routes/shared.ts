@@ -10,6 +10,7 @@ import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { EXECUTION_LEASE_METADATA_KEYS } from '../execution-lease';
 import { withProjectGitAuth } from '../lib/git';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -102,6 +103,11 @@ export async function resumeStoppedSandbox(row: {
     'runtimeWakeFailedAt',
     'opencodeReadyWaitStartedAt',
     'opencodeReadyWaitReason',
+    // The cumulative execution-lease anchor. The ceiling bounds how long a
+    // RUNNING box may keep renewing its own reprieve; a box that was stopped
+    // burned nothing, and a wake is a control-plane-OBSERVED event, so it is
+    // the one thing allowed to reset the anchor.
+    ...EXECUTION_LEASE_METADATA_KEYS,
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {

@@ -28,16 +28,18 @@ export function autoStopTtlMs(): number {
  * THE BACKSTOP — the answer to "a box must NEVER run 24/7 when it is not in use".
  *
  * Every other liveness signal the reaper trusts is written by the box itself:
- * `metadata.lastTurnAt` and `metadata.executionLeaseUntil` are stamped by the
- * in-sandbox agent's heartbeat (execution-lease.ts `writeExecutionLease`, renewed
- * every 60s while it believes ANY opencode session is 'busy' OR 'retry'), and the
- * busy probe asks that same wedged daemon. A retry loop, a dropped opencode event
- * subscription, or any daemon wedge therefore renews its own reprieve forever —
- * measured live 2026-07-29: 188 of 279 active prod boxes held a live execution
- * lease, 182 of them older than 12h, and `metadata.idleObservedAt` was a JSON
- * null on EVERY row platform-wide because the lease veto returns before the arm
- * write and every lease renew force-nulls it. The idle-TTL stop path had never
- * fired in production, not once.
+ * `metadata.executionLeaseUntil` is stamped by the in-sandbox agent's heartbeat
+ * (execution-lease.ts `writeExecutionLease`, renewed every 60s while it believes
+ * ANY opencode session is 'busy' OR 'retry'), and the busy probe asks that same
+ * wedged daemon. A retry loop, a dropped opencode event subscription, or any
+ * daemon wedge therefore renews its own reprieve forever — measured live
+ * 2026-07-29: 188 of 279 active prod boxes held a live execution lease, 182 of
+ * them older than 12h, and `metadata.idleObservedAt` was a JSON null on EVERY
+ * row platform-wide because the lease veto returns before the arm write and
+ * every lease renew force-nulls it. The idle-TTL stop path had never fired in
+ * production, not once. (That renew also stamped `lastTurnAt`, letting the box
+ * forge the very clock below; removed 2026-07-29 together with the cumulative
+ * lease ceiling in execution-lease.ts, which bounds the veto itself.)
  *
  * So the ceiling below deliberately consults ONLY evidence the box cannot forge:
  * the sandbox row's creation time and real `usage_events` rows (see
@@ -128,10 +130,16 @@ export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction 
 
 /**
  * Last MEANINGFUL activity for a sandbox row. Driven by `metadata.lastTurnAt`
- * (stamped at every turn boundary — the only thing that should keep a box alive)
  * with a fallback to row creation so a never-used box still ages out after the
  * grace TTL. Deliberately does NOT consider `last_used_at` (proxy traffic) or
  * any passive signal.
+ *
+ * Since 2026-07-29 `lastTurnAt` is written ONLY by control-plane-observed
+ * events — the reaper's own busy probe (reaping/running-box.ts), an explicit
+ * wake (routes/shared.ts), an in-place restart (session-lifecycle/
+ * readiness-clocks.ts). The in-sandbox lease renew used to stamp it too, which
+ * meant a wedged daemon kept this clock permanently fresh and could never age
+ * out; the whole point of the clock is that the box cannot wind it forward.
  */
 export function lastMeaningfulAt(row: {
   metadata: Record<string, unknown> | null;
@@ -149,10 +157,11 @@ export function lastMeaningfulAt(row: {
 /**
  * The UNFORGEABLE activity clock, and the only input to the absolute ceiling.
  *
- * `lastMeaningfulAt` above reads `metadata.lastTurnAt`, which the in-sandbox
- * agent rewrites to `now` on every 60s execution-lease renew — so a wedged box
- * keeps its own activity clock permanently fresh and can never age out. This
- * function reads only signals the box cannot write to:
+ * `lastMeaningfulAt` above reads `metadata.lastTurnAt`, which until 2026-07-29
+ * the in-sandbox agent rewrote to `now` on every 60s execution-lease renew — so
+ * a wedged box kept its own activity clock permanently fresh and could never age
+ * out. That stamp is gone, but this function stays the load-bearing one: it
+ * reads only signals the box cannot write to at all:
  *
  *   - `createdAt` — when WE provisioned the row, and
  *   - the newest `usage_events` row for the session — a real LLM call, written

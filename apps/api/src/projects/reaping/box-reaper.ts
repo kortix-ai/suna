@@ -98,10 +98,10 @@ export const EMPTY_REAP_RESULT: ReapResult = {
  * Bounded concurrency so a batch of provider round-trips doesn't serialize.
  *
  * ORPHAN-ACCOUNT BYPASS: a box whose owning account has been deleted keeps
- * heartbeating forever otherwise — the execution-lease renewal and the
- * busy-veto path both stamp `lastTurnAt`/clear `idleObservedAt` (see the
- * module header), so the idle clock can never accumulate and the box is
- * never even probed. There is no customer behind a deleted account whose
+ * heartbeating forever otherwise — the execution-lease renewal clears
+ * `idleObservedAt` and short-circuits the pass before the probe (see the module
+ * header), so the idle clock can never accumulate and the box is never even
+ * probed. There is no customer behind a deleted account whose
  * in-flight tool call this would interrupt, so for orphaned rows ONLY this
  * pass skips the lease short-circuit and tells `reapRunningBox` to skip the
  * busy probe too, going straight to `provider.stop()`. Every non-orphan row
@@ -184,9 +184,11 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
           const isOrphanAccount = !!row.accountId && orphanAccountIds !== null && orphanAccountIds.has(row.accountId);
           if (isOrphanAccount) orphanCandidates += 1;
 
-          // The execution lease is written by the box's OWN heartbeat and is
-          // renewed forever by a wedged/retrying daemon — it may defer a stop,
-          // never prevent one past the ceiling.
+          // The execution lease is written by the box's OWN heartbeat, so it may
+          // defer a stop, never prevent one past the ceiling. Doubly bounded
+          // since 2026-07-29: the API also refuses to renew a lease held longer
+          // than execution-lease.ts `maxLeaseHeldMs`, so a wedged/retrying daemon
+          // stops being able to write this veto at all.
           if (!isOrphanAccount && !hardStop && hasActiveExecutionLease(row.metadata, now)) {
             result.busyVetoed += 1;
             continue;
