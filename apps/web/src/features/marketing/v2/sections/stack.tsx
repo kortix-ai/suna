@@ -61,7 +61,11 @@ export function StackSection() {
   return (
     <section id="stack" className="bg-background scroll-mt-24 px-6 py-6">
       <div className="mx-auto w-full max-w-[68rem]">
-        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative">
+        <div
+          ref={wrapRef}
+          style={{ height: `${(LAYERS.length + 1) * 100}vh` }}
+          className="relative"
+        >
           <div className="sticky top-0 flex h-screen items-center py-6">
             <div
               className="relative grid h-[min(50rem,88vh)] w-full overflow-hidden rounded-[1.75rem] md:grid-cols-[1fr_1.05fr]"

@@ -1,21 +1,89 @@
 'use client';
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { SlabMark } from '@/features/marketing/v2/illustrations';
-import { CheckLine, Display, Lead, MAX_W, Pill } from '@/features/marketing/v2/primitives';
+import {
+  CheckLine,
+  Display,
+  Eyebrow,
+  InvertedPanel,
+  Lead,
+  LedeBullet,
+  MAX_W,
+  Pill,
+  Section,
+  SoftCard,
+} from '@/features/marketing/v2/primitives';
+import { RealVisual, hasVisual, isFullBleedVisual } from '@/features/marketing/v2/real-visual';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
-import { useCallback, type ReactNode } from 'react';
+import { Check } from 'lucide-react';
+import { type ReactNode, useCallback } from 'react';
 
 /**
- * Shared building blocks for the marketing sub-pages. Each page is a
- * composition of these: hero → showcase → feature grid → split → CTA.
+ * One component per section kind in the site spec, plus a dispatcher so a page
+ * is just an ordered list of sections. All product imagery goes through
+ * `RealVisual`, so no section here can render a fabricated screenshot.
  */
+
+/* ── the section contract ────────────────────────────────────────────────── */
+
+export type SectionKind =
+  | 'hero'
+  | 'showcase'
+  | 'split'
+  | 'list'
+  | 'grid'
+  | 'inverted'
+  | 'pricing'
+  | 'faq'
+  | 'cta';
+
+export type SectionSpec = {
+  id: string;
+  kind: SectionKind;
+  /** A string, or an array when the line breaks matter. */
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  /** A `RealVisual` identifier: a screenshot path, a component name, `slabs`, or `none`. */
+  visual?: string;
+  eyebrow?: string;
+  /** Puts the visual on the left. `split` only. */
+  reversed?: boolean;
+  /** Tints the band so consecutive splits separate. */
+  tone?: 'plain' | 'muted';
+  /** Overrides the column count a `grid` derives from its bullet count. */
+  columns?: 2 | 3 | 4;
+};
+
+/* ── bullet parsing ──────────────────────────────────────────────────────── */
+
+/**
+ * Spec bullets are written as "Lede. The rest of it." or "Term — the rest of
+ * it." Both forms split into a bold lede and a muted remainder; anything short
+ * with neither marker stays whole.
+ */
+export function splitBullet(text: string): { lede: string; rest?: string } {
+  const dash = text.indexOf(' — ');
+  if (dash > 0 && dash <= 70) return { lede: text.slice(0, dash), rest: text.slice(dash + 3) };
+  const sentence = text.match(/^(.{1,70}?[.?!])\s+(\S[\s\S]*)$/);
+  if (sentence) return { lede: sentence[1], rest: sentence[2] };
+  return { lede: text };
+}
+
+/** FAQ bullets are written as "Question? Answer." */
+export function splitQa(text: string): { question: string; answer: string } {
+  const m = text.match(/^([\s\S]+?\?)\s+([\s\S]*)$/);
+  return m ? { question: m[1], answer: m[2] } : { question: text, answer: '' };
+}
+
+/** Strips the trailing period a lede carries so it can be used as a title. */
+const asTitle = (lede: string) => lede.replace(/[.:]$/, '');
 
 /* ── CTAs ────────────────────────────────────────────────────────────────── */
 
-export function CtaPair({ tone = 'default' }: { tone?: 'default' | 'light' }) {
+export function CtaPair({ tone = 'default' }: { tone?: 'default' | 'inverse' }) {
   const { user } = useAuth();
   const openDemo = useRequestDemo();
 
@@ -26,276 +94,561 @@ export function CtaPair({ tone = 'default' }: { tone?: 'default' | 'light' }) {
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Pill variant={tone === 'light' ? 'light' : 'dark'} onClick={start}>
+      <Pill variant={tone === 'inverse' ? 'light' : 'dark'} onClick={start}>
         Get started
       </Pill>
-      <Pill variant={tone === 'light' ? 'ghostLight' : 'soft'} onClick={() => openDemo()}>
+      <Pill variant={tone === 'inverse' ? 'ghostLight' : 'soft'} onClick={() => openDemo()}>
         Request demo
       </Pill>
     </div>
   );
 }
 
-/* ── heroes ──────────────────────────────────────────────────────────────── */
+/* ── hero ────────────────────────────────────────────────────────────────── */
 
-/** Headline on one side, supporting copy + CTAs on the other. */
-export function SplitHero({
+export function HeroSection({
+  id,
   heading,
   body,
-  reversed,
+  bullets,
+  visual,
+  eyebrow,
   children,
 }: {
-  heading: string[];
-  body: string;
-  reversed?: boolean;
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  visual?: string;
+  eyebrow?: string;
   children?: ReactNode;
 }) {
   return (
-    <section className="pt-32 sm:pt-40">
+    <section id={id} className="scroll-mt-24 pt-32 sm:pt-40">
       <div className={MAX_W}>
         <div className="grid items-end gap-10 lg:grid-cols-2 lg:gap-16">
-          <div className={cn(reversed && 'lg:order-2')}>
+          <div>
+            {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
             <Display lines={heading} as="h1" className="sm:text-[3.5rem]" />
           </div>
-          <div className={cn('lg:pb-2', reversed && 'lg:order-1')}>
-            <Lead>{body}</Lead>
+          <div className="lg:pb-2">
+            {body && <Lead>{body}</Lead>}
+            {bullets && bullets.length > 0 && (
+              <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3">
+                {bullets.map((b) => (
+                  <CheckLine key={b}>{b}</CheckLine>
+                ))}
+              </div>
+            )}
             <div className="mt-8">
               <CtaPair />
             </div>
           </div>
         </div>
-        {children && <div className="mt-16">{children}</div>}
       </div>
-    </section>
-  );
-}
 
-/** Centred hero for pricing, use-cases, company pages. */
-export function CenterHero({
-  heading,
-  body,
-  cta = true,
-  children,
-}: {
-  heading: string[];
-  body: string;
-  cta?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <section className="pt-32 sm:pt-40">
-      <div className={MAX_W}>
-        <div className="mx-auto max-w-2xl text-center">
-          <Display lines={heading} as="h1" className="sm:text-[3.5rem]" />
-          <Lead className="mt-6">{body}</Lead>
-          {cta && (
-            <div className="mt-9 flex justify-center">
-              <CtaPair />
-            </div>
-          )}
-        </div>
-        {children && <div className="mt-16">{children}</div>}
-      </div>
+      {hasVisual(visual) &&
+        (isFullBleedVisual(visual) ? (
+          <div className="mt-16">
+            <RealVisual name={visual} />
+          </div>
+        ) : (
+          <div className={cn(MAX_W, 'mt-16')}>
+            <RealVisual name={visual} size="lg" priority />
+          </div>
+        ))}
+
+      {children}
     </section>
   );
 }
 
 /* ── showcase ────────────────────────────────────────────────────────────── */
 
-/** A product still floated on a soft accent wash. */
-export function Showcase({
-  children,
-  className,
-  height = 'h-[30rem]',
-}: {
-  children: ReactNode;
-  className?: string;
-  height?: string;
-}) {
-  return (
-    <div
-      className={cn('relative overflow-hidden rounded-[1.5rem] p-6 sm:p-12', height, className)}
-      style={{
-        background:
-          'linear-gradient(155deg, color-mix(in oklab, var(--kortix-blue) 4%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 20%, var(--background)) 100%)',
-        border: '1px solid color-mix(in oklab, var(--kortix-blue) 12%, transparent)',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** The floating white card used inside a Showcase. */
-export function Floating({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'bg-background overflow-hidden rounded-[0.9rem] shadow-[0_18px_50px_-12px_rgba(26,31,46,0.22)]',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-/* ── feature grid ────────────────────────────────────────────────────────── */
-
-export type Feature = { name: string; description: string };
-
-export function FeatureGrid({
-  eyebrow,
+/** Centred copy over a full-width visual. */
+export function ShowcaseSection({
+  id,
   heading,
   body,
-  items,
-  columns = 3,
-  illustrated,
+  bullets,
+  visual,
+  eyebrow,
 }: {
-  eyebrow?: string;
-  heading: string[];
+  id?: string;
+  heading: string | string[];
   body?: string;
-  items: Feature[];
-  columns?: 2 | 3 | 4;
-  illustrated?: boolean;
+  bullets?: string[];
+  visual?: string;
+  eyebrow?: string;
 }) {
+  const fullBleed = isFullBleedVisual(visual);
+  // A full-bleed component already tells the story its bullets would repeat.
+  const showBullets = !fullBleed && bullets && bullets.length > 0;
+
   return (
-    <section className="py-20 sm:py-28">
+    <section id={id} className="scroll-mt-24 py-20 sm:py-28">
       <div className={MAX_W}>
         <div className="mx-auto max-w-2xl text-center">
-          {eyebrow && (
-            <p className="text-muted-foreground mb-4 text-[13px] tracking-wider uppercase">
-              {eyebrow}
-            </p>
-          )}
+          {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
           <Display lines={heading} />
           {body && <Lead className="mt-6">{body}</Lead>}
         </div>
-
-        <div
-          className={cn(
-            'mt-14 grid gap-4',
-            columns === 2 && 'sm:grid-cols-2',
-            columns === 3 && 'sm:grid-cols-2 lg:grid-cols-3',
-            columns === 4 && 'sm:grid-cols-2 lg:grid-cols-4',
-          )}
-        >
-          {items.map((item, i) => (
-            <div
-              key={item.name}
-              className="flex flex-col rounded-[1.1rem] p-6"
-              style={{
-                background:
-                  'linear-gradient(155deg, color-mix(in oklab, var(--kortix-blue) 3%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 10%, var(--background)) 100%)',
-                border: '1px solid color-mix(in oklab, var(--kortix-blue) 11%, transparent)',
-              }}
-            >
-              {illustrated && <SlabMark count={(i % 3) + 1} tone="accent" className="mb-4" />}
-              <p className="text-foreground text-[1.125rem] font-medium">{item.name}</p>
-              <p className="text-muted-foreground mt-2 text-[0.9375rem] leading-[1.55]">
-                {item.description}
-              </p>
-            </div>
-          ))}
-        </div>
       </div>
+
+      {hasVisual(visual) && (
+        <div className={cn(!fullBleed && MAX_W, 'mt-14')}>
+          <RealVisual name={visual} size="lg" />
+        </div>
+      )}
+
+      {showBullets && (
+        <div className={cn(MAX_W, 'mt-14')}>
+          <div className="grid gap-x-12 sm:grid-cols-2">
+            {bullets.map((b) => {
+              const { lede, rest } = splitBullet(b);
+              return <LedeBullet key={b} lede={lede} rest={rest} />;
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-/* ── split block ─────────────────────────────────────────────────────────── */
+/* ── split ───────────────────────────────────────────────────────────────── */
 
-export function SplitBlock({
+export function SplitSection({
+  id,
   heading,
   body,
-  checks,
+  bullets,
   visual,
+  eyebrow,
   reversed,
-  tinted,
+  tone = 'plain',
 }: {
-  heading: string[];
-  body: string;
-  checks?: string[];
-  visual?: ReactNode;
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  visual?: string;
+  eyebrow?: string;
   reversed?: boolean;
-  tinted?: boolean;
+  tone?: 'plain' | 'muted';
 }) {
+  const withVisual = hasVisual(visual) && !isFullBleedVisual(visual);
+
   return (
-    <section className={cn('py-20 sm:py-28', tinted && 'bg-muted/40 border-border border-y')}>
-      <div className={MAX_W}>
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
-          <div className={cn(reversed && 'lg:order-2')}>
-            <Display lines={heading} />
-            <Lead className="mt-6">{body}</Lead>
-            {checks && (
-              <div className="mt-8 space-y-4">
-                {checks.map((c) => (
-                  <CheckLine key={c}>{c}</CheckLine>
-                ))}
-              </div>
-            )}
-          </div>
-          {visual && (
-            <Showcase className={cn(reversed && 'lg:order-1')} height="h-[26rem]">
-              <div className="flex h-full items-center justify-center">{visual}</div>
-            </Showcase>
+    <Section id={id} tone={tone}>
+      <div className={cn('grid items-center gap-12', withVisual && 'lg:grid-cols-2 lg:gap-16')}>
+        <div className={cn(reversed && 'lg:order-2')}>
+          {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+          <Display lines={heading} />
+          {body && <Lead className="mt-6">{body}</Lead>}
+          {bullets && bullets.length > 0 && (
+            <div className="mt-8">
+              {bullets.map((b) => {
+                const { lede, rest } = splitBullet(b);
+                return rest ? (
+                  <LedeBullet key={b} lede={lede} rest={rest} />
+                ) : (
+                  <div key={b} className="border-border border-t py-5">
+                    <CheckLine>{lede}</CheckLine>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
+
+        {withVisual && (
+          <div className={cn(reversed && 'lg:order-1')}>
+            <RealVisual name={visual} />
+          </div>
+        )}
       </div>
-    </section>
+    </Section>
   );
 }
 
-/* ── spec table ──────────────────────────────────────────────────────────── */
+/* ── list ────────────────────────────────────────────────────────────────── */
 
-export function SpecList({
+/** Heading on the left, a numbered rail of steps or spec rows on the right. */
+export function ListSection({
+  id,
   heading,
-  rows,
+  body,
+  bullets = [],
+  eyebrow,
+  numbered = false,
+  tone = 'plain',
 }: {
-  heading: string[];
-  rows: { label: string; value: string }[];
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  eyebrow?: string;
+  numbered?: boolean;
+  tone?: 'plain' | 'muted';
 }) {
   return (
-    <section className="py-20 sm:py-28">
-      <div className={MAX_W}>
-        <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+    <Section id={id} tone={tone}>
+      <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
+        <div>
+          {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
           <Display lines={heading} />
-          <dl>
-            {rows.map((row) => (
-              <div
-                key={row.label}
-                className="border-border grid gap-2 border-t py-5 sm:grid-cols-[13rem_1fr]"
-              >
-                <dt className="text-foreground text-[0.9375rem] font-medium">{row.label}</dt>
-                <dd className="text-muted-foreground text-[0.9375rem] leading-[1.55]">
-                  {row.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {body && <Lead className="mt-6">{body}</Lead>}
         </div>
+        <ol>
+          {bullets.map((b, i) => {
+            const { lede, rest } = splitBullet(b);
+            return (
+              <li key={b} className="border-border border-t py-6">
+                <p className="text-foreground flex items-baseline gap-2.5 text-[1.0625rem] font-medium">
+                  {numbered && (
+                    <span className="text-muted-foreground/60 font-mono text-xs tabular-nums">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                  )}
+                  {asTitle(lede)}
+                </p>
+                {rest && (
+                  <p
+                    className={cn(
+                      'text-muted-foreground mt-2 text-[0.9375rem] leading-[1.6]',
+                      numbered && 'pl-[1.9rem]',
+                    )}
+                  >
+                    {rest}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
       </div>
-    </section>
+    </Section>
+  );
+}
+
+/* ── grid ────────────────────────────────────────────────────────────────── */
+
+export function GridSection({
+  id,
+  heading,
+  body,
+  bullets = [],
+  eyebrow,
+  columns,
+  visual,
+  tone = 'plain',
+}: {
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  eyebrow?: string;
+  columns?: 2 | 3 | 4;
+  visual?: string;
+  tone?: 'plain' | 'muted';
+}) {
+  const cols = columns ?? (bullets.length % 3 === 0 ? 3 : bullets.length === 4 ? 4 : 2);
+
+  return (
+    <Section id={id} tone={tone}>
+      <div className="mx-auto max-w-2xl text-center">
+        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+        <Display lines={heading} />
+        {body && <Lead className="mt-6">{body}</Lead>}
+      </div>
+
+      <div
+        className={cn(
+          'mt-14 grid gap-4',
+          cols === 2 && 'sm:grid-cols-2',
+          cols === 3 && 'sm:grid-cols-2 lg:grid-cols-3',
+          cols === 4 && 'sm:grid-cols-2 lg:grid-cols-4',
+        )}
+      >
+        {bullets.map((b) => {
+          const { lede, rest } = splitBullet(b);
+          return (
+            <SoftCard key={b}>
+              <p className="text-foreground text-[1.125rem] font-medium">{asTitle(lede)}</p>
+              {rest && (
+                <p className="text-muted-foreground mt-2 text-[0.9375rem] leading-[1.55]">{rest}</p>
+              )}
+            </SoftCard>
+          );
+        })}
+      </div>
+
+      {hasVisual(visual) && !isFullBleedVisual(visual) && (
+        <div className="mt-14">
+          <RealVisual name={visual} size="lg" />
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/* ── inverted ────────────────────────────────────────────────────────────── */
+
+/** The trust panel: foreground surface, background type, accent bloom. */
+export function InvertedSection({
+  id,
+  heading,
+  body,
+  bullets = [],
+  eyebrow,
+  cta,
+}: {
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  eyebrow?: string;
+  cta?: { label: string; href: string };
+}) {
+  return (
+    <InvertedPanel id={id}>
+      <div className="px-8 pt-14 pb-14 sm:px-14 sm:pt-16">
+        <div className="grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
+          <div>
+            {eyebrow && <Eyebrow tone="inverse">{eyebrow}</Eyebrow>}
+            <Display lines={heading} tone="inverse" />
+          </div>
+          <div className="lg:pt-2">
+            {body && <Lead tone="inverse">{body}</Lead>}
+            {cta && (
+              <Pill as="a" href={cta.href} variant="light" className="mt-8">
+                {cta.label}
+              </Pill>
+            )}
+          </div>
+        </div>
+
+        {bullets.length > 0 && (
+          <div className="border-background/15 mt-14 grid gap-x-12 gap-y-2 border-t pt-6 md:grid-cols-2">
+            {bullets.map((b) => {
+              const { lede, rest } = splitBullet(b);
+              return (
+                <div key={b} className="border-background/10 border-b py-6 last:border-b-0">
+                  <CheckLine tone="inverse">
+                    <span className="font-medium">{asTitle(lede)}</span>
+                  </CheckLine>
+                  {rest && (
+                    <p className="text-background/60 mt-2.5 pl-[1.75rem] text-[0.9375rem] leading-[1.55]">
+                      {rest}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </InvertedPanel>
+  );
+}
+
+/* ── pricing ─────────────────────────────────────────────────────────────── */
+
+/** Bullets are "Plan — price. Feature. Feature." — the middle one is featured. */
+export function PricingSection({
+  id,
+  heading,
+  body,
+  bullets = [],
+  eyebrow,
+}: {
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  eyebrow?: string;
+}) {
+  const { user } = useAuth();
+  const openDemo = useRequestDemo();
+
+  const start = useCallback(() => {
+    trackCtaSignup();
+    window.location.href = user ? '/projects' : '/auth';
+  }, [user]);
+
+  const plans = bullets.map((b, i) => {
+    const { lede, rest = '' } = splitBullet(b);
+    const [price, ...features] = rest.split(/(?<=\.)\s+/);
+    return {
+      name: asTitle(lede),
+      price: price?.replace(/\.$/, '') ?? '',
+      features: features.filter(Boolean),
+      featured: i === 1,
+      enterprise: /enterprise/i.test(lede),
+    };
+  });
+
+  return (
+    <Section id={id}>
+      <div className="mx-auto max-w-2xl text-center">
+        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+        <Display lines={heading} />
+        {body && <Lead className="mt-6">{body}</Lead>}
+      </div>
+
+      <div className="mt-14 grid gap-4 lg:grid-cols-3">
+        {plans.map((plan) => (
+          <div
+            key={plan.name}
+            className={cn(
+              'flex flex-col rounded-[1.35rem] p-8',
+              plan.featured ? 'text-white' : 'border-border border',
+            )}
+            style={
+              plan.featured
+                ? {
+                    background:
+                      'linear-gradient(160deg, color-mix(in oklab, var(--kortix-blue) 86%, black) 0%, var(--kortix-blue) 100%)',
+                  }
+                : undefined
+            }
+          >
+            <p
+              className={cn(
+                'text-[1.375rem] font-medium',
+                plan.featured ? 'text-white' : 'text-foreground',
+              )}
+            >
+              {plan.name}
+            </p>
+            <p
+              className={cn(
+                'mt-6 text-[2rem] leading-none font-medium tracking-tight',
+                plan.featured ? 'text-white' : 'text-foreground',
+              )}
+            >
+              {plan.price}
+            </p>
+
+            <button
+              type="button"
+              onClick={plan.enterprise ? () => openDemo() : start}
+              className={cn(
+                'mt-7 flex h-11 w-full cursor-pointer items-center justify-center rounded-full text-[0.9375rem] font-medium transition-colors',
+                plan.featured
+                  ? 'bg-background text-foreground hover:bg-background/90'
+                  : 'bg-foreground/[0.06] text-foreground hover:bg-foreground/10',
+              )}
+            >
+              {plan.enterprise ? 'Talk to us' : 'Get started'}
+            </button>
+
+            <ul className="mt-8 space-y-3.5">
+              {plan.features.map((f) => (
+                <li key={f} className="flex items-start gap-2.5">
+                  <span
+                    className={cn(
+                      'mt-[3px] flex size-[18px] shrink-0 items-center justify-center rounded-full',
+                      plan.featured ? 'bg-white/20 text-white' : 'bg-kortix-blue text-white',
+                    )}
+                  >
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[0.9375rem] leading-[1.45]',
+                      plan.featured ? 'text-white/90' : 'text-foreground',
+                    )}
+                  >
+                    {f}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 
 /* ── faq ─────────────────────────────────────────────────────────────────── */
 
-export function Faq({ heading, items }: { heading: string[]; items: Feature[] }) {
+export function FaqSection({
+  id,
+  heading,
+  body,
+  bullets = [],
+  eyebrow,
+}: {
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  bullets?: string[];
+  eyebrow?: string;
+}) {
   return (
-    <section className="py-20 sm:py-28">
-      <div className={MAX_W}>
-        <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
+    <Section id={id}>
+      <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
+        <div>
+          {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
           <Display lines={heading} />
-          <div>
-            {items.map((item) => (
-              <div key={item.name} className="border-border border-t py-6">
-                <p className="text-foreground text-[1.0625rem] font-medium">{item.name}</p>
-                <p className="text-muted-foreground mt-2 text-[0.9375rem] leading-[1.6]">
-                  {item.description}
-                </p>
+          {body && <Lead className="mt-6">{body}</Lead>}
+        </div>
+        <div>
+          {bullets.map((b) => {
+            const { question, answer } = splitQa(b);
+            return (
+              <div key={b} className="border-border border-t py-6">
+                <p className="text-foreground text-[1.0625rem] font-medium">{question}</p>
+                {answer && (
+                  <p className="text-muted-foreground mt-2 text-[0.9375rem] leading-[1.6]">
+                    {answer}
+                  </p>
+                )}
               </div>
-            ))}
+            );
+          })}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/* ── page close ──────────────────────────────────────────────────────────── */
+
+export function CtaSection({
+  id,
+  heading,
+  body,
+  visual = 'KortixGrid',
+}: {
+  id?: string;
+  heading: string | string[];
+  body?: string;
+  visual?: string;
+}) {
+  return (
+    <section
+      id={id}
+      className="relative isolate overflow-hidden"
+      style={{
+        background:
+          'linear-gradient(150deg, color-mix(in oklab, var(--kortix-blue) 4%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 13%, var(--background)) 100%)',
+      }}
+    >
+      {hasVisual(visual) && (
+        <div className="absolute inset-y-0 right-[-6%] hidden w-[46%] lg:block">
+          <RealVisual name={visual} className="h-full" />
+        </div>
+      )}
+
+      <div className={cn(MAX_W, 'relative py-24 sm:py-32')}>
+        <div className="max-w-xl">
+          <Display lines={heading} />
+          {body && <Lead className="mt-7">{body}</Lead>}
+          <div className="mt-9">
+            <CtaPair />
           </div>
         </div>
       </div>
@@ -303,26 +656,39 @@ export function Faq({ heading, items }: { heading: string[]; items: Feature[] })
   );
 }
 
-/* ── page close ──────────────────────────────────────────────────────────── */
+/* ── the dispatcher ──────────────────────────────────────────────────────── */
 
-export function PageCta({ heading, body }: { heading: string[]; body: string }) {
+export function PageSection({ section }: { section: SectionSpec }) {
+  const { kind, ...rest } = section;
+  switch (kind) {
+    case 'hero':
+      return <HeroSection {...rest} />;
+    case 'showcase':
+      return <ShowcaseSection {...rest} />;
+    case 'split':
+      return <SplitSection {...rest} />;
+    case 'list':
+      return <ListSection {...rest} numbered />;
+    case 'grid':
+      return <GridSection {...rest} />;
+    case 'inverted':
+      return <InvertedSection {...rest} />;
+    case 'pricing':
+      return <PricingSection {...rest} />;
+    case 'faq':
+      return <FaqSection {...rest} />;
+    case 'cta':
+      return <CtaSection {...rest} />;
+  }
+}
+
+/** A whole page: an ordered list of sections. */
+export function PageSections({ sections }: { sections: SectionSpec[] }) {
   return (
-    <section
-      className="relative isolate overflow-hidden"
-      style={{
-        background:
-          'linear-gradient(150deg, color-mix(in oklab, var(--kortix-blue) 4%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 12%, var(--background)) 100%)',
-      }}
-    >
-      <div className={`${MAX_W} py-24 sm:py-28`}>
-        <div className="mx-auto max-w-2xl text-center">
-          <Display lines={heading} />
-          <Lead className="mt-6">{body}</Lead>
-          <div className="mt-9 flex justify-center">
-            <CtaPair />
-          </div>
-        </div>
-      </div>
-    </section>
+    <main className="bg-background">
+      {sections.map((section) => (
+        <PageSection key={section.id} section={section} />
+      ))}
+    </main>
   );
 }

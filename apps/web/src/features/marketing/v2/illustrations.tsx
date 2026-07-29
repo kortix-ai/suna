@@ -120,9 +120,9 @@ export function SlabMark({
 }) {
   return (
     <Iso className={cn('h-28 w-full', className)} scale={0.42}>
-      {Array.from({ length: count }).map((_, i) => (
+      {Array.from({ length: count }, (_, i) => `slab-${i}`).map((id, i) => (
         <Slab
-          key={i}
+          key={id}
           lift={i * 30}
           thickness={12}
           tone={i === count - 1 ? tone : 'frost'}
@@ -146,11 +146,11 @@ export function TileField({ className, style }: { className?: string; style?: CS
         className="absolute top-1/2 left-1/2 grid grid-cols-6 gap-2.5"
         style={{ transform: 'translate(-50%,-50%) rotateX(56deg) rotateZ(-45deg)' }}
       >
-        {Array.from({ length: 36 }).map((_, i) => {
+        {Array.from({ length: 36 }, (_, i) => `tile-${i}`).map((id, i) => {
           const hot = i % 7 === 0 || i % 11 === 4;
           return (
             <div
-              key={i}
+              key={id}
               className="size-[4.5rem] rounded-[10px]"
               style={{
                 background: hot

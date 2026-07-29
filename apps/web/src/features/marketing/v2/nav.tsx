@@ -2,13 +2,13 @@
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/marketing/button';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import {
-  NAV,
   type MenuColumn,
   type MenuFooter,
+  NAV,
   type NavEntry,
 } from '@/features/marketing/v2/content';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
@@ -139,7 +139,10 @@ export function MarketingNav() {
             <KortixLogo size={19} variant="logomark" />
           </Link>
 
-          <Nav.Root delayDuration={80} className="relative z-10 hidden flex-1 justify-center md:flex">
+          <Nav.Root
+            delayDuration={80}
+            className="relative z-10 hidden flex-1 justify-center md:flex"
+          >
             <Nav.List className="flex list-none items-center gap-1">
               {NAV.map((entry) =>
                 hasMenu(entry) ? (
