@@ -109,17 +109,19 @@ export function MarketingNav() {
     router.push(user ? '/projects' : '/auth');
   }, [router, user]);
 
-  // Only the landing page opens on the blue field; every other page starts on
-  // white, so the bar must be solid from the first pixel there.
   const pathname = usePathname();
-  const hasField = pathname === '/v2';
-  const onField = hasField && !scrolled;
+
+  /**
+   * The landing hero is a white surface carrying the letter-field texture, the
+   * same as the live site — there is no coloured field to sit on any more, so
+   * the bar is always the solid variant. It was previously white-on-field at
+   * the top of `/v2`, which turned the whole nav invisible once the field went.
+   */
+  const onField = false;
 
   const linkClass = cn(
     'flex h-9 items-center rounded-full px-3.5 text-[0.9375rem] font-medium transition-colors',
-    onField
-      ? 'text-white/90 hover:bg-white/15 hover:text-white'
-      : 'text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
+    'text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
   );
 
   return (
@@ -127,7 +129,9 @@ export function MarketingNav() {
       <header
         className={cn(
           'fixed inset-x-0 top-0 z-50 transition-colors duration-200',
-          scrolled && 'border-border bg-background/90 border-b backdrop-blur-xl',
+          scrolled
+            ? 'border-border bg-background/90 border-b backdrop-blur-xl'
+            : 'bg-background/70 backdrop-blur-sm',
         )}
       >
         <div className="mx-auto flex h-[4.5rem] w-full max-w-[68rem] items-center gap-6 px-6">

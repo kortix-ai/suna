@@ -25,46 +25,16 @@ import type { CSSProperties } from 'react';
 
 type Shot = { alt: string; ratio: string };
 
+/**
+ * Only stills that cannot go stale live here.
+ *
+ * The `landing-showcase/platform/*` captures were removed deliberately: they
+ * were committed on 2026-06-03 and the product has moved on since, so they
+ * showed a Kortix that no longer exists. Anything depicting the product now
+ * comes from the live components below, which render from current code. These
+ * remaining entries are photographs and artifacts, not UI, so they stay true.
+ */
 const SHOTS: Record<string, Shot> = {
-  '/images/landing-showcase/platform/01-command-center.png': {
-    alt: 'The Kortix command center',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/platform/02-team.png': {
-    alt: 'Members, groups, and roles in a Kortix project',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/platform/03-connectors.png': {
-    alt: 'Connectors in a Kortix project',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/platform/04-skills.png': {
-    alt: 'The skills library in a Kortix project',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/platform/05-agents.png': {
-    alt: 'Agents in a Kortix project',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/platform/06-channels.png': {
-    alt: 'Channels connected to a Kortix project',
-    ratio: '16 / 10',
-  },
-  '/images/landing-showcase/research.png': {
-    alt: 'A research memo produced by a Kortix session',
-    ratio: '2 / 1',
-  },
-  '/images/landing-showcase/data.png': {
-    alt: 'A financial model produced by a Kortix session',
-    ratio: '2 / 1',
-  },
-  '/images/landing-showcase/slides.png': {
-    alt: 'A slide deck produced by a Kortix session',
-    ratio: '2 / 1',
-  },
-  '/images/mobile-app/app-1.png': { alt: 'Kortix on mobile', ratio: '1080 / 2337' },
-  '/images/mobile-app/app-2.png': { alt: 'Kortix on mobile', ratio: '1080 / 2337' },
-  '/images/mobile-app/app-3.png': { alt: 'Kortix on mobile', ratio: '1080 / 2337' },
   '/images/team.webp': { alt: 'The Kortix team', ratio: '16 / 9' },
   '/images/careers/shackleton.png': {
     alt: 'The Shackleton advertisement that hangs in the Kortix office',

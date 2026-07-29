@@ -1,14 +1,27 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/marketing/button';
+import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { HERO } from '@/features/marketing/v2/content';
-import { MAX_W, Pill } from '@/features/marketing/v2/primitives';
-import { Screenshot } from '@/features/marketing/v2/real-visual';
+import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
+import { MAX_W } from '@/features/marketing/v2/primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { Check } from 'lucide-react';
 import { useCallback } from 'react';
+import { HiArrowRight } from 'react-icons/hi2';
 
+/**
+ * The hero, matched to the live Kortix landing page rather than a colour field:
+ * a white surface carrying the KortixLetterField texture, the badge eyebrow, the
+ * two-line display headline, and the real `HeroSurfaces` switcher underneath.
+ *
+ * `HeroSurfaces` renders the actual product (web, Slack, Teams, mobile, CLI,
+ * SDK) from live components, so it can never drift out of date the way a
+ * committed screenshot does — the previous build's PNGs were two months stale.
+ */
 export function Hero() {
   const { user } = useAuth();
   const openDemo = useRequestDemo();
@@ -19,76 +32,54 @@ export function Hero() {
   }, [user]);
 
   return (
-    <section className="relative isolate">
-      {/* the field — an always-blue surface, so its type is white in both themes */}
+    <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
       <div
+        className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%"
         aria-hidden
         data-a11y-decorative
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={
-          {
-            // every stop is the Kortix accent itself, only shaded — never mixed
-            // with a foreign navy, which is what dulls the hue.
-            '--field-1': 'color-mix(in oklab, var(--kortix-blue) 88%, black)',
-            '--field-2': 'var(--kortix-blue)',
-            '--field-3': 'color-mix(in oklab, var(--kortix-blue) 32%, var(--background))',
-            background:
-              'linear-gradient(172deg, var(--field-1) 0%, var(--field-2) 44%, var(--field-3) 78%, var(--background) 100%)',
-          } as React.CSSProperties
-        }
       >
-        <div
-          className="absolute inset-0 opacity-90"
-          style={{
-            background:
-              'radial-gradient(60% 45% at 88% 6%, rgba(255,255,255,0.26) 0%, transparent 62%), radial-gradient(45% 38% at 4% 74%, rgba(255,255,255,0.20) 0%, transparent 66%)',
-          }}
-        />
+        <KortixLetterField seed={3382} />
+      </div>
+      <div className="inset-0 z-0 hidden mask-t-from-70% lg:absolute">
+        <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
-      <div className={`${MAX_W} pt-32 sm:pt-40`}>
-        <p className="mb-5 text-[13px] tracking-wider text-white/70 uppercase">{HERO.eyebrow}</p>
-        <h1 className="max-w-3xl text-[2.75rem] leading-[1.03] font-medium tracking-[-0.025em] text-white sm:text-[3.5rem] lg:text-[4.25rem]">
-          {HERO.headline.map((line) => (
-            <span key={line} className="block">
-              {line}
-            </span>
-          ))}
-        </h1>
+      <div className="relative z-20">
+        <div className={MAX_W}>
+          <Badge variant="kortix" className="rounded">
+            {HERO.eyebrow}
+          </Badge>
 
-        <div className="mt-12 flex flex-col gap-6 sm:mt-14 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-lg text-[1.0625rem] leading-[1.6] text-white/85">{HERO.subline}</p>
-          <div className="flex shrink-0 items-center gap-1">
-            <Pill variant="light" onClick={handleGetStarted}>
+          <h1 className="text-foreground mt-6 text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
+            {HERO.headline.map((line) => (
+              <span key={line} className="block">
+                {line}
+              </span>
+            ))}
+          </h1>
+
+          <p className="text-muted-foreground mt-5 text-xl font-normal tracking-tight text-balance sm:text-2xl">
+            {HERO.subline}
+          </p>
+
+          <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed">
+            {HERO.description}
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button size="xl" onClick={handleGetStarted}>
               {HERO.primaryCta}
-            </Pill>
-            <Pill variant="ghostLight" onClick={() => openDemo()}>
+              <HiArrowRight className="size-4" />
+            </Button>
+            <Button size="xl" variant="secondary" onClick={() => openDemo()}>
               {HERO.secondaryCta}
-            </Pill>
+            </Button>
           </div>
         </div>
 
-        <ul className="mt-8 flex flex-wrap gap-x-7 gap-y-3">
-          {HERO.bullets.map((bullet) => (
-            <li key={bullet} className="flex items-center gap-2 text-[0.9375rem] text-white/85">
-              <Check className="size-4 shrink-0" strokeWidth={2.5} />
-              {bullet}
-            </li>
-          ))}
-        </ul>
-
-        {/* the real command center, clipped by the fold */}
-        <div className="relative mt-14 sm:mt-16">
-          <div className="rounded-t-[1.25rem] border-x border-t border-white/25 bg-white/[0.14] p-2 pb-0 backdrop-blur-[2px]">
-            <div className="overflow-hidden rounded-t-[0.9rem]">
-              <Screenshot
-                src={HERO.visual}
-                ratio="16 / 9"
-                priority
-                className="rounded-t-[0.9rem] rounded-b-none"
-              />
-            </div>
-          </div>
+        {/* the live product, across every surface it runs on */}
+        <div id="demo" className="relative z-10 mx-auto mt-14 max-w-6xl scroll-mt-24 sm:mt-20">
+          <HeroSurfaces />
         </div>
       </div>
     </section>

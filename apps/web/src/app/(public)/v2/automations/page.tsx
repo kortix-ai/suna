@@ -25,7 +25,7 @@ export default function Page() {
         <GridSection
           {...twoWays}
           columns={2}
-          visual="/images/landing-showcase/platform/06-channels.png"
+          visual="none"
         />
       )}
       {/* Config rows, not steps — so the rail stays unnumbered. */}

@@ -93,7 +93,7 @@ export default function DownloadPage() {
         id="hero"
         heading="Kortix, everywhere you work."
         body="The command center in the browser, the CLI in your terminal, and your sessions in your pocket. Same projects, same agents, same permissions."
-        visual="/images/landing-showcase/platform/01-command-center.png"
+        visual="none"
       />
 
       <Section id="surfaces">
@@ -110,7 +110,7 @@ export default function DownloadPage() {
         id="mobile"
         heading="Your sessions in your pocket."
         body="Start a session, read what came back, and connect the tools it needs, from your phone. Coming soon."
-        visual="/images/mobile-app/app-1.png, /images/mobile-app/app-3.png"
+        visual="none"
       />
 
       <Section id="cli" tone="muted">

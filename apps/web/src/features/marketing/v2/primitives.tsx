@@ -1,5 +1,6 @@
 'use client';
 
+import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
 import Link from 'next/link';
@@ -235,6 +236,57 @@ export function LedeBullet({
         )}
       </p>
     </div>
+  );
+}
+
+/**
+ * The house bullet: the Kortix asterisk, whose four arms carry an animated
+ * gradient through the six accent colours. `index` staggers the animation so a
+ * list flows rather than pulsing in unison — same component the live landing
+ * page uses, so the motif stays identical across both surfaces.
+ */
+export function AsteriskLine({
+  children,
+  index = 0,
+  tone = 'default',
+}: {
+  children: ReactNode;
+  index?: number;
+  tone?: Tone;
+}) {
+  return (
+    <li className="flex items-start gap-3">
+      <KortixAsterisk index={index} variant={tone === 'inverse' ? 'solid' : 'gradient'} />
+      <span
+        className={cn(
+          'text-[1.0625rem] leading-[1.6]',
+          tone === 'inverse' ? 'text-background/80' : 'text-muted-foreground',
+        )}
+      >
+        {children}
+      </span>
+    </li>
+  );
+}
+
+/** A list of asterisk bullets, staggered. */
+export function AsteriskList({
+  items,
+  tone = 'default',
+  className,
+}: {
+  items: string[];
+  tone?: Tone;
+  className?: string;
+}) {
+  return (
+    <ul className={cn('space-y-3.5', className)}>
+      {items.map((item, i) => (
+        <AsteriskLine key={item} index={i} tone={tone}>
+          {item}
+        </AsteriskLine>
+      ))}
+    </ul>
   );
 }
 

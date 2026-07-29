@@ -162,15 +162,18 @@ export const NAV: NavEntry[] = [
 
 /* ── landing hero ────────────────────────────────────────────────────────── */
 
+/**
+ * Shaped like the live landing hero: badge eyebrow, two-line display headline,
+ * one short tracking-tight subline, then the supporting paragraph.
+ */
 export const HERO = {
   eyebrow: 'The Autonomous Company Operating System',
-  headline: ['The AI command center', 'for your company.'],
-  subline:
-    'Kortix is the Autonomous Company Operating System: a cloud computer where a workforce of AI agents does real work for your company, and everything is code you own.',
-  bullets: ['Open source', 'Any model, your keys', 'Self-host, VPC, or on-prem'],
+  headline: ['The AI command center', 'for a workforce of agents.'],
+  subline: 'Your whole company. One repo you own.',
+  description:
+    'Every agent, skill, connector, and memory is a file — 3,000+ tools connected, one versioned source of truth, scoped so each person and agent has exactly the right access.',
   primaryCta: 'Get started',
   secondaryCta: 'Request demo',
-  visual: '/images/landing-showcase/platform/01-command-center.png',
 };
 
 /* ── the stack ───────────────────────────────────────────────────────────── */

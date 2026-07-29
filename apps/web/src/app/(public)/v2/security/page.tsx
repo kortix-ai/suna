@@ -60,7 +60,7 @@ export default function SecurityPage() {
           'Egress policy is set per project',
           'Adding reach is a change request like any other',
         ]}
-        visual="/images/landing-showcase/platform/03-connectors.png"
+        visual="none"
       />
 
       <ComplianceNote

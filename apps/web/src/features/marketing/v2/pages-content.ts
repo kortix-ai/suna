@@ -132,7 +132,7 @@ export const LANDING: SectionSpec[] = [
       'Improving one goes through the same reviewed change as everything else.',
       'What a session learns lands in memory, so the next one starts where the last one stopped.',
     ],
-    visual: '/images/landing-showcase/platform/04-skills.png',
+    visual: 'none',
     tone: 'muted',
   },
   {
@@ -146,7 +146,7 @@ export const LANDING: SectionSpec[] = [
       'A trigger can start the same session on a cron or a signed webhook, with no one asking.',
       'Output comes back to the channel, and durable work comes back as a change request.',
     ],
-    visual: '/images/landing-showcase/platform/06-channels.png',
+    visual: 'none',
     reversed: true,
   },
   {
@@ -231,7 +231,7 @@ const ENTERPRISE: SectionSpec[] = [
       'Advanced RBAC — roles and per-resource permissions, scoped per agent.',
       'Project access — owners, managers, editors, and members, invited by email or inherited from a group.',
     ],
-    visual: '/images/landing-showcase/platform/02-team.png',
+    visual: 'none',
     tone: 'muted',
   },
   {
@@ -334,7 +334,7 @@ const SECURITY: SectionSpec[] = [
       'Egress policy is set per project',
       'Adding reach is a change request like any other',
     ],
-    visual: '/images/landing-showcase/platform/03-connectors.png',
+    visual: 'none',
   },
   {
     id: 'compliance',
@@ -450,7 +450,7 @@ const AGENTS: SectionSpec[] = [
     kind: 'hero',
     heading: 'An agent is a file you can read.',
     body: 'A markdown persona with a prompt, a model, and a tightly scoped reach into your tools. Install one, fork it, or write your own — it lands in your repo as a file you can diff and review.',
-    visual: '/images/landing-showcase/platform/05-agents.png',
+    visual: 'none',
   },
   {
     id: 'anatomy',
@@ -596,7 +596,7 @@ const CONNECTORS: SectionSpec[] = [
     kind: 'hero',
     heading: 'One token. 3,000+ apps.',
     body: 'A connector is one-click reach into the tools your company already runs on — plus anything that speaks MCP, OpenAPI, GraphQL, or plain HTTP. Credentials are brokered server-side and never enter a sandbox.',
-    visual: '/images/landing-showcase/platform/03-connectors.png',
+    visual: 'none',
   },
   {
     id: 'how-reach-works',
@@ -643,7 +643,7 @@ const AGENT_TEMPLATES: SectionSpec[] = [
     kind: 'hero',
     heading: 'Templates for the work you already repeat.',
     body: 'Install a working agent in a click, then edit it like any other file in your repo. Every template is markdown, so there is nothing hidden to reverse-engineer.',
-    visual: '/images/landing-showcase/platform/04-skills.png',
+    visual: 'none',
   },
   {
     id: 'popular',
@@ -896,7 +896,7 @@ const DOWNLOAD: SectionSpec[] = [
     kind: 'hero',
     heading: 'Kortix, everywhere you work.',
     body: 'The command center in the browser, the CLI in your terminal, and your sessions in your pocket. Same projects, same agents, same permissions.',
-    visual: '/images/landing-showcase/platform/01-command-center.png',
+    visual: 'none',
   },
   {
     id: 'surfaces',
@@ -917,7 +917,7 @@ const DOWNLOAD: SectionSpec[] = [
     kind: 'showcase',
     heading: 'Your sessions in your pocket.',
     body: 'Start a session, read what came back, and connect the tools it needs, from your phone. Coming soon.',
-    visual: '/images/mobile-app/app-1.png, /images/mobile-app/app-3.png',
+    visual: 'none',
   },
   {
     id: 'cli',
