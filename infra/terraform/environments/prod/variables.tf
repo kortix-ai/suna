@@ -7,7 +7,12 @@ variable "aws_region" {
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string
-  default     = ""
+  # The kortix.com zone id. Not a secret — it is already exposed as the
+  # CLOUDFLARE_ZONE_ID repo variable and appears in every Cloudflare API URL.
+  # It defaults here because an empty value resolves zone_id to null on every
+  # cloudflare_record, and zone_id forces replacement: a plan run without the
+  # gitignored tfvars proposed destroying and recreating live production DNS.
+  default = "af378d3df4e4dd5052a1fcbf263b685d"
 }
 
 variable "extra_api_hostnames" {
