@@ -2,7 +2,6 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
   listAgentMailInstalls,
-  loadMeetInstall,
   loadSlackInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
@@ -105,16 +104,17 @@ export async function synthesizeChannelConnectors(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  // Meet (Recall.ai) — gated on the per-project `meet` experimental flag. Like
-  // Slack, a resolvable Recall key IS the registration (no OAuth / no [[connectors]]).
-  if (project && resolveExperimentalFeature(project.metadata, 'meet')) {
-    const meetSlug = channelDefaultSlug('meet');
-    if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
-      const install = await loadMeetInstall(projectId).catch(() => null);
-      if (install) specs.push(channelSpec('meet', meetSlug));
+  // Voice — gated on the per-project `voice` experimental flag. Unlike
+  // Slack/Teams/email there is no install to check: LiveKit config lives in
+  // this API's own env, not a per-project OAuth token, so the flag itself IS
+  // the registration (mirrors how `sensitive`-less channels work, minus the
+  // install lookup).
+  if (project && resolveExperimentalFeature(project.metadata, 'voice')) {
+    const voiceSlug = channelDefaultSlug('voice');
+    if (!channelAlreadyDeclared(declared, 'voice', voiceSlug)) {
+      specs.push(channelSpec('voice', voiceSlug));
     }
   }
-
 
   if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
     return specs;

@@ -71,6 +71,11 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
     opencode_session_id: "oc-1",
+    runtime_transport: "acp",
+    runtime_harness: "codex",
+    native_agent: "reviewer",
+    acp_server_id: SESSION,
+    acp_session_id: "codex-native-1",
     name: null,
     custom_name: null,
     agent_name: "default",
@@ -102,6 +107,11 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       updated_at: "2026-01-02T00:00:00Z",
     },
     opencode_session_id: "oc-1",
+    runtime_transport: "acp",
+    runtime_harness: "codex",
+    native_agent: "reviewer",
+    acp_server_id: SESSION,
+    acp_session_id: "codex-native-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
 });
@@ -133,6 +143,16 @@ test("projectSessionStartSeed rejects stale or incomplete inventory rows", () =>
     projectSessionStartSeed({ ...base, opencode_session_id: null }),
   ).toBeNull();
   expect(projectSessionStartSeed({ ...base, sandbox_url: null })).toBeNull();
+  // A legacy Suna-migration row is minted with `sandbox_id = null` and
+  // provisioning only writes `sandbox_url`, so a running, fully-wired row can
+  // still carry a null id. The seed MUST drop it — otherwise the session page
+  // derefs `sandbox.sandbox_id.slice(0, 8)` and crashes (BS e6d0e044).
+  // (`sandbox_id` is typed `string` but the DB column is nullable — the runtime
+  // null is exercised through a cast, mirroring what the API actually serves.)
+  expect(
+    projectSessionStartSeed({ ...base, sandbox_id: null as unknown as string }),
+  ).toBeNull();
+  expect(projectSessionStartSeed({ ...base, sandbox_id: "" })).toBeNull();
 });
 
 test("startProjectSession POSTs to /start with no query string when waitMs is omitted", async () => {

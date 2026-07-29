@@ -29,9 +29,10 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import {
   getSessionDisplayTitle,
   resolveSessionListViewState,
+  sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
-  sortSessionsByCreatedAt,
+  sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
@@ -42,10 +43,10 @@ import {
   stopProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import {
   CalendarClock,
   Mail,
@@ -156,7 +157,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
-  const sessions = sortSessionsByCreatedAt(data ?? []);
+  const sessions = sortSessionsByLastActivity(data ?? []);
   // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
   // this list only applies the chosen filter.
   const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
@@ -231,11 +232,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                     router.replace(href, { scroll: false });
                     return;
                   }
-                  if (shouldBeginSessionSwitch(
-                      event,
-                      session.session_id,
-                      activeSessionId)
-                  ) {
+                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
                     beginSessionSwitch(session.session_id);
                   }
                 }}
@@ -348,11 +345,15 @@ function ProjectSessionRow({
     requestAnimationFrame(() => fn());
   };
 
-  const relative = (() => {
+  const activity = (() => {
     try {
-      return formatDistanceToNowStrict(new Date(session.created_at), { addSuffix: false });
+      const date = new Date(sessionLastActivityAt(session));
+      return {
+        relative: formatDistanceToNowStrict(date, { addSuffix: false }),
+        exact: format(date, 'MMM d, yyyy, h:mm a'),
+      };
     } catch {
-      return '';
+      return null;
     }
   })();
 
@@ -376,13 +377,7 @@ function ProjectSessionRow({
           aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          {isSwitching ? (
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              <Loading className="size-3.5 shrink-0" />
-            </span>
-          ) : (
-            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
-          )}
+          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
 
           <span
             title={displayTitle}
@@ -415,15 +410,17 @@ function ProjectSessionRow({
           </span>
 
           <div className="relative w-10 min-w-10 shrink-0">
-            {relative && (
+            {activity && (
               <span
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
                   'pr-1.5 transition-opacity duration-150',
                   'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
                 )}
+                title={`Last activity: ${activity.exact}`}
+                aria-label={`Last activity: ${activity.relative}`}
               >
-                {shortRelative(relative)}
+                {shortRelative(activity.relative)}
               </span>
             )}
 
@@ -438,7 +435,7 @@ function ProjectSessionRow({
                   )}
                   className={cn(
                     'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
-                    relative
+                    activity
                       ? cn(
                           'pointer-events-none opacity-0',
                           'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
@@ -474,7 +471,9 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
                 >
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
@@ -558,9 +557,7 @@ function SessionStatusDot({
       side="right"
       label={
         reviewPending ? (
-          <span className="text-xs">
-            {reviewCount} awaiting your review
-          </span>
+          <span className="text-xs">{reviewCount} awaiting your review</span>
         ) : (
           <span className="text-xs capitalize">{status}</span>
         )

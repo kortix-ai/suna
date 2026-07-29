@@ -15,19 +15,19 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
+  normalizeSessionPanelLayoutView,
   SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import type { SessionStartStage } from '@kortix/sdk';
+import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -54,7 +54,7 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
   const booting = !!bootStage;
 
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  const { data: messages } = useRuntimeMessages(sessionId);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
@@ -88,8 +88,8 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [transient, isActiveTab, sessionId, setActiveSession]);
 
-  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
-  const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
+  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
+  const panelView = normalizeSessionPanelLayoutView(storedPanelView);
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const setActivePanelSession = useSessionBrowserStore((s) => s.setActiveSessionId);
 
@@ -104,7 +104,7 @@ export const SessionLayout = memo(function SessionLayout({
   // their busy dots. EasyPanel ORs this with its part-derived running flag so
   // an inter-tool-call gap (assistant text streaming, no tool part active)
   // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
+  const sessionStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
   const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the

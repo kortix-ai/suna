@@ -1,4 +1,4 @@
-import type { ProjectSandboxHealth, ProjectSnapshotBuild } from '@kortix/sdk/projects-client';
+import type { ProjectSandboxHealth, ProjectSnapshotBuild } from '@kortix/sdk';
 
 export type SandboxAlertSeverity = 'critical' | 'building';
 

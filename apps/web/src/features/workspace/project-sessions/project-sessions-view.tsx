@@ -33,6 +33,7 @@ import {
 } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  sessionLastActivityAt,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
@@ -43,7 +44,7 @@ import {
   stopProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
@@ -133,7 +134,7 @@ function DetailItem({ label, value, mono }: { label: string; value: string; mono
       <dt className="text-muted-foreground text-xs">{label}</dt>
       <dd
         className={cn(
-          'text-foreground break-words text-sm',
+          'text-foreground text-sm break-words',
           mono && 'font-mono text-xs tabular-nums',
         )}
       >
@@ -185,7 +186,7 @@ function SessionRow({
           ? 'Unknown principal'
           : 'Unattributed';
   const created = formatTimestamp(session.created_at);
-  const updated = formatTimestamp(session.updated_at || session.created_at);
+  const updated = formatTimestamp(sessionLastActivityAt(session));
   const conversationCount = (session.opencode_sessions ?? []).length;
   const archivedConversationCount = (session.opencode_sessions ?? []).filter(
     (item) => item.archived_at,
@@ -260,9 +261,12 @@ function SessionRow({
           </div>
 
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Last activity" value={updated.exact} />
             <DetailItem label="Status" value={status.label} />
+            <DetailItem
+              label="Source"
+              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
+            />
             <DetailItem label="Session / resource owner" value={ownerLabel} />
             <DetailItem label="Owner identity" value={ownerTypeLabel} />
             <DetailItem
@@ -272,10 +276,7 @@ function SessionRow({
             />
             <DetailItem label="Your access" value={access.label} />
             <DetailItem label="Visibility" value={visibility.label} />
-            <DetailItem
-              label="Source"
-              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-            />
+            <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Agent" value={session.agent_name || 'Project default'} />
             <DetailItem label="Runtime" value={session.sandbox_provider || 'Not provisioned'} />
             <DetailItem
@@ -488,7 +489,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
         </InputGroupSearch>
 
-        <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="[scrollbar-width:none] overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
           <FilterBar className="h-8 rounded-md">
             {PROJECT_SESSIONS_FILTERS.map((option) => (
               <FilterBarItem

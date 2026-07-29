@@ -18,8 +18,9 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
-  | 'meet'
+  | 'voice'
   | 'llm_gateway'
+  | 'acp_runtime'
   | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
@@ -71,6 +72,9 @@ export interface ProjectConfigSummary {
   signals: Record<string, boolean>;
   manifest_raw: string | null;
   open_code_raw: string | null;
+  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  default_agent?: string | null;
+  /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
@@ -80,6 +84,14 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Agent-specific sandbox template. null or absent inherits the project default. */
+    sandbox?: string | null;
+    /** Immutable runtime profile selected for this logical agent. */
+    runtime?: string | null;
+    /** ACP harness selected by the runtime profile. */
+    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+    /** Harness-native agent or mode name. */
+    native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -137,10 +149,36 @@ export interface GatewayCatalogModel {
   description?: string;
   open_weights?: boolean;
   last_updated?: string;
+  /**
+   * Whether the project OFFERS this model — server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway. Served by
+   * `/model-picker`; absent on the raw `/llm-catalog` (sandbox config) path,
+   * where enablement doesn't apply.
+   */
+  enabled?: boolean;
 }
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /**
+   * The project's stored EXCEPTIONS to the default model set
+   * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
+   * one model can PUT the merged map back. Read `GatewayCatalogModel.enabled`
+   * for the RESOLVED answer — this is only the delta.
+   */
+  modelOverrides?: Record<string, boolean>;
+  /**
+   * True while the project has made no exceptions and is running on the pure
+   * catalog default. What "reset to defaults" acts on; not derivable from the
+   * `enabled` flags alone.
+   */
+  usingDefaults?: boolean;
+  /**
+   * The wire model `auto` resolves to for this project. It can never be turned
+   * off (the PUT refuses it with 409 — disabling it would break every default
+   * request), so surfaces with a per-model switch must render this one locked.
+   */
+  defaultModel?: string;
 }
 
 export interface ProjectInput {
@@ -270,12 +308,19 @@ export function isManagedGithubProject(project: {
 }
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
-  return unwrap(
+  const detail = unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
       showErrors: false,
       ...options,
     }),
   );
+  return {
+    ...detail,
+    config: {
+      ...detail.config,
+      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+    },
+  };
 }
 
 export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
@@ -349,12 +394,22 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
  * default. No GitHub account or repo-name uniqueness needed; the starter is
  * seeded server-side so the project boots immediately.
  */
-export async function provisionProject(input: ProvisionProjectInput) {
+export async function provisionProject(
+  input: ProvisionProjectInput,
+  options: ApiClientOptions = {},
+) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/provision', {
-      seed_starter: true,
-      ...input,
-    }),
+    await backendApi.post<KortixProject>(
+      '/projects/provision',
+      {
+        seed_starter: true,
+        ...input,
+      },
+      {
+        timeout: 120_000,
+        ...options,
+      },
+    ),
   );
 }
 

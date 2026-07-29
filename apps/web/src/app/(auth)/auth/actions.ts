@@ -1,7 +1,6 @@
 'use server';
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
-import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import {
@@ -12,8 +11,14 @@ import {
 } from '@/lib/auth/unified-auth-flow';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
-import { headers } from 'next/headers';
+import {
+  checkAccessEmail,
+  fetchAccountStateWithToken,
+  recordPlatformLogout,
+  submitAccessRequest,
+} from '@kortix/sdk';
+import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -99,17 +104,14 @@ async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
     const requestHeaders = await headers();
     const forwardedFor = requestHeaders.get('x-forwarded-for') || requestHeaders.get('x-real-ip');
-    const res = await fetch(`${backendUrl}/access/check-email`, {
-      method: 'POST',
+    const body = await checkAccessEmail(email, {
+      backendUrl,
       headers: {
-        'Content-Type': 'application/json',
         ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
       },
-      body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(4_000),
     });
-    if (!res.ok) return 'unknown';
-    return resolveEmailFlowMode(await res.json());
+    return resolveEmailFlowMode(body);
   } catch {
     // Fail open — 'unknown' routes through the adaptive signup action, which
     // signs in existing users and registers new ones.
@@ -200,22 +202,18 @@ export async function requestAccess(prevState: any, formData: FormData) {
 
   try {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-    const res = await fetch(`${backendUrl}/access/request-access`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await submitAccessRequest(
+      {
         email: email.trim().toLowerCase(),
         company: company?.trim() || undefined,
         useCase: useCase?.trim() || undefined,
-      }),
-    });
-    if (res.ok) {
-      return {
-        success: true,
-        message: "Your access request has been submitted. We'll be in touch!",
-      };
-    }
-    return { message: 'Failed to submit request. Please try again.' };
+      },
+      { backendUrl },
+    );
+    return {
+      success: true,
+      message: "Your access request has been submitted. We'll be in touch!",
+    };
   } catch {
     return { message: 'Failed to submit request. Please try again.' };
   }
@@ -435,35 +433,11 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
-  const runtimeEnv = getServerPublicEnv();
-  const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  let redirectTo = returnUrl;
-
-  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
-  // dialog verbatim; don't override with a freshly-provisioned first project.
-  if (
-    billingEnabled &&
-    !alreadyExists &&
-    !isInviteReturnUrl(returnUrl) &&
-    signInData.session?.access_token
-  ) {
-    try {
-      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
-        /\/v1\/?$/,
-        '',
-      );
-      if (backendUrl) {
-        const projectPath = await resolveFirstProjectPathForNewUser({
-          backendUrl,
-          accessToken: signInData.session.access_token,
-          isNewUser: true,
-        });
-        if (projectPath) redirectTo = projectPath;
-      }
-    } catch {
-      // Fall back to the default return URL.
-    }
-  }
+  // `returnUrl` already defaults to PROJECT_LANDING_PATH, which paints
+  // instantly and provisions the first project behind the UI. This action used
+  // to await a managed git repo create + a full starter push here (up to 90s)
+  // before it could return a redirect, which blocked the sign-up form itself.
+  const redirectTo = returnUrl;
 
   return {
     success: true,
@@ -493,14 +467,9 @@ export async function signOut() {
     } = await supabase.auth.getSession();
     if (session?.access_token) {
       const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-      await fetch(`${backendUrl}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: '{}',
-        // Short timeout — logout should never hang on a slow backend.
+      await recordPlatformLogout({
+        backendUrl,
+        accessToken: session.access_token,
         signal: AbortSignal.timeout(3_000),
       });
     }
@@ -514,6 +483,11 @@ export async function signOut() {
   if (error) {
     return { message: error.message || 'Could not sign out' };
   }
+
+  // Forget the remembered project. Ownership binding already stops the next
+  // account from following it, but leaving one user's project id sitting in a
+  // shared browser after they sign out is needless.
+  (await cookies()).delete(LAST_PROJECT_COOKIE);
 
   return redirect('/');
 }
@@ -570,17 +544,12 @@ export async function verifyOtp(prevState: any, formData: FormData) {
           accessToken: data.session.access_token,
           timeoutMs: 5000,
         });
-        if (accountState) {
-          if (!accountHasAppAccess(accountState)) {
-            finalDestination = '/accounts';
-          } else {
-            const projectPath = await resolveFirstProjectPathForNewUser({
-              backendUrl,
-              accessToken: data.session.access_token,
-              isNewUser: true,
-            });
-            if (projectPath) finalDestination = projectPath;
-          }
+        // Entitlement is the only reason to override the destination here.
+        // First-project provisioning used to run on this path too and blocked
+        // the OTP form for the length of a managed git repo create plus a full
+        // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
+        if (accountState && !accountHasAppAccess(accountState)) {
+          finalDestination = '/accounts';
         }
       }
     } catch {

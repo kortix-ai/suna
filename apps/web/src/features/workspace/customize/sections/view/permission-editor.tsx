@@ -13,7 +13,7 @@ import {
   PERMISSION_RULE_KEYS,
 } from './agent-editor-catalog';
 import { Segmented } from './agent-editor-primitives';
-import type { PermissionAction, PermissionConfig, PermissionRule } from '@kortix/sdk/projects-client';
+import type { PermissionAction, PermissionConfig, PermissionRule } from '@kortix/sdk';
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus, Sliders, Trash2 } from 'lucide-react';
 import { useState } from 'react';

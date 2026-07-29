@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from './return-url';
 
 describe('sanitizeAuthReturnUrl', () => {
@@ -7,14 +8,23 @@ describe('sanitizeAuthReturnUrl', () => {
     expect(sanitizeAuthReturnUrl('/invites/abc-123')).toBe('/invites/abc-123');
   });
 
-  test('falls back to /projects when no value is given', () => {
-    expect(sanitizeAuthReturnUrl(undefined)).toBe('/projects');
-    expect(sanitizeAuthReturnUrl(null)).toBe('/projects');
+  test('defaults to a project, not the projects list', () => {
+    // Post-auth must never land on the list: choosing a project there is the
+    // manual step this flow exists to remove.
+    expect(sanitizeAuthReturnUrl(undefined)).toBe(PROJECT_LANDING_PATH);
+    expect(sanitizeAuthReturnUrl(null)).toBe(PROJECT_LANDING_PATH);
+    expect(PROJECT_LANDING_PATH).not.toBe('/projects');
   });
 
   test('rejects an absolute/off-origin URL', () => {
-    expect(sanitizeAuthReturnUrl('https://evil.example.com')).toBe('/projects');
-    expect(sanitizeAuthReturnUrl('//evil.example.com')).toBe('/projects');
+    expect(sanitizeAuthReturnUrl('https://evil.example.com')).toBe(PROJECT_LANDING_PATH);
+    expect(sanitizeAuthReturnUrl('//evil.example.com')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('does not return from auth to the projects list', () => {
+    // Middleware sends an unauthenticated /projects request through /auth.
+    // Returning to the list exposes it while first-project provisioning runs.
+    expect(sanitizeAuthReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
   });
 });
 

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-07-29T03:08:07.659Z",
+  "api_base": "http://localhost:8018/v1",
+  "project_id": "88b96042-796a-4837-9bbd-664125ed601c",
+  "provider": "daytona",
+  "model": "kortix/deepseek-v4-flash",
+  "prompt": "Reply with exactly READY and no other text.",
+  "session_id": "f10111da-bc05-4a8e-b70c-e45ddf007638",
+  "runtime_harness": "pi",
+  "runtime_transport": "acp",
+  "acp_session_id": "019fabd8-8a67-783c-9e25-886e5f7a5137",
+  "cumulative_ms": {
+    "session_created": 38.851,
+    "runtime_ready": 32685.354,
+    "acp_stream_open": 33400.521,
+    "acp_initialized": 33733.807,
+    "acp_session_created": 38031.081,
+    "prompt_dispatched": 38031.082,
+    "first_visible_token": 58136.051,
+    "prompt_complete": 58140.462
+  },
+  "durations_ms": {
+    "session_create_request": 38.792,
+    "acp_stream_open": 354.379,
+    "acp_initialize": 687.658,
+    "acp_session_new": 4297.265,
+    "prompt_to_first_visible_token": 20105.017,
+    "prompt_total": 20109.383,
+    "create_to_runtime_ready": 32685.354,
+    "create_to_first_visible_token": 58136.051
+  },
+  "host_provision_timeline": {
+    "id": "f10111da-bc05-4a8e-b70c-e45ddf007638",
+    "kind": "provision",
+    "marks": [
+      {
+        "atMs": 50,
+        "label": "row+tokens",
+        "deltaMs": 50
+      },
+      {
+        "atMs": 1312,
+        "label": "image-cached",
+        "deltaMs": 1261
+      },
+      {
+        "atMs": 27388,
+        "label": "provider-create:1x",
+        "deltaMs": 26076
+      }
+    ],
+    "totalMs": 27388
+  },
+  "guest_boot_timeline": [
+    {
+      "label": "static-web",
+      "atMs": 16
+    },
+    {
+      "label": "git-identity",
+      "atMs": 42
+    },
+    {
+      "label": "proxy-up",
+      "atMs": 54
+    },
+    {
+      "label": "repo-materialized",
+      "atMs": 4816
+    },
+    {
+      "label": "selected-harness-config-ready",
+      "atMs": 4817
+    },
+    {
+      "label": "opencode-skipped",
+      "atMs": 4821
+    },
+    {
+      "label": "runtime-process-spawned",
+      "atMs": 4828
+    },
+    {
+      "label": "runtime-acp-first-output",
+      "atMs": 5101
+    },
+    {
+      "label": "runtime-acp-initialized",
+      "atMs": 5101
+    },
+    {
+      "label": "acp-runtime-ready",
+      "atMs": 5101
+    }
+  ],
+  "first_reasoning_text": null,
+  "first_visible_text": "Retrying (attempt 1/3, waiting 2s)...",
+  "error": null,
+  "stop_reason": "end_turn",
+  "project_provision_ms": 2420
+}

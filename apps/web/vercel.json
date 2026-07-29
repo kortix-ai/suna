@@ -2,6 +2,7 @@
   "buildCommand": "next build",
   "installCommand": "pnpm install --frozen-lockfile",
   "ignoreCommand": "bash scripts/vercel-ignore.sh",
+  "regions": ["cle1"],
   "rewrites": [
     {
       "source": "/api/:path*",

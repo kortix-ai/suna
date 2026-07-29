@@ -14,7 +14,7 @@ import {
   type AgentConfigBlock,
   getAgentConfig,
   updateAgentConfig,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 export function agentConfigQueryKey(projectId: string, agentName: string) {
   return ['agent-config', projectId, agentName] as const;

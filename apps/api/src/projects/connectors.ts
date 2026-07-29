@@ -69,25 +69,44 @@ export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
-export const MEET_RESERVED_SLUG = 'kortix_meet';
+export const VOICE_RESERVED_SLUG = 'kortix_voice';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
-  'meet',
+  'voice',
   ...Object.keys(RESERVED_SLUG_PROVIDERS),
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'voice';
 
-type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
-const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];
+type ConnectorAuthType =
+  | 'bearer'
+  | 'basic'
+  | 'custom'
+  | 'api_key'
+  | 'oauth1'
+  | 'hmac'
+  | 'aws_sigv4'
+  | 'mtls'
+  | 'none';
+const AUTH_TYPES: readonly ConnectorAuthType[] = [
+  'bearer',
+  'basic',
+  'custom',
+  'api_key',
+  'oauth1',
+  'hmac',
+  'aws_sigv4',
+  'mtls',
+  'none',
+];
 
 interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
   type: ConnectorAuthType;
-  /** For `custom`: where the credential goes. Defaults to `header`. */
-  in: 'header' | 'query';
+  /** For `custom` and `api_key`: credential placement. */
+  in: 'header' | 'query' | 'cookie';
   /** For `custom`: the header/param name (e.g. `Authorization`, `X-API-Key`). */
   name: string | null;
   /** Optional value prefix (e.g. `Bearer`). */
@@ -263,7 +282,7 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
 
   if (spec.authAuto === false || spec.auth.type !== 'none') {
     const auth: Record<string, unknown> = { type: spec.auth.type };
-    if (spec.auth.type === 'custom') {
+    if (spec.auth.type === 'custom' || spec.auth.type === 'api_key' || spec.auth.type === 'hmac') {
       if (spec.auth.in !== 'header') auth.in = spec.auth.in;
       if (spec.auth.name) auth.name = spec.auth.name;
     }
@@ -501,12 +520,12 @@ function parseAuth(
   if (type === 'none') return { ok: true, value: { ...NO_AUTH } };
 
   const inRaw = typeof row.in === 'string' ? row.in.trim().toLowerCase() : 'header';
-  if (inRaw !== 'header' && inRaw !== 'query') {
-    return err(slug, '[connectors.auth].in must be "header" or "query"', filename);
+  if (inRaw !== 'header' && inRaw !== 'query' && inRaw !== 'cookie') {
+    return err(slug, '[connectors.auth].in must be "header", "query", or "cookie"', filename);
   }
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : null;
-  if (type === 'custom' && !name) {
-    return err(slug, '[connectors.auth] type="custom" requires `name` (the header/param name)', filename);
+  if ((type === 'custom' || type === 'api_key') && !name) {
+    return err(slug, `[connectors.auth] type="${type}" requires \`name\``, filename);
   }
   const prefix = typeof row.prefix === 'string' && row.prefix.trim() ? row.prefix.trim() : null;
 

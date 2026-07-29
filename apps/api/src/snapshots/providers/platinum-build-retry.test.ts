@@ -15,7 +15,6 @@ setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum');
 setTestEnv('KORTIX_URL', 'https://api.example.test');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
 const {
   isRetryablePlatinumBuildError,
@@ -39,6 +38,10 @@ describe('Platinum build-error retry classifier', () => {
     [
       'template never registered (stuck on "missing")',
       new Error('Platinum template kortix-default-3e3906a27df1 did not become ready (last state: missing)'),
+    ],
+    [
+      'per-org mutation RATE limit (transient, self-clears)',
+      new Error('platinum POST /v1/templates/from-build -> 429 {"error":"rate limited","code":"rate_limited"}'),
     ],
   ])('retries %s', (_label, err) => {
     expect(isRetryablePlatinumBuildError(err)).toBe(true);
@@ -66,6 +69,14 @@ describe('Platinum build-error retry classifier', () => {
     ['a "no space left on device" message without the ENOSPC code', new Error('write /var/lib: no space left on device')],
     ['an explicit "template size cap" message', new Error('Platinum template kortix-default-abc123 exceeded its template size cap')],
     ['the wrapped PlatinumSizeCapBuildError itself', new PlatinumSizeCapBuildError('kortix-default-abc123', new Error('size_mb too_big'))],
+    // ALSO a 429, but the opposite of transient: the per-org template COUNT cap.
+    // Nothing frees a template row on its own and Kortix has no org-wide GC for
+    // Platinum, so retrying burns BUILD_ATTEMPTS against a wall and buries the
+    // one error an operator needs to see.
+    [
+      'per-org template COUNT quota (permanent until a template is deleted)',
+      new Error('platinum POST /v1/templates/from-build -> 429 {"error":"org template quota reached (500/500); delete an existing template first","code":"org_template_quota_exceeded","quota":500,"used":500}'),
+    ],
   ])('does not retry %s', (_label, err) => {
     expect(isRetryablePlatinumBuildError(err)).toBe(false);
   });

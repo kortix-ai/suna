@@ -57,6 +57,37 @@ test('project(id).sessions.list forwards manager inventory scope', async () => {
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');
 });
 
+test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    const requestUrl = String(url);
+    calls.push({
+      url: requestUrl,
+      method: opts.method ?? 'GET',
+      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+    });
+    const body = requestUrl.endsWith('/warm/claim')
+      ? { session_id: 'SID456' }
+      : {
+          session: { session_id: 'SID456' },
+          reused: true,
+          workspace_refresh: { status: 'unchanged' },
+        };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await kortix.project('PID123').sessions.ensureWarm();
+  expect(last().url).toContain('/projects/PID123/sessions/warm');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' });
+  expect(last().url).toContain('/projects/PID123/sessions/warm/claim');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ session_id: 'SID456' });
+});
+
 test('top-level projects.list hits /projects', async () => {
   await kortix.projects.list();
   expect(last().url).toContain('/projects');
@@ -171,18 +202,15 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).channels covers slack, email and meet', async () => {
+test('project(id).channels covers slack, email and voice', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
 
   await kortix.project('PID123').channels.email.mode();
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
 
-  await kortix.project('PID123').channels.meet.voices();
-  expect(last().url).toContain('/projects/PID123/channels/meet/voices');
-
-  await kortix.project('PID123').channels.meet.setVoice('voice-1');
-  expect(last().url).toContain('/projects/PID123/channels/meet/voice');
+  await kortix.project('PID123').channels.voice.setBotName('Kortix');
+  expect(last().url).toContain('/projects/PID123/channels/meet/name');
   expect(last().method).toBe('PUT');
 });
 
@@ -531,12 +559,6 @@ test('project(id).channels.slack covers file download + upload proxies', async (
   expect(last().method).toBe('POST');
 });
 
-test('project(id).channels.meet.speak posts bot id + text', async () => {
-  await kortix.project('PID123').channels.meet.speak('bot-1', 'hello there');
-  expect(last().url).toContain('/projects/PID123/channels/meet/speak');
-  expect(last().method).toBe('POST');
-});
-
 test('project(id).gateway.playground posts prompt + models', async () => {
   await kortix.project('PID123').gateway.playground('Say hi', ['gpt-4o', 'claude-3']);
   expect(last().url).toContain('/projects/PID123/gateway/playground');
@@ -803,6 +825,47 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
   const promptCall = calls.find((c) => c.url.includes('/message'));
   expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
   expect(startCount).toBe(2);
+});
+
+test('session rewind and restore stay bound to the same canonical OpenCode session', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-REWIND/start')) {
+      return jsonResponse(sessionStartPayload('sb-rewind', 'ocs-rewind'));
+    }
+    return jsonResponse({ id: 'ocs-rewind' });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-REWIND');
+
+  await handle.rewind('msg_2');
+  await handle.restoreRewind();
+
+  const historyCalls = calls.filter((call) => call.url.includes('/session/ocs-rewind/revert'));
+  expect(historyCalls).toEqual([
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/revert'),
+      method: 'POST',
+      body: { messageID: 'msg_2' },
+    }),
+  ]);
+  expect(calls).toContainEqual(
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/unrevert'),
+      method: 'POST',
+    }),
+  );
 });
 
 // ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent

@@ -10,6 +10,12 @@ import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
+import {
+  type SecretEgressPolicy,
+  type SecretStrategy,
+  emitsValue,
+  resolveSecretDelivery,
+} from '../secrets/strategy';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -183,6 +189,12 @@ export interface ResolvedProjectSecret {
   identifier: string;
   key: string;
   value: string;
+  /** Delivery strategy for this row. Absent on rows resolved before the column
+   *  existed; `resolveSecretDelivery` reads absence as "no opinion", NOT as
+   *  `runtime`, so an older row cannot silently downgrade a narrowed one. */
+  strategy?: SecretStrategy;
+  egressPolicy?: SecretEgressPolicy | null;
+  handlePrefix?: string | null;
 }
 
 /**
@@ -204,6 +216,9 @@ export async function listResolvedProjectSecrets(
       scope: projectSecrets.scope,
       ownerUserId: projectSecrets.ownerUserId,
       active: projectSecrets.active,
+      strategy: projectSecrets.strategy,
+      egressPolicy: projectSecrets.egressPolicy,
+      handlePrefix: projectSecrets.handlePrefix,
     })
     .from(projectSecrets)
     .where(and(
@@ -226,7 +241,14 @@ export async function listResolvedProjectSecrets(
   for (const [identifier, slot] of byIdentifier) {
     const chosen = slot.personal && slot.personal.active ? slot.personal : slot.shared;
     if (!chosen) continue;
-    out.push({ identifier, key: chosen.name, value: decryptProjectSecret(projectId, chosen.valueEnc) });
+    out.push({
+      identifier,
+      key: chosen.name,
+      value: decryptProjectSecret(projectId, chosen.valueEnc),
+      strategy: chosen.strategy ?? undefined,
+      egressPolicy: chosen.egressPolicy ?? null,
+      handlePrefix: chosen.handlePrefix ?? null,
+    });
   }
   return out;
 }
@@ -442,13 +464,82 @@ export async function listProjectSecretsSnapshot(projectId: string): Promise<{
  * running agent's `secrets` grant (`AgentGrant.env`); omitted/`'all'` = every
  * secret in the project reaches this session (see resolveGrantedSecretEnv).
  */
+/**
+ * THE chokepoint: everything a sandbox is handed passes through here.
+ *
+ * Two production callers — sandbox boot (`buildSessionSandboxEnvVars`) and the
+ * per-prompt hot push (`resolveOwnerRawEnv`) — which is why the delivery
+ * decision belongs here rather than at either of them. A row's `strategy`
+ * decides whether its value may enter the box AT ALL; the pre-existing grant and
+ * allowlist narrowing decide only WHICH rows are considered.
+ *
+ * `sessionId` is required to deliver anything non-`runtime`: a brokered value is
+ * represented in the box by a per-session handle, and with no session there is
+ * nothing to mint against. Absent it, non-`runtime` rows are withheld rather
+ * than falling back to plaintext — the fallback would defeat the whole point.
+ */
+/**
+ * Delete from `env` every KEY that no longer has a deliverable value.
+ *
+ * Mutates in place because the caller owns the map and this is a pure narrowing
+ * of it — a row whose delivery says "nothing" is removed from the values, and
+ * therefore from `names`, which the daemon derives from the same map. (A name
+ * emitted without a value, or the reverse, desynchronises the box's env store.)
+ *
+ * The subtlety is the SHARED KEY. Two identifiers may resolve to one env KEY —
+ * that is deliberate, so an agent can be granted one specific value among
+ * several candidates for the same variable. A KEY may therefore only be dropped
+ * when EVERY identifier behind it is undeliverable; if one is still `runtime`,
+ * the KEY has a legitimate value and dropping it would break a working session.
+ */
+export function withholdUndeliverable(
+  rows: ResolvedProjectSecret[],
+  env: Record<string, string>,
+  sessionId: string | null,
+): void {
+  const deliverableKeys = new Set<string>();
+  const seenKeys = new Set<string>();
+  for (const row of rows) {
+    seenKeys.add(row.key);
+    const delivery = resolveSecretDelivery({
+      identifier: row.identifier,
+      strategy: row.strategy,
+      sessionId,
+      // The agent grant and the session allowlist were BOTH applied upstream by
+      // resolveGrantedSecretEnv; re-applying them here would double-count and
+      // could withhold a row the caller already admitted.
+      agentGrantEnv: 'all',
+      sessionAllowlist: null,
+    });
+    if (emitsValue(delivery)) deliverableKeys.add(row.key);
+  }
+  for (const key of seenKeys) {
+    if (!deliverableKeys.has(key)) delete env[key];
+  }
+}
+
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,
   userId: string | null,
   grantEnv?: string[] | 'all',
+  sessionId?: string | null,
 ): Promise<{ env: Record<string, string>; names: string[]; revision: string }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env } = resolveGrantedSecretEnv(rows, grantEnv);
+  const { env, identifiers } = resolveGrantedSecretEnv(rows, grantEnv);
+
+  // Only the GRANTED rows may vote on a shared KEY. Passing the full resolved
+  // set let an UNGRANTED sibling keep a key alive for a denied one: identifiers
+  // A ('denied') and B ('runtime') share KEY X, B is outside the agent grant so
+  // it contributed nothing to `env`, yet it still marked X deliverable — and X
+  // held A's plaintext. A row that could not put a value in the map must not be
+  // able to keep one there.
+  const granted = new Set(identifiers.map((id) => id.toUpperCase()));
+  withholdUndeliverable(
+    rows.filter((row) => granted.has(row.identifier.toUpperCase())),
+    env,
+    sessionId ?? null,
+  );
+
   const names = Object.keys(env).sort();
   return { env, names, revision: projectSecretsRevision(env) };
 }

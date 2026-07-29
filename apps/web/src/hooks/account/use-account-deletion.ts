@@ -1,6 +1,11 @@
 import { errorToast, successToast } from '@/components/ui/toast';
-import { backendApi } from '@/lib/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  cancelAccountDeletion,
+  deleteAccountImmediately,
+  getAccountDeletionStatus,
+  requestAccountDeletion,
+} from '@kortix/sdk';
 
 export interface AccountDeletionStatus {
   has_pending_deletion: boolean;
@@ -37,33 +42,12 @@ const UNSUPPORTED_STATUS: AccountDeletionStatus = {
   supported: false,
 };
 
-function isUnsupportedEndpoint(error: { status?: number; code?: string } | undefined): boolean {
-  return error?.status === 404 || error?.code === '404';
-}
-
 export function useAccountDeletionStatus() {
   return useQuery<AccountDeletionStatus>({
     queryKey: ACCOUNT_DELETION_QUERY_KEY,
     queryFn: async () => {
-      const response = await backendApi.get<AccountDeletionStatus>('/account/deletion-status', {
-        showErrors: false,
-      });
-
-      if (isUnsupportedEndpoint(response.error)) {
-        return UNSUPPORTED_STATUS;
-      }
-
-      if (!response.success || !response.data) {
-        return {
-          ...UNSUPPORTED_STATUS,
-          supported: true,
-        };
-      }
-
-      return {
-        ...response.data,
-        supported: true,
-      };
+      const status = await getAccountDeletionStatus();
+      return status ? { ...status, supported: true } : UNSUPPORTED_STATUS;
     },
     staleTime: 30000,
     refetchOnWindowFocus: true,
@@ -74,35 +58,15 @@ export function useRequestAccountDeletion() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (reason?: string) => {
-      const response = await backendApi.post<RequestDeletionResponse>(
-        '/account/request-deletion',
-        {
-          reason: reason || 'User requested deletion',
-        },
-        {
-          showErrors: false,
-        },
-      );
-
-      if (isUnsupportedEndpoint(response.error)) {
-        throw new Error('Account deletion is not available in this environment yet.');
-      }
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || 'Failed to request account deletion');
-      }
-
-      return response.data;
-    },
+    mutationFn: (reason?: string) => requestAccountDeletion(reason),
     onSuccess: (data) => {
       successToast(data.message);
 
       queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
         has_pending_deletion: true,
-        deletion_scheduled_for: data.deletion_scheduled_for,
+        deletion_scheduled_for: data.deletion_scheduled_for ?? null,
         requested_at: new Date().toISOString(),
-        can_cancel: data.can_cancel,
+        can_cancel: data.can_cancel ?? false,
         supported: true,
       });
     },
@@ -116,25 +80,7 @@ export function useCancelAccountDeletion() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
-      const response = await backendApi.post<CancelDeletionResponse>(
-        '/account/cancel-deletion',
-        undefined,
-        {
-          showErrors: false,
-        },
-      );
-
-      if (isUnsupportedEndpoint(response.error)) {
-        throw new Error('Account deletion is not available in this environment yet.');
-      }
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || 'Failed to cancel account deletion');
-      }
-
-      return response.data;
-    },
+    mutationFn: cancelAccountDeletion,
     onSuccess: (data) => {
       successToast(data.message);
 
@@ -156,24 +102,7 @@ export function useDeleteAccountImmediately() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
-      const response = await backendApi.delete<DeleteImmediatelyResponse>(
-        '/account/delete-immediately',
-        {
-          showErrors: false,
-        },
-      );
-
-      if (isUnsupportedEndpoint(response.error)) {
-        throw new Error('Account deletion is not available in this environment yet.');
-      }
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || 'Failed to delete account immediately');
-      }
-
-      return response.data;
-    },
+    mutationFn: deleteAccountImmediately,
     onSuccess: (data) => {
       successToast(data.message);
 

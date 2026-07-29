@@ -132,13 +132,55 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
 
 export type SessionVisibility = 'private' | 'project' | 'restricted';
 
+/**
+ * Context needed to decide whether `created_by` may confer ownership.
+ *
+ * For an INTERACTIVE session created_by is one human, so ownership is real. For
+ * a Kortix-as-a-Backend session it is the WRAPPER's credential — identical for
+ * every one of that wrapper's end-users — so it identifies nobody, and letting
+ * it short-circuit would make every end-user's session visible to every other.
+ */
+export interface SessionOwnershipContext {
+  /** The target session's `origin` (`'backend'` for a wrapper-created session). */
+  origin: string | null;
+  /** The target session's id. */
+  sessionId: string;
+  /** The CALLER's own session, when the credential is bound to one (a sandbox
+   *  token). Null for the wrapper's own backend credential, which acts for
+   *  nobody in particular and legitimately sees everything it created.
+   *  REQUIRED — never optional. An omitted binding would default to the
+   *  permissive value and silently reopen the hole on any edge that forgets it. */
+  callerSessionId: string | null;
+}
+
+/**
+ * A session-bound sandbox credential may access only its own backend session.
+ *
+ * Human credentials and wrapper backend credentials have no session binding.
+ * Interactive sessions keep their human ownership semantics.
+ */
+export function isSessionTargetVisibleToCaller(ownership: SessionOwnershipContext): boolean {
+  return !(
+    ownership.origin === 'backend' &&
+    ownership.callerSessionId != null &&
+    ownership.callerSessionId !== ownership.sessionId
+  );
+}
+
 /** Pure: can this subject see/open the session? The owner always can. */
 export function isSessionVisibleTo(
   visibility: SessionVisibility,
   ownerId: string | null,
   grants: SecretGrant[],
   subject: ShareSubject,
+  ownership: SessionOwnershipContext,
 ): boolean {
+  // A sandbox token acts for ONE end-user. It must not reach a sibling backend
+  // session just because the wrapper credential created them both. Interactive
+  // sessions are deliberately excluded: there created_by really is one person,
+  // and narrowing would break `kortix sessions ls` from inside a normal sandbox.
+  if (!isSessionTargetVisibleToCaller(ownership)) return false;
+
   if (ownerId && ownerId === subject.userId) return true;
   if (visibility === 'project') return true;
   if (visibility === 'restricted') {

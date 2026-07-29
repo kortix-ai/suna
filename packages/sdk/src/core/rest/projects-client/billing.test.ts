@@ -5,16 +5,21 @@ import {
   cancelSubscription,
   confirmCheckoutSession,
   configureAutoTopup,
+  claimPerSeatBilling,
+  createPerSeatCheckout,
   createCheckoutSession,
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
   getAutoTopupSettings,
+  getAutoTopupSetupStatus,
   getDefaultAccountState,
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
   scheduleDowngrade,
+  syncSubscription,
+  getUsageRollup,
 } from './billing';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
@@ -139,6 +144,31 @@ test('cancelSubscription / reactivateSubscription / scheduleDowngrade / cancelSc
   expect(last().url).toContain('/billing/cancel-scheduled-change');
 });
 
+test('per-seat, sync, and auto-topup setup methods own their REST paths', async () => {
+  nextResponse = { status: 200, body: { status: 'checkout_created' } };
+  await createPerSeatCheckout({
+    successUrl: 'https://example.com/success',
+    cancelUrl: 'https://example.com/cancel',
+    accountId: 'acc-1',
+  });
+  expect(last().url).toContain('/billing/create-per-seat-checkout');
+  expect(last().body).toMatchObject({ account_id: 'acc-1' });
+
+  nextResponse = { status: 200, body: { ok: true, status: 'migrated' } };
+  await claimPerSeatBilling('acc-1');
+  expect(last().url).toContain('/billing/claim-per-seat');
+
+  await syncSubscription('acc-1');
+  expect(last().url).toContain('/billing/sync-subscription');
+
+  nextResponse = {
+    status: 200,
+    body: { has_payment_method: true, has_default_payment_method: true },
+  };
+  await getAutoTopupSetupStatus('acc-1');
+  expect(last().url).toContain('/billing/auto-topup/setup-status?account_id=acc-1');
+});
+
 test('getProrationPreview GETs with new_price_id (+ optional account_id) as query params', async () => {
   nextResponse = { status: 200, body: {} };
   await getProrationPreview('price_123', 'acc-1');
@@ -167,4 +197,43 @@ test('getAutoTopupSettings GETs and configureAutoTopup POSTs auto-topup', async 
   expect(last().url).toContain('/billing/auto-topup/configure');
   expect(last().method).toBe('POST');
   expect(result.enabled).toBe(true);
+});
+
+test('getUsageRollup GETs /usage with no query when unfiltered', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup();
+  expect(last().url).toContain('/usage');
+  expect(last().url).not.toContain('?');
+  expect(last().method).toBe('GET');
+});
+
+test('getUsageRollup groups by end_user_ref so spend is attributable per end-user', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      data: { total_cost: 3, count: 2 },
+      breakdown: [
+        { end_user_ref: 'user-a', cost: 2, count: 1 },
+        { end_user_ref: 'user-b', cost: 1, count: 1 },
+      ],
+    },
+  };
+  const result = await getUsageRollup({ groupBy: 'end_user_ref', start: '2026-07-01' });
+  expect(last().url).toContain('group_by=end_user_ref');
+  expect(last().url).toContain('start=2026-07-01');
+  expect(result.breakdown?.map((b) => b.end_user_ref)).toEqual(['user-a', 'user-b']);
+});
+
+test('getUsageRollup narrows to one end-user via endUserRef', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
+  await getUsageRollup({ endUserRef: 'user-a' });
+  expect(last().url).toContain('end_user_ref=user-a');
+  expect(last().url).not.toContain('group_by');
+});
+
+test('the deprecated originRef option still works, mapped to the new param', async () => {
+  // Live callers pinned to the old option must keep functioning after the rename.
+  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
+  await getUsageRollup({ originRef: 'legacy-user' });
+  expect(last().url).toContain('end_user_ref=legacy-user');
 });

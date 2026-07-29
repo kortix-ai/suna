@@ -13,7 +13,7 @@ import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAccountMembers } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,

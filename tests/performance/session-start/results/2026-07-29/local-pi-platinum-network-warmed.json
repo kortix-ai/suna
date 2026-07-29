@@ -1,0 +1,745 @@
+{
+  "schema_version": 3,
+  "recorded_at": "2026-07-29T03:51:33.188Z",
+  "api_base": "http://localhost:8018/v1",
+  "project_id": "79777e6b-b411-4c20-a8a9-869547cc8490",
+  "project_provision": null,
+  "provider": "platinum",
+  "model": "kortix/deepseek-v4-flash",
+  "prompt": "Reply with exactly READY and no other text.",
+  "session_id": "5fe5a025-c97c-47ed-a05b-18cf199318de",
+  "runtime_harness": "pi",
+  "runtime_transport": "acp",
+  "acp_session_id": "019fabff-da0d-7446-b817-3b9a2ebeab16",
+  "cumulative_ms": {
+    "session_created": 621.149,
+    "runtime_ready": 3848.032,
+    "guest_network_probe_complete": 4119.396,
+    "acp_stream_open": 4189.179,
+    "acp_initialized": 4293.928,
+    "acp_session_created": 10144.055,
+    "first_agent_message": 10144.515,
+    "acp_model_selected": 10331.905,
+    "prompt_dispatched": 10331.913
+  },
+  "durations_ms": {
+    "session_create_request": 620.711,
+    "acp_stream_open": 69.373,
+    "acp_initialize": 174.114,
+    "acp_session_new": 5850.112,
+    "acp_model_select": 187.839
+  },
+  "api_requests": [
+    {
+      "label": "session.create",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions",
+      "status": 201,
+      "started_at_ms": 0.494,
+      "completed_at_ms": 621.124,
+      "duration_ms": 620.631
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 621.156,
+      "completed_at_ms": 627.931,
+      "duration_ms": 6.776
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 730.234,
+      "completed_at_ms": 738.895,
+      "duration_ms": 8.662
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 840.626,
+      "completed_at_ms": 848.592,
+      "duration_ms": 7.967
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 950.833,
+      "completed_at_ms": 959.749,
+      "duration_ms": 8.916
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1062.032,
+      "completed_at_ms": 1070.906,
+      "duration_ms": 8.874
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1171.631,
+      "completed_at_ms": 1179.824,
+      "duration_ms": 8.193
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1282.048,
+      "completed_at_ms": 1290.629,
+      "duration_ms": 8.581
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1392.818,
+      "completed_at_ms": 1404.209,
+      "duration_ms": 11.391
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1506.49,
+      "completed_at_ms": 1511.674,
+      "duration_ms": 5.199
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1614.181,
+      "completed_at_ms": 1620.053,
+      "duration_ms": 5.872
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1721.016,
+      "completed_at_ms": 1728.527,
+      "duration_ms": 7.512
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1830.921,
+      "completed_at_ms": 1840.152,
+      "duration_ms": 9.231
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 1941.648,
+      "completed_at_ms": 1949.656,
+      "duration_ms": 8.009
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2050.831,
+      "completed_at_ms": 2058.787,
+      "duration_ms": 7.956
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2161.284,
+      "completed_at_ms": 2170.006,
+      "duration_ms": 8.723
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2272.334,
+      "completed_at_ms": 2280.629,
+      "duration_ms": 8.296
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2383.029,
+      "completed_at_ms": 2392.136,
+      "duration_ms": 9.107
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2494.436,
+      "completed_at_ms": 2502.028,
+      "duration_ms": 7.592
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2604.335,
+      "completed_at_ms": 2611.384,
+      "duration_ms": 7.049
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2713.737,
+      "completed_at_ms": 2721.741,
+      "duration_ms": 8.004
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 2823.587,
+      "completed_at_ms": 3520.424,
+      "duration_ms": 696.838
+    },
+    {
+      "label": "session.start.poll",
+      "method": "POST",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de/start?wait_ms=0",
+      "status": 200,
+      "started_at_ms": 3622.786,
+      "completed_at_ms": 3848.02,
+      "duration_ms": 225.234
+    },
+    {
+      "label": "telemetry.guest.gateway-network-probe.start",
+      "method": "POST",
+      "path": "/p/sbx_01KYNZZHSZ6RPAZDWWT250XCW5/8000/kortix/pty",
+      "status": 200,
+      "started_at_ms": 3848.393,
+      "completed_at_ms": 3919.004,
+      "duration_ms": 70.611
+    },
+    {
+      "label": "telemetry.guest.gateway-network-probe.poll",
+      "method": "GET",
+      "path": "/p/sbx_01KYNZZHSZ6RPAZDWWT250XCW5/8000/file/content?path=%2Ftmp%2Fkortix-gateway-network-probe-1785297097036.json",
+      "status": 200,
+      "started_at_ms": 4019.736,
+      "completed_at_ms": 4119.374,
+      "duration_ms": 99.638
+    },
+    {
+      "label": "telemetry.guest.health",
+      "method": "GET",
+      "path": "/p/sbx_01KYNZZHSZ6RPAZDWWT250XCW5/8000/kortix/health",
+      "status": 200,
+      "started_at_ms": 35349.393,
+      "completed_at_ms": 35687.991,
+      "duration_ms": 338.598
+    },
+    {
+      "label": "DELETE /projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de",
+      "method": "DELETE",
+      "path": "/projects/79777e6b-b411-4c20-a8a9-869547cc8490/sessions/5fe5a025-c97c-47ed-a05b-18cf199318de",
+      "status": 200,
+      "started_at_ms": 35688.006,
+      "completed_at_ms": 35699.879,
+      "duration_ms": 11.874
+    }
+  ],
+  "start_poll_timeline": [
+    {
+      "at_ms": 627.934,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 738.899,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 848.596,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 959.751,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1070.931,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1179.827,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1290.632,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1404.213,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1511.692,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1620.056,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1728.533,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1840.156,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 1949.664,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2058.791,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2170.012,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2280.643,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2392.15,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2502.039,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2611.39,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 2721.744,
+      "status": 200,
+      "stage": "provisioning",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 3520.435,
+      "status": 200,
+      "stage": "starting",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    },
+    {
+      "at_ms": 3848.024,
+      "status": 200,
+      "stage": "ready",
+      "provisioning_stage": null,
+      "runtime_ready": null
+    }
+  ],
+  "acp_event_timeline": [
+    {
+      "at_ms": 4189.084,
+      "method": "initialize",
+      "id": "1785297097308-0-1",
+      "update": null,
+      "content_type": null,
+      "message_class": null,
+      "text": "",
+      "update_details": null
+    },
+    {
+      "at_ms": 10144.392,
+      "method": "session/update",
+      "id": null,
+      "update": "agent_message_chunk",
+      "content_type": "text",
+      "message_class": "harness_startup",
+      "text": "pi v0.80.6 --- ## Context - /workspace/AGENTS.md ## Skills - /workspace/.kortix/opencode/skills/kortix-cli/SKILL.md --- New version available: v0.82.1 (installed v0.80.6). Run: `npm i -g @earendil-works/pi-coding-agent`",
+      "update_details": {
+        "sessionUpdate": "agent_message_chunk"
+      }
+    },
+    {
+      "at_ms": 10148.32,
+      "method": "session/update",
+      "id": null,
+      "update": "available_commands_update",
+      "content_type": null,
+      "message_class": null,
+      "text": "",
+      "update_details": {
+        "sessionUpdate": "available_commands_update",
+        "availableCommands": [
+          {
+            "name": "skill:kortix-cli",
+            "description": "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors via the executor, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+          },
+          {
+            "name": "compact",
+            "input": {
+              "hint": "optional custom instructions"
+            },
+            "description": "Manually compact the session context"
+          },
+          {
+            "name": "autocompact",
+            "input": {
+              "hint": "on|off|toggle"
+            },
+            "description": "Toggle automatic context compaction"
+          },
+          {
+            "name": "export",
+            "description": "Export session to an HTML file in the session cwd"
+          },
+          {
+            "name": "session",
+            "description": "Show session stats (messages, tokens, cost, session file)"
+          },
+          {
+            "name": "name",
+            "input": {
+              "hint": "<name>"
+            },
+            "description": "Set session display name"
+          },
+          {
+            "name": "steering",
+            "input": {
+              "hint": "(no args to show) all | one-at-a-time"
+            },
+            "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)"
+          },
+          {
+            "name": "follow-up",
+            "input": {
+              "hint": "(no args to show) all | one-at-a-time"
+            },
+            "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)"
+          },
+          {
+            "name": "changelog",
+            "description": "Show pi changelog"
+          }
+        ]
+      }
+    },
+    {
+      "at_ms": 10332.146,
+      "method": "session/update",
+      "id": null,
+      "update": "config_option_update",
+      "content_type": null,
+      "message_class": null,
+      "text": "",
+      "update_details": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "options": [
+              {
+                "name": "kortix/deepseek-v4-flash",
+                "value": "kortix/deepseek-v4-flash",
+                "description": null
+              }
+            ],
+            "category": "model",
+            "description": "Select the model for this session",
+            "currentValue": "kortix/deepseek-v4-flash"
+          },
+          {
+            "id": "thought_level",
+            "name": "Thinking",
+            "type": "select",
+            "options": [
+              {
+                "name": "Thinking: off",
+                "value": "off",
+                "description": null
+              },
+              {
+                "name": "Thinking: minimal",
+                "value": "minimal",
+                "description": null
+              },
+              {
+                "name": "Thinking: low",
+                "value": "low",
+                "description": null
+              },
+              {
+                "name": "Thinking: medium",
+                "value": "medium",
+                "description": null
+              },
+              {
+                "name": "Thinking: high",
+                "value": "high",
+                "description": null
+              },
+              {
+                "name": "Thinking: xhigh",
+                "value": "xhigh",
+                "description": null
+              }
+            ],
+            "category": "thought_level",
+            "description": "Set the reasoning effort for this session",
+            "currentValue": "medium"
+          }
+        ],
+        "sessionUpdate": "config_option_update"
+      }
+    },
+    {
+      "at_ms": 29266.556,
+      "method": "session/update",
+      "id": null,
+      "update": "session_info_update",
+      "content_type": null,
+      "message_class": null,
+      "text": "",
+      "update_details": {
+        "_meta": {
+          "piAcp": {
+            "running": true,
+            "queueDepth": 0
+          }
+        },
+        "sessionUpdate": "session_info_update"
+      }
+    }
+  ],
+  "host_session_create_timeline": {
+    "id": "5fe5a025-c97c-47ed-a05b-18cf199318de",
+    "kind": "session-create",
+    "marks": [
+      {
+        "atMs": 5,
+        "label": "git-auth",
+        "deltaMs": 5
+      },
+      {
+        "atMs": 31,
+        "label": "env-vars",
+        "deltaMs": 26
+      },
+      {
+        "atMs": 79,
+        "label": "kicked",
+        "deltaMs": 48
+      }
+    ],
+    "totalMs": 79
+  },
+  "host_provision_timeline": {
+    "id": "5fe5a025-c97c-47ed-a05b-18cf199318de",
+    "kind": "provision",
+    "marks": [
+      {
+        "atMs": 48,
+        "label": "row+tokens",
+        "deltaMs": 48
+      },
+      {
+        "atMs": 246,
+        "label": "image-cached",
+        "deltaMs": 198
+      },
+      {
+        "atMs": 2170,
+        "label": "provider-create:1x",
+        "deltaMs": 1924
+      }
+    ],
+    "totalMs": 2170
+  },
+  "guest_boot_timeline": [
+    {
+      "label": "static-web",
+      "atMs": 22
+    },
+    {
+      "label": "git-identity",
+      "atMs": 57
+    },
+    {
+      "label": "proxy-up",
+      "atMs": 69
+    },
+    {
+      "label": "repo-materialized",
+      "atMs": 106
+    },
+    {
+      "label": "selected-harness-config-ready",
+      "atMs": 108
+    },
+    {
+      "label": "opencode-skipped",
+      "atMs": 117
+    },
+    {
+      "label": "runtime-process-spawned",
+      "atMs": 126
+    },
+    {
+      "label": "runtime-acp-first-output",
+      "atMs": 561
+    },
+    {
+      "label": "runtime-acp-initialized",
+      "atMs": 562
+    },
+    {
+      "label": "acp-runtime-ready",
+      "atMs": 562
+    }
+  ],
+  "guest_network_probe": {
+    "http_code": 200,
+    "dns_s": 0.005703,
+    "tcp_s": 0.007622,
+    "tls_s": 0.03263,
+    "pretransfer_s": 0.032778,
+    "ttfb_s": 0.115311,
+    "total_s": 0.11537,
+    "duration_ms": 271.019
+  },
+  "gateway_request_timeline": [],
+  "gateway_attribution": null,
+  "sequential_breakdown": [
+    {
+      "phase": "create_to_runtime_ready",
+      "start_ms": 0,
+      "end_ms": 3848.032,
+      "duration_ms": 3848.032
+    },
+    {
+      "phase": "acp_connect_and_initialize",
+      "start_ms": 3848.032,
+      "end_ms": 4293.928,
+      "duration_ms": 445.896
+    },
+    {
+      "phase": "acp_session_new",
+      "start_ms": 4293.928,
+      "end_ms": 10144.055,
+      "duration_ms": 5850.127
+    },
+    {
+      "phase": "acp_model_select",
+      "start_ms": 10144.055,
+      "end_ms": 10331.905,
+      "duration_ms": 187.85
+    },
+    {
+      "phase": "model_select_to_prompt_dispatch",
+      "start_ms": 10331.905,
+      "end_ms": 10331.913,
+      "duration_ms": 0.008
+    }
+  ],
+  "first_agent_message_text": "pi v0.80.6\n---\n\n## Context\n- /workspace/AGENTS.md\n\n## Skills\n- /workspace/.kortix/opencode/skills/kortix-cli/SKILL.md\n\n---\nNew version available: v0.82.1 (installed v0.80.6). Run: `npm i -g @earendil-works/pi-coding-agent`\n",
+  "first_agent_message_class": "harness_startup",
+  "first_reasoning_text": null,
+  "first_model_text": null,
+  "model_response_text": "",
+  "error": "ACP request failed with HTTP 503: {\"error\":true,\"message\":\"Request exceeded the 25s server processing deadline\",\"status\":503}"
+}

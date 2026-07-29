@@ -104,6 +104,10 @@ mock.module('../projects/git', () => ({
   invalidateProjectMirror: () => {},
 }));
 
+mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
+  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
+}));
+
 mock.module('../projects/sandbox-reaper', () => ({
   reapAndReconcileSandboxes: async () => ({
     candidates: 0,

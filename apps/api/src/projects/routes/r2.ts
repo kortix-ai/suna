@@ -17,7 +17,8 @@ import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '.
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
 import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { sendSessionCreateError } from '../lib/sessions';
+import { createSession } from '../session-lifecycle';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
@@ -790,7 +791,8 @@ projectsApp.openapi(
     `3. Open a change request. Once it merges, the image rebuilds automatically.`,
   ].join('\n');
 
-  const result = await createProjectSession({
+  const result = await createSession({
+    source: 'system:sandbox-build-fix',
     project: loaded.row,
     userId,
     requestingPrincipalType:
@@ -813,10 +815,12 @@ projectsApp.openapi(
       sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
     },
     request: requestAuditContext(c),
+    queuePolicy: 'never',
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
 
-  return c.json({ session_id: result.row!.sessionId }, 201);
+  return c.json({ session_id: result.row.sessionId }, 201);
 },
 );
 

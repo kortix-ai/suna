@@ -24,7 +24,7 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -34,7 +34,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { systemReload } from '@kortix/sdk/opencode-client';
+import { systemReload } from '@kortix/sdk';
 import {
   type ExperimentalFeatureKey,
   type KortixAccount,
@@ -44,7 +44,7 @@ import {
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -76,12 +76,12 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
+import { useModelStore } from '@kortix/sdk/react';
+import { useCreatePty } from '@kortix/sdk/react';
 import {
-  useCreateOpenCodeSession,
-  useOpenCodeMessages,
-} from '@/hooks/opencode/use-opencode-sessions';
+  useCreateRuntimeSession,
+  useRuntimeMessages,
+} from '@kortix/sdk/react';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -99,7 +99,7 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
@@ -285,7 +285,7 @@ function MessagesPage({
   onSelect: (messageId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useOpenCodeMessages(sessionId);
+  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
 
   const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
 
@@ -368,7 +368,7 @@ export function CommandPalette() {
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reopenPaletteRef = useRef(false);
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const rawPathname = usePathname();
@@ -385,7 +385,7 @@ export function CommandPalette() {
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
-  const createSession = useCreateOpenCodeSession();
+  const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
   const activeWallpaperId = useUserPreferencesStore(
@@ -394,8 +394,8 @@ export function CommandPalette() {
   const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const billingEnabled = isBillingEnabled();
 
-  const { data: agents } = useOpenCodeAgents();
-  const { data: providers } = useOpenCodeProviders();
+  const { data: agents } = useRuntimeAgents();
+  const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useQuery({
@@ -1008,14 +1008,14 @@ export function CommandPalette() {
   }, [close, panelMode]);
 
   /**
-   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
-   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
+   * "Open Terminal" / "Open Audit" / "Open Browser" / "Open Files" (Easy: the
+   * Easy panel's detail layer, Advanced: the panel's corresponding tab). The
    * id-space-sensitive branching lives in `openSessionQuickView` — shared
-   * with the session header's terminal/browser buttons, so it can never
+   * with the session header's terminal/browser/files buttons, so it can never
    * drift between them.
    */
   const handleOpenQuickView = useCallback(
-    (view: 'terminal' | 'audit' | 'browser') => {
+    (view: 'terminal' | 'audit' | 'browser' | 'files') => {
       close();
       openSessionQuickView(view, 'palette');
     },
@@ -1034,6 +1034,10 @@ export function CommandPalette() {
     () => handleOpenQuickView('browser'),
     [handleOpenQuickView],
   );
+  const handleOpenSessionFiles = useCallback(
+    () => handleOpenQuickView('files'),
+    [handleOpenQuickView],
+  );
 
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
@@ -1046,8 +1050,10 @@ export function CommandPalette() {
 
   const handleOpenPlan = useCallback(() => {
     close();
-    openNewInstanceModal();
-  }, [close, openNewInstanceModal]);
+    // Previously opened NewInstanceModal, which no surface mounts — this
+    // command was a no-op. GlobalUpgradeModal is the live plan surface.
+    openUpgradeDialog({ reason: 'subscription_required' });
+  }, [close, openUpgradeDialog]);
 
   const handleLogout = useCallback(() => {
     reopenPaletteRef.current = true;
@@ -1151,6 +1157,7 @@ export function CommandPalette() {
       openSessionTerminal: handleOpenSessionTerminal,
       openSessionAudit: handleOpenSessionAudit,
       openSessionBrowser: handleOpenSessionBrowser,
+      openSessionFiles: handleOpenSessionFiles,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1169,6 +1176,7 @@ export function CommandPalette() {
       handleOpenSessionTerminal,
       handleOpenSessionAudit,
       handleOpenSessionBrowser,
+      handleOpenSessionFiles,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,

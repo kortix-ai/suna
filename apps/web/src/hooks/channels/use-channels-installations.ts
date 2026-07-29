@@ -16,7 +16,7 @@ import {
   type EmailSenderPolicy,
   type SlackInstallation,
   type SlackMode,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type { EmailInstallation, EmailMode, EmailSenderPolicy, SlackInstallation, SlackMode };

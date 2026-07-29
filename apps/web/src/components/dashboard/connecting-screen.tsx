@@ -23,7 +23,8 @@ import {
   STAGE_LABELS,
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
-import { type SandboxRecoveryPhase, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { type SandboxRecoveryPhase, useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -56,15 +57,16 @@ export function ConnectingScreen({
   minimal = false,
   hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
+  const appHome = useAppHome();
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const status = useSandboxConnectionStore((s) => s.status);
-  const wasConnected = useSandboxConnectionStore((s) => s.wasConnected);
-  const initialCheckDone = useSandboxConnectionStore((s) => s.initialCheckDone);
-  const reconnectAttempts = useSandboxConnectionStore((s) => s.reconnectAttempts);
-  const disconnectedAt = useSandboxConnectionStore((s) => s.disconnectedAt);
-  const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
-  const restartRequestedAt = useSandboxConnectionStore((s) => s.restartRequestedAt);
-  const healthy = useSandboxConnectionStore((s) => s.healthy);
+  const status = useRuntimeConnectionStore((s) => s.status);
+  const wasConnected = useRuntimeConnectionStore((s) => s.wasConnected);
+  const initialCheckDone = useRuntimeConnectionStore((s) => s.initialCheckDone);
+  const reconnectAttempts = useRuntimeConnectionStore((s) => s.reconnectAttempts);
+  const disconnectedAt = useRuntimeConnectionStore((s) => s.disconnectedAt);
+  const recoveryPhase = useRuntimeConnectionStore((s) => s.recoveryPhase);
+  const restartRequestedAt = useRuntimeConnectionStore((s) => s.restartRequestedAt);
+  const healthy = useRuntimeConnectionStore((s) => s.healthy);
 
   const router = useRouter();
 
@@ -75,7 +77,7 @@ export function ConnectingScreen({
   const runtimeSummary = 'Runtime services degraded';
 
   const handleSwitch = () => {
-    router.push(backHref || '/projects');
+    router.push(backHref || appHome);
   };
 
   const serverLabel = labelOverride?.trim() || 'workspace';

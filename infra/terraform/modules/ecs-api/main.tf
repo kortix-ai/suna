@@ -112,8 +112,19 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 # Let the execution role pull the values behind any injected secrets.
+#
+# Prefer secrets_blob_arn. ecs-deploy.sh builds every task-def revision by
+# reading EVERY key out of the kortix-<env>-env blob, so the blob — not this
+# module — is the source of truth for which secrets exist. Enumerating them in
+# var.secrets as well means keeping a second copy by hand, and that copy is
+# already wrong: prod's blob holds 132 keys against 100 in tfvars, and staging
+# has 106 with no tfvars at all. Granting on the blob ARN covers every key
+# forever and deletes the drift rather than tracking it.
+#
+# var.secrets remains only as the fallback for callers that have not been
+# given a blob yet; it resolves to the same base ARNs.
 resource "aws_iam_role_policy" "secrets" {
-  count = length(var.secrets) > 0 ? 1 : 0
+  count = var.secrets_blob_arn != "" || length(var.secrets) > 0 ? 1 : 0
   name  = "${local.name}-secrets-read"
   role  = aws_iam_role.execution.id
   policy = jsonencode({
@@ -121,8 +132,10 @@ resource "aws_iam_role_policy" "secrets" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
-      # Grant on the base secret/parameter ARN (strip any :json-key::version suffix from valueFrom).
-      Resource = distinct([for v in values(var.secrets) : join(":", slice(split(":", v), 0, 7))])
+      # Strip any :json-key::version suffix to reach the base secret ARN.
+      Resource = var.secrets_blob_arn != "" ? [var.secrets_blob_arn] : distinct([
+        for v in values(var.secrets) : join(":", slice(split(":", v), 0, 7))
+      ])
     }]
   })
 }
@@ -426,6 +439,18 @@ resource "aws_ecs_task_definition" "this" {
     # ALB target group health check (HTTP GET health_check_path) is the
     # authoritative gate for routing + the deployment circuit breaker.
   }])
+
+  # This resource only bootstraps the FIRST revision. Every later one is
+  # registered by ecs-deploy.sh, which rebuilds the container definition from
+  # the live service plus the secrets blob — so image, environment and secrets
+  # here go stale the moment anything deploys. The service already ignores
+  # task_definition, so re-registering from stale inputs on every apply
+  # produced an orphan revision nothing ran and a permanent "must be replaced"
+  # in the plan. Ceding the container definition removes the phantom diff and
+  # makes the deploy script the single owner of revisions.
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
 
   tags = {
     ManagedBy   = "terraform"

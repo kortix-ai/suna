@@ -1,16 +1,30 @@
 import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'cursor';
+export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'pi' | 'cursor';
 
-export const SUPPORTED_AGENTS: readonly CodingAgent[] = ['opencode', 'claude', 'codex', 'cursor'] as const;
+export const SUPPORTED_AGENTS: readonly CodingAgent[] = [
+  'opencode',
+  'claude',
+  'codex',
+  'pi',
+  'cursor',
+] as const;
 
 export const DEFAULT_PRIMARY: CodingAgent = 'codex';
 
-/** Path of the canonical Kortix skill, relative to repo root. */
-export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
+/**
+ * Path of the canonical Kortix skill, relative to repo root.
+ *
+ * `kortix-cli`, not `kortix-system`: the rest of the `kortix-*` family is
+ * injected into sandboxes at boot rather than committed, so it is absent from a
+ * local checkout — and this path is handed to LOCAL coding agents via the
+ * generated AGENTS.md, where a dangling reference just wastes a file read.
+ * `kortix-cli` ships in the scaffold and is the front door to the others.
+ */
+export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-cli/SKILL.md';
 
-/** The OpenCode runtime config dir every coding agent is pointed at. */
+/** The starter's canonical project skill source. */
 const OPENCODE_DIR = '.kortix/opencode';
 
 /**
@@ -20,12 +34,13 @@ const OPENCODE_DIR = '.kortix/opencode';
  *   .opencode → .kortix/opencode   (OpenCode native; recursive skill discovery)
  *   .claude   → .kortix/opencode   (Claude Code: .claude/skills, .claude/agents — flat, depth-1)
  *   .agents   → .kortix/opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
+ *   .pi       → .kortix/opencode   (Pi: .pi/skills)
  *
  * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
  * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
  * choice wires `.agents`. Each link targets `.kortix/opencode` directly (not via
- * `.opencode`) so any agent can be wired independently. Cursor has no dir of its
- * own — it reads the root `AGENTS.md` natively.
+ * `.opencode`) so any agent can be wired independently. Pi also reads a root
+ * `AGENTS.md`. Cursor has no directory of its own and reads `AGENTS.md`.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
  * under a grouping folder (e.g. `<skill>/SKILL.md`) are
@@ -36,6 +51,7 @@ const AGENT_LINK: Partial<Record<CodingAgent, string>> = {
   opencode: '.opencode',
   claude: '.claude',
   codex: '.agents',
+  pi: '.pi',
 };
 
 export interface WireAgentsInput {
@@ -50,11 +66,9 @@ export interface WireAgentsResult {
 }
 
 /**
- * Wire each chosen coding agent to the project's OpenCode config. opencode /
- * claude / codex get a symlink from their native discovery dir to
- * `.kortix/opencode` (sharing its skills + agents). codex and cursor also get a
- * root `AGENTS.md` pointer — the universal, always-loaded instructions file they
- * read natively (which is why Cursor needs no rule file of its own).
+ * Wire each selected local coding tool to the starter's canonical skill source.
+ * OpenCode, Claude Code, Codex, and Pi get a native discovery-directory link.
+ * Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
  */
 export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
@@ -78,11 +92,10 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
         }
       }
     }
-    if (agent === 'codex' || agent === 'cursor') wantAgentsMd = true;
+    if (agent === 'codex' || agent === 'pi' || agent === 'cursor') wantAgentsMd = true;
   }
 
-  // AGENTS.md — the universal, always-loaded instructions file Codex injects on
-  // the first turn and Cursor applies as a rule. Written once if either is wired.
+  // AGENTS.md is loaded by Codex, Pi, and Cursor. Write it once.
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
@@ -118,14 +131,14 @@ function agentsPointer(): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project — its agent runtime
-config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The OpenCode
-config dir is symlinked into each wired coding agent's native location
-(\`.opencode\`, \`.claude\`, \`.agents\`), so its skills and agents are shared.
+config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The starter's
+canonical system skills are available through each wired tool's native discovery
+location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, connectors, or how to configure OpenCode
-(agents / skills / commands / tools / plugins / MCP servers / custom tools /
-ACP) — read \`${CANONICAL_SKILL}\` first. It is the canonical reference.
+sandbox image, sessions, connectors, ACP, runtime profiles, or OpenCode,
+Claude Code, Codex, and Pi configuration — read \`${CANONICAL_SKILL}\` first.
+It is the canonical reference.
 
 For any other task, proceed normally.
 `;

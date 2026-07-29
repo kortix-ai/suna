@@ -1,7 +1,7 @@
 import { logger } from './logger';
 
-export const EXECUTION_HEARTBEAT_INTERVAL_MS = 20_000;
-export const EXECUTION_LEASE_TTL_SECONDS = 120;
+export const EXECUTION_HEARTBEAT_INTERVAL_MS = 60_000;
+export const EXECUTION_LEASE_TTL_SECONDS = 180;
 export interface ExecutionLeaseContext {
   projectId: string;
   sessionId: string;
@@ -32,6 +32,7 @@ export class ExecutionLeaseReporter {
   private providerUrl: string | null = null;
   private providerHeaders: Record<string, string> = {};
   private queue: Promise<void> = Promise.resolve();
+  private renewalPending = false;
   constructor(
     private readonly context: ExecutionLeaseContext,
     options: ExecutionLeaseReporterOptions = {},
@@ -40,41 +41,38 @@ export class ExecutionLeaseReporter {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? EXECUTION_HEARTBEAT_INTERVAL_MS;
     this.leaseTtlSeconds = options.leaseTtlSeconds ?? EXECUTION_LEASE_TTL_SECONDS;
   }
-  discover(): void {
-    this.enqueue('execution_lease_discover');
-  }
   markBusy(sessionId: string): void {
     if (!sessionId) return;
     const wasIdle = this.busySessions.size === 0;
     this.busySessions.add(sessionId);
     if (!wasIdle) return;
-    this.enqueue('execution_heartbeat');
-    this.timer = setInterval(() => this.enqueue('execution_heartbeat'), this.heartbeatIntervalMs);
+    this.enqueue('acquire');
+    this.timer = setInterval(() => this.enqueueRenewal(), this.heartbeatIntervalMs);
   }
   markInactive(sessionId: string): void {
     if (!sessionId) return;
-    this.busySessions.delete(sessionId);
+    if (!this.busySessions.delete(sessionId)) return;
     if (this.busySessions.size > 0) return;
     this.clearTimer();
-    this.enqueue('execution_lease_release');
+    this.enqueue('release');
   }
   replaceBusySessions(sessionIds: string[]): void {
     const wasBusy = this.busySessions.size > 0;
     this.busySessions.clear();
     for (const id of sessionIds.filter(Boolean)) this.busySessions.add(id);
     if (!wasBusy && this.busySessions.size > 0) {
-      this.enqueue('execution_heartbeat');
-      this.timer = setInterval(() => this.enqueue('execution_heartbeat'), this.heartbeatIntervalMs);
+      this.enqueue('acquire');
+      this.timer = setInterval(() => this.enqueueRenewal(), this.heartbeatIntervalMs);
     } else if (wasBusy && this.busySessions.size === 0) {
       this.clearTimer();
-      this.enqueue('execution_lease_release');
+      this.enqueue('release');
     }
   }
   close(): void {
     this.clearTimer();
     if (this.busySessions.size > 0) {
       this.busySessions.clear();
-      this.enqueue('execution_lease_release');
+      this.enqueue('release');
     }
   }
   async settled(): Promise<void> {
@@ -84,19 +82,57 @@ export class ExecutionLeaseReporter {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
-  private enqueue(
-    kind: 'execution_heartbeat' | 'execution_lease_release' | 'execution_lease_discover',
-  ): void {
+  private enqueue(action: 'acquire' | 'renew' | 'release'): void {
     this.queue = this.queue
-      .then(() => this.send(kind))
+      .then(() => this.send(action))
       .catch((err) =>
         logger.warn('[execution-lease] reporter failed', { err: (err as Error).message }),
       );
   }
-  private async send(
-    kind: 'execution_heartbeat' | 'execution_lease_release' | 'execution_lease_discover',
-  ): Promise<void> {
-    if (kind === 'execution_heartbeat' && this.providerUrl) {
+  private enqueueRenewal(): void {
+    if (this.busySessions.size === 0 || this.renewalPending) return;
+    this.renewalPending = true;
+    this.queue = this.queue
+      .then(() => this.send('renew'))
+      .catch((err) =>
+        logger.warn('[execution-lease] reporter failed', { err: (err as Error).message }),
+      )
+      .finally(() => {
+        this.renewalPending = false;
+      });
+  }
+  private async send(action: 'acquire' | 'renew' | 'release'): Promise<void> {
+    const response = await this.fetchFn(
+      `${this.context.apiRoot}/projects/${encodeURIComponent(this.context.projectId)}/execution-lease`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.context.token}`,
+        },
+        body: JSON.stringify({
+          session_id: this.context.sessionId,
+          action,
+          lease_ttl_seconds: this.leaseTtlSeconds,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!response.ok) throw new Error(`${action} returned ${response.status}`);
+    const body = (await response.json().catch(() => ({}))) as {
+      provider_url?: unknown;
+      provider_headers?: unknown;
+    };
+    if (typeof body.provider_url === 'string' && body.provider_url.startsWith('https://'))
+      this.providerUrl = body.provider_url.replace(/\/$/, '');
+    if (body.provider_headers && typeof body.provider_headers === 'object' && !Array.isArray(body.provider_headers)) {
+      this.providerHeaders = Object.fromEntries(
+        Object.entries(body.provider_headers as Record<string, unknown>).filter(
+          ([name, value]) => name.toLowerCase() !== 'authorization' && typeof value === 'string',
+        ),
+      ) as Record<string, string>;
+    }
+    if (action !== 'release' && this.providerUrl) {
       try {
         await this.fetchFn(`${this.providerUrl}/kortix/health`, {
           headers: {
@@ -110,36 +146,6 @@ export class ExecutionLeaseReporter {
           err: (err as Error).message,
         });
       }
-    }
-    const response = await this.fetchFn(
-      `${this.context.apiRoot}/projects/${encodeURIComponent(this.context.projectId)}/turn-stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.context.token}`,
-        },
-        body: JSON.stringify({
-          session_id: this.context.sessionId,
-          kind,
-          lease_ttl_seconds: this.leaseTtlSeconds,
-        }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-    if (!response.ok) throw new Error(`${kind} returned ${response.status}`);
-    const body = (await response.json().catch(() => ({}))) as {
-      provider_url?: unknown;
-      provider_headers?: unknown;
-    };
-    if (typeof body.provider_url === 'string' && body.provider_url.startsWith('https://'))
-      this.providerUrl = body.provider_url.replace(/\/$/, '');
-    if (body.provider_headers && typeof body.provider_headers === 'object' && !Array.isArray(body.provider_headers)) {
-      this.providerHeaders = Object.fromEntries(
-        Object.entries(body.provider_headers as Record<string, unknown>).filter(
-          ([name, value]) => name.toLowerCase() !== 'authorization' && typeof value === 'string',
-        ),
-      ) as Record<string, string>;
     }
   }
 }

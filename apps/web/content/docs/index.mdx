@@ -15,9 +15,13 @@ a change request. You review it and merge it to the default branch.
 ```
 project (git repo + kortix.yaml)
    └─ session ──> isolated sandbox on branch "<uuid>"
-                     └─ agent (OpenCode) commits + pushes
+                     └─ selected harness commits + pushes
                            └─ change request ──> merge ──> default branch
 ```
+
+The default v2 project uses OpenCode REST. A v3 project uses ACP runtime
+profiles for OpenCode, Claude Code, Codex, or Pi. The runtime profile is
+immutable for one session.
 
 <Cards>
   <Card title="Quickstart" href="/docs/quickstart">Create a project, start a session, and merge your first change request.</Card>

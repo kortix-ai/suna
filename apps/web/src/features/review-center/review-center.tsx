@@ -37,7 +37,7 @@ import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
-import type { ReviewVerdict } from '@kortix/sdk/projects-client';
+import type { ReviewVerdict } from '@kortix/sdk';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
 import { ChevronDown, Layers, Search } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';

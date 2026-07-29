@@ -24,7 +24,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectBranch, ProjectSession } from '@kortix/sdk/projects-client';
+import type { ProjectBranch, ProjectSession } from '@kortix/sdk';
 import { Layers } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';

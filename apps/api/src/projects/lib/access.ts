@@ -1,9 +1,15 @@
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
+import {
+  isSessionTargetVisibleToCaller,
+  isSessionVisibleTo,
+  loadSessionGrants,
+  resolveShareSubject,
+  type SecretGrant,
+  type ShareSubject,
+} from '../../executor/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
-import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -20,7 +26,7 @@ import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
 
-// Enforce the per-account project cap (free → 3, paid → effectively uncapped).
+// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
 // project. Every isolated project counts, even when another project uses the
 // same Git repository or branch.
@@ -39,12 +45,15 @@ export async function enforceProjectQuota(
     .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
   const count = counted?.count ?? 0;
   if (count >= limit) {
+    // FREE_TIER_PROJECT_LIMIT is 1, so this string is pluralized rather than
+    // hardcoded — "limited to 1 projects" reads as a bug to the user.
+    const projectsWord = limit === 1 ? 'project' : 'projects';
     return c.json(
       {
         error:
           limit === FREE_TIER_PROJECT_LIMIT
-            ? `Free accounts are limited to ${limit} projects. Upgrade to a paid plan to create more.`
-            : `This account has reached its limit of ${limit} projects.`,
+            ? `Free accounts are limited to ${limit} ${projectsWord}. Upgrade to a paid plan to create more.`
+            : `This account has reached its limit of ${limit} ${projectsWord}.`,
         code: 'project_limit_reached',
         limit,
         count,
@@ -74,6 +83,14 @@ async function loadProjectSessionRow(
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
+  /**
+   * The CALLER's own session, when the credential is bound to one (a sandbox
+   * token: `c.get('sessionId')`). Null/undefined for a human or for a wrapper's
+   * own backend credential. Required to stop a sandbox reaching a SIBLING
+   * backend session — every KaaB session shares one `created_by`, so ownership
+   * alone cannot separate them. See isSessionVisibleTo.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   subject: ShareSubject;
@@ -86,7 +103,13 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
+  if (
+    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
+      origin: row.origin ?? null,
+      sessionId,
+      callerSessionId,
+    })
+  ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
     // invisible (private / not-my-grant). Audit every use — this is a real
@@ -127,6 +150,14 @@ export async function loadVisibleSession(
 export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
   sessionId: string,
+  /**
+   * The CALLER's own session when the credential is bound to one. REQUIRED —
+   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * a public share is UNAUTHENTICATED and its router is mounted before auth,
+   * so minting one against another end-user's session exposes their live app
+   * port and workspace files to anyone holding the URL.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -135,6 +166,16 @@ export async function loadSessionForSharing(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
+  // Apply only the session-bound KaaB narrowing here. Human project members
+  // must reach the sharing permission check and receive 403 when it rejects
+  // them. Session-content visibility does not govern share management.
+  if (!isSessionTargetVisibleToCaller({
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+  })) {
+    return null;
+  }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
@@ -142,8 +183,11 @@ export async function loadSessionForSharing(
 
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
-// getAccountMembership: runs on every project request, cross-region roundtrip
-// per statement, revocations lag at most one TTL window, grants are instant.
+// getAccountMembership: runs on every project request. Each statement is a
+// fast same-region roundtrip (~3ms measured, not the cross-region cost this
+// comment used to claim), but the same query repeats across a burst of
+// parallel requests, so caching still cuts redundant query volume;
+// revocations lag at most one TTL window, grants are instant.
 const loadProjectMemberRole = ttlMemo({
   ttlMs: 15_000,
   // Key is `${userId}|${projectId}` (userId-first) so a single
@@ -495,8 +539,10 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   const requestCtx = deriveRequestContext(c);
 
   // Membership, project role and the IAM verdict are independent lookups —
-  // overlap them. Every project-scoped request runs this path and each DB
-  // statement costs a cross-region roundtrip in prod, so depth matters.
+  // overlap them. Every project-scoped request runs this path; each DB
+  // statement is a fast same-region roundtrip (~3ms measured, DB and API
+  // both in eu-west-2), but they're serial by default, so running them in
+  // parallel instead of stacked still matters at this call frequency.
   // The engine consults super-admin bypass, direct + group policies,
   // project_groups, AND the legacy account_role / project_members bridges
   // (in non-strict mode), so it's strictly a superset of the old role-only
@@ -593,12 +639,6 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   const effectiveRole =
     (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
   (c as any).set('accountId', row.accountId);
-
-  if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
-    // Proactively wake the user's most recently-stopped session(s) so the resume
-    // overlaps their navigation. No-op unless KORTIX_PRERESUME_ENABLED.
-    preResumeRecentStoppedSessions(projectId, userId);
-  }
 
   return {
     row,

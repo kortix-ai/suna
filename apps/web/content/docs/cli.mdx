@@ -95,6 +95,9 @@ To attach your local OpenCode client to the sandbox instead, run:
 kortix sessions connect
 ```
 
+This command attaches to the OpenCode REST compatibility process. It does not
+attach a local Claude Code, Codex, or Pi client to the selected ACP process.
+
 To open a raw shell in the sandbox, with no agent involved, run:
 
 ```sh
@@ -184,7 +187,11 @@ A command resolves "the project" in this order:
 
 ### Project scaffold
 
-`kortix init [project-name] [options]` creates a new, empty project directory. It writes `kortix.yaml`, `.kortix/Dockerfile`, and the OpenCode config directory. It does not write `.kortix/link.json` — `kortix ship` or `kortix projects link` create that later.
+`kortix init [project-name] [options]` creates a new project directory. It
+writes a v2 `kortix.yaml`, `.kortix/Dockerfile`, and the canonical
+`.kortix/opencode` system-skill source. It can wire OpenCode, Claude Code,
+Codex, Pi, and Cursor for local discovery. It does not write
+`.kortix/link.json` — `kortix ship` or `kortix projects link` create that later.
 
 | Flag | Meaning |
 | --- | --- |
@@ -196,6 +203,10 @@ A command resolves "the project" in this order:
 | `--overwrite` | Overwrite existing files. |
 | `--no-git` | Skip git init. |
 | `-y, --yes` | Don't prompt. |
+
+The local coding-tool selection does not select a cloud session harness. Enable
+the **ACP & Multi-Harness** project experiment and use a v3 manifest runtime
+profile for cloud OpenCode, Claude Code, Codex, or Pi selection.
 
 `kortix init` does not include a marketplace picker. Adding a marketplace skill is an agent import: start a session and ask the agent to bring one in.
 
@@ -235,7 +246,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
 | `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes); a timeout is a hard failure (exit 1), not a silent success. Backend-origin overrides require a backend token (PAT or service account) and 403 otherwise: `--origin-ref <user-id>` (attribute to your end user), `--secret <id>` (narrow injected secrets, repeatable), `--no-secrets` (inject zero project secrets), `--connector <alias>=<profile-id>` (bind a connector to a profile, repeatable), `--context <key>=<value>` (runtime context, repeatable). |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
-| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode server already running in the sandbox. Alias: `attach`. |
+| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode REST compatibility process in the sandbox. It does not attach to Claude Code, Codex, or Pi. Alias: `attach`. |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. Aliases: `messages`, `history`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
@@ -361,13 +372,24 @@ Read-only discovery of marketplace items. Installing an item into a project is a
 
 Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`, `--json`.
 
-### Skills
+### System skills
+
+The Kortix system skills are the platform's own documentation. They cover
+sessions, sandboxes, ACP, all four runtime harnesses, the executor, memory, and
+channels. The API serves them live, so they match the deployed host version.
+The binary and a token are enough for an agent to retrieve this context.
 
 | Command | Effect |
 | --- | --- |
-| `kortix skills list` | List skills available to the project. Default subcommand. |
-| `kortix skills get <name> [--full]` | Show one skill. |
-| `kortix skills path [name]` | Print a skill's file path. |
+| `kortix system-skills list` | List the Kortix system skills. Default subcommand. |
+| `kortix system-skills get <name> [--full]` | Print one skill's current `SKILL.md`. `--full` adds its referenced files. |
+| `kortix system-skills path [name]` | Print a skill's on-disk directory in this project. |
+
+Options: `--host <name>`, `--json`.
+
+`kortix skills` is a permanent alias for the same command.
+
+This list is always the system skills, never a mix. Optional skills live in the marketplace: `kortix marketplace list --type skill`.
 
 ### Executor
 

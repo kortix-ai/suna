@@ -25,6 +25,7 @@ import {
 } from '../seed-files';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
+import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -36,7 +37,10 @@ import { metadataMerge } from '../lib/metadata-merge';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
-import { createProjectWebhookRateLimitMiddleware } from '../../shared/rate-limit';
+import {
+  consumeProjectWebhookManifestRefreshBudget,
+  createProjectWebhookRateLimitMiddleware,
+} from '../../shared/rate-limit';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -70,6 +74,12 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     .limit(1);
   if (!project) return c.json({ error: 'Not found' }, 404);
 
+  // Trigger CRUD can commit on another API replica. Refresh this replica's
+  // mirror before authentication, but bound the unauthenticated Git work by
+  // project. Rotating source IPs cannot force more than one refresh per 30s.
+  if (consumeProjectWebhookManifestRefreshBudget(projectId)) {
+    invalidateProjectMirror(projectId);
+  }
   const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec || spec.type !== 'webhook' || !spec.enabled) {
@@ -729,8 +739,20 @@ projectsApp.openapi(
   // in the sandbox/CLI git config.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
   if (gitAuth.authSource === 'pat') {
+    // This host's managed git runs on an org-wide token. Exporting it to a
+    // client would hand out write access to EVERY managed repo, so we refuse —
+    // clients push through the Kortix git proxy (`git_origin_url`) with their
+    // own Kortix token instead, which needs no provider credential client-side.
+    // Say so explicitly: the old message read as a server misconfiguration and
+    // sent people hunting for GitHub App settings that aren't the problem.
     return c.json(
-      { error: 'Managed git push token export requires a repo-scoped installation token' },
+      {
+        error:
+          "This host's managed git uses an org-wide token, which is never exported. " +
+          "Push through the project's Kortix git origin instead (git_origin_url) — " +
+          'run `kortix update` if your CLI still asks for a push token.',
+        git_origin_url: serializeProject(loaded.row).git_origin_url,
+      },
       503,
     );
   }

@@ -70,6 +70,10 @@ export function startOpencodeEventLoop(
   const connected = new Promise<void>((resolve) => {
     markConnected = resolve
   })
+  // Distinguishes "opencode hasn't bound its port yet" (boot race, retry tight)
+  // from "an established subscription dropped" (real fault, back off). See the
+  // retry loop below.
+  let everConnected = false
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
@@ -82,6 +86,7 @@ export function startOpencodeEventLoop(
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
     logger.info('[opencode-events] subscribed')
+    everConnected = true
     markConnected()
     // Reconcile any turn that finished before this subscription was live. Fires
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
@@ -121,23 +126,46 @@ export function startOpencodeEventLoop(
   }
 
   ;(async () => {
-    // Start tight (250ms): on a cold boot the first connect races opencode's
-    // port bind, and the initial-prompt path is blocked awaiting `connected`, so
-    // a fast retry minimizes the added latency before the subscription is live.
-    let backoffMs = 250
+    // Two DIFFERENT retry regimes, because the pre-connect and post-connect
+    // failures mean opposite things.
+    //
+    // Before the first successful subscribe, every failure is just "opencode
+    // hasn't bound its port yet" — a boot race, not a fault. And this is ON the
+    // critical path: maybeCreateInitialOpencodeSession blocks on `connected`
+    // before delivering the first prompt, and `opencode-session-created` (4.7s
+    // Daytona / 12.0s Platinum p50) is stamped after it. Exponential backoff
+    // here actively hurts: with attempts at 0/0.25/0.75/1.75/3.75/7.75s, an
+    // opencode that becomes ready at t=5s isn't noticed until t=7.75s — ~2.7s of
+    // pure dead time, sleeping through the readiness it was waiting for. The old
+    // code's own comment said "a fast retry minimizes the added latency" and
+    // then doubled to 15s, defeating exactly that intent.
+    //
+    // So: poll at a FLAT tight interval until connected once (bounded by the
+    // caller's own 10s race), then switch to exponential backoff, where it is
+    // correct — a drop after a successful subscribe is a real fault and
+    // hammering a sick opencode makes it worse.
+    const PRE_CONNECT_RETRY_MS = 100
+    const POST_CONNECT_BACKOFF_START_MS = 250
+    let backoffMs = PRE_CONNECT_RETRY_MS
     while (!stopping) {
       try {
         await connectOnce()
       } catch (err) {
         if (stopping) return
-        logger.warn('[opencode-events] disconnected — reconnecting', {
-          err: (err as Error).message,
-          backoffMs,
-        })
+        // Pre-connect failures are the expected boot race; don't log them as
+        // disconnects (it made a normal cold boot look broken).
+        if (everConnected) {
+          logger.warn('[opencode-events] disconnected — reconnecting', {
+            err: (err as Error).message,
+            backoffMs,
+          })
+        }
       }
       if (stopping) return
       await new Promise((r) => setTimeout(r, backoffMs))
-      backoffMs = Math.min(backoffMs * 2, 15_000)
+      backoffMs = everConnected
+        ? Math.min(Math.max(backoffMs, POST_CONNECT_BACKOFF_START_MS) * 2, 15_000)
+        : PRE_CONNECT_RETRY_MS
     }
   })().catch((err) => logger.error('[opencode-events] loop crashed', err))
 

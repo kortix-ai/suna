@@ -9,7 +9,12 @@ import { Input } from '@/components/ui/input';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
+import {
+  configureAutoTopup,
+  getAutoTopupSettings,
+  getAutoTopupSetupStatus,
+  type AutoTopupSettings as AutoTopupConfig,
+} from '@kortix/sdk';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -109,8 +114,13 @@ export function AutoTopupCard({
   const handleSave = useCallback(async () => {
     const thresholdNum = Math.max(AUTO_TOPUP_MIN_THRESHOLD, parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD);
     const amountNum = Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT);
-    if (enabled && setupStatus && !setupStatus.has_default_payment_method) {
-      const message = 'No default payment method found. Please set up a default card in Billing before enabling auto-topup.';
+    // Gate on "is there a chargeable method", NOT on "is one marked default".
+    // A Stripe Link (or SEPA) checkout attaches the method to the SUBSCRIPTION
+    // and leaves the customer-level invoice default null, so gating on the
+    // default told customers with a working, already-charged payment method
+    // that they had none — and auto top-up then never fired for them.
+    if (enabled && setupStatus && !setupStatus.has_payment_method) {
+      const message = 'No saved payment method found. Add one in Billing before enabling auto top-up.';
       setSaveResult({ type: 'error', message });
       errorToast(message);
       return;
@@ -119,7 +129,12 @@ export function AutoTopupCard({
     setSaving(true);
     setSaveResult(null);
     try {
-      await configureAutoTopup({ enabled, threshold: thresholdNum, amount: amountNum }, accountId);
+      await configureAutoTopup({
+        accountId,
+        enabled,
+        threshold: thresholdNum,
+        amount: amountNum,
+      });
       queryClient.invalidateQueries({ queryKey: ['auto-topup-settings'] });
       queryClient.invalidateQueries({ queryKey: ['accountState'] });
       queryClient.invalidateQueries({ queryKey: ['auto-topup-setup-status'] });
@@ -135,7 +150,7 @@ export function AutoTopupCard({
     }
   }, [enabled, threshold, amount, setupStatus, queryClient, accountId]);
 
-  const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_default_payment_method;
+  const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_payment_method;
 
   if (fetchSettings && isLoading) {
     return (
@@ -179,7 +194,7 @@ export function AutoTopupCard({
 
       {showMissingCardWarning && (
         <InfoBanner tone="warning">
-          {tHardcodedUi.raw('componentsBillingAutoTopupCard.line182JsxTextNoDefaultPaymentMethodFoundAddADefault')}
+          No saved payment method found. Add one in Billing before enabling auto top-up.
         </InfoBanner>
       )}
 

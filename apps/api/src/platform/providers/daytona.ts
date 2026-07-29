@@ -17,6 +17,7 @@ import {
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { providerAutoStopBackstopMinutes } from './index';
+import { classifyDaytonaState } from './daytona-state';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
@@ -102,6 +103,8 @@ import type {
 // idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
+
+
 
 function isMissingSandboxError(error: unknown): boolean {
   const err = error as
@@ -237,6 +240,32 @@ export class DaytonaProvider implements SandboxProvider {
     const apiBase = sandboxApiBase;
     const baseUrl = `${apiBase}/v1/p/${externalId}/8000`;
 
+    // Warm the preview route NOW, so the edge is live before anything asks for it.
+    // The Platinum provider has always done the equivalent (its eager
+    // POST /:id/expose, platinum.ts) precisely because a lazily-routed edge left a
+    // window where the first /agent | /session | /global/events call hit an
+    // un-routed edge and 504'd right after runtime-ready. Daytona had no
+    // counterpart: every session paid getPreviewLink (~179ms measured) on its
+    // first proxied request, plus whatever the edge needs to start routing — and
+    // that lands squarely inside the window where the frontend is already polling
+    // readiness. Measured 2026-07-25, `daemon_reachable` trails `vm_created` by
+    // 0-3.8s on Daytona (vs 16ms-1.8s on Platinum), and this asymmetry is a
+    // plausible part of that spread.
+    //
+    // Strictly best-effort and NOT awaited into the result: resolveIngress()
+    // still resolves the link lazily, so a failure here costs nothing beyond the
+    // old behaviour. Bounded so a hung Daytona call cannot outlive the provision.
+    void withTimeout(
+      (daytonaSandbox as any).getPreviewLink(8000),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona eager getPreviewLink(${externalId}:8000)`,
+    ).catch((err: unknown) => {
+      console.warn(
+        `[DAYTONA] eager preview-link warm for ${externalId} failed (lazy fallback):`,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+
     return {
       externalId,
       baseUrl,
@@ -311,14 +340,13 @@ export class DaytonaProvider implements SandboxProvider {
     try {
       const daytona = getDaytona();
       const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-      const state = String(sandbox.state ?? '').toLowerCase();
-      if (state.includes('start') || state.includes('running') || state.includes('active')) {
+      const status = classifyDaytonaState(sandbox.state);
+      if (status === 'running') {
         runningStatusCache.set(externalId, Date.now());
         return 'running';
       }
       runningStatusCache.delete(externalId);
-      if (state.includes('stop') || state.includes('archive')) return 'stopped';
-      return 'unknown';
+      return status;
     } catch (err) {
       runningStatusCache.delete(externalId);
       if (isMissingSandboxError(err)) return 'removed';

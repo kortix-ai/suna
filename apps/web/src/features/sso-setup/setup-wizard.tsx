@@ -54,7 +54,7 @@ import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 import { buildScimBaseUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
 import { relativeTime } from '@/lib/utils/date';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAccountMembers } from '@kortix/sdk';
 import {
   type GuideStep,
   PROVIDER_GUIDES,

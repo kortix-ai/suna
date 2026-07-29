@@ -3,10 +3,11 @@
  * domain, so reclaiming those users (+ their cascade) is the primary leak guard.
  * Runs by email-domain prefix + age so it never touches an in-flight run.
  *
- * Uses the Supabase admin API (service-role). A DB/Daytona fallback for orphaned
- * sandboxes can be layered on later via KE2E_DATABASE_URL.
+ * Uses the direct database when available so cleanup selects only test users.
+ * Falls back to the paginated Supabase admin API when direct access is absent.
  */
 import { Client } from "../core/client";
+import { mapWithConcurrency } from "../core/concurrency";
 import { loadEnv, type Env } from "../core/env";
 import { log } from "../core/log";
 import { adminDeleteUser, passwordGrant } from "./supabase";
@@ -51,7 +52,10 @@ async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
   const conn = env.databaseUrl!;
   const local = conn.includes("localhost") || conn.includes("127.0.0.1");
   const { Client } = await import("pg");
-  const client = new Client({ connectionString: conn, ssl: local ? false : true });
+  const client = new Client({
+    connectionString: conn,
+    ssl: local ? false : true,
+  });
   await client.connect();
   try {
     const r = await client.query(
@@ -69,14 +73,8 @@ async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
 }
 
 async function listTestUsers(env: Env): Promise<SupaUser[]> {
-  let users: SupaUser[];
-  try {
-    users = await listTestUsersViaApi(env);
-  } catch (err) {
-    if (!env.databaseUrl) throw err;
-    log.warn(`admin list failed (${String((err as Error).message).slice(0, 90)}) — falling back to read-only DB query`);
-    users = await listTestUsersViaDb(env);
-  }
+  if (env.databaseUrl) return listTestUsersViaDb(env);
+  const users = await listTestUsersViaApi(env);
   return users.filter((u) => (u.email ?? "").endsWith(`@${env.testEmailDomain}`));
 }
 
@@ -97,10 +95,16 @@ export async function runGc(opts: GcOptions): Promise<void> {
   log.info(`gc: ${users.length} test user(s) found, ${stale.length} older than ${opts.olderThan}`);
   let removed = 0;
   let failed = 0;
-  for (const u of stale) {
+  const configuredWorkers = Number(process.env.KE2E_GC_WORKERS ?? 8);
+  const workers =
+    Number.isFinite(configuredWorkers) && configuredWorkers > 0
+      ? Math.min(32, Math.trunc(configuredWorkers))
+      : 8;
+  log.info(`gc: reclaiming with ${workers} workers`);
+  await mapWithConcurrency(stale, workers, async (u) => {
     if (opts.dryRun) {
       log.info(`  would delete ${u.email} (${u.id})`);
-      continue;
+      return;
     }
     try {
       await reclaimUser(env, u);
@@ -109,7 +113,7 @@ export async function runGc(opts: GcOptions): Promise<void> {
       failed++;
       log.warn(`  could not reclaim ${u.email}: ${String((err as Error).message).slice(0, 120)}`);
     }
-  }
+  });
   if (!opts.dryRun) {
     log.pass(`gc: reclaimed ${removed} stale test user(s)`);
     if (failed) log.fail(`gc: ${failed} could not be reclaimed (see warnings)`);

@@ -7,6 +7,7 @@ export {
 export { enqueueContinueSessionCommand } from './store';
 export { deleteSession, restartSession } from './actions';
 export { stopSession } from './stop';
+export { reconcileUndeliveredPrompts } from './undelivered-prompts';
 export { resolveProjectAutomationActor, resolveAgentRunAttribution } from './actor';
 export { sessionBackpressureState, triggerBackpressureLimit } from './backpressure';
 export type {

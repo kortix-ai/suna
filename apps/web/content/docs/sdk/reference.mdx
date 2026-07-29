@@ -30,7 +30,7 @@ kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode client for the active runtime — throws on a @kortix/sdk/server scoped client
+kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
 ```
 
 ### Accounts — `kortix.accounts`
@@ -346,10 +346,10 @@ A routing policy holds a default model, a vision model, and an ordered
 fallback chain, each model attempted at most once; `fallbackOn` is
 `transient` or `any-error`.
 
-#### `p.channels` — Slack / email / Meet
+#### `p.channels` — Slack / email / voice
 
 Integration surfaces that let an agent act as a Slack app, an email address,
-or a meeting bot.
+or join a realtime voice call.
 
 | method | what |
 | --- | --- |
@@ -358,8 +358,7 @@ or a meeting bot.
 | `slack.getFile(url)` · `slack.uploadFile(input)` | download · upload a file via the server proxy |
 | `email.installation(connectorSlug?)` · `email.mode()` | current install · mode |
 | `email.connect(input)` · `email.disconnect(...)` · `email.updatePolicy(input)` | connect · disconnect · update the send/reply policy |
-| `meet.voices()` · `meet.setVoice(voice)` · `meet.previewVoice(voiceId)` | list · set · preview a bot voice |
-| `meet.setBotName(name)` · `meet.speak(botId, text, voice?)` | rename the bot · make it speak in a live meeting |
+| `voice.setBotName(name)` | rename the bot in a live call |
 
 #### `p.modelDefaults` — default model preferences
 
@@ -394,7 +393,8 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 
 ### Escape hatch
 
-`kortix.runtime()` returns the typed OpenCode client for the active runtime.
+`kortix.runtime()` returns the typed OpenCode REST compatibility client for the
+active sandbox. It is not a harness-neutral ACP client.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
@@ -428,6 +428,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | --- | --- |
 | Files | Workspace file operations: list, read, search, write |
 | Session runtime | Health probe and preview/proxy URL builders |
+| ACP | Harness-neutral client, projection, and session controller for OpenCode, Claude Code, Codex, and Pi |
 | OpenCode client | The typed OpenCode v2 client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
 | Projects REST | The raw REST functions the facade wraps |
@@ -457,7 +458,7 @@ import { getSessionHealth, isRuntimeReady } from '@kortix/sdk';
 
 const result = await getSessionHealth();
 if (result.ok && isRuntimeReady(result.health)) {
-  // the runtime is up and OpenCode is ready
+  // the sandbox daemon is ready
 }
 ```
 
@@ -476,7 +477,7 @@ const client = getClient();
 const { data } = await client.session.list({ limit: 100 });
 ```
 
-`getClient()` returns the typed OpenCode v2 client for the active runtime,
+`getClient()` returns the typed OpenCode v2 compatibility client for the active sandbox,
 with auth already injected. Prefer `kortix.session(pid, sid).runtime`, the
 same client scoped to one session, over the global `getClient()` when your
 host runs more than one session.

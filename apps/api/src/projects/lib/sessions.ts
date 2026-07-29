@@ -3,23 +3,23 @@ import {
   projectSessionConnectorBindings,
   projectSessionRuntimeContexts,
   projectSessions,
+  usageEvents,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
+import { resolveExperimentalFeature } from '../../experimental/features';
+import { decideSpendCap, spendCapError, spendWindowStart } from './end-user-spend-cap';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
-import {
-  type ModelSource,
-  toOpencodeModelRef,
-} from '../../llm-gateway/resolution/effective';
+import { type ModelSource, toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -35,10 +35,13 @@ import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
+  personalConnectorsForAgent,
   projectRequiresDeclaredAgents,
   resolveGovernedAgentGrant,
+  sandboxFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
+import { resolveSessionSecretGrant } from './secret-grant';
 import {
   AmbiguousSecretGrantError,
   intersectSecretGrants,
@@ -48,6 +51,10 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import {
+  resolveCompiledRuntimeConfigForSession,
+  type CompiledRuntimeConfig,
+} from './compile-runtime-config';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -63,17 +70,22 @@ import {
   normalizeString,
 } from './serializers';
 import {
+  canonicalConnectorAlias,
   parseSessionConnectorBindings,
+  resolveRequiredMemberConnectorProfiles,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
 import { canOverride, resolveSessionOrigin } from './session-origin';
+import { resolveEndUserRef } from './end-user-ref';
+import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildSessionRuntimeEnv, shouldResolvePlatformDefaultModel } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
@@ -101,6 +113,121 @@ export async function countActiveProjectSessions(accountId: string): Promise<num
     .limit(1);
 
   return Number(row?.activeCount ?? 0);
+}
+
+/**
+ * Live sessions for ONE of a wrapper's end-users. Backs the per-origin cap: an
+ * account-wide limit is not enough for Kortix-as-a-Backend, where one account
+ * fronts many end-users and any single one could otherwise consume every slot
+ * the whole wrapper has. Served by idx_project_sessions_account_origin_active,
+ * whose predicate mirrors ACTIVE_SESSION_STATUSES.
+ */
+export async function countActiveProjectSessionsForOrigin(
+  accountId: string,
+  originRef: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.accountId, accountId),
+        eq(projectSessions.originRef, originRef),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return Number(row?.activeCount ?? 0);
+}
+
+/**
+ * Per-end-user concurrency cap. Opt-in: with the limit unset (or <= 0) this is a
+ * no-op, so nothing changes for deployments that don't want it. Only applies to
+ * sessions that actually carry an origin_ref (i.e. backend-origin ones).
+ *
+ * Same check-then-act race as the account cap — N parallel creates for one
+ * end-user can overshoot — so treat it as a guardrail against runaway loops,
+ * not a hard quota.
+ */
+export async function enforcePerOriginSessionCap(
+  accountId: string,
+  originRef: string | null,
+): Promise<SessionCreateError | null> {
+  const limit = config.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT ?? 0;
+  if (!originRef || limit <= 0) return null;
+  const active = await countActiveProjectSessionsForOrigin(accountId, originRef);
+  if (active < limit) return null;
+  const message = `This end-user already has ${active} active session${active === 1 ? '' : 's'} (limit ${limit}). Finish or stop one before starting another.`;
+  return {
+    status: 429,
+    headers: {
+      'X-RateLimit-Limit': String(limit),
+      'X-RateLimit-Remaining': '0',
+    },
+    body: {
+      error: message,
+      message,
+      code: 'per_origin_session_limit',
+      limit,
+      active_sessions: active,
+    },
+  };
+}
+
+/**
+ * Spend already attributed to one end-user inside the rolling window.
+ *
+ * Served by idx_usage_events_account_origin_time, which is partial on
+ * `origin_ref is not null` — the vast majority of usage rows are non-backend
+ * spend and never enter this index.
+ *
+ * Sums `cost_usd_precise` (the 20,10 column), not the legacy 12,6 `cost_usd`:
+ * a per-end-user ceiling is exactly where rounding each row to six decimals
+ * would accumulate into a visibly wrong total.
+ */
+export async function sumEndUserSpendUsd(
+  accountId: string,
+  endUserRef: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${usageEvents.costUsd}), 0)::text` })
+    .from(usageEvents)
+    .where(
+      and(
+        eq(usageEvents.accountId, accountId),
+        eq(usageEvents.originRef, endUserRef),
+        gte(usageEvents.createdAt, since),
+      ),
+    )
+    .limit(1);
+  const total = Number.parseFloat(row?.total ?? '0');
+  return Number.isFinite(total) ? total : 0;
+}
+
+/**
+ * Per-end-user SPEND cap. Opt-in and off by default, like the concurrency cap
+ * beside it. Skips the query entirely when the cap is off or the session has no
+ * end-user, so an unconfigured deployment pays nothing for this.
+ */
+export async function enforcePerEndUserSpendCap(
+  accountId: string,
+  endUserRef: string | null,
+  now = new Date(),
+): Promise<SessionCreateError | null> {
+  const limitUsd = config.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD ?? 0;
+  const windowDays = config.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS ?? 30;
+  // Decide the cheap cases BEFORE touching the database.
+  const preflight = decideSpendCap({ endUserRef, limitUsd, windowDays, spentUsd: 0 });
+  if (preflight.allowed && preflight.reason !== 'under_limit') return null;
+
+  const spentUsd = await sumEndUserSpendUsd(
+    accountId,
+    endUserRef as string,
+    spendWindowStart(now, windowDays),
+  );
+  const decision = decideSpendCap({ endUserRef, limitUsd, windowDays, spentUsd });
+  return decision.allowed ? null : spendCapError(decision);
 }
 
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
@@ -255,6 +382,10 @@ export async function buildSessionSandboxEnvVars(input: {
    *  grant defaults to 'all' (back-compat, no narrowing). */
   defaultBranch?: string;
   manifestPath?: string;
+  /** Effective project ACP experiment. */
+  acpRuntimeEnabled?: boolean;
+  /** Immutable create-time launch plan. Restarts pass the stored plan. */
+  compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -275,6 +406,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
+  let compiledRuntimeConfig: CompiledRuntimeConfig | null = input.compiledRuntimeConfig ?? null;
   if (input.defaultBranch) {
     compiledAgentConfig = await resolveCompiledAgentConfigForSession({
       projectId: input.projectId,
@@ -283,6 +415,15 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
+    if (input.acpRuntimeEnabled && !compiledRuntimeConfig) {
+      compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }).catch(() => null);
+    }
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -290,15 +431,20 @@ export async function buildSessionSandboxEnvVars(input: {
     // No-op (undefined → 'all') for back-compat grants and projects without
     // an `agents:` map or git context. This is the ONLY gate on agent secret
     // access — there is no resource-side allow-list on the secret itself.
-    const loadedAgents = await loadProjectAgents({
+    //
+    // FAIL CLOSED: this used to `.catch(() => null)`, which collapsed a loader
+    // throw into an unrestricted grant — a transient git/parse failure silently
+    // handed the session every project secret. It now throws
+    // SecretGrantResolutionError and the provision fails instead. Shares one
+    // resolver with the per-prompt hot push (lib/secret-grant.ts) so the two
+    // paths can no longer disagree about what this agent may read.
+    agentGrantEnv = await resolveSessionSecretGrant({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    }).catch(() => null);
-    const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
-    agentGrantEnv = grant?.env;
+      manifestPath: input.manifestPath,
+      sessionAgent: input.agentName,
+    });
   }
 
   // Per-session KaaB fields, read by sessionId inside the builder so all three
@@ -342,6 +488,10 @@ export async function buildSessionSandboxEnvVars(input: {
       input.projectId,
       secretsPrincipalUserId,
       grantEnvForSession,
+      // Non-`runtime` rows are delivered as a per-session handle, so the
+      // chokepoint needs the session this env is being built FOR. Without it it
+      // withholds them rather than falling back to plaintext.
+      input.sessionId,
     );
   } catch (err) {
     if (err instanceof AmbiguousSecretGrantError) {
@@ -398,14 +548,20 @@ export async function buildSessionSandboxEnvVars(input: {
     // that one is an intentional native provider).
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: '1',
-    // Force a FULL clone (no blobless partial clone). The blobless default
-    // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
-    // through the Kortix git proxy; when the proxy's partial-clone capability
-    // isn't advertised consistently, git intermittently stalls on an on-demand
-    // blob fetch and the clone never finishes (repo_ready stuck false → the
-    // session never reaches runtimeReady). A full clone transfers one pack with
-    // no on-demand fetches — reliable. Starter/project repos are small so the
-    // size cost is negligible. Empty string = full clone (see daemon config.ts).
+    // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
+    // on-demand fetches, which stall through the Kortix git proxy when its
+    // partial-clone capability isn't advertised consistently — the clone then
+    // never finishes and the session never reaches runtimeReady. It is also
+    // simply slower: measured on kortix-ai/company, blobless 6161ms vs a full
+    // clone's 4288ms.
+    //
+    // Shallowness is the safe lever instead (KORTIX_CLONE_DEPTH=1, the daemon
+    // default): one pack, one commit, no on-demand fetches, with history
+    // restored in the background right after boot (scheduleHistoryBackfill).
+    // It is worth ~1.5x on the clone, no more — the dominant cost is the
+    // working tree plus the transatlantic git-proxy hop (sandbox US → API
+    // eu-west-2 → GitHub US). See
+    // docs/specs/2026-07-25-session-boot-latency-attribution.md, Finding 1.
     KORTIX_CLONE_FILTER: '',
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
@@ -424,9 +580,14 @@ export async function buildSessionSandboxEnvVars(input: {
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
+      // OpenCode ACP starts its internal REST server. Existing REST clients
+      // continue to work while the project experiment selects the ACP client.
+      opencodeProcessTransport: 'acp',
       // Backend-vouched end-user (KaaB) → KORTIX_ORIGIN_REF in the sandbox.
       originRef: sessionKaabRow?.originRef ?? null,
       compiledAgentConfig,
+      compiledRuntimeConfig: input.acpRuntimeEnabled ? compiledRuntimeConfig : null,
+      runtimeModel: input.opencodeModel,
     }),
   };
 }
@@ -559,7 +720,14 @@ export async function createProjectSession(input: {
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
   // owner's profile), so unlike origin_ref/secrets it is NOT origin-gated.
-  const inheritUnbound = body.inherit_unbound === true;
+  let inheritUnbound = body.inherit_unbound === true;
+  // Interactive-only: connectors the ACTING USER must have connected themselves
+  // for this session (by alias). Resolved to their own member profile below; a
+  // missing one fails create with CONNECTOR_CONNECTION_REQUIRED so the UI can
+  // prompt them to connect it.
+  const requireConnectors: string[] = Array.isArray(body.require_connectors)
+    ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
+    : [];
 
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
@@ -572,19 +740,42 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
   });
-  const requestedOriginRef = normalizeString(body.origin_ref);
-  // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
-  // whitespace-only one), not on its trimmed value — otherwise a non-backend
-  // caller could send origin_ref: "   " to slip past the 403, since
-  // normalizeString would null it out.
-  const originRefProvided = typeof body.origin_ref === 'string' && body.origin_ref.length > 0;
+  // require_connectors is interactive-only: it means "resolve THIS user's own
+  // connection", which a backend/service-account session (no single current
+  // user) cannot satisfy — it uses connector_bindings with explicit profile ids.
+  if (requireConnectors.length > 0 && origin !== 'user') {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'require_connectors is interactive-only — a backend/service-account session has no single current user; use connector_bindings instead',
+          code: 'REQUIRE_CONNECTORS_INTERACTIVE_ONLY',
+        },
+      },
+    };
+  }
+  // Accept `end_user_ref` and its deprecated alias `origin_ref`. Disagreeing
+  // values are rejected rather than silently resolved — picking either would
+  // misattribute every usage row for this session.
+  const endUserRef = resolveEndUserRef(body);
+  if (!endUserRef.ok) {
+    return {
+      error: { status: 400, body: { error: endUserRef.message, code: endUserRef.code } },
+    };
+  }
+  const requestedOriginRef = endUserRef.value;
+  // Gate on whether it was SUPPLIED (any non-empty string, incl. a
+  // whitespace-only one), not on the trimmed value — otherwise a non-backend
+  // caller could send "   " to slip past the 403.
+  const originRefProvided = endUserRef.suppliedUnder !== null;
   if (originRefProvided && !canOverride(origin, 'origin_ref')) {
     return {
       error: {
         status: 403,
         body: {
           error:
-            'origin_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+            'end_user_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
           code: 'origin_override_forbidden',
         },
       },
@@ -672,10 +863,47 @@ export async function createProjectSession(input: {
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
-  const agentName =
+  let agentName =
     (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
     projectDefaultAgent ??
     'default';
+  const acpRuntimeEnabled = resolveExperimentalFeature(project.metadata, 'acp_runtime');
+  const compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
+    projectId,
+    repoUrl: project.repoUrl,
+    defaultBranch: project.defaultBranch,
+    manifestPath: project.manifestPath,
+    gitAuthToken: null,
+  }).catch(() => null);
+  if (compiledRuntimeConfig?.version === 3 && !acpRuntimeEnabled) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'kortix_version 3 requires the ACP & Multi-Harness project experiment',
+          code: 'ACP_RUNTIME_REQUIRED',
+        },
+      },
+    };
+  }
+  const runtimeAgent =
+    compiledRuntimeConfig?.agents[agentName] ??
+    (agentName === 'default'
+      ? compiledRuntimeConfig?.agents[compiledRuntimeConfig.defaultAgent]
+      : undefined);
+  if (acpRuntimeEnabled && compiledRuntimeConfig && (!runtimeAgent || !runtimeAgent.enabled)) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `Agent "${agentName}" is not declared and enabled in kortix.yaml`,
+          code: 'AGENT_NOT_DECLARED',
+        },
+      },
+    };
+  }
+  if (runtimeAgent) agentName = runtimeAgent.name;
+  const loadedAgents = await loadProjectAgents(project);
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
@@ -698,7 +926,10 @@ export async function createProjectSession(input: {
       return {
         error: {
           status: 400,
-          body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
+          body: {
+            error: `"${requestedModel}" doesn't look like a model id`,
+            code: 'INVALID_SESSION_MODEL',
+          },
         },
       };
     }
@@ -722,7 +953,10 @@ export async function createProjectSession(input: {
     }
     opencodeModel = toOpencodeModelRef(requestedModel);
     opencodeModelSource = 'explicit';
-  } else if (llmGatewayEnabled) {
+  } else if (
+    llmGatewayEnabled &&
+    shouldResolvePlatformDefaultModel(acpRuntimeEnabled, runtimeAgent?.harness)
+  ) {
     try {
       const resolved = await resolveEffectiveModel({
         userId,
@@ -733,8 +967,7 @@ export async function createProjectSession(input: {
         freeModelsOnly,
       });
       const concreteModel =
-        resolved.model ??
-        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+        resolved.model ?? (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -753,11 +986,30 @@ export async function createProjectSession(input: {
     }
   }
 
+  // Agent-declared personal connectors (connectors_personal): a session with this
+  // agent auto-requires the launching user's OWN connection for each — but only
+  // for an interactive ('user') session. A backend/service-account session has no
+  // single current user and manages connectors explicitly via connector_bindings,
+  // so its agent's personal declaration is not enforced here. (`loadedAgents` is
+  // already resolved above — reuse it rather than re-reading the manifest.)
+  const agentPersonalConnectors =
+    origin === 'user' ? personalConnectorsForAgent(agentName, loadedAgents) : [];
+  const effectiveRequireConnectors = Array.from(
+    new Set<string>([...requireConnectors, ...agentPersonalConnectors]),
+  );
+
+  // Every connector this session touches — whether the caller bound it explicitly
+  // (connector_bindings) or it's required as the user's own (require_connectors or
+  // the agent's connectors_personal) — must be granted to the session's agent.
+  const grantCheckAliases = new Set<string>([
+    ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
+    ...effectiveRequireConnectors,
+  ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
-  if (parsedConnectorBindings.bindings) {
-    loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
-    for (const alias of Object.keys(parsedConnectorBindings.bindings)) {
-      if (!agentMayUseConnector(loadedAgentGrant, alias)) {
+  if (grantCheckAliases.size > 0) {
+    loadedAgentGrant = grantFromLoadedAgents(agentName, loadedAgents);
+    for (const alias of grantCheckAliases) {
+      if (!agentMayUseConnector(loadedAgentGrant, canonicalConnectorAlias(alias))) {
         return {
           error: {
             status: 403,
@@ -789,6 +1041,35 @@ export async function createProjectSession(input: {
       },
     };
   }
+  // Resolve require_connectors to THE ACTING USER's own member profiles and merge
+  // them into the binding set. A missing/revoked one fails create with a
+  // structured CONNECTOR_CONNECTION_REQUIRED so the UI can prompt a connect.
+  if (effectiveRequireConnectors.length > 0) {
+    const required = await resolveRequiredMemberConnectorProfiles({
+      accountId,
+      projectId,
+      actingUserId: userId,
+      actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+      aliases: effectiveRequireConnectors,
+    });
+    if (!required.ok) {
+      return {
+        error: {
+          status: 409,
+          body: { error: required.error, code: required.code, connector: required.connector },
+        },
+      };
+    }
+    // Dedupe by alias — an explicit connector_bindings entry for the same alias
+    // wins (it's already validated). Merging member bindings forces the session
+    // private (via the gate below); force inherit_unbound so binding these does
+    // not null the agent's OTHER connectors.
+    const boundAliases = new Set(validatedConnectorBindings.bindings.map((b) => b.alias));
+    for (const binding of required.bindings) {
+      if (!boundAliases.has(binding.alias)) validatedConnectorBindings.bindings.push(binding);
+    }
+    inheritUnbound = true;
+  }
   if (
     visibility !== 'private' &&
     sessionConnectorBindingsRequirePrivateVisibility(validatedConnectorBindings.bindings)
@@ -814,7 +1095,6 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = await loadProjectAgents(project);
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,
@@ -823,18 +1103,16 @@ export async function createProjectSession(input: {
       return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
     }
   }
-  // Explicit request wins; otherwise fall back to the project's default sandbox
-  // template (`sandbox.default` in kortix.yaml — `[sandbox] default` in a
-  // legacy v1 kortix.toml — synced to project metadata), so EVERY session — UI,
-  // triggers, channels — inherits the project's chosen box without each
-  // caller passing `sandbox_slug`. Unset → platform default.
+  // Explicit request wins. The selected agent environment is next. The
+  // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
-  const sandboxSlug =
-    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ??
-    projectDefaultSandboxSlug ??
-    undefined;
+  const sandboxSlug = resolveSessionSandboxSlug({
+    explicit: normalizeString(body.sandbox_slug ?? body.sandboxSlug),
+    agent: sandboxFromLoadedAgents(agentName, loadedAgents),
+    project: projectDefaultSandboxSlug,
+  });
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
@@ -897,12 +1175,31 @@ export async function createProjectSession(input: {
   // run them concurrently so a warmed create pays a single DB round-trip instead
   // of two serial ones. Error precedence is preserved exactly: the cap (429) is
   // still evaluated/returned before billing (402).
-  const [capResult, billingCheck] = await Promise.all([
+  const [capResult, billingCheck, perOriginCapError, perEndUserSpendError] = await Promise.all([
     input.enforceAccountCap !== false
       ? checkConcurrentSessionCap(accountId, userId, input.request)
       : Promise.resolve(null),
     checkBillingActive(accountId),
+    // Per-END-USER cap, alongside the account one: a wrapper account fronts many
+    // end-users, so an account-wide limit alone lets a single end-user (or a
+    // runaway loop acting for one) consume every slot. No-op unless configured
+    // AND the session carries an origin_ref. Joins the existing Promise.all so
+    // it costs no extra round-trip depth.
+    input.enforceAccountCap !== false
+      ? enforcePerOriginSessionCap(accountId, originRef)
+      : Promise.resolve(null),
+    // Per-END-USER SPEND cap. The account balance check above only fires once
+    // the WHOLE wrapper is out of money — by then one runaway end-user has
+    // already spent every other end-user's budget. Also off by default; also
+    // joins this Promise.all so it adds no round-trip depth.
+    input.enforceAccountCap !== false
+      ? enforcePerEndUserSpendCap(accountId, originRef)
+      : Promise.resolve(null),
   ]);
+  if (perOriginCapError) return { error: perOriginCapError };
+  // Concurrency before spend: "you already have N running" is the more
+  // actionable message when an end-user trips both at once.
+  if (perEndUserSpendError) return { error: perEndUserSpendError };
   if (capResult) {
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };
@@ -921,6 +1218,8 @@ export async function createProjectSession(input: {
           // of pitching the Free plan to a Team account. See web error-handler.
           billing_model: billingCheck.billingModel,
           has_subscription: billingCheck.hasSubscription,
+          // The unambiguous state — the one field a client should branch on.
+          billing_state: billingCheck.billingState,
           // The account that actually needs the upgrade — the project's owning
           // (team) account, NOT the caller's primary account. The upgrade dialog
           // scopes itself to this so a non-billing member sees the *team's*
@@ -946,7 +1245,18 @@ export async function createProjectSession(input: {
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
+    runtime_transport: acpRuntimeEnabled ? 'acp' : 'rest',
+    runtime_harness: acpRuntimeEnabled ? (runtimeAgent?.harness ?? 'opencode') : 'opencode',
+    ...(acpRuntimeEnabled && runtimeAgent
+      ? {
+          runtime_name: runtimeAgent.runtime,
+          native_agent: runtimeAgent.nativeAgent,
+          acp_server_id: sessionId,
+          compiled_runtime_plan: compiledRuntimeConfig,
+        }
+      : {}),
     ...(input.metadata ?? {}),
+    sandbox_slug: sandboxSlug,
   };
 
   let sessionRow: ProjectSessionRow | null = null;
@@ -1063,6 +1373,8 @@ export async function createProjectSession(input: {
           initialPrompt,
           opencodeModel,
           llmGatewayEnabled,
+            acpRuntimeEnabled,
+            compiledRuntimeConfig,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,
@@ -1075,19 +1387,10 @@ export async function createProjectSession(input: {
       });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
-        const [current] = await db
-          .select({ metadata: projectSessions.metadata })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sessionId))
-          .limit(1);
-        const currentMetadata =
-          current?.metadata && typeof current.metadata === 'object'
-            ? (current.metadata as Record<string, unknown>)
-            : {};
         await db
           .update(projectSessions)
           .set({
-            metadata: { ...currentMetadata, ...extra },
+            metadata: projectSessionMetadataMerge(extra),
             updatedAt: new Date(),
           })
           .where(eq(projectSessions.sessionId, sessionId));
@@ -1136,6 +1439,7 @@ export async function createProjectSession(input: {
         accountId,
         projectId,
         userId,
+        agentName,
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,

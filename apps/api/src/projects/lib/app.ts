@@ -9,6 +9,8 @@ import {
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   TriggerSchema as ContractTriggerSchema,
+  WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
+  ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { Hono } from 'hono';
@@ -31,6 +33,12 @@ export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi
 export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
 
 export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
+
+export const WarmProjectSessionResultSchema =
+  ContractWarmProjectSessionResultSchema.openapi('WarmProjectSessionResult');
+
+export const ClaimWarmProjectSessionInputSchema =
+  ContractClaimWarmProjectSessionInputSchema.openapi('ClaimWarmProjectSessionInput');
 
 export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 

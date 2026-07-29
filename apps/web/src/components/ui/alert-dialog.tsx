@@ -7,6 +7,12 @@ import { ButtonProps, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 
+// Depth is derived from context on purpose — an alert that confirms for a
+// dialog must be rendered INSIDE that dialog's React tree, which nests it a
+// band above automatically. Rendering it as a sibling and hand-tuning a depth
+// looks right but still breaks: Radix reads pointer ownership off the React
+// tree, so the dialog underneath treats every click in the alert as an
+// outside-click and dismisses itself.
 function AlertDialog({
   children,
   ...props

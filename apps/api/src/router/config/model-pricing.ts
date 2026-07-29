@@ -2,13 +2,12 @@
  * models.dev pricing — live LLM pricing from the open-source models database.
  *
  * Fetches https://models.dev/api.json on boot and refreshes every 24 h in the
- * background (non-blocking). Builds a flat Map<modelId, pricing> plus a
- * normalized-id index for resilient provider-native lookups.
+ * background (non-blocking). Prices remain qualified by provider and model.
  *
  * Usage:
  *   import { initModelPricing, getModelPricing } from './model-pricing';
  *   await initModelPricing();                       // call once at boot
- *   const p = getModelPricing('claude-sonnet-4-20250514');
+ *   const p = getModelPricing('anthropic', 'claude-sonnet-4-20250514');
  *   // => { inputPer1M: 3, outputPer1M: 15 } | null
  */
 
@@ -21,14 +20,38 @@ export interface ModelPricingEntry {
   outputPer1M: number;
   cacheReadPer1M?: number;
   cacheWritePer1M?: number;
+  tiers?: ModelPricingTier[];
+  contextOver200k?: ModelPricingTier;
 }
 
-const normModelId = (id: string): string => id.toLowerCase().replace(/\./g, '-');
+export interface ModelPricingTier extends ModelPricingEntry {
+  contextThreshold: number;
+}
+
+interface ModelsDevCost {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tiers?: Array<{
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    tier?: { type?: string; size?: number };
+  }>;
+  context_over_200k?: {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+  };
+}
 
 /** Shape of a single model in the models.dev API response. */
 interface ModelsDevModel {
   id: string;
-  cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number };
+  cost?: ModelsDevCost;
   [key: string]: unknown;
 }
 
@@ -40,7 +63,8 @@ interface ModelsDevProvider {
 }
 
 /** The full API response: { [providerId]: ModelsDevProvider } */
-type ModelsDevApiResponse = Record<string, ModelsDevProvider>;
+export type ModelsDevApiResponse = Record<string, ModelsDevProvider>;
+export type ModelPricingIndex = Map<string, Map<string, ModelPricingEntry>>;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -58,10 +82,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 // State
 // ---------------------------------------------------------------------------
 
-/** In-memory pricing lookup.  `null` key means "not yet loaded". */
-let pricingMap: Map<string, ModelPricingEntry> = new Map();
-/** Normalised-id index (lowercase, dots→dashes) for resilient lookups. */
-let normIndex: Map<string, ModelPricingEntry> = new Map();
+let pricingIndex: ModelPricingIndex = new Map();
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -73,19 +94,11 @@ let modelCount = 0;
 // ---------------------------------------------------------------------------
 
 /**
- * Look up pricing for a model ID (provider-native, e.g. `claude-sonnet-4-20250514`).
+ * Look up an exact provider and exact provider-native model ID.
  * Returns `null` if the model is unknown or pricing hasn't been fetched yet.
  */
-export function getModelPricing(modelId: string): ModelPricingEntry | null {
-  const exact = pricingMap.get(modelId);
-  if (exact) return exact;
-  const nq = normModelId(modelId);
-  const norm = normIndex.get(nq);
-  if (norm) return norm;
-  for (const [key, entry] of normIndex) {
-    if (key.startsWith(nq) || nq.startsWith(key)) return entry;
-  }
-  return null;
+export function getModelPricing(providerId: string, modelId: string): ModelPricingEntry | null {
+  return lookupModelPricing(pricingIndex, providerId, modelId);
 }
 
 /**
@@ -146,34 +159,16 @@ async function refreshPricing(): Promise<void> {
     }
 
     const data = (await res.json()) as ModelsDevApiResponse;
-    const newMap = new Map<string, ModelPricingEntry>();
-    const newNorm = new Map<string, ModelPricingEntry>();
-
-    for (const provider of Object.values(data)) {
-      if (!provider?.models) continue;
-      for (const model of Object.values(provider.models)) {
-        const input = model.cost?.input;
-        const output = model.cost?.output;
-        if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0))
-          continue;
-        const entry: ModelPricingEntry = { inputPer1M: input, outputPer1M: output };
-        if (typeof model.cost?.cache_read === 'number')
-          entry.cacheReadPer1M = model.cost.cache_read;
-        if (typeof model.cost?.cache_write === 'number')
-          entry.cacheWritePer1M = model.cost.cache_write;
-        if (!newMap.has(model.id)) newMap.set(model.id, entry);
-        const nk = normModelId(model.id);
-        if (!newNorm.has(nk)) newNorm.set(nk, entry);
-      }
-    }
+    const newIndex = buildModelPricingIndex(data);
 
     // Atomic swap — readers never see a partially-built map
-    pricingMap = newMap;
-    normIndex = newNorm;
-    modelCount = newMap.size;
+    pricingIndex = newIndex;
+    modelCount = [...newIndex.values()].reduce((count, models) => count + models.size, 0);
     lastFetchedAt = new Date();
 
-    console.log(`[model-pricing] Loaded ${newMap.size} model prices from models.dev (live)`);
+    console.log(
+      `[model-pricing] Loaded ${modelCount} provider-qualified model prices from models.dev (live)`,
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('abort')) {
@@ -182,4 +177,70 @@ async function refreshPricing(): Promise<void> {
       console.error('[model-pricing] Fetch error:', message);
     }
   }
+}
+
+function pricingEntry(cost: ModelsDevCost | undefined): ModelPricingEntry | null {
+  if (!cost) return null;
+  const input = cost.input;
+  const output = cost.output;
+  if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0)) {
+    return null;
+  }
+
+  const entry: ModelPricingEntry = {
+    inputPer1M: input,
+    outputPer1M: output,
+  };
+  if (typeof cost.cache_read === 'number') entry.cacheReadPer1M = cost.cache_read;
+  if (typeof cost.cache_write === 'number') entry.cacheWritePer1M = cost.cache_write;
+  const tiers = cost.tiers
+    ?.filter((tier) => tier.tier?.type === 'context' && typeof tier.tier.size === 'number')
+    .map((tier) => {
+      const mapped: ModelPricingTier = {
+        inputPer1M: tier.input ?? input,
+        outputPer1M: tier.output ?? output,
+        contextThreshold: tier.tier!.size!,
+      };
+      if (typeof tier.cache_read === 'number') mapped.cacheReadPer1M = tier.cache_read;
+      if (typeof tier.cache_write === 'number') mapped.cacheWritePer1M = tier.cache_write;
+      return mapped;
+    });
+  if (tiers?.length) entry.tiers = tiers;
+
+  const over200k = cost.context_over_200k;
+  if (over200k) {
+    const mapped: ModelPricingTier = {
+      inputPer1M: over200k.input ?? input,
+      outputPer1M: over200k.output ?? output,
+      contextThreshold: 200_000,
+    };
+    if (typeof over200k.cache_read === 'number') mapped.cacheReadPer1M = over200k.cache_read;
+    if (typeof over200k.cache_write === 'number') mapped.cacheWritePer1M = over200k.cache_write;
+    entry.contextOver200k = mapped;
+  }
+  return entry;
+}
+
+export function buildModelPricingIndex(data: ModelsDevApiResponse): ModelPricingIndex {
+  const index: ModelPricingIndex = new Map();
+  for (const [providerKey, provider] of Object.entries(data)) {
+    if (!provider?.models) continue;
+    const providerId = provider.id || providerKey;
+    const models = new Map<string, ModelPricingEntry>();
+    for (const [modelKey, model] of Object.entries(provider.models)) {
+      const entry = pricingEntry(model.cost);
+      if (!entry) continue;
+      models.set(model.id || modelKey, entry);
+    }
+    if (models.size) index.set(providerId, models);
+  }
+  return index;
+}
+
+export function lookupModelPricing(
+  index: ModelPricingIndex,
+  providerId: string,
+  modelId: string,
+): ModelPricingEntry | null {
+  return index.get(providerId)?.get(modelId) ?? null;
 }

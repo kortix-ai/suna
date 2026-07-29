@@ -22,7 +22,7 @@ import {
   getSessionAudit,
   listSessionsNeedingInput,
   resolveApproval,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   type QueryClient,
   useMutation,
@@ -141,7 +141,7 @@ export function useSessionAudit(
  * open, and the audit poll can lag a few seconds behind), which 404s with a
  * bare "not found". The no-op `onError` below opts this mutation out of the
  * global default, matching the same pattern already used by
- * `useAbortOpenCodeSession` — every consumer already owns its own error UX.
+ * `useAbortRuntimeSession` — every consumer already owns its own error UX.
  */
 export function resolveApprovalMutationOptions(
   projectId: string | undefined,

@@ -640,6 +640,13 @@ async function assertContextComplete(
     'kortix-agent.gz',
     'kortix-opencode-warmup',
     'MACHINE.md',
+    // The baked model catalog is what keeps `opencode serve` off the network at
+    // boot: the daemon reads /opt/kortix/llm-catalog.json instead of fetching
+    // the gateway's ~400KB /models. If it silently fails to stage, the image
+    // still builds and every session on it pays a synchronous cross-region
+    // fetch that gates opencode's port bind. That is invisible in build logs and
+    // shows up only as "boot got slower", so assert it here.
+    'kortix-llm-catalog.json',
     dockerfileName,
   ];
   // A per-project warm bake COPYs the staged checkout — verify it (and its

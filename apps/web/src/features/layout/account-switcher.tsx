@@ -21,7 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
-import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
@@ -34,6 +34,7 @@ import {
   Search,
 } from '@mynaui/icons-react';
 import { Icon } from '../icon/icon';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export type AccountSwitcherVariant = 'header' | 'sidebar';
 
@@ -278,7 +279,10 @@ export function AccountSwitcher({
           void queryClient.invalidateQueries({
             queryKey: ['projects', account.account_id],
           });
-          router.push('/projects');
+          // The landing door, NOT the remembered project: that cookie names a
+          // project in the account being left. The door re-resolves the latest
+          // project for the account just switched to.
+          router.push(PROJECT_LANDING_PATH);
         }}
       />
     </>

@@ -74,6 +74,7 @@ let providerCreateCalls = 0;
 let providerFallbackEnabled = false;
 let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
+let imageRequests: Array<Record<string, unknown>> = [];
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -213,13 +214,16 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensureSandboxImage: async (_gitProject: unknown, _opts: unknown) => ({
-    snapshotName: 'snap-test-1',
-    slug: 'default',
-    contentHash: 'hash-1',
-    isDefault: true,
-    built: false,
-  }),
+  ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
+    imageRequests.push(opts);
+    return {
+      snapshotName: 'snap-test-1',
+      slug: 'default',
+      contentHash: 'hash-1',
+      isDefault: true,
+      built: false,
+    };
+  },
   deleteSandboxImage: async () => {},
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
 }));
@@ -303,6 +307,7 @@ beforeEach(() => {
   providerFallbackEnabled = false;
   providerNamesRequested = [];
   providerCreateErrors = {};
+  imageRequests = [];
 });
 
 function baseOpts() {
@@ -320,6 +325,40 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('ACP sessions require the current sandbox runtime identity', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      projectMetadata: { experimental: { acp_runtime: true } },
+    });
+    await opened;
+
+    expect(imageRequests[0]).toMatchObject({
+      source: 'session-start',
+      requireCurrentRuntime: true,
+    });
+  });
+
+  test('REST sessions retain last-known-good runtime compatibility', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      projectMetadata: { experimental: { acp_runtime: false } },
+    });
+    await opened;
+
+    expect(imageRequests[0]).toMatchObject({
+      source: 'session-start',
+      requireCurrentRuntime: false,
+    });
+  });
+
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -356,6 +395,29 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
       ),
     ).toBe(false);
+  });
+
+  test('classifies a provider no-capacity response as transient capacity failure', async () => {
+    providerCreateErrors.daytona =
+      'platinum POST /v1/sandboxes -> 503 {"error":"no capacity","code":"unavailable"}';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await failed;
+
+    const failureCalls = updateCalls.filter(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'error' &&
+        'metadata' in call.updates,
+    );
+    expect(failureCalls.at(-1)?.updates.metadata).toMatchObject({
+      failureCategory: 'provider-capacity',
+      errorMessage:
+        'The sandbox provider is at capacity right now. Try again in a minute.',
+    });
   });
 
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {

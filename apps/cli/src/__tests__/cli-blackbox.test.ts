@@ -108,6 +108,46 @@ function startMarketplaceServer() {
   return `http://127.0.0.1:${server.port}`;
 }
 
+// `GET /v1/skills` — the kortix-managed system floor. Nothing else is served, so
+// any fallback to the marketplace catalog shows up as a 404 rather than passing.
+function startSystemSkillsServer() {
+  const body = '---\nname: kortix-system\n---\n\n<skill name="kortix-system">how Kortix works</skill>\n';
+  server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      const url = new URL(req.url);
+      requests.push({
+        method: req.method,
+        path: `${url.pathname}${url.search}`,
+        authorization: req.headers.get('authorization'),
+      });
+      if (url.pathname === '/v1/skills') {
+        return Response.json({
+          skills: [
+            {
+              name: 'kortix-system',
+              description: 'How Kortix works. Load whenever the user asks about the platform.',
+              referenceCount: 0,
+              bytes: body.length,
+            },
+          ],
+          count: 1,
+        });
+      }
+      if (url.pathname === '/v1/skills/kortix-system') {
+        return Response.json({
+          name: 'kortix-system',
+          description: 'How Kortix works.',
+          body,
+          references: [],
+        });
+      }
+      return Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  return `http://127.0.0.1:${server.port}`;
+}
+
 function projectSummary(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     project_id: 'proj_e2e',
@@ -315,6 +355,59 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).toContain('marketplace');
     expect(result.stdout).not.toContain('add <item>');
     expect(result.stdout).not.toContain('registry <subcommand>');
+  });
+
+  // The whole reason this command exists: an agent in any harness that holds
+  // nothing but the binary and a token must be able to find its own way from a
+  // cold `--help` to a skill body it can follow. Each step here is one hop of
+  // that path, asserted as a process.
+  test('an agent with only the binary finds system-skills in --help and reads one end to end', async () => {
+    const help = await runCli(['--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('Start here');
+    expect(help.stdout).toContain('system-skills');
+    expect(help.stdout).toContain('Learn how to drive Kortix');
+
+    const apiBase = startSystemSkillsServer();
+    const configFile = writeConfig(apiBase);
+
+    const listed = await runCli(['system-skills', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(listed.code).toBe(0);
+    const parsed = JSON.parse(listed.stdout);
+    expect(parsed.count).toBe(1);
+    expect(parsed.skills[0].name).toBe('kortix-system');
+
+    const read = await runCli(['system-skills', 'get', 'kortix-system'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
+    expect(read.code).toBe(0);
+    expect(read.stdout).toContain('how Kortix works');
+
+    // Served live from the host, never from the marketplace catalog and never
+    // from a local clone.
+    expect(requests.map((r) => r.path)).toEqual(['/v1/skills', '/v1/skills/kortix-system']);
+    expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
+  }, 20_000);
+
+  test('the `skills` alias still resolves for sandboxes baked against the old name', async () => {
+    const apiBase = startSystemSkillsServer();
+    const configFile = writeConfig(apiBase);
+
+    const result = await runCli(['skills', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).skills[0].name).toBe('kortix-system');
+    expect(requests.map((r) => r.path)).toEqual(['/v1/skills']);
+  }, 15_000);
+
+  test('top-level help lists system-skills and no longer advertises the ambiguous `skills`', async () => {
+    const result = await runCli(['--help']);
+
+    expect(result.stdout).toContain('system-skills');
+    expect(result.stdout).not.toContain('skills <subcommand>');
+    // Optional/marketplace skills keep their own home rather than being folded
+    // back into the system-skills list.
+    expect(result.stdout).toContain('marketplace');
   });
 
   test('sessions connect runs opencode attach through an authenticated sandbox proxy', async () => {
@@ -556,10 +649,11 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'default-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
@@ -581,7 +675,7 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
@@ -594,8 +688,8 @@ console.log(JSON.stringify({ cmd, args, body }));
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
 

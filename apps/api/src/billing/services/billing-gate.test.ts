@@ -24,8 +24,24 @@ mock.module('./free-tier', () => ({
   ensureFreeTierAccountReady: async () => undefined,
 }));
 
+// The whole module is replaced, so every symbol `./credits` imports from it has
+// to exist here — without `updateCreditAccount` the import of `./credits`
+// (deductCredits, on the pure-wallet admission-hold path) fails to link and the
+// entire file errors out before a single test runs.
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,
+  getCreditBalance: async () => null,
+  updateCreditAccount: async () => undefined,
+  upsertCreditAccount: async () => undefined,
+}));
+
+// The admission hold is a real row-locked DB write in production; here it is
+// emulated against the fixture balance — it succeeds when the wallet can cover
+// the floor and throws when it cannot, exactly like `atomic_use_credits`.
+mock.module('./credits', () => ({
+  deductCredits: async (_accountId: string, amount: number) => {
+    if (Number(account?.balance ?? 0) < amount) throw new Error('insufficient credits');
+  },
 }));
 
 const { assertBillingActive, checkBillingActive, BillingGateError } = await import(
@@ -37,6 +53,8 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     accountId: 'acct-1',
     balance: '100.00',
     billingModel: 'legacy',
+    tier: 'free',
+    paymentStatus: 'active',
     stripeSubscriptionId: null,
     stripeSubscriptionStatus: null,
     ...overrides,
@@ -109,6 +127,77 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
     account = creditAccount({ billingModel: 'legacy', balance: '5.00' });
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(true);
+  });
+
+  test('per-seat account on an ACTIVE subscription with a drained wallet is admitted (not wallet-gated)', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0.0099614711',
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.holdUsd).toBeUndefined();
+  });
+});
+
+describe('checkBillingActive — billingState is the unambiguous discriminator', () => {
+  test('a drained Team account that HAS a plan reports out_of_credits, never no_subscription', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_gone',
+      stripeSubscriptionStatus: 'canceled',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.billingState).toBe('out_of_credits');
+      expect(result.reason).toBe('insufficient_credits');
+    }
+  });
+
+  test('a never-subscribed per-seat account reports no_subscription', async () => {
+    billingEnabled = true;
+    account = creditAccount({ billingModel: 'per_seat', balance: '0' });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.billingState).toBe('no_subscription');
+      expect(result.reason).toBe('subscription_required');
+    }
+  });
+
+  test('a drained FREE account reports no_subscription even though its 402 code stays insufficient_credits', async () => {
+    billingEnabled = true;
+    account = creditAccount({ billingModel: 'legacy', tier: 'free', balance: '0' });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.billingState).toBe('no_subscription');
+      expect(result.reason).toBe('insufficient_credits');
+    }
+  });
+
+  test('a drained legacy PAID account reports out_of_credits', async () => {
+    billingEnabled = true;
+    account = creditAccount({ billingModel: 'legacy', tier: 'tier_2_20', balance: '0' });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.billingState).toBe('out_of_credits');
+  });
+
+  test('no credit account reports no_account', async () => {
+    billingEnabled = true;
+    account = null;
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.billingState).toBe('no_account');
   });
 });
 
@@ -186,6 +275,26 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
       expect(body.code).toBe('insufficient_credits');
       expect(body.billing_model).toBe('per_seat');
       expect(body.has_subscription).toBe(true);
+    }
+  });
+
+  test('the 402 body carries billing_state so a drained Team wallet is never rendered as "no plan"', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_gone',
+      stripeSubscriptionStatus: 'canceled',
+    });
+    try {
+      await assertBillingActive('acct-1');
+      throw new Error('expected assertBillingActive to throw');
+    } catch (err) {
+      const gateError = err as InstanceType<typeof BillingGateError>;
+      const body = await gateError.res!.clone().json();
+      expect(body.billing_state).toBe('out_of_credits');
+      expect(body.billing_state).not.toBe('no_subscription');
     }
   });
 });

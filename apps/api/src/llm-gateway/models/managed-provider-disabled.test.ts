@@ -3,14 +3,12 @@ import { describe, expect, mock, test } from 'bun:test';
 // Self-host default: KORTIX_MANAGED_PROVIDER_ENABLED is OFF. This file boots
 // the gateway's real (unmocked) descriptors/resolve-candidates/catalog/picker
 // modules against that config so every consumer of the managed lineup is
-// exercised end to end — no managed models served, no managed candidates
-// resolved, and NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY read for
-// managed routing (the real-world bug: a self-host operator's OWN OpenRouter
-// BYOK key lives in that exact config var, and must never be mistaken for
-// Kortix's shared managed credential).
+// exercised end to end. No managed models are served. No managed candidates
+// resolve. No managed upstream credential is read.
 
 let bedrockKeyReads = 0;
 let openrouterKeyReads = 0;
+let asterKeyReads = 0;
 
 mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -42,6 +40,11 @@ mock.module('../../config', () => ({
           return 'operators-own-openrouter-key';
         }
         if (key === 'OPENROUTER_API_URL') return 'https://openrouter.ai/api/v1';
+        if (key === 'ASTER_API_KEY') {
+          asterKeyReads += 1;
+          return 'fake-aster-key-must-never-be-read';
+        }
+        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         return target[key];
       },
     },
@@ -122,9 +125,11 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {
     expect(managedCandidates(FAKE_MANAGED_MODEL)).toEqual([]);
     expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'openrouter' })).toEqual([]);
+    expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'aster' })).toEqual([]);
     expect(managedDescriptor(FAKE_MANAGED_MODEL)).toBeNull();
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
+    expect(asterKeyReads).toBe(0);
   });
 
   test('a request explicitly naming a managed model resolves to NO candidates — never a silent fallback to Kortix credits', async () => {

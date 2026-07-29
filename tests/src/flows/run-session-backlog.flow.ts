@@ -31,6 +31,7 @@ import { isKe2eRetryableError } from '../core/client';
 import { waitFor, sleep } from '../core/poll';
 import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
 import type { FlowContext } from '../core/types';
+import { subscribe } from '../fixtures/billing';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ async function bootSandbox(
   ctx: FlowContext,
   opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  const project = await ctx.fixtures.project({ seed: true });
+  const project = await ctx.fixtures.sharedSeededProject();
   const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
   const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
 
@@ -516,19 +517,24 @@ flow(
     }
     const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
     let previousLimit: number | null | undefined;
+    const team = await ctx.fixtures.team();
+
+    await ctx.step('fund the isolated session-limit account', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
 
     await ctx.step('set the run account concurrent-session override to 1', async () => {
       const r = await admin.post(
         '/v1/admin/api/accounts/:id/session-limit',
         { max_concurrent_sessions: 1 },
-        { params: { id: ctx.P.accountId } },
+        { params: { id: team.id } },
       );
       r.status(200);
       previousLimit = r.json<{ previous: number | null }>().previous;
     });
 
     try {
-      const project = await ctx.fixtures.project({ seed: true });
+      const project = await team.project({ seed: true });
       await ctx.step('first session at limit 1 → 201', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -560,7 +566,7 @@ flow(
           const r = await admin.post(
             '/v1/admin/api/accounts/:id/session-limit',
             { max_concurrent_sessions: previousLimit },
-            { params: { id: ctx.P.accountId } },
+            { params: { id: team.id } },
           );
           r.status(200);
         });
@@ -583,7 +589,7 @@ flow(
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
+    const project = await ctx.fixtures.sharedSeededProject();
     const clientSessionId = crypto.randomUUID();
     await ctx.step(
       'create session with client-minted id + branch_already_created → 201',

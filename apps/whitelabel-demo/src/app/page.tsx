@@ -1,7 +1,12 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { ApiKeyGate } from '@/components/api-key-gate';
+import { ImportProjectsDialog } from '@/components/import-projects-dialog';
+import { ModeBadge } from '@/components/mode-badge';
 import { BrandMark } from '@/components/brand-mark';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { LoginGate } from '@/components/login-gate';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,7 +27,7 @@ import { qk } from '@/lib/query-keys';
 import { clearSessionToken, getSessionToken } from '@/lib/session';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, Loader2, LogOut, Plus, Receipt, Users } from 'lucide-react';
+import { FolderGit2, LogOut, Plus, Receipt, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -39,7 +44,7 @@ export default function Home() {
   if (ready === null) {
     return (
       <div className="grid min-h-dvh place-items-center bg-background">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loading className="size-5 text-muted-foreground" />
       </div>
     );
   }
@@ -80,7 +85,13 @@ function Dashboard({
     <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
-          <BrandMark />
+          <div className="flex items-center gap-2">
+            <BrandMark />
+            {/* The two integration shapes behave differently and the difference
+                is otherwise invisible — which makes every other observation on
+                this page ambiguous. */}
+            <ModeBadge wrapperMode={wrapperMode} />
+          </div>
           <div className="flex items-center gap-1">
             {wrapperMode ? (
               <Link href="/usage">
@@ -110,7 +121,11 @@ function Dashboard({
               Each project is a git repo. Open one to run an agent against it.
             </p>
           </div>
-          <CreateProjectDialog />
+          <div className="flex items-center gap-1">
+            {/* Gated + hidden by default — see server/project-adoption.ts. */}
+            <ImportProjectsDialog />
+            <CreateProjectDialog />
+          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -120,10 +135,16 @@ function Dashboard({
             ))}
           {projects.isError && (
             <Card className="col-span-full p-4 text-sm text-destructive">
-              Couldn&apos;t load projects — {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
-              <button className="underline" onClick={onDisconnect}>
+              Couldn&apos;t load projects —{' '}
+              {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-destructive"
+                onClick={onDisconnect}
+              >
                 {wrapperMode ? 'Sign out' : 'Reconnect'}
-              </button>
+              </Button>
             </Card>
           )}
           {projects.isSuccess && items.length === 0 && (
@@ -201,9 +222,14 @@ function CreateProjectDialog() {
               placeholder="My website"
             />
           </div>
+          {/* The first call a wrapper ever makes, and the only project-create
+              path it may use — so it belongs on the button that makes it. */}
+          <div className="mt-3">
+            <CallSnippet id="project.provision" context={{ projectName: name }} />
+          </div>
           <DialogFooter className="mt-4">
             <Button type="submit" disabled={!name.trim() || create.isPending}>
-              {create.isPending && <Loader2 className="size-4 animate-spin" />}
+              {create.isPending && <Loading className="size-4" />}
               Create project
             </Button>
           </DialogFooter>

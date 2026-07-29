@@ -6,86 +6,97 @@
  *
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
-import { flow } from "../core/flow";
+import { flow } from '../core/flow';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
 // NONMEMBER are denied by PROJECT_CREATE (403). We assert the boundary only —
 // a real 201 needs a GitHub App install + reachable repo, which the harness
 // can't guarantee.
-flow(
-  "PROJ-2",
-  { domain: "projects", routes: ["POST /v1/projects"] },
-  async (ctx) => {
-    await ctx.step("non-GitHub repo_url → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects", { name: ctx.fixtures.name("byo"), repo_url: "https://gitlab.com/acme/widget" });
-      r.status(400);
-    });
-    await ctx.step("http:// (non-HTTPS) repo_url → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects", { name: ctx.fixtures.name("byo"), repo_url: "http://github.com/acme/widget" });
-      r.status(400);
-    });
-    await ctx.step("ANON cannot create → 401", async () => {
-      // (Any authenticated user CAN create a project in their own account, so a
-      // cross-tenant 403 isn't the boundary here — unauth is.)
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/projects", { name: ctx.fixtures.name("byo"), repo_url: "https://github.com/acme/widget" });
-      r.status(401);
-    });
-  },
-);
+flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/projects'] }, async (ctx) => {
+  await ctx.step('non-GitHub repo_url → 400', async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post('/v1/projects', {
+        name: ctx.fixtures.name('byo'),
+        repo_url: 'https://gitlab.com/acme/widget',
+      });
+    r.status(400);
+  });
+  await ctx.step('http:// (non-HTTPS) repo_url → 400', async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post('/v1/projects', {
+        name: ctx.fixtures.name('byo'),
+        repo_url: 'http://github.com/acme/widget',
+      });
+    r.status(400);
+  });
+  await ctx.step('ANON cannot create → 401', async () => {
+    // (Any authenticated user CAN create a project in their own account, so a
+    // cross-tenant 403 isn't the boundary here — unauth is.)
+    const r = await ctx.client
+      .as(ctx.P.ANON)
+      .post('/v1/projects', {
+        name: ctx.fixtures.name('byo'),
+        repo_url: 'https://github.com/acme/widget',
+      });
+    r.status(401);
+  });
+});
 
 // PROJ-10 — CLI-token lifecycle. POST mints a real project-scoped PAT
 // (returns secret_key + token_id, 201); GET lists it; DELETE revokes it.
 // Mutating + minting a credential → serial.
 flow(
-  "PROJ-10",
+  'PROJ-10',
   {
-    domain: "projects",
+    domain: 'projects',
     routes: [
-      "POST /v1/projects/:projectId/cli-token",
-      "GET /v1/projects/:projectId/cli-token",
-      "DELETE /v1/projects/:projectId/cli-token/:tokenId",
+      'POST /v1/projects/:projectId/cli-token',
+      'GET /v1/projects/:projectId/cli-token',
+      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    let tokenId = "";
-    await ctx.step("mint a CLI token → 201", async () => {
+    let tokenId = '';
+    await ctx.step('mint a CLI token → 201', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/cli-token", { name: ctx.fixtures.name("cli") }, { params: { projectId: p.id } });
-      r.status(201).body().exists("$.token_id").exists("$.secret_key").has("$.project_id", p.id);
+        .post(
+          '/v1/projects/:projectId/cli-token',
+          { name: ctx.fixtures.name('cli') },
+          { params: { projectId: p.id } },
+        );
+      r.status(201).body().exists('$.token_id').exists('$.secret_key').has('$.project_id', p.id);
       tokenId = r.json<any>().token_id;
-      ctx.track("cli-token", tokenId, { projectId: p.id });
+      ctx.track('cli-token', tokenId, { projectId: p.id });
     });
-    await ctx.step("list CLI tokens → 200 includes minted", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.items");
-    });
-    await ctx.step("revoke CLI token → 200", async () => {
+    await ctx.step('list CLI tokens → 200 includes minted', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", { params: { projectId: p.id, tokenId } });
-      r.status(200).body().has("$.ok", true);
+        .get('/v1/projects/:projectId/cli-token', { params: { projectId: p.id } });
+      r.status(200).body().exists('$.items');
     });
-    await ctx.step("revoke unknown token → 404", async () => {
+    await ctx.step('revoke CLI token → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", {
-          params: { projectId: p.id, tokenId: "00000000-0000-4000-a000-000000000000" },
+        .del('/v1/projects/:projectId/cli-token/:tokenId', {
+          params: { projectId: p.id, tokenId },
         });
+      r.status(200).body().has('$.ok', true);
+    });
+    await ctx.step('revoke unknown token → 404', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
+        params: { projectId: p.id, tokenId: '00000000-0000-4000-a000-000000000000' },
+      });
       r.status(404);
     });
-    await ctx.step("NONMEMBER cannot mint → 403/404", async () => {
+    await ctx.step('NONMEMBER cannot mint → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/cli-token", {}, { params: { projectId: p.id } });
+        .post('/v1/projects/:projectId/cli-token', {}, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -94,26 +105,38 @@ flow(
 // PROJ-11 — onboarding state. PATCH {completed:true|false} flips
 // metadata.onboarding_completed_at and echoes the serialized project (200).
 flow(
-  "PROJ-11",
-  { domain: "projects", routes: ["PATCH /v1/projects/:projectId/onboarding"] },
+  'PROJ-11',
+  { domain: 'projects', routes: ['PATCH /v1/projects/:projectId/onboarding'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("mark onboarding completed → 200", async () => {
+    await ctx.step('mark onboarding completed → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/onboarding", { completed: true }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.project_id", p.id);
+        .patch(
+          '/v1/projects/:projectId/onboarding',
+          { completed: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has('$.project_id', p.id);
     });
-    await ctx.step("reset onboarding → 200", async () => {
+    await ctx.step('reset onboarding → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/onboarding", { completed: false }, { params: { projectId: p.id } });
+        .patch(
+          '/v1/projects/:projectId/onboarding',
+          { completed: false },
+          { params: { projectId: p.id } },
+        );
       r.status(200);
     });
-    await ctx.step("NONMEMBER cannot patch → 403/404", async () => {
+    await ctx.step('NONMEMBER cannot patch → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .patch("/v1/projects/:projectId/onboarding", { completed: true }, { params: { projectId: p.id } });
+        .patch(
+          '/v1/projects/:projectId/onboarding',
+          { completed: true },
+          { params: { projectId: p.id } },
+        );
       r.status([403, 404]);
     });
   },
@@ -123,27 +146,30 @@ flow(
 // without). Same ref short-circuits to is_same_ref:true (200) with no git
 // round-trip; a real cross-ref diff may 400 if a ref can't be resolved.
 flow(
-  "PROJ-12",
-  { domain: "projects", routes: ["GET /v1/projects/:projectId/version-diff"] },
+  'PROJ-12',
+  { domain: 'projects', routes: ['GET /v1/projects/:projectId/version-diff'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("missing from/into → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/version-diff", { params: { projectId: p.id } });
+    await ctx.step('missing from/into → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/version-diff', { params: { projectId: p.id } });
       r.status(400);
     });
-    await ctx.step("same ref → 200 is_same_ref", async () => {
+    await ctx.step('same ref → 200 is_same_ref', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/version-diff", { params: { projectId: p.id }, query: { from: "main", into: "main" } });
-      r.status(200).body().has("$.is_same_ref", true);
-    });
-    await ctx.step("cross-ref diff → 200 or 400 (unresolvable ref)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/version-diff", {
+        .get('/v1/projects/:projectId/version-diff', {
           params: { projectId: p.id },
-          query: { from: "does-not-exist", into: "main" },
+          query: { from: 'main', into: 'main' },
         });
+      r.status(200).body().has('$.is_same_ref', true);
+    });
+    await ctx.step('cross-ref diff → 200 or 400 (unresolvable ref)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+        params: { projectId: p.id },
+        query: { from: 'does-not-exist', into: 'main' },
+      });
       r.status([200, 400]);
     });
   },
@@ -157,68 +183,86 @@ flow(
 // provider would spawn a server-side OpenCode flow, so we exercise `start`'s
 // unknown-provider guard instead.
 flow(
-  "PROJ-13",
+  'PROJ-13',
   {
-    domain: "projects",
+    domain: 'projects',
     routes: [
-      "POST /v1/projects/:projectId/oauth/:provider/start",
-      "POST /v1/projects/:projectId/oauth/:provider/poll",
-      "GET /v1/projects/:projectId/oauth",
-      "DELETE /v1/projects/:projectId/oauth/:provider",
+      'POST /v1/projects/:projectId/oauth/:provider/start',
+      'POST /v1/projects/:projectId/oauth/:provider/poll',
+      'GET /v1/projects/:projectId/oauth',
+      'DELETE /v1/projects/:projectId/oauth/:provider',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("start unknown provider → 400 (no flow spawned)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/oauth/:provider/start", {}, { params: { projectId: p.id, provider: "nope" } });
-      r.status(400);
-    });
-    await ctx.step("start invalid sharing → 400", async () => {
+    await ctx.step('start unknown provider → 400 (no flow spawned)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/oauth/:provider/start",
-          { sharing: { mode: "bogus" } },
-          { params: { projectId: p.id, provider: "openai" } },
+          '/v1/projects/:projectId/oauth/:provider/start',
+          {},
+          { params: { projectId: p.id, provider: 'nope' } },
         );
       r.status(400);
     });
-    await ctx.step("poll missing flow_id → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/oauth/:provider/poll", {}, { params: { projectId: p.id, provider: "openai" } });
-      r.status(400);
-    });
-    await ctx.step("poll bogus flow_id → 200 expired", async () => {
+    await ctx.step('start invalid sharing → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/oauth/:provider/poll",
-          { flow_id: "00000000-0000-4000-a000-000000000000" },
-          { params: { projectId: p.id, provider: "openai" } },
+          '/v1/projects/:projectId/oauth/:provider/start',
+          { sharing: { mode: 'bogus' } },
+          { params: { projectId: p.id, provider: 'openai' } },
         );
-      r.status(200).body().has("$.status", "expired");
+      r.status(400);
     });
-    await ctx.step("list configured OAuth → 200 items", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/oauth", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.items");
-    });
-    await ctx.step("delete unknown provider → 404", async () => {
+    await ctx.step('poll missing flow_id → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/oauth/:provider", { params: { projectId: p.id, provider: "nope" } });
+        .post(
+          '/v1/projects/:projectId/oauth/:provider/poll',
+          {},
+          { params: { projectId: p.id, provider: 'openai' } },
+        );
+      r.status(400);
+    });
+    await ctx.step('poll bogus flow_id → 200 expired', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/oauth/:provider/poll',
+          { flow_id: '00000000-0000-4000-a000-000000000000' },
+          { params: { projectId: p.id, provider: 'openai' } },
+        );
+      r.status(200).body().has('$.status', 'expired');
+    });
+    await ctx.step('list configured OAuth → 200 items', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/oauth', { params: { projectId: p.id } });
+      r.status(200).body().exists('$.items');
+    });
+    await ctx.step('delete unknown provider → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/oauth/:provider', {
+          params: { projectId: p.id, provider: 'nope' },
+        });
       r.status(404);
     });
-    await ctx.step("NONMEMBER start → 404", async () => {
+    await ctx.step('NONMEMBER start → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/oauth/:provider/start", {}, { params: { projectId: p.id, provider: "openai" } });
+        .post(
+          '/v1/projects/:projectId/oauth/:provider/start',
+          {},
+          { params: { projectId: p.id, provider: 'openai' } },
+        );
       r.status([403, 404]);
     });
-    await ctx.step("ANON list → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/oauth", { params: { projectId: p.id } });
+    await ctx.step('ANON list → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/oauth', { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -229,26 +273,38 @@ flow(
 // then validates questions. A missing id is 400; an unknown id is 404. We assert the
 // no-session negative so it runs locally without a live OpenCode session.
 flow(
-  "PROJ-16",
-  { domain: "projects", routes: ["POST /v1/projects/:projectId/turn-question"] },
+  'PROJ-16',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-question'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("missing session_id → 400", async () => {
+    await ctx.step('missing session_id → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/turn-question", { questions: [{ question: "q?" }] }, { params: { projectId: p.id } });
+        .post(
+          '/v1/projects/:projectId/turn-question',
+          { questions: [{ question: 'q?' }] },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
-    await ctx.step("unknown session takes precedence over missing questions → 404", async () => {
+    await ctx.step('unknown session takes precedence over missing questions → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/turn-question", { session_id: "bogus" }, { params: { projectId: p.id } });
+        .post(
+          '/v1/projects/:projectId/turn-question',
+          { session_id: 'bogus' },
+          { params: { projectId: p.id } },
+        );
       r.status(404);
     });
-    await ctx.step("NONMEMBER → 403/404", async () => {
+    await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/turn-question", { session_id: "bogus", questions: [] }, { params: { projectId: p.id } });
+        .post(
+          '/v1/projects/:projectId/turn-question',
+          { session_id: 'bogus', questions: [] },
+          { params: { projectId: p.id } },
+        );
       r.status([400, 403, 404]);
     });
   },
@@ -259,36 +315,48 @@ flow(
 // the event payload. Asserting the negative
 // keeps this local (no funded session required).
 flow(
-  "PROJ-17",
-  { domain: "projects", routes: ["POST /v1/projects/:projectId/turn-stream"] },
+  'PROJ-17',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-stream'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("missing session_id + text → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/turn-stream", { kind: "step" }, { params: { projectId: p.id } });
-      r.status(400);
-    });
-    await ctx.step("unknown session takes precedence over missing text → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/turn-stream", { session_id: "bogus" }, { params: { projectId: p.id } });
-      r.status(404);
-    });
-    await ctx.step("kind=turn_end with an unknown session → 404", async () => {
+    await ctx.step('missing session_id + text → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/turn-stream",
-          { session_id: "bogus", kind: "turn_end", status: "idle" },
+          '/v1/projects/:projectId/turn-stream',
+          { kind: 'step' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step('unknown session takes precedence over missing text → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/turn-stream',
+          { session_id: 'bogus' },
           { params: { projectId: p.id } },
         );
       r.status(404);
     });
-    await ctx.step("NONMEMBER → 403/404", async () => {
+    await ctx.step('kind=turn_end with an unknown session → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/turn-stream',
+          { session_id: 'bogus', kind: 'turn_end', status: 'idle' },
+          { params: { projectId: p.id } },
+        );
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/turn-stream", { session_id: "bogus", text: "hi" }, { params: { projectId: p.id } });
+        .post(
+          '/v1/projects/:projectId/turn-stream',
+          { session_id: 'bogus', text: 'hi' },
+          { params: { projectId: p.id } },
+        );
       r.status([400, 403, 404]);
     });
   },
@@ -304,58 +372,64 @@ flow(
 // validates the block shape strictly: a body with unrecognized top-level keys
 // (or a bad enum) is refused with a 400; the editor-tier gate holds.
 flow(
-  "PROJ-19",
+  'PROJ-19',
   {
-    domain: "projects",
+    domain: 'projects',
     routes: [
-      "GET /v1/projects/:projectId/agents/:agentName/config",
-      "PUT /v1/projects/:projectId/agents/:agentName/config",
+      'GET /v1/projects/:projectId/agents/:agentName/config',
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
 
-    await ctx.step("GET reports schema_version 2 / editable true for a synthesized blank manifest", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/agents/:agentName/config", {
-          params: { projectId: project.id, agentName: "kortix" },
-        });
-      r.status(200).body().has("$.schema_version", 2).has("$.editable", true);
-    });
+    await ctx.step(
+      'GET reports schema_version 2 / editable true for a synthesized blank manifest',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/agents/:agentName/config', {
+            params: { projectId: project.id, agentName: 'kortix' },
+          });
+        r.status(200).body().has('$.schema_version', 2).has('$.editable', true);
+      },
+    );
 
-    await ctx.step("PUT a body with unrecognized top-level keys → 400", async () => {
+    await ctx.step('PUT a body with unrecognized top-level keys → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/agents/:agentName/config",
-          { mode: "primary", description: "Support", temperature: 0.2 },
-          { params: { projectId: project.id, agentName: "kortix" } },
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { mode: 'primary', description: 'Support', temperature: 0.2 },
+          { params: { projectId: project.id, agentName: 'kortix' } },
         );
       r.status(400);
     });
 
-    await ctx.step("PUT with a malformed body (bad enum) → 400", async () => {
+    await ctx.step('PUT with a malformed body (bad enum) → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/agents/:agentName/config",
-          { mode: "supervisor" },
-          { params: { projectId: project.id, agentName: "kortix" } },
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { mode: 'supervisor' },
+          { params: { projectId: project.id, agentName: 'kortix' } },
         );
       r.status(400);
     });
 
-    await ctx.step("a member with no project grant cannot read/write the config → 403", async () => {
-      const bare = await team.addMember("member");
-      const r = await ctx.client
-        .as(bare)
-        .get("/v1/projects/:projectId/agents/:agentName/config", {
-          params: { projectId: project.id, agentName: "kortix" },
-        });
-      r.status(403);
-    });
+    await ctx.step(
+      'a member with no project grant cannot read/write the config → 403',
+      async () => {
+        const bare = await team.addMember('member');
+        const r = await ctx.client
+          .as(bare)
+          .get('/v1/projects/:projectId/agents/:agentName/config', {
+            params: { projectId: project.id, agentName: 'kortix' },
+          });
+        r.status(403);
+      },
+    );
   },
 );
 
@@ -366,22 +440,22 @@ flow(
 // the path has no :projectId, it reports the server-wide managed-git backend).
 // Read-only and safe to assert the happy path on staging.
 flow(
-  "PROJ-20",
-  { domain: "projects", routes: ["GET /v1/projects/managed-git/status"] },
+  'PROJ-20',
+  { domain: 'projects', routes: ['GET /v1/projects/managed-git/status'] },
   async (ctx) => {
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/managed-git/status");
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/managed-git/status');
       r.status(401);
     });
-    await ctx.step("OWNER → 200 with {configured, provider}", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/managed-git/status");
-      r.status(200).body().exists("$.configured").exists("$.provider");
+    await ctx.step('OWNER → 200 with {configured, provider}', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/managed-git/status');
+      r.status(200).body().exists('$.configured').exists('$.provider');
       const provider = r.json<any>()?.provider;
-      if (typeof provider !== "string" || provider.length === 0) {
+      if (typeof provider !== 'string' || provider.length === 0) {
         throw new Error(`expected a non-empty provider string, got: ${provider}`);
       }
       // `configured` is a boolean — never a 500, never an unset field.
-      if (typeof r.json<any>()?.configured !== "boolean") {
+      if (typeof r.json<any>()?.configured !== 'boolean') {
         throw new Error(`expected configured to be a boolean, got: ${r.json<any>()?.configured}`);
       }
     });
@@ -394,105 +468,161 @@ flow(
 // flow reads the current project picker and selects a managed model from that
 // served catalog. Full set → read-back → clear lifecycle on scope=project.
 flow(
-  "PROJ-27",
+  'PROJ-27',
   {
-    domain: "projects",
-    requires: ["funded"],
+    domain: 'projects',
+    requires: ['funded'],
     routes: [
-      "GET /v1/projects/:projectId/model-picker",
-      "GET /v1/projects/:projectId/model-defaults",
-      "PUT /v1/projects/:projectId/model-defaults",
-      "DELETE /v1/projects/:projectId/model-defaults",
+      'GET /v1/projects/:projectId/model-picker',
+      'GET /v1/projects/:projectId/model-defaults',
+      'PUT /v1/projects/:projectId/model-defaults',
+      'DELETE /v1/projects/:projectId/model-defaults',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    let servableModel = "";
-    await ctx.step("GET before any override → 200 with no project default", async () => {
+    let servableModel = '';
+    await ctx.step('GET before any override → 200 with no project default', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.platformDefault").has("$.projectDefault", null);
+        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      r.status(200).body().exists('$.platformDefault').has('$.projectDefault', null);
     });
-    await ctx.step("GET model picker → select a served managed model", async () => {
+    await ctx.step('GET model picker → select a served managed model', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/model-picker", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/model-picker', { params: { projectId: p.id } });
       r.status(200);
       const models = r.json<any>()?.models;
       const candidate =
-        models && typeof models === "object"
-          ? Object.keys(models).find((model) => model !== "auto" && !model.includes("/"))
+        models && typeof models === 'object'
+          ? Object.keys(models).find((model) => model !== 'auto' && !model.includes('/'))
           : undefined;
       if (!candidate) {
         throw new Error(`model-picker returned no managed model: ${r.text()}`);
       }
       servableModel = candidate;
     });
-    await ctx.step("PUT scope=project sets a concrete model → 200", async () => {
+    await ctx.step('PUT scope=project sets a concrete model → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/model-defaults",
-          { scope: "project", model: servableModel },
+          '/v1/projects/:projectId/model-defaults',
+          { scope: 'project', model: servableModel },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", servableModel);
+      r.status(200)
+        .body()
+        .has('$.ok', true)
+        .has('$.scope', 'project')
+        .has('$.model', servableModel);
     });
-    await ctx.step("GET reflects the set project default", async () => {
+    await ctx.step('GET reflects the set project default', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
-      r.status(200).body().has("$.projectDefault", servableModel).has("$.resolvedForCaller", servableModel);
+        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      r.status(200)
+        .body()
+        .has('$.projectDefault', servableModel)
+        .has('$.resolvedForCaller', servableModel);
     });
-    await ctx.step("PUT with the synthetic auto id → 409 (not servable)", async () => {
+    await ctx.step('PUT with the synthetic auto id → 409 (not servable)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/model-defaults",
-          { scope: "project", model: "auto" },
+          '/v1/projects/:projectId/model-defaults',
+          { scope: 'project', model: 'auto' },
           { params: { projectId: p.id } },
         );
-      r.status(409).body().has("$.code", "model_not_servable");
+      r.status(409).body().has('$.code', 'model_not_servable');
     });
-    await ctx.step("PUT scope=agent without agentName → 400", async () => {
+    await ctx.step('PUT scope=agent without agentName → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/model-defaults",
-          { scope: "agent", model: servableModel },
+          '/v1/projects/:projectId/model-defaults',
+          { scope: 'agent', model: servableModel },
           { params: { projectId: p.id } },
         );
       r.status(400);
     });
-    await ctx.step("DELETE scope=project clears the override → 200", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/model-defaults", {
-          params: { projectId: p.id },
-          query: { scope: "project" },
-        });
-      r.status(200).body().has("$.ok", true);
+    await ctx.step('DELETE scope=project clears the override → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/model-defaults', {
+        params: { projectId: p.id },
+        query: { scope: 'project' },
+      });
+      r.status(200).body().has('$.ok', true);
     });
-    await ctx.step("GET reflects the clear", async () => {
+    await ctx.step('GET reflects the clear', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
-      r.status(200).body().has("$.projectDefault", null);
+        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      r.status(200).body().has('$.projectDefault', null);
     });
-    await ctx.step("DELETE with an invalid scope → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/model-defaults", {
-          params: { projectId: p.id },
-          query: { scope: "bogus" },
-        });
+    await ctx.step('DELETE with an invalid scope → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/model-defaults', {
+        params: { projectId: p.id },
+        query: { scope: 'bogus' },
+      });
       r.status(400);
     });
-    await ctx.step("NONMEMBER cannot read → 403/404", async () => {
+    await ctx.step('NONMEMBER cannot read → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+  },
+);
+
+// PROJ-35 — PUT /v1/projects/:projectId/model-enablement
+// (apps/api/src/projects/routes/r4.ts:2763-2822). Replace the project's
+// model-override exceptions (which models are enabled/disabled). The full
+// positive path needs a funded account + model-picker data; the BOUNDARIES
+// are assertable without one: an unknown project 404s, ANON 401s, a missing
+// body 400s, and a NONMEMBER is denied — proving the route is mounted and
+// its auth/shape gates fire before any model-override logic.
+flow(
+  'PROJ-35',
+  { domain: 'projects', routes: ['PUT /v1/projects/:projectId/model-enablement'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: p.id } },
+        );
+      r.status(401);
+    });
+    await ctx.step('unknown projectId → 404 (project not loadable)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('missing modelOverrides → 400 (zod validation)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put('/v1/projects/:projectId/model-enablement', {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step('NONMEMBER → 403/404 (no project access)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: p.id } },
+        );
       r.status([403, 404]);
     });
   },
@@ -505,30 +635,30 @@ flow(
 // has neither, so this asserts the real "nothing to migrate" shape rather than
 // kicking off a real migration against production Suna data.
 flow(
-  "PROJ-28",
+  'PROJ-28',
   {
-    domain: "projects",
+    domain: 'projects',
     routes: [
-      "GET /v1/projects/suna-migration/eligibility",
-      "GET /v1/projects/suna-migration/status",
-      "POST /v1/projects/suna-migration/start",
+      'GET /v1/projects/suna-migration/eligibility',
+      'GET /v1/projects/suna-migration/status',
+      'POST /v1/projects/suna-migration/start',
     ],
   },
   async (ctx) => {
-    await ctx.step("GET eligibility for a fresh account → 200, not eligible", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/suna-migration/eligibility");
-      r.status(200).body().has("$.eligible", false).has("$.migration", null);
+    await ctx.step('GET eligibility for a fresh account → 200, not eligible', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/eligibility');
+      r.status(200).body().has('$.eligible', false).has('$.migration', null);
     });
-    await ctx.step("GET status for a fresh account → 200, no migration on record", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/suna-migration/status");
-      r.status(200).body().has("$.migration", null);
+    await ctx.step('GET status for a fresh account → 200, no migration on record', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/status');
+      r.status(200).body().has('$.migration', null);
     });
-    await ctx.step("POST start for a non-eligible account → 400 (nothing to migrate)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/suna-migration/start", {});
+    await ctx.step('POST start for a non-eligible account → 400 (nothing to migrate)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/suna-migration/start', {});
       r.status(400);
     });
-    await ctx.step("ANON cannot read eligibility → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/suna-migration/eligibility");
+    await ctx.step('ANON cannot read eligibility → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/suna-migration/eligibility');
       r.status(401);
     });
   },
@@ -538,44 +668,51 @@ flow(
 // Always resolves — the verdict lives in the body, never a raw parser 4xx —
 // except the caller-input guards (missing `raw`) which are the real 400s.
 flow(
-  "PROJ-29",
-  { domain: "projects", routes: ["POST /v1/projects/:projectId/manifest/validate"] },
+  'PROJ-29',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/manifest/validate'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("missing raw → 400", async () => {
+    await ctx.step('missing raw → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/manifest/validate", { format: "yaml" }, { params: { projectId: p.id } });
+        .post(
+          '/v1/projects/:projectId/manifest/validate',
+          { format: 'yaml' },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
-    await ctx.step("a valid minimal v2 manifest → 200 valid:true", async () => {
-      const raw = "kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n";
+    await ctx.step('a valid minimal v2 manifest → 200 valid:true', async () => {
+      const raw = 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n';
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/manifest/validate",
-          { raw, format: "yaml" },
+          '/v1/projects/:projectId/manifest/validate',
+          { raw, format: 'yaml' },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.valid", true);
+      r.status(200).body().has('$.valid', true);
     });
-    await ctx.step("a broken manifest (default_agent not declared) → 200 valid:false with issues", async () => {
-      const raw = "kortix_version: 2\ndefault_agent: does-not-exist\nagents:\n  kortix: {}\n";
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          "/v1/projects/:projectId/manifest/validate",
-          { raw, format: "yaml" },
-          { params: { projectId: p.id } },
-        );
-      r.status(200).body().has("$.valid", false).exists("$.issues");
-    });
-    await ctx.step("NONMEMBER → 403/404", async () => {
+    await ctx.step(
+      'a broken manifest (default_agent not declared) → 200 valid:false with issues',
+      async () => {
+        const raw = 'kortix_version: 2\ndefault_agent: does-not-exist\nagents:\n  kortix: {}\n';
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/manifest/validate',
+            { raw, format: 'yaml' },
+            { params: { projectId: p.id } },
+          );
+        r.status(200).body().has('$.valid', false).exists('$.issues');
+      },
+    );
+    await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          "/v1/projects/:projectId/manifest/validate",
-          { raw: "kortix_version: 2\n", format: "yaml" },
+          '/v1/projects/:projectId/manifest/validate',
+          { raw: 'kortix_version: 2\n', format: 'yaml' },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -589,40 +726,52 @@ flow(
 // agent already declared (see PROJ-19), so setting it back to `kortix` is a
 // safe, real no-op write (still commits to git) that proves the success path.
 flow(
-  "PROJ-30",
+  'PROJ-30',
   {
-    domain: "projects",
+    domain: 'projects',
     timeoutMs: 240_000,
-    routes: ["PUT /v1/projects/:projectId/default-agent"],
+    routes: ['PUT /v1/projects/:projectId/default-agent'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ seed: true });
     await ctx.step("set default agent to the existing 'kortix' agent → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/default-agent", { agent: "kortix" }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.ok", true).has("$.default_agent", "kortix");
+        .put(
+          '/v1/projects/:projectId/default-agent',
+          { agent: 'kortix' },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has('$.ok', true).has('$.default_agent', 'kortix');
     });
-    await ctx.step("unknown agent name → 400", async () => {
+    await ctx.step('unknown agent name → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/default-agent",
-          { agent: "does-not-exist" },
+          '/v1/projects/:projectId/default-agent',
+          { agent: 'does-not-exist' },
           { params: { projectId: p.id } },
         );
       r.status(400);
     });
-    await ctx.step("empty agent name → 400", async () => {
+    await ctx.step('empty agent name → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/default-agent", { agent: "" }, { params: { projectId: p.id } });
+        .put(
+          '/v1/projects/:projectId/default-agent',
+          { agent: '' },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
-    await ctx.step("NONMEMBER → 403/404", async () => {
+    await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .put("/v1/projects/:projectId/default-agent", { agent: "kortix" }, { params: { projectId: p.id } });
+        .put(
+          '/v1/projects/:projectId/default-agent',
+          { agent: 'kortix' },
+          { params: { projectId: p.id } },
+        );
       r.status([403, 404]);
     });
   },
@@ -636,43 +785,62 @@ flow(
 // project with no sessions is side-effect-free (resolveSessionProvider only
 // consults the pin at session-create time).
 flow(
-  "PROJ-31",
-  { domain: "projects", routes: ["PATCH /v1/projects/:projectId/sandbox-provider"] },
+  'PROJ-31',
+  { domain: 'projects', routes: ['PATCH /v1/projects/:projectId/sandbox-provider'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("unknown/disabled provider → 400", async () => {
+    await ctx.step('unknown/disabled provider → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/sandbox-provider",
-          { provider: "not-a-real-provider" },
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'not-a-real-provider' },
           { params: { projectId: p.id } },
         );
       r.status(400);
     });
-    await ctx.step("pin to the enabled 'daytona' provider → 200 (immediate, kind:project)", async () => {
+    await ctx.step(
+      "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/sandbox-provider',
+            { provider: 'daytona' },
+            { params: { projectId: p.id } },
+          );
+        // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
+        r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
+      },
+    );
+    await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
-      // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-      r.status(200).body().has("$.kind", "project").has("$.default_sandbox_provider", "daytona");
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: null },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has('$.kind', 'project');
     });
-    await ctx.step("clear the pin (null) → 200 (immediate, kind:project)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/sandbox-provider", { provider: null }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.kind", "project");
-    });
-    await ctx.step("NONMEMBER → 403/404", async () => {
+    await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'daytona' },
+          { params: { projectId: p.id } },
+        );
       r.status([403, 404]);
     });
-    await ctx.step("ANON → 401", async () => {
+    await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'daytona' },
+          { params: { projectId: p.id } },
+        );
       r.status(401);
     });
   },
@@ -685,38 +853,38 @@ flow(
 // since it's meaningful for every project including native (non-gateway)
 // ones. Project-read-scoped (403/404 boundary), not actually secret data.
 flow(
-  "PROJ-32",
-  { domain: "projects", routes: ["GET /v1/projects/:projectId/llm-catalog/providers"] },
+  'PROJ-32',
+  { domain: 'projects', routes: ['GET /v1/projects/:projectId/llm-catalog/providers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("OWNER reads the provider-connect catalog → 200 live snapshot", async () => {
+    await ctx.step('OWNER reads the provider-connect catalog → 200 live snapshot', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.providers").exists("$.provider_count").exists("$.model_count");
+        .get('/v1/projects/:projectId/llm-catalog/providers', { params: { projectId: p.id } });
+      r.status(200).body().exists('$.providers').exists('$.provider_count').exists('$.model_count');
       const body = r.json<any>();
       if (!Array.isArray(body?.providers) || body.providers.length === 0) {
-        throw new Error("llm-catalog/providers returned an empty provider list");
+        throw new Error('llm-catalog/providers returned an empty provider list');
       }
     });
-    await ctx.step("unknown project → 404", async () => {
+    await ctx.step('unknown project → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/llm-catalog/providers", {
-          params: { projectId: "00000000-0000-4000-a000-000000000000" },
+        .get('/v1/projects/:projectId/llm-catalog/providers', {
+          params: { projectId: '00000000-0000-4000-a000-000000000000' },
         });
       r.status(404);
     });
-    await ctx.step("NONMEMBER → 403", async () => {
+    await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/llm-catalog/providers', { params: { projectId: p.id } });
       r.status(403);
     });
-    await ctx.step("ANON → 401", async () => {
+    await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/llm-catalog/providers', { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -732,20 +900,20 @@ flow(
 // active_provider=null + latest=null (still 200), which is the case exercised
 // here without provisioning a real cross-provider build.
 flow(
-  "PROJ-33",
-  { domain: "projects", routes: ["GET /v1/projects/:projectId/sandbox-provider/transition"] },
+  'PROJ-33',
+  { domain: 'projects', routes: ['GET /v1/projects/:projectId/sandbox-provider/transition'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const INTERNAL_LEAK_KEYS = [
-      "lease_epoch",
-      "lease_holder",
-      "last_error",
-      "snapshot_name",
-      "external_template_id",
-      "attempts",
+      'lease_epoch',
+      'lease_holder',
+      'last_error',
+      'snapshot_name',
+      'external_template_id',
+      'attempts',
     ];
     const assertNoLeak = (item: unknown) => {
-      if (item && typeof item === "object") {
+      if (item && typeof item === 'object') {
         for (const k of INTERNAL_LEAK_KEYS) {
           if (k in (item as Record<string, unknown>)) {
             throw new Error(`transition view leaked internal field '${k}'`);
@@ -753,34 +921,101 @@ flow(
         }
       }
     };
-    await ctx.step("OWNER reads the public transition state → 200 public shape", async () => {
+    await ctx.step('OWNER reads the public transition state → 200 public shape', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.active_provider").exists("$.history");
-      const body = r.json<{ latest: unknown; history: unknown[] }>();
+        .get('/v1/projects/:projectId/sandbox-provider/transition', {
+          params: { projectId: p.id },
+        });
+      r.status(200).body().exists('$.history');
+      const body = r.json<{
+        active_provider: string | null;
+        latest: unknown;
+        history: unknown[];
+      }>();
+      if (!Object.hasOwn(body, 'active_provider')) {
+        throw new Error('transition view omitted active_provider');
+      }
       assertNoLeak(body.latest);
       if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);
     });
-    await ctx.step("unknown project → 404", async () => {
+    await ctx.step('unknown project → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandbox-provider/transition", {
-          params: { projectId: "00000000-0000-4000-a000-000000000000" },
+        .get('/v1/projects/:projectId/sandbox-provider/transition', {
+          params: { projectId: '00000000-0000-4000-a000-000000000000' },
         });
       r.status(404);
     });
-    await ctx.step("NONMEMBER → 403/404 (cross-project rejection)", async () => {
+    await ctx.step('NONMEMBER → 403/404 (cross-project rejection)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/sandbox-provider/transition', {
+          params: { projectId: p.id },
+        });
       r.status([403, 404]);
     });
-    await ctx.step("ANON → 401", async () => {
+    await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+        .get('/v1/projects/:projectId/sandbox-provider/transition', {
+          params: { projectId: p.id },
+        });
       r.status(401);
+    });
+  },
+);
+
+// PROJ-34 — the execution lease's auth gate.
+//
+// NOT a voice route: this came in with the API-latency refactor (PR #5490).
+// The in-sandbox agent reports active OpenCode work here, and the route is one
+// of the handful `middleware/auth.ts` lets a SANDBOX token reach
+// (alongside clone-credential / turn-stream / turn-question / llm-catalog /
+// boot-timeline). The acquire/renew/release semantics themselves need a live
+// sandbox token, which a black-box client cannot mint — so what is asserted
+// here is the gate, exactly as GH-11 does for clone-credential: being a
+// perfectly good project principal buys you nothing on a runtime-only route.
+flow(
+  'PROJ-34',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/execution-lease'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    // A valid body on purpose: the zod validator runs BEFORE the handler, so a
+    // malformed one would 400 and never prove the token check happened at all.
+    // `renew` on a session with no lease is a no-op even if it somehow ran.
+    const body = { action: 'renew', session_id: 'e2e-no-such-session' };
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
+      r.status(401);
+    });
+
+    await ctx.step('OWNER user session is not a sandbox token → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
+      r.status(403);
+    });
+
+    await ctx.step('account PAT is not a sandbox token → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.PAT_ACCT)
+        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
+      r.status(403);
+    });
+
+    await ctx.step('unknown action → 400 (body validated before the token check)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/execution-lease',
+          { action: 'steal', session_id: 'e2e-no-such-session' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
     });
   },
 );

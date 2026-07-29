@@ -49,8 +49,9 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  meet: z.boolean(),
+  voice: z.boolean(),
   llm_gateway: z.boolean(),
+  acp_runtime: z.boolean(),
   review_center: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
@@ -85,12 +86,7 @@ export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
  * (underscore) single-instance provider ripped out in 9cbf57dda — the schema
  * test suite asserts the old identifier stays rejected.
  */
-export const SANDBOX_PROVIDERS = [
-  'daytona',
-  'platinum',
-  'e2b',
-  'local-docker',
-] as const;
+export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -298,20 +294,220 @@ export type ConnectionProfile = z.infer<typeof ConnectionProfileSchema>;
 export const ReconcileConnectionProfileInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-    owner_type: ConnectionProfileOwnerTypeSchema,
-    owner_id: z.string().trim().min(1).max(512),
+    // `project` = a TEAM-shared connection (several are allowed per connector,
+    // distinguished by label); it takes no owner_id. Every other owner type
+    // requires one. Creating a team connection needs the profiles-manage
+    // capability — enforced at the route.
+    owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+    owner_id: z.string().trim().min(1).max(512).optional(),
     label: z.string().trim().min(1).max(255),
     metadata: ConnectionProfileMetadataSchema.optional(),
   })
   .strict();
 export type ReconcileConnectionProfileInput = z.infer<typeof ReconcileConnectionProfileInputSchema>;
 
-export const UpdateConnectionProfileCredentialInputSchema = z
+export const OAuth2ClientCredentialsSchema = z
   .object({
-    value: z.string().min(1).max(65536),
-    kind: z.enum(['secret', 'connection']).optional(),
+    type: z.literal('oauth2_client_credentials'),
+    token_url: z
+      .string()
+      .url()
+      .refine((value) => value.startsWith('https://'), 'token_url must use https'),
+    client_id: z.string().trim().min(1).max(1024),
+    token_endpoint_auth_method: z.enum([
+      'none',
+      'client_secret_post',
+      'client_secret_basic',
+      'client_secret_jwt',
+      'private_key_jwt',
+    ]),
+    client_secret: z.string().min(1).max(65536).optional(),
+    private_key: z.string().min(1).max(65536).optional(),
+    certificate_thumbprint: z.string().min(1).max(512).optional(),
+    scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
+    resource: z.string().trim().min(1).max(4096).optional(),
+    audience: z.string().trim().min(1).max(4096).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const usesSecret =
+      value.token_endpoint_auth_method === 'client_secret_post' ||
+      value.token_endpoint_auth_method === 'client_secret_basic' ||
+      value.token_endpoint_auth_method === 'client_secret_jwt';
+    if (usesSecret && !value.client_secret) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['client_secret'],
+        message: 'client_secret is required for the selected authentication method',
+      });
+    }
+    if (
+      value.token_endpoint_auth_method === 'private_key_jwt' &&
+      !value.private_key
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['private_key'],
+        message: 'private_key is required for private_key_jwt',
+      });
+    }
+  });
+export type OAuth2ClientCredentials = z.infer<typeof OAuth2ClientCredentialsSchema>;
+
+const OAuth2HttpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => value.startsWith('https://'), 'OAuth2 endpoints must use https');
+
+const OAuth2RedirectUrlSchema = z.string().url().refine((value) => {
+  const url = new URL(value);
+  return (
+    url.protocol === 'https:' ||
+    (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1'))
+  );
+}, 'redirect URI must use https except on loopback');
+
+export const OAuth2TokenEndpointAuthMethodSchema = z.enum([
+  'none',
+  'client_secret_basic',
+  'client_secret_post',
+  'client_secret_jwt',
+  'private_key_jwt',
+]);
+export type OAuth2TokenEndpointAuthMethod = z.infer<
+  typeof OAuth2TokenEndpointAuthMethodSchema
+>;
+
+const OAuth2ApplicationFields = {
+  discovery_url: OAuth2HttpsUrlSchema.optional(),
+  authorization_url: OAuth2HttpsUrlSchema.optional(),
+  token_url: OAuth2HttpsUrlSchema.optional(),
+  device_authorization_url: OAuth2HttpsUrlSchema.optional(),
+  revocation_url: OAuth2HttpsUrlSchema.optional(),
+  client_id: z.string().trim().min(1).max(1024),
+  token_endpoint_auth_method: OAuth2TokenEndpointAuthMethodSchema,
+  client_secret: z.string().min(1).max(65536).optional(),
+  private_key: z.string().min(1).max(65536).optional(),
+  scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
+  resource: z.string().trim().min(1).max(4096).optional(),
+  audience: z.string().trim().min(1).max(4096).optional(),
+  authorization_params: z.record(z.string().max(4096)).optional(),
+  token_params: z.record(z.string().max(4096)).optional(),
+};
+
+export const OAuth2ApplicationInputSchema = z
+  .object(OAuth2ApplicationFields)
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.discovery_url && !value.token_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token_url'],
+        message: 'token_url or discovery_url is required',
+      });
+    }
+    if (
+      (value.token_endpoint_auth_method === 'client_secret_basic' ||
+        value.token_endpoint_auth_method === 'client_secret_post' ||
+        value.token_endpoint_auth_method === 'client_secret_jwt') &&
+      !value.client_secret
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['client_secret'],
+        message: 'client_secret is required for the selected authentication method',
+      });
+    }
+    if (value.token_endpoint_auth_method === 'private_key_jwt' && !value.private_key) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['private_key'],
+        message: 'private_key is required for private_key_jwt',
+      });
+    }
+  });
+export type OAuth2ApplicationInput = z.infer<typeof OAuth2ApplicationInputSchema>;
+
+export const OAuth2ApplicationViewSchema = z.object(OAuth2ApplicationFields).omit({
+  client_secret: true,
+  private_key: true,
+}).extend({
+  has_client_secret: z.boolean(),
+  has_private_key: z.boolean(),
+});
+export type OAuth2ApplicationView = z.infer<typeof OAuth2ApplicationViewSchema>;
+
+export const OAuth2DiscoveryInputSchema = z
+  .object({ discovery_url: OAuth2HttpsUrlSchema })
+  .strict();
+export type OAuth2DiscoveryInput = z.infer<typeof OAuth2DiscoveryInputSchema>;
+
+const OAuth2OptionalScopesSchema = z
+  .array(z.string().trim().min(1).max(2048))
+  .max(64)
+  .optional();
+
+export const OAuth2AuthorizationStartInputSchema = z
+  .object({
+    scopes: OAuth2OptionalScopesSchema,
+    success_redirect_uri: OAuth2RedirectUrlSchema.optional(),
+    error_redirect_uri: OAuth2RedirectUrlSchema.optional(),
   })
   .strict();
+export type OAuth2AuthorizationStartInput = z.infer<
+  typeof OAuth2AuthorizationStartInputSchema
+>;
+
+export const OAuth2DeviceAuthorizationStartInputSchema = z
+  .object({ scopes: OAuth2OptionalScopesSchema })
+  .strict();
+export type OAuth2DeviceAuthorizationStartInput = z.infer<
+  typeof OAuth2DeviceAuthorizationStartInputSchema
+>;
+
+export const OAuth2AuthorizationStartResultSchema = z
+  .object({
+    authorization_url: OAuth2HttpsUrlSchema,
+    expires_at: z.string().datetime(),
+  })
+  .strict();
+export type OAuth2AuthorizationStartResult = z.infer<
+  typeof OAuth2AuthorizationStartResultSchema
+>;
+
+export const OAuth2DeviceAuthorizationStartResultSchema = z
+  .object({
+    session_id: z.string().uuid(),
+    user_code: z.string().min(1).max(1024),
+    verification_uri: OAuth2HttpsUrlSchema,
+    verification_uri_complete: OAuth2HttpsUrlSchema.optional(),
+    expires_at: z.string().datetime(),
+    interval_seconds: z.number().int().min(1).max(300),
+  })
+  .strict();
+export type OAuth2DeviceAuthorizationStartResult = z.infer<
+  typeof OAuth2DeviceAuthorizationStartResultSchema
+>;
+
+export const OAuth2ConnectionStatusSchema = z
+  .object({
+    status: z.enum(['not_configured', 'ready', 'pending', 'active', 'error', 'revoked']),
+    expires_at: z.string().datetime().nullable().optional(),
+    scopes: z.array(z.string()).optional(),
+    error_code: z.string().max(128).nullable().optional(),
+  })
+  .strict();
+export type OAuth2ConnectionStatus = z.infer<typeof OAuth2ConnectionStatusSchema>;
+
+export const UpdateConnectionProfileCredentialInputSchema = z.union([
+  z
+    .object({
+      value: z.string().min(1).max(65536),
+      kind: z.enum(['secret', 'connection']).optional(),
+    })
+    .strict(),
+  z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
+]);
 export type UpdateConnectionProfileCredentialInput = z.infer<
   typeof UpdateConnectionProfileCredentialInputSchema
 >;
@@ -328,8 +524,8 @@ export const SessionCreateInputSchema = z
     session_id: z
       .string()
       .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-      'session_id must be an RFC 4122 v4 UUID',
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        'session_id must be an RFC 4122 v4 UUID',
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
@@ -344,10 +540,29 @@ export const SessionCreateInputSchema = z
     // inherits the project DEFAULT profile — never another owner's — so it is not
     // origin-gated (any caller may set it).
     inherit_unbound: z.boolean().optional(),
+    // Interactive-only: require each named connector to resolve to the ACTING
+    // USER's OWN connected account for this session. Like connector_bindings but
+    // BY ALIAS — the server finds the caller's member profile for each. If the
+    // user hasn't connected one, session-create is refused with a structured
+    // CONNECTOR_CONNECTION_REQUIRED (409) naming the connector, so the UI can
+    // prompt them to connect it. Implies inherit_unbound (other connectors keep
+    // their project defaults). Rejected for backend/service-account origin — a
+    // backend caller has no single "current user"; it uses connector_bindings.
+    require_connectors: z
+      .array(z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'))
+      .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
+      .optional(),
     // Backend-only: the wrapper's opaque end-user handle this session acts for.
     // Accepted only from a backend-origin caller (an account API key / PAT or a
     // service-account bearer); any other origin supplying it is rejected 403
     // (see resolveSessionOrigin / canOverride).
+    end_user_ref: z.string().trim().min(1).max(256).optional(),
+    /**
+     * @deprecated Renamed to `end_user_ref`. Still accepted, and will stay
+     * accepted — this is a published wire field. Sending both is fine only if
+     * they agree; disagreeing values are rejected 400 END_USER_REF_CONFLICT
+     * rather than silently picking one and misattributing the usage rows.
+     */
     origin_ref: z.string().trim().min(1).max(256).optional(),
     // Backend-only: narrow which project secrets (by identifier) this session's
     // sandbox receives, from the default agent-grant set down to this list. `[]`
@@ -364,8 +579,8 @@ export const SessionCreateInputSchema = z
     sessionId: z
       .string()
       .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-      'sessionId must be an RFC 4122 v4 UUID',
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        'sessionId must be an RFC 4122 v4 UUID',
       )
       .optional(),
     branchAlreadyCreated: z.boolean().optional(),
@@ -384,6 +599,11 @@ export const ProjectSessionSchema = z.object({
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
   opencode_session_id: z.string().nullable(),
+  runtime_transport: z.enum(['acp', 'rest']).optional(),
+  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
+  native_agent: z.string().nullable().optional(),
+  acp_server_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -401,6 +621,8 @@ export const ProjectSessionSchema = z.object({
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
   /** Backend wrapper's end-user handle; non-null only for backend sessions. */
+  end_user_ref: z.string().nullable(),
+  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
   origin_ref: z.string().nullable(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
@@ -418,6 +640,41 @@ export const ProjectSessionSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+
+export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
+  status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
+  before_sha: z.string().nullable().optional(),
+  after_sha: z.string().nullable().optional(),
+  error: z.string().optional(),
+});
+export type WarmProjectSessionWorkspaceRefresh = z.infer<
+  typeof WarmProjectSessionWorkspaceRefreshSchema
+>;
+
+export const WarmProjectSessionResultSchema = z.object({
+  session: ProjectSessionSchema,
+  reused: z.boolean(),
+  workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
+});
+export type WarmProjectSessionResult = z.infer<
+  typeof WarmProjectSessionResultSchema
+>;
+
+export const ClaimWarmProjectSessionInputSchema = z
+  .object({
+    session_id: z
+      .string()
+      .regex(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        'session_id must be an RFC 4122 v4 UUID',
+      ),
+    agent_name: z.string().min(1).optional(),
+    sandbox_slug: z.string().min(1).optional(),
+  })
+  .strict();
+export type ClaimWarmProjectSessionInput = z.infer<
+  typeof ClaimWarmProjectSessionInputSchema
+>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
@@ -472,6 +729,15 @@ export const SessionStartResultSchema = z.object({
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical OpenCode root pin, resolved server-side once the box is up. */
   opencode_session_id: z.string().nullable(),
+  /**
+   * Server-selected OpenCode transport. Omitted only by pre-ACP servers.
+   * Clients must treat omission as the legacy REST transport.
+   */
+  runtime_transport: z.enum(['acp', 'rest']).optional(),
+  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
+  native_agent: z.string().nullable().optional(),
+  acp_server_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns

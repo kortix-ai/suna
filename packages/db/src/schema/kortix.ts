@@ -39,6 +39,38 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
+/**
+ * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
+ * below. Where `scope` says which subsystem OWNS a row, `strategy` says how (and
+ * whether) the value reaches the wire:
+ *
+ *   runtime  the plaintext value is injected into the sandbox env — today's
+ *            behavior, and the default, so an existing deployment is unchanged.
+ *   egress   a format-shaped handle is injected; the real credential is attached
+ *            outside the guest by the egress proxy, per host+method+path.
+ *   broker   a handle (or a session-scoped gateway key) is injected; a named
+ *            Kortix chokepoint attaches the credential.
+ *   denied   nothing is injected — the name is not emitted at all.
+ *
+ * The order of the values IS the strictness lattice: composition across the DB
+ * row, the manifest, the agent grant and the session allowlist takes the MAX, so
+ * a declaration can only ever strengthen delivery, never weaken it. Adding a
+ * value in the middle would silently re-rank every stored row — append only.
+ *
+ * A third `scope` value was deliberately NOT used: `scope='connector'` rows are
+ * written live by the channels install store and mean something else entirely.
+ *
+ * Declared up here with the other early enums because `projects` (the first
+ * table that uses it) is defined well above the secrets section, and a table's
+ * column builders run at module load — a later `const` would be in its TDZ.
+ */
+export const projectSecretStrategyEnum = kortixSchema.enum('project_secret_strategy', [
+  'runtime',
+  'egress',
+  'broker',
+  'denied',
+]);
+
 export const projectSessionStatusEnum = kortixSchema.enum('project_session_status', [
   'queued',
   'branching',
@@ -108,37 +140,37 @@ export const apiKeyTypeEnum = kortixSchema.enum('api_key_type', ['user', 'sandbo
 export const accountRoleEnum = kortixSchema.enum('account_role', ['owner', 'admin', 'member']);
 
 export const accounts = kortixSchema.table('accounts', {
-    accountId: uuid('account_id').defaultRandom().primaryKey(),
-    name: varchar('name', { length: 255 }).notNull(),
-    setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
-    setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
-    // When true the IAM engine rejects every browser/JWT request whose
-    // session is not at AAL2 (MFA-verified). PATs are exempt — they're
-    // expected to gate via per-policy require_mfa conditions instead.
-    // Super-admins are also exempt so flipping the switch can never
-    // permanently lock the account out.
-    mfaRequired: boolean('mfa_required').default(false).notNull(),
-    // Maximum lifetime of a session, measured from the JWT's `iat`
-    // claim. NULL = no max (Supabase default — refresh tokens never
-    // expire on their own). 0 < value ≤ 7*24*60 (one week ceiling).
-    sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
-    // Idle timeout: a session is killed after this many minutes of no
-    // requests against this account. NULL = no idle gate. We update
-    // last_seen at most every 60s to keep DB write pressure bounded.
-    sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
-    // PAT lifecycle policy (CLI Personal Access Tokens). All three
-    // independent — admins can mix any combination.
-    /** When set, PATs whose requested `expires_at` is further out than
-     *  this are refused at mint. NULL = no ceiling. Units: days. */
-    patMaxLifetimeDays: integer('pat_max_lifetime_days'),
-    /** When true, minting a PAT without an `expires_at` is refused.
-     *  Pairs with patMaxLifetimeDays — admins typically set both. */
-    patRequireExpiry: boolean('pat_require_expiry').default(false).notNull(),
-    /** When set, PATs not used in this many days are auto-revoked on
-     *  next validate. NULL = no idle gate. Units: days. */
-    patIdleRevokeDays: integer('pat_idle_revoke_days'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  accountId: uuid('account_id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
+  setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
+  // When true the IAM engine rejects every browser/JWT request whose
+  // session is not at AAL2 (MFA-verified). PATs are exempt — they're
+  // expected to gate via per-policy require_mfa conditions instead.
+  // Super-admins are also exempt so flipping the switch can never
+  // permanently lock the account out.
+  mfaRequired: boolean('mfa_required').default(false).notNull(),
+  // Maximum lifetime of a session, measured from the JWT's `iat`
+  // claim. NULL = no max (Supabase default — refresh tokens never
+  // expire on their own). 0 < value ≤ 7*24*60 (one week ceiling).
+  sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
+  // Idle timeout: a session is killed after this many minutes of no
+  // requests against this account. NULL = no idle gate. We update
+  // last_seen at most every 60s to keep DB write pressure bounded.
+  sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
+  // PAT lifecycle policy (CLI Personal Access Tokens). All three
+  // independent — admins can mix any combination.
+  /** When set, PATs whose requested `expires_at` is further out than
+   *  this are refused at mint. NULL = no ceiling. Units: days. */
+  patMaxLifetimeDays: integer('pat_max_lifetime_days'),
+  /** When true, minting a PAT without an `expires_at` is refused.
+   *  Pairs with patMaxLifetimeDays — admins typically set both. */
+  patRequireExpiry: boolean('pat_require_expiry').default(false).notNull(),
+  /** When set, PATs not used in this many days are auto-revoked on
+   *  next validate. NULL = no idle gate. Units: days. */
+  patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const accountMembers = kortixSchema.table(
@@ -202,15 +234,15 @@ export const accountInvitations = kortixSchema.table(
      *  ride-along pattern as project grants. */
     bootstrapGrants:
       jsonb('bootstrap_grants').$type<
-      Array<
+        Array<
           | {
               project_id: string;
               role: 'manager' | 'editor' | 'member';
               expires_at?: string | null;
             }
-        | { group_id: string }
-      >
-    >(),
+          | { group_id: string }
+        >
+      >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     acceptedByUserId: uuid('accepted_by_user_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -287,6 +319,14 @@ export const projects = kortixSchema.table(
     defaultBranch: varchar('default_branch', { length: 255 }).default('main').notNull(),
     manifestPath: text('manifest_path').default('kortix.yaml').notNull(),
     status: projectStatusEnum('status').default('active').notNull(),
+    // Delivery floor for secrets created in this project. Composed as a MAX with
+    // the row's own strategy, so raising it here can only ever strengthen an
+    // existing secret. Stays 'runtime' for every existing project — a
+    // Kortix-as-a-Backend project is the case that wants 'denied', where an
+    // undeclared secret exists but has no path until someone declares one.
+    secretDefaultStrategy: projectSecretStrategyEnum('secret_default_strategy')
+      .default('runtime')
+      .notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     // Monotonic CAS token for sandbox-provider switching. Reserved (bumped) on
     // THIS row at switch-REQUEST time and stamped onto the new provider_transitions
@@ -466,6 +506,57 @@ export const projectSecretScopeEnum = kortixSchema.enum('project_secret_scope', 
 ]);
 
 /**
+ * How a non-`runtime` secret is allowed to leave the box. Stored shape only —
+ * the grammar, the host/method/path matcher and the "no match ⇒ deny" rule live
+ * in the API's strategy module, which parses this blob DEFENSIVELY: a row can
+ * outlive the code that wrote it, and for `egress` this JSON is the thing that
+ * decides whether a credential is attached to an agent-influenced request.
+ *
+ * Keys are snake_case because this is the same document the REST route, the
+ * manifest `[env]` object form and the CLI accept — one grammar, not three.
+ */
+export interface SecretEgressRule {
+  /** Exact host, or ONE leading `*.` suffix. Never a regex — see matchRule. */
+  host: string;
+  /** Absent or empty = any method. */
+  methods?: string[];
+  /** Exact path, or ONE trailing `/*`. Absent = any path under `host`. */
+  path?: string;
+  /** Where the credential is attached. Absent = the policy-level default. */
+  inject?: SecretInjectionSlot;
+}
+
+export type SecretInjectionSlot =
+  | { kind: 'header'; name: string; template?: string }
+  | { kind: 'query'; name: string }
+  | { kind: 'json_body_field'; path: string };
+
+export interface SecretEgressPolicy {
+  /** For `strategy='broker'`: which Kortix chokepoint holds the real value. */
+  backend?: 'llm_gateway' | 'executor' | 'git_proxy' | 'kortix_fetch';
+  /** Env var carrying the base URL that points an unmodified vendor SDK at us. */
+  base_url_env?: string;
+  /**
+   * REQUIRED and non-empty. A policy with no rules matches nothing, and since
+   * "no match" is a deny, it would be an elaborate way to write `denied` — far
+   * more likely a caller who forgot the field than one who meant it.
+   */
+  rules: SecretEgressRule[];
+  /**
+   * REQUIRED. Where the credential is attached when a rule does not override it.
+   * "First match wins, no match denies" only means something if a matched rule
+   * has a defined slot to inject into; an absent default would leave a matched
+   * request with nowhere to put the secret and no principled answer.
+   */
+  inject: SecretInjectionSlot;
+  /** `observe` tunnels and audits undeclared hosts so a project can discover its
+   *  real egress footprint before committing to `deny`. */
+  on_no_match?: 'deny' | 'observe';
+  /** `tunnel` blind-pipes a host for cert-pinned clients — and so cannot inject. */
+  tls?: 'terminate' | 'tunnel';
+}
+
+/**
  * A project secret is `{ identifier, name (the KEY), value }`. `identifier` is
  * the unique-per-project handle — the human-facing label AND what an agent's
  * `secrets` grant (kortix.yaml) references. `name` is the env var KEY injected
@@ -492,6 +583,29 @@ export const projectSecrets = kortixSchema.table(
     name: varchar('name', { length: 64 }).notNull(),
     valueEnc: text('value_enc').notNull(),
     scope: projectSecretScopeEnum('scope').default('runtime').notNull(),
+    /** How the value reaches the wire. See projectSecretStrategyEnum. Set on
+     *  INSERT only, never on conflict-update — mirroring `scope` — so a value
+     *  re-entered through a setup link or `kortix env push` can never silently
+     *  downgrade a brokered secret back to plaintext. */
+    strategy: projectSecretStrategyEnum('strategy').default('runtime').notNull(),
+    /** NULL while strategy = 'runtime'; there is no wire for a plaintext row. */
+    egressPolicy: jsonb('egress_policy').$type<SecretEgressPolicy>(),
+    /** Format-shaping prefix for the minted handle (e.g. 'sk-ant-api03-') so a
+     *  vendor SDK that regex-validates key SHAPE keeps constructing. NULL uses
+     *  the self-describing default, which instead lands remediation text in the
+     *  model's own context when a stray SDK 401s. */
+    handlePrefix: varchar('handle_prefix', { length: 48 }),
+    /** Free-text note. The setup-link flow has always collected this and thrown
+     *  it away; the Delivery UI needs somewhere to say what a secret is for. */
+    description: text('description'),
+    /** Last explicit rotation. Distinct from updatedAt, which any edit bumps —
+     *  "anything ever delivered as runtime must be ROTATED, not re-scoped", so
+     *  this has to be answerable per secret. */
+    rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+    /** Pins the strategy against every write path including the dedicated
+     *  strategy route. An agent with an unrestricted grant can otherwise flip a
+     *  row back to 'runtime' and reboot to read the value it was denied. */
+    strategyLocked: boolean('strategy_locked').default(false).notNull(),
     // NULL = the shared project-level row. Non-null = that member's PRIVATE
     // per-identifier override (used ONLY by the CODEX_AUTH_JSON per-user
     // provider login today — the general "only me" override was retired, see
@@ -519,6 +633,12 @@ export const projectSecrets = kortixSchema.table(
     uniqueIndex('idx_project_secrets_project_name_owner')
       .on(table.projectId, table.name, table.ownerUserId)
       .where(sql`${table.ownerUserId} is not null`),
+    // NOTE: a partial index `idx_project_secrets_project_strategy`
+    // ((project_id, strategy) WHERE strategy <> 'runtime') ALSO exists, created
+    // by 20260728132613912_secret_delivery_indexes.concurrent.ts. It is
+    // intentionally NOT declared here so `db:generate` won't emit a conflicting
+    // plain CREATE INDEX against the already-built one — index create/drop is
+    // the CONCURRENTLY escape hatch's territory (see MIGRATIONS.md).
   ],
 );
 
@@ -599,12 +719,35 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
+    // origin_ref's live sessions, checked on every backend session create.
+    // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
+    // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
+    // NULL, so it indexes only live backend sessions — a small fraction of the
+    // table, and nothing at all for non-KaaB projects.
+    // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
+    // statuses — the partial active-only index below cannot serve it.
+    index('idx_project_sessions_project_origin')
+      .on(table.projectId, table.originRef)
+      .where(sql`${table.originRef} is not null`),
+    index('idx_project_sessions_account_origin_active')
+      .on(table.accountId, table.originRef)
+      .where(
+        sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
+      ),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
       table.projectId,
       table.sessionId,
     ),
+    uniqueIndex('idx_project_sessions_one_available_warm')
+      .on(table.projectId, table.createdBy)
+      .where(
+        sql`${table.createdBy} is not null
+          and ${table.metadata}->'warm_session'->>'state' = 'available'
+          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
+      ),
     // NOTE: a partial composite index `idx_project_sessions_account_active`
     // ((account_id) WHERE status IN active-set) ALSO exists — created by the
     // hand-written migration drizzle/20260617102106_account_active_session_index.sql
@@ -643,6 +786,73 @@ export const projectSessionRuntimeContexts = kortixSchema.table(
     ),
   ],
 );
+
+/**
+ * Lifecycle of one minted secret handle. `superseded` rather than deletion so a
+ * handle that shows up after rotation can still be attributed to the session and
+ * secret it was minted for — an unattributable handle is indistinguishable from
+ * a forged one, which is the whole point of keeping the row.
+ */
+export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_handle_status', [
+  'active',
+  'superseded',
+  'revoked',
+]);
+
+/**
+ * The handle a sandbox holds INSTEAD of a secret's value when that secret's
+ * delivery strategy is not `runtime`. One row per (session, secret, revision);
+ * minted at boot and reused on every hot push, so the string inside the box is
+ * stable for the session's life.
+ *
+ * The row stores `lookupId` and a SHA-256 of the full handle — never the handle
+ * itself. Presenting a handle is authentication, so a dump of this table must
+ * not be usable to spend the credentials it describes.
+ *
+ * `policySnapshot` is frozen at mint time on purpose: a live handle may LOSE
+ * validity (revocation, session end) but must never GAIN a host. Re-reading the
+ * secret's current `egressPolicy` at call time would let an agent widen its own
+ * reach by editing the row it was denied the value of.
+ *
+ * NOTE: this table's indexes — idx_secret_handles_lookup (unique, lookup_id),
+ * idx_secret_handles_session (session_id) and idx_secret_handles_session_secret_rev
+ * (unique, session_id + secret_id + revision) — are intentionally NOT declared
+ * here. They ship in 20260728132613912_secret_delivery_indexes.concurrent.ts so
+ * index creation stays on the CONCURRENTLY path; declaring them would make
+ * `db:generate` emit conflicting plain CREATE INDEX statements. See MIGRATIONS.md.
+ */
+export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
+  handleId: uuid('handle_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  sessionId: text('session_id')
+    .notNull()
+    .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  secretId: uuid('secret_id')
+    .notNull()
+    .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
+  /** Denormalized from the secret so a handle presented after the row is
+   *  deleted still audits as something a human can read. */
+  identifier: varchar('identifier', { length: 128 }).notNull(),
+  /** The env var KEY this handle was emitted under. Same non-uniqueness as
+   *  project_secrets.name — two identifiers may share one key. */
+  envName: varchar('env_name', { length: 64 }).notNull(),
+  /** The public 96-bit component of the handle; what the broker looks up. */
+  lookupId: varchar('lookup_id', { length: 32 }).notNull(),
+  /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
+   *  not char(64) despite the fixed width: char blank-pads and compares
+   *  ignoring trailing spaces, and squawk's ban-char-field is on. */
+  handleHash: varchar('handle_hash', { length: 64 }).notNull(),
+  /** Bumped by per-prompt rotation; the previous revision goes `superseded`
+   *  with an overlap window rather than dying mid-turn. */
+  revision: integer('revision').default(1).notNull(),
+  policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
+  status: projectSecretHandleStatusEnum('status').default('active').notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
 
 // Account-scoped default model preferences. Drives server-side resolution of the
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
@@ -737,6 +947,29 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .default({})
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
+    /**
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. The gateway refuses anything not effectively
+     * enabled everywhere (chat, Slack, triggers, API); the picker and "Manage
+     * models" render from the same answer.
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
+     */
+    modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
+    /**
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
+     */
+    disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -753,6 +986,14 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_gen_config_object_check',
       sql`jsonb_typeof(${table.modelGenerationConfig}) = 'object'`,
+    ),
+    check(
+      'project_llm_routing_policies_disabled_models_array_check',
+      sql`jsonb_typeof(${table.disabledModels}) = 'array'`,
+    ),
+    check(
+      'project_llm_routing_policies_model_overrides_object_check',
+      sql`jsonb_typeof(${table.modelOverrides}) = 'object'`,
     ),
   ],
 );
@@ -818,6 +1059,44 @@ export const projectSessionPublicShares = kortixSchema.table(
 );
 
 /**
+ * Durable, lossless ACP JSON-RPC envelope log.
+ *
+ * `ordinal` is the client-facing stream cursor. `upstreamEventId` is scoped by
+ * `runtimeInstanceId` because every harness process starts its own event
+ * sequence. This keeps retries idempotent without treating a restarted harness
+ * as the previous process.
+ */
+export const acpSessionEnvelopes = kortixSchema.table(
+  'acp_session_envelopes',
+  {
+    ordinal: bigint('ordinal', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+    eventId: uuid('event_id').defaultRandom().notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    runtimeInstanceId: text('runtime_instance_id').notNull(),
+    direction: varchar('direction', { length: 32 }).notNull(),
+    upstreamEventId: bigint('upstream_event_id', { mode: 'number' }),
+    envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_acp_session_envelopes_event_id').on(table.eventId),
+    uniqueIndex('idx_acp_session_envelopes_upstream_event')
+      .on(table.sessionId, table.direction, table.runtimeInstanceId, table.upstreamEventId)
+      .where(sql`${table.upstreamEventId} IS NOT NULL`),
+    index('idx_acp_session_envelopes_session_ordinal').on(table.sessionId, table.ordinal),
+    check(
+      'acp_session_envelopes_direction_check',
+      sql`${table.direction} IN ('client_to_agent', 'agent_to_client')`,
+    ),
+  ],
+);
+
+/**
  * Runtime state for triggers defined in the project repo
  * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
  * row holds the cron scheduler's "last fired" state so we don't need to
@@ -855,11 +1134,81 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
+    // Materialized schedule catalog. The repo manifest remains the source of
+    // truth, but the timing path reads only these indexed columns. Nullable
+    // columns keep mixed-version deploys safe while existing rows are cataloged.
+    triggerType: varchar('trigger_type', { length: 16 }),
+    enabled: boolean('enabled'),
+    scheduleCron: text('schedule_cron'),
+    scheduleRunAt: timestamp('schedule_run_at', { withTimezone: true }),
+    scheduleTimezone: varchar('schedule_timezone', { length: 128 }),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }),
+    scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
+    nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
+    lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
+    index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Durable execution queue for materialized cron slots.
+ *
+ * A unique project/slug/revision/slot key prevents duplicate execution across
+ * scheduler ticks, pod restarts, and concurrent leaders. The schedule catalog
+ * advances in the same transaction that inserts this row.
+ */
+export const projectTriggerExecutions = kortixSchema.table(
+  'project_trigger_executions',
+  {
+    executionId: uuid('execution_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }).notNull(),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 32 }).default('queued').notNull(),
+    spec: jsonb('spec').notNull().$type<Record<string, unknown>>(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    sessionId: text('session_id'),
+    commandId: uuid('command_id'),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+      name: 'project_trigger_exec_project_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_trigger_exec_session_fk',
+    }).onDelete('set null'),
+    uniqueIndex('idx_project_trigger_executions_slot').on(
+      table.projectId,
+      table.slug,
+      table.scheduleRevision,
+      table.scheduledFor,
+    ),
+    index('idx_project_trigger_executions_due').on(
+      table.status,
+      table.availableAt,
+      table.lockedUntil,
+    ),
+    index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
   ],
 );
 
@@ -1108,6 +1457,92 @@ export const chatTurnStreams = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+/**
+ * The shared transcript of a live voice call — written by the realtime provider
+ * as speech happens, read back by the Kortix session through `voice_read`.
+ *
+ * `cursor` (bigserial) is what makes the read non-blocking: the agent loop is
+ * single-threaded and can never sit on a stream, so it asks "what is new since
+ * X" and gets an answer immediately. Ordering is on the cursor, never
+ * created_at — two turns can land in the same millisecond and a wall-clock tie
+ * would silently drop one on the next poll.
+ */
+export const voiceCallTurns = kortixSchema.table(
+  'voice_call_turns',
+  {
+    cursor: bigint('cursor', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
+     *  'tool' (an ask_kortix/run_command call the worker made through the
+     *  voice MCP — see mcp.ts's callTool). CHECK constraint enforces this set. */
+    role: varchar('role', { length: 16 }).notNull(),
+    speaker: text('speaker'),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_voice_call_turns_call_cursor').on(table.callId, table.cursor),
+    index('idx_voice_call_turns_session').on(table.sessionId, table.cursor),
+  ],
+);
+
+/**
+ * The Kortix agent's read position in a call's transcript — the state that lets
+ * a bare `read_transcript {}` mean "only what I have not been shown yet".
+ *
+ * Cursor-paging was already incremental, but only for an agent that threaded the
+ * returned cursor back on every call; one that forgot passed 0 and re-read the
+ * whole conversation. Keeping the position here makes the cheap path the DEFAULT
+ * path and removes the agent's obligation to remember anything.
+ *
+ * `cursor` is the highest `voice_call_turns.cursor` actually handed over, and it
+ * only ever moves forward (the upsert's `setWhere` refuses to lower it) — a race
+ * between two reads in one call must not rewind it. Exactly one writer: the
+ * agent-side `read_transcript`. The call page's poll (r7.ts,
+ * public-join-routes.ts) passes its own explicit cursor and never touches this
+ * row, so a human scrolling the transcript cannot consume the agent's unread.
+ */
+export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
+  /** The call — which is also the session id. */
+  callId: text('call_id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  cursor: bigint('cursor', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Short, ungessable join links that resolve server-side to a fresh LiveKit
+ * access token — see `apps/api/src/channels/voice/join-links.ts`. Replaces
+ * handing out the raw ~300-char LiveKit JWT itself in `voice_spawn`'s
+ * `join_url` (fragile in transit: one corrupted character breaks the
+ * signature and the browser gets "invalid token").
+ *
+ * `token_hash` (sha256 of the raw token), never the raw token, is the primary
+ * key — same posture as `project_session_public_shares.token_hash`: a DB dump
+ * should not itself be a bag of live capability tokens.
+ *
+ * DB-backed rather than a stateless encrypted envelope (compare
+ * `setup-links/token.ts`) for the one property a self-contained token cannot
+ * give: revocation. A live call can end while a copy of its link is still
+ * sitting in someone's chat history, and that link must stop working the
+ * moment the call does (`revoked_at`, set by `endCall`) -- not just whenever
+ * its TTL happens to lapse.
+ */
+export const voiceJoinLinks = kortixSchema.table(
+  'voice_join_links',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_voice_join_links_call').on(table.callId)],
 );
 
 export const teamsPendingUploads = kortixSchema.table(
@@ -1714,7 +2149,7 @@ export const accountTokens = kortixSchema.table(
     serviceAccountId: uuid('service_account_id').references(
       () => serviceAccounts.serviceAccountId,
       {
-      onDelete: 'cascade',
+        onDelete: 'cascade',
       },
     ),
   },
@@ -1730,13 +2165,13 @@ export const accountTokens = kortixSchema.table(
 // ─── OAuth2 Provider ──────────────────────────────────────────────────────
 
 export const oauthClients = kortixSchema.table('oauth_clients', {
-    clientId: uuid('client_id').defaultRandom().primaryKey(),
-    clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
-    name: varchar('name', { length: 255 }).notNull(),
-    redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
-    scopes: jsonb('scopes').default([]).$type<string[]>(),
-    active: boolean('active').default(true).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  clientId: uuid('client_id').defaultRandom().primaryKey(),
+  clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
+  scopes: jsonb('scopes').default([]).$type<string[]>(),
+  active: boolean('active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const oauthAuthorizationCodes = kortixSchema.table(
@@ -1938,10 +2373,10 @@ export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
 export const accountGithubInstallationsRelations = relations(
   accountGithubInstallations,
   ({ one }) => ({
-  account: one(accounts, {
-    fields: [accountGithubInstallations.accountId],
-    references: [accounts.accountId],
-  }),
+    account: one(accounts, {
+      fields: [accountGithubInstallations.accountId],
+      references: [accounts.accountId],
+    }),
   }),
 );
 
@@ -1986,6 +2421,20 @@ export const usageEvents = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
     sessionId: text('session_id'),
+    /**
+     * Kortix-as-a-Backend attribution: which of the wrapper's END-USERS this
+     * spend belongs to. A server-derived COPY of project_sessions.origin_ref,
+     * resolved from the session at emit time — never read from a request body.
+     *
+     * Denormalized rather than joined at read time on purpose: the legacy router
+     * path takes session_id from the request (body / X-Session-ID), so joining
+     * usage_events.session_id -> project_sessions would let one end-user's agent
+     * bill spend to another end-user inside the same wrapper account.
+     *
+     * NULL = unattributed (any row written before this column existed, plus
+     * non-session spend like the model playground).
+     */
+    originRef: text('origin_ref'),
     actorUserId: uuid('actor_user_id'),
     provider: text('provider').notNull(),
     model: text('model').notNull(),
@@ -1994,7 +2443,8 @@ export const usageEvents = kortixSchema.table(
     outputTokens: integer('output_tokens').default(0).notNull(),
     cachedTokens: integer('cached_tokens').default(0).notNull(),
     cacheWriteTokens: integer('cache_write_tokens').default(0).notNull(),
-    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    legacyCostUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    costUsd: numeric('cost_usd_precise', { precision: 20, scale: 10 }).default('0').notNull(),
     streaming: boolean('streaming').default(false).notNull(),
     upstreamStatus: integer('upstream_status'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
@@ -2005,6 +2455,12 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    // Per-end-user metering: "spend for origin_ref X in a window", and the
+    // group_by=origin_ref rollup. Partial — the vast majority of rows are
+    // non-backend spend with a NULL origin_ref and never match this predicate.
+    index('idx_usage_events_account_origin_time')
+      .on(table.accountId, table.originRef, table.createdAt)
+      .where(sql`${table.originRef} is not null`),
   ],
 );
 
@@ -2035,8 +2491,15 @@ export const gatewayRequestLogs = kortixSchema.table(
     inputTokens: integer('input_tokens').default(0).notNull(),
     outputTokens: integer('output_tokens').default(0).notNull(),
     cachedTokens: integer('cached_tokens').default(0).notNull(),
-    upstreamCost: numeric('upstream_cost', { precision: 12, scale: 6 }).default('0').notNull(),
-    finalCost: numeric('final_cost', { precision: 12, scale: 6 }).default('0').notNull(),
+    cacheWriteTokens: integer('cache_write_tokens').default(0).notNull(),
+    legacyUpstreamCost: numeric('upstream_cost', { precision: 12, scale: 6 })
+      .default('0')
+      .notNull(),
+    upstreamCost: numeric('upstream_cost_precise', { precision: 20, scale: 10 })
+      .default('0')
+      .notNull(),
+    legacyFinalCost: numeric('final_cost', { precision: 12, scale: 6 }).default('0').notNull(),
+    finalCost: numeric('final_cost_precise', { precision: 20, scale: 10 }).default('0').notNull(),
     streaming: boolean('streaming').default(false).notNull(),
     billingMode: text('billing_mode'),
     request: jsonb('request').$type<Record<string, unknown>>(),
@@ -2135,14 +2598,26 @@ export const creditAccounts = kortixSchema.table(
   'credit_accounts',
   {
     accountId: uuid('account_id').primaryKey().notNull(),
-    balance: numeric('balance', { precision: 12, scale: 4 }).default('0').notNull(),
-    lifetimeGranted: numeric('lifetime_granted', { precision: 12, scale: 4 })
+    legacyBalance: numeric('balance', { precision: 12, scale: 4 }).default('0').notNull(),
+    balance: numeric('balance_precise', { precision: 20, scale: 10 }).default('0').notNull(),
+    legacyLifetimeGranted: numeric('lifetime_granted', { precision: 12, scale: 4 })
       .default('0')
       .notNull(),
-    lifetimePurchased: numeric('lifetime_purchased', { precision: 12, scale: 4 })
+    lifetimeGranted: numeric('lifetime_granted_precise', { precision: 20, scale: 10 })
       .default('0')
       .notNull(),
-    lifetimeUsed: numeric('lifetime_used', { precision: 12, scale: 4 }).default('0').notNull(),
+    legacyLifetimePurchased: numeric('lifetime_purchased', { precision: 12, scale: 4 })
+      .default('0')
+      .notNull(),
+    lifetimePurchased: numeric('lifetime_purchased_precise', { precision: 20, scale: 10 })
+      .default('0')
+      .notNull(),
+    legacyLifetimeUsed: numeric('lifetime_used', { precision: 12, scale: 4 })
+      .default('0')
+      .notNull(),
+    lifetimeUsed: numeric('lifetime_used_precise', { precision: 20, scale: 10 })
+      .default('0')
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
     lastGrantDate: timestamp('last_grant_date', { withTimezone: true, mode: 'string' }),
@@ -2150,13 +2625,22 @@ export const creditAccounts = kortixSchema.table(
     billingCycleAnchor: timestamp('billing_cycle_anchor', { withTimezone: true, mode: 'string' }),
     nextCreditGrant: timestamp('next_credit_grant', { withTimezone: true, mode: 'string' }),
     stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
-    expiringCredits: numeric('expiring_credits', { precision: 12, scale: 4 })
+    legacyExpiringCredits: numeric('expiring_credits', { precision: 12, scale: 4 })
       .default('0')
       .notNull(),
-    nonExpiringCredits: numeric('non_expiring_credits', { precision: 12, scale: 4 })
+    expiringCredits: numeric('expiring_credits_precise', { precision: 20, scale: 10 })
       .default('0')
       .notNull(),
-    dailyCreditsBalance: numeric('daily_credits_balance', { precision: 10, scale: 2 })
+    legacyNonExpiringCredits: numeric('non_expiring_credits', { precision: 12, scale: 4 })
+      .default('0')
+      .notNull(),
+    nonExpiringCredits: numeric('non_expiring_credits_precise', { precision: 20, scale: 10 })
+      .default('0')
+      .notNull(),
+    legacyDailyCreditsBalance: numeric('daily_credits_balance', { precision: 10, scale: 2 })
+      .default('0')
+      .notNull(),
+    dailyCreditsBalance: numeric('daily_credits_balance_precise', { precision: 20, scale: 10 })
       .default('0')
       .notNull(),
     trialStatus: varchar('trial_status', { length: 20 }).default('none'),
@@ -2330,8 +2814,14 @@ export const creditLedger = kortixSchema.table(
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
     accountId: uuid('account_id').notNull(),
-    amount: numeric('amount', { precision: 12, scale: 4 }).notNull(),
-    balanceAfter: numeric('balance_after', { precision: 12, scale: 4 }).notNull(),
+    legacyAmount: numeric('amount', { precision: 12, scale: 4 }).default('0').notNull(),
+    amount: numeric('amount_precise', { precision: 20, scale: 10 }).default('0').notNull(),
+    legacyBalanceAfter: numeric('balance_after', { precision: 12, scale: 4 })
+      .default('0')
+      .notNull(),
+    balanceAfter: numeric('balance_after_precise', { precision: 20, scale: 10 })
+      .default('0')
+      .notNull(),
     type: text().notNull(),
     description: text(),
     referenceId: uuid('reference_id'),
@@ -2692,9 +3182,9 @@ export const accessRequestStatusEnum = kortixSchema.enum('access_request_status'
 ]);
 
 export const platformSettings = kortixSchema.table('platform_settings', {
-    key: varchar('key', { length: 255 }).primaryKey(),
-    value: jsonb('value').notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  key: varchar('key', { length: 255 }).primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const accessAllowlist = kortixSchema.table(
@@ -3595,12 +4085,31 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.connectorId,
       table.profileId,
     ),
-    uniqueIndex('idx_executor_connection_profiles_default')
+    // A connector may hold MANY connections (e.g. support@ and sales@ for the
+    // team, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one team default, and at most one default
+    // per member/agent/external owner. Split into two partial indexes so the
+    // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
+    // is still capped at one.
+    uniqueIndex('idx_executor_connection_profiles_default_project')
       .on(table.connectorId)
-      .where(sql`${table.isDefault} = true`),
-    uniqueIndex('idx_executor_connection_profiles_owner')
+      .where(sql`${table.isDefault} = true and ${table.ownerType} = 'project'`),
+    uniqueIndex('idx_executor_connection_profiles_default_owner')
       .on(table.connectorId, table.ownerType, table.ownerId)
+      .where(sql`${table.isDefault} = true and ${table.ownerId} is not null`),
+    // Identity is (connector, owner, LABEL) — the label is the discriminator that
+    // lets one owner hold several connections ("Work", "Personal") while keeping
+    // reconcile idempotent: the same label updates in place, a new label adds a
+    // new connection.
+    uniqueIndex('idx_executor_connection_profiles_owner_label')
+      .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
+    // Project-owned rows carry owner_id NULL, so the index above (partial on
+    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // connector are allowed, distinguished by label — this keeps that set unique.
+    uniqueIndex('idx_executor_connection_profiles_project_label')
+      .on(table.connectorId, table.label)
+      .where(sql`${table.ownerId} is null`),
     index('idx_executor_connection_profiles_project').on(table.projectId),
     index('idx_executor_connection_profiles_connector').on(table.connectorId),
     check(
@@ -3743,6 +4252,91 @@ export const executorCredentials = kortixSchema.table(
   ],
 );
 
+/** Encrypted provider-independent OAuth2 application configuration per profile. */
+export const executorOAuthApplications = kortixSchema.table(
+  'executor_oauth_applications',
+  {
+    applicationId: uuid('application_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    connectorId: uuid('connector_id').notNull(),
+    profileId: uuid('profile_id').notNull(),
+    configEnc: text('config_enc').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.accountId, table.projectId, table.connectorId, table.profileId],
+      foreignColumns: [
+        executorConnectionProfiles.accountId,
+        executorConnectionProfiles.projectId,
+        executorConnectionProfiles.connectorId,
+        executorConnectionProfiles.profileId,
+      ],
+      name: 'executor_oauth_applications_profile_tenant_fk',
+    }).onDelete('cascade'),
+    uniqueIndex('idx_executor_oauth_applications_profile').on(table.profileId),
+    index('idx_executor_oauth_applications_project').on(table.projectId),
+  ],
+);
+
+/**
+ * Short-lived Authorization Code or Device Authorization transaction.
+ * State is hashed. PKCE verifiers and device codes are encrypted.
+ */
+export const executorOAuthSessions = kortixSchema.table(
+  'executor_oauth_sessions',
+  {
+    sessionId: uuid('session_id').defaultRandom().primaryKey(),
+    applicationId: uuid('application_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    profileId: uuid('profile_id').notNull(),
+    initiatedBy: uuid('initiated_by').notNull(),
+    flow: varchar('flow', { length: 32 }).notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    stateHash: varchar('state_hash', { length: 64 }),
+    pkceVerifierEnc: text('pkce_verifier_enc'),
+    deviceCodeEnc: text('device_code_enc'),
+    successRedirectUri: text('success_redirect_uri'),
+    errorRedirectUri: text('error_redirect_uri'),
+    scopes: text('scopes').array(),
+    intervalSeconds: integer('interval_seconds'),
+    nextPollAt: timestamp('next_poll_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    errorCode: varchar('error_code', { length: 128 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.applicationId],
+      foreignColumns: [executorOAuthApplications.applicationId],
+      name: 'executor_oauth_sessions_application_fk',
+    }).onDelete('cascade'),
+    uniqueIndex('idx_executor_oauth_sessions_state_hash')
+      .on(table.stateHash)
+      .where(sql`${table.stateHash} is not null`),
+    index('idx_executor_oauth_sessions_profile').on(table.profileId),
+    index('idx_executor_oauth_sessions_expires').on(table.expiresAt),
+    check(
+      'executor_oauth_sessions_flow_check',
+      sql`${table.flow} IN ('authorization_code', 'device_authorization')`,
+    ),
+    check(
+      'executor_oauth_sessions_status_check',
+      sql`${table.status} IN ('pending', 'active', 'consumed', 'error', 'expired')`,
+    ),
+    check(
+      'executor_oauth_sessions_material_check',
+      sql`(${table.flow} = 'authorization_code' AND ${table.stateHash} IS NOT NULL AND ${table.pkceVerifierEnc} IS NOT NULL AND ${table.deviceCodeEnc} IS NULL) OR (${table.flow} = 'device_authorization' AND ${table.stateHash} IS NULL AND ${table.pkceVerifierEnc} IS NULL AND ${table.deviceCodeEnc} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const executorConnectorActions = kortixSchema.table(
   'executor_connector_actions',
   {
@@ -3787,6 +4381,48 @@ export const executorConnectorPolicies = kortixSchema.table(
 );
 
 /**
+ * Per-CONNECTION tool-call policies, keyed by profile_id.
+ *
+ * One connector can hold several connections — support@, sales@, a member's own
+ * mailbox — and they often warrant DIFFERENT permissions. Connector-scoped rules
+ * cannot express that: they are keyed by the connector, so every connection under
+ * it shares one policy.
+ *
+ * Deliberately NOT in executor_connector_policies: sync.ts deletes every row for
+ * a connector and re-inserts from the manifest on each manifest write, so a
+ * DB-authored row there would be destroyed. Deliberately NOT in the manifest
+ * either: a member's private connection can never appear in git, and profile
+ * uuids are not portable across projects.
+ *
+ * Evaluated AFTER project rules (which remain un-overridable) and BEFORE
+ * connector rules, so the more specific scope wins over the connector default.
+ */
+export const executorConnectionPolicies = kortixSchema.table(
+  'executor_connection_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    profileId: uuid('profile_id').notNull(),
+    /** Connector-relative glob, same grammar as the connector-scoped rules. */
+    match: varchar('match', { length: 512 }).notNull(),
+    action: executorPolicyActionEnum('action').notNull(),
+    /** Authoring order — evaluated top-to-bottom, first match wins. */
+    position: integer('position').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_executor_connection_policies_profile').on(table.profileId),
+    // Named explicitly: the derived name would exceed Postgres's 63-char
+    // identifier limit and be silently truncated.
+    foreignKey({
+      columns: [table.profileId],
+      foreignColumns: [executorConnectionProfiles.profileId],
+      name: 'executor_connection_policies_profile_id_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
  * Project-scoped tool-call policies — materialized from top-level [[policies]]
  * in kortix.yaml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
  * across ALL connectors in the project; evaluated BEFORE any connector-scoped
@@ -3820,11 +4456,11 @@ export const executorDefaultModeEnum = kortixSchema.enum('executor_default_mode'
  * for back-compat with existing projects.
  */
 export const executorProjectSettings = kortixSchema.table('executor_project_settings', {
-    projectId: uuid('project_id')
-      .primaryKey()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    defaultMode: executorDefaultModeEnum('default_mode').default('allow_all').notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  defaultMode: executorDefaultModeEnum('default_mode').default('allow_all').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /** Audit + approval ledger for every executor call. */
@@ -3924,10 +4560,10 @@ export const executorConnectorActionsRelations = relations(executorConnectorActi
 export const executorConnectorPoliciesRelations = relations(
   executorConnectorPolicies,
   ({ one }) => ({
-  connector: one(executorConnectors, {
-    fields: [executorConnectorPolicies.connectorId],
-    references: [executorConnectors.connectorId],
-  }),
+    connector: one(executorConnectors, {
+      fields: [executorConnectorPolicies.connectorId],
+      references: [executorConnectors.connectorId],
+    }),
   }),
 );
 

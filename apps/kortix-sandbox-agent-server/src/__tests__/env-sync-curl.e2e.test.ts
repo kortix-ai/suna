@@ -32,6 +32,7 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
   }
 }
 

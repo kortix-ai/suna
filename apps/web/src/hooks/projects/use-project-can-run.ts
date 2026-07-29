@@ -1,8 +1,13 @@
 'use client';
 
 import { useAccountState } from '@/hooks/billing';
+import {
+  type BillingState,
+  billingStateAllowsRun,
+  resolveBillingState,
+} from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 export function useProjectCanRun(projectId: string | undefined) {
@@ -22,20 +27,24 @@ export function useProjectCanRun(projectId: string | undefined) {
   });
 
   if (!isBillingEnabled()) {
-    return { canRun: true, isLoading: false, accountId };
+    return { canRun: true, isLoading: false, accountId, billingState: null as BillingState | null };
   }
 
   if (!projectId || projectLoading || (accountId && accountLoading)) {
-    return { canRun: false, isLoading: true, accountId };
+    return { canRun: false, isLoading: true, accountId, billingState: null as BillingState | null };
   }
 
   if (!accountId) {
-    return { canRun: false, isLoading: false, accountId };
+    return { canRun: false, isLoading: false, accountId, billingState: null as BillingState | null };
   }
 
+  // Resolved through the ONE billing-state resolver, so "can this account run"
+  // has the same answer here, on the session page, and in the API's gate.
+  const billingState = resolveBillingState(accountState);
   return {
-    canRun: accountState?.credits?.can_run ?? false,
+    canRun: !!accountState && billingStateAllowsRun(billingState),
     isLoading: false,
     accountId,
+    billingState,
   };
 }

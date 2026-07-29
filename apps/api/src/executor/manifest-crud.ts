@@ -10,9 +10,17 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
+import type { UpdateConnectionProfileCredentialInput } from '@kortix/api-contract';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, RESERVED_CONNECTOR_SLUGS, RESERVED_SLUG_PROVIDERS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import {
+  extractConnectors,
+  RESERVED_CONNECTOR_SLUGS,
+  RESERVED_SLUG_PROVIDERS,
+  type ConnectorPolicySpec,
+  type ConnectorPolicyAction,
+  type ConnectorSpec,
+} from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -22,7 +30,7 @@ import {
   type DefaultMode,
 } from '../projects/policies';
 import { syncProjectConnectors, type SyncResult } from './sync';
-import { upsertCredential } from './credentials';
+import { upsertCredential, upsertOAuth2Credential } from './credentials';
 import { resolveExperimentalFeature } from '../experimental/features';
 
 export interface ConnectorDraft {
@@ -41,7 +49,21 @@ export interface ConnectorDraft {
    *  removed 2026-07-05) — accepted for back-compat callers but never emitted
    *  into the manifest, since `shared` is already the implicit default. */
   credential?: 'shared';
-  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in?: 'header' | 'query'; name?: string; prefix?: string };
+  auth?: {
+    type?:
+      | 'none'
+      | 'bearer'
+      | 'basic'
+      | 'custom'
+      | 'api_key'
+      | 'oauth1'
+      | 'hmac'
+      | 'aws_sigv4'
+      | 'mtls';
+    in?: 'header' | 'query' | 'cookie';
+    name?: string;
+    prefix?: string;
+  };
   /** Static request headers sent on every call — an ordered map of header name
    *  → value (`{ Accept: 'application/json', 'X-Tenant-Id': 'acme' }`).
    *  NOT secrets: they are committed to kortix.yaml in plaintext, exactly like
@@ -78,7 +100,7 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   // Omitted means auto-detect; explicit none must remain a durable opt-out.
   if (d.auth && d.auth.type) {
     const auth: Record<string, unknown> = { type: d.auth.type };
-    if (d.auth.type === 'custom') {
+    if (d.auth.type === 'custom' || d.auth.type === 'api_key' || d.auth.type === 'hmac') {
       if (d.auth.in && d.auth.in !== 'header') auth.in = d.auth.in;
       if (d.auth.name) auth.name = d.auth.name;
     }
@@ -155,7 +177,9 @@ export async function upsertConnectorInManifest(
   }
 
   const entry = draftToEntry(draft);
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const idx = current.findIndex((c) => c?.slug === draft.slug);
   if (idx >= 0) {
     // Updating in place: carry over fields the connection draft doesn't own —
@@ -180,14 +204,21 @@ export async function upsertConnectorInManifest(
   const err = parsed.errors.find((e) => e.slug === draft.slug);
   if (err) return { ok: false, error: err.error, status: 400 };
 
-  const committed = await commitManifest(row, manifest, `chore: ${idx >= 0 ? 'update' : 'add'} connector ${draft.slug}`);
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: ${idx >= 0 ? 'update' : 'add'} connector ${draft.slug}`,
+  );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };
 }
 
-export async function deleteConnectorFromManifest(projectId: string, slug: string): Promise<CrudResult> {
+export async function deleteConnectorFromManifest(
+  projectId: string,
+  slug: string,
+): Promise<CrudResult> {
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
 
@@ -198,25 +229,50 @@ export async function deleteConnectorFromManifest(projectId: string, slug: strin
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const next = current.filter((c) => c?.slug !== slug);
   if (next.length === current.length) {
-    await db.delete(executorConnectors).where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)));
+    await db
+      .delete(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)));
     return { ok: true };
   }
   manifest.raw.connectors = next;
   const committed = await commitManifest(row, manifest, `chore: delete connector ${slug}`);
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
-  await db.delete(executorConnectors).where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)));
+  await db
+    .delete(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)));
   return { ok: true };
 }
 
 /** Set the SHARED credential value (userId null) — the only credential a
  *  connector has since `per_user` was removed 2026-07-05. */
-export async function setConnectorCredentialShared(projectId: string, slug: string, value: string): Promise<CrudResult> {
+export async function setConnectorCredentialShared(
+  projectId: string,
+  slug: string,
+  input: UpdateConnectionProfileCredentialInput,
+): Promise<CrudResult> {
   const connectorId = await connectorIdFor(projectId, slug);
   if (!connectorId) return { ok: false, error: 'connector not found', status: 404 };
-  await upsertCredential({ projectId, connectorId, userId: null, value, kind: 'secret' });
+  if ('oauth2' in input) {
+    await upsertOAuth2Credential({
+      projectId,
+      connectorId,
+      userId: null,
+      oauth2: input.oauth2,
+    });
+  } else {
+    await upsertCredential({
+      projectId,
+      connectorId,
+      userId: null,
+      value: input.value,
+      kind: input.kind,
+    });
+  }
   return { ok: true };
 }
 
@@ -244,7 +300,9 @@ export async function setConnectorCredentialModeInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
   delete entry.credential;
@@ -254,7 +312,11 @@ export async function setConnectorCredentialModeInManifest(
   const err = parsed.errors.find((e) => e.slug === slug);
   if (err) return { ok: false, error: err.error, status: 400 };
 
-  const committed = await commitManifest(row, manifest, `chore: set ${slug} credential mode → ${mode}`);
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: set ${slug} credential mode → ${mode}`,
+  );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
@@ -283,7 +345,9 @@ export async function setConnectorSensitiveInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
   // Omit the key when false so the emitted manifest stays minimal (false is the default).
@@ -295,7 +359,11 @@ export async function setConnectorSensitiveInManifest(
   const err = parsed.errors.find((e) => e.slug === slug);
   if (err) return { ok: false, error: err.error, status: 400 };
 
-  const committed = await commitManifest(row, manifest, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`);
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`,
+  );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
@@ -323,7 +391,9 @@ export async function setConnectorNameInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
   entry.name = trimmed;
@@ -333,7 +403,11 @@ export async function setConnectorNameInManifest(
   const err = parsed.errors.find((e) => e.slug === slug);
   if (err) return { ok: false, error: err.error, status: 400 };
 
-  const committed = await commitManifest(row, manifest, `chore: rename connector ${slug} → ${trimmed}`);
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: rename connector ${slug} → ${trimmed}`,
+  );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
@@ -355,7 +429,21 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: {
+    type:
+      | 'none'
+      | 'bearer'
+      | 'basic'
+      | 'custom'
+      | 'api_key'
+      | 'oauth1'
+      | 'hmac'
+      | 'aws_sigv4'
+      | 'mtls';
+    in: 'header' | 'query' | 'cookie';
+    name: string | null;
+    prefix: string | null;
+  };
   /** Static request headers (ordered map of name → value); `{}` when none. */
   headers: Record<string, string>;
 }
@@ -387,14 +475,23 @@ export async function getConnectorConfigFromManifest(
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     spec: spec.spec,
-    auth: { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix },
+    auth: {
+      type: spec.auth.type,
+      in: spec.auth.in,
+      name: spec.auth.name,
+      prefix: spec.auth.prefix,
+    },
     headers: { ...spec.headers },
   };
 }
 
 // ─── Per-connector policies (each connector's `policies:` list) ─────────────
 
-const CONNECTOR_POLICY_ACTIONS: readonly ConnectorPolicyAction[] = ['always_run', 'require_approval', 'block'];
+const CONNECTOR_POLICY_ACTIONS: readonly ConnectorPolicyAction[] = [
+  'always_run',
+  'require_approval',
+  'block',
+];
 
 /** Read a single connector's `policies:` list from kortix.yaml (source of truth). */
 export async function getConnectorPoliciesFromManifest(
@@ -405,7 +502,9 @@ export async function getConnectorPoliciesFromManifest(
   if (!row) return null;
   const manifest = await loadManifestForEdit(row).catch(() => null);
   if (!manifest) return { policies: [] };
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return null;
   const raw = Array.isArray(entry.policies) ? (entry.policies as Record<string, unknown>[]) : [];
@@ -427,10 +526,16 @@ export async function setConnectorPoliciesInManifest(
   policies: ConnectorPolicySpec[],
 ): Promise<CrudResult> {
   for (const [i, p] of policies.entries()) {
-    if (!p.match || typeof p.match !== 'string') return { ok: false, error: `rule #${i + 1}: \`match\` is required`, status: 400 };
-    if (!isValidMatcher(p.match.trim())) return { ok: false, error: `rule #${i + 1}: invalid regex pattern`, status: 400 };
+    if (!p.match || typeof p.match !== 'string')
+      return { ok: false, error: `rule #${i + 1}: \`match\` is required`, status: 400 };
+    if (!isValidMatcher(p.match.trim()))
+      return { ok: false, error: `rule #${i + 1}: invalid regex pattern`, status: 400 };
     if (!CONNECTOR_POLICY_ACTIONS.includes(p.action)) {
-      return { ok: false, error: `rule #${i + 1}: \`action\` must be ${CONNECTOR_POLICY_ACTIONS.join(' | ')}`, status: 400 };
+      return {
+        ok: false,
+        error: `rule #${i + 1}: \`action\` must be ${CONNECTOR_POLICY_ACTIONS.join(' | ')}`,
+        status: 400,
+      };
     }
   }
 
@@ -444,7 +549,9 @@ export async function setConnectorPoliciesInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
 
@@ -473,13 +580,19 @@ export interface ProjectPoliciesView {
 }
 
 /** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
-export async function getProjectPoliciesFromManifest(projectId: string): Promise<ProjectPoliciesView | null> {
+export async function getProjectPoliciesFromManifest(
+  projectId: string,
+): Promise<ProjectPoliciesView | null> {
   const row = await loadRow(projectId);
   if (!row) return null;
   const manifest = await loadManifestForEdit(row).catch(() => null);
   if (!manifest) return { policies: [], defaultMode: 'allow_all', errors: [] };
   const parsed = extractProjectPolicies(manifest);
-  return { policies: parsed.policies, defaultMode: parsed.settings.defaultMode, errors: parsed.errors };
+  return {
+    policies: parsed.policies,
+    defaultMode: parsed.settings.defaultMode,
+    errors: parsed.errors,
+  };
 }
 
 /**
@@ -503,7 +616,11 @@ export async function setProjectPoliciesInManifest(
       return { ok: false, error: `policy #${i + 1}: \`match\` is required`, status: 400 };
     }
     if (p.action !== 'always_run' && p.action !== 'require_approval' && p.action !== 'block') {
-      return { ok: false, error: `policy #${i + 1}: \`action\` must be always_run | require_approval | block`, status: 400 };
+      return {
+        ok: false,
+        error: `policy #${i + 1}: \`action\` must be always_run | require_approval | block`,
+        status: 400,
+      };
     }
   }
   if (defaultMode !== 'risk' && defaultMode !== 'allow_all') {

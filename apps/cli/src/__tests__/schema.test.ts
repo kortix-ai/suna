@@ -49,6 +49,13 @@ describe('kortix schema', () => {
     expect(schema.$id).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json`);
   });
 
+  test('--version 3 prints only the ACP multi-harness document', () => {
+    const code = runSchema(['--version', '3']);
+    expect(code).toBe(0);
+    const schema = JSON.parse(stdout);
+    expect(schema.$id).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`);
+  });
+
   test('--url prints the canonical URL instead of the schema body', () => {
     const code = runSchema(['--url']);
     expect(code).toBe(0);
@@ -68,7 +75,7 @@ describe('kortix schema', () => {
   });
 
   test('an invalid --version value fails with a clear error', () => {
-    const code = runSchema(['--version', '3']);
+    const code = runSchema(['--version', '4']);
     expect(code).toBe(1);
     expect(stderr).toContain('--version must be');
   });

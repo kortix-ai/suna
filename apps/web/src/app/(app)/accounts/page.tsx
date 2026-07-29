@@ -12,11 +12,12 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export default function AccountsPage() {
   const router = useRouter();
@@ -131,7 +132,9 @@ export default function AccountsPage() {
           void queryClient.invalidateQueries({
             queryKey: ['projects', account.account_id],
           });
-          router.replace('/projects');
+          // The landing door, NOT the remembered project: that cookie names a
+          // project in the account being left.
+          router.replace(PROJECT_LANDING_PATH);
         }}
       />
     </>

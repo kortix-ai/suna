@@ -15,7 +15,6 @@ setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum,daytona');
 setTestEnv('KORTIX_URL', 'https://api.example.test');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 setTestEnv('DAYTONA_API_KEY', 'dt_test');
@@ -27,8 +26,20 @@ const pinned = { activeProvider: 'platinum', activeExternalTemplateId: 'tpl_pinn
 describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
   test('boots by the pinned id when the active provider matches and id-boot is supported', () => {
     expect(
-      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'platinum', providerSupportsIdBoot: true }),
+      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'platinum', providerSupportsIdBoot: true, imageIsDefault: true }),
     ).toEqual({ bootByTemplateId: 'tpl_pinned' });
+  });
+
+  test('a custom template never boots the pinned project-default template id', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: false,
+      }),
+    ).toEqual({ bootByTemplateId: null });
   });
 
   test('rollback: a leftover Platinum id pin does NOT id-boot a Daytona session (name-boot)', () => {

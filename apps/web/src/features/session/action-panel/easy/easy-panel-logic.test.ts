@@ -6,10 +6,12 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  pathOutput,
   quickBrowserOutput,
   sandboxRecents,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 
@@ -242,5 +244,44 @@ describe('sandboxRecents (AppPreview landing "Recents")', () => {
 
   test('empty in, empty out — the landing falls back to the search hint', () => {
     expect(sandboxRecents([])).toEqual([]);
+  });
+});
+
+describe('pathOutput', () => {
+  it('names the output after the file, not the whole path', () => {
+    const out = pathOutput('/workspace/reports/q3-summary.md');
+    expect(out.name).toBe('q3-summary.md');
+    expect(out.path).toBe('/workspace/reports/q3-summary.md');
+    expect(out.kind).toBe('file');
+  });
+
+  it('handles a bare filename with no directory', () => {
+    expect(pathOutput('notes.txt').name).toBe('notes.txt');
+  });
+
+  it('gives each path a distinct outputKey so re-opening re-animates', () => {
+    expect(outputKey(pathOutput('/a/one.md'))).not.toBe(outputKey(pathOutput('/a/two.md')));
+  });
+
+  it('never reports fresh — a path opened by click is not this run\'s deliverable', () => {
+    expect(pathOutput('/a/one.md').fresh).toBeUndefined();
+  });
+});
+
+describe('focusIndexForCall (which command inside a group to open)', () => {
+  const parts = [{ callID: 'c1' }, { callID: 'c2' }, { callID: 'c3' }];
+
+  test('finds the clicked call inside the group', () => {
+    // The bug: the panel opened at parts.length - 1, so clicking c1 showed c3.
+    expect(focusIndexForCall(parts, 'c1')).toBe(0);
+    expect(focusIndexForCall(parts, 'c2')).toBe(1);
+    expect(focusIndexForCall(parts, 'c3')).toBe(2);
+  });
+
+  test('-1 when the call is not in this step, so the caller follows live', () => {
+    expect(focusIndexForCall(parts, 'nope')).toBe(-1);
+    expect(focusIndexForCall(parts, null)).toBe(-1);
+    expect(focusIndexForCall(parts, undefined)).toBe(-1);
+    expect(focusIndexForCall([], 'c1')).toBe(-1);
   });
 });

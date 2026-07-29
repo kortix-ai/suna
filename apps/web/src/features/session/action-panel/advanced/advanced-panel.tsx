@@ -2,13 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
-import { NativeSlider } from '@/components/ui/slider-native';
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ActionNavigator } from '../shared/action-navigator';
 import { collectToolParts } from '../shared/collect-tool-parts';
 import {
   ToolPartRenderer,
@@ -51,45 +49,12 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   const atLatest = safeIndex >= count - 1;
   const isLive = atLatest && mode === 'live';
 
-  // Wall-clock time the focused action ran (end if finished, else start),
-  // shown in the scrubber's hover hint. Same-day actions get just the time;
-  // older ones get the date too.
-  const timeLabel = useMemo(() => {
-    const t = (current?.state as any)?.time;
-    const ms = t?.end ?? t?.start;
-    if (typeof ms !== 'number') return '';
-    const d = new Date(ms);
-    const sameDay = d.toDateString() === new Date().toDateString();
-    return sameDay
-      ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
-      : d.toLocaleString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        });
-  }, [current]);
-
-  const goPrev = useCallback(() => {
-    setMode('manual');
-    setIndex((i) => Math.max(0, i - 1));
+  // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
+  // on every streaming re-render; setState setters are already stable.
+  const handleIndexChange = useCallback((i: number, m: 'live' | 'manual') => {
+    setMode(m);
+    setIndex(i);
   }, []);
-
-  const goNext = useCallback(() => {
-    const next = Math.min(count - 1, index + 1);
-    setMode(next >= count - 1 ? 'live' : 'manual');
-    setIndex(next);
-  }, [count, index]);
-
-  // Scrubbing to the end re-arms live-follow; anywhere else pins manual.
-  const handleScrub = useCallback(
-    (values: number[]) => {
-      const next = Math.min(count - 1, Math.max(0, values[0] ?? 0));
-      setMode(next >= count - 1 ? 'live' : 'manual');
-      setIndex(next);
-    },
-    [count],
-  );
 
   // Jump to the tool the user clicked in the chat (focus by callID, robust to
   // ordering). Pins manual mode so it doesn't immediately snap back to live.
@@ -104,35 +69,6 @@ export const AdvancedPanel = memo(function AdvancedPanel({
     }
     clearFocusedToolCall();
   }, [focusedToolCallId, parts, count, clearFocusedToolCall]);
-
-  // Keyboard ←/→ steps through actions (ignored while typing in a field).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = document.activeElement as HTMLElement | null;
-      if (
-        el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          el.isContentEditable ||
-          el.closest('.cm-editor') ||
-          el.closest('.ProseMirror') ||
-          // The scrubber thumb handles ←/→ itself — don't double-step.
-          el.closest('[data-slot="slider"]'))
-      ) {
-        return;
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        goPrev();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        goNext();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [goPrev, goNext]);
 
   if (count === 0) {
     return (
@@ -158,55 +94,12 @@ export const AdvancedPanel = memo(function AdvancedPanel({
         )}
       </div>
 
-      {count > 1 && (
-        <div className="border-border flex shrink-0 items-center gap-2 border-t px-2 py-1.5 pr-3.5">
-          <div className="flex shrink-0 items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goPrev}
-              className="hit-area-2 hit-area-r-0"
-              disabled={safeIndex === 0}
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionActionsPanel.line185JsxAttrAriaLabelPreviousAction',
-              )}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goNext}
-              className="hit-area-2 hit-area-l-0"
-              disabled={atLatest}
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionActionsPanel.line223JsxAttrAriaLabelNextAction',
-              )}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-
-          <NativeSlider
-            value={[safeIndex]}
-            min={0}
-            max={count - 1}
-            step={1}
-            onValueChange={handleScrub}
-            tooltip={timeLabel ? <span className="tabular-nums">{timeLabel}</span> : undefined}
-            className={cn(
-              'min-w-0 flex-1',
-              '[&_[data-slot=slider-thumb]]:transition-[background-color,border-color,box-shadow]',
-            )}
-          />
-
-          <span className="text-muted-foreground shrink-0 pl-1 text-xs tabular-nums">
-            {safeIndex + 1}
-            <span className="text-muted-foreground/40">/</span>
-            {count}
-          </span>
-        </div>
-      )}
+      <ActionNavigator
+        parts={parts}
+        index={safeIndex}
+        isLive={isLive}
+        onIndexChange={handleIndexChange}
+      />
     </div>
   );
 });

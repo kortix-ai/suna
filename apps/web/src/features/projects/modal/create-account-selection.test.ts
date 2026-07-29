@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { KortixAccount } from '@kortix/sdk/projects-client';
+import type { KortixAccount } from '@kortix/sdk';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
 

@@ -13,14 +13,16 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import type { FlatModel } from './model-flatten';
-import { safeSetItem } from '../platform/storage/managed-storage';
 import {
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
+  defaultEnabledModelIds,
 } from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { safeSetItem } from '../platform/storage/managed-storage';
+import type { FlatModel } from './model-flatten';
 import { createModelLookup } from './model-lookup';
+import { shouldSetSessionAgentName } from './session-agent-name-guard';
 
 // ============================================================================
 // Types
@@ -261,62 +263,27 @@ export function isDefaultVisible(model: ModelKey): boolean {
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 
-function isWithinMonths(dateStr: string | undefined, months: number): boolean {
-  if (!dateStr) return false;
-  try {
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return false;
-    const now = new Date();
-    const diffMs = Math.abs(now.getTime() - date.getTime());
-    const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
-    return diffMonths < months;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Compute "latest" models: models released within 6 months,
- * grouped by provider then family, newest per family wins.
+ * "Latest" models, keyed `providerID:modelID` for the store's lookup maps.
+ *
+ * The RULE itself lives in `@kortix/llm-catalog` — the gateway enforces the
+ * same default set server-side, and two copies of "newest per family within
+ * the window" is exactly how the picker and "Manage models" drifted apart.
+ * This is only the key-shape adapter.
  */
 export function computeLatestSet(models: FlatModel[]): Set<string> {
-  // Filter to recent models (within 6 months)
-  const recent = models.filter((m) => isWithinMonths(m.releaseDate, 6));
-
-  // Group by provider
-  const byProvider = new Map<string, FlatModel[]>();
-  for (const m of recent) {
-    const list = byProvider.get(m.providerID) || [];
-    list.push(m);
-    byProvider.set(m.providerID, list);
-  }
-
-  const latestKeys = new Set<string>();
-
-  for (const [, providerModels] of byProvider) {
-    // Group by family
-    const byFamily = new Map<string, FlatModel[]>();
-    for (const m of providerModels) {
-      const family = m.family || m.modelID;
-      const list = byFamily.get(family) || [];
-      list.push(m);
-      byFamily.set(family, list);
-    }
-
-    // Pick newest per family
-    for (const [, familyModels] of byFamily) {
-      familyModels.sort((a, b) => {
-        const da = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
-        const db = b.releaseDate ? new Date(b.releaseDate).getTime() : 0;
-        return db - da; // newest first
-      });
-      if (familyModels[0]) {
-        latestKeys.add(`${familyModels[0].providerID}:${familyModels[0].modelID}`);
-      }
-    }
-  }
-
-  return latestKeys;
+  return defaultEnabledModelIds(
+    models.map((m) => ({
+      // Feed the store's own composite key through as the candidate id so the
+      // result needs no lossy id → model lookup on the way back out.
+      id: `${m.providerID}:${m.modelID}`,
+      released: m.releaseDate,
+      family: m.family,
+      // `provider` is the real upstream under the gateway (every model is
+      // served as `kortix`); for a native provider it IS the providerID.
+      provider: m.provider ?? m.providerID,
+    })),
+  );
 }
 
 // ============================================================================
@@ -505,6 +472,15 @@ export function useModelStore(
 
   const setSessionAgentName = useCallback((sessionId: string, name: string | undefined) => {
     const s = getStore();
+    // Read-then-write idempotency guard: `setSessionAgentName` writes to a
+    // `useSyncExternalStore`-backed store whose snapshot identity changes on
+    // every write. Without this guard, any render/effect path that re-fires the
+    // setter with the SAME value drives an infinite render loop (React #185,
+    // "Maximum update depth exceeded"). The loop was reported by Better Stack
+    // as `Object.setSessionAgentName` on the co-worker session page (pattern
+    // 351da943…). See `shouldSetSessionAgentName` for the rationale.
+    const current = s.sessionAgentName?.[sessionId];
+    if (!shouldSetSessionAgentName(current, name)) return;
     const next = { ...s.sessionAgentName };
     if (name) {
       next[sessionId] = name;

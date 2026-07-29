@@ -23,7 +23,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk/projects-client';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';

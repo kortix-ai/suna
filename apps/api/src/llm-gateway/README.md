@@ -28,18 +28,18 @@ opaque values and executes the finite route returned by the control plane.
 | `hooks.ts` | Canonical control plane: `authenticatePrincipal`, `assertGatewayBudget`, `recordGatewayUsage`, `persistGatewayTrace`, and `createInProcessGatewayHooks()`. |
 | `internal-routes.ts` | Thin HTTP wrappers over `hooks.ts` for the out-of-process gateway pod. |
 | `routing/` | Host-owned model defaults and declarative fallback policies; backs `/internal/gateway/resolve-route`. |
-| `resolution/` | `resolveCandidates` — turns a requested model into ordered upstream descriptors (BYOK → managed fallback, Codex, managed Bedrock/OpenRouter). |
+| `resolution/` | `resolveCandidates` — turns a requested model into ordered upstream descriptors (BYOK → managed fallback, Codex, managed Bedrock/AsterLab/OpenRouter). |
 | `budgets.ts` | Per-project / per-member spend caps (`checkBudget`). |
 | `models/runtime-catalog.ts` | Fetches provider/model metadata from `LLM_GATEWAY_CATALOG_URL` (models.dev by default), refreshes every 24 hours, and atomically retains the last known snapshot on failure. |
 | `models/` | Builds the project/tier-specific catalog served to clients and resolves provider transports from the runtime catalog. |
 | `gateway-keys.ts` | Gateway API key (`kgw_…`) lifecycle + validation. |
 | `credentials/` | Codex (ChatGPT subscription) credential resolution. |
-| `sandbox-credentials.ts` | Which provider env vars are withheld from opencode so the gateway is the only LLM path. |
+| `sandbox-credentials.ts` | Which provider env vars are withheld from the OpenCode compatibility process when the gateway owns routing. Other harnesses resolve direct or managed credentials in `apps/kortix-sandbox-agent-server/src/acp/harness-registry.ts`. |
 
 ## Request path
 
 ```
-client (opencode)
+runtime harness (OpenCode, Claude Code, Codex, or Pi)
   → POST /v1/llm/chat/completions  (in-API)   or  → standalone gateway pod
        │                                                │  /internal/gateway/* RPC
        └──────────── @kortix/llm-gateway pipeline ──────┘
@@ -49,6 +49,12 @@ client (opencode)
                        → stream relay (SSE, 10s heartbeat) / json
                        → recordUsage + recordTrace
 ```
+
+Each harness adapter translates its native provider protocol into a supported
+gateway dialect. Direct project credentials take precedence where the selected
+harness supports them. A generic provider-key check does not prove one
+harness-model pair. The ACP multi-harness smoke sends a real prompt through
+each selected pair.
 
 The standalone pod does not import `@kortix/llm-catalog`. It obtains both the
 served model catalog and each request's route plan from this API over the

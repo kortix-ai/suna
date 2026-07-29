@@ -26,9 +26,15 @@ import {
   useCreatePerSeatCheckout,
   useCreatePortalSession,
 } from '@/hooks/billing';
-import type { AccountState } from '@/lib/api/billing';
+import type { AccountState, BillingState } from '@kortix/sdk';
+import {
+  accountHasLiveSubscription,
+  billingStateNeedsTopUp,
+  resolveBillingState,
+} from '@/lib/billing/billing-gate-state';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { formatCredits } from '@kortix/shared';
 import { CreditCardPlusSolid } from '@mynaui/icons-react';
@@ -46,6 +52,10 @@ export interface UpgradePlansModalProps {
   reason?: string;
   billingModel?: string;
   hasSubscription?: boolean;
+  /** The resolved state from whichever surface opened the modal. Preferred over
+   *  `reason` (the lossy 402 code) so the modal and the gate that opened it can
+   *  never disagree about the same account. */
+  billingState?: BillingState;
   balance?: number;
   /** True while account state is doing its first load — the credit view shows a
    *  balance skeleton instead of a misleading $0.00 until the real value lands. */
@@ -59,22 +69,28 @@ export function UpgradePlansModal({
   reason,
   billingModel,
   hasSubscription,
+  billingState,
   balance,
   accountLoading,
 }: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
   const openDemo = useRequestDemo();
+  const billingReturnUrl = useBillingReturnUrl();
 
-  // Show the top-up view (not the Free-plan pitch) whenever we can tell the
-  // account is already a paying/Team account whose wallet ran dry. Prefer the
-  // 402 hints (billing_model / has_subscription / reason) since accountState can
-  // still be loading when the modal opens; fall back to it once available.
+  // Which view? Resolved from the ONE billing-state resolver. The caller's
+  // `billingState` (from the 402 or the gate that opened this) wins because
+  // accountState can still be loading; otherwise derive it from live state.
   const isPerSeat = billingModel === 'per_seat' || accountState?.billing_model === 'per_seat';
-  const hasSub = hasSubscription ?? Boolean(accountState?.subscription?.subscription_id);
+  const hasSub = hasSubscription ?? accountHasLiveSubscription(accountState);
   const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? isPerSeat;
+  const resolvedState = billingState ?? resolveBillingState(accountState);
   const showTopUp =
-    (reason === 'insufficient_credits' || isPerSeat || hasSub) && canPurchaseCredits;
+    (billingStateNeedsTopUp(resolvedState) ||
+      reason === 'insufficient_credits' ||
+      isPerSeat ||
+      hasSub) &&
+    canPurchaseCredits;
 
   if (showTopUp) {
     return (
@@ -83,6 +99,7 @@ export function UpgradePlansModal({
         onOpenChange={onOpenChange}
         accountState={accountState}
         balance={balance}
+        billingState={resolvedState}
         accountLoading={accountLoading}
       />
     );
@@ -95,10 +112,9 @@ export function UpgradePlansModal({
   const canManageBilling = accountState?.can_manage_billing !== false;
 
   const handleSubscribe = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     createPerSeat.mutate({
-      success_url: `${origin}/projects?team_signup=success`,
-      cancel_url: typeof window !== 'undefined' ? window.location.href : `${origin}/`,
+      success_url: billingReturnUrl('team_signup'),
+      cancel_url: window.location.href,
     });
   };
 
@@ -245,6 +261,7 @@ interface CreditTopUpModalProps {
   onOpenChange: (open: boolean) => void;
   accountState?: AccountState;
   balance?: number;
+  billingState?: BillingState | null;
   accountLoading?: boolean;
 }
 
@@ -259,9 +276,13 @@ function CreditTopUpModal({
   onOpenChange,
   accountState,
   balance,
+  billingState,
   accountLoading,
 }: CreditTopUpModalProps) {
   const createPortal = useCreatePortalSession();
+  // Never tell a customer whose payment is failing that their plan "is
+  // unaffected" — that was the same class of lie as the gate copy.
+  const paymentFailed = billingState === 'payment_failed';
 
   // Trust the LIVE account state as the source of truth (same field the Plan
   // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
@@ -286,10 +307,13 @@ function CreditTopUpModal({
               <CreditCardPlusSolid className="text-kortix-orange size-5" />
             </span>
             <div className="space-y-0.5">
-              <ModalTitle className="text-lg font-medium tracking-tight">Out of credits</ModalTitle>
+              <ModalTitle className="text-lg font-medium tracking-tight">
+                {paymentFailed ? 'Payment issue on your plan' : 'Out of credits'}
+              </ModalTitle>
               <ModalDescription className="text-sm text-balance">
-                Top up to keep compute and the latest AI models running — your Team plan and seats
-                are unaffected.
+                {paymentFailed
+                  ? 'Your last payment didn’t go through. Update your payment method under Manage billing, or top up to keep running in the meantime.'
+                  : 'Top up to keep compute and the latest AI models running — your Team plan and seats are unaffected.'}
               </ModalDescription>
             </div>
           </div>
@@ -353,8 +377,16 @@ function CreditTopUpModal({
 }
 
 export function GlobalUpgradeModal() {
-  const { isOpen, closeUpgradeDialog, accountId, reason, billingModel, hasSubscription, balance } =
-    useUpgradeDialogStore();
+  const {
+    isOpen,
+    closeUpgradeDialog,
+    accountId,
+    reason,
+    billingModel,
+    hasSubscription,
+    billingState,
+    balance,
+  } = useUpgradeDialogStore();
   const { data: accountState, isLoading: accountLoading } = useAccountState({ accountId });
   const queryClient = useQueryClient();
 
@@ -374,6 +406,7 @@ export function GlobalUpgradeModal() {
         reason={reason}
         billingModel={billingModel}
         hasSubscription={hasSubscription}
+        billingState={billingState}
         balance={balance}
         accountLoading={accountLoading}
       />

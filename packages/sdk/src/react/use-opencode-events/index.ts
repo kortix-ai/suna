@@ -39,7 +39,7 @@ import { openEventStream } from '../../core/stream/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream() {
+export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const addPermission = useOpenCodePendingStore((s) => s.addPermission);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -108,7 +108,13 @@ export function useOpenCodeEventStream() {
     // runtime is starting/degraded. Otherwise every mounted dashboard tab
     // fans out into /session/*, /path, /permission, /question, and /lsp/*
     // requests that each sit for 30s and retry.
-    if (!activeServerUrl || sandboxStatus !== 'connected' || runtimeHealthy !== true) return;
+    if (
+      options.enabled === false ||
+      !activeServerUrl ||
+      sandboxStatus !== 'connected' ||
+      runtimeHealthy !== true
+    )
+      return;
 
     // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
     // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
@@ -252,6 +258,7 @@ export function useOpenCodeEventStream() {
     activeServerUrl,
     sandboxStatus,
     runtimeHealthy,
+    options.enabled,
     applySyncEvent,
     stopCompaction,
   ]);

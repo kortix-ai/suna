@@ -1,0 +1,744 @@
+{
+ "generatedAt": "2026-07-28T23:08:17.436Z",
+ "environment": "production",
+ "targets": [
+  {
+   "label": "daytona-starter",
+   "projectId": "30b0c519-858f-4246-8c88-e6e34d36de99",
+   "provider": "daytona",
+   "repoUrl": "https://github.com/managed-kortix/boot-benchmark-starter-1785279937-30b0c519-858f-4246-8c88-e6e34d36de99.git",
+   "baseSha": "31509011b0543cd2fd0e30b22fcf3ad4426e072a"
+  },
+  {
+   "label": "platinum-starter",
+   "projectId": "30b0c519-858f-4246-8c88-e6e34d36de99",
+   "provider": "platinum",
+   "repoUrl": "https://github.com/managed-kortix/boot-benchmark-starter-1785279937-30b0c519-858f-4246-8c88-e6e34d36de99.git",
+   "baseSha": "31509011b0543cd2fd0e30b22fcf3ad4426e072a"
+  }
+ ],
+ "api": "https://api.kortix.com",
+ "rounds": 5,
+ "boots": [
+  {
+   "target": "daytona-starter",
+   "round": 1,
+   "sessionId": "1bfe5e19-6855-469d-b5c0-82464a31461a",
+   "provider": "daytona",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 1544,
+   "vmCreatedMs": 4976,
+   "rowActiveMs": 4976,
+   "daemonReachableMs": 6516,
+   "runtimeReadyMs": 22430,
+   "hostMarks": [
+    {
+     "atMs": 826,
+     "label": "row+tokens",
+     "deltaMs": 826
+    },
+    {
+     "atMs": 835,
+     "label": "image-cached",
+     "deltaMs": 9
+    },
+    {
+     "atMs": 1891,
+     "label": "provider-create:1x",
+     "deltaMs": 1056
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 4
+    },
+    {
+     "label": "git-identity",
+     "atMs": 18
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 22
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 9689
+    },
+    {
+     "label": "config-deps",
+     "atMs": 9691
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 16197
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 16423
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 17146
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 17146
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 17146
+    }
+   ]
+  },
+  {
+   "target": "daytona-starter",
+   "round": 2,
+   "sessionId": "14dfdc14-d819-4a20-92a4-33837898080c",
+   "provider": "daytona",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 902,
+   "vmCreatedMs": 27436,
+   "rowActiveMs": 27436,
+   "daemonReachableMs": 28132,
+   "runtimeReadyMs": 46467,
+   "hostMarks": [
+    {
+     "atMs": 1717,
+     "label": "row+tokens",
+     "deltaMs": 1717
+    },
+    {
+     "atMs": 1785,
+     "label": "image-cached",
+     "deltaMs": 68
+    },
+    {
+     "atMs": 25002,
+     "label": "provider-create:1x",
+     "deltaMs": 23217
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 12
+    },
+    {
+     "label": "git-identity",
+     "atMs": 93
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 100
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 5053
+    },
+    {
+     "label": "config-deps",
+     "atMs": 5062
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 16800
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 17168
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 18532
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 18533
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 18533
+    }
+   ]
+  },
+  {
+   "target": "daytona-starter",
+   "round": 3,
+   "sessionId": "ae7b55f3-367c-4850-8e27-df4c492cafa9",
+   "provider": "daytona",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 2516,
+   "vmCreatedMs": 6127,
+   "rowActiveMs": 6127,
+   "daemonReachableMs": 7541,
+   "runtimeReadyMs": 21093,
+   "hostMarks": [
+    {
+     "atMs": 360,
+     "label": "row+tokens",
+     "deltaMs": 360
+    },
+    {
+     "atMs": 545,
+     "label": "image-cached",
+     "deltaMs": 185
+    },
+    {
+     "atMs": 1957,
+     "label": "provider-create:1x",
+     "deltaMs": 1412
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 4
+    },
+    {
+     "label": "git-identity",
+     "atMs": 28
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 34
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 3540
+    },
+    {
+     "label": "config-deps",
+     "atMs": 3548
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 12710
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 12977
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 14766
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 14767
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 14767
+    }
+   ]
+  },
+  {
+   "target": "daytona-starter",
+   "round": 4,
+   "sessionId": "e7c34b45-4d2e-410c-9c84-0ab35b68c5a2",
+   "provider": "daytona",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 617,
+   "vmCreatedMs": 2555,
+   "rowActiveMs": 2555,
+   "daemonReachableMs": 3470,
+   "runtimeReadyMs": 19014,
+   "hostMarks": [
+    {
+     "atMs": 180,
+     "label": "row+tokens",
+     "deltaMs": 180
+    },
+    {
+     "atMs": 183,
+     "label": "image-cached",
+     "deltaMs": 3
+    },
+    {
+     "atMs": 1702,
+     "label": "provider-create:1x",
+     "deltaMs": 1519
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 4
+    },
+    {
+     "label": "git-identity",
+     "atMs": 20
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 27
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 7791
+    },
+    {
+     "label": "config-deps",
+     "atMs": 7796
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 15018
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 15329
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 16051
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 16051
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 16051
+    }
+   ]
+  },
+  {
+   "target": "daytona-starter",
+   "round": 5,
+   "sessionId": "e3ec905a-609b-4d30-a49e-198460de00dc",
+   "provider": "daytona",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 581,
+   "vmCreatedMs": 1947,
+   "rowActiveMs": 1947,
+   "daemonReachableMs": 2963,
+   "runtimeReadyMs": 22555,
+   "hostMarks": [
+    {
+     "atMs": 165,
+     "label": "row+tokens",
+     "deltaMs": 165
+    },
+    {
+     "atMs": 171,
+     "label": "image-cached",
+     "deltaMs": 6
+    },
+    {
+     "atMs": 1299,
+     "label": "provider-create:1x",
+     "deltaMs": 1128
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 6
+    },
+    {
+     "label": "git-identity",
+     "atMs": 25
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 29
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 12206
+    },
+    {
+     "label": "config-deps",
+     "atMs": 12219
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 18954
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 19244
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 20012
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 20013
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 20013
+    }
+   ]
+  },
+  {
+   "target": "platinum-starter",
+   "round": 1,
+   "sessionId": "57cfef51-9c9f-4a11-b219-5de967380184",
+   "provider": "platinum",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 936,
+   "vmCreatedMs": 12176,
+   "rowActiveMs": 12176,
+   "daemonReachableMs": 14767,
+   "runtimeReadyMs": 32202,
+   "hostMarks": [
+    {
+     "atMs": 267,
+     "label": "row+tokens",
+     "deltaMs": 267
+    },
+    {
+     "atMs": 270,
+     "label": "image-cached",
+     "deltaMs": 3
+    },
+    {
+     "atMs": 11160,
+     "label": "provider-create:1x",
+     "deltaMs": 10891
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 18
+    },
+    {
+     "label": "git-identity",
+     "atMs": 52
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 63
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 4256
+    },
+    {
+     "label": "config-deps",
+     "atMs": 4259
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 17753
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 18200
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 19727
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 19728
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 19728
+    }
+   ]
+  },
+  {
+   "target": "platinum-starter",
+   "round": 2,
+   "sessionId": "b545e404-f3d3-4904-beb4-c75aa7fa2d90",
+   "provider": "platinum",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 817,
+   "vmCreatedMs": 3283,
+   "rowActiveMs": 3283,
+   "daemonReachableMs": 3712,
+   "runtimeReadyMs": 27279,
+   "hostMarks": [
+    {
+     "atMs": 113,
+     "label": "row+tokens",
+     "deltaMs": 113
+    },
+    {
+     "atMs": 196,
+     "label": "image-cached",
+     "deltaMs": 83
+    },
+    {
+     "atMs": 2313,
+     "label": "provider-create:1x",
+     "deltaMs": 2117
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 20
+    },
+    {
+     "label": "git-identity",
+     "atMs": 60
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 73
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 8660
+    },
+    {
+     "label": "config-deps",
+     "atMs": 8664
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 21849
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 22328
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 23967
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 23969
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 23969
+    }
+   ]
+  },
+  {
+   "target": "platinum-starter",
+   "round": 3,
+   "sessionId": "539ebbb5-2b22-470a-9de1-c73b913b4f99",
+   "provider": "platinum",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 1214,
+   "vmCreatedMs": 4590,
+   "rowActiveMs": 4590,
+   "daemonReachableMs": 5079,
+   "runtimeReadyMs": 25852,
+   "hostMarks": [
+    {
+     "atMs": 258,
+     "label": "row+tokens",
+     "deltaMs": 258
+    },
+    {
+     "atMs": 262,
+     "label": "image-cached",
+     "deltaMs": 4
+    },
+    {
+     "atMs": 2533,
+     "label": "provider-create:1x",
+     "deltaMs": 2271
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 20
+    },
+    {
+     "label": "git-identity",
+     "atMs": 60
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 72
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 3594
+    },
+    {
+     "label": "config-deps",
+     "atMs": 3598
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 16325
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 16821
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 19897
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 19899
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 19899
+    }
+   ]
+  },
+  {
+   "target": "platinum-starter",
+   "round": 4,
+   "sessionId": "a52f0ec2-0a21-4649-94a0-e429fd72fc32",
+   "provider": "platinum",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 449,
+   "vmCreatedMs": 3006,
+   "rowActiveMs": 3006,
+   "daemonReachableMs": 4024,
+   "runtimeReadyMs": 25084,
+   "hostMarks": [
+    {
+     "atMs": 118,
+     "label": "row+tokens",
+     "deltaMs": 118
+    },
+    {
+     "atMs": 157,
+     "label": "image-cached",
+     "deltaMs": 39
+    },
+    {
+     "atMs": 2357,
+     "label": "provider-create:1x",
+     "deltaMs": 2200
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 20
+    },
+    {
+     "label": "git-identity",
+     "atMs": 59
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 72
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 6359
+    },
+    {
+     "label": "config-deps",
+     "atMs": 6362
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 19025
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 19511
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 21429
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 21432
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 21432
+    }
+   ]
+  },
+  {
+   "target": "platinum-starter",
+   "round": 5,
+   "sessionId": "d775718a-9739-43c2-b4e5-dbe2aa4589c9",
+   "provider": "platinum",
+   "image": "kortix-default-92b96a918ef1",
+   "imageKind": "default-cold",
+   "apiCreateMs": 560,
+   "vmCreatedMs": 3703,
+   "rowActiveMs": 3703,
+   "daemonReachableMs": 9227,
+   "runtimeReadyMs": 30028,
+   "hostMarks": [
+    {
+     "atMs": 148,
+     "label": "row+tokens",
+     "deltaMs": 148
+    },
+    {
+     "atMs": 194,
+     "label": "image-cached",
+     "deltaMs": 46
+    },
+    {
+     "atMs": 3057,
+     "label": "provider-create:1x",
+     "deltaMs": 2864
+    }
+   ],
+   "bootTimeline": [
+    {
+     "label": "static-web",
+     "atMs": 21
+    },
+    {
+     "label": "git-identity",
+     "atMs": 64
+    },
+    {
+     "label": "proxy-up",
+     "atMs": 76
+    },
+    {
+     "label": "repo-materialized",
+     "atMs": 10271
+    },
+    {
+     "label": "config-deps",
+     "atMs": 10276
+    },
+    {
+     "label": "opencode-spawned",
+     "atMs": 23249
+    },
+    {
+     "label": "opencode-answering",
+     "atMs": 23752
+    },
+    {
+     "label": "opencode-root-ready",
+     "atMs": 25220
+    },
+    {
+     "label": "opencode-session-created",
+     "atMs": 25222
+    },
+    {
+     "label": "opencode-ready",
+     "atMs": 25222
+    }
+   ]
+  }
+ ]
+}

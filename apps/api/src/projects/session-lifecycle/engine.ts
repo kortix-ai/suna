@@ -1,22 +1,36 @@
 import { executorExecutions, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { isHarnessId, type HarnessId } from '@kortix/shared/harnesses';
 import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { mayRequeueFailedCreate } from './requeue-policy';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { originRefConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+import {
+  endUserRefConflicts,
+  requireConnectorsConflicts,
+  runtimeContextConflicts,
+} from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
+import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
+import { appendAcpEnvelope } from '../lib/acp-transcript';
 import { openSession } from '../routes/shared';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  deliverHeadlessAcpPrompt,
+  queueInitialAcpPrompt,
+  shouldScheduleInitialAcpPrompt,
+} from './headless-acp';
+import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,
@@ -141,7 +155,7 @@ export async function createSession(
     // session — that would land end-user B's prompts in A's conversation and
     // misattribute usage. Refuse it, mirroring the guards above. (Cross-ACCOUNT
     // key collision is a separate concern — see the account-scope fix.)
-    if (originRefConflicts(existingBody.origin_ref, command.body.origin_ref)) {
+    if (endUserRefConflicts(existingBody, command.body)) {
       return {
         status: 'failed',
         commandId: claimed.row.commandId,
@@ -165,6 +179,25 @@ export async function createSession(
           body: {
             error: 'Idempotency key was already used with a different runtime_context',
             code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
+          },
+        },
+      };
+    }
+    // require_connectors resolves to member bindings at create; a replay with a
+    // different required set would otherwise return the first session, which was
+    // resolved against a different set of the user's own connections.
+    if (
+      requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different require_connectors',
+            code: 'IDEMPOTENCY_REQUIRE_CONNECTORS_CONFLICT',
           },
         },
       };
@@ -252,8 +285,16 @@ export async function createSession(
   }
 
   const message = String(result.error?.body?.error ?? result.reason ?? 'Failed to create session');
+  // This is the INLINE path — the queued branch returned above — so `result` is
+  // about to be handed to a waiting caller. Marking it retryable would leave the
+  // command row queued for the drainer as well, and the caller (told by the
+  // guide that a 429/503 is worth retrying) retries with a fresh key: two billed
+  // sandboxes for one intent, same end_user_ref, both running initial_prompt.
   await markCommandFailed(claimed.row.commandId, message, {
-    retryable: result.retryable ?? false,
+    retryable: mayRequeueFailedCreate({
+      answeredSynchronously: true,
+      errorIsRetryable: result.retryable ?? false,
+    }),
     attempts: claimed.row.attempts + 1,
   });
   return { ...result, commandId: claimed.row.commandId };
@@ -328,6 +369,16 @@ export async function continueSession(
   // the user explicitly deleted.
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  const runtimeHarness = isHarnessId(sessionMeta.runtime_harness)
+    ? sessionMeta.runtime_harness
+    : null;
+  const acpServerId =
+    typeof sessionMeta.acp_server_id === 'string' ? sessionMeta.acp_server_id : null;
+  let acpSessionId =
+    typeof sessionMeta.acp_session_id === 'string' ? sessionMeta.acp_session_id : null;
+  const nativeAgent =
+    typeof sessionMeta.native_agent === 'string' ? sessionMeta.native_agent : null;
+  const usesAcp = sessionMeta.runtime_transport === 'acp' && !!runtimeHarness && !!acpServerId;
 
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
@@ -398,7 +449,7 @@ export async function continueSession(
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    opencodeSessionId: o.opencode_session_id,
+    opencodeSessionId: usesAcp ? acpServerId : o.opencode_session_id,
   });
 
   return deliverWithRetry({
@@ -408,8 +459,24 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId),
+    send: async (externalId, runtimeId) => {
+      if (!usesAcp || !runtimeHarness || !acpServerId) {
+        return postPrompt(externalId, runtimeId, text, userId, sessionId);
+      }
+      const delivered = await postAcpPrompt({
+        externalId,
+        acpServerId,
+        acpSessionId,
+        runtimeHarness,
+        nativeAgent,
+        projectId: session.projectId,
+        projectSessionId: sessionId,
+        text,
+        userId,
+      });
+      if (delivered.acpSessionId) acpSessionId = delivered.acpSessionId;
+      return delivered.ok;
+    },
   });
 }
 
@@ -662,6 +729,41 @@ async function executeCreateSession(
       retryable: isRetryableCreateError(result.error.status),
     };
   }
+  const initialPrompt =
+    typeof command.body.initial_prompt === 'string' ? command.body.initial_prompt.trim() : '';
+  const runtimeMetadata = (result.row?.metadata ?? {}) as Record<string, unknown>;
+  const postCreateOwnsPrompt = command.postCreate?.some(
+    (action) => action.type === 'deliver_prompt',
+  );
+  if (
+    result.row &&
+    shouldScheduleInitialAcpPrompt({
+      initialPrompt,
+      runtimeMetadata,
+      postCreateOwnsPrompt: !!postCreateOwnsPrompt,
+      hasSessionRow: true,
+    })
+  ) {
+    await queueInitialAcpPrompt(
+      {
+        source: command.source,
+        projectId: command.project.projectId,
+        accountId: command.project.accountId,
+        sessionId: result.row.sessionId,
+        actorUserId: command.userId,
+        text: initialPrompt,
+      },
+      {
+        enqueue: enqueueContinueSessionCommand,
+        drain: () => drainSessionLifecycleQueue({ limit: 1 }),
+      },
+    ).catch((error) => {
+      console.warn('[session-lifecycle] initial ACP prompt enqueue failed', {
+        sessionId: result.row?.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return {
     status: 'created',
     sessionId: result.row!.sessionId,
@@ -720,18 +822,55 @@ function sandboxExternalId(
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
 }
 
+async function postAcpPrompt(input: {
+  externalId: string;
+  acpServerId: string;
+  acpSessionId: string | null;
+  runtimeHarness: HarnessId;
+  nativeAgent: string | null;
+  projectId: string;
+  projectSessionId: string;
+  text: string;
+  userId: string;
+}): Promise<{ ok: boolean; acpSessionId: string | null }> {
+  return deliverHeadlessAcpPrompt(input, {
+    request: (method, route, query, headers, body) =>
+      forwardToSandbox(
+        input.externalId,
+        DAEMON_PORT,
+        {
+          kind: 'principal',
+          userId: input.userId,
+          callerSessionId: input.projectSessionId,
+        },
+        method,
+        route,
+        query,
+        headers,
+        body ? (body.slice().buffer as ArrayBuffer) : undefined,
+        config.KORTIX_URL ?? '',
+      ),
+    persistIdentity: (identity) =>
+      persistAcpSessionIdentity({ db }, identity).then(() => undefined),
+    persistEnvelope: appendAcpEnvelope,
+  });
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
   text: string,
   userId: string,
+  /** The session this prompt is FOR. Passed as the caller binding so the
+   *  isolation guard proves the target matches, rather than being waived. */
+  callerSessionId: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
   try {
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId },
+      { kind: 'principal', userId, callerSessionId },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,

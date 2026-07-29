@@ -22,7 +22,9 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  Pencil,
   Reply,
+  RotateCcw,
   Scissors,
   Search,
   Terminal,
@@ -35,7 +37,10 @@ import { createPortal } from 'react-dom';
 
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog, type ModelDefaultControls } from '@/features/session/model-selector';
+import {
+  ConnectProviderDialog,
+  type ModelDefaultControls,
+} from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -62,13 +67,16 @@ import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { errorToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { uploadFile } from '@/features/files/api/opencode-files';
+import { uploadFile } from '@/features/files/api/runtime-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
@@ -80,32 +88,8 @@ import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import {
-  type ModelKey,
-  formatModelString,
-  formatPromptModel,
-  parseModelKey,
-  useOpenCodeLocal,
-} from '@/hooks/opencode/use-opencode-local';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import {
-  ascendingId,
-  rejectQuestion,
-  replyToPermission,
-  replyToQuestion,
-  useAbortOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-  useOpenCodeRuntimeReady,
-  useOpenCodeSession,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { getClient } from '@/lib/opencode-sdk';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -127,31 +111,16 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { usePendingQueueStore } from '@/stores/pending-queue-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import {
+  usePendingFilesStore,
+  usePendingQueueStore,
+} from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import {
-  type KortixSendError,
-  abandonOptimisticSend,
-  applyOptimisticAbort,
-  beginOptimisticSend,
-  classifySendError,
-  clearStartStash,
-  readStartStash,
-  replayStartStash,
-  sendAndRecover,
-  usePermissionSelfHeal,
-  useProjectConfig,
-  useQuestionSelfHeal,
-} from '@kortix/sdk/react';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -195,7 +164,46 @@ import {
   shouldShowToolPart,
   splitUserParts,
 } from '@/ui';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import {
+  type KortixSendError,
+  type ModelKey,
+  type UseSessionResult,
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  ascendingId,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
+  readStartStash,
+  recoverFromSendFailure,
+  rejectQuestion,
+  replayStartStash,
+  replyToPermission,
+  replyToQuestion,
+  sendAndRecover,
+  useAbortRuntimeSession,
+  useExecuteRuntimeCommand,
+  usePermissionSelfHeal,
+  useProjectConfig,
+  useQuestionSelfHeal,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useRuntimeProviders,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionModelSelection,
+  useSessionStateStore,
+  useSessionSync,
+} from '@kortix/sdk/react';
 import { SandboxUrlDetector } from './sandbox-url-detector';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -2224,6 +2232,72 @@ interface SessionTurnProps {
   disableToolNavigation?: boolean;
   /** Permission reply handler */
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  /** Stage an in-place session rewind and restore this prompt in the composer. */
+  onRewind: (messageId: string, text: string) => void;
+  /** Disable history changes while the session is busy or read-only. */
+  rewindDisabled: boolean;
+}
+
+/**
+ * The worker-run result row shown above a turn — an entity row in the design
+ * system's sense, not a tinted banner: the surface stays neutral and the status
+ * lives in one tinted icon tile, so a run of these reads as a list rather than
+ * a stack of coloured alerts.
+ *
+ * Extracted from the turn body so the row can be rendered (and looked at) on
+ * its own, and so the turn's render reads as a list of sections rather than
+ * forty lines of card markup inlined among them.
+ */
+export function SessionReportCard({
+  report,
+  onOpen,
+}: {
+  report: SessionReport;
+  onOpen: () => void;
+}) {
+  const complete = report.status === 'COMPLETE';
+  return (
+    // A real <button>: Enter, Space and the focus ring come free, where the
+    // previous role="button" div hand-rolled Enter only.
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/report bg-popover hover:bg-accent/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors active:scale-[0.99]"
+    >
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-sm',
+          complete ? 'bg-kortix-green/15' : 'bg-kortix-red/15',
+        )}
+      >
+        {complete ? (
+          <CheckCircle className="text-kortix-green size-4" />
+        ) : (
+          <AlertTriangle className="text-kortix-red size-4" />
+        )}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">
+          Worker {complete ? 'complete' : 'failed'}
+        </span>
+        {/* One meta line, truncated by CSS against the real available width —
+            the old 60-character slice cut mid-word at every viewport and still
+            overflowed narrow ones. */}
+        {(report.project || report.prompt) && (
+          <span className="text-muted-foreground block truncate text-xs">
+            {report.project}
+            {report.project && report.prompt && (
+              <span className="text-muted-foreground/40"> &bull; </span>
+            )}
+            {report.prompt}
+          </span>
+        )}
+      </span>
+
+      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+    </button>
+  );
 }
 
 function SessionTurn({
@@ -2242,6 +2316,8 @@ function SessionTurn({
   commands,
   disableToolNavigation,
   onPermissionReply,
+  onRewind,
+  rewindDisabled,
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
@@ -2644,6 +2720,19 @@ function SessionTurn({
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
+  const rewindPromptText = useMemo(() => {
+    if (commandForTurn) {
+      return `/${commandForTurn.name}${commandForTurn.args ? ` ${commandForTurn.args}` : ''}`;
+    }
+    const withoutReply = parseReplyContext(userMessageText).cleanText;
+    const withoutUploads = parseFileReferences(withoutReply).cleanText;
+    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
+    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
+    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
+    return stripKortixSystemTags(withoutSessions).trim();
+  }, [commandForTurn, userMessageText]);
+
   const handleCopyUser = async () => {
     if (!userMessageText) return;
     await navigator.clipboard.writeText(userMessageText);
@@ -2746,7 +2835,11 @@ function SessionTurn({
           defaultOpen
         />
         {turnError && (
-          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+          <TurnErrorDisplay
+            errorText={turnError}
+            errorDetails={turnErrorDetails}
+            className="mt-2"
+          />
         )}
         <ConnectProviderDialog
           open={connectProviderOpen}
@@ -2803,44 +2896,10 @@ function SessionTurn({
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setSessionReportModalOpen(true)}
-            onKeyDown={(e) => e.key === 'Enter' && setSessionReportModalOpen(true)}
-            className={cn(
-              'flex items-center gap-2 rounded-2xl px-3 py-2 text-xs',
-              'group/report cursor-pointer border transition-colors select-none',
-              sessionReport.status === 'COMPLETE'
-                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
-                : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
-            )}
-          >
-            {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
-            ) : (
-              <AlertTriangle className="text-destructive size-3.5 flex-shrink-0" />
-            )}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span
-                className={cn(
-                  'font-medium',
-                  sessionReport.status === 'COMPLETE' ? STATUS_TEXT.success : 'text-destructive',
-                )}
-              >
-                Worker {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
-              </span>
-              {sessionReport.project && (
-                <span className="text-muted-foreground/60">· {sessionReport.project}</span>
-              )}
-              {sessionReport.prompt && (
-                <span className="text-muted-foreground/40 truncate">
-                  {sessionReport.prompt.slice(0, 60)}
-                </span>
-              )}
-            </div>
-            <ExternalLink className="text-muted-foreground/30 group-hover/report:text-muted-foreground/60 size-3 flex-shrink-0 transition-colors" />
-          </div>
+          <SessionReportCard
+            report={sessionReport}
+            onOpen={() => setSessionReportModalOpen(true)}
+          />
           <SubSessionModal
             open={sessionReportModalOpen}
             onOpenChange={setSessionReportModalOpen}
@@ -2867,7 +2926,19 @@ function SessionTurn({
             commands={commands}
           />
           {userMessageText && (
-            <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+              <Hint label="Edit from here" side="top" align="center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Edit message and rewind session"
+                  disabled={rewindDisabled}
+                  onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+              </Hint>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
@@ -3327,6 +3398,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Complete SDK state for the root session. Omit for a read-only child session. */
+  sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
   /** Immutable project-session agent. When set, prompts are locked to this agent. */
@@ -3343,6 +3416,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  sessionState,
   projectId,
   boundAgentName,
   headerLeadingAction,
@@ -3477,23 +3551,24 @@ export function SessionChat({
   // runtimeReady gates the session query (it's disabled until the sandbox
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const { data: session, isFetched: sessionFetched } = useOpenCodeSession(sessionId);
+  const runtimeReady = useRuntimeReady();
+  const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
+  const localSync = useSessionSync(sessionState ? '' : sessionId);
   const {
     messages: syncMessages,
     isLoading: syncMessagesLoading,
     hasOlder,
     isLoadingOlder,
     loadOlder,
-  } = useSessionSync(sessionId);
+  } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
   // Pending connector-approvals for this session pause the run — lock the
   // composer (like a question) until they're resolved. Shares the query key with
   // SessionApprovalPrompt, so it's one request.
@@ -3504,15 +3579,16 @@ export function SessionChat({
     { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
-  const { data: commands } = useOpenCodeCommands();
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: allSessions } = useOpenCodeSessions();
-  const { data: config } = useOpenCodeConfig();
+  const { data: commands } = useRuntimeCommands();
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: allSessions } = useRuntimeSessions();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const abortSession = useAbortOpenCodeSession();
+  const abortSession = useAbortRuntimeSession();
+  const executeCommand = useExecuteRuntimeCommand();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,
@@ -3522,7 +3598,7 @@ export function SessionChat({
   });
   // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   // default off): the picker still defaults to the session's agent (seeded via
-  // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
+  // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
   // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
   // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
@@ -3578,6 +3654,15 @@ export function SessionChat({
     files: AttachedFile[];
     id: number;
   } | null>(null);
+  const [rewindTarget, setRewindTarget] = useState<{
+    messageId: string;
+    text: string;
+  } | null>(null);
+  const [rewindDraft, setRewindDraft] = useState<{
+    text: string;
+    id: number;
+  } | null>(null);
+  const rewindPrefillId = useRef(0);
   // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
@@ -3589,7 +3674,7 @@ export function SessionChat({
   // parent), so the text has already landed by the time we clear it here.
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
-  }, [sessionPrefill?.id, sessionId]);
+  }, [sessionPrefill, sessionId]);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -3767,7 +3852,7 @@ export function SessionChat({
   // selection yet. This handles opening a session for the first time. If the user
   // already changed the model in this session (persisted per-session in localStorage),
   // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useOpenCodeLocal.
+  // resolution chain in useRuntimeLocal.
   const lastUserMessage = useMemo(
     () => (messages ? [...messages].reverse().find((m) => m.info.role === 'user') : undefined),
     [messages],
@@ -3792,11 +3877,9 @@ export function SessionChat({
 
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
-  const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
-    Boolean(s.compactingBySession[sessionId]),
-  );
-  const sessionStatus = syncStatus;
+  const syncStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
+  const isOptimisticCompacting = sessionState?.isCompacting ?? false;
+  const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // Pending: last assistant message has no time.completed.
@@ -3890,7 +3973,7 @@ export function SessionChat({
     const cacheFingerprint = `${cached.messageID}:${cached.partID}:${cached.text.length}`;
     if (streamCacheRestoredRef.current === cacheFingerprint) return;
 
-    const store = useSyncStore.getState();
+    const store = useSessionStateStore.getState();
     const currentMsgs = store.getMessages(sessionId);
     let latestUserId: string | undefined;
     for (let i = currentMsgs.length - 1; i >= 0; i--) {
@@ -3999,7 +4082,7 @@ export function SessionChat({
         const remaining = 5000 - timeSinceSend;
         const timer = setTimeout(() => {
           // Re-check: if still idle after grace period, stop polling
-          const currentStatus = useSyncStore.getState().sessionStatus[sessionId];
+          const currentStatus = useSessionStateStore.getState().sessionStatus[sessionId];
           if (currentStatus?.type === 'idle') {
             setPollingActive(false);
           }
@@ -4095,7 +4178,7 @@ export function SessionChat({
   }, [messages?.length]);
 
   // ---- Auto-scroll (replaces inline scroll logic) ----
-  const hasActiveQuestion = useOpenCodePendingStore((s) =>
+  const hasActiveQuestion = useRuntimePendingStore((s) =>
     Object.values(s.questions).some((q) => q.sessionID === sessionId),
   );
   const messageCount = messages?.length ?? 0;
@@ -4115,11 +4198,11 @@ export function SessionChat({
   });
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
-    const previousHeight = node?.scrollHeight ?? 0;
+    const anchor = node ? captureTurnScrollAnchor(node) : null;
     await loadOlder();
     if (!node) return;
     requestAnimationFrame(() => {
-      node.scrollTop += node.scrollHeight - previousHeight;
+      restoreTurnScrollAnchor(node, anchor);
     });
   }, [loadOlder, scrollRef]);
 
@@ -4172,11 +4255,13 @@ export function SessionChat({
   // preserves scroll position automatically. No action needed here.
 
   // ---- Pending permissions & questions ----
-  const allPermissions = useOpenCodePendingStore((s) => s.permissions);
-  const allQuestions = useOpenCodePendingStore((s) => s.questions);
+  const allPermissions = useRuntimePendingStore((s) => s.permissions);
+  const allQuestions = useRuntimePendingStore((s) => s.questions);
   const pendingPermissions = useMemo(
-    () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
-    [allPermissions, sessionId],
+    () =>
+      sessionState?.permissions ??
+      Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
+    [sessionState?.permissions, allPermissions, sessionId],
   );
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
@@ -4193,10 +4278,11 @@ export function SessionChat({
   }, []);
   const pendingQuestions = useMemo(
     () =>
-      Object.values(allQuestions).filter(
-        (q) => q.sessionID === sessionId && !isQuestionSuppressed(q.id),
-      ),
-    [allQuestions, sessionId, isQuestionSuppressed],
+      (
+        sessionState?.questions ??
+        Object.values(allQuestions).filter((q) => q.sessionID === sessionId)
+      ).filter((q) => !isQuestionSuppressed(q.id)),
+    [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
@@ -4270,36 +4356,44 @@ export function SessionChat({
   // Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store for this session) —
   // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useOpenCodeEventStream`'s reconnect-gap hydration.
+  // `useRuntimeEventStream`'s reconnect-gap hydration.
   useQuestionSelfHeal(sessionId, messages, {
-    enabled: isActiveSessionTab,
+    enabled: !sessionState && isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
   });
   // The permission twin — a missed `permission.asked` frame otherwise leaves
   // the agent silently blocked with no card to answer (the "have to type
   // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
+  usePermissionSelfHeal(sessionId, messages, {
+    enabled: !sessionState && isActiveSessionTab,
+  });
 
   // ---- Permission/question reply handlers ----
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
-      await replyToPermission(requestId, reply);
-      removePermission(requestId);
+      if (sessionState) {
+        await sessionState.answerPermission(requestId, reply);
+      } else {
+        await replyToPermission(requestId, reply);
+        removePermission(requestId);
+      }
     },
-    [removePermission],
+    [sessionState, removePermission],
   );
 
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
       // Snapshot the question BEFORE removing it so we can cache the
       // answer against the tool part's ID.
-      const questionReq = useOpenCodePendingStore.getState().questions[requestId];
+      const questionReq =
+        sessionState?.questions.find((question) => question.id === requestId) ??
+        useRuntimePendingStore.getState().questions[requestId];
 
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
@@ -4311,7 +4405,7 @@ export function SessionChat({
       // answeredQuestionParts reads from this cache as a fallback.
       if (questionReq?.tool?.messageID) {
         const { messageID } = questionReq.tool;
-        const parts = useSyncStore.getState().parts[messageID];
+        const parts = useSessionStateStore.getState().parts[messageID];
         if (parts) {
           const match = parts.find(
             (p) =>
@@ -4329,12 +4423,13 @@ export function SessionChat({
       }
 
       try {
-        await replyToQuestion(requestId, answers);
+        if (sessionState) await sessionState.answerQuestion(requestId, answers);
+        else await replyToQuestion(requestId, answers);
       } catch {
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor],
   );
 
   const handleQuestionReject = useCallback(
@@ -4343,16 +4438,19 @@ export function SessionChat({
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
       try {
-        await rejectQuestion(requestId);
+        if (sessionState) await sessionState.rejectQuestion(requestId);
+        else await rejectQuestion(requestId);
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
       // Also abort the session so the "The operation was aborted." banner appears
-      if (!abortSession.isPending) {
+      if (sessionState) {
+        sessionState.cancel();
+      } else if (!abortSession.isPending) {
         abortSession.mutate(sessionId);
       }
     },
-    [removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, sessionId, suppressQuestionFor],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -4394,6 +4492,8 @@ export function SessionChat({
     setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
+    setRewindTarget(null);
+    setRewindDraft(null);
     lastSendTimeRef.current = 0;
   }, [sessionId]);
 
@@ -4404,19 +4504,31 @@ export function SessionChat({
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
-  // ============================================================================
-  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
-  // flow instead of the removed edit-fork-prompt feature. The old behaviour
-  // created a native fork of the session at a message and reopened the new
-  // session with the edited prompt restored in the composer — that UX was the
-  // wrong model. What we actually want is a proper rewind/rollback on the SAME
-  // session (edit a prior user message, roll the session back to that point,
-  // and re-run from there), which opencode supports natively. Removed here so
-  // it can be rebuilt correctly. The old surface spanned: useForkSession()
-  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
-  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
-  // the composer draft-restore in session-chat-input.tsx.
-  // ============================================================================
+  const handleConfirmRewind = useCallback(async () => {
+    if (!sessionState || !rewindTarget) return;
+    try {
+      const { messageId, text } = rewindTarget;
+      await sessionState.rewind(messageId);
+      setRewindDraft({ text, id: ++rewindPrefillId.current });
+      setRewindTarget(null);
+    } catch (error) {
+      errorToast('Session rewind failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [rewindTarget, sessionState]);
+
+  const handleRestoreRewind = useCallback(async () => {
+    if (!sessionState?.rewindMessageId) return;
+    try {
+      await sessionState.restoreRewind();
+      setRewindDraft({ text: '', id: ++rewindPrefillId.current });
+    } catch (error) {
+      errorToast('Session restore failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [sessionState]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4615,7 +4727,7 @@ export function SessionChat({
         if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
       }
 
-      // Send via the SDK's promptOpenCodeMessage — the server accepts the
+      // Send via the SDK's promptRuntimeMessage — the server accepts the
       // prompt (204) and streams the response over SSE; we await the ACK so
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
@@ -4635,10 +4747,13 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
+      const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
+      const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
+      const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
 
       // Sending to the sandbox's OpenCode server can transiently fail — the
       // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. `promptOpenCodeMessage` (packages/sdk) owns retrying transient
+      // blips. `promptRuntimeMessage` (packages/sdk) owns retrying transient
       // failures with backoff so a flaky send self-heals; only a real 4xx (bad
       // request / auth / missing model key), or exhausting the retry window,
       // surfaces here. The optimistic user message + busy status stay up the
@@ -4647,21 +4762,38 @@ export function SessionChat({
       // busy, then either rehydrate real messages from the server (some error
       // paths — e.g. missing API key — never emit a `session.error` SSE
       // event) or drop the optimistic message if the server has no record.
-      const result = await sendAndRecover({
-        sessionId,
-        messageId: messageID,
-        parts: mappedParts,
-        options: {
-          // Pass the session's directory so opencode resolves project-scoped
-          // agents (.opencode/agent/*.md under the project) and applies them
-          // when the user picked a project agent from the picker.
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-          ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
-          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-        } as any,
-        classify: classifySessionError,
-      });
+      const result = sessionState
+        ? await (async () => {
+            try {
+              await sessionState.sendParts(mappedParts, {
+                ...(session?.directory ? { directory: session.directory } : {}),
+                ...(selectedAgent ? { agent: selectedAgent } : {}),
+                ...(selectedModel ? { model: selectedModel } : {}),
+                ...(selectedVariant ? { variant: selectedVariant } : {}),
+              });
+              return { ok: true } as const;
+            } catch (cause) {
+              const error = recoverFromSendFailure(sessionId, messageID, cause, {
+                classify: classifySessionError,
+              });
+              return { ok: false, error, cause } as const;
+            }
+          })()
+        : await sendAndRecover({
+            sessionId,
+            messageId: messageID,
+            parts: mappedParts,
+            options: {
+              // Pass the session's directory so opencode resolves project-scoped
+              // agents (.opencode/agent/*.md under the project) and applies them
+              // when the user picked a project agent from the picker.
+              ...(session?.directory ? { directory: session.directory } : {}),
+              ...(selectedAgent ? { agent: selectedAgent } : {}),
+              ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
+              ...(selectedVariant ? { variant: selectedVariant } : {}),
+            } as any,
+            classify: classifySessionError,
+          });
       if (!result.ok) {
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
@@ -4680,6 +4812,7 @@ export function SessionChat({
       scrollToBottom,
       replyTo,
       messages,
+      sessionState,
     ],
   );
 
@@ -4766,8 +4899,9 @@ export function SessionChat({
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
 
-    abortSession.mutate(sessionId);
-  }, [sessionId, abortSession]);
+    if (sessionState) sessionState.cancel();
+    else abortSession.mutate(sessionId);
+  }, [sessionId, sessionState, abortSession]);
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -4876,16 +5010,14 @@ export function SessionChat({
 
       playSound('send');
       const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.sendKey
-        ? formatModelString(local.model.sendKey)
-        : undefined;
+      const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
         setPendingCommand(null);
         setPendingUserMessage(null);
         setPendingUserMessageId(null);
         setPollingActive(false);
         pendingCommandStashRef.current = null;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        useSessionStateStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
       };
 
@@ -4908,20 +5040,23 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const client = getClient();
-      void client.session
-        .command({
-          sessionID: sessionId,
+      const agent = lockedAgentName || local.agent.current?.name;
+      const variant = local.model.variant.current;
+      void (
+        sessionState?.runCommand(cmd.name, args || '', {
+          agent,
+          model: selectedModel,
+          variant,
+        }) ??
+        executeCommand.mutateAsync({
+          sessionId,
           command: cmd.name,
-          arguments: args || '',
-          ...((lockedAgentName || local.agent.current?.name) && {
-            agent: lockedAgentName || local.agent.current?.name,
-          }),
-          ...(selectedModel && { model: selectedModel }),
-          ...(local.model.variant.current && {
-            variant: local.model.variant.current,
-          }),
-        } as any)
+          args: args || '',
+          ...(agent ? { agent } : {}),
+          ...(selectedModel ? { model: formatModelString(selectedModel) } : {}),
+          ...(variant ? { variant } : {}),
+        })
+      )
         .then((res: any) => {
           if (res?.error) {
             handleCommandError(res.error);
@@ -4938,6 +5073,8 @@ export function SessionChat({
       sessionId,
       scrollToBottom,
       lockedAgentName,
+      sessionState,
+      executeCommand,
       local.agent.current,
       local.model.currentKey,
       local.model.sendKey,
@@ -4957,7 +5094,7 @@ export function SessionChat({
   const router = useRouter();
 
   // Thread context for subsessions only (real parentID).
-  const { data: parentSessionData } = useOpenCodeSession(session?.parentID || '');
+  const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
@@ -5061,6 +5198,27 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
+        {sessionState?.rewindMessageId ? (
+          <div className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-2">
+            <RotateCcw className="text-muted-foreground size-3.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground text-xs font-medium">Session rewound</p>
+              <p className="text-muted-foreground text-xs">
+                Sending a new prompt commits this path. Restore keeps the removed messages and file
+                changes.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={sessionState.rewindPending}
+              onClick={() => void handleRestoreRewind()}
+            >
+              {sessionState.rewindPending ? <Loading /> : 'Restore'}
+            </Button>
+          </div>
+        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -5095,6 +5253,9 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionState?.rewindMessageId,
+      sessionState?.rewindPending,
+      handleRestoreRewind,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -5167,7 +5328,7 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" />
+        <SessionStartingLoader stage="ready" variant="compact" />
       </div>
     );
   }
@@ -5375,7 +5536,7 @@ export function SessionChat({
                         key={turn.userMessage.info.id}
                         data-turn-id={turn.userMessage.info.id}
                         className={cn(
-                          '[content-visibility:auto] [contain-intrinsic-size:auto_600px]',
+                          '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
                           turnIndex === 0 ? '' : 'mt-12',
                         )}
                       >
@@ -5408,6 +5569,10 @@ export function SessionChat({
                           commands={commands}
                           disableToolNavigation={disableToolNavigation}
                           onPermissionReply={handlePermissionReply}
+                          onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                          rewindDisabled={
+                            !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                          }
                         />
                       </div>
                     );
@@ -5441,7 +5606,7 @@ export function SessionChat({
               <Button
                 onClick={handleSelectionReply}
                 size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
               >
                 Reply
                 <svg
@@ -5497,74 +5662,100 @@ export function SessionChat({
 
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
-        <SessionChatInput
-          onSend={async (text, files, mentions) => {
-            await handleSend(text, files, mentions);
-            if (failedStartDraft) {
-              clearStartStash(sessionId);
-              usePendingFilesStore.getState().consumePendingFiles();
-              setFailedStartDraft(null);
+        <>
+          <SessionChatInput
+            onSend={async (text, files, mentions) => {
+              await handleSend(text, files, mentions);
+              if (failedStartDraft) {
+                clearStartStash(sessionId);
+                usePendingFilesStore.getState().consumePendingFiles();
+                setFailedStartDraft(null);
+              }
+            }}
+            prefill={
+              rewindDraft
+                ? {
+                    text: rewindDraft.text,
+                    id: rewindDraft.id,
+                    mode: 'replace',
+                  }
+                : failedStartDraft
+                  ? {
+                      text: failedStartDraft.text,
+                      files: failedStartDraft.files,
+                      id: failedStartDraft.id,
+                      mode: 'merge',
+                    }
+                  : sessionPrefill
+                    ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                    : null
             }
-          }}
-          prefill={
-            failedStartDraft
-              ? {
-                  text: failedStartDraft.text,
-                  files: failedStartDraft.files,
-                  id: failedStartDraft.id,
-                  mode: 'merge',
-                }
-              : sessionPrefill
-                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                : null
-          }
-          isBusy={isBusy}
-          queuedMessages={queuedMessages}
-          onQueueMessage={handleQueueMessage}
-          onRemoveQueuedMessage={handleRemoveQueuedMessage}
-          onStop={handleStop}
-          escCount={escCount}
-          agents={local.agent.list}
-          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-          agentSelectorLocked={!!lockedAgentName}
-          commands={chatCommands}
-          onCommand={handleCommand}
-          models={local.model.list}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={handleModelChange}
-          modelDefaultControls={chatModelDefaultControls}
-          variants={local.model.variant.list}
-          selectedVariant={local.model.variant.current ?? null}
-          onVariantChange={handleVariantChange}
-          messages={messages}
-          sessionId={sessionId}
-          projectId={projectId}
-          onFileSearch={handleFileSearch}
-          providers={providers}
-          modelRequired
-          modelsLoading={providersLoading}
-          threadContext={threadContext}
-          onContextClick={handleContextClick}
-          replyTo={replyTo}
-          onClearReply={handleClearReply}
-          // Only lock the input into question-answer mode while the session is
-          // actually busy (a live question keeps the run busy). If a question
-          // chip is ever showing while the session is idle — e.g. a dead /
-          // abandoned question the agent left behind — the input stays unlocked
-          // so a typed message is sent to the agent instead of being swallowed
-          // as a custom answer.
-          lockForQuestion={!!renderedQuestion && isBusy}
-          // Same dead-prompt guard as questions: only lock while the agent is
-          // actually paused on the decision (isBusy), so a stale card can't
-          // swallow the composer on an idle session.
-          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-          onCustomAnswer={handleCustomAnswer}
-          questionButtonLabel={renderedQuestion ? questionAction.label : null}
-          questionCanAct={questionAction.canAct}
-          onQuestionAction={handleQuestionAction}
-          inputSlot={chatInputSlot}
-        />
+            isBusy={isBusy}
+            queuedMessages={queuedMessages}
+            onQueueMessage={handleQueueMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
+            onStop={handleStop}
+            escCount={escCount}
+            agents={local.agent.list}
+            selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+            onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+            agentSelectorLocked={!!lockedAgentName}
+            commands={chatCommands}
+            onCommand={handleCommand}
+            models={local.model.list}
+            selectedModel={local.model.currentKey ?? null}
+            onModelChange={handleModelChange}
+            modelDefaultControls={chatModelDefaultControls}
+            variants={local.model.variant.list}
+            selectedVariant={local.model.variant.current ?? null}
+            onVariantChange={handleVariantChange}
+            messages={messages}
+            sessionId={sessionId}
+            projectId={projectId}
+            onFileSearch={handleFileSearch}
+            providers={providers}
+            modelRequired
+            modelsLoading={providersLoading}
+            threadContext={threadContext}
+            onContextClick={handleContextClick}
+            replyTo={replyTo}
+            onClearReply={handleClearReply}
+            // Only lock the input into question-answer mode while the session is
+            // actually busy (a live question keeps the run busy). If a question
+            // chip is ever showing while the session is idle — e.g. a dead /
+            // abandoned question the agent left behind — the input stays unlocked
+            // so a typed message is sent to the agent instead of being swallowed
+            // as a custom answer.
+            lockForQuestion={!!renderedQuestion && isBusy}
+            // Same dead-prompt guard as questions: only lock while the agent is
+            // actually paused on the decision (isBusy), so a stale card can't
+            // swallow the composer on an idle session.
+            lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+            onCustomAnswer={handleCustomAnswer}
+            questionButtonLabel={renderedQuestion ? questionAction.label : null}
+            questionCanAct={questionAction.canAct}
+            onQuestionAction={handleQuestionAction}
+            inputSlot={chatInputSlot}
+          />
+          <ConfirmDialog
+            open={!!rewindTarget}
+            onOpenChange={(open) => !open && setRewindTarget(null)}
+            title="Edit from this message?"
+            description={
+              <>
+                <p>This rewinds the same session and restores its files to this message.</p>
+                <p className="mt-2">
+                  You can restore the removed path until you send a replacement prompt.
+                </p>
+              </>
+            }
+            confirmLabel="Rewind session"
+            confirmVariant="destructive"
+            confirmIcon={<RotateCcw className="size-3.5" />}
+            isPending={sessionState?.rewindPending}
+            onConfirm={() => void handleConfirmRewind()}
+          />
+        </>
       )}
     </div>
   );

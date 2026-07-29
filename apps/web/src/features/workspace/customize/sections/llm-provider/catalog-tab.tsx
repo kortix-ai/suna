@@ -35,6 +35,7 @@ export function CatalogTab({
   search,
   subview,
   setSubview,
+  onProviderConnected,
   canWrite = false,
 }: {
   projectId: string;
@@ -42,6 +43,7 @@ export function CatalogTab({
   search: string;
   subview: CatalogSubview;
   setSubview: (next: CatalogSubview) => void;
+  onProviderConnected: (providerId: string) => void;
   canWrite?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -91,7 +93,10 @@ export function CatalogTab({
         projectId={projectId}
         provider={provider}
         onBack={() => setSubview({ kind: 'detail', providerId: provider.id })}
-        onConnected={() => setSubview({ kind: 'list' })}
+        onConnected={(providerId) => {
+          setSubview({ kind: 'list' });
+          onProviderConnected(providerId);
+        }}
       />
     );
   }
@@ -274,7 +279,11 @@ function ProviderDetail({
                       <span className="text-foreground truncate text-sm font-medium">
                         {model.name}
                       </span>
-                      <ModelCapabilityIcons model={model} />
+                      <ModelCapabilityIcons
+                        reasoning={model.reasoning}
+                        toolCall={model.tool_call}
+                        vision={model.attachment}
+                      />
                     </div>
                     <div className="flex min-w-0 items-center gap-0.5">
                       <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">

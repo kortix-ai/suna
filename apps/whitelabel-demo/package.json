@@ -6,11 +6,12 @@
   "description": "Golden white-label reference — a complete Kortix client built on ONLY @kortix/sdk. Reskin the brand config + point at any Kortix deployment.",
   "scripts": {
     "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
-    "build": "next build",
+    "build": "pnpm lint:sdk-boundary && next build",
+    "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test tests/e2e",
-    "test:e2e": "bun test tests/e2e"
+    "test": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "typecheck": "pnpm lint:sdk-boundary && tsc --noEmit"
   },
   "dependencies": {
     "@kortix/sdk": "workspace:*",

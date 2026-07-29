@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,9 +31,9 @@ import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { setAdminBypass } from '@/lib/api-client';
-import { getProject, requestProjectAccess } from '@kortix/sdk/projects-client';
+import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 
 interface ProjectAccessBoundaryProps {
@@ -134,6 +134,16 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   const [sent, setSent] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [bypassError, setBypassError] = useState<string | null>(null);
+
+  // Stop this screen from becoming the user's permanent landing page. If the
+  // remembered project is one they cannot read, every `/` hit and every sign-in
+  // would redirect straight back here. The shell's self-heal does not fire for
+  // this case: a private project is a legitimate 403 surface, not a failed
+  // fetch. Forget it and let the landing door resolve a project they can open.
+  useEffect(() => {
+    if (readLastProjectId(user?.id) !== projectId) return;
+    clearLastProjectId();
+  }, [projectId, user?.id]);
 
   const requestMutation = useMutation({
     mutationFn: () => requestProjectAccess(projectId, message),

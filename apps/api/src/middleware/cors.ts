@@ -53,6 +53,7 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'traceparent',
       'tracestate',
       'X-Request-Id',
+      'Last-Event-ID',
     ],
     exposeHeaders: ['X-Next-Cursor', 'X-Request-Id'],
     credentials: true,

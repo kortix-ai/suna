@@ -11,31 +11,31 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { AgentHarnessIcon } from '@/features/session/composer/agent-harness-icon';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
-import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import {
   detectManifestVersion,
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
-  type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
+  type ProjectConfigSummary,
   setAgentScope,
   updateProjectDefaultAgent,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
+import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { StarSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
@@ -63,8 +63,13 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderContext={(config) => (
         <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
       )}
-      renderTriggerLabel={(agent) => agent.name}
-      className=' p-4  lg:py-0'
+      renderTriggerLabel={(agent) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <AgentHarnessIcon harness={agent.harness} />
+          <span className="truncate">{agent.name}</span>
+        </span>
+      )}
+      className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
           {agent.mode ? (
@@ -80,6 +85,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
+          <AgentHarnessIcon harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -169,17 +175,16 @@ function DefaultAgentSelector({
           onValueChange={(agentName) => mutation.mutate(agentName)}
           disabled={!canWrite || mutation.isPending}
         >
-          <SelectTrigger
-            aria-label="Default agent"
-            className="w-48 shrink-0"
-            variant="popover"
-          >
+          <SelectTrigger aria-label="Default agent" className="w-48 shrink-0" variant="popover">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {availableAgents.map((agent) => (
               <SelectItem key={agent.name} value={agent.name}>
-                {agent.name}
+                <span className="flex min-w-0 items-center gap-2">
+                  <AgentHarnessIcon harness={agent.harness} />
+                  <span className="truncate">{agent.name}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -240,8 +245,8 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
         ))}
       </div>
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; groups inherit this agent's declared secrets &amp; connectors
-        (below) as their own — usable in Secrets, sessions, and connector calls.
+        These members &amp; groups inherit this agent's declared secrets &amp; connectors (below) as
+        their own — usable in Secrets, sessions, and connector calls.
       </p>
     </div>
   );
@@ -260,7 +265,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
     staleTime: 20_000,
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
   const explicit = defaults.agentDefaults[agentName] ?? null;
@@ -474,7 +479,8 @@ function AgentScopeCard({
       <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
           Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
-          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>.
+          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>
+          .
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && (

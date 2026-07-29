@@ -52,6 +52,8 @@ export {
   archiveRepoSubtree,
   getFileAtRef,
   getFileHistory,
+  RepoFileNotFoundError,
+  isRepoFileNotFoundError,
 } from './git/files';
 
 export {

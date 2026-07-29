@@ -1,12 +1,8 @@
 /**
  * The wrapper-mode BFF proxy: `${origin}/api/kortix/*` → `${KORTIX_UPSTREAM}/*`.
  *
- * This is the one place in the app that talks to Kortix with a raw `fetch`
- * instead of `@kortix/sdk` — by design (see AGENTS.md: transport code inside
- * `src/server/` + `app/api/` is exempt from the "SDK only" rule; it's what the
- * SDK itself talks to). Everything else in the app still goes through
- * `@kortix/sdk`, just pointed at THIS route as its `backendUrl` in wrapper
- * mode (`src/lib/kortix.ts#configureWrapperMode`).
+ * The SDK owns the upstream HTTP transport. This route owns wrapper
+ * authentication, authorization policy, and ownership bookkeeping.
  *
  * Order of operations, each one able to short-circuit with an error response:
  *   1. `KORTIX_API_KEY` must be configured (wrapper mode must actually be on).
@@ -16,18 +12,26 @@
  *   5. Forward to upstream with the Kortix API key substituted in for
  *      Authorization — the end user's own session token NEVER reaches Kortix.
  *
- * Streaming: the response body is passed straight through
+ * Streaming: the response body passes straight through
  * (`new Response(upstreamRes.body, …)`) for everything except the two routes
  * that need a tiny JSON rewrite (`filterProjectsList`, `recordProvisionOwner`)
- * — those bodies are small, one-shot JSON, never SSE/long-lived, so buffering
- * them is safe. Nothing else is buffered: this is what keeps the SSE event
- * stream and long-lived sandbox-runtime GETs working.
+ * — those bodies are small one-shot JSON responses. Buffering them is safe.
+ * Nothing else is buffered. Long-lived session streams remain active.
  */
 
 import { getRequestSession } from '@/server/auth';
+import { buildUpstreamPath } from '@/server/upstream-path';
+import {
+  injectEndUserRef,
+  isSessionCreate,
+  isSessionList,
+  scopeSessionListToEndUser,
+} from '@/server/end-user';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
 import { addOwnedProject, isOwner, listOwnedProjects } from '@/server/users';
+import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -58,47 +62,66 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   }
 
   const { path = [] } = await ctx.params;
-  const upstreamPath = path.join('/');
+  // Next hands back DECODED segments, so `%2F..%2F` arrives as a real `..` and a
+  // naive join lets the POLICY and the UPSTREAM disagree about which project is
+  // being addressed. Refuse before anything reads the path.
+  const built = buildUpstreamPath(path);
+  if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
+  const upstreamPath = built.path;
 
   const policy = evaluatePolicy(req.method, upstreamPath, (projectId) =>
     isOwner(session.userId, projectId),
+    resolveRuntimeProject,
   );
   if (!policy.allow) return jsonError(policy.status, policy.reason);
 
   const url = new URL(req.url);
-  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${url.search}`;
+  // The session list is scoped to the signed-in end-user server-side; without
+  // this the browser sees (and can ask for) every OTHER Lumen user's sessions.
+  let upstreamSearch = url.search;
+  if (isSessionList(req.method, upstreamPath)) {
+    const scoped = scopeSessionListToEndUser(url.search, session.userId);
+    if (scoped.action === 'reject') return jsonError(403, scoped.reason);
+    upstreamSearch = scoped.search;
+  }
+  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${upstreamSearch}`;
 
-  const headers = new Headers(req.headers);
-  headers.delete('host');
-  headers.delete('content-length');
-  headers.delete('cookie'); // the app session cookie is ours, never upstream's
-  headers.set('authorization', `Bearer ${apiKey}`);
-
-  // Buffer the request body instead of streaming it (`body: req.body,
-  // duplex: 'half'`): a streamed body has no Content-Length, so undici sends
-  // it with `Transfer-Encoding: chunked` — and the sandbox proxy's inner load
-  // balancer (AWS ALB fronting the Daytona runtime) rejects chunked request
-  // bodies with a bare HTML 400. Every request body on this surface is small
-  // JSON (or a modest FormData upload), so buffering is safe; RESPONSE bodies
-  // below still stream untouched, which is what SSE and long-lived runtime
-  // GETs actually need.
-  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
-  const init: RequestInit = {
-    method: req.method,
-    headers,
-    redirect: 'manual',
-    ...(hasBody ? { body: await req.arrayBuffer() } : {}),
-  };
-
-  let upstreamRes: Response;
-  try {
-    upstreamRes = await fetch(upstreamUrl, init);
-  } catch {
-    return jsonError(502, 'Upstream request failed');
+  // Kortix-as-a-Backend: every upstream call carries ONE credential (the
+  // wrapper's API key), so upstream cannot tell Lumen's users apart by itself.
+  // Stamp the authenticated user onto session creates so per-end-user usage,
+  // idempotency-replay protection and the per-end-user cap all key on a value
+  // the browser cannot forge.
+  let forwardRequest: NextRequest | Request = req;
+  if (isSessionCreate(req.method, upstreamPath)) {
+    let parsed: unknown = null;
+    try {
+      parsed = await req.clone().json();
+    } catch {
+      parsed = null;
+    }
+    const decision = injectEndUserRef(parsed, session.userId);
+    if (decision.action === 'reject') return jsonError(403, decision.reason);
+    if (decision.action === 'inject') {
+      forwardRequest = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body: JSON.stringify(decision.body),
+      });
+    }
   }
 
-  // Buffered post-processing — only for the two ownership-tracking routes.
-  if (policy.filterProjectsList || policy.recordProvisionOwner) {
+  const upstreamRes = await forwardKortixRequest({
+    request: forwardRequest as NextRequest,
+    upstreamUrl,
+    token: apiKey,
+  });
+
+  // Buffer only responses that update or filter wrapper ownership state.
+  if (
+    policy.filterProjectsList ||
+    policy.recordProvisionOwner ||
+    policy.recordRuntimeProjectId
+  ) {
     const text = await upstreamRes.text();
     let body: unknown;
     let isJson = true;
@@ -122,6 +145,12 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
       if (projectId) addOwnedProject(session.userId, projectId);
     }
 
+    if (policy.recordRuntimeProjectId && upstreamRes.ok) {
+      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)?.sandbox
+        ?.external_id;
+      if (runtimeId) recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
+    }
+
     if (policy.filterProjectsList && Array.isArray(body)) {
       const owned = new Set(listOwnedProjects(session.userId));
       body = body.filter((item) => owned.has((item as { project_id?: string })?.project_id ?? ''));
@@ -130,13 +159,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
     return Response.json(body, { status: upstreamRes.status });
   }
 
-  // Everything else — stream straight through, unbuffered.
-  const outHeaders = new Headers(upstreamRes.headers);
-  outHeaders.delete('content-encoding');
-  outHeaders.delete('content-length');
-  outHeaders.delete('set-cookie'); // upstream's own cookies are meaningless on our origin
-
-  return new Response(upstreamRes.body, { status: upstreamRes.status, headers: outHeaders });
+  // The SDK returns a sanitized, streaming response.
+  return upstreamRes;
 }
 
 export { handle as DELETE, handle as GET, handle as PATCH, handle as POST, handle as PUT };

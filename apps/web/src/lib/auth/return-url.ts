@@ -1,5 +1,9 @@
-// Post-auth landing goes to the projects list.
-const DEFAULT_AUTH_RETURN_URL = '/projects';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+
+// Post-auth landing goes to a project, never to the projects list. The landing
+// door paints immediately and resolves (or provisions) the project behind the
+// UI, so no auth path has to block on the backend to build this redirect.
+const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',
@@ -38,6 +42,12 @@ export function sanitizeAuthReturnUrl(
   } catch {
     return fallback;
   }
+
+  // Middleware preserves an unauthenticated request as the post-auth return
+  // path. A request for the bare list must still enter through the landing
+  // door. Otherwise a new account renders /projects while its first project is
+  // being provisioned.
+  if (trimmedValue === '/projects') return PROJECT_LANDING_PATH;
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => {
     return trimmedValue === prefix || trimmedValue.startsWith(`${prefix}/`) || trimmedValue.startsWith(`${prefix}?`);

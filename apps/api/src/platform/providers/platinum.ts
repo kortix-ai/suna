@@ -414,6 +414,10 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'running') return 'running';
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
+      // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
+      // reported as `unknown` is a box `decideReconcile` never acts on, and
+      // compute billing then accrues wall-clock against it indefinitely.
+      if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
       if (isMissingSandboxError(err)) return 'removed';

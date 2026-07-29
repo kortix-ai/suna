@@ -46,6 +46,11 @@ export type ActionBinding =
   // through the shared tunnel RPC core instead of executeCall. See
   // docs/specs/computer-connector.md.
   | { kind: 'tunnel'; method: string }
+  // Voice channel action (`spawn_room`, `join_gmeet`, `join_zoom`, …): server-
+  // side logic (LiveKit today), never an outbound HTTP call — the gateway
+  // routes these through GatewayDeps.executeVoiceCall instead of executeCall.
+  // `op` is the action's connector-relative path. See executor/gateway.ts.
+  | { kind: 'voice'; op: string }
   | { kind: 'pipedream'; app: string; actionKey: string }
   // Generic Connect-Proxy request: hit ANY endpoint of a Pipedream-connected
   // app's API. Pipedream injects the user's credential server-side, so this

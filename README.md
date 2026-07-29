@@ -6,7 +6,7 @@
 
 **The AI command center for your company**
 
-**One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
+**One repo. One manifest. Native runtime configs. A workforce of AI agents that does the real work.**
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Version](https://img.shields.io/badge/version-0.9.98-111111.svg)](VERSION)
@@ -59,7 +59,7 @@ Most AI tools give you a chat box. Kortix gives you a **command center** — one
 ```
 project  (git repo + kortix.yaml)
    └─ session ──> isolated cloud sandbox on a branch named after the session
-                     └─ agent (OpenCode) works, commits, pushes
+                     └─ agent (OpenCode, Claude Code, Codex, or Pi) works
                            └─ change request ──> you review & merge ──> main
 ```
 

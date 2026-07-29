@@ -8,13 +8,22 @@
  * string from the field + selection — is a follow-up; normalization already
  * works.) See docs/specs/executor.md §7.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import type { ActionBinding } from './types';
 
 export interface ExecutorAuth {
-  type: 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
-  in: 'header' | 'query';
+  type:
+    | 'bearer'
+    | 'basic'
+    | 'custom'
+    | 'api_key'
+    | 'oauth1'
+    | 'hmac'
+    | 'aws_sigv4'
+    | 'mtls'
+    | 'none';
+  in: 'header' | 'query' | 'cookie';
   name: string | null;
   prefix: string | null;
 }
@@ -26,6 +35,7 @@ interface BuiltRequest {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  tls?: { cert: string; key: string; ca?: string };
 }
 
 export interface ExecResult {
@@ -48,7 +58,16 @@ function applyAuth(
   auth: ExecutorAuth,
   secret: string | null,
 ): void {
-  if (auth.type === 'none' || auth.type === 'oauth1' || !secret) return;
+  if (
+    auth.type === 'none' ||
+    auth.type === 'oauth1' ||
+    auth.type === 'hmac' ||
+    auth.type === 'aws_sigv4' ||
+    auth.type === 'mtls' ||
+    !secret
+  ) {
+    return;
+  }
   if (auth.type === 'bearer') {
     const prefix = auth.prefix ?? 'Bearer';
     headers['Authorization'] = `${prefix} ${secret}`.trim();
@@ -59,10 +78,14 @@ function applyAuth(
     headers['Authorization'] = `Basic ${Buffer.from(secret).toString('base64')}`;
     return;
   }
-  // custom
+  // custom / api_key
   const value = auth.prefix ? `${auth.prefix}${secret}` : secret;
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
+  else if (auth.in === 'cookie') {
+    const cookie = `${name}=${encodeURIComponent(value)}`;
+    headers.Cookie = headers.Cookie ? `${headers.Cookie}; ${cookie}` : cookie;
+  }
   else headers[name] = value;
 }
 
@@ -76,9 +99,131 @@ function applyAuth(
  */
 function reservedAuthHeader(auth: ExecutorAuth): string | null {
   if (auth.type === 'none') return null;
-  if (auth.type === 'custom') return auth.in === 'query' ? null : (auth.name ?? 'Authorization');
+  if (auth.type === 'custom' || auth.type === 'api_key') {
+    return auth.in === 'header' ? (auth.name ?? 'Authorization') : auth.in === 'cookie' ? 'Cookie' : null;
+  }
+  if (auth.type === 'hmac') return auth.name ?? 'X-Signature';
+  if (auth.type === 'mtls') return null;
   // bearer / basic / oauth1 all sign into Authorization.
   return 'Authorization';
+}
+
+function parseObjectCredential(secret: string | null, kind: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(secret ?? '') as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') throw new Error();
+    const values = Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    return values;
+  } catch {
+    throw new Error(`${kind} credential must be a JSON object`);
+  }
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function hmacSha256(key: string | Buffer, value: string, encoding?: 'hex'): Buffer | string {
+  const digest = createHmac('sha256', key).update(value);
+  return encoding === 'hex' ? digest.digest('hex') : digest.digest();
+}
+
+function canonicalQuery(url: URL): string {
+  return [...url.searchParams.entries()]
+    .map(([key, value]) => [rfc3986(key), rfc3986(value)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak === bk ? av.localeCompare(bv) : ak.localeCompare(bk)))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
+
+function applyAdvancedAuth(
+  request: BuiltRequest,
+  auth: ExecutorAuth,
+  secret: string | null,
+  now: () => Date,
+): void {
+  if (!secret) return;
+  if (auth.type === 'hmac') {
+    const credential = parseObjectCredential(secret, 'hmac');
+    if (!credential.secret) throw new Error('hmac credential requires secret');
+    const timestamp = now().toISOString();
+    const url = new URL(request.url);
+    const canonical = [
+      request.method,
+      `${url.pathname}${url.search}`,
+      timestamp,
+      sha256(request.body ?? ''),
+    ].join('\n');
+    const header = auth.name ?? 'X-Signature';
+    request.headers[header] = String(hmacSha256(credential.secret, canonical, 'hex'));
+    request.headers[`${header}-Timestamp`] = timestamp;
+    if (credential.key_id) request.headers[`${header}-Key-Id`] = credential.key_id;
+    return;
+  }
+  if (auth.type === 'aws_sigv4') {
+    const credential = parseObjectCredential(secret, 'aws_sigv4');
+    const { access_key_id, secret_access_key, region, service, session_token } = credential;
+    if (!access_key_id || !secret_access_key || !region || !service) {
+      throw new Error(
+        'aws_sigv4 credential requires access_key_id, secret_access_key, region, and service',
+      );
+    }
+    const date = now();
+    const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.slice(0, 8);
+    const url = new URL(request.url);
+    const payloadHash = sha256(request.body ?? '');
+    request.headers.Host = url.host;
+    request.headers['X-Amz-Date'] = amzDate;
+    request.headers['X-Amz-Content-Sha256'] = payloadHash;
+    if (session_token) request.headers['X-Amz-Security-Token'] = session_token;
+    const signedHeaderNames = Object.keys(request.headers)
+      .map((name) => name.toLowerCase())
+      .sort();
+    const canonicalHeaders = signedHeaderNames
+      .map((name) => {
+        const source = Object.keys(request.headers).find((key) => key.toLowerCase() === name)!;
+        return `${name}:${request.headers[source]!.trim().replace(/\s+/g, ' ')}\n`;
+      })
+      .join('');
+    const signedHeaders = signedHeaderNames.join(';');
+    const canonicalRequest = [
+      request.method,
+      url.pathname || '/',
+      canonicalQuery(url),
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+    const scope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      scope,
+      sha256(canonicalRequest),
+    ].join('\n');
+    const dateKey = hmacSha256(`AWS4${secret_access_key}`, dateStamp) as Buffer;
+    const regionKey = hmacSha256(dateKey, region) as Buffer;
+    const serviceKey = hmacSha256(regionKey, service) as Buffer;
+    const signingKey = hmacSha256(serviceKey, 'aws4_request') as Buffer;
+    const signature = hmacSha256(signingKey, stringToSign, 'hex');
+    request.headers.Authorization =
+      `AWS4-HMAC-SHA256 Credential=${access_key_id}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    return;
+  }
+  if (auth.type === 'mtls') {
+    const credential = parseObjectCredential(secret, 'mtls');
+    if (!credential.certificate || !credential.private_key) {
+      throw new Error('mtls credential requires certificate and private_key');
+    }
+    request.tls = {
+      cert: credential.certificate,
+      key: credential.private_key,
+      ...(credential.ca ? { ca: credential.ca } : {}),
+    };
+  }
 }
 
 /**
@@ -468,7 +613,15 @@ function buildMcpRequest(opts: {
   return { url, method: 'POST', headers, body };
 }
 
-export type FetchImpl = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<{
+export type FetchImpl = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    tls?: { cert: string; key: string; ca?: string };
+  },
+) => Promise<{
   status: number;
   ok: boolean;
   text: () => Promise<string>;
@@ -499,8 +652,20 @@ export function parseResponseBody(text: string): unknown {
 }
 
 /** Perform a built request and parse the response (JSON or SSE-framed JSON). */
-async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
-  const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
+async function performRequest(
+  req: BuiltRequest,
+  fetchImpl: FetchImpl,
+  auth: ExecutorAuth,
+  secret: string | null,
+  now: () => Date,
+): Promise<ExecResult> {
+  applyAdvancedAuth(req, auth, secret, now);
+  const res = await fetchImpl(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    tls: req.tls,
+  });
   const text = await res.text();
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
 }
@@ -522,6 +687,7 @@ export async function executeCall(opts: {
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  now?: () => Date;
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
@@ -533,7 +699,7 @@ export async function executeCall(opts: {
       headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
-    }), opts.fetchImpl);
+    }), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'openapi') {
@@ -549,7 +715,7 @@ export async function executeCall(opts: {
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'http') {
@@ -564,7 +730,7 @@ export async function executeCall(opts: {
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'mcp') {
@@ -577,7 +743,7 @@ export async function executeCall(opts: {
       toolName: binding.tool,
       args: opts.args,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'graphql') {
@@ -591,7 +757,7 @@ export async function executeCall(opts: {
       secret: opts.secret,
       args: opts.args,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   throw new Error(`execution for "${binding.kind}" connectors is not implemented yet`);

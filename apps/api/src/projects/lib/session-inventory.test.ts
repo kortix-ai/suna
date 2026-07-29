@@ -42,6 +42,45 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('an end-user-filtered project scope drops rows the manager cannot open', () => {
+    // scope=project normally returns inaccessible rows with the end-user label
+    // redacted. Pairing that with ?end_user_ref= would turn it into an oracle:
+    // send a guessed handle, count the rows, learn whether that end-user exists
+    // here. An end-user-scoped question gets end-user-scoped rows.
+    const privateOther = row('private-other', { createdBy: OTHER_ID });
+    const mine = row('mine', { createdBy: VIEWER_ID });
+
+    const filtered = selectSessionRowsForViewer({
+      rows: [privateOther, mine],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: true,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(filtered.items.map((item) => item.row.sessionId)).toEqual(['mine']);
+
+    // ...and the unfiltered inventory is unchanged — a manager asking for the
+    // whole project still gets the whole project.
+    const unfiltered = selectSessionRowsForViewer({
+      rows: [privateOther, mine],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: false,
+      runtimeStatusBySession: new Map(),
+    });
+    expect(unfiltered.items.map((item) => item.row.sessionId)).toEqual([
+      'private-other',
+      'mine',
+    ]);
+  });
+
   test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
@@ -59,7 +98,9 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: true,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: false,
+    runtimeStatusBySession: new Map(),
     });
 
     expect(selected.authorized).toBe(true);
@@ -90,7 +131,9 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: false,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map(),
+      callerSessionId: null,
+      endUserRefFiltered: false,
+    runtimeStatusBySession: new Map(),
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
@@ -111,7 +154,9 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: false,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
+      callerSessionId: null,
+      endUserRefFiltered: false,
+    runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
     expect(selected.authorized).toBe(true);
@@ -161,3 +206,82 @@ describe('mergeSessionOwnerIdentities', () => {
     });
   });
 });
+
+/**
+ * Kortix-as-a-Backend isolation, at the LIST leg.
+ *
+ * The unit tests for `isSessionVisibleTo` cover the decision. This covers the
+ * scenario the decision exists for, in the shape it actually occurs: a wrapper
+ * creates every end-user's session under ONE credential, so `created_by` is
+ * identical across them and cannot separate anybody.
+ */
+describe('KaaB: one wrapper credential, many end-users', () => {
+  const WRAPPER = '33333333-3333-4333-8333-333333333333';
+  const wrapperSubject = { userId: WRAPPER, groupIds: [] };
+
+  // Two end-users' sessions. Same creator, same visibility — the ONLY thing
+  // distinguishing them is which sandbox is asking.
+  const alice = row('aaaa1111-1111-4111-8111-111111111111', {
+    createdBy: WRAPPER,
+    origin: 'backend',
+    originRef: 'end-user-alice',
+  });
+  const bob = row('bbbb2222-2222-4222-8222-222222222222', {
+    createdBy: WRAPPER,
+    origin: 'backend',
+    originRef: 'end-user-bob',
+  });
+
+  const select = (callerSessionId: string | null) =>
+    selectSessionRowsForViewer({
+      rows: [alice, bob],
+      scope: 'visible',
+      canManageProject: false,
+      subject: wrapperSubject,
+      grantsBySession: new Map(),
+      callerSessionId,
+      endUserRefFiltered: false,
+      runtimeStatusBySession: new Map(),
+    });
+
+  test("alice's sandbox cannot see bob's session", () => {
+    const accessible = select(alice.sessionId)
+      .items.filter((item) => item.canAccess)
+      .map((item) => item.row.sessionId);
+    expect(accessible).toEqual([alice.sessionId]);
+  });
+
+  test("bob's sandbox cannot see alice's session", () => {
+    const accessible = select(bob.sessionId)
+      .items.filter((item) => item.canAccess)
+      .map((item) => item.row.sessionId);
+    expect(accessible).toEqual([bob.sessionId]);
+  });
+
+  test('the wrapper backend itself still sees BOTH — it is the operator', () => {
+    // Not session-bound: this is the wrapper's own credential acting for nobody
+    // in particular, so created_by ownership is legitimate here.
+    const accessible = select(null)
+      .items.filter((item) => item.canAccess)
+      .map((item) => item.row.sessionId);
+    expect(accessible).toEqual([alice.sessionId, bob.sessionId]);
+  });
+
+  test('an INTERACTIVE session is unaffected by the caller binding', () => {
+    // created_by really is one person there, so narrowing would break
+    // `kortix sessions ls` from inside a normal sandbox.
+    const mine = row('cccc3333-3333-4333-8333-333333333333', { createdBy: VIEWER_ID });
+    const sibling = row('dddd4444-4444-4444-8444-444444444444', { createdBy: VIEWER_ID });
+    const selected = selectSessionRowsForViewer({
+      rows: [mine, sibling],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: mine.sessionId,
+      endUserRefFiltered: false,
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.items.every((item) => item.canAccess)).toBe(true);
+  });
+})

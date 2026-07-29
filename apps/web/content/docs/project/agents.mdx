@@ -1,31 +1,56 @@
 ---
 title: Agents
-description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
+description: Logical agents select immutable OpenCode, Claude Code, Codex, or Pi runtime profiles.
 ---
 
-An agent is a markdown file that defines how OpenCode acts in a
-[session](/docs/work/sessions). This page covers agent files, skills, and
-how a session picks an agent.
+An agent is the logical name a project uses to start a [session](/docs/work/sessions). The agent selects one immutable runtime profile. The profile selects OpenCode, Claude Code, Codex, or Pi.
 
-## OpenCode runs every session
+## Runtime modes
 
-OpenCode, the open-source coding-agent runtime, runs every session. The
-`kortix-agent` daemon starts it as `opencode serve`, with its config
-directory pointed at the project's `.kortix/opencode/` folder.
+- Version 2 runs OpenCode.
+- Version 3 runs the harness selected by `agents.<name>.runtime`.
 
-## An agent is two files
+Version 3 requires the project experiment named **ACP & Multi-Harness**. The default remains OpenCode over REST.
 
-Each agent has two parts:
+## Version 3 logical agents
 
-- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
-  frontmatter sets the model, mode, and tools. Its body is the system prompt.
-- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
-  name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, and CLI actions.
+Version 3 separates three identifiers.
 
-The manifest never sets a prompt, mode, or tool. The `.md` file never sets
-platform access. See [the manifest reference](/docs/project/manifest) for
-every governance field.
+| Identifier | Purpose |
+|---|---|
+| Logical agent | Project-facing name passed as `agent_name`. |
+| Runtime profile | Immutable manifest profile selected by the logical agent. |
+| Native agent | Optional harness-native agent or mode in `agents.<name>.agent`. |
+
+```yaml
+kortix_version: 3
+default_agent: reviewer
+
+runtimes:
+  codex:
+    harness: codex
+    config_dir: .codex
+
+agents:
+  reviewer:
+    runtime: codex
+    agent: reviewer
+    connectors: [github]
+    skills: [code-review]
+```
+
+Kortix compiles this mapping when it creates the session. The session returns
+`runtime_harness` and `native_agent`. Its metadata stores `runtime_name` and the
+compiled runtime plan. A later UI agent selection cannot change these values.
+
+## Version 2 OpenCode agents
+
+Each v2 agent has two parts.
+
+- **Behavior** — `.kortix/opencode/agents/<name>.md`.
+- **Governance** — the matching `agents.<name>` block in `kortix.yaml`.
+
+The Markdown frontmatter sets OpenCode behavior. The manifest sets connectors, secrets, skills, and CLI grants.
 
 ## Governance is deny-by-default
 
@@ -40,18 +65,22 @@ grant full access by default. Set specific grants to restrict access. See
 
 ## Skills give an agent know-how
 
-A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
-OpenCode loads a skill on demand when the agent calls it — Kortix does not
-inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
-controls which skills it may load.
+A v2 OpenCode skill is a Markdown file at `.kortix/opencode/skills/<name>/SKILL.md`. The `skills` grant controls which skills the agent may load. Version 3 applies the same grant boundary to the selected harness.
+
+Kortix injects managed system skills into the selected harness's native
+discovery path. An agent can also retrieve the deployed source through the CLI:
+
+```sh
+kortix system-skills
+kortix system-skills get kortix-system --full
+```
+
+Codex reads repository skills from `.agents/skills` and instructions from
+`AGENTS.md`. OpenCode, Claude Code, and Pi read their native skill directories.
 
 ## How a session picks its agent
 
-Creating a session accepts an `agent_name`. Kortix starts that agent for the
-session. If you omit `agent_name`, Kortix uses the project's `default_agent`.
-Set the default agent from the dashboard, the API, or the SDK. Each writes
-`default_agent` to `kortix.yaml` and commits the change to the project's
-default branch.
+Creating a session accepts `agent_name`. Kortix uses `default_agent` when the field is absent. The selected agent remains fixed for the session.
 
 An agent never exceeds the access of the person or token that started the
 session.
@@ -60,3 +89,30 @@ New or changed agents and skills reach future sessions only after a
 [change request](/docs/work/change-requests) merges them into the default
 branch. Connect external tools before an agent can use them; see
 [Connectors](/docs/connect/connectors).
+
+## Test each harness
+
+Create one fresh session per logical agent. Use the same deterministic prompt.
+
+```sh
+kortix sessions new --agent opencode --prompt "Reply exactly: OPENCODE_OK" --wait --json
+kortix sessions new --agent claude --prompt "Reply exactly: CLAUDE_OK" --wait --json
+kortix sessions new --agent codex --prompt "Reply exactly: CODEX_OK" --wait --json
+kortix sessions new --agent pi --prompt "Reply exactly: PI_OK" --wait --json
+```
+
+Read each result with `kortix sessions info <session-id> --json` and
+`kortix sessions log <session-id> --json`. Confirm `runtime_harness`, the exact
+reply, and the persisted transcript. Restart the same session and send one more
+prompt to verify immutable runtime identity.
+
+The source checkout includes the complete four-harness protocol smoke:
+
+```sh
+pnpm exec dotenvx run --ignore=MISSING_ENV_FILE \
+  -f apps/api/.env.local -f apps/api/.env -f apps/web/.env \
+  -- bun tests/e2e/scripts/acp-multi-harness-smoke.ts
+```
+
+A generic provider-key check is not acceptance proof. Test the exact harness
+and model with a real prompt.

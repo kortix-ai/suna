@@ -62,13 +62,13 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk/projects-client';
+import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -290,7 +290,7 @@ function StepPrimaryAction({
 }) {
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
-  const modelProviders = useOpenCodeProviders();
+  const modelProviders = useRuntimeProviders();
   const { hasSelectableModels } = useModelConnectionGate(flattenModels(modelProviders.data));
 
   if (stepId === 'slack') {
@@ -736,7 +736,7 @@ function SlackGlyph() {
 // ─── Step 4: Connect a model ────────────────────────────────────────────────────
 
 function ModelStep() {
-  const { data: providers, isLoading } = useOpenCodeProviders();
+  const { data: providers, isLoading } = useRuntimeProviders();
   const {
     openConnectProvider,
     openUpgrade,

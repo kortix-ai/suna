@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { RefreshCw, ServerOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
-import { useServerStore } from '@/stores/server-store';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 
@@ -33,7 +33,7 @@ export function SandboxFileExplorer({
 /** Renders children only while the sandbox OpenCode server is reachable. */
 function SandboxServerGate({ children }: { children: React.ReactNode }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
 
   if (!isHealthLoading && !health?.healthy) {

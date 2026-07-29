@@ -20,7 +20,7 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { useSyncExternalStore } from 'react';
@@ -41,7 +41,7 @@ function portOf(url: string | undefined): number {
 // snapshots sidesteps that — same live value, same reactivity via
 // `subscribe`, no behavior change in the browser or in real SSR.
 const getSandboxAliveSnapshot = () => {
-  const s = useSandboxConnectionStore.getState();
+  const s = useRuntimeConnectionStore.getState();
   return s.status === 'connected' && s.healthy === true;
 };
 
@@ -57,7 +57,7 @@ export function AppsCard({
   // was static markup before this — a stopped sandbox kept "live" dots pulsing
   // over dead servers, which is the panel lying (W8).
   const sandboxAlive = useSyncExternalStore(
-    useSandboxConnectionStore.subscribe,
+    useRuntimeConnectionStore.subscribe,
     getSandboxAliveSnapshot,
     getSandboxAliveSnapshot,
   );

@@ -37,8 +37,12 @@ because EKS is active.
 
 ## State
 
-State lives in S3 (`kortix-terraform-state`) with a DynamoDB lock table
-(`kortix-terraform-locks`), both in us-west-2 — see `environments/*/backend.tf`.
+Most state lives in S3 (`kortix-terraform-state`) with a DynamoDB lock table
+(`kortix-terraform-locks`), both in `us-west-2`.
+
+The US East 2 production shadow uses the regional S3 bucket
+`kortix-terraform-state-us-east-2-935064898258` and DynamoDB table
+`kortix-terraform-locks-us-east-2`. See each root's `backend.tf`.
 Bootstrap once with `bash scripts/bootstrap-state.sh` (creates the bucket +
 table if absent), then `terraform init`.
 

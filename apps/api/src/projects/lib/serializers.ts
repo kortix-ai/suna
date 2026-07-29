@@ -1,22 +1,29 @@
-import { config, type SandboxProviderName } from '../../config';
-import { isPlaceholderOpencodeTitle } from '../opencode-title-sync';
 import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
-import { type SecretGrant, visibilityToIntent } from '../../executor/share';
-import { db } from '../../shared/db';
-import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
+  type accountGithubInstallations,
+  type projectGitConnections,
+  type projectGitCredentials,
+  projectSecrets,
+  type projectSessions,
+  type projects,
+} from '@kortix/db';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import type { Context } from 'hono';
+import { type SandboxProviderName, config } from '../../config';
+import { type SecretGrant, visibilityToIntent } from '../../executor/share';
+import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
+import { db } from '../../shared/db';
+import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
+import {
+  type SnapshotErrorCategory,
   classifySnapshotError,
   describeSnapshotError,
-  type SnapshotErrorCategory,
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
-import { type ProjectRole } from '../access';
-import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
-import { isGithubAppConfigured, type GitHubRepo } from '../github';
-import { accountGithubInstallations, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import { Context } from 'hono';
+import type { ProjectRole } from '../access';
+import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
+import { isPlaceholderOpencodeTitle } from './opencode-title';
 import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
@@ -45,7 +52,6 @@ export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './sessio
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
-
 export function serializeSession(
   row: ProjectSessionRow,
   ctx?: {
@@ -70,20 +76,28 @@ export function serializeSession(
     deletedBy?: string | null;
   },
 ): ProjectSession {
-  const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
-    ? row.metadata.opencode_sessions
-    : [];
+  // Computed BEFORE the metadata-derived fields below, because name,
+  // custom_name and opencode_sessions are all derived FROM metadata — redacting
+  // the metadata object alone would still have leaked the OpenCode-synced title
+  // (which summarises the conversation) and the conversation-tree snapshot.
+  const canAccess = ctx?.canAccess ?? true;
+  const opencodeSessions =
+    canAccess && Array.isArray(row.metadata?.opencode_sessions)
+      ? row.metadata.opencode_sessions
+      : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
-  const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
+  const customName =
+    canAccess && typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
   // Historic rows may carry OpenCode's frozen placeholder ("New session - …")
   // in metadata.name — expose it as untitled so clients fall back to their own
   // display chain instead of a junk title (heals old rows with no backfill).
-  const rawAutoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const rawAutoName =
+    canAccess && typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
   return {
     session_id: row.sessionId,
@@ -95,12 +109,34 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
+    runtime_transport:
+      canAccess && row.metadata?.runtime_transport === 'acp' ? 'acp' : 'rest',
+    runtime_harness:
+      canAccess &&
+      ['claude', 'codex', 'opencode', 'pi'].includes(String(row.metadata?.runtime_harness))
+        ? (row.metadata?.runtime_harness as 'claude' | 'codex' | 'opencode' | 'pi')
+        : 'opencode',
+    native_agent:
+      canAccess && typeof row.metadata?.native_agent === 'string'
+        ? row.metadata.native_agent
+        : null,
+    acp_server_id:
+      canAccess && typeof row.metadata?.acp_server_id === 'string'
+        ? row.metadata.acp_server_id
+        : null,
+    acp_session_id:
+      canAccess && typeof row.metadata?.acp_session_id === 'string'
+        ? row.metadata.acp_session_id
+        : null,
     name: customName ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
-    metadata: row.metadata ?? {},
+    // A row the caller cannot ACCESS is still listed (scope=project shows a
+    // manager the whole project) but must not carry the session's CONTENT.
+    // metadata holds initial_prompt — the literal text an end-user typed.
+    metadata: canAccess ? (row.metadata ?? {}) : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
@@ -109,12 +145,20 @@ export function serializeSession(
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
-    origin_ref: row.originRef,
-    secrets_allowlist: row.secretsAllowlist ?? null,
-    sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
+    // Which END-USER a backend session acts for, and what it may read, are
+    // both session content — withheld on a row the caller cannot open.
+    end_user_ref: canAccess ? row.originRef : null,
+    // Deprecated alias, echoed with the same value so wrappers written against
+    // the old name keep working. The DB column keeps its original name.
+    origin_ref: canAccess ? row.originRef : null,
+    secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
+    sharing: visibilityToIntent(
+      row.visibility as 'private' | 'project' | 'restricted',
+      ctx?.grants ?? [],
+    ),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
-    can_access: ctx?.canAccess ?? true,
+    can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
     deleted_by: ctx?.deletedBy ?? null,
@@ -142,8 +186,10 @@ export function isRepoNameTakenError(error: unknown): boolean {
   return m.includes('already exists') || m.includes('name already') || m.includes('(422)');
 }
 
-
-export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }): Project {
+export function serializeProject(
+  row: ProjectRow,
+  access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole },
+): Project {
   return {
     project_id: row.projectId,
     account_id: row.accountId,
@@ -177,10 +223,11 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     // create path (which ignores a disabled/removed pin and falls back), so the
     // picker never shows a value with no matching option.
     default_sandbox_provider: ((): SandboxProviderName | null => {
-      const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
+      const pin = (row.metadata as Record<string, unknown> | null | undefined)
+        ?.default_sandbox_provider;
       if (
-        typeof pin !== 'string'
-        || !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
+        typeof pin !== 'string' ||
+        !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
       ) {
         return null;
       }
@@ -188,10 +235,11 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
       const provider = pin as SandboxProviderName;
       return config.isProviderEnabled(provider) ? provider : null;
     })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
+      config.isProviderEnabled(p),
+    ),
   };
 }
-
 
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {
   if (!row) return null;
@@ -221,7 +269,6 @@ export function serializeProjectGitConnection(row: ProjectGitConnectionRow | nul
   };
 }
 
-
 export function serializeGitHubRepo(repo: GitHubRepo) {
   return {
     id: String(repo.id),
@@ -236,13 +283,11 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-
 function clientIp(c: Context) {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || null;
+  return (
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null
+  );
 }
-
 
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
@@ -252,7 +297,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     userAgent: c.req.header('user-agent') || null,
   };
 }
-
 
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
@@ -295,7 +339,9 @@ export function buildSecretView(input: {
     // Is a shared project value set at all.
     configured: Boolean(shared),
     // MY private override (value never returned), and whether I'm using it.
-    mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
+    mine: personal
+      ? { active: personal.active, updated_at: personal.updatedAt.toISOString() }
+      : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
     // Members manage only their own override; editors also manage the shared row.
@@ -316,10 +362,12 @@ export async function loadSecretViewsForUser(
   const rows = await db
     .select()
     .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
-    ))
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+      ),
+    )
     .orderBy(desc(projectSecrets.updatedAt));
 
   const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
@@ -341,18 +389,17 @@ export async function loadSecretViewsForUser(
   );
 }
 
-
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
 
-
-export function serializeSessionSandboxConfig(configValue: Record<string, unknown> | null | undefined): Record<string, unknown> {
+export function serializeSessionSandboxConfig(
+  configValue: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
   const config = { ...(configValue ?? {}) };
   delete config.serviceKey;
   return config;
 }
-
 
 export function serializeGitHubInstallation(
   row: typeof accountGithubInstallations.$inferSelect | null,
@@ -380,7 +427,6 @@ export function serializeGitHubInstallation(
     updated_at: row?.updatedAt.toISOString() ?? null,
   };
 }
-
 
 /**
  * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
@@ -442,11 +488,9 @@ export function serializeGitHubInstallations(
   };
 }
 
-
 export function normalizeString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
-
 
 export function normalizeBoolean(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value;
@@ -458,16 +502,13 @@ export function normalizeBoolean(value: unknown): boolean | null {
   return null;
 }
 
-
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-
 export function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
 }
-
 
 export function normalizeRepoUrl(value: unknown): string | null {
   const repoUrl = normalizeString(value);
@@ -482,11 +523,9 @@ export function normalizeRepoUrl(value: unknown): string | null {
   return normalized;
 }
 
-
 export function hasOwn(body: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
-
 
 export function deriveKortixApiRoot(kortixUrl: string): string {
   return (kortixUrl || 'https://api.kortix.com')
@@ -495,25 +534,23 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/v1$/, '');
 }
 
-
 // Display cap for user-supplied project names. Well under the projects.name
 // varchar(255) column so every write path (provision, GitHub link, PAT link)
 // fits the schema even after a linked repo's derived name is substituted.
 export const PROJECT_NAME_MAX_LENGTH = 120;
 
 export function clampProjectName(name: string): string {
-  return name.length > PROJECT_NAME_MAX_LENGTH ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd() : name;
+  return name.length > PROJECT_NAME_MAX_LENGTH
+    ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd()
+    : name;
 }
 
 export function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
-  return tail
-    .replace(/[-_]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
-
 
 export async function readBody(c: Context) {
   try {
@@ -522,7 +559,6 @@ export async function readBody(c: Context) {
     return {};
   }
 }
-
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
   // errorCategory is a free-form column; older rows predate the classifier.
@@ -556,7 +592,6 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
   };
 }
 
-
 export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
   return {
     template_id: t.templateId,
@@ -583,11 +618,9 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-
 const PROJECT_ROLES = ['editor', 'member'] as const;
 
-export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
-
+export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 
 export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);

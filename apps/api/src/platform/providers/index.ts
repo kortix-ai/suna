@@ -99,7 +99,8 @@ export interface ProvisionResult {
   metadata: Record<string, unknown>;
 }
 
-export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
+export type { SandboxStatus } from './status';
+import type { SandboxStatus } from './status';
 export type InPlaceRecoveryStatus = 'running' | 'recovering' | 'unavailable';
 
 export interface ResolvedEndpoint {

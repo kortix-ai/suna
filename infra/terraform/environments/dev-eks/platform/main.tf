@@ -92,7 +92,11 @@ module "platform" {
   # Let external-dns also auto-manage per-PR preview records
   # (pr-<n>.preview-api.kortix.com) — created/deleted with each preview Ingress —
   # and the standalone LLM gateway host (gateway-dev.kortix.com).
-  extra_domain_filters = ["preview-api.kortix.com", "gateway-dev.kortix.com"]
+  extra_domain_filters = [
+    "preview-api.kortix.com",
+    "gateway-dev.kortix.com",
+    "gateway-dev-eks.kortix.com",
+  ]
 
   cloudflare_api_token = var.cloudflare_api_token
   cloudflare_zone_id   = var.cloudflare_zone_id

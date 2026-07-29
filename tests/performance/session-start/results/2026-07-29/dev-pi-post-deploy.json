@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-07-29T01:46:26.553Z",
+  "environment": "dev",
+  "api_base": "https://dev-api.kortix.com/v1",
+  "provider": "daytona",
+  "harness": "pi",
+  "deployed_api": {
+    "status": "ok",
+    "version": "0.11.1-dev.7935cd93",
+    "commit": "7935cd9360afbd8f182ba6ac1dd12d0b3fdb6d3e",
+    "environment": "dev",
+    "deploy_run": 30413472528,
+    "deploy_run_conclusion": "cancelled",
+    "deploy_note": "A newer main push canceled the workflow after the API rollout. The live health route reports this run's exact commit."
+  },
+  "cold_snapshot_cache_miss": {
+    "runtime_model": "kortix/glm-5.2",
+    "host_provision_timeline_ms": [
+      {
+        "label": "row+tokens",
+        "at_ms": 499,
+        "delta_ms": 499
+      },
+      {
+        "label": "image-cached",
+        "at_ms": 342352,
+        "delta_ms": 341853
+      },
+      {
+        "label": "provider-create:1x",
+        "at_ms": 343589,
+        "delta_ms": 1237
+      }
+    ],
+    "host_provision_total_ms": 343589,
+    "guest_boot_timeline_ms": [
+      {
+        "label": "static-web",
+        "at_ms": 4
+      },
+      {
+        "label": "git-identity",
+        "at_ms": 19
+      },
+      {
+        "label": "proxy-up",
+        "at_ms": 25
+      },
+      {
+        "label": "repo-materialized",
+        "at_ms": 5443
+      },
+      {
+        "label": "selected-harness-config-ready",
+        "at_ms": 5444
+      },
+      {
+        "label": "opencode-skipped",
+        "at_ms": 5449
+      },
+      {
+        "label": "runtime-process-spawned",
+        "at_ms": 5452
+      },
+      {
+        "label": "runtime-acp-first-output",
+        "at_ms": 5575
+      },
+      {
+        "label": "runtime-acp-initialized",
+        "at_ms": 5575
+      },
+      {
+        "label": "acp-runtime-ready",
+        "at_ms": 5575
+      }
+    ],
+    "health": {
+      "runtimeReady": true,
+      "runtime_harness": "pi",
+      "opencode": "down",
+      "opencode_pid": null
+    },
+    "chat_smoke": {
+      "result": "failed",
+      "status": 503,
+      "error": "Request exceeded the 25s server processing deadline"
+    }
+  },
+  "warm_snapshot_cache_hit": {
+    "runtime_model": "kortix/deepseek-v4-flash",
+    "host_provision_timeline_ms": [
+      {
+        "label": "row+tokens",
+        "at_ms": 658,
+        "delta_ms": 658
+      },
+      {
+        "label": "image-cached",
+        "at_ms": 752,
+        "delta_ms": 94
+      },
+      {
+        "label": "provider-create:1x",
+        "at_ms": 2320,
+        "delta_ms": 1569
+      }
+    ],
+    "host_provision_total_ms": 2320,
+    "guest_boot_timeline_ms": [
+      {
+        "label": "static-web",
+        "at_ms": 10
+      },
+      {
+        "label": "git-identity",
+        "at_ms": 27
+      },
+      {
+        "label": "proxy-up",
+        "at_ms": 32
+      },
+      {
+        "label": "repo-materialized",
+        "at_ms": 47
+      },
+      {
+        "label": "selected-harness-config-ready",
+        "at_ms": 48
+      },
+      {
+        "label": "opencode-skipped",
+        "at_ms": 53
+      },
+      {
+        "label": "runtime-process-spawned",
+        "at_ms": 56
+      },
+      {
+        "label": "runtime-acp-first-output",
+        "at_ms": 182
+      },
+      {
+        "label": "runtime-acp-initialized",
+        "at_ms": 183
+      },
+      {
+        "label": "acp-runtime-ready",
+        "at_ms": 183
+      }
+    ],
+    "health": {
+      "runtimeReady": true,
+      "runtime_harness": "pi",
+      "opencode": "down",
+      "opencode_pid": null
+    },
+    "chat_smoke": {
+      "result": "pass",
+      "harnesses_passed": 1,
+      "harnesses_total": 1,
+      "checks": [
+        "initial response",
+        "follow-up response",
+        "transcript reload",
+        "immutable agent identity",
+        "runtime restart",
+        "post-restart response",
+        "persisted runtime identity"
+      ]
+    },
+    "repository": {
+      "head": "8de781b942a3154dfd23ed7918ada8ae97f7c4a9",
+      "remote_main": "8de781b942a3154dfd23ed7918ada8ae97f7c4a9",
+      "match": true
+    }
+  },
+  "derived": {
+    "cold_image_cache_ms": 341853,
+    "warm_image_cache_ms": 94,
+    "image_cache_speedup": 3636.734,
+    "cold_repository_ms": 5418,
+    "warm_repository_ms": 15,
+    "repository_speedup": 361.2,
+    "warm_pi_acp_initialize_after_repository_ms": 136
+  }
+}

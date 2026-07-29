@@ -4,6 +4,7 @@ import {
   LLM_PROVIDER_CREDENTIALS,
   type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
+  mergeProviderLists,
   mergeProjectSecretConnectedProviders,
   projectLlmCatalogToProviderList,
 } from './provider-selection';
@@ -86,5 +87,26 @@ describe('projectLlmCatalogToProviderList', () => {
 
     expect(list.default).toEqual({ kortix: 'claude-opus-4.8' });
     expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['claude-opus-4.8']);
+  });
+});
+
+describe('mergeProviderLists', () => {
+  test('merges providers, connections, and defaults by provider id', () => {
+    const primary = {
+      default: { kortix: 'managed' },
+      connected: ['kortix'],
+      all: [{ id: 'kortix', name: 'Kortix', models: {} }],
+    } as unknown as ProviderListResponse;
+    const secondary = {
+      default: { anthropic: 'claude' },
+      connected: ['anthropic'],
+      all: [{ id: 'anthropic', name: 'Anthropic', models: {} }],
+    } as unknown as ProviderListResponse;
+
+    const merged = mergeProviderLists(primary, secondary);
+
+    expect(merged.connected).toEqual(['kortix', 'anthropic']);
+    expect(merged.all?.map((provider) => provider.id)).toEqual(['kortix', 'anthropic']);
+    expect(merged.default).toEqual({ kortix: 'managed', anthropic: 'claude' });
   });
 });

@@ -22,11 +22,11 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeSession } from '@kortix/sdk/react';
 import {
   loadSessionTranscriptMessages,
   useSessionSync,
-} from '@/hooks/opencode/use-session-sync';
+} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -55,7 +55,7 @@ export function ExportTranscriptModal({
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
-  const { data: session } = useOpenCodeSession(sessionId);
+  const { data: session } = useRuntimeSession(sessionId);
   const { messages: visibleMessages } = useSessionSync(sessionId);
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);

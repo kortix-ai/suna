@@ -20,6 +20,7 @@ export interface GatewayLogRow {
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number;
+  cache_write_tokens: number;
   upstream_cost: number;
   final_cost: number;
   streaming: boolean;
@@ -224,9 +225,13 @@ export interface GatewayRoutePreview {
   models: Array<{ model: string; available: boolean }>;
 }
 
-export async function getGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+export async function getGatewayRoutingPolicy(
+  projectId: string,
+): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.get<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    await backendApi.get<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+    ),
     'Gateway routing policy request failed',
   );
 }
@@ -236,14 +241,21 @@ export async function setGatewayRoutingPolicy(
   policy: GatewayProjectRoutingPolicy,
 ): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.put<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`, policy),
+    await backendApi.put<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+      policy,
+    ),
     'Gateway routing policy request failed',
   );
 }
 
-export async function resetGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+export async function resetGatewayRoutingPolicy(
+  projectId: string,
+): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.delete<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    await backendApi.delete<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+    ),
     'Gateway routing policy request failed',
   );
 }
@@ -253,7 +265,10 @@ export async function previewGatewayRoute(
   input: GatewayRoutePreviewInput,
 ): Promise<GatewayRoutePreview> {
   return unwrap(
-    await backendApi.post<GatewayRoutePreview>(`/projects/${projectId}/gateway/routing-policy/preview`, input),
+    await backendApi.post<GatewayRoutePreview>(
+      `/projects/${projectId}/gateway/routing-policy/preview`,
+      input,
+    ),
     'Gateway route preview failed',
   );
 }
@@ -268,7 +283,9 @@ export async function listGatewayLogs(
   if (opts?.ok !== undefined) q.set('ok', String(opts.ok));
   const qs = q.toString();
   return unwrap(
-    await backendApi.get<GatewayLogsResponse>(`/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`),
+    await backendApi.get<GatewayLogsResponse>(
+      `/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+    ),
     'Gateway request failed',
   );
 }
@@ -280,7 +297,10 @@ export async function getGatewayLog(projectId: string, logId: string): Promise<G
   );
 }
 
-export async function getGatewayOverview(projectId: string, days?: number): Promise<GatewayOverview> {
+export async function getGatewayOverview(
+  projectId: string,
+  days?: number,
+): Promise<GatewayOverview> {
   return unwrap(
     await backendApi.get<GatewayOverview>(
       `/projects/${projectId}/gateway/overview${days ? `?days=${days}` : ''}`,
@@ -298,7 +318,10 @@ export async function getGatewaySeries(projectId: string, days?: number): Promis
   );
 }
 
-export async function getGatewayBreakdown(projectId: string, days?: number): Promise<GatewayBreakdown> {
+export async function getGatewayBreakdown(
+  projectId: string,
+  days?: number,
+): Promise<GatewayBreakdown> {
   return unwrap(
     await backendApi.get<GatewayBreakdown>(
       `/projects/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
@@ -307,7 +330,10 @@ export async function getGatewayBreakdown(projectId: string, days?: number): Pro
   );
 }
 
-export async function getGatewaySessions(projectId: string, days?: number): Promise<GatewaySessions> {
+export async function getGatewaySessions(
+  projectId: string,
+  days?: number,
+): Promise<GatewaySessions> {
   return unwrap(
     await backendApi.get<GatewaySessions>(
       `/projects/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
@@ -316,7 +342,10 @@ export async function getGatewaySessions(projectId: string, days?: number): Prom
   );
 }
 
-export async function getGatewayErrors(projectId: string, days?: number): Promise<GatewayErrorsResponse> {
+export async function getGatewayErrors(
+  projectId: string,
+  days?: number,
+): Promise<GatewayErrorsResponse> {
   return unwrap(
     await backendApi.get<GatewayErrorsResponse>(
       `/projects/${projectId}/gateway/errors${days ? `?days=${days}` : ''}`,
@@ -373,10 +402,7 @@ export async function createGatewayKey(
   );
 }
 
-export async function revokeGatewayKey(
-  projectId: string,
-  keyId: string,
-): Promise<{ ok: boolean }> {
+export async function revokeGatewayKey(projectId: string, keyId: string): Promise<{ ok: boolean }> {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/keys/${keyId}`),
     'Gateway request failed',

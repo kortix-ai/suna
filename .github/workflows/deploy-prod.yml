@@ -10,12 +10,15 @@ name: Deploy Prod
 #      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
 #      self-host `:stable` channel is promoted SEPARATELY and manually via
 #      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
-#   2. Deploy BOTH prod backends in parallel, with perfect parity:
+#   2. Deploy the production and pre-cutover shadow backends in parallel:
 #      - ECS Fargate (the ACTIVE backend behind api.kortix.com since PR #4683):
 #        deploy-ecs rolls api + gateway task-defs rendered from the prod env
 #        blob, stamped with the clean KORTIX_VERSION.
 #      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
 #        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
+#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
+#        migrations, refreshes logical replication, and rolls the US API and
+#        gateway. It does not change production routing or enable writers.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -563,7 +566,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version]
+    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -768,6 +771,24 @@ jobs:
         run: |
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}"
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}"
+
+  # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
+  # The shadow uses the native US East 2 Supabase project and separate ECS
+  # services. This job keeps its database schema, logical publication, API, and
+  # gateway on the same release as production. It does not change Cloudflare
+  # routing, production DNS, desired counts, or worker flags.
+  deploy-us-shadow:
+    name: Deploy API + gateway to US East 2 shadow
+    needs: [version, retag-images, verify-image-commits, migrate-db]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-prod-us-east-2-shadow.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      source_sha: ${{ needs.version.outputs.source_sha }}
+      synchronize_database: true
+    secrets: inherit
 
   # ── Deploy API to prod EKS (the standby backend, kept in perfect parity) ─────
   # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
@@ -996,14 +1017,15 @@ jobs:
   #     api-ecs-fargate.kortix.com / api-eks.kortix.com
   #     gateway-ecs-fargate.kortix.com / gateway-eks.kortix.com
   #
+  # The US East 2 shadow endpoints are also hard requirements. A release cannot
+  # leave the prepared cutover stack on an older version.
+  #
   # Everything that announces success (github-release, announce, banner-off)
-  # needs: this job — a release whose live version doesn't match can no longer
-  # be published. This is what would have caught the v0.10.0/v0.10.1 night, where
-  # deploy-ecs failed twice while the release went out and api.kortix.com (ECS
-  # active) kept serving the previous build.
+  # needs this job. A release whose live version does not match cannot be
+  # published.
   verify-live-version:
     name: Verify live version == v${{ needs.version.outputs.version }}
-    needs: [version, deploy-ecs, deploy-api, deploy-gateway]
+    needs: [version, deploy-ecs, deploy-us-shadow, deploy-api, deploy-gateway]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -1028,6 +1050,8 @@ jobs:
             "origin-api-eks|https://api-eks.kortix.com/v1/health|origin|1"
             "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin|0"
             "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin|0"
+            "shadow-api-use2|https://api-use2-shadow.kortix.com/v1/health|required|1"
+            "shadow-gateway-use2|https://gateway-use2-shadow.kortix.com/health/live|required|1"
           )
 
           declare -A live
@@ -1058,7 +1082,7 @@ jobs:
               fi
             done
             if [ "$all_ok" = 1 ]; then
-              echo "✅ every endpoint reports v${VERSION} (and the correct commit where checkable) — release is live on both backends."
+              echo "✅ every production and US shadow endpoint reports v${VERSION} with the correct commit where available."
               exit 0
             fi
             sleep 15
@@ -1216,6 +1240,21 @@ jobs:
             echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  frontend-auth-proof:
+    name: Prod frontend auth configuration
+    needs: [version, frontend-note]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the released frontend and verify its EU Supabase configuration
+        run: |
+          node apps/web/scripts/validate-production-supabase-env.mjs \
+            --runtime-url https://kortix.com/api/runtime-config \
+            --expected-version "${{ needs.version.outputs.version }}" \
+            --attempts 30 \
+            --interval-ms 20000
+
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
   # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
   # merge). After a release publishes, advance main's VERSION to the NEXT dev
@@ -1329,7 +1368,7 @@ jobs:
   # rollout banner.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version]
+    needs: [verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

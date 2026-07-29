@@ -13,7 +13,10 @@ export interface OpenAiUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  prompt_tokens_details?: { cached_tokens: number };
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  };
   completion_tokens_details?: { reasoning_tokens: number };
   cost?: number;
 }
@@ -35,10 +38,10 @@ function costFromProviderMetadata(metadata: ProviderMetadata | undefined): numbe
 }
 
 // LanguageModelUsage → OpenAI `usage`. `inputTokens` is the full prompt count
-// (cached included), matching OpenAI's `prompt_tokens`; the cached subset is
-// broken out under `prompt_tokens_details.cached_tokens` exactly as the native
-// path forwards it, so the gateway's usage extractor + pricing table produce the
-// same cost on both engines. `cost`, when present, is the real upstream-billed
+// (cache reads and writes included), matching OpenAI's `prompt_tokens`; both
+// subsets are broken out under `prompt_tokens_details` exactly as the native
+// path forwards them, so the gateway's usage extractor + pricing table produce
+// the same cost on both engines. `cost`, when present, is the real upstream-billed
 // dollar figure (e.g. OpenRouter's `usage.cost`) — the gateway's cost-hint
 // extractor (usage/extract.ts normalizeUsageChunk) reads it as
 // `upstreamCostHint` and pricing.ts prefers it whenever no catalog price is
@@ -51,6 +54,7 @@ export function mapUsage(
   const prompt = usage?.inputTokens ?? 0;
   const completion = usage?.outputTokens ?? 0;
   const cached = usage?.inputTokenDetails?.cacheReadTokens ?? 0;
+  const cacheWrite = usage?.inputTokenDetails?.cacheWriteTokens ?? 0;
   const reasoning = usage?.outputTokenDetails?.reasoningTokens ?? 0;
   const total = usage?.totalTokens ?? prompt + completion;
   const out: OpenAiUsage = {
@@ -58,7 +62,12 @@ export function mapUsage(
     completion_tokens: completion,
     total_tokens: total,
   };
-  if (cached > 0) out.prompt_tokens_details = { cached_tokens: cached };
+  if (cached > 0 || cacheWrite > 0) {
+    out.prompt_tokens_details = {
+      ...(cached > 0 ? { cached_tokens: cached } : {}),
+      ...(cacheWrite > 0 ? { cache_write_tokens: cacheWrite } : {}),
+    };
+  }
   if (reasoning > 0) out.completion_tokens_details = { reasoning_tokens: reasoning };
   const cost = costFromProviderMetadata(providerMetadata);
   if (cost !== undefined) out.cost = cost;

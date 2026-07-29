@@ -34,6 +34,20 @@ export function isKe2eRetryableError(error: unknown): boolean {
   );
 }
 
+const DEFAULT_RETRY_DELAY_MS = 2_000;
+const MAX_RETRY_AFTER_MS = 15_000;
+
+/** Return the host-requested retry delay for a marked transient failure. */
+export function ke2eRetryDelayMs(
+  error: unknown,
+  fallbackMs = DEFAULT_RETRY_DELAY_MS,
+): number {
+  if (!isKe2eRetryableError(error)) return fallbackMs;
+  const delay = (error as { ke2eRetryAfterMs?: unknown }).ke2eRetryAfterMs;
+  if (typeof delay !== 'number' || !Number.isFinite(delay)) return fallbackMs;
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(fallbackMs, Math.trunc(delay)));
+}
+
 export interface ReqOpts {
   /** `:param` substitutions for the URL (template stays the coverage key). */
   params?: Record<string, string | number>;
@@ -131,6 +145,14 @@ export class Res {
   /** Assert the status code (exact or set membership). */
   status(code: number | number[]): this {
     const codes = Array.isArray(code) ? code : [code];
+    if (!codes.includes(this.statusCode) && isKe2eTransientGatewayResponse(this)) {
+      const error = new Error(
+        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}]`,
+      );
+      (error as any).ke2eRetryable = true;
+      (error as any).ke2eRetryAfterMs = retryAfterMs(this.header('retry-after'));
+      throw error;
+    }
     assert({
       kind: 'status',
       description: `status in [${codes.join(', ')}]`,
@@ -187,6 +209,15 @@ export function isKe2eTransientGatewayResponse(response: Res): boolean {
     response.header('retry-after') !== undefined ||
     response.header('content-type')?.includes('text/html') === true
   );
+}
+
+function retryAfterMs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const at = Date.parse(value);
+  if (!Number.isFinite(at)) return undefined;
+  return Math.max(0, at - Date.now());
 }
 
 const TRANSIENT_GATEWAY_RETRY_DELAY_MS = 2_000;

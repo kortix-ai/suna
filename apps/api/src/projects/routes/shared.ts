@@ -1,18 +1,23 @@
-import { reopenComputeForSandbox } from '../../billing/services/compute-metering';
+import { pauseComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { logSafe } from '../../shared/log-safe';
+import { enforcePerOriginSessionCap } from '../lib/sessions';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import { inspectSandboxRuntime, readManagedAcpSessionIdentity } from '../runtime-inspection';
 import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
@@ -55,6 +60,30 @@ export async function resumeStoppedSandbox(row: {
 }): Promise<boolean> {
   if (!row.externalId) return false;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
+
+  // The per-end-user concurrency cap was enforced only at session CREATE, so it
+  // was bypassable by simply resuming: stop N sessions, resume them all, and one
+  // end-user holds more live sandboxes than the operator allowed. A cap that any
+  // caller can step around by pausing is not a cap.
+  //
+  // Safe to count here: the session being resumed is still `stopped`, which is
+  // NOT in ACTIVE_SESSION_STATUSES, so it cannot count itself.
+  const [sessionRow] = await db
+    .select({ originRef: projectSessions.originRef })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
+  const capRefusal = await enforcePerOriginSessionCap(row.accountId, sessionRow?.originRef ?? null);
+  if (capRefusal) {
+    // Returning false degrades to the caller's existing "could not resume" path.
+    // Logged at warn because the surfaced error is a generic unreachable page,
+    // and an operator debugging "why won't this session wake" needs the real
+    // reason to be findable.
+    console.warn(
+      `[projects] resume refused by per-end-user session cap for ${row.sessionId} (end_user_ref=${logSafe(sessionRow?.originRef)})`,
+    );
+    return false;
+  }
 
   const externalId = row.externalId;
   const now = new Date();
@@ -111,9 +140,13 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId, null, row.provider as SandboxProviderName).catch((err) =>
-    console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
-  );
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+    null,
+    row.provider as SandboxProviderName,
+  ).catch((err) => console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err));
 
   const provider = getProvider(row.provider as SandboxProviderName);
   void provider
@@ -164,6 +197,18 @@ export async function resumeStoppedSandbox(row: {
       .set({ status: 'stopped', updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, row.sessionId))
       .catch(() => {});
+    // The meter was opened optimistically above, BEFORE provider.start() had
+    // resolved. This branch is the proof it never came up, so the window must
+    // close here — reverting the two status rows and leaving the meter running
+    // is how a box that failed to start in 134ms went on accruing wall-clock
+    // (observed in prod 2026-07-29). The billing-invariant sweep would also
+    // catch it, but a leak this deterministic should not wait for a sweep.
+    await pauseComputeSession(row.sandboxId).catch((pauseErr) =>
+      console.warn(
+        `[projects] compute pause after failed wake failed for ${row.sandboxId}:`,
+        pauseErr,
+      ),
+    );
   });
   return true;
 }
@@ -203,99 +248,6 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
   });
 }
 
-// ── Pre-resume on presence ───────────────────────────────────────────────────
-// Throttle pre-resume per project so portal activity doesn't re-kick on every
-// request. The resume itself is idempotent (resumeStoppedSandbox only acts on a
-// stopped→active transition), so this is purely to avoid wasted DB lookups.
-const preResumeThrottle = new Map<string, number>();
-const PRERESUME_THROTTLE_MS = 30_000;
-
-/**
- * When a user returns to a project, proactively resume their most-recently-used
- * STOPPED session sandbox(es) so the ~8s in-place resume (VM restart + opencode
- * re-warm) overlaps the user's navigation and the session is ready by the time
- * they open it. Reuses resumeStoppedSandbox (idempotent with the on-open resume:
- * if the box is already resuming/active, the conditional stopped→active lock
- * simply no-ops). Best-effort + fire-and-forget; GATED OFF by default
- * (KORTIX_PRERESUME_ENABLED) since it spends compute on a box the user might not
- * open. Scoped to the user's OWN sessions (never speculatively resumes someone
- * else's). Most-recent-first, capped at KORTIX_PRERESUME_MAX_PER_PROJECT.
- */
-/**
- * The pre-resume candidates: the user's OWN most-recently-used STOPPED session
- * sandboxes in a project (status='stopped', a provider box still attached).
- * Most-recent-first, capped at `limit`. Pure DB read, no side effects —
- * exported so the selection is testable without provisioning real sandboxes.
- */
-export async function selectPreResumeTargets(
-  projectId: string,
-  userId: string,
-  limit: number,
-): Promise<
-  Array<{
-    sandboxId: string;
-    sessionId: string;
-    accountId: string;
-    provider: string;
-    externalId: string | null;
-    metadata: Record<string, unknown> | null;
-  }>
-> {
-  return db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      accountId: sessionSandboxes.accountId,
-      provider: sessionSandboxes.provider,
-      externalId: sessionSandboxes.externalId,
-      metadata: sessionSandboxes.metadata,
-    })
-    .from(sessionSandboxes)
-    .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
-    .where(
-      and(
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.status, 'stopped'),
-      isNotNull(sessionSandboxes.externalId),
-      eq(projectSessions.createdBy, userId),
-      ),
-    )
-    .orderBy(desc(sessionSandboxes.lastUsedAt))
-    .limit(Math.max(1, limit));
-}
-
-export function preResumeRecentStoppedSessions(projectId: string, userId?: string | null): void {
-  if (!config.KORTIX_PRERESUME_ENABLED || !projectId || !userId) return;
-  const nowMs = Date.now();
-  if (nowMs - (preResumeThrottle.get(projectId) ?? 0) < PRERESUME_THROTTLE_MS) return;
-  preResumeThrottle.set(projectId, nowMs);
-  void (async () => {
-    try {
-      const rows = await selectPreResumeTargets(
-        projectId,
-        userId,
-        config.KORTIX_PRERESUME_MAX_PER_PROJECT,
-      );
-      let kicked = 0;
-      for (const row of rows) {
-        const won = await resumeStoppedSandbox(row).catch((err) => {
-          console.warn(
-            `[pre-resume] resume ${row.sandboxId.slice(0, 8)} failed:`,
-            err instanceof Error ? err.message : err,
-          );
-          return false;
-        });
-        if (won) kicked++;
-      }
-      if (kicked)
-        console.log(`[pre-resume] kicked ${kicked} resume(s) for project ${projectId.slice(0, 8)}`);
-    } catch (err) {
-      console.warn('[pre-resume] failed:', err instanceof Error ? err.message : err);
-      preResumeThrottle.delete(projectId); // let the next presence retry
-    }
-  })();
-}
-
 export async function allocateRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   session: {
@@ -328,6 +280,7 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
+    sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
     sessionMetadata,
     buildEnvVars: () =>
@@ -343,6 +296,9 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
+        compiledRuntimeConfig:
+          (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
   });
@@ -896,6 +852,81 @@ export async function openSession(args: {
   const runningExternalId = row.externalId;
   if (!runningExternalId) {
     throw new Error(`Provider-running sandbox ${row.sandboxId} has no external_id`);
+  }
+
+  const sessionMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+  const managedAcpIdentity = readManagedAcpSessionIdentity(sessionMetadata);
+  if (managedAcpIdentity) {
+    const expectedServerId = managedAcpIdentity.acpServerId;
+    const expectedHarness = managedAcpIdentity.runtimeHarness;
+    const health = await inspectSandboxRuntime(runningExternalId, loaded.userId);
+    const identityMatches =
+      !!expectedServerId &&
+      !!expectedHarness &&
+      health?.runtime === 'acp' &&
+      health.acpServerId === expectedServerId &&
+      health.runtimeHarness === expectedHarness;
+    const runtimeReady = identityMatches && health?.runtimeReady === true;
+
+    if (health?.bootError) {
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: health.bootError,
+      };
+    }
+
+    if (!runtimeReady) {
+      const reason = !health
+        ? 'unreachable'
+        : !identityMatches
+          ? 'acp_runtime_identity_mismatch'
+          : 'not_ready';
+      const staleBoot = staleOpencodeReadyReason(
+        sandboxMetadata(row),
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+        Date.now(),
+        STALE_OPENCODE_READY_MS,
+      );
+      if (staleBoot) {
+        return preserveEstablishedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          staleBoot,
+        );
+      }
+      await markOpencodeReadyWaitStarted(
+        row,
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+      );
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason,
+      };
+    }
+
+    await clearRuntimeReadinessClocks(row);
+    return {
+      stage: 'ready',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: visible.row.opencodeSessionId,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: 'acp_ready',
+    };
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin

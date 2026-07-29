@@ -2,7 +2,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 
-import { createConnector, pipedreamConnect, pipedreamFinalize } from '@kortix/sdk/projects-client';
+import { createConnector, pipedreamConnect, pipedreamFinalize } from '@kortix/sdk';
 
 import { toast } from '@/lib/toast';
 

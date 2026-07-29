@@ -457,7 +457,12 @@ describe('POST /v1/projects/provision (managed git)', () => {
     });
 
     expect(res.status).toBe(503);
-    expect(await res.text()).toContain('repo-scoped installation token');
+    const body = await res.json();
+    // Fails closed AND points at the path that actually works: the org-wide
+    // token is never exported, clients push through the git proxy origin.
+    expect(body.error).toContain('org-wide token');
+    expect(body.error).toContain('git_origin_url');
+    expect(body.git_origin_url).toBeTruthy();
   });
 
   test('rejects an explicit account the caller has no membership in', async () => {

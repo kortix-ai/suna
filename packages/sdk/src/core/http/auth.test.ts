@@ -81,6 +81,13 @@ test('does NOT impose a default timeout on the SSE event stream endpoint (/globa
 	expect(signal).toBeUndefined();
 });
 
+test('does NOT impose a default timeout on an ACP session stream', () => {
+	const url = 'http://sbx.test/kortix/acp/ses_1';
+	expect(isStreamingRequest(url)).toBe(true);
+	expect(withDefaultTimeout(url, undefined)).toBeUndefined();
+	expect(isStreamingRequest('http://sbx.test/kortix/acpish/ses_1')).toBe(false);
+});
+
 test('composes a caller-supplied signal with the default timeout on a non-streaming request', () => {
 	const controller = new AbortController();
 	controller.abort();

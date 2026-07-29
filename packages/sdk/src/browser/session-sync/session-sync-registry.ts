@@ -80,7 +80,10 @@ function createController(sessionId: string): SessionSyncController {
       const state = useSyncStore.getState();
       if (!(sessionId in state.messages)) state.hydrate(sessionId, []);
     },
-    setStatus: (status) => useSyncStore.getState().setStatus(sessionId, status),
+    setStatus: (status) => {
+      controllers.get(sessionId)?.controller.observePromptStatus(status);
+      useSyncStore.getState().setStatus(sessionId, status);
+    },
     onTelemetry: (event) => reportTelemetry(sessionId, event),
   });
 }
@@ -176,6 +179,14 @@ export function reconcileSessionTail(sessionId: string, reason: SessionSyncReaso
   return getSessionSyncController(sessionId).reconcile(reason);
 }
 
+export function beginSessionPromptObservation(sessionId: string): void {
+  getSessionSyncController(sessionId).beginPromptObservation();
+}
+
+export function endSessionPromptObservation(sessionId: string): void {
+  controllers.get(sessionId)?.controller.endPromptObservation();
+}
+
 export function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
@@ -184,16 +195,35 @@ export function loadSessionTranscriptMessages(
   );
 }
 
-export function noteSessionSyncEvent(event: { properties: unknown }): void {
+export function noteSessionSyncEvent(event: { type?: string; properties: unknown }): void {
   const properties = event.properties as Record<string, unknown>;
-  const info = properties.info as { sessionID?: string } | undefined;
+  const info = properties.info as { sessionID?: string; role?: string } | undefined;
   const part = properties.part as { sessionID?: string } | undefined;
   const sessionId =
     (typeof properties.sessionID === 'string' && properties.sessionID) ||
     info?.sessionID ||
     part?.sessionID;
   if (!sessionId) return;
-  controllers.get(sessionId)?.controller.noteActivity();
+  const controller = controllers.get(sessionId)?.controller;
+  if (!controller) return;
+  controller.noteActivity();
+
+  if (event.type === 'session.status') {
+    const status = properties.status as SessionStatus | undefined;
+    if (status) controller.observePromptStatus(status);
+    return;
+  }
+  if (event.type === 'session.idle') {
+    controller.observePromptStatus({ type: 'idle' });
+    return;
+  }
+  if (event.type === 'session.error') {
+    controller.endPromptObservation();
+    return;
+  }
+  if (event.type === 'message.updated' && info?.role === 'assistant') {
+    controller.observePromptActivity();
+  }
 }
 
 export function resetSessionSyncControllers(): void {

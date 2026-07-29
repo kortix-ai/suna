@@ -1,11 +1,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from '../../types';
 import { deductCredits, calculateTokenCost } from '../services/credits';
 import { getVisibleTiers } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
 import type { TokenUsageRequest } from '../../types';
-import { makeOpenApiApp, json, auth } from '../../openapi';
+import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
 
@@ -38,6 +39,7 @@ creditsRouter.openapi(
     },
     responses: {
       200: json(DeductResultSchema, 'Deduction result'),
+      ...errors(422),
     },
   }),
   async (c) => {
@@ -46,7 +48,14 @@ creditsRouter.openapi(
     // never rejects on missing/zero fields (cost<=0 short-circuits to success).
     const body = await c.req.json<TokenUsageRequest>();
 
-    const cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
+    let cost: number;
+    try {
+      cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
+    } catch {
+      throw new HTTPException(422, {
+        message: `No billing price for model ${body.model}. No credits were deducted.`,
+      });
+    }
     if (cost <= 0) {
       return c.json({ success: true, cost: 0, new_balance: 0 });
     }

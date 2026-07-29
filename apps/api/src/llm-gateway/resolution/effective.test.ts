@@ -13,20 +13,20 @@ describe('chooseEffectiveModel', () => {
       chooseEffectiveModel({
         agentDefault: 'claude-opus-4.8',
         projectDefault: 'glm-5.2',
-        accountDefault: 'qwen3.7-max',
+        accountDefault: 'deepseek-v4-flash',
       }),
     ).toEqual({ model: 'claude-opus-4.8', source: 'agent' });
   });
 
   test('project default wins over account when no agent default', () => {
     expect(
-      chooseEffectiveModel({ projectDefault: 'glm-5.2', accountDefault: 'qwen3.7-max' }),
+      chooseEffectiveModel({ projectDefault: 'glm-5.2', accountDefault: 'deepseek-v4-flash' }),
     ).toEqual({ model: 'glm-5.2', source: 'project' });
   });
 
   test('account default applies when nothing more specific', () => {
-    expect(chooseEffectiveModel({ accountDefault: 'qwen3.7-max' })).toEqual({
-      model: 'qwen3.7-max',
+    expect(chooseEffectiveModel({ accountDefault: 'deepseek-v4-flash' })).toEqual({
+      model: 'deepseek-v4-flash',
       source: 'account',
     });
   });

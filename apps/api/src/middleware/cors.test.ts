@@ -20,13 +20,16 @@ describe('createCorsMiddleware', () => {
       headers: {
         Origin: 'https://kortix.com',
         'Access-Control-Request-Method': 'GET',
-        'Access-Control-Request-Headers': 'authorization,content-type',
+        'Access-Control-Request-Headers': 'authorization,content-type,last-event-id',
       },
     });
 
     expect(response.status).toBe(204);
     expect(response.headers.get('access-control-allow-origin')).toBe('https://kortix.com');
     expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(response.headers.get('access-control-allow-headers')?.toLowerCase()).toContain(
+      'last-event-id',
+    );
     expect(response.headers.get('access-control-max-age')).toBe('600');
   });
 

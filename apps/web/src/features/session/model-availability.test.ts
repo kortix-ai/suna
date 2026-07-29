@@ -4,6 +4,7 @@ import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
+  resolveAvailableSelectedModel,
 } from './model-availability';
 
 describe('session model availability', () => {
@@ -25,6 +26,18 @@ describe('session model availability', () => {
         lockForQuestion: false,
       }),
     ).toBe(false);
+  });
+
+  test('removes a selected model that is not usable for the account', () => {
+    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.2' };
+
+    expect(resolveAvailableSelectedModel(selectedModel, () => false)).toBeNull();
+  });
+
+  test('keeps a selected model that is usable for the account', () => {
+    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.2' };
+
+    expect(resolveAvailableSelectedModel(selectedModel, () => true)).toEqual(selectedModel);
   });
 
   test('does not block non-chat question actions', () => {

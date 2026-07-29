@@ -23,7 +23,7 @@ import {
   useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import type { SessionAuditAction } from '@kortix/sdk/projects-client';
+import type { SessionAuditAction } from '@kortix/sdk';
 import { Check, ShieldCheck, X } from 'lucide-react';
 import { useState } from 'react';
 

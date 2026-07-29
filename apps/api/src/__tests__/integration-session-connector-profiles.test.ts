@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accounts,
+  chatInstalls,
   executorConnectionProfiles,
   executorConnectors,
   executorCredentials,
@@ -20,12 +21,14 @@ import {
   resolveCredentialValue,
   resolveProfileCredentialValue,
   upsertCredential,
+  upsertProfileOAuth2Credential,
   upsertProfileCredential,
 } from '../executor/credentials';
 import { makeDbGatewayDeps } from '../executor/db-deps';
 import { finalizePipedreamProfileConnection } from '../executor/pipedream';
 import { reconcileEmailConnectionProfiles } from '../executor/sync';
 import {
+  resolveRequiredMemberConnectorProfiles,
   resolveSessionConnectorProfile,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
@@ -386,6 +389,34 @@ describe('session connector profile isolation', () => {
     });
   });
 
+  test("an unbound alias NEVER falls back to a member's personal default (wrong-account guard)", async () => {
+    // A connector can hold many connections now, and defaults are PER OWNER — a
+    // member may mark one of their own connections default. The unbound-alias
+    // fallback selects is_default=true, so without an owner_type='project'
+    // filter it could hand a session someone else's PERSONAL connection and act
+    // as the wrong account. Mark USER's own profile default and assert the
+    // fallback still resolves the PROJECT's shared connection.
+    await db
+      .update(executorConnectionProfiles)
+      .set({ isDefault: true })
+      .where(eq(executorConnectionProfiles.profileId, PROFILE_A));
+    try {
+      const resolved = await resolveSessionConnectorProfile({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        sessionId: SESSION_DEFAULT,
+        alias: 'veyris',
+      });
+      expect(resolved?.profileId).toBe(PROFILE_DEFAULT);
+      expect(resolved?.profileId).not.toBe(PROFILE_A);
+    } finally {
+      await db
+        .update(executorConnectionProfiles)
+        .set({ isDefault: false })
+        .where(eq(executorConnectionProfiles.profileId, PROFILE_A));
+    }
+  });
+
   test('a partially bound session fails closed for every unbound connector alias', async () => {
     const boundSessionEmail = await resolveSessionConnectorProfile({
       accountId: ACCOUNT_A,
@@ -720,6 +751,108 @@ describe('session connector profile isolation', () => {
     });
   });
 
+  test('OAuth2 profile credentials refresh once and persist the fresh access token', async () => {
+    let acquisitions = 0;
+    const acquire = async () => {
+      acquisitions += 1;
+      return {
+        access_token: `oauth-access-${acquisitions}`,
+        token_type: 'Bearer',
+        expires_at: acquisitions === 1 ? 0 : Date.now() + 3_600_000,
+        scopes: ['https://graph.microsoft.com/.default'],
+      };
+    };
+    try {
+      await upsertProfileOAuth2Credential(
+        {
+          projectId: PROJECT_A,
+          connectorId: CONNECTOR_A,
+          profileId: PROFILE_A,
+          oauth2: {
+            type: 'oauth2_client_credentials',
+            token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+            client_id: 'client-id',
+            token_endpoint_auth_method: 'client_secret_post',
+            client_secret: 'client-secret',
+            scopes: ['https://graph.microsoft.com/.default'],
+          },
+          createdBy: USER,
+        },
+        { acquire },
+      );
+      expect(
+        await resolveProfileCredentialValue(
+          { connectorId: CONNECTOR_A, profileId: PROFILE_A },
+          { acquire },
+        ),
+      ).toBe('oauth-access-2');
+      expect(
+        await resolveProfileCredentialValue(
+          { connectorId: CONNECTOR_A, profileId: PROFILE_A },
+          { acquire },
+        ),
+      ).toBe('oauth-access-2');
+      expect(acquisitions).toBe(2);
+    } finally {
+      await upsertProfileCredential({
+        projectId: PROJECT_A,
+        connectorId: CONNECTOR_A,
+        profileId: PROFILE_A,
+        value: 'workspace-a-capability',
+        createdBy: USER,
+      });
+    }
+  });
+
+  test('OAuth2 profile credentials serialize concurrent refreshes in PostgreSQL', async () => {
+    let acquisitions = 0;
+    const acquire = async () => {
+      acquisitions += 1;
+      if (acquisitions > 1) await Bun.sleep(25);
+      return {
+        access_token: `oauth-concurrent-${acquisitions}`,
+        token_type: 'Bearer',
+        expires_at: acquisitions === 1 ? 0 : Date.now() + 3_600_000,
+        scopes: [],
+      };
+    };
+    try {
+      await upsertProfileOAuth2Credential(
+        {
+          projectId: PROJECT_A,
+          connectorId: CONNECTOR_A,
+          profileId: PROFILE_A,
+          oauth2: {
+            type: 'oauth2_client_credentials',
+            token_url: 'https://login.example.com/token',
+            client_id: 'client-id',
+            token_endpoint_auth_method: 'client_secret_post',
+            client_secret: 'client-secret',
+          },
+        },
+        { acquire },
+      );
+      const values = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          resolveProfileCredentialValue(
+            { connectorId: CONNECTOR_A, profileId: PROFILE_A },
+            { acquire },
+          ),
+        ),
+      );
+      expect(new Set(values)).toEqual(new Set(['oauth-concurrent-2']));
+      expect(acquisitions).toBe(2);
+    } finally {
+      await upsertProfileCredential({
+        projectId: PROJECT_A,
+        connectorId: CONNECTOR_A,
+        profileId: PROFILE_A,
+        value: 'workspace-a-capability',
+        createdBy: USER,
+      });
+    }
+  });
+
   test('AgentMail profiles stay immutable per inbox and revoke on partial or final disconnect', async () => {
     await saveAgentMailInstall({
       projectId: PROJECT_A,
@@ -777,5 +910,173 @@ describe('session connector profile isolation', () => {
       .from(executorConnectionProfiles)
       .where(eq(executorConnectionProfiles.profileId, profileB.profileId));
     expect(afterFinal?.status).toBe('revoked');
+  });
+
+  test('saveAgentMailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
+    // Regression for the AgentMail inbox hijack. PROJECT_A claims inbox
+    // "shared-inbox". PROJECT_B then claims the SAME inbox. Before the fix,
+    // saveAgentMailInstall ran an unscoped DELETE (platform + workspaceId only)
+    // that wiped PROJECT_A's chat_installs row. With the fix, the DELETE is
+    // scoped to the calling project, so both rows coexist (unique index allows
+    // multiple projects per inbox) and resolveProjectForAgentMailInbox keeps
+    // returning PROJECT_A for PROJECT_A's install.
+    const sharedInbox = 'shared-inbox-hijack-test';
+    await saveAgentMailInstall({
+      projectId: PROJECT_A,
+      profileSlug: 'kortix_email',
+      inboxId: sharedInbox,
+      email: 'shared-a@example.test',
+      displayName: 'A',
+      apiKey: 'agentmail-key',
+    });
+    // PROJECT_B claims the same inbox. This must NOT remove PROJECT_A's row.
+    await saveAgentMailInstall({
+      projectId: PROJECT_B,
+      profileSlug: 'kortix_email',
+      inboxId: sharedInbox,
+      email: 'shared-b@example.test',
+      displayName: 'B',
+      apiKey: 'agentmail-key',
+    });
+
+    const owners = await db
+      .select({ projectId: chatInstalls.projectId })
+      .from(chatInstalls)
+      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, sharedInbox)));
+    const ownerIds = owners.map((r) => r.projectId).sort();
+    expect(ownerIds).toEqual([PROJECT_A, PROJECT_B].sort());
+
+    // Cleanup so the row does not leak into other tests.
+    await deleteAgentMailInstall(PROJECT_A, 'kortix_email');
+    await deleteAgentMailInstall(PROJECT_B, 'kortix_email');
+  });
+});
+
+describe('resolveRequiredMemberConnectorProfiles (require_connectors)', () => {
+  test("resolves a required connector to the acting user's OWN member profile", async () => {
+    // USER owns PROFILE_A, a member profile for the 'veyris' connector.
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.bindings).toHaveLength(1);
+      expect(res.bindings[0]).toMatchObject({
+        alias: 'veyris',
+        profileId: PROFILE_A,
+        ownerType: 'member',
+        ownerId: USER,
+      });
+    }
+  });
+
+  test("picks the member's OWN DEFAULT when they hold several connections on one connector", async () => {
+    // A member may now hold several personal connections on one connector
+    // ("Work", "Personal"). "Use my veyris" must not be a coin flip between them
+    // — the one they marked default wins, deterministically.
+    const SECOND = crypto.randomUUID();
+    await db.insert(executorConnectionProfiles).values({
+      profileId: SECOND,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorId: CONNECTOR_A,
+      ownerType: 'member',
+      ownerId: USER,
+      label: 'My second workspace',
+      isDefault: true,
+    });
+    try {
+      const res = await resolveRequiredMemberConnectorProfiles({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        actingUserId: USER,
+        actingPrincipalIsServiceAccount: false,
+        aliases: ['veyris'],
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.bindings[0]?.profileId).toBe(SECOND);
+    } finally {
+      await db
+        .delete(executorConnectionProfiles)
+        .where(eq(executorConnectionProfiles.profileId, SECOND));
+    }
+  });
+
+  test('skips a REVOKED connection and uses the active one instead of failing closed', async () => {
+    // The lookup must filter to usable rows IN the query. Fetching an arbitrary
+    // row first and then rejecting it would report "connect your account" while
+    // a perfectly good active connection exists.
+    const REVOKED = crypto.randomUUID();
+    await db.insert(executorConnectionProfiles).values({
+      profileId: REVOKED,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorId: CONNECTOR_A,
+      ownerType: 'member',
+      ownerId: USER,
+      label: 'Revoked workspace',
+      status: 'revoked',
+      isDefault: true, // even as the "default", a revoked row must never win
+    });
+    try {
+      const res = await resolveRequiredMemberConnectorProfiles({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        actingUserId: USER,
+        actingPrincipalIsServiceAccount: false,
+        aliases: ['veyris'],
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.bindings[0]?.profileId).toBe(PROFILE_A);
+    } finally {
+      await db
+        .delete(executorConnectionProfiles)
+        .where(eq(executorConnectionProfiles.profileId, REVOKED));
+    }
+  });
+
+  test('resolves DISTINCT users to their own member profiles (never each other)', async () => {
+    // OTHER_USER owns PROFILE_B for the same connector — must not get USER's.
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: OTHER_USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.bindings[0]?.profileId).toBe(PROFILE_B);
+  });
+
+  test('refuses with CONNECTOR_CONNECTION_REQUIRED (naming the public alias) when the user has not connected it', async () => {
+    // USER has no MEMBER profile for kortix_email (only a project-default exists).
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['email'], // canonicalizes to kortix_email; reported back as 'email'
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
+      expect(res.connector).toBe('email');
+    }
+  });
+
+  test('a service account can NEVER satisfy a personal requirement (fails closed)', async () => {
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: SERVICE_ACCOUNT,
+      actingPrincipalIsServiceAccount: true,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
   });
 });

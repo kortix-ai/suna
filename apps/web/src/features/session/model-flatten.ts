@@ -1,7 +1,7 @@
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
+import { normalizeProviderList } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 
 // ============================================================================
 // Flat model list helper
@@ -57,6 +57,14 @@ export interface FlatModel {
   openWeights?: boolean;
   /** When models.dev last refreshed this model's own entry. */
   lastUpdated?: string;
+  /**
+   * Whether the project OFFERS this model. Server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway — the session
+   * picker renders the enabled ones and "Manage models" switches on this flag.
+   * Neither re-derives it. Undefined on catalogs that don't carry enablement
+   * (anything but `/model-picker`), which callers read as "not applicable".
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -165,6 +173,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         description: model.description,
         openWeights: model.open_weights,
         lastUpdated: model.last_updated,
+        enabled: model.enabled,
       });
     }
   }

@@ -62,16 +62,16 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import {
   type Agent,
-  useOpenCodeProviders,
+  useRuntimeProviders,
   useVisibleAgents,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
+import { getProject, listProjectAccess } from '@kortix/sdk';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
@@ -376,7 +376,7 @@ function ChannelBindingTableRow({
   }, [visibleAgents, projectDefaultAgent, binding.agentName]);
   const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = binding.opencodeModel
     ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel))

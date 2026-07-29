@@ -13,7 +13,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { updateProjectSession } from '@kortix/sdk/projects-client';
+import { updateProjectSession } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';

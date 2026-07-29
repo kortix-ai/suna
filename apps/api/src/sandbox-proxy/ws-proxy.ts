@@ -22,7 +22,7 @@
 // 8000.
 // ════════════════════════════════════════════════════════════════════════════
 
-import { authenticatePreviewPrincipal } from './preview-auth';
+import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 
@@ -77,8 +77,12 @@ export async function preparePreviewWsUpgrade(
 
   const { sandboxId, port, remainingPath } = match;
 
-  const userId = await authenticatePreviewPrincipal(url.searchParams.get('token'), sandboxId);
-  if (!userId) return { ok: false, status: 401, message: 'unauthorized' };
+  const principal = await authenticatePreviewPrincipalDetailed(
+    url.searchParams.get('token'),
+    sandboxId,
+  );
+  if (!principal) return { ok: false, status: 401, message: 'unauthorized' };
+  const userId = principal.userId;
 
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
@@ -99,6 +103,7 @@ export async function preparePreviewWsUpgrade(
       userId,
       remainingPath,
       queryString,
+      callerSessionId: principal.sessionId,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };

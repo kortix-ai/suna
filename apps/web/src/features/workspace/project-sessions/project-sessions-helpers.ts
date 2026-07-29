@@ -1,7 +1,10 @@
-import type { ProjectSession } from '@kortix/sdk/projects-client';
+import type { ProjectSession } from '@kortix/sdk';
 
 import { sessionSource } from '@/components/projects/session-label';
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import {
+  getSessionDisplayTitle,
+  sortSessionsByLastActivity,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
 export type ProjectSessionsFilter =
   | 'all'
@@ -101,16 +104,13 @@ export function filterProjectSessions(
   query: string,
 ): ProjectSession[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  return sessions
-    .filter((session) => matchesProjectSessionsFilter(session, filter))
-    .filter((session) => !normalizedQuery || sessionSearchText(session).includes(normalizedQuery))
-    .sort((a, b) => {
-      const parsedA = new Date(a.updated_at || a.created_at).getTime();
-      const parsedB = new Date(b.updated_at || b.created_at).getTime();
-      const aTime = Number.isFinite(parsedA) ? parsedA : 0;
-      const bTime = Number.isFinite(parsedB) ? parsedB : 0;
-      return bTime - aTime;
-    });
+  return sortSessionsByLastActivity(
+    sessions
+      .filter((session) => matchesProjectSessionsFilter(session, filter))
+      .filter(
+        (session) => !normalizedQuery || sessionSearchText(session).includes(normalizedQuery),
+      ),
+  );
 }
 
 export function projectSessionsFilterCounts(

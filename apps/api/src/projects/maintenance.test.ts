@@ -17,6 +17,10 @@ mock.module('../shared/db', () => ({
       from: () => ({
         innerJoin: () => ({
           where: () => ({
+            // The branch sweep orders before it limits (deterministic drain, so
+            // the planner's scan order can't crowd rows out of the batch), so
+            // the stub has to be chainable through orderBy as well as limit.
+            orderBy: () => ({ limit: async () => [] }),
             limit: async () => [],
           }),
         }),
@@ -27,7 +31,7 @@ mock.module('../shared/db', () => ({
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
 mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
-  tickRunningComputeCharges: async () => ({ settled: 0 }),
+  tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
 }));
 mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),
@@ -55,6 +59,12 @@ let reapAndReconcileSandboxesImpl = async () => ({
   errors: 0,
 });
 
+// The prompt-delivery backstop lives with the command queue it drains, not with
+// the sandbox reaper — maintenance.ts is simply the tick that calls both.
+mock.module('./session-lifecycle/undelivered-prompts', () => ({
+  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
+}));
+
 mock.module('./sandbox-reaper', () => ({
   reapAndReconcileSandboxes: () => reapAndReconcileSandboxesImpl(),
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
@@ -64,9 +74,25 @@ mock.module('./sandbox-reaper', () => ({
     billingClosed: 0,
     errors: 0,
   }),
-  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
+  // The mirror monitor: evidence-gated billing under-bills SILENTLY when the
+  // reaper is starved, where wall-clock billing over-billed loudly.
+  countStaleLivenessWindows: async () => 0,
+  EMPTY_REAP_RESULT: {
+    candidates: 0,
+    matching: 0,
+    deferred: 0,
+    stopped: 0,
+    hardStopped: 0,
+    reconciled: 0,
+    billingClosed: 0,
+    skipped: 0,
+    warmSkipped: 0,
+    busyVetoed: 0,
+    idleArmed: 0,
+    errors: 0,
+  },
 }));
 
 const { shouldForceResetStaleLock, runProjectMaintenance, __isMaintenanceRunningForTest } =
