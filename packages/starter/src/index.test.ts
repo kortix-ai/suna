@@ -179,6 +179,33 @@ describe('getStarterFiles', () => {
   });
 
   /**
+   * `walk()` here and the snapshot generator filter independently, so a filter
+   * added to only one of them means the compiled binary and a source checkout
+   * scaffold different files. That drift shipped three `__pycache__/*.pyc` files
+   * into every API-created project.
+   */
+  test('scaffolds no build artifacts or OS cruft', () => {
+    const junk = getStarterFiles({ projectName: 'X' }).filter((f) =>
+      /(^|\/)(__pycache__|node_modules|\.venv|\.mypy_cache|\.pytest_cache|\.ruff_cache|\.tox|\.cache)\//.test(
+        f.path,
+      ) || /(^|\/)(\.DS_Store|Thumbs\.db)$/.test(f.path) || f.path.endsWith('.pyc'),
+    );
+    expect(junk.map((f) => f.path)).toEqual([]);
+  });
+
+  /**
+   * The config summary matches skills with a GREEDY `skills/(.+)/SKILL.md`, so a
+   * SKILL.md nested inside another skill registers as a phantom entity named
+   * `parent/child` and pads the Skills UI. Keep SKILL.md exactly one level deep.
+   */
+  test('no SKILL.md is nested inside another skill', () => {
+    const nested = getStarterFiles({ projectName: 'X' })
+      .map((f) => f.path.match(/^\.kortix\/opencode\/skills\/(.+)\/SKILL\.md$/)?.[1])
+      .filter((slug): slug is string => Boolean(slug) && slug.includes('/'));
+    expect(nested).toEqual([]);
+  });
+
+  /**
    * The scaffold floor. Anything beyond this is a marketplace install — the
    * point of the cut, and the thing most likely to creep back one "surely this
    * one is universal" skill at a time.

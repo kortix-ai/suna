@@ -90,6 +90,25 @@ const MANAGED_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'managed')
 
 /** Roots that may legitimately hold nothing — see `rawFilesForRoot`. */
 const OPTIONAL_TEMPLATE_ROOTS = new Set(['marketplace-projects']);
+
+// Build artifacts and OS cruft that can appear in a working tree but must never
+// be scaffolded into a user's repo. This MUST stay in sync with the identical
+// lists in `scripts/generate-embedded.ts`: the compiled binary reads the
+// snapshot (which the generator already filters) while a source checkout walks
+// disk here, so a filter in only one place means the two paths scaffold
+// different files. That drift is exactly how three `__pycache__/*.pyc` files
+// ended up committed into every API-created project.
+const IGNORED_TEMPLATE_DIRS = new Set([
+  '.cache',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
+  '.tox',
+  '.venv',
+  '__pycache__',
+  'node_modules',
+]);
+const IGNORED_TEMPLATE_FILES = new Set(['.DS_Store', 'Thumbs.db']);
 const MARKETPLACE_PROJECTS_TEMPLATE_DIR = join(
   import.meta.dir,
   '..',
@@ -276,6 +295,7 @@ function interpolate(input: string, vars: Required<StarterVars>): string {
 function walk(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root)) {
+    if (IGNORED_TEMPLATE_DIRS.has(entry) || IGNORED_TEMPLATE_FILES.has(entry)) continue;
     const abs = join(root, entry);
     const st = statSync(abs);
     if (st.isDirectory()) out.push(...walk(abs));
