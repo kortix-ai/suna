@@ -6,6 +6,9 @@ import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { logSafe } from '../../shared/log-safe';
 import { enforcePerOriginSessionCap } from '../lib/sessions';
+import { IDLE_GRACE_MS } from '../lifetime/constants';
+import { anchorDeadline } from '../lifetime/deadline';
+import { observeControlPlaneEvent } from '../lifetime/observation';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
@@ -128,6 +131,24 @@ export async function resumeStoppedSandbox(row: {
     )
     .returning();
   if (!won) return false;
+
+  // W6 — BOUNDED SANDBOX LIFETIME: a real stopped → active transition just
+  // happened, so a NEW running stretch begins. The anchor-guard trigger has
+  // already stamped `active_since = now()` on the conditional update above;
+  // this only states the window. Issued after the flip for exactly that reason.
+  //
+  // A resume is control-plane-OBSERVED by construction — the box was parked and
+  // could not have asked for this — so it is one of the very few things allowed
+  // to mint a fresh cap operand. IDLE_GRACE is a floor, not a promise: the
+  // user's prompt that follows extends it to the turn ceiling.
+  //
+  // Shadow mode: this only writes and logs. Nothing kills on it yet.
+  await anchorDeadline(row.sandboxId, IDLE_GRACE_MS, observeControlPlaneEvent()).catch((err) =>
+    console.warn(
+      `[lifetime] failed to anchor deadline on resume for ${row.sandboxId} (shadow mode, non-fatal):`,
+      err,
+    ),
+  );
 
   await db
     .update(projectSessions)

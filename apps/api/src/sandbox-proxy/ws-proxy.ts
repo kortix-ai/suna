@@ -25,6 +25,10 @@
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import { PROGRESS_GRANT_MS } from '../projects/lifetime/constants';
+import { extendDeadline } from '../projects/lifetime/deadline';
+import { sandboxDeadlinePtyPresenceEnabled } from '../projects/lifetime/flags';
+import { observeControlPlaneEvent } from '../projects/lifetime/observation';
 
 // opencode's internal port — its PTY WebSocket endpoint lives here, reachable
 // via a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
@@ -39,6 +43,32 @@ export interface PreviewWsData {
   upstream?: WebSocket;
   ready?: boolean;
   queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
+  // ── BOUNDED SANDBOX LIFETIME (W5) — observed interactive presence ─────────
+  //
+  // The original design named the `message` handler as the write site. It
+  // cannot be: this state object carried no sandbox id, no session id and no DB
+  // access, and the handler has nothing but `ws` and the bytes. So the identity
+  // is resolved ONCE, at upgrade, where `principal.sessionId` and the sandbox
+  // row are both already in hand, and stashed here.
+  //
+  // Two amendments to the naive version, both load-bearing:
+  //
+  //  - it grants a PROGRESS grant (2h), not an idle grace. The platform's own
+  //    conclusion is written into the provider layer: a timer that "only sees
+  //    inbound traffic" is "blind to local tool runs" and at short TTLs "WOULD
+  //    kill working boxes (the 2026-06-24 stopped-too-quickly-mid-session
+  //    class)". A 15-minute keystroke timer IS such a timer — an engineer
+  //    running a 40-minute build types nothing, and losing that box loses the
+  //    build, not "a dropped shell".
+  //
+  //  - it resets on frames in EITHER direction. Sandbox → client output is also
+  //    a control-plane observation and proves the box is producing.
+  /** Session that owns this socket; the write key. */
+  sessionId: string;
+  /** False when the socket's own credential is bound to this sandbox. */
+  extendable: boolean;
+  /** Monotonic ms of the last extension; throttles the per-frame path. */
+  lastExtendedAtMs: number;
 }
 
 /** Minimal shape of the Bun server WebSocket we touch. */
@@ -110,12 +140,47 @@ export async function preparePreviewWsUpgrade(
     }
     return {
       ok: true,
-      data: { type: 'preview-ws', url: upstream.url, headers: upstream.headers },
+      data: {
+        type: 'preview-ws',
+        url: upstream.url,
+        headers: upstream.headers,
+        sessionId: upstream.sessionId,
+        extendable: upstream.extendable,
+        lastExtendedAtMs: 0,
+      },
     };
   } catch (err) {
     console.warn('[PREVIEW-WS] upstream resolve failed:', (err as Error)?.message || err);
     return { ok: false, status: 502, message: 'failed to resolve sandbox upstream' };
   }
+}
+
+/**
+ * W5's write. Called on every frame in both directions, throttled hard.
+ *
+ * Self-authorship was already decided at upgrade (`extendable`), so a socket
+ * the box opened with its own token extends nothing in either direction — which
+ * is why the outbound direction can safely use a control-plane observation.
+ *
+ * Fire-and-forget and never throwing: a terminal frame must never be delayed or
+ * dropped because a deadline write was slow.
+ */
+function notePreviewWsPresence(state: PreviewWsData): void {
+  if (!sandboxDeadlinePtyPresenceEnabled()) return;
+  if (!state.extendable) return;
+  const now = Date.now();
+  // A PTY streams frames per keystroke and per line of build output. One write
+  // per minute keeps WAL proportional to sessions, not to characters typed; the
+  // grant is 2h, so the throttle costs at most 60s of window.
+  if (now - state.lastExtendedAtMs < 60_000) return;
+  state.lastExtendedAtMs = now;
+  void extendDeadline(
+    { sessionId: state.sessionId },
+    PROGRESS_GRANT_MS,
+    observeControlPlaneEvent(),
+  ).catch((err) =>
+    console.warn('[lifetime] PTY presence extension failed (shadow mode, non-fatal):', err),
+  );
 }
 
 // Preserve meaningful standard close codes, but never emit reserved wire-only
@@ -167,6 +232,7 @@ export const previewWsHandlers = {
     };
 
     upstream.onmessage = (ev: MessageEvent) => {
+      notePreviewWsPresence(state);
       try { ws.send(ev.data as any); } catch {}
     };
 
@@ -181,6 +247,7 @@ export const previewWsHandlers = {
 
   message(ws: ServerWs, message: string | Buffer) {
     const state = ws.data;
+    notePreviewWsPresence(state);
     const upstream = state.upstream;
     if (state.ready && upstream && upstream.readyState === WebSocket.OPEN) {
       try { upstream.send(message as any); } catch {}

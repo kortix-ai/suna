@@ -12,6 +12,8 @@ import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from 
 import { createPersistedAcpSseProxy } from '../lib/acp-sse-proxy';
 import { appendAcpEnvelope, loadAcpTranscript } from '../lib/acp-transcript';
 import { projectsApp } from '../lib/app';
+import { noteAcpRelayProgress } from '../lifetime/acp-progress';
+import { observeControlPlaneEvent, observeExtension } from '../lifetime/observation';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { sandboxRuntimeEndpoint } from '../runtime-inspection';
 
@@ -215,6 +217,27 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
       direction: 'client_to_agent',
       envelope,
     });
+
+    // W2 + W3b — BOUNDED SANDBOX LIFETIME. This route resolves the sandbox
+    // endpoint itself and bypasses forwardToSandbox entirely, so the proxy's
+    // turn-start classifier never sees it. It is the path the web UI uses for
+    // every claude/codex/pi session, and it is the ONLY progress signal for a
+    // direct-key session, which produces no usage_events at all.
+    //
+    // `c.get('sessionId')` is the caller's OWN session when the credential is a
+    // session-bound sandbox token — the exact discriminator that stops a box
+    // from prompting itself into immortality. Awaited before forwarding so it
+    // cannot lose a race with a kill pass; monotone, so a retry is a no-op.
+    //
+    // Shadow mode: writes and logs only.
+    await noteAcpRelayProgress(
+      target.sessionId,
+      envelope,
+      observeExtension({
+        principalSessionId: c.get('sessionId') ?? null,
+        recordSessionId: target.sessionId,
+      }),
+    );
     const body = JSON.stringify(envelope);
     const { upstream } = await fetchAcpUpstreamWithIngressRefresh(target, (activeTarget) => {
       const headers = new Headers(activeTarget.endpoint.headers);
@@ -290,15 +313,28 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
           sessionId: target.sessionId,
           afterOrdinal,
         }),
-      persist: (upstreamEventId, envelope) =>
-        appendAcpEnvelope({
+      persist: (upstreamEventId, envelope) => {
+        // W3b/W3c, outbound direction — BOUNDED SANDBOX LIFETIME.
+        //
+        // The agent → client direction has NO request credential to check, so
+        // it uses a control-plane observation: the API relaying a byte to a
+        // waiting client is the control plane's own act, exactly like the
+        // reaper observing a provider status. Bounded by the cap and by
+        // active_since immutability like every other extension.
+        //
+        // This is what makes an approval pause survivable: `session/request_input`
+        // is published with `{ timeoutMs: null }`, and the human's answer comes
+        // back as a bare JSON-RPC response that no `method` check could match.
+        void noteAcpRelayProgress(target.sessionId, envelope, observeControlPlaneEvent());
+        return appendAcpEnvelope({
           projectId: target.projectId,
           sessionId: target.sessionId,
           runtimeInstanceId,
           direction: 'agent_to_client',
           upstreamEventId,
           envelope,
-        }),
+        });
+      },
     });
     const responseHeaders = decodedResponseHeaders(upstream);
     responseHeaders.set('Cache-Control', 'no-cache, no-transform');

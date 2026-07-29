@@ -26,6 +26,7 @@ import {
   loadSandbox,
   markSandboxErrored,
   markSandboxUsed,
+  isSandboxQuiesced,
   resolveSandboxIngress,
   routeSandboxIngress,
   wakeSandbox,
@@ -37,6 +38,11 @@ import {
 } from '../preview-retry-budget';
 import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
 import { carriesSessionData } from '../session-data-ports';
+import { TURN_CEILING_MS } from '../../projects/lifetime/constants';
+import { extendDeadline } from '../../projects/lifetime/deadline';
+import { sandboxDeadlineResumeGateEnabled } from '../../projects/lifetime/flags';
+import { observeExtension } from '../../projects/lifetime/observation';
+import { isTurnStartRequest } from '../../projects/lifetime/turn-start';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{
@@ -532,8 +538,31 @@ export function shouldAutoResumeStoppedSandbox(
   status: string,
   upstreamPort: number,
   accessKind: string,
+  // BOUNDED SANDBOX LIFETIME — §2.1 W6. Optional, and OFF unless the caller
+  // opts in, because this change is SHADOW ONLY: with no kill path enabled
+  // there are no deadline stops to flap against, so tightening the gate now
+  // would be a user-visible behaviour change bought for nothing.
+  //
+  // Why it must tighten before enforcement: a re-anchor is the ONE thing that
+  // can legitimately mint a fresh 24h cap operand, so any path that re-anchors
+  // on traffic the user did not intend defeats the ceiling. A tab polling
+  // session.list every 30s would resume a just-stopped box, mint a fresh
+  // stretch, and — across 187 boxes — issue roughly 18k provider starts a day
+  // into a provider with a documented 429 history (PR #5193). Requiring
+  // OBSERVED TURN INTENT to wake a QUIESCED box means sustaining a flap
+  // requires a real prompt per grant, which is a working box.
+  //
+  // `selfAuthored` is separate from `isTurnStart` on purpose: the box holds a
+  // session-bound token, so it can issue a syntactically perfect turn start
+  // against itself. A sandbox may not resurrect itself.
+  opts?: { enforceTurnIntentGate: boolean; isTurnStart: boolean; quiesced: boolean; selfAuthored: boolean },
 ): boolean {
-  return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
+  if (status !== 'stopped') return false;
+  if (upstreamPort !== SANDBOX_AGENT_PORT) return false;
+  if (accessKind !== 'principal') return false;
+  if (!opts?.enforceTurnIntentGate) return true;
+  if (opts.selfAuthored) return false;
+  return opts.isTurnStart || !opts.quiesced;
 }
 export async function forwardToSandbox(
   sandboxId: string,
@@ -596,8 +625,23 @@ export async function forwardToSandbox(
     path: remainingPath,
     acpPrompt: acpPromptSession !== null,
   };
+  // W2 — BOUNDED SANDBOX LIFETIME: is this request a control-plane-OBSERVED
+  // turn start?
+  //
+  // Anchored to `promptDelivery`, NOT to the env-sync `if` further down. That
+  // one is REST-only and would miss every ACP prompt flowing through
+  // forwardToSandbox — i.e. every headless trigger/Slack/CLI/mobile prompt.
+  // `isTurnStartRequest` additionally covers /command, /summarize, Daytona's
+  // un-rerouted :4096 and /proxy/<port> nesting.
+  //
+  // Deliberately a SEPARATE predicate rather than a widening of
+  // shouldSyncProjectEnvBeforeProxy: that would hand /command and /summarize an
+  // env pre-sync round-trip they do not need, on the hot prompt path.
+  const observedTurnStart = isTurnStartRequest(upstreamPort, method, remainingPath);
   const promptDelivery =
-    shouldSyncProjectEnvBeforeProxy(port, method, remainingPath) || acpPromptSession !== null;
+    shouldSyncProjectEnvBeforeProxy(port, method, remainingPath) ||
+    acpPromptSession !== null ||
+    observedTurnStart;
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -632,7 +676,21 @@ export async function forwardToSandbox(
     // idempotent, clears the reaper's idle-quiesce marker, and its DB conditional
     // lock de-dupes the concurrent session.list retries (one provider start). Gated
     // so passive asset/preview traffic still 503s — we don't fight idle-quiesce.
-    if (shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind)) {
+    const enforceTurnIntentGate = sandboxDeadlineResumeGateEnabled();
+    // Lazily: the quiesce lookup is a real query, and with the gate off its
+    // answer cannot change the decision. Do not hoist it.
+    const quiesced = enforceTurnIntentGate ? await isSandboxQuiesced(record.sandboxId) : false;
+    if (
+      shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind, {
+        enforceTurnIntentGate,
+        isTurnStart: observedTurnStart || acpPromptSession !== null,
+        quiesced,
+        selfAuthored:
+          access.kind === 'principal' &&
+          access.callerSessionId !== null &&
+          access.callerSessionId === record.sessionId,
+      })
+    ) {
       const resumeExternalId = record.externalId;
       await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
         console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
@@ -674,6 +732,31 @@ export async function forwardToSandbox(
     });
     if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+    }
+
+    // W2's write, inside the block that just claimed the dedupe key and AWAITED
+    // before forwarding, so it cannot lose a race with a concurrent kill pass.
+    // Idempotent and monotone, so re-execution is harmless.
+    //
+    // `observeExtension` is what separates a real prompt from the box prompting
+    // ITSELF. The sandbox holds an executor token bound to this very session and
+    // `access.kind` is 'principal' for requests it authors, so a path classifier
+    // alone would let a wedged box grant itself the turn ceiling forever — a 6x
+    // widening on exactly the zombie population this design exists to kill. A
+    // null proof means self-authored: skip, silently and by design.
+    //
+    // Shadow mode: this writes and logs a deadline. Nothing reads it to kill.
+    const proof = observeExtension({
+      principalSessionId: access.kind === 'principal' ? access.callerSessionId : null,
+      recordSessionId: record.sessionId,
+    });
+    if (proof) {
+      await extendDeadline({ sandboxId }, TURN_CEILING_MS, proof).catch((err) =>
+        console.warn(
+          `[lifetime] failed to extend deadline on turn start for ${sandboxId} (shadow mode, non-fatal):`,
+          err,
+        ),
+      );
     }
   }
 
@@ -1162,7 +1245,21 @@ export async function resolvePreviewWsUpstream(opts: {
    *  principal that is not session-bound. REQUIRED — fail closed, never default. */
   callerSessionId: string | null;
 }): Promise<
-  | { ok: true; url: string; headers: Record<string, string> }
+  | {
+      ok: true;
+      url: string;
+      headers: Record<string, string>;
+      /** The session this socket belongs to — the write key for W5. */
+      sessionId: string;
+      /**
+       * BOUNDED SANDBOX LIFETIME (W5). False when this socket's CREDENTIAL is
+       * bound to this very sandbox. The box holds a session-bound token and can
+       * open its own WebSocket with `?token=`, so "frames prove a human is
+       * present" is false without this check. Decided ONCE, at upgrade, so the
+       * per-frame path stays a map lookup and a comparison.
+       */
+      extendable: boolean;
+    }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
@@ -1226,7 +1323,13 @@ export async function resolvePreviewWsUpstream(opts: {
     if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
   }
 
-  return { ok: true, url: upstreamUrl.toString(), headers };
+  return {
+    ok: true,
+    url: upstreamUrl.toString(),
+    headers,
+    sessionId: record.sessionId,
+    extendable: callerSessionId === null || callerSessionId !== record.sessionId,
+  };
 }
 
 // === Route handlers: ALL /:sandboxId/:port(/*) ===

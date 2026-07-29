@@ -15,6 +15,13 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import {
+  BOOT_GRACE_MS,
+  TURN_CEILING_MS,
+  WARM_POOL_TTL_MS,
+} from '../../projects/lifetime/constants';
+import { anchorDeadline } from '../../projects/lifetime/deadline';
+import { observeControlPlaneEvent } from '../../projects/lifetime/observation';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
@@ -813,6 +820,43 @@ export async function provisionSessionSandbox(opts: {
         });
         return;
       }
+
+      // W1 — BOUNDED SANDBOX LIFETIME: anchor this box's running stretch.
+      //
+      // MUST run AFTER the flip above, never before: the anchor-guard trigger
+      // sets `active_since := now()` on the provisioning → active transition,
+      // so only now is the cap operand fresh. Issued before it, the write would
+      // clamp against a stale anchor.
+      //
+      // Shadow mode: this WRITES a deadline and logs it. Nothing reads it for a
+      // kill or a bill in this change.
+      //
+      // The grant is chosen from what the control plane ITSELF authored, not
+      // from anything the box will later say:
+      //   - a baked initial prompt is a turn the API started. It is delivered
+      //     IN-BOX from KORTIX_INITIAL_PROMPT, so the control plane never sees
+      //     that turn start on the wire — but it wrote it, which is exactly the
+      //     provenance the invariant asks for.
+      //   - a warm bake is a box nobody has claimed. This replaces the
+      //     UNBOUNDED `warm_session.state === 'available'` reaper exemption
+      //     with a number.
+      //   - everything else gets the boot floor, which must exceed the runtime
+      //     readiness wait plus two maintenance ticks (see BOOT_GRACE_MS).
+      const bakedInitialPrompt = !!opts.extraEnvVars?.KORTIX_INITIAL_PROMPT;
+      const isWarmBake =
+        (opts.metadata as Record<string, unknown> | undefined)?.warm_session !== undefined;
+      const initialGrantMs = bakedInitialPrompt
+        ? TURN_CEILING_MS
+        : isWarmBake
+          ? WARM_POOL_TTL_MS
+          : BOOT_GRACE_MS;
+      await anchorDeadline(sandbox.sandboxId, initialGrantMs, observeControlPlaneEvent()).catch(
+        (err) =>
+          console.warn(
+            `[lifetime] failed to anchor deadline for ${sandbox.sandboxId} (shadow mode, non-fatal):`,
+            err,
+          ),
+      );
 
       // Mirror sandbox readiness onto the project_sessions row so the
       // sidebar's status dot stops spinning. session_id == sandbox_id by

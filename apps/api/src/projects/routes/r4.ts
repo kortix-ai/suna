@@ -60,6 +60,13 @@ import {
 } from '../../channels/turn-relay';
 import { setProjectBotName } from '../../channels/voice-identity';
 import { callerKortixSessionId } from '../lib/caller-session';
+import {
+  POST_TURN_GRACE_MS,
+  TRIGGER_POST_TURN_GRACE_MS,
+} from '../lifetime/constants';
+import { shortenDeadline } from '../lifetime/deadline';
+import { sandboxDeadlineShortenOnTurnEndEnabled } from '../lifetime/flags';
+import { isTriggerSession } from '../reaping/policy';
 import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { config } from '../../config';
 import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
@@ -2337,6 +2344,51 @@ projectsApp.openapi(
               providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
             }
           : undefined;
+      // W4 — BOUNDED SANDBOX LIFETIME. The platform already had a precise
+      // turn-boundary system here and wired it only to chat notifications,
+      // while sandbox LIFETIME ran on a self-reported, unbounded lease.
+      //
+      // Safe despite the payload being sandbox-authored, best-effort and
+      // deduplicated, because `shortenDeadline` is STRUCTURALLY INCAPABLE of
+      // extending: no GREATEST, no active_since, no cap needed. That is the
+      // whole point of the shorten/extend split — a signal that can only kill
+      // its own box earlier needs no provenance proof.
+      //
+      // HONEST NOTE ON HOW MUCH THIS BUYS TODAY: almost nothing.
+      // `relayTurnEndToApi` returns early unless the box has Slack thread env,
+      // so turn_end fires only for Slack-originated sessions — zero of the
+      // trigger:cron boxes that dominate the leak. Un-gating it is an image
+      // change that will never reach already-running boxes. KILL CORRECTNESS
+      // THEREFORE DOES NOT DEPEND ON turn_end; it rests on W1/W2/W3a/W3b plus
+      // the CHECK and the anchor trigger, all control-plane-side and
+      // image-independent — the same constraint that forced PR #4228 to use a
+      // proxy-reachable probe.
+      //
+      // Correctly root-only upstream (`isRootOpencodeSession`, parentID-based),
+      // so a subagent going idle cannot shorten a live parent turn.
+      if (sandboxDeadlineShortenOnTurnEndEnabled()) {
+        // `metadata.source` lives on the SANDBOX row (stamped at provisioning),
+        // not on project_sessions — and the two disagree badly in production
+        // (metadata: 154 trigger:cron / 41 ui; project_sessions.origin: 26
+        // schedule / 170 user). Read the one `isTriggerSession` is written for.
+        // Only inside this branch, so no other `kind` pays for the lookup.
+        const [boxRow] = await db
+          .select({ metadata: sessionSandboxes.metadata })
+          .from(sessionSandboxes)
+          .where(eq(sessionSandboxes.sessionId, sessionId))
+          .limit(1);
+        const graceMs = isTriggerSession(
+          (boxRow?.metadata ?? null) as Record<string, unknown> | null,
+        )
+          ? TRIGGER_POST_TURN_GRACE_MS
+          : POST_TURN_GRACE_MS;
+        await shortenDeadline({ sessionId }, graceMs).catch((err) =>
+          console.warn(
+            `[lifetime] failed to shorten deadline on turn end (shadow mode, non-fatal):`,
+            err,
+          ),
+        );
+      }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }

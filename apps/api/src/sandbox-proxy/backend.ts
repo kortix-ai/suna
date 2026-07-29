@@ -278,8 +278,15 @@ export async function wakeSandbox(externalId: string): Promise<void> {
   }
 }
 
-/** True when the sandbox row carries the reaper's idle-quiesce marker. */
-async function isSandboxQuiesced(sandboxId: string): Promise<boolean> {
+/**
+ * True when the sandbox row carries the reaper's idle-quiesce marker.
+ *
+ * Exported for the bounded-sandbox-lifetime auto-resume gate (§2.1 W6), which
+ * needs the same "did the control plane deliberately park this box" answer that
+ * `wakeSandbox` has always used. Read lazily by that caller — only when the
+ * gate is enabled — so the hot proxy path does not gain a query it does not need.
+ */
+export async function isSandboxQuiesced(sandboxId: string): Promise<boolean> {
   try {
     const [row] = await db
       .select({ metadata: sessionSandboxes.metadata })

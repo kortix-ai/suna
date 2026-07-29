@@ -36,6 +36,77 @@ describe('shouldAutoResumeStoppedSandbox', () => {
     expect(shouldAutoResumeStoppedSandbox('active', 8000, 'principal')).toBe(false);
     expect(shouldAutoResumeStoppedSandbox('provisioning', 8000, 'principal')).toBe(false);
   });
+
+  // ── BOUNDED SANDBOX LIFETIME (§2.1 W6) — the turn-intent gate ─────────────
+  //
+  // A resume is the ONE thing that legitimately mints a fresh 24h cap operand,
+  // so any path that re-anchors on traffic the user did not intend defeats the
+  // ceiling. Off by default: this ships SHADOW ONLY, and with no kill path
+  // there is nothing to flap against, so tightening it now would be a
+  // user-visible behaviour change bought for nothing.
+  describe('turn-intent gate', () => {
+    const base = { isTurnStart: false, quiesced: true, selfAuthored: false };
+
+    test('with the gate DISABLED, behaviour is byte-for-byte what it is today', () => {
+      expect(
+        shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+          ...base,
+          enforceTurnIntentGate: false,
+        }),
+      ).toBe(true);
+    });
+
+    test('a QUIESCED box ignores passive traffic — that loop is the ceiling defeat', () => {
+      // A tab polling session.list every 30s would otherwise resume a
+      // just-stopped box, mint a fresh stretch, and across 187 boxes issue
+      // roughly 18k provider starts a day into a provider with a documented
+      // 429 history.
+      expect(
+        shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+          ...base,
+          enforceTurnIntentGate: true,
+        }),
+      ).toBe(false);
+    });
+
+    test('a QUIESCED box DOES wake on a real observed turn start', () => {
+      expect(
+        shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+          ...base,
+          enforceTurnIntentGate: true,
+          isTurnStart: true,
+        }),
+      ).toBe(true);
+    });
+
+    test('a box stopped by the PROVIDER (not quiesced) keeps waking on any traffic', () => {
+      // Only the reaper's deliberate idle-stop sets idleQuiesced. A provider
+      // auto-stop or a webhook must not start 503ing.
+      expect(
+        shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+          ...base,
+          enforceTurnIntentGate: true,
+          quiesced: false,
+        }),
+      ).toBe(true);
+    });
+
+    test('a sandbox may NEVER resurrect itself, even with a perfect turn start', () => {
+      // The box holds a session-bound executor token and can issue a
+      // syntactically valid prompt against itself. `access.kind` is
+      // 'principal' for that request, so path classification alone is not a
+      // defence.
+      expect(
+        shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+          ...base,
+          enforceTurnIntentGate: true,
+          isTurnStart: true,
+          selfAuthored: true,
+          quiesced: false,
+        }),
+      ).toBe(false);
+    });
+  });
 });
 
 // A long reasoning+tool turn on the blocking `POST /session/:id/message` path
