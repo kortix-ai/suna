@@ -200,7 +200,6 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     network: ["api.replicate.com"],
   },
   "deep-research": { tools: ["web_search"] },
-  "research-report": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },
   "draft-outreach": { tools: ["web_search"] },

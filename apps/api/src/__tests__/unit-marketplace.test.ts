@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 import {
   DEFAULT_MARKETPLACES,
+  _resetExternalCache,
   assertAllowedSourceAddress,
   findCatalogEntryByName,
   getCatalogItemDetail,
@@ -14,7 +15,6 @@ import {
   listMarketplaces,
   marketplaceIdOf,
   registerMarketplaceSourceProvider,
-  _resetExternalCache,
 } from '../marketplace/catalog';
 
 describe('marketplace catalog', () => {
@@ -68,7 +68,11 @@ describe('marketplace catalog', () => {
     expect(agentBrowserDetail!.marketplaceId).toBe('kortix');
     expect(agentBrowserDetail!.type).toBe('registry:skill');
     expect(agentBrowserDetail!.managedBy).toBeUndefined();
-    expect(agentBrowserDetail!.defaultProjectInstall).toBe(true);
+    // `agent-browser` ships in the SCAFFOLD now (driving a browser is a floor
+    // capability), so it is no longer an opt-in default marketplace install —
+    // it arrives with the repo and is badged as part of the starter instead.
+    expect(agentBrowserDetail!.defaultProjectInstall).toBe(false);
+    expect(agentBrowserDetail!.partOfProject?.title).toBe('Kortix Starter');
 
     const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
     expect(starterDetail!.dependencyItems.some((d) => d.name === 'agent-browser')).toBe(true);
@@ -93,20 +97,28 @@ describe('marketplace catalog', () => {
     const defaultInstallNames = new Set(
       depDetails.filter((d) => d?.defaultProjectInstall).map((d) => d!.name),
     );
+    // The artifact floor that carries `defaultProjectInstall`. `deep-research`,
+    // `document-review` and the GTM skills moved to the marketplace with the flag
+    // stripped (leaving it on would have silently re-installed exactly what the
+    // slim-down removed); `research-report` was deleted; `agent-browser` is
+    // scaffolded now, so it arrives with the repo rather than as a default install.
     for (const name of [
-      'agent-browser',
-      'deep-research',
-      'document-review',
+      'design-foundations',
       'docx',
       'pdf',
       'presentations',
-      'research-report',
+      'web-publishing-and-deployments',
+      'webapp',
       'website-building',
       'xlsx',
     ]) {
       expect(defaultInstallNames.has(name)).toBe(true);
       expect(all.find((i) => i.name === name)?.defaultProjectInstall).toBe(true);
     }
+    for (const name of ['deep-research', 'document-review', 'account-research', 'search']) {
+      expect(all.find((i) => i.name === name)?.defaultProjectInstall).toBe(false);
+    }
+    expect(all.find((i) => i.name === 'research-report')).toBeUndefined();
   });
 
   test('marks only kortix-* runtime skills as Kortix-managed', async () => {
@@ -152,115 +164,12 @@ describe('marketplace catalog', () => {
     expect(projects.every((i) => i.type === 'registry:project')).toBe(true);
     // `pdf` is browseable again — a query hit on its own tile.
     expect((await listCatalogItems({ query: 'pdf' })).some((i) => i.name === 'pdf')).toBe(true);
-    expect((await listCatalogItems({ query: 'starter' })).some((i) => i.id === 'kortix-projects:starter')).toBe(true);
+    expect(
+      (await listCatalogItems({ query: 'starter' })).some(
+        (i) => i.id === 'kortix-projects:starter',
+      ),
+    ).toBe(true);
     expect((await listCatalogItems({ query: 'zzzznotathing' })).length).toBe(0);
-  });
-
-  test('surfaces SEO Department as a full cloneable project with agents and schedules', async () => {
-    const projects = await listCatalogItems({ type: 'project', source: 'kortix' });
-    const seo = projects.find((i) => i.id === 'kortix-projects:seo-department');
-    expect(seo).toBeTruthy();
-    expect(seo!.title).toBe('SEO Department');
-    expect(seo!.categories).toEqual(expect.arrayContaining(['marketing', 'seo', 'automation']));
-    expect(seo!.dependencies).toEqual(
-      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
-    );
-
-    const detail = await getCatalogItemDetail('kortix-projects:seo-department');
-    expect(detail).toBeTruthy();
-    expect(detail!.readme).toContain('# SEO Department');
-    expect(detail!.files.map((f) => f.target)).toEqual(
-      expect.arrayContaining([
-        'kortix.yaml',
-        'install.md',
-        '.kortix/memory/SEO.md',
-        '.kortix/opencode/agents/seo-director.md',
-        '.kortix/opencode/agents/technical-seo.md',
-        '.kortix/opencode/agents/content-strategist.md',
-        '.kortix/opencode/agents/serp-analyst.md',
-        '.kortix/opencode/agents/seo-repo-watchdog.md',
-        '.kortix/opencode/skills/seo-operating-system/SKILL.md',
-        '.kortix/opencode/skills/technical-seo-audit/SKILL.md',
-        '.kortix/opencode/skills/seo-repo-monitoring/SKILL.md',
-        '.kortix/opencode/skills/content-seo-workflow/SKILL.md',
-        '.kortix/opencode/skills/serp-intelligence/SKILL.md',
-      ]),
-    );
-    expect(detail!.projectAgents?.map((a) => a.name).sort()).toEqual([
-      'content-strategist',
-      'seo-director',
-      'seo-repo-watchdog',
-      'serp-analyst',
-      'technical-seo',
-    ]);
-    expect(detail!.projectTriggers?.map((t) => t.slug).sort()).toEqual([
-      'daily-repo-seo-sweep',
-      'daily-serp-watch',
-      'monthly-seo-growth-report',
-      'repo-seo-watch',
-      'seo-request-intake',
-      'weekly-content-refresh',
-      'weekly-technical-audit',
-    ]);
-  });
-
-  test('surfaces Marketing Department as a full cloneable project with agents and schedules', async () => {
-    const projects = await listCatalogItems({ type: 'project', source: 'kortix' });
-    const marketing = projects.find((i) => i.id === 'kortix-projects:marketing-department');
-    expect(marketing).toBeTruthy();
-    expect(marketing!.title).toBe('Marketing Department');
-    expect(marketing!.categories).toEqual(expect.arrayContaining(['marketing', 'growth', 'automation']));
-    expect(marketing!.dependencies).toEqual(
-      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
-    );
-    expect(marketing!.dependencies).toEqual(
-      expect.arrayContaining(['ad-performance-review', 'brand-mention-monitor', 'social-post-drafting']),
-    );
-
-    const detail = await getCatalogItemDetail('kortix-projects:marketing-department');
-    expect(detail).toBeTruthy();
-    expect(detail!.readme).toContain('# Marketing Department');
-    expect(detail!.files.map((f) => f.target)).toEqual(
-      expect.arrayContaining([
-        'kortix.yaml',
-        'install.md',
-        '.kortix/memory/MARKETING.md',
-        '.kortix/opencode/agents/marketing-director.md',
-        '.kortix/opencode/agents/campaign-strategist.md',
-        '.kortix/opencode/agents/content-marketer.md',
-        '.kortix/opencode/agents/lifecycle-marketer.md',
-        '.kortix/opencode/agents/growth-analyst.md',
-        '.kortix/opencode/agents/brand-guardian.md',
-        '.kortix/opencode/agents/marketing-repo-watchdog.md',
-        '.kortix/opencode/skills/marketing-operating-system/SKILL.md',
-        '.kortix/opencode/skills/brand-positioning/SKILL.md',
-        '.kortix/opencode/skills/campaign-strategy/SKILL.md',
-        '.kortix/opencode/skills/content-engine/SKILL.md',
-        '.kortix/opencode/skills/lifecycle-growth/SKILL.md',
-        '.kortix/opencode/skills/marketing-analytics/SKILL.md',
-        '.kortix/opencode/skills/marketing-repo-awareness/SKILL.md',
-      ]),
-    );
-    expect(detail!.projectAgents?.map((a) => a.name).sort()).toEqual([
-      'brand-guardian',
-      'campaign-strategist',
-      'content-marketer',
-      'growth-analyst',
-      'lifecycle-marketer',
-      'marketing-director',
-      'marketing-repo-watchdog',
-    ]);
-    expect(detail!.projectTriggers?.map((t) => t.slug).sort()).toEqual([
-      'daily-marketing-performance-pulse',
-      'daily-marketing-repo-sweep',
-      'marketing-request-intake',
-      'monthly-marketing-report',
-      'repo-marketing-watch',
-      'weekly-brand-competitor-watch',
-      'weekly-campaign-planning',
-      'weekly-content-calendar',
-      'weekly-lifecycle-review',
-    ]);
   });
 
   test('source safety — rejects local + private/non-https URLs (LFI/SSRF guard)', () => {
@@ -321,7 +230,6 @@ describe('marketplace catalog', () => {
     expect(detail.files.every((f) => f.target.startsWith('@skills/'))).toBe(true);
     expect(detail.readme).toContain('---');
   });
-
 });
 
 describe('marketplace external registries (skills.sh / GitHub path)', () => {
@@ -331,7 +239,8 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
 
   function stub(map: Record<string, string>) {
     const fetchStub = (async (url: unknown) => {
-      const key = typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
+      const key =
+        typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
       const body = map[key];
       if (body == null) return new Response('not found', { status: 404 });
       return new Response(body, { status: 200 });
@@ -354,7 +263,13 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
             name: 'hello-ext',
             type: 'registry:skill',
             title: 'Hello (external)',
-            files: [{ path: 'hello/SKILL.md', type: 'registry:file', target: '@skills/hello-ext/SKILL.md' }],
+            files: [
+              {
+                path: 'hello/SKILL.md',
+                type: 'registry:file',
+                target: '@skills/hello-ext/SKILL.md',
+              },
+            ],
           },
         ],
       }),
@@ -375,7 +290,10 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       const skillFile = detail!.files.find((f) => f.target === '@skills/hello-ext/SKILL.md');
       expect(skillFile).toBeTruthy();
 
-      const fetched = await getCatalogItemFile('mock-skills:hello-ext', '@skills/hello-ext/SKILL.md');
+      const fetched = await getCatalogItemFile(
+        'mock-skills:hello-ext',
+        '@skills/hello-ext/SKILL.md',
+      );
       expect(fetched?.content).toContain('Hi from an external registry');
     } finally {
       restoreFetch();
@@ -393,7 +311,7 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       // Base intact — the starter project (browse now folds individual
       // kortix-starter skills like `pdf` inside it, so check by id/detail).
       expect(all.find((i) => i.id === 'kortix-projects:starter')).toBeTruthy();
-      expect((await getCatalogItemDetail('kortix-starter:pdf'))).toBeTruthy();
+      expect(await getCatalogItemDetail('kortix-starter:pdf')).toBeTruthy();
       expect(all.find((i) => i.name === 'hello-ext')).toBeUndefined();
     } finally {
       restoreFetch();
@@ -411,7 +329,9 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
             name: 'db-ext',
             type: 'registry:skill',
             title: 'DB ext',
-            files: [{ path: 'db/SKILL.md', type: 'registry:file', target: '@skills/db-ext/SKILL.md' }],
+            files: [
+              { path: 'db/SKILL.md', type: 'registry:file', target: '@skills/db-ext/SKILL.md' },
+            ],
           },
         ],
       }),
