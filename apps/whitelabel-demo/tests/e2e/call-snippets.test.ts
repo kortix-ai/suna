@@ -183,15 +183,17 @@ describe('the other calls', () => {
     );
   });
 
-  test('an approval resolves by execution id, with the scope named', () => {
+  test('an approval resolves by execution id, and carries no widening scope', () => {
     const snippet = callSnippet('approval.resolve', {
       projectId: PROJECT_ID,
       executionId: 'exec_42',
     });
-    expect(renderHttp(snippet.http)).toContain(
-      `POST /v1/projects/${PROJECT_ID}/approvals/exec_42`,
-    );
-    expect(renderHttp(snippet.http)).toContain('"scope": "once"');
+    const rendered = renderHttp(snippet.http);
+    expect(rendered).toContain(`POST /v1/projects/${PROJECT_ID}/approvals/exec_42`);
+    expect(rendered).toContain('"decision": "approve"');
+    // The documented call must not teach a scope that no longer exists — the
+    // decision covers exactly the call that asked for it.
+    expect(rendered).not.toContain('scope');
   });
 
   test('a secret is addressed by identifier', () => {
