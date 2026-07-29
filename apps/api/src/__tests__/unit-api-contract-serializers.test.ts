@@ -82,6 +82,8 @@ function sandboxRow(
     config: { serviceKey: 'sensitive', region: 'eu' },
     metadata: {},
     lastUsedAt: NOW,
+    activeSince: NOW,
+    deadlineAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

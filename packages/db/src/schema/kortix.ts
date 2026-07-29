@@ -1614,9 +1614,40 @@ export const sessionSandboxes = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    /**
+     * Start of this box's current CONTINUOUS RUNNING STRETCH — the anchor
+     * operand of the absolute 24h cap.
+     *
+     * Application code NEVER assigns this. It is written only by the
+     * `session_sandboxes_anchor_guard` BEFORE INSERT OR UPDATE trigger
+     * (20260730090000005), which makes it immutable while `status = 'active'`
+     * and re-anchors it on every real non-active → active transition. That
+     * immutability is what turns the CHECK below into a ceiling: a constraint
+     * on a difference whose left operand any caller can slide forward is not a
+     * bound at all.
+     */
+    activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
+    /**
+     * When the control plane stops this box unless something moves it.
+     *
+     * THE INVARIANT: a sandbox-reported signal may only SHORTEN this. Only a
+     * control-plane-OBSERVED event that the sandbox did not AUTHOR may extend
+     * it, and only up to `active_since + 24h` — enforced by the
+     * `session_sandboxes_deadline_bounded` CHECK (20260730090000003).
+     *
+     * Single TypeScript writer: apps/api/src/projects/lifetime/deadline.ts,
+     * enforced in CI by projects/lifetime/architecture.test.ts. The only other
+     * writers are the two DB triggers (anchor guard, usage progress).
+     */
+    deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
+  // NOTE: `idx_session_sandboxes_deadline` — the partial index on
+  // (deadline_at) WHERE status IN ('active','provisioning') that the kill query
+  // reads — is deliberately NOT declared here. It is built CONCURRENTLY by
+  // 20260730090000001_sandbox_deadline_indexes.concurrent.ts; declaring it
+  // would make `db:generate` emit a conflicting plain CREATE INDEX.
   (table) => [
     index('idx_session_sandboxes_session').on(table.sessionId),
     index('idx_session_sandboxes_project').on(table.projectId),

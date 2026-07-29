@@ -190,6 +190,13 @@
       "when": 1785292200000,
       "tag": "20260729023000_add_project_model_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785402000000,
+      "tag": "20260730090000_sandbox_deadline_columns",
+      "breakpoints": true
     }
   ]
 }
