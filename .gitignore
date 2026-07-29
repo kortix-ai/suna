@@ -152,4 +152,9 @@ grafana-creds.txt
 botkube-communication.secret.yaml
 botkube-comm-real.yaml
 .env*
+# Exception: apps/api/.env.test is the hermetic unit-test env — plaintext by
+# design, fake values only, no credential ever. It must be committed or the
+# suite cannot run in CI. This negation has to sit AFTER the `.env*` above:
+# in .gitignore the last matching rule wins.
+!apps/api/.env.test
 .cutover-state/
