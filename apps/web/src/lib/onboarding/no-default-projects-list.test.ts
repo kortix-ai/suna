@@ -20,10 +20,13 @@ import { join } from 'node:path';
 const SRC = join(import.meta.dir, '..', '..');
 
 /** Programmatic navigation to the bare list. */
+// `(?:\w+\()?` also catches a single wrapping call — e.g.
+// `router.replace(withCurrentQuery('/projects'))`. Without it, wrapping the
+// literal is a silent escape hatch from this entire guard.
 const NAV_PATTERNS = [
-  /router\.(?:push|replace)\(\s*['"`]\/projects['"`]\s*\)/,
-  /window\.location\.href\s*=\s*['"`]\/projects['"`]/,
-  /redirect\(\s*['"`]\/projects['"`]\s*\)/,
+  /router\.(?:push|replace)\(\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
+  /window\.location\.href\s*=\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
+  /redirect\(\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
   /NextResponse\.redirect\(\s*new URL\(\s*['"`]\/projects['"`]/,
 ];
 

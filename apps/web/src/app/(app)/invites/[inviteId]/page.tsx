@@ -21,7 +21,7 @@ import {
   type AccountInviteDescribe,
 } from '@kortix/sdk';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
@@ -30,6 +30,7 @@ async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
 }
 
 export default function InvitePage() {
+  const appHome = useAppHome();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const locale = useLocale();
   const { inviteId } = useParams<{ inviteId: string }>();
@@ -110,7 +111,7 @@ export default function InvitePage() {
             {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
           </StateHeading>
           <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
-          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
+          <GhostAction onClick={() => router.replace(appHome)}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -143,7 +144,7 @@ export default function InvitePage() {
           <p className="text-foreground/30 mt-4 text-xs">
             {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
           </p>
-          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
+          <GhostAction onClick={() => router.replace(appHome)}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -165,7 +166,7 @@ export default function InvitePage() {
               'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
             )}
           </StateBody>
-          <GhostAction onClick={() => router.replace(latestProjectPath(null))}>
+          <GhostAction onClick={() => router.replace(appHome)}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>

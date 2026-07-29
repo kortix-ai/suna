@@ -130,56 +130,6 @@ export default function ProjectsPage() {
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (searchParams.get('team_signup') !== 'success') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await syncSubscription();
-        if (cancelled) return;
-        await invalidateAccountState(queryClient);
-        fireConfetti();
-        successToast('Subscription activated', {
-          description: 'Your team is on Kortix Team. Compute and LLM credits are ready.',
-        });
-      } catch {
-        invalidateAccountState(queryClient);
-      } finally {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('team_signup');
-        window.history.replaceState(null, '', url.toString());
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, queryClient]);
-
-  // Stripe credit-purchase return. The webhook grants the credits server-side;
-  // here we just refetch the wallet so the new balance shows immediately, then
-  // celebrate. Mirrors the team_signup handler above.
-  useEffect(() => {
-    if (searchParams.get('credit_purchase') !== 'success') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await invalidateAccountState(queryClient, true);
-        if (cancelled) return;
-        fireConfetti();
-        successToast('Credits added', {
-          description: 'Your top-up landed — compute and the latest AI models are ready to go.',
-        });
-      } finally {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('credit_purchase');
-        window.history.replaceState(null, '', url.toString());
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, queryClient]);
-
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,

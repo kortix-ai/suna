@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { useMemo, useState } from 'react';
+import { useBillingReturnUrl } from '@/features/billing/billing-return';
 
 /** Preset one-time credit packages. $1 = 100 credits (CREDITS_PER_DOLLAR). The
  *  backend (payments.ts) maps these exact dollar amounts to fixed Stripe prices
@@ -45,6 +46,7 @@ interface CreditTopupSectionProps {
  */
 export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditTopupSectionProps) {
   const billingAccountId = useBillingAccountId();
+  const billingReturnUrl = useBillingReturnUrl();
   const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
   const [customValue, setCustomValue] = useState('');
   const [isCustom, setIsCustom] = useState(false);
@@ -76,9 +78,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
           // Whole-dollar amounts only — custom prices are per-dollar on the
           // backend and the ledger displays cleanly. Round to be safe.
           amount: Math.round(amount),
-          // Land on /projects (a real route) — /dashboard 404s. The projects
-          // page reads ?credit_purchase=success to refresh the wallet + confetti.
-          successUrl: successUrl ?? `${window.location.origin}/projects?credit_purchase=success`,
+          successUrl: successUrl ?? billingReturnUrl('credit_purchase'),
           cancelUrl: cancelUrl ?? window.location.href,
         });
       if (response.checkout_url) {

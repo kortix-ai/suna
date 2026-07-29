@@ -3,7 +3,7 @@
 import { use, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTabStore } from '@/stores/tab-store';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * Preview route handler for /p/[port].
@@ -26,6 +26,7 @@ export default function PreviewPage({
 }: {
   params: Promise<{ port: string }>;
 }) {
+  const appHome = useAppHome();
   const { port } = use(params);
   const router = useRouter();
   const { tabs, setActiveTab } = useTabStore();
@@ -35,7 +36,7 @@ export default function PreviewPage({
     if (tabs[tabId]) {
       setActiveTab(tabId);
     } else {
-      router.replace(latestProjectPath(null));
+      router.replace(appHome);
     }
   }, [port, tabs, setActiveTab, router]);
 

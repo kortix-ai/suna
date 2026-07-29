@@ -26,9 +26,10 @@ import { LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 export default function PhoneVerificationPage() {
+  const appHome = useAppHome();
   const t = useTranslations('auth.phoneVerification');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -167,7 +168,7 @@ export default function PhoneVerificationPage() {
       // Wait a bit for cache invalidation, then redirect. Track the timer so a
       // pre-redirect unmount doesn't fire router.push/onSuccess after unmount.
       redirectTimerRef.current = setTimeout(() => {
-        router.push(latestProjectPath(null));
+        router.push(appHome);
       }, 2000);
     } catch (err) {
       console.error('❌ OTP verification failed:', err);

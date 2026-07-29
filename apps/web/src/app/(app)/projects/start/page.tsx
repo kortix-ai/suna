@@ -16,6 +16,20 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/**
+ * Carry the incoming query string onto the resolved destination.
+ *
+ * This door is a redirect, not a page, so anything deep-linked to it has to
+ * survive the hop. Concretely: a Stripe `success_url` can target the door when
+ * the browser has no remembered project yet, and dropping `?team_signup=success`
+ * here would silently swallow the post-checkout refresh and celebration.
+ */
+function withCurrentQuery(path: string): string {
+  if (typeof window === 'undefined') return path;
+  const { search } = window.location;
+  return search && search !== '?' ? `${path}${search}` : path;
+}
+
 /** Transient failures get retried here rather than bounced to the list. */
 const MAX_RESOLVE_ATTEMPTS = 3;
 const RETRY_DELAY_MS = [400, 1200];
@@ -77,7 +91,7 @@ export default function ProjectStartPage() {
 
       if (project) {
         writeLastProjectId(user?.id, project.project_id);
-        router.replace(`/projects/${project.project_id}`);
+        router.replace(withCurrentQuery(`/projects/${project.project_id}`));
         return;
       }
 
@@ -86,7 +100,7 @@ export default function ProjectStartPage() {
       // last project. There is no project to open, so the list is the only
       // surface that can explain the state — this is a terminal case, not a
       // default landing.
-      router.replace('/projects');
+      router.replace(withCurrentQuery('/projects'));
     } catch (err) {
       console.error('[onboarding] could not resolve a landing project', err);
       const delay = RETRY_DELAY_MS[attempts.current - 1];

@@ -3,7 +3,6 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { isBillingEnabled } from '@/lib/config';
 import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
@@ -328,9 +327,12 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         duration: 6000,
       });
     } else {
-      usePricingModalStore.getState().openPricingModal({
-        isAlert: true,
-        alertTitle: errorUI.alertTitle,
+      // Was openPricingModal() on the pricing-modal store, whose modal
+      // (NewInstanceModal) is not mounted anywhere — every non-credits 402
+      // therefore surfaced NOTHING. GlobalUpgradeModal is the live surface.
+      useUpgradeDialogStore.getState().openUpgradeDialog({
+        reason: 'subscription_required',
+        message: errorUI.alertTitle,
       });
     }
     return;

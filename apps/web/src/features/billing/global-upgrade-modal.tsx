@@ -29,6 +29,7 @@ import {
 import type { AccountState } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { formatCredits } from '@kortix/shared';
 import { CreditCardPlusSolid } from '@mynaui/icons-react';
@@ -93,12 +94,12 @@ export function UpgradePlansModal({
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
   const canManageBilling = accountState?.can_manage_billing !== false;
+  const billingReturnUrl = useBillingReturnUrl();
 
   const handleSubscribe = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     createPerSeat.mutate({
-      success_url: `${origin}/projects?team_signup=success`,
-      cancel_url: typeof window !== 'undefined' ? window.location.href : `${origin}/`,
+      success_url: billingReturnUrl('team_signup'),
+      cancel_url: window.location.href,
     });
   };
 
