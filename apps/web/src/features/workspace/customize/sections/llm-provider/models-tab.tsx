@@ -6,7 +6,13 @@ import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
-import { useModelEnablement, useProjectModels } from '@kortix/sdk/react';
+import {
+  useModelDefaults,
+  useModelEnablement,
+  useProjectModels,
+  wireToModelKey,
+} from '@kortix/sdk/react';
+import { Star } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -24,6 +30,10 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
   // is the one and only thing deciding whether it appears there.
   const models = useProjectModels(projectId);
   const enablement = useModelEnablement(projectId);
+  // Setting the project default from here is what makes the locked row
+  // actionable: the only way to turn the default off is to make something else
+  // the default, so the control for that belongs on the same screen.
+  const defaults = useModelDefaults(projectId);
 
   const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
   const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
@@ -86,6 +96,11 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
             <div className="bg-popover overflow-hidden rounded-md border">
               {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
                 const enabled = !!model.enabled;
+                // `auto` resolves to this one, so turning it off would break
+                // every default request — the server refuses it with a 409.
+                // Lock the switch and say why instead of letting the click
+                // become a failed action.
+                const isProjectDefault = wireId === enablement.defaultModel;
                 const ctx = formatTokenCount(model.contextWindow);
                 const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
                 const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
@@ -93,7 +108,8 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                   <label
                     key={wireId}
                     className={cn(
-                      'hover:bg-muted/40 flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
+                      'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
+                      isProjectDefault ? 'cursor-default' : 'cursor-pointer',
                       i > 0 && 'border-border border-t',
                       !enabled && 'opacity-60',
                     )}
@@ -109,6 +125,7 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. */}
                         {isRollingAlias && <Tag>latest</Tag>}
+                        {isProjectDefault && <Tag>project default</Tag>}
                       </div>
                       <div className="flex min-w-0 items-center gap-0.5">
                         <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
@@ -127,9 +144,36 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         </InlineMeta>
                       )}
                     </div>
+                    {!isProjectDefault && enabled && (
+                      <button
+                        type="button"
+                        disabled={defaults.isUpdating}
+                        title={`Make ${model.modelName} this project's default model`}
+                        onClick={(e) => {
+                          // The row is a <label> wrapping the switch — without
+                          // this the click would toggle enablement instead.
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void defaults.setProjectDefault(wireToModelKey(wireId));
+                        }}
+                        className="text-muted-foreground/50 hover:text-foreground hover:bg-muted mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Star className="size-3.5" />
+                      </button>
+                    )}
                     <Switch
                       checked={enabled}
-                      disabled={enablement.isUpdating}
+                      disabled={enablement.isUpdating || isProjectDefault}
+                      aria-label={
+                        isProjectDefault
+                          ? `${model.modelName} is this project's default model and cannot be turned off`
+                          : `Offer ${model.modelName}`
+                      }
+                      title={
+                        isProjectDefault
+                          ? "This project's default model — set a different default to turn it off."
+                          : undefined
+                      }
                       onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
                       className="mt-0.5 shrink-0"
                     />

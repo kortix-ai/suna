@@ -2713,6 +2713,11 @@ projectsApp.openapi(
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
+    // What `auto` resolves to for this project. Served below so the client can
+    // LOCK its switch instead of offering a toggle that always 409s.
+    const effectiveDefault = toWireModel(
+      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
+    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
@@ -2742,6 +2747,11 @@ projectsApp.openapi(
       // merged map back without having to reconstruct it by diffing the
       // resolved flags against a default it would have to recompute.
       modelOverrides: routing?.modelOverrides ?? {},
+      // The model `auto` resolves to. It cannot be turned off (that would break
+      // every default request — the PUT refuses it with 409), so the client
+      // renders its switch as locked rather than letting the user click into an
+      // error.
+      defaultModel: effectiveDefault || undefined,
       // True while the project has made no exceptions at all — the only thing
       // "reset to defaults" has left to act on, and not derivable from the
       // `enabled` flags alone (they look identical either way).
