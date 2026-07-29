@@ -23,6 +23,11 @@ import {
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import {
+  resolveSessionOverlay,
+  shouldForgetNewSessionHint,
+  shouldMountSessionChat,
+} from '@/features/session/session-surface';
 import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -50,12 +55,12 @@ import {
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
+  type UseSessionResult,
   clearRuntimeEnsureGuard,
   migrateStash,
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
-  type UseSessionResult,
 } from '@kortix/sdk/react';
 
 /**
@@ -72,10 +77,40 @@ import {
  * — purely for MID-SESSION reconnect detection (the box dropping after it was
  * healthy), which drives the reconnect/offline UI. The URL stays at
  * `/projects/<id>/sessions/<sessionId>` the whole time.
+ *
+ * The route itself is deliberately thin: it reads the ids and hands them to a
+ * view KEYED by session id. See {@link ProjectSessionView} for why that key is
+ * load-bearing rather than tidy.
  */
 export default function ProjectSessionPage() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  if (!projectId || !sessionId) return null;
+  return (
+    <ProjectSessionView
+      key={`${projectId}/${sessionId}`}
+      projectId={projectId}
+      sessionId={sessionId}
+    />
+  );
+}
+
+/**
+ * One session's view. Every piece of per-session state below is created by React
+ * on mount, because the route above keys this component by session id.
+ *
+ * It used to be one component instance reused across session switches, resetting
+ * itself from a render-phase block: two refs mutated mid-render alongside three
+ * `setState` calls in the same pass. Client navigation is a transition, React may
+ * throw a transition render away and start over, and the two halves do not
+ * survive that equally — the ref writes persist, the queued state updates do not.
+ * When they came apart the route latched onto the previous session's brand-new
+ * shell and could not get out of it (see `session-surface.ts` for the deadlock),
+ * so clicking a session with hours of history painted the empty project-home
+ * surface until a hard reload. A key makes the whole class of desync
+ * unrepresentable: switching sessions remounts, and a remount cannot half-apply.
+ */
+function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -199,38 +234,56 @@ export default function ProjectSessionPage() {
     openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
   }, [billingBlocked, billingState, accountState, openUpgradeDialog, projectAccountId]);
 
-  // ── Crossfade: the instant shell fades out as the real chat fades in ──────
-  // A fully-interactive shell (welcome wallpaper + live input) renders at a SINGLE
-  // stable tree position for the whole pre-ready lifecycle, so it never remounts.
+  // ── Crossfade: the overlay fades out as the real chat fades in ────────────
+  // The overlay (a fully-interactive new-session shell, or the boot loader for a
+  // resume) occupies a SINGLE stable tree position for the whole pre-ready
+  // lifecycle, so nothing under it remounts as the boot advances.
   const [chatReady, setChatReady] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
-  const [shellSubmitted, setShellSubmitted] = useState(false);
-  const freshRef = useRef<boolean>(false);
-  const lifecycleForRef = useRef<string | null>(null);
-  if (lifecycleForRef.current !== sessionId) {
-    lifecycleForRef.current = sessionId;
-    if (chatReady) setChatReady(false);
-    if (!loaderMounted) setLoaderMounted(true);
-    let fresh = false;
-    let pending = false;
-    if (typeof window !== 'undefined') {
-      // Was two raw legacy-key checks (`opencode_pending_prompt:<id>` /
-      // `project_pending_prompt:<id>`) — now that every producer stashes
-      // canonically under the route id (see the `migrateStash` call below),
-      // `readStartStash` is the one check that still sees a stash from any of
-      // them (canonical or legacy shape) without knowing which key it lives
-      // under.
-      pending = !!readStartStash(sessionId)?.prompt;
-      fresh = pending || isSessionFresh(sessionId);
-    }
-    freshRef.current = fresh;
-    setShellSubmitted(pending);
-    if (resumeAttempts !== 0) setResumeAttempts(0);
-  }
-  const isFresh = freshRef.current;
+  // Seeded ONCE, on mount, in a single initializer — both halves of the hand-off
+  // are read in the same pass and land in the same commit, so they cannot come
+  // apart the way the old render-phase ref/setState pair could. There is no
+  // per-session reset to hand-roll: the route keys this component by session id.
+  //
+  // `readStartStash` is one check that sees a stash from every producer
+  // (canonical `kortix:start:<id>` or either legacy shape) without knowing which
+  // key it lives under — it replaced two raw legacy-key checks
+  // (`opencode_pending_prompt:<id>` / `project_pending_prompt:<id>`).
+  const [handoff] = useState(() => {
+    if (typeof window === 'undefined') return { pending: false, newSessionHint: false };
+    const pending = !!readStartStash(sessionId)?.prompt;
+    return { pending, newSessionHint: pending || isSessionFresh(sessionId) };
+  });
+  const [submittedOnShell, setSubmittedOnShell] = useState(false);
+  // Arriving with a stashed prompt counts as submitted for the purpose of
+  // mounting the chat (the message is already committed and needs a runtime to
+  // send it), but NOT for holding the shell in place — a stash can outlive the
+  // hand-off it describes, and only a send made HERE means the user is watching
+  // their own optimistic bubble on this shell.
+  const shellSubmitted = handoff.pending || submittedOnShell;
+
+  // Transcript evidence — the veto that keeps a stale hint from stranding a real
+  // session on the empty new-session surface. It comes from `useSession`'s own
+  // sync, which paints from the local IndexedDB cache WITHOUT waiting for the
+  // sandbox, so it lands while a hibernated box is still waking and without the
+  // chat having mounted. Latched: the store only ever grows for a live session,
+  // but a transient empty read must never resurrect the shell.
+  const [sawTranscript, setSawTranscript] = useState(false);
   useEffect(() => {
-    if (chatReady) clearSessionFresh(sessionId);
-  }, [chatReady, sessionId]);
+    if (session.messages.length > 0) setSawTranscript(true);
+  }, [session.messages.length]);
+  const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
+  const overlay = resolveSessionOverlay({ ...surface, submittedOnShell });
+
+  // Drop the local hint as soon as it has done its job OR been proven wrong.
+  // This used to wait on `chatReady`, which the hint itself could withhold — so
+  // a wrong hint kept itself alive for the whole tab.
+  useEffect(() => {
+    if (shouldForgetNewSessionHint({ chatReady, hasTranscript, submitted: shellSubmitted })) {
+      clearSessionFresh(sessionId);
+    }
+  }, [chatReady, hasTranscript, shellSubmitted, sessionId]);
 
   // Terminal/gated states fully REPLACE the content (no chat to fade to).
   const gated = !authLoading && !!user && billingBlocked;
@@ -256,6 +309,15 @@ export default function ProjectSessionPage() {
     sessionId,
     sessionContentAvailable,
   );
+  // Leaving mid-switch used to strand the target in the store: nothing cleared
+  // it, so the NEXT open of that session opened straight onto the full-screen
+  // switch loader. Compare-and-clear, so a rapid click-through never clears the
+  // newer target (see `completeSwitch`).
+  useEffect(() => {
+    return () => {
+      useSessionSwitchStore.getState().completeSwitch(sessionId);
+    };
+  }, [sessionId]);
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
     if (sessionContentAvailable || session.startError || unmaterializedFailure || fatal || gated) {
@@ -279,9 +341,16 @@ export default function ProjectSessionPage() {
   // or wrote that cache, so every open waited out a full VM wake to show text
   // the user already had.)
   const canMountChat = sessionContentAvailable;
-  // For a fresh session, hold the real chat until the user actually sends their
-  // first message — the instant shell is the typing surface until then.
-  const mountChat = canMountChat && (!isFresh || shellSubmitted);
+  // For a genuinely new session, hold the real chat until the user actually sends
+  // their first message — the instant shell is the typing surface until then, and
+  // a second composer underneath it would fight for focus. `shouldMountSessionChat`
+  // owns the rule that makes that hold safe: transcript evidence outranks the
+  // hint, so a session with history is never held back (session-surface.ts).
+  const mountChat = shouldMountSessionChat({
+    ...surface,
+    contentAvailable: canMountChat,
+    submitted: shellSubmitted,
+  });
 
   // `sandbox_id` is nullable on the wire: the `/start` path always serves a
   // non-null id (it serializes the `session_sandboxes` uuid PK), but the
@@ -466,12 +535,12 @@ export default function ProjectSessionPage() {
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
-            {isFresh ? (
+            {overlay === 'new-session-shell' ? (
               <InstantSessionShell
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
-                onSubmit={() => setShellSubmitted(true)}
+                onSubmit={() => setSubmittedOnShell(true)}
               />
             ) : (
               <SessionStartingLoader
@@ -583,28 +652,36 @@ function ActiveSessionChat({
   const selectedSession = selectedOpenCodeSessionId
     ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  const pinRef = useRef<{ sid: string; id: string | null }>({ sid: sessionId, id: null });
-  if (pinRef.current.sid !== sessionId) pinRef.current = { sid: sessionId, id: null };
-  if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
-  const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
+  // Pin the first resolved root id so the chat keeps its identity if the live
+  // value blips back to null mid-session. State, not a ref written during
+  // render: this component is already keyed per session by the route, so there
+  // is no cross-session reset to hand-roll, and a discarded render can no longer
+  // leave a pin behind that the state it belongs to never saw.
+  const [pinnedRootSessionId, setPinnedRootSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pinnedRootSessionId && rootSessionId) setPinnedRootSessionId(rootSessionId);
+  }, [pinnedRootSessionId, rootSessionId]);
+  const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
 
-  // Migrate the home-composer prompt onto the canonical SDK start-stash DURING
-  // RENDER — every producer (project-home composer, `useConfigureThread`, the
-  // instant shell) stashes under the ROUTE session id (before the canonical
-  // OpenCode session exists); once it resolves, hand the stash off to
-  // `chatSessionId`'s stash, which `readStartStash` (SessionChat's
-  // pending-prompt effect, or `useSession`'s own replay) reads uniformly.
-  // `migrateStash` understands both the canonical shape and any producer that
-  // still writes the older bare-prompt legacy shape at the route id.
-  const promptMigratedForRef = useRef<string | null>(null);
-  if (
-    typeof window !== 'undefined' &&
-    chatSessionId &&
-    promptMigratedForRef.current !== chatSessionId
-  ) {
-    promptMigratedForRef.current = chatSessionId;
+  // Migrate the home-composer prompt onto the canonical SDK start-stash. Every
+  // producer (project-home composer, `useConfigureThread`, the instant shell)
+  // stashes under the ROUTE session id, before the canonical OpenCode session
+  // exists; once it resolves, hand the stash off to `chatSessionId`'s stash,
+  // which `readStartStash` (SessionChat's pending-prompt effect, or
+  // `useSession`'s own replay) reads uniformly. `migrateStash` understands both
+  // the canonical shape and any producer that still writes the older bare-prompt
+  // legacy shape at the route id.
+  //
+  // In an effect, not during render — SessionChat's replay retries the read
+  // across exactly this write race (`writeRaceAttempts`), so arriving a tick
+  // later costs nothing, and a render React discards can no longer move a user's
+  // prompt into a namespace the surviving state knows nothing about. This
+  // component only mounts once a fresh session's first message has been stashed
+  // (see `shouldMountSessionChat`), so mount-time is never too early.
+  useEffect(() => {
+    if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
-  }
+  }, [sessionId, chatSessionId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
