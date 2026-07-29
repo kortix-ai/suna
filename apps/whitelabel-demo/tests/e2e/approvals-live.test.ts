@@ -145,7 +145,9 @@ function createApprovalUpstream() {
             { status: 403 },
           );
         }
-        return Response.json({ ok: true, scope: (body as { scope?: string })?.scope ?? 'once' });
+        // The real route now answers a bare { ok: true } — there is no scope to
+        // echo back, because a decision covers only the call that asked.
+        return Response.json({ ok: true });
       }
 
       return Response.json({ ok: true, path: p, method });
@@ -214,13 +216,13 @@ describe('approvals + end-user isolation', () => {
   test('approving posts the decision to the approval route for that execution', async () => {
     upstream.reset();
 
-    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve', 'once');
+    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
 
     expect(upstream.requests).toHaveLength(1);
     const posted = upstream.requests[0]!;
     expect(posted.method).toBe('POST');
     expect(posted.path).toBe(`/v1/projects/${PROJECT_ID}/approvals/${PENDING_EXECUTION}`);
-    expect(posted.body).toEqual({ decision: 'approve', scope: 'once' });
+    expect(posted.body).toEqual({ decision: 'approve' });
     expect(posted.authorization).toBe(`Bearer ${WRAPPER_KEY}`);
   });
 
@@ -229,15 +231,23 @@ describe('approvals + end-user isolation', () => {
 
     await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'deny');
 
-    expect(upstream.requests[0]!.body).toEqual({ decision: 'deny', scope: 'once' });
+    expect(upstream.requests[0]!.body).toEqual({ decision: 'deny' });
   });
 
-  test('a standing "always this session" approval sends the session scope', async () => {
+  // Inverted deliberately. This used to assert that a standing "always this
+  // session" approval sent `scope: 'session'`. That scope was REMOVED: a grant
+  // keyed on (session, connector, action) ignores the ARGUMENTS, so approving a
+  // send to one recipient silently pre-authorised a send to any other. A
+  // decision now covers exactly the call that asked for it, and no caller can
+  // widen it.
+  test('a decision can never carry a scope that widens it', async () => {
     upstream.reset();
 
-    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve', 'session');
+    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
 
-    expect(upstream.requests[0]!.body).toEqual({ decision: 'approve', scope: 'session' });
+    const body = upstream.requests[0]!.body as Record<string, unknown>;
+    expect(body).toEqual({ decision: 'approve' });
+    expect('scope' in body).toBe(false);
   });
 
   test('403 APPROVAL_REQUIRES_HUMAN survives the proxy and keeps its own meaning', async () => {
