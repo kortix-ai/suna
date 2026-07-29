@@ -397,7 +397,7 @@ gate, not polish:
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/co-worker/project-layout/project-home.tsx`,
+  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands
