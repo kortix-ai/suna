@@ -9,7 +9,7 @@ Owner: Security and Infrastructure
 Review cadence: quarterly and whenever the affected resource or trust boundary
 changes.
 
-Last reviewed: 2026-07-16
+Last reviewed: 2026-07-29
 
 Evidence run: `ca3bda98-c916-4bc4-90b8-210f68a22b63`
 
@@ -23,6 +23,31 @@ Evidence run: `ca3bda98-c916-4bc4-90b8-210f68a22b63`
 | 8011 Public Access Restricted                     | `dev-eks.aws_eks_cluster.this`                    |     1 | Approved authenticated control-plane access | GitHub-hosted deployment runners require a network path to the EKS API. The endpoint is TLS- and IAM-authenticated, private access is also enabled, access is audited, and workload nodes remain in private subnets. This exception must be revisited when a VPC-hosted deployment runner is available.                    |
 | 8010 Network Configurations Restrict Broad Access | `module.ecs-api.aws_security_group.service`       |     1 | Required service egress                     | API and gateway workloads call external model providers, registries, identity services, and other SaaS endpoints without stable destination CIDRs. Ingress is limited to the ALB security group; tasks run in private subnets behind NAT; VPC flow logs, GuardDuty, and application monitoring provide detective controls. |
 | 8010 Network Configurations Restrict Broad Access | `module.selfhost-ec2.aws_security_group.this`     |     1 | Required self-host egress                   | The reusable self-host host must reach package mirrors, container registries, ACME, GitHub releases, and user-selected sandbox targets. Ingress is independently restricted, SSM is the administration path, and the module documents the outbound requirement.                                                            |
+
+## Open critical finding — awaiting Drata exclusion
+
+| Test                                                        | Resource                                                | Severity | Status                     |
+| ----------------------------------------------------------- | ------------------------------------------------------- | -------- | -------------------------- |
+| 8025 Refine access policy scope to enforce minimum necessary | `aws_iam_role_policy.gha_nacl_audit` (`security-baseline/iam-gha-nacl-audit.tf`) | CRITICAL | Exclusion request pending |
+
+**Why the policy cannot be narrowed.** The statement allows exactly two
+actions, `ec2:DescribeRegions` and `ec2:DescribeNetworkAcls`, and grants no
+write access. Neither action supports resource-level permissions: the EC2
+`Describe*` API family is not resource-scopable, so IAM requires
+`Resource: "*"`. Replacing the inline policy with an AWS-managed one such as
+`AmazonEC2ReadOnlyAccess` would silence the finding while granting strictly
+more access, so it is deliberately not done. Two read-only describes is the
+minimum the control can operate on.
+
+**Compensating controls.** The role is assumable only via GitHub OIDC with the
+subject pinned to `repo:kortix-ai/suna:ref:refs/heads/main`, so pull-request
+workflows cannot assume it. It has no write permissions of any kind, and its
+sole consumer is the scheduled `nacl admin-port audit` job.
+
+**Regression note.** This finding began failing the pipeline on `main` at
+commit `b104e0f2` (2026-07-28). Per the change rule below, a critical is not
+accepted by this register alone — it needs an explicit Drata exclusion with
+this evidence attached before the gate returns to green.
 
 ## Change rule
 
