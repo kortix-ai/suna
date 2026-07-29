@@ -18,14 +18,14 @@
  */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
-  UpdateConnectionProfileCredentialInputSchema,
   type UpdateConnectionProfileCredentialInput,
+  UpdateConnectionProfileCredentialInputSchema,
 } from '@kortix/api-contract';
 import type { AgentGrant } from '@kortix/db';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
-import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import { type GatewayDeps, handleCall } from './gateway';
 
@@ -138,12 +138,22 @@ interface SyncResult {
 
 type CrudOutcome = { ok: true; sync?: SyncResult } | { ok: false; error: string; status: number };
 
+import {
+  type PolicyArgCondition,
+  areValidConditions,
+  isValidMatcher,
+  normalizeConditions,
+} from './policy';
+
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface ProjectPolicyView {
   match: string;
   action: PolicyAction;
+  /** Optional ARGUMENT conditions — ALL must hold for the rule to apply. Lets a
+   *  rule say "only to these recipients", which a tool-name pattern cannot. */
+  conditions?: PolicyArgCondition[] | null;
 }
 
 export interface ProjectPoliciesViewResponse {
@@ -1268,6 +1278,31 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         if (!match) return c.json({ error: `policy #${i + 1}: \`match\` is required` }, 400);
         if (action !== 'always_run' && action !== 'require_approval' && action !== 'block') {
           return c.json({ error: `policy #${i + 1}: invalid \`action\` "${action}"` }, 400);
+        }
+        // Reject an invalid matcher at WRITE time. An unparseable pattern
+        // compiles to a never-match, so a broken `block` rule would look saved
+        // while silently protecting nothing.
+        if (!isValidMatcher(match)) {
+          return c.json(
+            {
+              error: `policy #${i + 1}: invalid \`match\` pattern "${match}"`,
+              code: 'INVALID_MATCHER',
+            },
+            400,
+          );
+        }
+        if (p?.conditions !== undefined && p?.conditions !== null) {
+          if (!areValidConditions(p.conditions)) {
+            return c.json(
+              {
+                error: `policy #${i + 1}: invalid \`conditions\` — each needs \`arg\` (a dot path, not __proto__/constructor/prototype) and \`match\` (glob or /regex/), with optional boolean \`negate\``,
+                code: 'INVALID_CONDITIONS',
+              },
+              400,
+            );
+          }
+          policies.push({ match, action, conditions: normalizeConditions(p.conditions) });
+          continue;
         }
         policies.push({ match, action });
       }
