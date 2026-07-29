@@ -4,7 +4,13 @@
 // the caller a blank "stop" with no text or tool calls.
 
 interface ChoiceLike {
-  message?: { content?: unknown; tool_calls?: unknown };
+  finish_reason?: unknown;
+  message?: {
+    content?: unknown;
+    tool_calls?: unknown;
+    reasoning?: unknown;
+    reasoning_content?: unknown;
+  };
   delta?: {
     content?: unknown;
     tool_calls?: unknown;
@@ -54,6 +60,115 @@ export interface SseErrorFrame {
    * upstream's extra fields survive without this type having to know them.
    */
   detail?: Record<string, unknown>;
+}
+
+const SOFT_RATE_LIMIT_MESSAGE =
+  'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.';
+
+const SOFT_RATE_LIMIT_FRAME: SseErrorFrame = {
+  message: SOFT_RATE_LIMIT_MESSAGE,
+  code: 429,
+  detail: { type: 'soft_rate_limit' },
+};
+
+function hasZeroUsage(data: Record<string, unknown>): boolean {
+  const usage = data.usage;
+  if (!usage || typeof usage !== 'object') return false;
+  const values = Object.entries(usage as Record<string, unknown>)
+    .filter(([key]) => key.endsWith('_tokens') || key === 'total_tokens')
+    .map(([, value]) => value);
+  return values.length > 0 && values.every((value) => value === 0);
+}
+
+/**
+ * Detects the exact OpenRouter ramp-rate rejection that one upstream encodes
+ * as a successful assistant message. Zero usage distinguishes the rejection
+ * from a model that quotes the same text in a real completion.
+ */
+export function jsonSoftFailureFrame(data: unknown): SseErrorFrame | null {
+  if (!data || typeof data !== 'object') return null;
+  const body = data as Record<string, unknown>;
+  if (!hasZeroUsage(body)) return null;
+  const choices = body.choices;
+  if (!Array.isArray(choices) || choices.length !== 1) return null;
+  const choice = choices[0];
+  if (!choice || typeof choice !== 'object') return null;
+  const typedChoice = choice as ChoiceLike;
+  if (typedChoice.finish_reason !== 'stop') return null;
+  if (typedChoice.message?.content !== SOFT_RATE_LIMIT_MESSAGE) return null;
+  if (Array.isArray(typedChoice.message.tool_calls) && typedChoice.message.tool_calls.length > 0) {
+    return null;
+  }
+  return SOFT_RATE_LIMIT_FRAME;
+}
+
+interface SseSoftFailureState {
+  text: string;
+  ended: boolean;
+  incompatibleOutput: boolean;
+}
+
+function sseSoftFailureState(buffer: string): SseSoftFailureState {
+  let text = '';
+  let ended = false;
+  let incompatibleOutput = false;
+
+  for (const line of buffer.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload) continue;
+    if (payload === '[DONE]') {
+      ended = true;
+      continue;
+    }
+    try {
+      const chunk = JSON.parse(payload) as { choices?: unknown };
+      if (!Array.isArray(chunk.choices)) continue;
+      for (const rawChoice of chunk.choices) {
+        if (!rawChoice || typeof rawChoice !== 'object') continue;
+        const choice = rawChoice as ChoiceLike;
+        if (typeof choice.finish_reason === 'string') ended = true;
+        const delta = choice.delta;
+        if (!delta) continue;
+        if (typeof delta.content === 'string') {
+          text += delta.content;
+        } else if (delta.content !== undefined && delta.content !== null) {
+          incompatibleOutput = true;
+        }
+        if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+          incompatibleOutput = true;
+        }
+        if (
+          (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) ||
+          (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
+        ) {
+          incompatibleOutput = true;
+        }
+      }
+    } catch {
+      // A partial or malformed data line cannot confirm this exact signature.
+    }
+  }
+  return { text, ended, incompatibleOutput };
+}
+
+/**
+ * Returns true while the buffered assistant text remains an exact prefix of
+ * the known soft rate-limit rejection. The stream probe holds these bytes.
+ */
+export function sseMayContainSoftFailure(buffer: string): boolean {
+  const state = sseSoftFailureState(buffer);
+  if (state.incompatibleOutput) return false;
+  return SOFT_RATE_LIMIT_MESSAGE.startsWith(state.text);
+}
+
+/** Detects the complete soft rate-limit rejection in an SSE completion. */
+export function sseSoftFailureFrame(buffer: string): SseErrorFrame | null {
+  const state = sseSoftFailureState(buffer);
+  if (state.incompatibleOutput || !state.ended || state.text !== SOFT_RATE_LIMIT_MESSAGE) {
+    return null;
+  }
+  return SOFT_RATE_LIMIT_FRAME;
 }
 
 /** First in-stream error frame in an SSE buffer, if any. OpenRouter (and other

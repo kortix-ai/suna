@@ -172,6 +172,47 @@ describe('probeStream', () => {
     });
     expect(up.cancelled).toBe(true);
   });
+
+  test('holds and classifies the production soft rate-limit completion before relaying bytes', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame).toEqual({
+      message:
+        'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.',
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('does not release a soft-failure prefix at the normal chunk budget', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    for (let index = 0; index < 70; index += 1) up.push(': provider-heartbeat\n\n');
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame?.code).toBe(429);
+  });
 });
 
 describe('relayStream with a primed reader', () => {
