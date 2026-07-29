@@ -76,6 +76,7 @@ export {
   getBranchDiff,
   getDiffBetweenShas,
   previewMerge,
+  MergeConflictError,
   mergeBranches,
   diffStat,
   resolveBranchAheadState,

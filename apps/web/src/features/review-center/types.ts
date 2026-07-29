@@ -58,6 +58,7 @@ export interface RequestedChange {
 /** kind: 'change' — a Change Request, presented in plain language. */
 export interface ChangeDetail {
   crId?: string; // the underlying Change Request id (connected mode) — enables the live diff
+  number?: number;
   whatChanged: string[];
   /** The agent's free-form description when it's real markdown — rendered as
    *  such in the modal instead of being line-split into `whatChanged` rows. */
