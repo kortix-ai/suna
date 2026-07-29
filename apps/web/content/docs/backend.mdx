@@ -154,7 +154,8 @@ await kortix.project(projectId).sessions.list({ end_user_ref: 'your-app-user-123
 ```
 
 Every status is included, so completed sessions come back too. The deprecated
-`origin_ref` spelling also works; sending both with different values is a `400`.
+`origin_ref` spelling also works; sending both with different values is refused
+— see `END_USER_REF_CONFLICT` in the error table below.
 
 ## 3. Bring each user's own connector
 
@@ -277,6 +278,7 @@ starting a second one. Replaying a key with a **different** body — different
 | --- | --- | --- |
 | `400` | `INVALID_SESSION_MODEL` | `opencode_model` isn't servable for this account. |
 | `400` | `INVALID_SESSION_CONNECTOR_BINDINGS` / `INVALID_SESSION_SECRETS` | Malformed overrides, or a secret/binding cap exceeded. |
+| `404` | `SECRET_IDENTIFIER_NOT_FOUND` | A backend session referenced a secret name that doesn't exist in the project. |
 | `404` | `CONNECTOR_PROFILE_NOT_FOUND` | The bound `profile_id` doesn't exist for this project (or isn't yours). |
 | `409` | `CONNECTOR_PROFILE_INACTIVE` | The bound profile is revoked or the connector is disabled. |
 | `409` | `IDEMPOTENCY_*_CONFLICT` | An `Idempotency-Key` was replayed with a different body. Keep the body identical across retries. |
