@@ -10,6 +10,7 @@ import {
   DisclosureContent,
   DisclosureTrigger,
 } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
@@ -22,11 +23,17 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
-import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import {
+  type FailedBuildRelevance,
+  describeFailedBuild,
+  formatSandboxProviders,
+} from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import {
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
+  type SandboxRuntimeStatus,
   type SandboxTemplate,
   type SnapshotErrorCategory,
   buildSandboxTemplate,
@@ -34,7 +41,12 @@ import {
   getProject,
   listProjectSnapshots,
 } from '@kortix/sdk';
-import { CheckCircleSolid, SparklesSolid, XCircleSolid } from '@mynaui/icons-react';
+import {
+  CheckCircleSolid,
+  DangerTriangleSolid,
+  SparklesSolid,
+  XCircleSolid,
+} from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -167,16 +179,37 @@ export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean 
   return build.snapshot_name.startsWith('kortix-ppwarm-');
 }
 
+/**
+ * A failed build that no longer describes anything bootable is history, and must
+ * not keep shouting in red — that is exactly how an 11-day-old error passed for
+ * a live outage. Only a failure that still blocks a session keeps the red tile.
+ */
+const STALE_FAILURE_LABEL: Record<Exclude<FailedBuildRelevance, 'blocking'>, string> = {
+  superseded: 'superseded',
+  recovered: 'resolved',
+  retrying: 'retrying',
+};
+
+const STALE_FAILURE_HINT: Record<Exclude<FailedBuildRelevance, 'blocking'>, string> = {
+  superseded: 'Built an older definition of this template. The current image has moved on.',
+  recovered: 'This image is available now — nothing to fix.',
+  retrying: 'A newer build of this same image is running.',
+};
+
 export function BuildRow({
   build,
   providerMode,
+  relevance,
 }: {
   build: ProjectSnapshotBuild;
   /** Only reveal the resolved provider when the project has explicitly pinned one. */
   providerMode: SandboxProviderMode;
+  /** How this build relates to the image the project boots today. */
+  relevance?: FailedBuildRelevance | null;
 }) {
   const status = BUILD_STATUS_TILE[build.status];
   const { Icon } = status;
+  const stale = relevance && relevance !== 'blocking' ? relevance : null;
   const duration = formatBuildDuration(build.started_at, build.finished_at);
   const sourceLabel = build.source ? BUILD_SOURCE_LABEL[build.source] : null;
   const timestamp = formatRelative(build.finished_at ?? build.started_at);
@@ -186,18 +219,33 @@ export function BuildRow({
   const row = (
     <>
       <span
-        className={cn('flex size-9 shrink-0 items-center justify-center rounded-sm', status.tileBg)}
+        className={cn(
+          'flex size-9 shrink-0 items-center justify-center rounded-sm',
+          stale ? 'border-border text-muted-foreground border' : status.tileBg,
+        )}
       >
-        <Icon className={cn('size-5 shrink-0', status.iconColor)} />
+        <Icon className={cn('size-5 shrink-0', stale ? undefined : status.iconColor)} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground truncate text-sm font-medium">
+          <span
+            className={cn(
+              'truncate text-sm font-medium',
+              stale ? 'text-muted-foreground' : 'text-foreground',
+            )}
+          >
             {accelerator ? 'Repository accelerator' : build.slug}
           </span>
-          <Badge variant={status.badgeVariant} size="xs">
+          <Badge variant={stale ? 'muted' : status.badgeVariant} size="xs">
             {status.label}
           </Badge>
+          {stale ? (
+            <Hint label={STALE_FAILURE_HINT[stale]}>
+              <Badge variant="muted" size="xs">
+                {STALE_FAILURE_LABEL[stale]}
+              </Badge>
+            </Hint>
+          ) : null}
           {providerMode === 'pinned' ? <ProviderBadge provider={build.provider} /> : null}
         </div>
         <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
@@ -269,73 +317,114 @@ function InlinePanelEmpty({ message, action }: { message: string; action?: React
   );
 }
 
-function LatestFailureBanner({
-  failure,
+/**
+ * Shown only when a failure still bites — i.e. the API's derived state is
+ * `blocked` (nothing bootable anywhere this project routes) or `degraded` (some
+ * routable providers are fine, others aren't).
+ *
+ * It deliberately never renders the newest failed row on its own. A build row is
+ * a record of one past attempt against one image identity; presenting it as the
+ * present tense is what showed "Latest build failed" for eleven days while a
+ * ready image was serving every session.
+ */
+function SandboxStatusBanner({
+  status,
   canManage,
-  canFixWithAgent,
   isFixPending,
+  isRetryPending,
   onFix,
+  onRetry,
 }: {
-  failure: ProjectSnapshotBuild;
+  status: SandboxRuntimeStatus;
   canManage: boolean;
-  canFixWithAgent: boolean;
   isFixPending: boolean;
+  isRetryPending: boolean;
   onFix: () => void;
+  onRetry: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const showFixAction = canManage && canFixWithAgent;
+  const failure = status.current_failure;
+  const blocked = status.state === 'blocked';
+  const showFixAction = canManage && status.fix_with_agent_available;
+  const failedAt = failure ? formatRelative(failure.finished_at ?? failure.started_at) : null;
 
   return (
     <div className="border-border bg-popover rounded-md border">
       <div className="flex items-start gap-3 px-4 py-3">
-        <span className="border-border bg-kortix-red/10 text-kortix-red inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border">
-          <XCircleSolid className="size-6 shrink-0" />
+        <span
+          className={cn(
+            'border-border inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border',
+            blocked ? 'bg-kortix-red/10 text-kortix-red' : 'bg-kortix-orange/10 text-kortix-orange',
+          )}
+        >
+          {blocked ? (
+            <XCircleSolid className="size-6 shrink-0" />
+          ) : (
+            <DangerTriangleSolid className="size-6 shrink-0" />
+          )}
         </span>
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1">
               <p className="text-foreground text-sm font-medium text-balance">
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsSandboxSnapshotCardJsxTextLatestBuildFailedf1dd9030',
-                )}
+                {blocked ? 'Sessions can’t start' : 'Some sessions won’t start'}
               </p>
-              <InlineMeta>
-                <code className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-xs">
-                  {failure.slug}
-                </code>
-                <span className="tabular-nums">
-                  {formatRelative(failure.finished_at ?? failure.started_at)}
-                </span>
-              </InlineMeta>
+              <p className="text-muted-foreground text-sm text-balance">
+                {blocked
+                  ? 'The image this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
+                  : `The image is ready on ${formatSandboxProviders(status.ready_providers)} but failing on ${formatSandboxProviders(status.failed_providers)}. Sessions routed there won’t start.`}
+              </p>
+              {failure ? (
+                <InlineMeta>
+                  <code className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-xs">
+                    {failure.slug}
+                  </code>
+                  <span className="tabular-nums">{failedAt}</span>
+                </InlineMeta>
+              ) : null}
             </div>
-            {(failure.error_category || showFixAction) && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {failure.error_category ? (
-                  <Badge size="sm" variant="warning">
-                    {CATEGORY_LABEL[failure.error_category] ?? failure.error_category}
-                  </Badge>
-                ) : null}
-                {showFixAction ? (
-                  <Button
-                    size="sm"
-                    className="gap-1.5 transition-transform active:scale-[0.96]"
-                    disabled={isFixPending}
-                    onClick={onFix}
-                  >
-                    {isFixPending ? (
-                      <Loading className="size-3.5 shrink-0" />
-                    ) : (
-                      <SparklesSolid className="size-3.5 shrink-0" />
-                    )}
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsSandboxSnapshotCardJsxTextFixWithAgent918e1083',
-                    )}
-                  </Button>
-                ) : null}
-              </div>
-            )}
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {failure?.error_category ? (
+                <Badge size="sm" variant={blocked ? 'destructive' : 'warning'}>
+                  {CATEGORY_LABEL[failure.error_category] ?? failure.error_category}
+                </Badge>
+              ) : null}
+              {showFixAction ? (
+                <Button
+                  size="sm"
+                  className="gap-1.5 transition-transform active:scale-[0.96]"
+                  disabled={isFixPending}
+                  onClick={onFix}
+                >
+                  {isFixPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <SparklesSolid className="size-3.5 shrink-0" />
+                  )}
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsSandboxSnapshotCardJsxTextFixWithAgent918e1083',
+                  )}
+                </Button>
+              ) : null}
+              {canManage ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={isRetryPending}
+                  onClick={onRetry}
+                >
+                  {isRetryPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <RefreshCw className="size-3.5 shrink-0" />
+                  )}
+                  Rebuild
+                </Button>
+              ) : null}
+            </div>
           </div>
-          {failure.error ? (
+          {failure?.error ? (
             <pre className="bg-muted/50 text-muted-foreground max-h-36 overflow-auto rounded-sm p-2.5 text-xs wrap-break-word whitespace-pre-wrap">
               {failure.error}
             </pre>
@@ -347,18 +436,7 @@ function LatestFailureBanner({
 }
 
 function formatRelative(input: string | null | undefined): string {
-  if (!input) return '—';
-  const then = new Date(input).getTime();
-  if (!Number.isFinite(then)) return input;
-  const diffMs = Date.now() - then;
-  const minutes = Math.round(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(input).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return relativeTime(input) || '—';
 }
 
 function TemplateRow({
@@ -553,7 +631,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
       return anyBuilding ? 5_000 : false;
     },
   });
-  const { fixWithAgent } = useSandboxRecovery(projectId);
+  const { fixWithAgent, retry } = useSandboxRecovery(projectId);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SandboxTemplate | null>(null);
@@ -566,9 +644,11 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const selectedProvider = data?.selected_provider ?? null;
   const templateBuilds = builds.filter((build) => !isProjectAcceleratorBuild(build));
   const acceleratorBuilds = builds.filter(isProjectAcceleratorBuild);
-  const latestFailure = currentFailedBuild(templateBuilds);
-  const latestReady = templateBuilds.find((b) => b.status === 'ready') ?? null;
-  const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
+  const status = data?.status ?? null;
+  // Only these two states mean a user is actually affected right now. Everything
+  // else — including a failed build whose image the provider has since brought
+  // up — belongs in the log below, not in a banner.
+  const showStatusBanner = status?.state === 'blocked' || status?.state === 'degraded';
   const isFullyEmpty = templates.length === 0 && builds.length === 0;
 
   const newTemplateAction = canManage ? (
@@ -698,13 +778,14 @@ export function SandboxView({ projectId }: { projectId: string }) {
                   </div>
                 )}
 
-                {latestFailure ? (
-                  <LatestFailureBanner
-                    failure={latestFailure}
+                {showStatusBanner && status ? (
+                  <SandboxStatusBanner
+                    status={status}
                     canManage={canManage}
-                    canFixWithAgent={canFixWithAgent}
                     isFixPending={fixWithAgent.isPending}
+                    isRetryPending={retry.isPending}
                     onFix={() => fixWithAgent.mutate()}
+                    onRetry={() => retry.mutate(status.current_failure?.template_slug)}
                   />
                 ) : null}
 
@@ -722,7 +803,12 @@ export function SandboxView({ projectId }: { projectId: string }) {
                   ) : (
                     <ul className="space-y-2">
                       {templateBuilds.slice(0, 10).map((b) => (
-                        <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
+                        <BuildRow
+                          key={b.build_id}
+                          build={b}
+                          providerMode={providerMode}
+                          relevance={describeFailedBuild(b, status)}
+                        />
                       ))}
                     </ul>
                   )}

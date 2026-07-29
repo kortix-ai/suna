@@ -1,7 +1,8 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
-import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../../snapshots/build-state';
+import { sessionTemplateBuilds } from '../../snapshots/build-state';
+import { pickPrimaryTemplate, resolveSandboxRuntimeStatus } from '../../snapshots/sandbox-status';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -32,6 +33,59 @@ function templateProviderObservation(metadata: unknown) {
     selectedProvider,
     providerMode: selectedProvider ? 'pinned' as const : 'automatic' as const,
     listOptions: { selectedProvider, includeProviderCoverage: true } as const,
+  };
+}
+
+/**
+ * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
+ * panel, and the fix-with-agent gate — so they can never disagree about whether
+ * a project's sessions can start. See snapshots/sandbox-status.ts for why this
+ * is derived from live provider coverage rather than from the build log.
+ */
+function projectSandboxStatus(args: {
+  templates: Awaited<ReturnType<typeof listSandboxTemplates>>;
+  builds: Awaited<ReturnType<typeof listSnapshotBuilds>>;
+  metadata: unknown;
+  selectedProvider: string | null;
+}) {
+  const meta = args.metadata && typeof args.metadata === 'object'
+    ? args.metadata as Record<string, unknown>
+    : null;
+  const primary = pickPrimaryTemplate(args.templates, normalizeString(meta?.default_sandbox_slug));
+  const templateBuilds = sessionTemplateBuilds(args.builds);
+  // Only the primary template's own attempts describe the primary template.
+  const primaryBuilds = primary
+    ? templateBuilds.filter((build) => templateSlugFromBuildSlug(build.slug) === primary.slug)
+    : templateBuilds;
+  const status = resolveSandboxRuntimeStatus({
+    snapshotName: primary?.snapshotName ?? null,
+    coverage: primary?.providerCoverage ?? null,
+    selectedProvider: args.selectedProvider,
+    builds: primaryBuilds,
+  });
+  // A fix session must itself boot a sandbox, so it needs SOME image that works
+  // — see the fix-with-agent handler, which enforces the same two conditions.
+  const hasHostBuild = templateBuilds.some((build) => build.status === 'ready');
+  return { primary, templateBuilds, status, hasHostBuild };
+}
+
+function serializeSandboxStatus(resolved: ReturnType<typeof projectSandboxStatus>) {
+  const currentFailure = resolved.status.current_failure
+    ? serializeBuildSummary(resolved.status.current_failure)
+    : null;
+  return {
+    ...resolved.status,
+    current_failure: currentFailure,
+    stale_failure: resolved.status.stale_failure
+      ? serializeBuildSummary(resolved.status.stale_failure)
+      : null,
+    /**
+     * Whether POST /snapshots/fix-with-agent would accept right now. Derived
+     * here from the same inputs the endpoint gates on so the button can never
+     * offer an action the API answers 409 to — or hide one it would accept.
+     */
+    fix_with_agent_available:
+      !!currentFailure && currentFailure.fixable_by_agent && resolved.hasHostBuild,
   };
 }
 
@@ -487,10 +541,17 @@ projectsApp.openapi(
   // before reading them, so the dashboard never shows a permanent "Building".
   await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
+  const resolved = projectSandboxStatus({
+    templates,
+    builds,
+    metadata: loaded.row.metadata,
+    selectedProvider: observation.selectedProvider,
+  });
   return c.json({
     templates: templates.map((t) => serializeTemplate(t)),
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
+    status: serializeSandboxStatus(resolved),
     provider_mode: observation.providerMode,
     selected_provider: observation.selectedProvider,
   });
@@ -519,6 +580,12 @@ interface SandboxHealthPayload {
   building: boolean;
   latest_build: ReturnType<typeof serializeBuildSummary> | null;
   latest_failure: ReturnType<typeof serializeBuildSummary> | null;
+  /**
+   * The derived answer to "can a session start, and if not, why". Every alert
+   * must be driven by THIS, never by `latest_failure` — that field is the newest
+   * failed row in the log whether or not it still describes anything bootable.
+   */
+  status: ReturnType<typeof serializeSandboxStatus> | null;
   provider_mode: 'automatic' | 'pinned';
   selected_provider: 'daytona' | 'platinum' | 'e2b' | 'local-docker' | null;
 }
@@ -533,6 +600,7 @@ const SANDBOX_HEALTH_DEGRADED: SandboxHealthPayload = {
   building: false,
   latest_build: null,
   latest_failure: null,
+  status: null,
   provider_mode: 'automatic',
   selected_provider: null,
 };
@@ -552,22 +620,25 @@ async function buildSandboxHealth(
   } catch {
     /* no templates */
   }
-  const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
-  const templateBuilds = sessionTemplateBuilds(builds);
+  const resolved = projectSandboxStatus({
+    templates,
+    builds,
+    metadata: loaded.row.metadata,
+    selectedProvider: observation.selectedProvider,
+  });
+  const { primary, templateBuilds, status } = resolved;
   const latest = templateBuilds[0] ?? null;
-  const latestFailure = currentFailedSnapshotBuild(templateBuilds);
-  const isBuilding =
-    (latest && latest.status === 'building') ||
-    primary?.providerState === 'building';
+  const latestFailure = templateBuilds.find((build) => build.status === 'failed') ?? null;
 
   return {
     primary_slug: primary?.slug ?? null,
     primary_template: primary ? serializeTemplate(primary) : null,
     ready: primary?.ready ?? false,
-    building: isBuilding,
+    building: status.state === 'building',
     latest_build: latest ? serializeBuildSummary(latest) : null,
     latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
+    status: serializeSandboxStatus(resolved),
     provider_mode: observation.providerMode,
     selected_provider: observation.selectedProvider,
   };
@@ -739,10 +810,48 @@ projectsApp.openapi(
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
-  const templateBuilds = sessionTemplateBuilds(builds);
-  const failed = currentFailedSnapshotBuild(templateBuilds);
+  // Gate on the SAME derived status the UI renders, not on the newest failed row:
+  // a build that failed against a definition nobody boots anymore — or whose image
+  // the provider has since brought up — has nothing left for an agent to fix, and
+  // sending one after it burns a session on a phantom.
+  const observation = templateProviderObservation(loaded.row.metadata);
+  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+  let templatesUnavailable = false;
+  try {
+    // Repo unreachable / manifest broken / provider slow. Without the current
+    // template identity we cannot tell a live failure from a stale one, and
+    // guessing in either direction is worse than saying so.
+    templates = await listSandboxTemplates(await loadGitProject(loaded), observation.listOptions);
+  } catch {
+    templatesUnavailable = true;
+  }
+  const { templateBuilds, status } = projectSandboxStatus({
+    templates,
+    builds,
+    metadata: loaded.row.metadata,
+    selectedProvider: observation.selectedProvider,
+  });
+  const failed = status.current_failure;
   if (!failed) {
-    return c.json({ error: 'No current failed snapshot build to fix.' }, 409);
+    if (templatesUnavailable) {
+      return c.json(
+        {
+          error:
+            'Could not read this project’s sandbox templates, so the current build state is unknown. Try again in a moment.',
+          code: 'SANDBOX_STATE_UNKNOWN',
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        error: status.stale_failure
+          ? 'That build failure no longer applies — the current sandbox image is not failing.'
+          : 'No current failed snapshot build to fix.',
+        code: 'NO_CURRENT_FAILURE',
+      },
+      409,
+    );
   }
 
   const errorText = failed.error ?? 'Snapshot build failed';
