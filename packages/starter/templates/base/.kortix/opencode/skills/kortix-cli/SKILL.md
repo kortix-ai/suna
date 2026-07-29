@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors via the executor, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get`."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors via the executor, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -18,13 +18,24 @@ Kortix reference — every command, the manifest, change requests, the runtime �
 served **live by the CLI**, so it never goes stale between releases:
 
 ```bash
-kortix skills                        # list the Kortix system skills served live
-kortix skills get kortix-system      # THE full reference: CLI, kortix.yaml, CRs, runtime
-kortix skills get kortix-cli --full  # this skill's complete command reference
+kortix skills                    # list the Kortix system skills served live
+kortix skills get kortix-system  # THE reference + the paths of its 18 sub-docs
+```
+
+`get` prints the body and then **lists** the skill's reference files. Pull the
+one you need instead of the whole tree — `kortix-system` is ~230 KB in full:
+
+```bash
+kortix skills file kortix-system references/kortix/kortix-cli.md   # the FULL CLI reference
+kortix skills file kortix-system references/kortix/kortix-yaml.md  # the manifest
+kortix skills get kortix-system --full                             # everything, ~230 KB
 ```
 
 Load `kortix skills get kortix-system` before doing anything non-trivial with
 Kortix — the CLI serves version-matched content, which this static stub can't.
+The complete `kortix` command reference is
+`references/kortix/kortix-cli.md` inside `kortix-system` — **not** `kortix skills
+get kortix-cli`, which just returns this same stub.
 
 ## The moves you'll reach for
 
@@ -39,8 +50,9 @@ kortix cr open --title "…"                       # propose landing your branch
 
 Every read command takes `--json` (clean payload on stdout), so the CLI is a
 100% scriptable surface. For anything beyond the above — flags, the token-scope
-model, host switching, orchestration patterns — run `kortix skills get
-kortix-system` (or `kortix skills get <name>` for a specific system skill).
+model, host switching, orchestration patterns — read
+`kortix skills file kortix-system references/kortix/kortix-cli.md` (the full
+command reference), or `kortix skills get <name>` for another system skill.
 
 ## Landing work on `main`
 

@@ -50,7 +50,19 @@ end_call        {}                        → {ended: true}          hang up and
 
 `join_gmeet` and `join_zoom` are listed on the connector but are **not implemented**; calling either returns an error telling you to use `spawn_room`. Do not build a workaround.
 
-If `kortix executor connectors` shows no `kortix_voice` at all, voice is not enabled for this project — say so plainly instead of hunting for another way in.
+If `kortix executor connectors` shows no `kortix_voice` at all, voice is not
+enabled for this project. Say so plainly and hand back the fix — don't hunt for
+another way in:
+
+> Voice isn't enabled on this project yet. Someone with customize access can
+> turn it on in **Customize → Settings → Experimental** (the `voice` feature).
+> Once it's on, a **Voice** section appears under Connect and I can start calls.
+
+There is **nothing to authenticate** — no OAuth, no API key, no workspace to
+link. Calls run on Kortix's own infrastructure, so enabling the feature is the
+whole setup. There is also no `kortix` CLI command for this toggle; it is a
+dashboard action (or `PATCH /v1/projects/<id>/experimental`
+`{"feature":"voice","enabled":true}` for someone driving the API).
 </the-actions>
 
 <starting-a-call-and-getting-the-human-in>

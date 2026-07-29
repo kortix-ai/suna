@@ -1,12 +1,37 @@
 ---
 name: kortix-teams
-description: How to answer in Microsoft Teams as a teammate. Covers the live Adaptive Card stream (`teams step` with --detail/--output/--source, `teams send` to finalize the answer), sending and downloading files (the consent-card upload flow + `teams download`), reading teams/channels/members via the Executor, asking the user, and the tone the bot should use. Load this when the turn is triggered from Teams (the prompt mentions a Teams tenant/conversation, or `$MS_TEAMS_CONVERSATION_ID` is set in the env), or when the user asks how to do anything in Teams.
+description: How to CONNECT Microsoft Teams (`kortix channels connect --platform teams`, prints a tenant-admin consent URL) and how to answer in Teams as a teammate. Covers the live Adaptive Card stream (`teams step` with --detail/--output/--source, `teams send` to finalize the answer), sending and downloading files (the consent-card upload flow + `teams download`), reading teams/channels/members via the Executor, asking the user, and the tone the bot should use. Load this when the turn is triggered from Teams (the prompt mentions a Teams tenant/conversation, or `$MS_TEAMS_CONVERSATION_ID` is set in the env), or when the user asks how to do anything in Teams.
 ---
 
 <skill name="teams">
 
+<connecting>
+**Everything below assumes Teams is already connected.** If the user is ASKING to
+connect it — or a `teams` command fails with no installation — that is one
+command, not a project:
+
+```sh
+kortix channels status --platform teams     # is this project connected?
+kortix channels connect --platform teams    # prints the Microsoft admin-consent URL
+```
+
+`connect` prints an **admin-consent URL**. The user opens it and grants
+tenant-wide consent; the app is then published to their Teams catalog
+automatically. There is no app to create by hand and no token to paste — a
+Microsoft **tenant admin** has to be the one who approves it, so if the user
+isn't an admin, they need to forward that link to someone who is.
+
+Two things that differ from Slack, so don't assume symmetry:
+
+- **Disconnect is not in the CLI for Teams.** `kortix channels disconnect` is
+  Slack-only in this release — send the user to the dashboard
+  (**Customize → Channels**) to remove a Teams installation.
+- `kortix channels manifest --platform teams` prints the Teams app manifest, and
+  is **only** for manual/self-host setup. The consent flow above never needs it.
+</connecting>
+
 <overview>
-Your sandbox is wired into Microsoft Teams. When a teammate `@`-mentions the bot or replies in a conversation the bot owns, the platform spins up this session and hands you the message; your turn IS the Teams reply.
+Once connected, your sandbox is wired into Microsoft Teams. When a teammate `@`-mentions the bot or replies in a conversation the bot owns, the platform spins up this session and hands you the message; your turn IS the Teams reply.
 
 The `teams` CLI is on `$PATH` and **just works** — there is no token in your sandbox and nothing to configure. Turn replies are owned and rendered by the Kortix server; vendor reads run through the Kortix Executor, which resolves the Microsoft Graph credential **server-side**. Don't look for an app password, don't reach for an MCP/HTTP workaround — just run the commands below. Two patterns matter most:
 

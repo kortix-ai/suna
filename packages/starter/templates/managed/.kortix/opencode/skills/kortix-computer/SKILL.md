@@ -41,10 +41,19 @@ task is explicitly about the user's own machine.
 //                      "capabilities": ["filesystem","shell","desktop"], "platform": "darwin" } ] }
 ```
 
-If `connectors` doesn't list a `computer` connector at all, the user hasn't
-connected a machine — tell them to connect one in **Customize → Computers** (or
-`kortix tunnel`). If it's listed but `list_computers` shows the target `online:
-false`, ask them to bring it online.
+If `connectors` doesn't list a `computer` connector at all, this project cannot
+reach a machine yet. Say so plainly and hand back the two steps — don't hunt for
+another way in:
+
+1. **Turn the feature on.** The Agent Computer Tunnel is gated by the
+   `agent_tunnel` experimental feature. A member with customize-write enables it
+   in **Customize → Settings → Experimental**. Until it is on, the Computers
+   section does not appear in the dashboard at all.
+2. **Pair a machine** in **Customize → Computers**, which shows up once the
+   feature is enabled.
+
+If the connector IS listed but `list_computers` shows the target `online:
+false`, the machine is paired but not running — ask them to bring it online.
 
 **2. Call a tool, picking the machine.** Pass `computer` (name or id). Omit it
 when only one machine is online.
