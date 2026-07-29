@@ -149,6 +149,14 @@ jobs:
         root:
           - infra/terraform/environments/prod-eks/cluster
           - infra/terraform/environments/dev-eks/cluster
+          # The ECS envs became plannable from a clean checkout once their
+          # non-secret config moved out of gitignored tfvars into variable
+          # defaults (#5771, #5778). Before that a plan here proposed replacing
+          # the production certificate and live DNS, so covering them would
+          # have reported catastrophic false drift every night.
+          - infra/terraform/environments/prod
+          - infra/terraform/environments/staging
+          - infra/terraform/environments/dev
           # Not under environments/ — the stack lives at the terraform root.
           - infra/terraform/security-baseline
     steps:
