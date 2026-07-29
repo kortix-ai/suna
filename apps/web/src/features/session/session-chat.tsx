@@ -203,6 +203,7 @@ import {
   useSessionSync,
 } from '@kortix/sdk/react';
 import { SandboxUrlDetector } from './sandbox-url-detector';
+import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 
 // ============================================================================
@@ -5290,6 +5291,7 @@ export function SessionChat({
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
   const sessionResolved = runtimeReady && sessionFetched;
+  const composerReadiness = sessionComposerReadiness({ runtimeReady });
   const isNotFound = !session && sessionResolved && !optimisticPrompt;
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
@@ -5736,6 +5738,11 @@ export function SessionChat({
             questionCanAct={questionAction.canAct}
             onQuestionAction={handleQuestionAction}
             inputSlot={chatInputSlot}
+            // The shell can now render on a cached transcript alone, i.e. before
+            // the sandbox answers — so sending has to be gated separately from
+            // reading. See sessionComposerReadiness.
+            disabled={composerReadiness.disabled}
+            placeholder={composerReadiness.placeholder}
           />
           <ConfirmDialog
             open={!!rewindTarget}

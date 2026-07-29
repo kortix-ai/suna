@@ -73,9 +73,18 @@ const pendingWrites = new Map<string, {
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_INTERVAL_MS = 500;
 
+// The caps below are only real if something enforces them. Prune once per page
+// load, off the back of the first flush, so the cache cannot grow forever
+// without any host having to remember to call it.
+let prunedThisLoad = false;
+
 async function flushPendingWrites(): Promise<void> {
   flushTimer = null;
   if (pendingWrites.size === 0) return;
+  if (!prunedThisLoad) {
+    prunedThisLoad = true;
+    void pruneIDBCache();
+  }
   const batch = new Map(pendingWrites);
   pendingWrites.clear();
   try {
@@ -214,16 +223,19 @@ export async function pruneIDBCache(): Promise<void> {
       req.onerror = () => reject(req.error);
     });
     const now = Date.now();
+    // Delete by `cacheKey` — it is the store's keyPath. Deleting by `sessionId`
+    // matched no record, so prune silently kept every entry forever and the
+    // 50-session / 7-day caps were never enforced.
     const stale = entries.filter((e) => now - e.updatedAt > MAX_SESSION_AGE_MS);
     for (const e of stale) {
-      store.delete(e.sessionId);
+      store.delete(e.cacheKey);
     }
     const fresh = entries
       .filter((e) => now - e.updatedAt <= MAX_SESSION_AGE_MS)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     if (fresh.length > MAX_CACHED_SESSIONS) {
       for (const e of fresh.slice(MAX_CACHED_SESSIONS)) {
-        store.delete(e.sessionId);
+        store.delete(e.cacheKey);
       }
     }
   } catch {

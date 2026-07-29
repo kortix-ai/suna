@@ -21,6 +21,7 @@ import {
   findInitialSessionPin,
 } from '@/features/session/session-load-state';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
+import { canPollSessionStart } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
@@ -39,23 +40,23 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { formatRuntimeError } from '@kortix/sdk';
 import {
+  formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   clearRuntimeEnsureGuard,
   migrateStash,
   readStartStash,
+  useRuntimeConnectionStore,
   useSession,
   type UseSessionResult,
 } from '@kortix/sdk/react';
-import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -80,8 +81,10 @@ export default function ProjectSessionPage() {
   const searchParams = useSearchParams();
   const forceAcp = searchParams.has('acp');
 
-  // Billing gate. An account that cannot run should not start a session — the
-  // backend would never provision a sandbox, so polling for one spins forever.
+  // Billing gate. An account that cannot run should not KEEP polling to start a
+  // session — the backend would never provision a sandbox, so the poll spins
+  // forever. It gates the poll, never the transcript: reading what you already
+  // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
   const { data: projectDetail } = useQuery({
     queryKey: ['project-detail', projectId],
@@ -92,13 +95,11 @@ export default function ProjectSessionPage() {
     enabled: !!projectId,
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
-  const { data: accountState, isLoading: accountStateLoading } = useAccountState({
+  const { data: accountState } = useAccountState({
     accountId: projectAccountId,
   });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
-  const billingGatePending =
-    isBillingEnabled() && !!projectAccountId && (accountStateLoading || !accountLoaded);
   // ONE resolver for "what is this account's billing situation" (see
   // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
   // `noPlan` with a "Subscribe to Team plan" pitch — which told a Team account
@@ -106,7 +107,8 @@ export default function ProjectSessionPage() {
   // while the modal that CTA opened correctly said "Out of credits — your Team
   // plan and seats are unaffected". `can_run: false` means blocked, not unplanned.
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
-  const billingBlocked = isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
+  const billingBlocked =
+    isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
   const { data: projectSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -118,13 +120,15 @@ export default function ProjectSessionPage() {
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
-  // seeding (no client health poll), and the canonical id. Gated on the billing
-  // check so a no-plan account never spins on a sandbox that won't provision.
+  // seeding (no client health poll), and the canonical id. The billing gate is
+  // monotonic (see canPollSessionStart) so a no-plan account still stops polling
+  // for a sandbox that won't provision, without the old open→shut→open flip
+  // interrupting an in-flight wake.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
   const session = useSession(projectId, sessionId, {
-    enabled: !!user && !billingGatePending && !billingBlocked,
+    enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
     runtimeTransport: forceAcp ? 'acp' : undefined,
@@ -254,13 +258,7 @@ export default function ProjectSessionPage() {
   );
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (
-      sessionContentAvailable ||
-      session.startError ||
-      unmaterializedFailure ||
-      fatal ||
-      gated
-    ) {
+    if (sessionContentAvailable || session.startError || unmaterializedFailure || fatal || gated) {
       completeSessionSwitch(sessionId);
     }
   }, [
@@ -274,8 +272,12 @@ export default function ProjectSessionPage() {
     completeSessionSwitch,
   ]);
   // Existing sessions can mount from their server-owned pin before the runtime
-  // switch completes. SessionChat hydrates IndexedDB first, then revalidates
-  // over the live runtime after useSession finishes the switch.
+  // switch completes, and `useSessionSync` paints the cached transcript out of
+  // IndexedDB without waiting for the sandbox, then revalidates over the live
+  // runtime once useSession finishes the switch. (This comment claimed the IDB
+  // hydration for a long time before anything actually called it — nothing read
+  // or wrote that cache, so every open waited out a full VM wake to show text
+  // the user already had.)
   const canMountChat = sessionContentAvailable;
   // For a fresh session, hold the real chat until the user actually sends their
   // first message — the instant shell is the typing surface until then.
@@ -307,7 +309,8 @@ export default function ProjectSessionPage() {
     }
 
     if (gated) {
-      const blockedState = billingState && billingState !== 'active' ? billingState : 'no_subscription';
+      const blockedState =
+        billingState && billingState !== 'active' ? billingState : 'no_subscription';
       const copy = billingGateCopy(blockedState);
       // The genuinely-no-plan copy keeps its translated strings; the states this
       // surface used to mislabel get their copy from the shared resolver.
@@ -321,7 +324,9 @@ export default function ProjectSessionPage() {
           }
           message={
             isNoPlan
-              ? tI18nHardcoded.raw('autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779')
+              ? tI18nHardcoded.raw(
+                  'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779',
+                )
               : copy.message
           }
           action={
@@ -683,9 +688,7 @@ function ActiveSessionChat({
 
   if (runtimeError) {
     const formatted = formatRuntimeError(runtimeError);
-    const restartError = restartMutation.error
-      ? formatRuntimeError(restartMutation.error)
-      : null;
+    const restartError = restartMutation.error ? formatRuntimeError(restartMutation.error) : null;
     return (
       <InlineSessionError
         title={formatted.title}
@@ -726,9 +729,7 @@ function ActiveSessionChat({
           key={chatSessionId}
           sessionId={chatSessionId}
           projectId={projectId}
-          sessionState={
-            chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined
-          }
+          sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />
       </ClientErrorBoundary>
     </SessionLayout>

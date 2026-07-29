@@ -7,6 +7,12 @@ import {
   loadSessionTranscriptMessages,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
+import {
+  readCachedTranscript,
+  shouldHydrateFromCache,
+  toHydrateEntries,
+  writeCachedTranscript,
+} from '../browser/session-sync/session-transcript-cache';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { type MessageWithParts, useSyncStore } from '../browser/stores/sync-store';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
@@ -84,6 +90,33 @@ export function useSessionSync(sessionId: string) {
     controller.getSnapshot,
   );
 
+  // Paint from disk FIRST, and deliberately without waiting on `runtimeHealthy`.
+  // The transcript is settled history; gating it on a woken sandbox is what made
+  // opening a hibernated session a blank screen for the length of a VM boot.
+  // `shouldHydrateFromCache` keeps this strictly additive — the moment the store
+  // holds anything for this session, live data owns it and the cache stands down.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId)) return;
+    let cancelled = false;
+    void (async () => {
+      const cached = await readCachedTranscript(sessionId);
+      if (cancelled || !cached) return;
+      const store = useSyncStore.getState();
+      if (
+        !shouldHydrateFromCache({
+          storeHasSession: sessionId in store.messages,
+          cachedMessageCount: cached.messages.length,
+        })
+      ) {
+        return;
+      }
+      store.hydrate(sessionId, toHydrateEntries(cached));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
   useEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !runtimeHealthy) return;
     const release = retainSessionSyncController(sessionId);
@@ -95,6 +128,27 @@ export function useSessionSync(sessionId: string) {
       messageCache.delete(sessionId);
     };
   }, [controller, runtimeHealthy, sessionId]);
+
+  // Mirror the tail back to disk as it changes, so the NEXT open of this session
+  // has something to paint. Subscribing to the store (rather than reacting to
+  // rendered output) also captures SSE updates that arrive while the transcript
+  // is scrolled out of view. The IDB layer batches these on its own timer.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId)) return;
+    let lastMessages: unknown;
+    let lastParts: unknown;
+    const persist = (state: { messages: any; parts: any }) => {
+      // The store is shared by every session and also carries status/todos, so
+      // most notifications are irrelevant here. Compare the two slices this
+      // cache actually mirrors before rebuilding anything.
+      if (state.messages[sessionId] === lastMessages && state.parts === lastParts) return;
+      lastMessages = state.messages[sessionId];
+      lastParts = state.parts;
+      void writeCachedTranscript(state, sessionId);
+    };
+    persist(useSyncStore.getState());
+    return useSyncStore.subscribe(persist);
+  }, [sessionId]);
 
   const messages = useSyncStore((state) =>
     buildMessages(sessionId, state.messages[sessionId], state.parts),
