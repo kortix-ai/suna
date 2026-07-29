@@ -2730,7 +2730,7 @@ projectsApp.openapi(
     // model so every client renders the same answer the gateway enforces. The
     // session picker shows the enabled ones; "Manage models" shows them all and
     // switches on this flag. Neither re-derives it.
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {});
+    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
     return c.json({
       models: Object.fromEntries(
         Object.entries(models).map(([id, model]) => [

@@ -26,6 +26,12 @@ const CATALOG = {
   },
 };
 
+// glm-5.2 is the PLATFORM DEFAULT and, like every managed model, publishes no
+// release date or family — see the regression test below.
+mock.module('../llm-gateway/models/managed-models', () => ({
+  isKnownManagedModelId: (id: string) => id === 'glm-5.2' || id === 'claude-opus-4.8',
+}));
+
 const { defaultEnabledFromCatalog, resolveEnablement, isModelEnabledForProject } = await import(
   '../llm-gateway/model-enablement'
 );
@@ -67,6 +73,25 @@ describe('model-enablement', () => {
     };
     const enabled = resolveEnablement(withNewModel, { 'anthropic/claude-opus-4-1': true });
     expect(enabled.get('anthropic/claude-opus-6')).toBe(true);
+  });
+
+  it('never prunes a managed model, however thin its catalog metadata', () => {
+    // REGRESSION: managed models are hand-curated and publish no `released` or
+    // `family`, so the recency rule dropped every one of them — including
+    // glm-5.2, the PLATFORM DEFAULT. The gateway then refused every `auto`
+    // request with "This model is turned off for this project."
+    const withManaged = { ...CATALOG, 'glm-5.2': {}, 'claude-opus-4.8': {} };
+    const set = defaultEnabledFromCatalog(withManaged);
+    expect(set.has('glm-5.2')).toBe(true);
+    expect(set.has('claude-opus-4.8')).toBe(true);
+  });
+
+  it('never prunes a model the project is configured to route to', () => {
+    // A stale BYOK model set as the project default (or a routing-rule target)
+    // must stay offered — refusing it would break a request the project's own
+    // settings just produced.
+    const set = defaultEnabledFromCatalog(CATALOG, ['anthropic/claude-opus-4-1']);
+    expect(set.has('anthropic/claude-opus-4-1')).toBe(true);
   });
 
   it('offers a newly connected provider without any manual clicking', () => {
