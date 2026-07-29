@@ -18,7 +18,12 @@ variable "extra_api_hostnames" {
     canonical api.kortix.com record stays tunnel-locked on the old box.
   EOT
   type        = list(string)
-  default     = []
+  # This is a live SAN on the certificate currently serving api.kortix.com, so
+  # it belongs in version control rather than only in a gitignored tfvars. With
+  # the old default of [], any plan run without that local file — CI, or a
+  # second machine — proposed REPLACING the production certificate, because
+  # subject_alternative_names forces replacement.
+  default = ["api-ecs-fargate.kortix.com"]
 }
 
 variable "manage_dns" {
