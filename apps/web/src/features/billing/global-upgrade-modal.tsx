@@ -66,6 +66,7 @@ export function UpgradePlansModal({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
   const openDemo = useRequestDemo();
+  const billingReturnUrl = useBillingReturnUrl();
 
   // Show the top-up view (not the Free-plan pitch) whenever we can tell the
   // account is already a paying/Team account whose wallet ran dry. Prefer the
@@ -94,7 +95,6 @@ export function UpgradePlansModal({
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
   const canManageBilling = accountState?.can_manage_billing !== false;
-  const billingReturnUrl = useBillingReturnUrl();
 
   const handleSubscribe = () => {
     createPerSeat.mutate({
