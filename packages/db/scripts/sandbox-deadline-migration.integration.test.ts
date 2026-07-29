@@ -531,7 +531,18 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
     // whose query throws every tick logs a warning nobody reads and reports a
     // reassuring zero.
     const source = await Bun.file(
-      resolve(import.meta.dir, '..', '..', '..', 'apps', 'api', 'src', 'projects', 'lifetime', 'shadow-queries.ts'),
+      resolve(
+        import.meta.dir,
+        '..',
+        '..',
+        '..',
+        'apps',
+        'api',
+        'src',
+        'projects',
+        'lifetime',
+        'shadow-queries.ts',
+      ),
     ).text();
     const blocks = [...source.matchAll(/sql`([\s\S]*?)`\)/g)].map((m) => m[1] ?? '');
     expect(blocks.length).toBe(2);
@@ -563,6 +574,82 @@ describe.skipIf(!dockerAvailable)('sandbox deadline migrations — real PostgreS
     // so this also proves Postgres can prove the implication — a partial index
     // the planner cannot match is an index that silently never runs.
     expect(plan).toContain('idx_session_sandboxes_deadline');
+  });
+
+  // ── The two monitors, against real rows ────────────────────────────────────
+
+  test('M1 counts boxes alive past their deadline — the leak, as one number', async () => {
+    // The success criterion of this whole feature stated as one number: if M1
+    // stays at zero with enforcement on, the leak is fixed. Run the SHIPPED SQL
+    // rather than a copy, for the same reason as the shadow query above.
+    const monitors = await Bun.file(
+      resolve(
+        import.meta.dir,
+        '..',
+        '..',
+        '..',
+        'apps',
+        'api',
+        'src',
+        'projects',
+        'lifetime',
+        'monitors.ts',
+      ),
+    ).text();
+    const blocks = [...monitors.matchAll(/sql`([\s\S]*?)`\)/g)].map((m) => m[1] ?? '');
+    expect(blocks.length).toBe(2);
+    const m1 = (blocks[0] ?? '').replace(/\$\{toleranceSeconds\}/g, '900');
+    expect(m1).not.toContain('${');
+    // sess-zombie-264h and sess-stale-usage were backfilled to a deadline hours
+    // in the past, so both are overdue well beyond the 15-minute tolerance.
+    // Wrapped so the two-column monitor yields one scalar.
+    const overdue = Number(scalar(`SELECT t.overdue FROM (${m1.replace(/;\s*$/, '')}) t`));
+    expect(overdue).toBeGreaterThanOrEqual(2);
+  });
+
+  test('M2 reads ZERO while nothing stamps a deadline stop — shadow mode, proved', () => {
+    // The claim "this change kills nothing" is checkable rather than asserted:
+    // M2 keys on metadata.deadlineStop, which only the ENFORCING sweep writes.
+    expect(
+      scalar(`SELECT count(*)::int FROM kortix.session_sandboxes WHERE metadata ? 'deadlineStop'`),
+    ).toBe('0');
+  });
+
+  test('M2 catches a stop of a box that had progress inside the grant', async () => {
+    // The leading false-kill indicator, and it is 0 BY CONSTRUCTION: a deadline
+    // stop of a box with recent billed or relayed progress means an EXTENSION
+    // WRITE WAS MISSED, not that the box deserved to die.
+    psql(`INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, external_id, status, metadata)
+          VALUES (gen_random_uuid(), 'sess-wrongly-killed', '${ACC_A}', '${ACC_A}', 'box-wk', 'stopped',
+                  jsonb_build_object('deadlineStop', jsonb_build_object(
+                    'atIso', to_char(now() - interval '5 minutes', 'YYYY-MM-DD"T"HH24:MI:SSZ'),
+                    'lastUsageAgeMs', 60000,
+                    'lastAcpRelayAgeMs', null,
+                    'grantSource', 'progress')))`);
+    const monitors = await Bun.file(
+      resolve(
+        import.meta.dir,
+        '..',
+        '..',
+        '..',
+        'apps',
+        'api',
+        'src',
+        'projects',
+        'lifetime',
+        'monitors.ts',
+      ),
+    ).text();
+    const blocks = [...monitors.matchAll(/sql`([\s\S]*?)`\)/g)].map((m) => m[1] ?? '');
+    const m2 = (blocks[1] ?? '')
+      .replace(/\$\{windowSeconds\}/g, '86400')
+      .replace(/\$\{grantMs\}/g, '7200000');
+    expect(m2).not.toContain('${');
+    const row = scalar(
+      `SELECT (t.deadline_stops || '|' || t.stopped_with_recent_progress) FROM (${m2.replace(/;\s*$/, '')}) t`,
+    );
+    expect(row).toBe('1|1');
+    psql(`DELETE FROM kortix.session_sandboxes WHERE session_id='sess-wrongly-killed'`);
   });
 
   // ── The kill query the reaper will run ─────────────────────────────────────

@@ -7,6 +7,12 @@ import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { sandboxDeadlineKillBatch, sandboxDeadlinePerAccountCap } from './lifetime/flags';
+import { sandboxDeadlineEnforcementEnabled } from './lifetime/flags';
+import {
+  countAlivePastDeadline,
+  countKilledWithLiveTurn,
+  rePromptAfterDeadlineStopRate,
+} from './lifetime/monitors';
 import { EMPTY_SHADOW_RESULT, runSandboxDeadlineShadowPass } from './lifetime/shadow';
 import {
   EMPTY_REAP_RESULT,
@@ -455,6 +461,49 @@ export async function runProjectMaintenance(): Promise<void> {
       if (staleLiveness > 0) {
         console.warn(
           `[project-maintenance] BILLING LIVENESS STALE: ${staleLiveness} active compute session(s) not observed alive within the grace — revenue is draining silently, check the reaper`,
+        );
+      }
+
+      // BOUNDED SANDBOX LIFETIME — the two monitors, one per fail direction,
+      // deliberately alongside the billing pair above so they share a tick and
+      // an operator finds all four in one place.
+      //
+      //   M1  the fix is NOT HOLDING     boxes alive past their deadline
+      //   M2  the fix is TOO AGGRESSIVE  boxes stopped while a turn was live
+      //
+      // Both run in SHADOW MODE too, and that is the point. M1 measures the
+      // leak itself and should currently read the whole wedged population — it
+      // is logged, not warned, until enforcement is on, because alerting on a
+      // number we are deliberately not acting on trains people to ignore it.
+      // M2 must read ZERO until then, which makes it a free correctness check
+      // on the claim that nothing in this change kills anything.
+      const [alivePastDeadline, killedWithLiveTurn] = await Promise.all([
+        countAlivePastDeadline(),
+        countKilledWithLiveTurn(),
+      ]);
+      const enforcing = sandboxDeadlineEnforcementEnabled();
+      console.log(
+        '[lifetime] monitors',
+        `enforcing=${enforcing}`,
+        `m1_overdue=${alivePastDeadline.overdue}`,
+        `m1_max_overdue_s=${alivePastDeadline.maxOverdueSeconds}`,
+        `m2_deadline_stops=${killedWithLiveTurn.deadlineStops}`,
+        `m2_stopped_with_recent_progress=${killedWithLiveTurn.stoppedWithRecentProgress}`,
+        `m2_re_prompted_10m=${killedWithLiveTurn.rePromptedWithin10Min}`,
+        `m2_run_cap_stops=${killedWithLiveTurn.runCapStops}`,
+        `m2_re_prompt_rate=${rePromptAfterDeadlineStopRate(killedWithLiveTurn) ?? 'n/a'}`,
+      );
+      if (enforcing && alivePastDeadline.overdue > 0) {
+        console.warn(
+          `[lifetime] SANDBOX ALIVE PAST DEADLINE: ${alivePastDeadline.overdue} box(es) still running past their deadline (worst ${alivePastDeadline.maxOverdueSeconds}s) — the bound is not holding`,
+        );
+      }
+      // NOT gated on `enforcing`: this counter is 0 BY CONSTRUCTION in shadow
+      // mode, so a non-zero value here means something is stamping deadline
+      // stops that should not exist yet. Louder is correct.
+      if (killedWithLiveTurn.stoppedWithRecentProgress > 0) {
+        console.warn(
+          `[lifetime] SANDBOX KILLED WITH A LIVE TURN: ${killedWithLiveTurn.stoppedWithRecentProgress} deadline stop(s) of a box that showed progress inside the grant — an extension write is MISSING`,
         );
       }
     } catch (err) {
