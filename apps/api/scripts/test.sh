@@ -25,7 +25,7 @@ case "$mode" in
     if [ "${COVERAGE:-}" = "1" ]; then
       cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
     fi
-    # --env-file=.env.test, NOT dotenvx: the unit suite is hermetic. It runs
+    # --env-file=scripts/test.env, NOT dotenvx: the unit suite is hermetic. It runs
     # off a committed plaintext file of fake values, so it behaves identically
     # on a laptop with no decryption key and on a CI runner that must never be
     # handed one. `--env-file` also stops bun auto-loading the encrypted .env,
@@ -40,7 +40,7 @@ case "$mode" in
     # the flag is required explicitly. Without it, cross-file mock.module()
     # collisions are order-dependent and can silently pass or fail depending
     # on which files happen to run adjacently.
-    exec bun test --isolate --env-file=.env.test $cov $files
+    exec bun test --isolate --env-file=scripts/test.env $cov $files
     ;;
   *)
     echo "usage: test.sh [default|integration|live]" >&2
