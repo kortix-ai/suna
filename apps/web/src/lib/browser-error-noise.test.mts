@@ -26,6 +26,7 @@ import {
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
   isRuntimeNotReadyNoiseMessage,
+  isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -909,6 +910,216 @@ test('does NOT suppress a storage SecurityError when only ONE of several frames 
     }),
     false,
   )
+})
+
+// ---------------------------------------------------------------------------
+// Safari generic SecurityError noise — the bare `The operation is insecure.`
+// message from Safari 26.6+ on iOS for cross-origin restricted API access
+// (`crypto.subtle`, `fetch` in a restricted context, or a Web Crypto operation
+// in a sandboxed iframe / Safari private-mode context). This is a SIBLING of
+// the storage SecurityError noise (`isStorageSecurityErrorNoise`) — the storage
+// matcher anchors on `'localStorage'`/`'sessionStorage'` property names and
+// does NOT catch the bare `The operation is insecure.` message.
+//
+// Better Stack frontend prod patterns:
+//   e1d25be3ab38488ba0bfb2b3f069f24641914e3d20bacc1027178a5522376294
+//   1918c62ac5434aa56d7ce150e96b99be1b520471360fa3ef091802327297cf73
+//   70e1c309921716ee01cd5cd083cef876b41a81311b51db3d5bd55def644fdc47
+//   1cec609ee07b7f15aea6fea1eed550e4ce45a838abdf40171050336ff4abc2aa
+// (Kortix Frontend prod, application_id 2346967): all `SecurityError: The
+// operation is insecure.`, 1 occurrence each / 0 identified users, last
+// 2026-07-29 08:36:02 UTC, release `c330eda4d96e7aee557618254a86df7d16ba5d9b`
+// (v0.11.0 — POST-Promote), transaction `/` (marketing homepage), URL
+// `https://kortix.com/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). Frames: all
+// in `webpack-befb5b1662175048.js` function `a` (webpack runtime) +
+// `59675-a333ed5b0ae6dae4.js` functions `17725`/`20532`/`63613` (in_app) —
+// NO first-party `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact raw message from the production events.
+const SAFARI_SECURITY_ERROR_MESSAGE = 'The operation is insecure.'
+
+// A minified chunk frame (webpack runtime / app chunk) — no resolved first-party
+// `apps/web/src/…` source, so the negative guard does NOT fire. Represents the
+// four production patterns' frame shapes.
+const SAFARI_SECURITY_ERROR_CHUNK_FRAME =
+  'app:///_next/static/chunks/webpack-befb5b1662175048.js'
+
+// The three canonical capture-path forms: raw, `SecurityError: ` prefix, and
+// stacked `Unhandled promise rejection: SecurityError: ` prefix.
+const SAFARI_SECURITY_ERROR_CAPTURE_FORMS = [
+  SAFARI_SECURITY_ERROR_MESSAGE,
+  `SecurityError: ${SAFARI_SECURITY_ERROR_MESSAGE}`,
+  `Unhandled promise rejection: SecurityError: ${SAFARI_SECURITY_ERROR_MESSAGE}`,
+]
+
+test('classifies every Safari generic SecurityError capture form as noise (no first-party frame)', () => {
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    // Matcher-level: message alone (frameless — still noise because the message
+    // is Safari-specific and generic enough).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message }),
+      true,
+      `expected "${message}" to be classified as Safari generic SecurityError noise`,
+    )
+    // Matcher-level: with a minified chunk frame (no first-party source).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message, frames: [{ filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }] }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    // Matcher-level: with a window.onerror filename (no first-party source).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message, filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the Safari generic SecurityError Sentry event via the beforeSend gate', () => {
+  for (const value of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [{ filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless Safari generic SecurityError Sentry event (no first-party frame to preserve)', () => {
+  for (const value of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Safari generic SecurityError unhandled rejection via the runtime (window.onerror) gate', () => {
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a Safari generic SecurityError whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code threw a
+  // `SecurityError: The operation is insecure.` — actionable, so it must keep
+  // reporting so the call site can be fixed. This is the negative guard that
+  // distinguishes actionable first-party code regressions from the noise class.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    [{ filename: 'app:///apps/web/src/lib/security/some-crypto.ts' }],
+    [{ filename: 'apps/web/src/features/auth/use-auth.ts' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+      assert.equal(
+        isSafariGenericSecurityErrorNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/security/some-crypto.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded SecurityError from a different error type', () => {
+  // A non-SecurityError type with the same message (e.g. `Error: The operation
+  // is insecure.`) is a different error class — the bare `Error:` type without
+  // the `SecurityError:` prefix means a different throw path. The matcher
+  // anchors on the EXACT `SecurityError: The operation is insecure.` message
+  // (and its canonical wrappers) — a bare `Error:` prefix is NOT a `SecurityError:`
+  // prefix, so `stripErrorWrappers` strips it but leaves the remainder, and the
+  // exact regex `/^The operation is insecure\.$/` matches the underlying
+  // message. Wait — `stripErrorWrappers` strips `[A-Za-z]+Error: `, which
+  // includes `Error: `, so both `Error: The operation is insecure.` and
+  // `SecurityError: The operation is insecure.` strip to the same underlying
+  // message. The over-match guard is that a real first-party `throw new Error(
+  // 'The operation is insecure.')` de-minifies to `apps/web/src/…` and is
+  // preserved by the negative guard. But verify that a FIRST-PARTY frame
+  // preserves it even when the Error type differs.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/foo.ts' }],
+  ]) {
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message: `Error: ${SAFARI_SECURITY_ERROR_MESSAGE}`, frames }),
+      false,
+      `expected first-party "Error: The operation is insecure." to keep reporting`,
+    )
+  }
+})
+
+test('cross-matcher isolation: the new Safari generic matcher does NOT match the existing storage SecurityError message', () => {
+  // The storage SecurityError matcher (`isStorageSecurityErrorNoise`) is anchored
+  // on `Failed to read the 'localStorage'/'sessionStorage' property from 'Window'`.
+  // The new Safari generic matcher (`isSafariGenericSecurityErrorNoise`) is anchored
+  // on the bare `The operation is insecure.` — they must NOT overlap.
+  for (const message of [
+    "SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+    "Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
+    "Unhandled promise rejection: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+  ]) {
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message }),
+      false,
+      `expected storage SecurityError "${message}" to NOT be matched by the Safari generic matcher`,
+    )
+  }
+})
+
+test('cross-matcher isolation: the existing storage matcher does NOT match the new Safari generic message', () => {
+  // The storage SecurityError matcher regexes anchor on `'localStorage'` /
+  // `'sessionStorage'` property names, so the bare `The operation is insecure.`
+  // must NOT match.
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      isStorageSecurityErrorNoise({ message }),
+      false,
+      `expected Safari generic SecurityError "${message}" to NOT be matched by the storage matcher`,
+    )
+  }
 })
 
 test('does NOT suppress a non-storage SecurityError with the same shape', () => {
