@@ -4024,3 +4024,59 @@ directly.
 **Status:** IN PROGRESS.
 
 **SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-07-29 — session `sdk-inherited-session-defaults` follow-up completion
+
+Completed the inherited OpenCode session compatibility fix in `a900fc605`.
+
+The SDK now reads the persisted project-session model and agent before the
+first default OpenCode REST `send()` on a handle. Per-call choices override
+handle choices. Handle choices override persisted defaults. `changeModel()`
+invalidates the cached persisted defaults. A failed defaults read clears the
+cache so the next `send()` retries it.
+
+The live smoke now treats the sandbox as the isolation boundary. It accepts an
+equal snapshot-inherited `opencode_session_id` only when the Kortix sessions,
+sandboxes, and transcripts remain isolated. The session-create helper retries
+only the exact `409 ACP_RUNTIME_REQUIRED` manifest-convergence response.
+
+TDD and focused evidence:
+
+- RED: the inherited-session prompt omitted the persisted model and agent.
+- GREEN: the prompt used `kortix/glm-5.2` and agent `kortix`.
+- RED: `changeModel()` left the old persisted model cached.
+- GREEN: the next prompt used the changed model.
+- Focused SDK client suite: `71 pass`, `0 fail`, `258` assertions.
+- Tests package typecheck: exit `0`.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1385 pass`, `0 fail`, `5978`
+  assertions across `121` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
+
+Live dev Platinum acceptance:
+
+- Evidence:
+  `tests/performance/session-start/results/2026-07-29/opencode-inherited-pin-dev-platinum.json`.
+- Result: `PASS 2/2`.
+- Create-to-ready: `26.022 s` and `35.169 s`.
+- Two distinct Kortix sessions and Platinum sandboxes inherited
+  `ses_050fadf1dffeb2XyPZiu0qloal`.
+- `createKortix().session().ensureReady()` matched the authoritative `/start`
+  pin for both sandboxes.
+- Both sessions passed first response, follow-up response, restart, and
+  post-restart response using only SDK `send()`.
+- Each transcript contained only its own three assistant markers.
+- Fixture cleanup removed the project, sessions, account, and user.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** PR merge, Deploy Dev,
+and deployed SHA proof remain.
