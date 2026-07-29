@@ -357,7 +357,7 @@ This branch changes the managed runtime path:
 3. It injects managed skills only into the selected harness.
 4. It initializes the selected ACP connection before `runtimeReady`.
 5. It records process spawn, first ACP output, and ACP initialization.
-6. It stops inherited warm-seed OpenCode when the adopted session selects a
+6. It stops inherited prestarted OpenCode when the adopted session selects a
    managed harness.
 
 The legacy OpenCode path remains available when no managed ACP server exists.
@@ -473,3 +473,273 @@ The result isolates three separate costs:
 1. ACP is a protocol. It does not remove provider or repository latency.
 2. Selected Pi removes the OpenCode process from the readiness path.
 3. Exact artifact cache hits remove snapshot build and repository clone costs.
+
+## 16. Startup-only Pi and OpenCode comparison
+
+The startup boundary is ACP model selection completion.
+
+The boundary excludes prompt dispatch, model execution, gateway latency, and
+first-token latency.
+
+| configuration | samples | runtime ready p50 | `session/new` p50 | session ready p50 |
+|---|---:|---:|---:|---:|
+| Pi, Daytona repository disk snapshot | 8 | 4.047 s | 2.987 s | 7.784 s |
+| Pi, Platinum cold disk snapshot | 6 | 7.132 s | 5.127 s | 12.823 s |
+| OpenCode, Platinum cold disk snapshot | 5 | 15.001 s | 641 ms | 16.298 s |
+
+The Platinum rows use the same starter repository and snapshot state.
+
+Pi reaches session readiness 3.475 seconds before OpenCode.
+
+Pi saves 7.869 seconds during runtime boot.
+
+Pi loses 4.486 seconds during `session/new`.
+
+The comparable Platinum p50 events are:
+
+| event | Pi | OpenCode |
+|---|---:|---:|
+| `POST /sessions` | 33 ms | 33 ms |
+| Git authentication | 3 ms | 3 ms |
+| Environment variables | 26 ms | 34 ms |
+| Background allocation kicked | 48 ms | 47 ms |
+| Row and service tokens | 47 ms | 47 ms |
+| Cached image resolution | 2.396 s | 1.469 s |
+| Platinum sandbox creation | 2.018 s | 2.094 s |
+| Static web server | 22 ms | 22 ms |
+| Git identity | 32 ms | 34 ms |
+| Daemon proxy | 11 ms | 11 ms |
+| Repository materialization | 1.645 s | 1.741 s |
+| Selected harness configuration | 2 ms | 4 ms |
+| Legacy OpenCode supervisor skipped | 4 ms | 4 ms |
+| Selected process spawn call | 4 ms | 6 ms |
+| Spawn to first ACP output | 417 ms | 8.451 s |
+| First ACP output to initialized | 0 ms | 651 ms |
+| Create to runtime ready | 7.132 s | 15.001 s |
+| ACP stream open | 74 ms | 71 ms |
+| ACP initialize | 294 ms | 237 ms |
+| ACP `session/new` | 5.127 s | 641 ms |
+| ACP model selection | 150 ms | 515 ms |
+| Create to session ready | 12.823 s | 16.298 s |
+
+Percentiles are calculated independently.
+
+Nested event values overlap with runtime-ready totals.
+
+## 17. Snapshot terminology
+
+The Daytona benchmark did not use a stateful snapshot.
+
+It used a repository disk snapshot.
+
+The snapshot contains repository files. It does not preserve:
+
+1. VM memory.
+2. Running processes.
+3. Open sockets.
+4. An initialized ACP server.
+5. An active Pi or OpenCode session.
+
+A stateful snapshot preserves VM memory and process state.
+
+The useful capture point is after repository materialization and ACP
+initialization.
+
+The capture must occur before session-specific secrets and identity enter the
+runtime.
+
+The restored runtime must adopt these values after restore:
+
+1. `session_id`.
+2. Session and project tokens.
+3. Environment revision.
+4. Repository commit overlay.
+5. Canonical ACP session identity.
+
+Capturing the current third-party `pi-acp` before `session/new` is
+insufficient.
+
+`pi-acp` starts Pi during `session/new`.
+
+Capturing it after `session/new` preserves one session-specific Pi child
+process.
+
+The reusable Pi capture point requires a persistent in-process Pi ACP server.
+
+## 18. Exact Pi `session/new` cause
+
+Kortix pins these runtime versions:
+
+| component | version |
+|---|---:|
+| OpenCode | 1.17.11 |
+| Claude Agent ACP | 0.58.1 |
+| Codex ACP | 1.1.2 |
+| Pi ACP | 0.0.31 |
+| Pi coding agent | 0.80.6 |
+
+The npm packages for `pi-acp@0.0.31` and `0.0.32` contain the same
+`session/new` startup sequence.
+
+One request performs these operations:
+
+1. Load slash commands and Pi settings.
+2. Spawn `pi --mode rpc --no-themes`.
+3. Call `get_state` inside `PiRpcProcess.spawn()`.
+4. Call `get_state` inside `SessionManager.create()`.
+5. Call `get_state` inside `newSession()`.
+6. Call `get_available_models` inside `newSession()`.
+7. Construct ACP model, mode, and configuration responses.
+
+One Pi `session/new` starts one child process.
+
+It performs three `get_state` requests.
+
+It performs one `get_available_models` request.
+
+Measured costs are:
+
+| path | p50 |
+|---|---:|
+| Pi RPC through `get_state` | 503.195 ms |
+| Third-party `pi-acp` `session/new` | 1.865 s |
+| Daytona `pi-acp` `session/new` | 2.987 s |
+| Platinum `pi-acp` `session/new` | 5.127 s |
+| In-process `createAgentSession()` | 3.819 ms |
+
+OpenCode creates sessions inside one initialized `opencode acp` process.
+
+Its comparable Platinum `session/new` p50 is 641 ms.
+
+ACP does not cause the Pi delay.
+
+The third-party Pi adapter architecture causes the Pi delay.
+
+## 19. ACP reference implementations
+
+ACP defines a protocol and SDKs.
+
+It does not define one mandatory agent architecture.
+
+The ACP TypeScript documentation names Gemini CLI as the complete
+production-ready reference agent.
+
+Current implementations use these patterns:
+
+| agent | implementation | session architecture |
+|---|---|---|
+| Gemini CLI | Native ACP | Creates configuration, client, chat, and session objects in one process. |
+| Codex | `@agentclientprotocol/codex-acp` | Starts one persistent `codex app-server`. ACP sessions map to threads. |
+| Claude | `@agentclientprotocol/claude-agent-acp` | Creates one Agent SDK `query()` per ACP session. The SDK owns executable lifecycle. |
+| OpenCode | Native `opencode acp` | Implements ACP inside the OpenCode process. |
+| Pi | `svkozak/pi-acp` | Starts `pi --mode rpc --no-themes` during every `session/new`. |
+
+The ACP registry lists `svkozak/pi-acp` as the Pi adapter.
+
+Kortix uses it because no other Pi adapter is registered.
+
+It is an MVP adapter. It is not a latency-optimized server.
+
+The target Pi implementation must use this design:
+
+1. Start one Kortix-owned ACP process.
+2. Use the current ACP TypeScript `agent()` API.
+3. Import `@earendil-works/pi-coding-agent` once.
+4. Load project resources once.
+5. Create Pi sessions through in-process `createAgentSession()`.
+6. Translate `AgentSession` events into ACP updates.
+7. Use the Pi `SessionManager` for persistence and resume.
+8. Remove Pi RPC IPC from `session/new`.
+
+Inspected sources:
+
+- ACP protocol:
+  <https://github.com/agentclientprotocol/agent-client-protocol/tree/e67a7d4625c0aea6b5a8ea2dd48d2c890cd2eb06>
+- Gemini CLI:
+  <https://github.com/google-gemini/gemini-cli/tree/3499c84f7b8e70c86600e7cd2c67a7c65a667f5e/packages/cli/src/acp>
+- Claude Agent ACP:
+  <https://github.com/agentclientprotocol/claude-agent-acp/tree/d7a65ce1d042a90d24a71279a319735cb9200bf8>
+- Codex ACP:
+  <https://github.com/agentclientprotocol/codex-acp/tree/ba5bef59cfcea4229841fe9438d816696621307b>
+- Pi ACP:
+  <https://github.com/svkozak/pi-acp/tree/2f6e3c5>
+- Pi SDK:
+  <https://github.com/badlogic/pi-mono/blob/cced6a21da273b26ee4a23a803680614bbe8dd1e/packages/coding-agent/docs/sdk.md>
+
+## 20. Stateful target architecture
+
+Use this immutable snapshot key:
+
+```text
+runtime digest + repository commit + runtime configuration digest + harness
+```
+
+Build the stateful runtime in this sequence:
+
+1. Restore or create the exact runtime disk state.
+2. Materialize the exact repository commit.
+3. Install runtime configuration dependencies.
+4. Start the sandbox daemon.
+5. Start and initialize the selected ACP harness.
+6. Verify ACP initialization, repository SHA, PTY, and network state.
+7. Remove session-specific credentials.
+8. Capture VM memory and disk state.
+
+Claim a session in this sequence:
+
+1. Restore the exact stateful snapshot.
+2. Rebind provider network and ingress state.
+3. Attach a writable repository overlay.
+4. Create the local session branch.
+5. Adopt session tokens and the environment revision.
+6. Create or reset the canonical ACP session.
+7. Verify ACP, PTY, and event-stream liveness.
+8. Return `runtimeReady`.
+
+Use an already-running runtime slot when a provider cannot restore process
+memory.
+
+The target budgets are:
+
+| phase | p50 target |
+|---|---:|
+| Snapshot lookup | less than 10 ms |
+| Stateful restore or slot claim | less than 100 ms |
+| Overlay and local branch | less than 20 ms |
+| Environment adoption | less than 50 ms |
+| In-process Pi `session/new` | less than 10 ms |
+| API and transport | less than 60 ms |
+| **Create to runtime ready** | **less than 250 ms** |
+
+The implementation must pass the stateful restore tests in section 10.5.
+
+A `/kortix/health` response does not prove ACP, PTY, or event-stream liveness.
+
+## 21. Persisted benchmark assets
+
+The benchmark directory now contains:
+
+1. Startup-only analyzer.
+2. Published Pi ACP source-path auditor.
+3. Historical first-token analyzer.
+4. End-to-end session probe.
+5. Pi ACP wire probe.
+6. Pi RPC wire probe.
+7. Every retained Pi and OpenCode raw result.
+
+Use:
+
+```bash
+node tests/performance/session-start/analyze-startup-ready.mjs \
+  tests/performance/session-start/results/2026-07-29/local-pi-daytona-post-fix-0[1-8].json
+```
+
+The analyzer reports:
+
+```text
+boundary: ACP model selection complete; prompt not included
+files: 8
+valid: 8
+rejected: []
+create_to_session_ready_ms p50: 7783.588
+```

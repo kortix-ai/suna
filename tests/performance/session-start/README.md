@@ -47,10 +47,13 @@ Pi `0.81.1` local results:
 
 | path | p50 |
 |---|---:|
-| fresh `pi --mode rpc` to `get_state` | 439 ms |
-| one-time in-process module import | 372 ms |
-| in-process `createAgentSession()` after import | 2.865 ms |
-| third-party `pi-acp` initialize + `session/new` | 1.635 s |
+| fresh `pi --mode rpc` to `get_state` | 503.195 ms |
+| one-time in-process module import | 680.356 ms |
+| in-process `createAgentSession()` after import | 3.819 ms |
+| third-party `pi-acp` `session/new` | 1.865 s |
+
+These values come from sequential rechecks. The earlier `*-recheck.json` files
+ran concurrently. Their values include local CPU contention.
 
 The third-party adapter starts another Pi process for each ACP session. It does
 not represent the target in-process architecture.
@@ -72,7 +75,124 @@ this process-local work.
 
 The managed runtime path now starts only the selected ACP harness. It no longer
 starts legacy OpenCode before Pi, Codex, Claude, or managed OpenCode. A
-warm-seed adoption stops the inherited legacy OpenCode process.
+runtime-slot adoption stops the inherited legacy OpenCode process.
+
+## 2026-07-29 startup-only Pi and OpenCode comparison
+
+The boundary is ACP model selection completion.
+
+The boundary excludes prompt dispatch, model execution, and first-token
+latency.
+
+| configuration | samples | runtime ready p50 | `session/new` p50 | session ready p50 |
+|---|---:|---:|---:|---:|
+| Pi, Daytona repository disk snapshot | 8 | 4.047 s | 2.987 s | 7.784 s |
+| Pi, Platinum cold disk snapshot | 6 | 7.132 s | 5.127 s | 12.823 s |
+| OpenCode, Platinum cold disk snapshot | 5 | 15.001 s | 641 ms | 16.298 s |
+
+The Platinum rows use the same starter repository and snapshot state.
+
+Pi reaches session readiness 3.475 seconds before OpenCode.
+
+Pi saves 7.869 seconds during runtime boot.
+
+Pi loses 4.486 seconds during `session/new`.
+
+Percentiles are calculated independently. Do not add percentile rows to
+reconstruct a total percentile.
+
+### Complete comparable Platinum p50 events
+
+| event | Pi | OpenCode |
+|---|---:|---:|
+| `POST /sessions` | 33 ms | 33 ms |
+| Git authentication | 3 ms | 3 ms |
+| Environment variables | 26 ms | 34 ms |
+| Background allocation kicked | 48 ms | 47 ms |
+| Row and service tokens | 47 ms | 47 ms |
+| Cached image resolution | 2.396 s | 1.469 s |
+| Platinum sandbox creation | 2.018 s | 2.094 s |
+| Static web server | 22 ms | 22 ms |
+| Git identity | 32 ms | 34 ms |
+| Daemon proxy | 11 ms | 11 ms |
+| Repository materialization | 1.645 s | 1.741 s |
+| Selected harness configuration | 2 ms | 4 ms |
+| Legacy OpenCode supervisor skipped | 4 ms | 4 ms |
+| Selected process spawn call | 4 ms | 6 ms |
+| Spawn to first ACP output | 417 ms | 8.451 s |
+| First ACP output to initialized | 0 ms | 651 ms |
+| Create to runtime ready | 7.132 s | 15.001 s |
+| ACP stream open | 74 ms | 71 ms |
+| ACP initialize | 294 ms | 237 ms |
+| ACP `session/new` | 5.127 s | 641 ms |
+| ACP model selection | 150 ms | 515 ms |
+| Create to session ready | 12.823 s | 16.298 s |
+
+Nested event values overlap with runtime-ready totals.
+
+### Snapshot terminology
+
+The Daytona result uses a repository disk snapshot.
+
+The snapshot contains repository files. It does not preserve these items:
+
+1. VM memory.
+2. Running processes.
+3. Open sockets.
+4. An initialized ACP server.
+5. An active Pi or OpenCode session.
+
+A stateful snapshot preserves process memory and the initialized ACP process.
+
+Restoring `pi-acp` before `session/new` does not remove the Pi delay.
+
+`pi-acp` creates a new Pi child process during every `session/new`.
+
+Capturing state after `session/new` preserves a session-specific child process
+and session identity. It does not create a reusable blank Pi runtime.
+
+### Why Pi `session/new` is slower
+
+Kortix pins `pi-acp@0.0.31`.
+
+`pi-acp@0.0.31` and `0.0.32` use the same startup sequence:
+
+1. Load slash commands and Pi settings.
+2. Spawn `pi --mode rpc --no-themes`.
+3. Call `get_state` inside `PiRpcProcess.spawn()`.
+4. Call `get_state` inside `SessionManager.create()`.
+5. Call `get_state` inside `newSession()`.
+6. Call `get_available_models` inside `newSession()`.
+7. Construct ACP model, mode, and configuration responses.
+
+One `session/new` therefore starts one child process.
+
+It also performs three `get_state` requests and one
+`get_available_models` request.
+
+OpenCode performs `session/new` inside the initialized `opencode acp` process.
+
+The correct Pi design uses one persistent ACP process and an in-process Pi SDK
+adapter.
+
+The adapter imports Pi once. It creates sessions with
+`createAgentSession()` in the same process.
+
+### Raw evidence
+
+The result directory contains every retained attempt.
+
+This includes valid samples, rejected samples, image-build samples, profiling
+samples, and local wire probes.
+
+The primary startup sample sets are:
+
+- `local-pi-daytona-post-fix-01.json` through `08.json`.
+- `local-pi-platinum-post-fix-01.json` through `06.json`.
+- `local-opencode-platinum-deepseek-post-fix-01.json` through `05.json`.
+- `pi-rpc-sequential-recheck.json`.
+- `pi-acp-sequential-recheck.json`.
+- `pi-in-process-sequential-recheck.json`.
 
 ## Run
 
@@ -146,6 +266,34 @@ OPENAI_API_KEY=bench-placeholder \
 
 `bench-placeholder` only satisfies the adapter's startup auth check.
 The benchmark does not send a model prompt.
+
+Audit the published `pi-acp` `session/new` source path:
+
+```bash
+node audit-pi-acp-session-new.mjs 0.0.31 0.0.32
+```
+
+The audit downloads npm tarballs into a temporary directory.
+
+It does not install either version into this repository.
+
+Analyze startup through ACP model selection:
+
+```bash
+node analyze-startup-ready.mjs \
+  results/2026-07-29/local-pi-daytona-post-fix-0[1-8].json
+
+node analyze-startup-ready.mjs \
+  results/2026-07-29/local-pi-platinum-post-fix-0[1-6].json
+
+node analyze-startup-ready.mjs \
+  results/2026-07-29/local-opencode-platinum-deepseek-post-fix-0[1-5].json
+```
+
+`analyze-first-token.mjs` and `create-to-first-token.mjs` preserve the earlier
+prompt benchmark technique.
+
+Do not use their first-token metric for the startup-only comparison.
 
 Each iteration provisions and deletes a **real cloud sandbox** — keep `N` small.
 `run.sh` resets a throwaway local e2e user's password to sign in; **local dev
@@ -242,9 +390,9 @@ Results (`create → running`, 2026-06-28):
 
 - **opencode cold start (~2–6s, high variance)** — Bun loading the opencode
   bundle + project init on a cold Daytona runner. Reducing it further needs a
-  patched opencode build (`/usr/local/bin/opencode-kortix`) or more bake-time
-  initialization in the warm snapshot.
+  patched opencode build (`/usr/local/bin/opencode-kortix`) or a stateful
+  process snapshot.
 - **Daytona `provider-create` variance / retries** — the largest run-to-run
   swing.
-- **repo clone (~2.5s)** — eliminated by warm/baked-repo snapshots.
+- **repo clone (~2.5s)** — eliminated by repository disk snapshots.
 - Persisting `boot_timeline` server-side so this stays attributable in prod.
