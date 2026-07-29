@@ -105,11 +105,15 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                 const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
                 const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
                 return (
-                  <label
+                  // A plain row, NOT a <label>: it holds three controls (copy
+                  // id, set-as-default, the switch) and a label binds to the
+                  // FIRST labelable one — the copy button — so "click the row
+                  // to toggle" never did what it looked like. Each control
+                  // carries its own accessible name instead.
+                  <div
                     key={wireId}
                     className={cn(
                       'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
-                      isProjectDefault ? 'cursor-default' : 'cursor-pointer',
                       i > 0 && 'border-border border-t',
                       !enabled && 'opacity-60',
                     )}
@@ -149,13 +153,7 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         type="button"
                         disabled={defaults.isUpdating}
                         title={`Make ${model.modelName} this project's default model`}
-                        onClick={(e) => {
-                          // The row is a <label> wrapping the switch — without
-                          // this the click would toggle enablement instead.
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void defaults.setProjectDefault(wireToModelKey(wireId));
-                        }}
+                        onClick={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
                         className="text-muted-foreground/50 hover:text-foreground hover:bg-muted mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Star className="size-3.5" />
@@ -177,7 +175,7 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                       onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
                       className="mt-0.5 shrink-0"
                     />
-                  </label>
+                  </div>
                 );
               })}
             </div>
