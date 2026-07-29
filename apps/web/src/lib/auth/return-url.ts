@@ -67,9 +67,22 @@ export function sanitizeAuthReturnUrl(
     return fallback;
   }
 
+  // Canonicalize BEFORE any prefix check, and return the canonical form.
+  //
+  // Every consumer eventually rebuilds this path through `new URL()` — the
+  // password flow to attach auth_event, the callback to prepend the origin —
+  // and that collapses dot segments. So a prefix test against the raw string
+  // is testing a path the browser will never visit:
+  // `/marketplace/../projects/<id>` passes a `/marketplace` check and then
+  // lands on `/projects/<id>`, which is exactly the foreign-project bug the
+  // signup rule below exists to prevent (and would equally slip a
+  // `/x/../dashboard` past LEGACY_AUTH_RETURN_PREFIXES). Normalizing here
+  // means every downstream rule sees the path that will actually be opened.
+  let normalizedValue: string;
   try {
     const resolved = new URL(trimmedValue, 'https://kortix.local');
     if (resolved.origin !== 'https://kortix.local') return fallback;
+    normalizedValue = `${resolved.pathname}${resolved.search}${resolved.hash}`;
   } catch {
     return fallback;
   }
@@ -78,13 +91,13 @@ export function sanitizeAuthReturnUrl(
   // path. A request for the bare list must still enter through the landing
   // door. Otherwise a new account renders /projects while its first project is
   // being provisioned.
-  if (trimmedValue === '/projects') return PROJECT_LANDING_PATH;
+  if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
 
-  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(trimmedValue, prefix))) {
+  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
     return fallback;
   }
 
-  return trimmedValue;
+  return normalizedValue;
 }
 
 /**

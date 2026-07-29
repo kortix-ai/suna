@@ -32,6 +32,15 @@ describe('sanitizeAuthReturnUrl', () => {
     // Returning to the list exposes it while first-project provisioning runs.
     expect(sanitizeAuthReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
   });
+
+  test('returns the canonical path, so later rules see what the browser opens', () => {
+    expect(sanitizeAuthReturnUrl('/marketplace/../invites/abc')).toBe('/invites/abc');
+    // A dot segment must not sneak a legacy path past its own prefix check.
+    expect(sanitizeAuthReturnUrl('/invites/../dashboard')).toBe(PROJECT_LANDING_PATH);
+    // Normalization must not disturb an ordinary path, its query, or its hash.
+    expect(sanitizeAuthReturnUrl('/projects?tab=recent')).toBe('/projects?tab=recent');
+    expect(sanitizeAuthReturnUrl('/invites/abc-123?x=1#note')).toBe('/invites/abc-123?x=1#note');
+  });
 });
 
 describe('isInviteReturnUrl', () => {
@@ -140,6 +149,24 @@ describe('resolveNewAccountReturnUrl', () => {
     expect(isSignupSafeReturnUrl(null)).toBe(false);
     expect(isSignupSafeReturnUrl(undefined)).toBe(false);
     expect(isSignupSafeReturnUrl('')).toBe(false);
+  });
+
+  test('a dot segment cannot smuggle a foreign project past the allowlist', () => {
+    // Every consumer rebuilds this path through `new URL()`, which collapses
+    // dot segments — so testing the raw string tests a path the browser never
+    // visits. `/marketplace/../projects/<id>` would pass a `/marketplace`
+    // check and then open `/projects/<id>`: the exact bug, through the fix.
+    for (const crafted of [
+      '/marketplace/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/marketplace/%2e%2e/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/invites/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/use-cases/a/../../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+    ]) {
+      const resolved = resolveNewAccountReturnUrl(crafted);
+      // What the browser will actually open, not what the string looks like.
+      expect(new URL(`https://kortix.local${resolved}`).pathname).not.toContain('319395c1');
+      expect(resolved).toBe(PROJECT_LANDING_PATH);
+    }
   });
 });
 
