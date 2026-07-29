@@ -149,13 +149,30 @@ export interface GatewayCatalogModel {
   description?: string;
   open_weights?: boolean;
   last_updated?: string;
+  /**
+   * Whether the project OFFERS this model — server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway. Served by
+   * `/model-picker`; absent on the raw `/llm-catalog` (sandbox config) path,
+   * where enablement doesn't apply.
+   */
+  enabled?: boolean;
 }
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Wire-model ids the project has turned OFF (server-owned enablement). Only
-   *  populated by the `/model-picker` endpoint. Absent → treat as none. */
-  disabledModels?: string[];
+  /**
+   * The project's stored EXCEPTIONS to the default model set
+   * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
+   * one model can PUT the merged map back. Read `GatewayCatalogModel.enabled`
+   * for the RESOLVED answer — this is only the delta.
+   */
+  modelOverrides?: Record<string, boolean>;
+  /**
+   * True while the project has made no exceptions and is running on the pure
+   * catalog default. What "reset to defaults" acts on; not derivable from the
+   * `enabled` flags alone.
+   */
+  usingDefaults?: boolean;
 }
 
 export interface ProjectInput {

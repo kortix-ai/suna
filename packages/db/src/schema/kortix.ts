@@ -947,9 +947,28 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .default({})
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
-    // Wire-model ids the project has explicitly DISABLED. Opt-out: absent from
-    // this list = usable. The gateway rejects a disabled model everywhere (chat,
-    // Slack, triggers, API) and the picker hides it. Default [] = all enabled.
+    /**
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. The gateway refuses anything not effectively
+     * enabled everywhere (chat, Slack, triggers, API); the picker and "Manage
+     * models" render from the same answer.
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
+     */
+    modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
+    /**
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
+     */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -971,6 +990,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_disabled_models_array_check',
       sql`jsonb_typeof(${table.disabledModels}) = 'array'`,
+    ),
+    check(
+      'project_llm_routing_policies_model_overrides_object_check',
+      sql`jsonb_typeof(${table.modelOverrides}) = 'object'`,
     ),
   ],
 );

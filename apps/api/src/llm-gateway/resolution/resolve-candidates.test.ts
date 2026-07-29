@@ -120,12 +120,14 @@ mock.module('../models/managed-models', () => ({
 let capabilities = { reasoning: false, temperature: true };
 mock.module('../models/catalog-models', () => ({
   capabilitiesForModel: () => capabilities,
+  gatewayModelCatalog: () => ({}),
 }));
 
 let disabledModelId: string | null = null;
 mock.module('../model-enablement', () => ({
-  isModelDisabledForProject: async (_projectId: string | null | undefined, model: string) =>
-    model === disabledModelId,
+  isModelEnabledForProject: async (_projectId: string | null | undefined, model: string) =>
+    model !== disabledModelId,
+  defaultEnabledFromCatalog: () => new Set<string>(),
 }));
 
 const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');

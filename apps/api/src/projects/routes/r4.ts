@@ -72,6 +72,7 @@ import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
@@ -89,7 +90,7 @@ import {
 } from '../../repositories/model-preferences';
 import {
   getProjectRoutingPolicy,
-  setProjectDisabledModels,
+  setProjectModelOverrides,
 } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import {
@@ -2725,16 +2726,40 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    // Server-owned per-project enablement: the client renders these as OFF and
-    // hides them from the session picker; the gateway also refuses them.
-    return c.json({ models, disabledModels: routing?.disabledModels ?? [] });
+    // Server-owned per-project enablement, resolved HERE and stamped onto each
+    // model so every client renders the same answer the gateway enforces. The
+    // session picker shows the enabled ones; "Manage models" shows them all and
+    // switches on this flag. Neither re-derives it.
+    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {});
+    return c.json({
+      models: Object.fromEntries(
+        Object.entries(models).map(([id, model]) => [
+          id,
+          { ...model, enabled: enabled.get(id) ?? true },
+        ]),
+      ),
+      // The stored EXCEPTIONS, so a client toggling one model can PUT the
+      // merged map back without having to reconstruct it by diffing the
+      // resolved flags against a default it would have to recompute.
+      modelOverrides: routing?.modelOverrides ?? {},
+      // True while the project has made no exceptions at all — the only thing
+      // "reset to defaults" has left to act on, and not derivable from the
+      // `enabled` flags alone (they look identical either way).
+      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    });
   },
 );
 
-// PUT /v1/projects/:projectId/model-enablement  { disabledModels: string[] }
-// Replace the project's disabled-model set (opt-out). Authoritative: the gateway
-// refuses any model in this set for every surface. Refuses to disable the
-// project's own default model (that would break every `auto` request).
+// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
+// Replace the project's EXCEPTIONS to the default model set (the newest model
+// per family). Authoritative: the gateway refuses anything not effectively
+// enabled on every surface. An empty object restores the pure default. Refuses
+// to turn off the project's own default model (that would break every `auto`
+// request).
+const modelEnablementBody = z.object({
+  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
+});
+
 projectsApp.openapi(
   createRoute({
     method: 'put',
@@ -2744,13 +2769,7 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ disabledModels: z.array(z.string().min(1).max(128)).max(500) }),
-          },
-        },
-      },
+      body: { content: { 'application/json': { schema: modelEnablementBody } } },
     },
     responses: {
       200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
@@ -2771,21 +2790,23 @@ projectsApp.openapi(
     const accountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
 
-    const parsed = z
-      .object({ disabledModels: z.array(z.string().min(1).max(128)).max(500) })
-      .safeParse(await c.req.json().catch(() => null));
+    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
     }
-    const disabledModels = Array.from(
-      new Set(parsed.data.disabledModels.map((m) => toWireModel(m.trim())).filter(Boolean)),
-    );
+    const modelOverrides: Record<string, boolean> = {};
+    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
+      const wire = toWireModel(model.trim());
+      if (wire) modelOverrides[wire] = enabled;
+    }
 
-    // A project must never disable the model its own `auto` resolves to.
+    // A project must never turn off the model its own `auto` resolves to. Only
+    // an explicit `false` can do that — omitting it leaves the default in
+    // charge, which always offers the current one.
     const defaults = await getAccountModelDefaults(accountId, projectId);
     const effectiveDefault =
       defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
-    if (effectiveDefault && disabledModels.includes(toWireModel(effectiveDefault))) {
+    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
       return c.json(
         {
           error: 'Cannot disable the project default model — change the default first.',
@@ -2795,8 +2816,8 @@ projectsApp.openapi(
       );
     }
 
-    await setProjectDisabledModels({ projectId, updatedBy: userId, disabledModels });
-    return c.json({ ok: true, disabledModels });
+    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
+    return c.json({ ok: true, modelOverrides });
   },
 );
 

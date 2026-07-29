@@ -3,72 +3,32 @@
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
+import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import { useModelEnablement } from '@kortix/sdk/react';
-import { ExternalLink } from 'lucide-react';
+import { useModelEnablement, useProjectModels } from '@kortix/sdk/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { ModelIdCopyButton } from './model-id-copy-button';
-import {
-  formatPricePerMillion,
-  formatTokenCount,
-  gatewayModelId,
-  helpHostnameFromUrl,
-} from './utils';
+import { buildModelGroups } from './model-rows';
+import { formatPricePerMillion, formatTokenCount } from './utils';
 
-export function ModelsTab({
-  projectId,
-  connectedProviders,
-  search,
-}: {
-  projectId: string;
-  connectedProviders: LlmProviderEntry[];
-  search: string;
-}) {
+export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const pricingLookup = useModelPricingLookup(undefined);
 
-  // Enablement is SERVER-owned (the gateway enforces it): each switch persists
-  // to `PUT /projects/:id/model-enablement`, not localStorage. `gatewayModelId`
-  // gives each row its wire id — the key the server stores.
+  // The SAME server list the session picker renders (`GET /model-picker`), so
+  // the two views can never show different models — and each model's `enabled`
+  // flag is resolved server-side and enforced by the gateway, so a switch here
+  // is the one and only thing deciding whether it appears there.
+  const models = useProjectModels(projectId);
   const enablement = useModelEnablement(projectId);
 
-  const rows = useMemo(
-    () => connectedProviders.flatMap((p) => p.models.map((m) => ({ provider: p, model: m }))),
-    [connectedProviders],
-  );
+  const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
+  const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
 
-  const enabledCount = useMemo(
-    () =>
-      rows.filter((row) => enablement.isEnabled(gatewayModelId(row.provider, row.model.id))).length,
-    [rows, enablement],
-  );
-  const hasOverrides = enablement.disabledModels.size > 0;
-
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
-    for (const row of rows) {
-      if (
-        q &&
-        !row.model.name.toLowerCase().includes(q) &&
-        !row.model.id.toLowerCase().includes(q)
-      ) {
-        continue;
-      }
-      const existing = byProvider.get(row.provider.id);
-      if (existing) existing.rows.push(row);
-      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
-    }
-    return Array.from(byProvider.values());
-  }, [rows, search]);
-
-  if (connectedProviders.length === 0) {
+  if (models.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
         <p className="text-muted-foreground/60 text-xs">
@@ -80,7 +40,7 @@ export function ModelsTab({
     );
   }
 
-  if (grouped.length === 0) {
+  if (groups.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
         <p className="text-muted-foreground/60 text-xs">
@@ -95,17 +55,18 @@ export function ModelsTab({
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {rows.length}{' '}
+            {enabledCount} of {models.length}{' '}
             {tHardcodedUi.raw(
               'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
             )}
           </p>
-          {hasOverrides && (
+          {!enablement.usingDefaults && (
             <Button
               variant="ghost"
               size="sm"
+              disabled={enablement.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => void enablement.enableAll()}
+              onClick={() => void enablement.resetToDefaults()}
             >
               {tHardcodedUi.raw(
                 'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
@@ -115,83 +76,69 @@ export function ModelsTab({
         </div>
       )}
       <div className="space-y-3">
-        {grouped.map(({ provider, rows: providerRows }) => {
-          const helpHostname = helpHostnameFromUrl(provider.helpUrl);
-          return (
-            <div key={provider.id}>
-              <div className="flex items-center gap-2 px-1 pb-1">
-                <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-                <span className="text-foreground/70 text-xs font-medium">{provider.label}</span>
-                {helpHostname && provider.helpUrl && (
-                  <a
-                    href={provider.helpUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground/50 hover:text-foreground inline-flex items-center gap-0.5 text-[11px] transition-colors"
-                  >
-                    <ExternalLink className="size-2.5 shrink-0" />
-                    {helpHostname}
-                  </a>
-                )}
-                <span className="text-muted-foreground/40 ml-auto text-xs">
-                  {providerRows.length}
-                </span>
-              </div>
-              <div className="bg-popover overflow-hidden rounded-md border">
-                {providerRows.map(({ model }, i) => {
-                  const wireId = gatewayModelId(provider, model.id);
-                  const visible = enablement.isEnabled(wireId);
-                  const rates = pricingLookup(provider.id, model.id);
-                  const ctx = formatTokenCount(model.limit?.context);
-                  const out = formatTokenCount(model.limit?.output);
-                  const priceIn = rates ? formatPricePerMillion(rates.inputPer1M) : '';
-                  const priceOut = rates ? formatPricePerMillion(rates.outputPer1M) : '';
-                  const hasMeta = !!ctx || !!out || (!!priceIn && !!priceOut);
-                  return (
-                    <label
-                      key={model.id}
-                      className={cn(
-                        'hover:bg-muted/40 flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
-                        i > 0 && 'border-border border-t',
-                        !visible && 'opacity-60',
-                      )}
-                    >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-foreground truncate text-sm">{model.name}</span>
-                          <ModelCapabilityIcons model={model} />
-                        </div>
-                        <div className="flex min-w-0 items-center gap-0.5">
-                          <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
-                            {wireId}
-                          </code>
-                          <ModelIdCopyButton value={wireId} />
-                        </div>
-                        {hasMeta && (
-                          <InlineMeta>
-                            {ctx && <span className="tabular-nums">{ctx} ctx</span>}
-                            {out && <span className="tabular-nums">{out} max out</span>}
-                            {priceIn && priceOut && (
-                              <span className="tabular-nums">
-                                {priceIn} / {priceOut} per 1M
-                              </span>
-                            )}
-                          </InlineMeta>
-                        )}
-                      </div>
-                      <Switch
-                        checked={visible}
-                        disabled={enablement.isUpdating}
-                        onCheckedChange={(c) => void enablement.setEnabled(wireId, c)}
-                        className="mt-0.5 shrink-0"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
+        {groups.map((group) => (
+          <div key={group.providerID}>
+            <div className="flex items-center gap-2 px-1 pb-1">
+              <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
+              <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{group.rows.length}</span>
             </div>
-          );
-        })}
+            <div className="bg-popover overflow-hidden rounded-md border">
+              {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                const enabled = !!model.enabled;
+                const ctx = formatTokenCount(model.contextWindow);
+                const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
+                const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
+                return (
+                  <label
+                    key={wireId}
+                    className={cn(
+                      'hover:bg-muted/40 flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
+                      i > 0 && 'border-border border-t',
+                      !enabled && 'opacity-60',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-foreground truncate text-sm">{model.modelName}</span>
+                        <ModelCapabilityIcons
+                          reasoning={model.capabilities?.reasoning}
+                          toolCall={model.capabilities?.toolcall}
+                          vision={model.capabilities?.vision}
+                        />
+                        {/* Same display name as its pinned snapshots — say which
+                            row is the one that rolls forward. */}
+                        {isRollingAlias && <Tag>latest</Tag>}
+                      </div>
+                      <div className="flex min-w-0 items-center gap-0.5">
+                        <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
+                          {wireId}
+                        </code>
+                        <ModelIdCopyButton value={wireId} />
+                      </div>
+                      {(ctx || (priceIn && priceOut)) && (
+                        <InlineMeta>
+                          {ctx && <span className="tabular-nums">{ctx} ctx</span>}
+                          {priceIn && priceOut && (
+                            <span className="tabular-nums">
+                              {priceIn} / {priceOut} per 1M
+                            </span>
+                          )}
+                        </InlineMeta>
+                      )}
+                    </div>
+                    <Switch
+                      checked={enabled}
+                      disabled={enablement.isUpdating}
+                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                      className="mt-0.5 shrink-0"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

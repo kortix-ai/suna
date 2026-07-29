@@ -30,18 +30,14 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
-import { modelKeyToWire, useModelEnablement, useModelStore } from '@kortix/sdk/react';
+import { getProjectDetail } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { resolveAvailableSelectedModel } from './model-availability';
+import { pickerGroupId, pickerGroupLabel } from './model-grouping';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -78,50 +74,6 @@ export function ConnectProviderDialog({
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
-
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
-
-// The gateway exposes its whole catalog through a single `kortix` provider, with
-// model ids namespaced as `<provider>/<model>`. For the picker we recover the
-// REAL provider: platform-managed defaults stay under the "Kortix" group, while
-// every BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) —
-// so a connected provider reads as its own section, not buried in Kortix.
-//
-// *** BUG THIS FIXES (every model showing under "Kortix", even BYOK Anthropic) ***
-// `pickerGroupId` always correctly computed the grouping KEY (it split
-// `modelID` on "/" and returned e.g. "anthropic"). The bug was never in the
-// key — it was that the group's DISPLAY NAME, built in `grouped` below, was
-// taken verbatim from `model.providerName` (opencode's raw provider name,
-// which is ALWAYS "Kortix" — every gateway model is registered under the one
-// synthetic `kortix` opencode provider). So the group's icon rendered
-// correctly (`ProviderLogo` is keyed off the correct `providerID`), but the
-// text label next to it always read "Kortix" regardless of which provider
-// actually served the model.
-//
-// The robust fix (per the live /v1/models trace): the gateway now serves an
-// EXPLICIT `provider` field per model (`GatewayModel.provider`, threaded onto
-// `FlatModel.provider` by flattenModels) — grouping/labeling should prefer
-// that over parsing the wire id at all. String-splitting `modelID` remains
-// ONLY as a fallback for a stale/older baked catalog that predates the field.
-export function pickerGroupId(model: FlatModel): string {
-  if (model.providerID !== 'kortix') {
-    return model.providerID;
-  }
-  if (MANAGED_MODEL_IDS.has(model.modelID)) return model.provider ?? model.providerID;
-  if (model.provider) return model.provider;
-  const slash = model.modelID.indexOf('/');
-  return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
-}
-
-// The group's display name/label — NEVER the raw `FlatModel.providerName`
-// (always "Kortix" under the gateway, see the bug note above). Prefer the
-// canonical label for the resolved real-provider id; only fall back to the
-// model's own providerName for a truly unknown id (e.g. `pickerGroupId`
-// degrading to the raw `providerID` because neither `provider` nor a `/` was
-// present — at that point `groupID === model.providerID` anyway).
-export function pickerGroupLabel(groupID: string, model: FlatModel): string {
-  return PROVIDER_LABELS[groupID] ?? model.providerName;
-}
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
@@ -199,49 +151,12 @@ export function ModelSelector({
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
 
-  // Track project secrets whenever we're in a project (not only while the picker
-  // is open) so connecting/disconnecting a provider flips model visibility live —
-  // the connect mutation invalidates this exact key, and an always-subscribed
-  // query refetches immediately instead of waiting for the next picker open.
-  const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
-    staleTime: 10_000,
-  });
-  const secretNames = useMemo(() => {
-    const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : (data?.items ?? []);
-    return new Set(items.map((secret: { name: string }) => secret.name));
-  }, [secretsQuery.data]);
-  // Providers whose key(s) are present — drives which of the gateway's full
-  // baked catalog is shown by default in the picker (connected providers light
-  // up the instant their secret lands; everything else stays search-only).
-  // Re-renders when LlmCatalogBootstrap's live-catalog fetch lands — see
-  // use-connected-providers.ts for the same pattern.
-  const catalogRevision = useLlmProviderCatalogRevision();
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return new Set<string>();
-    return connectedGatewayProviderIdsFromSecretNames(secretNames);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
-  }, [llmGatewayEnabled, secretNames, catalogRevision]);
-
-  // Free tier (free/no plan AND no active subscription) hides Kortix-managed
-  // models. Connected BYOK providers remain.
-  const { data: accountState } = useAccountState();
-  const freeTier = useMemo(() => {
-    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
-    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
-    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-  }, [accountState]);
-
-  const modelStore = useModelStore(baseModels, {
-    connectedProviderIds,
-    freeTier: llmGatewayEnabled && freeTier,
-  });
-  // Server-owned enablement: a model the project turned OFF is unusable (the
-  // gateway refuses it), so it never appears in the picker — not even via search.
-  const { disabledModels } = useModelEnablement(projectId);
+  // NOTE: the picker deliberately derives NO availability of its own. Which
+  // models a project can call (connected BYOK providers, plan entitlement) and
+  // which of those it offers are both resolved server-side by `/model-picker`
+  // — the route this list already comes from. Re-deriving either here from
+  // project secrets + account tier is what let this view disagree with both
+  // the "Manage models" tab and the gateway.
 
   const availableSelectedModel = entitlementsPending
     ? selectedModel
@@ -262,36 +177,24 @@ export function ModelSelector({
 
   // ── Filtered + grouped models ──
 
+  // The list is exactly what the project OFFERS. `enabled` is resolved by the
+  // server (and enforced by the gateway), so the picker applies no visibility
+  // rule of its own — a second, client-only filter here is precisely what made
+  // "Manage models" report 15 of 15 shown while this rendered 3. Turn a model
+  // on in "Manage models" and it appears here; there is nothing else to check.
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return baseModels
-      .filter((m) => {
-        if (!isSelectableModel({ providerID: m.providerID, modelID: m.modelID })) {
-          return false;
-        }
-        // A project-disabled model is unusable — hide it unconditionally.
-        if (disabledModels.has(modelKeyToWire({ providerID: m.providerID, modelID: m.modelID })))
-          return false;
-        // Search reveals usable models that the user hid from the default list.
-        // It never reveals models that the account cannot call.
-        if (
-          !q &&
-          !modelStore.isVisible({
-            providerID: m.providerID,
-            modelID: m.modelID,
-            provider: m.provider,
-          })
-        )
-          return false;
-        return (
-          !q ||
-          (m.modelName || '').toLowerCase().includes(q) ||
-          (m.modelID || '').toLowerCase().includes(q) ||
-          (m.providerName || '').toLowerCase().includes(q)
-        );
-      })
+      .filter(
+        (m) =>
+          m.enabled !== false &&
+          (!q ||
+            (m.modelName || '').toLowerCase().includes(q) ||
+            (m.modelID || '').toLowerCase().includes(q) ||
+            (m.providerName || '').toLowerCase().includes(q)),
+      )
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search, modelStore, isSelectableModel, disabledModels]);
+  }, [baseModels, search]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -471,20 +374,6 @@ export function ModelSelector({
                           availableSelectedModel?.modelID === model.modelID;
 
                         const isFree = shouldShowFreeTag(model);
-                        // `.provider` (the real upstream, when the gateway
-                        // serves it) makes isVisible's connection-gating
-                        // check the correct sub-provider instead of falling
-                        // back to string-splitting modelID — see
-                        // use-model-store.ts's subProviderOf.
-                        const modelKey = {
-                          providerID: model.providerID,
-                          modelID: model.modelID,
-                          provider: model.provider,
-                        };
-                        // "Latest" models are always shown; older ones get an
-                        // activation switch so they can be pinned into the picker.
-                        const isLatestModel = modelStore.isLatest(modelKey);
-                        const isModelVisible = modelStore.isVisible(modelKey);
                         // Under a BYOK provider group the `<provider>/` prefix is
                         // redundant — show just the bare model id.
                         const displayModelID =
@@ -496,11 +385,7 @@ export function ModelSelector({
                           <CommandItem
                             key={`${model.providerID}:${model.modelID}`}
                             value={`model-${model.providerID}-${model.modelID}`}
-                            className={cn(
-                              '!pl-3',
-                              isSelected && 'bg-foreground/[0.06]',
-                              !isLatestModel && !isModelVisible && 'opacity-60',
-                            )}
+                            className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
                             onSelect={() => handleSelect(model)}
                           >
                             <div className="min-w-0 flex-1 py-0.5">

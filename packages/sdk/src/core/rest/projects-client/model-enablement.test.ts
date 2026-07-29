@@ -7,7 +7,7 @@ let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
 
 beforeEach(() => {
   calls = [];
-  nextResponse = { status: 200, body: { ok: true, disabledModels: [] } };
+  nextResponse = { status: 200, body: { ok: true, modelOverrides: {} } };
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
     calls.push({
       url: String(url),
@@ -24,16 +24,16 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
-test('PUTs the disabled set to the project model-enablement endpoint', async () => {
-  nextResponse = { status: 200, body: { ok: true, disabledModels: ['glm-5.2'] } };
-  const res = await setProjectModelEnablement('proj-1', ['glm-5.2']);
+test('PUTs the override map to the project model-enablement endpoint', async () => {
+  nextResponse = { status: 200, body: { ok: true, modelOverrides: { 'glm-5.2': false } } };
+  const res = await setProjectModelEnablement('proj-1', { 'glm-5.2': false });
   expect(last().method).toBe('PUT');
   expect(last().url).toContain('/projects/proj-1/model-enablement');
-  expect(last().body).toEqual({ disabledModels: ['glm-5.2'] });
-  expect(res).toEqual({ ok: true, disabledModels: ['glm-5.2'] });
+  expect(last().body).toEqual({ modelOverrides: { 'glm-5.2': false } });
+  expect(res).toEqual({ ok: true, modelOverrides: { 'glm-5.2': false } });
 });
 
-test('sends an empty set to re-enable everything', async () => {
-  await setProjectModelEnablement('proj-1', []);
-  expect(last().body).toEqual({ disabledModels: [] });
+test('sends an empty map to drop every exception and restore the default', async () => {
+  await setProjectModelEnablement('proj-1', {});
+  expect(last().body).toEqual({ modelOverrides: {} });
 });

@@ -1,5 +1,11 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
 
+export {
+  DEFAULT_ENABLEMENT_WINDOW_MONTHS,
+  defaultEnabledModelIds,
+  type EnablementCandidate,
+} from './enablement';
+
 // ─── Kortix-owned provider auth requirements ────────────────────────────────
 //
 // *** THE PROBLEM THIS FIXES ***
