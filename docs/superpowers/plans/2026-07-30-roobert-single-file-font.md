@@ -1,8 +1,6 @@
 # Roobert Single-File Variable Font Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
->
-> **Progress is tracked in Linear, not only in this file.** Read **Section D** before Task 0 and follow it for every task. The checkboxes here are your local working state; Linear is what Jay reads. If the two disagree, Linear is wrong and you did not update it.
 
 **Goal:** Replace `apps/web`'s four Roobert `.woff2` files (528 KB, up to 4 requests) with the foundry's single three-axis `RoobertCollectionVF.woff2` (300 KB, 1 request), fix the live monospace-alignment bug, and expose a ten-step weight ladder plus a SemiMono family.
 
@@ -25,7 +23,6 @@
 - **Never commit a plaintext secret.** No task here touches secrets, but the repo-wide rule stands.
 - **Every task ends with the real command run and its real output pasted.** No "should work".
 - **Do not commit unless explicitly asked.** Each task below has a commit step; run it only when the operator confirms.
-- **Every task is mirrored by a Linear issue in the `Jay` team.** Move it to `In Progress` before the first step and to `Done` only after that task's verification output is pasted into a Linear comment. Never mark an issue `Done` on the strength of a passing checkbox alone. See Section D.
 
 ---
 
@@ -260,177 +257,6 @@ lines flush within 0.07px.
 
 ---
 
-## Section D — Progress tracking in Linear
-
-Jay tracks this work in Linear. Treat the Linear issues as the source of truth for
-*status*; this file stays the source of truth for *instructions*.
-
-### The workspace, verified
-
-`Jay` is a **team**, not a project. Do not search for a project called "jay" — there
-isn't one. These IDs were read from the live workspace on 2026-07-30; prefer the name
-strings, and fall back to the IDs if a name lookup is ambiguous.
-
-
-| Thing                     | Value                                                  |
-| ------------------------- | ------------------------------------------------------ |
-| Workspace                 | `sutharjay` — `https://linear.app/sutharjay`           |
-| Team                      | `Jay` · `f7441bb1-8c0d-4c7e-9eca-36a7ad847f94`         |
-| Issue state — not started | `Todo` · `b97fcb16-4c4d-4b8f-a347-2997b559967a`        |
-| Issue state — active      | `In Progress` · `8b1f214f-5ab0-4845-a566-873e53196301` |
-| Issue state — finished    | `Done` · `937ab6aa-5658-4bc9-8ea9-efff43a6c72c`        |
-| Issue state — dropped     | `Canceled` · `a2aa2c3f-ed35-4ba6-ab3d-6b7a9a89a561`    |
-| Issue state — deferred    | `Backlog` · `f5a5031c-a63d-4073-80ff-54547527502b`     |
-| Project status — active   | `In Progress` · `f1361612-b4be-49cd-8d65-3dc344ff997f` |
-| Project status — finished | `Completed` · `3fade6d9-9662-4514-bb10-47841ff0c6a4`   |
-
-
-The `Jay` team already holds 6 projects. `**Domain Enrichment Pipeline**`
-(`https://linear.app/sutharjay/project/domain-enrichment-pipeline-0b846cfe665a`) is
-the precedent to copy: one Linear project per work stream, issues inside it, closed
-out when the work shipped. Match that shape.
-
-### Tool access
-
-The Linear MCP tools are **deferred** — their schemas are not loaded at session start,
-and calling one directly fails with `InputValidationError`. Load them first:
-
-```
-ToolSearch("select:mcp__claude_ai_Linear__save_project,mcp__claude_ai_Linear__save_issue,mcp__claude_ai_Linear__save_comment,mcp__claude_ai_Linear__list_issues,mcp__claude_ai_Linear__get_issue")
-```
-
-Pass Markdown to `description` and `body` with **literal newlines**, not `\n` escape
-sequences.
-
-### The protocol, per task
-
-Each of Tasks 1–7 gets exactly one Linear issue. For every task:
-
-1. **Before the first step** — set the issue to `In Progress`.
-2. **While working** — if you discover something that changes the plan, comment on the
-  issue with what you found and what you did about it. A silent deviation is the one
-   failure mode this protocol exists to prevent.
-3. **After the last verification step** — comment with the **real command and its real
-  output** (the same evidence the task already requires), then set the issue to `Done`.
-4. **If blocked** — leave it `In Progress`, comment with what is blocking and what
-  would unblock it, and move to the next task only if it has no dependency on this
-   one. Do not silently skip.
-
-Rules that are not negotiable:
-
-- `**Done` requires pasted evidence.** An issue with no output comment is not done,
-regardless of what the checkboxes say.
-- **Never mark Task 1 `Done` if Firefox or WebKit failed.** That is a `Blocked`
-comment and an escalation, not a completion — the whole design branches on it.
-- **Do not close the project** until Task 7 Step 5 passes against `dev.kortix.com`.
-Merged is not shipped.
-
----
-
-## Task 0: Create the Linear project and issues
-
-Do this first, before Task 1. It is bookkeeping, so it has no tests — but nothing else
-starts until Jay can see the board.
-
-**Files:** none. This task only writes to Linear.
-
-**Interfaces:**
-
-- Produces: a Linear project plus 8 issue identifiers (`JAY-*`) that Tasks 1–7 and the
-C3 decision reference by title.
-
-- [ ] **Step 1: Load the Linear tool schemas**
-
-```
-ToolSearch("select:mcp__claude_ai_Linear__save_project,mcp__claude_ai_Linear__save_issue,mcp__claude_ai_Linear__save_comment,mcp__claude_ai_Linear__list_issues,mcp__claude_ai_Linear__get_issue")
-```
-
-- [ ] **Step 2: Check the project does not already exist**
-
-Someone may have started this. Do not create a duplicate.
-
-```
-mcp__claude_ai_Linear__list_projects  team="Jay"  query="Roobert"
-```
-
-If a `Roobert` project exists, adopt it and skip to Step 4.
-
-- [ ] **Step 3: Create the project**
-
-`save_project` with:
-
-- `team`: `Jay`
-- `name`: `Roobert Single-File Font`
-- `status`: `In Progress`
-- `description`:
-
-```markdown
-Replace apps/web's four Roobert .woff2 files (528 KB, up to 4 requests) with the
-foundry's own three-axis RoobertCollectionVF.woff2 (300 KB, 1 request) — 43% smaller.
-
-Fixes three things on the way:
-- Monospace alignment is broken in production. `->` `<-` (calt) and `tt` `ff` `ffi`
-  (liga) collapse monospace cells, so `getAttribute->off` renders three cells short.
-- The weight ladder is a lie. The CSS declares 100–900 while the wght axis is
-  300–900, so font-thin and font-extralight silently render as Light 300.
-- Display-only stylistic sets leak into code text, swapping E F L y : ; ? — and `:`
-  and `;` are everywhere in TypeScript.
-
-Also exposes font-semimono (MONO=60) for IDs, hashes and timestamps.
-
-Scope is apps/web only; apps/mobile is deferred by decision.
-The licence forbids modifying the binary, so nothing is subsetted or re-generated —
-this adopts a file the foundry already ships.
-
-Spec: docs/superpowers/specs/2026-07-30-roobert-single-file-design.md
-Plan: docs/superpowers/plans/2026-07-30-roobert-single-file-font.md
-Worktree: /Users/jay/root/kortix/suna-font (branch `font`)
-```
-
-Record the returned project URL — it goes in the PR body at Task 7.
-
-- [ ] **Step 4: Create the eight issues**
-
-All in team `Jay`, all with `project` set to `Roobert Single-File Font`. Create the
-decision issue **first** so the others can reference it as a blocker.
-
-
-| #   | Title                                                              | State  | Priority   | Notes for the description                                                                                                                                                                                                                               |
-| --- | ------------------------------------------------------------------ | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Decide the tenth weight token name (blocks weight ladder)`        | `Todo` | `1` Urgent | Tailwind has no `font-950`; the `--font-weight-*` namespace ships nine names. Recommendation: `font-heavy` → `wght 900`, matching Roobert's own instance name at 900. Needs Jay. Blocks the weight-ladder issue. Assign to Jay.                         |
-| 2   | `Gate: verify @font-face descriptor support in Firefox and WebKit` | `Todo` | `1` Urgent | Task 1. The whole design branches here. If either engine ignores the descriptor, D2 must be redesigned around per-element `font-variation-settings` utilities. Only `chromium-1228` is installed — `pnpm exec playwright install firefox webkit` first. |
-| 3   | `Adopt RoobertCollectionVF and author the four font families`      | `Todo` | `2` High   | Task 2. 528 KB / 4 files → 300 KB / 1 file. Four `@font-face` rules share one `src`; drop `next/font/local` and preload explicitly. Blocked by the gate issue.                                                                                          |
-| 4   | `Fix monospace cell alignment in Roobert Mono`                     | `Todo` | `2` High   | Task 3. The live bug. `font-variant-ligatures: none` on `code, pre, .font-mono`; `calt off` alone is not enough. Must be element-level — the `@font-face` descriptor loses to `html`/`body` inheritance (see plan Section B, C1).                       |
-| 5   | `Map all ten font-weight names onto the real 300–900 axis`         | `Todo` | `3` Medium | Task 4. Blocked by the decision issue. 400–800 unchanged; only light (300→368) and black (900→870) shift, across 3 files.                                                                                                                               |
-| 6   | `Expose and document Roobert SemiMono (font-semimono)`             | `Todo` | `3` Medium | Task 5. `MONO=60` for IDs, hashes, timestamps. NOT monospaced — never for code or column-aligned tables. Needs copy keys in all 8 `apps/web/translations/*.json`.                                                                                       |
-| 7   | `Verify locally across three engines and refresh visual baselines` | `Todo` | `2` High   | Task 6. Landing snapshots at `maxDiffPixelRatio: 0.01` will move; inspect the diff before accepting. Also a11y and a real production build.                                                                                                             |
-| 8   | `Ship: PR, merge, Deploy Dev, verify on dev.kortix.com`            | `Todo` | `2` High   | Task 7. Local verification does not replace the deployed check. Confirm the deployed artifact carries the merged SHA — a healthy `/health` is not deployment proof.                                                                                     |
-
-
-Each description must open with a one-line pointer back to this plan and the task
-number, so an agent picking up a single issue can find its instructions:
-
-```markdown
-Task N of docs/superpowers/plans/2026-07-30-roobert-single-file-font.md
-```
-
-- [ ] **Step 5: Wire the blockers**
-
-- Issue 5 (`weight ladder`) `blockedBy` issue 1 (`tenth weight token name`).
-- Issues 3, 4, 5, 6 `blockedBy` issue 2 (`descriptor gate`).
-- Issue 8 (`Ship`) `blockedBy` issue 7 (`Verify locally`).
-
-- [ ] **Step 6: Confirm the board reads correctly**
-
-```
-mcp__claude_ai_Linear__list_issues  team="Jay"  project="Roobert Single-File Font"
-```
-
-Expected: 8 issues, all `Todo`, blockers set as above. Report the project URL and the
-8 issue identifiers to the operator before starting Task 1.
-
----
-
 ## Task 1: Cross-browser descriptor gate (spec R3)
 
 This gates the whole design. If Firefox or WebKit ignores the `font-variation-settings` descriptor, D2 collapses and the fallback is per-element `font-variation-settings` utility classes — a materially different plan. Run this **before** touching `apps/web`.
@@ -446,7 +272,6 @@ This gates the whole design. If Firefox or WebKit ignores the `font-variation-se
 
 - Produces: the `test:typography` npm script and the `tests/typography/` config that Task 3 reuses for `roobert.spec.ts`.
 
-**Linear:** issue JAY-124 `Gate: verify @font-face descriptor support in Firefox and WebKit`, already `In Progress` and carrying the escalation comment. Set `Done` once the six results pass.
 
 **Status:** the gate has RUN and its question is answered — see Section B, C4. WebKit
 ignores the descriptor; element-level settings work everywhere; Jay approved the
@@ -752,11 +577,6 @@ request event per @font-face rule sharing a URL while fetching only once, so
 an event count would have read as four downloads."
 ```
 
-- [ ] **Step 8: Update Linear**
-
-Comment on JAY-124 with the verbatim six-result output from Step 6, then set it to
-`Done`. The escalation comment recording the WebKit finding is already on the issue —
-leave it; it is the record of why the design changed.
 
 ---
 
@@ -774,7 +594,6 @@ leave it; it is the record of why the design changed.
 - Consumes: the descriptor support proven in Task 1.
 - Produces: CSS families `Roobert`, `Roobert Mono`, `Roobert SemiMono`, and the theme tokens `--font-sans`, `--font-mono`, `--font-semimono`. Tasks 3–5 depend on these exact family strings.
 
-**Linear:** issue `Adopt RoobertCollectionVF and author the four font families`. Set `In Progress` before Step 1.
 
 - [ ] **Step 1: Copy the binary in, delete the four old files**
 
@@ -1011,11 +830,6 @@ ital=11 for italics (the axis is 0-11, so font-style: italic alone rendered
 roughly 9% of the intended slant)."
 ```
 
-- [ ] **Step 10: Update Linear**
-
-Comment with the Step 1 payload output (`du -ch`, showing 300 KB down from 528 KB), the
-Step 6 dangling-reference grep returning nothing, and the Step 8 browser output
-(`woff2 requests: 1`). Then set the issue to `Done`.
 
 ---
 
@@ -1037,7 +851,6 @@ The live bug. Five character sequences collapse monospace cells: `->`, `<-` (`ca
 - Consumes: the `Roobert Mono` family and `--font-mono` token from Task 2.
 - Produces: the automated F3 regression test that Task 6 re-runs.
 
-**Linear:** issue `Fix monospace cell alignment in Roobert Mono`. Set `In Progress` before Step 1. This is the user-visible bug in the set — the `Done` comment must show the before and after width arrays, not just "tests pass".
 
 - [ ] **Step 0: De-duplicate the fixture origin (carried over from Task 1's review)**
 
@@ -1284,25 +1097,13 @@ Drops ss10 everywhere. It targets '?' and ss09 already won, so it never did
 anything."
 ```
 
-- [ ] **Step 7: Update Linear**
-
-Comment with both width arrays — the failing one from Step 2 and the flush one from
-Step 5 — so the fix is legible without rerunning anything:
-
-```markdown
-Before: [282.3, 322.5, 282.3, 342.7, 342.7]  spread 60.4px
-After:  [342.7, 342.7, 342.7, 342.7, 342.7]  spread 0px
-```
-
-Then set the issue to `Done`.
 
 ---
 
 ## Task 4: Ten-step weight ladder (spec D3)
 
-**Naming settled (C3):** Jay chose `font-heavy` → `wght 900` on 2026-07-30. JAY-123 is `Done`.
+**Naming settled (C3):** Jay chose `font-heavy` → `wght 900` on 2026-07-30. is `Done`.
 
-**Linear:** issue JAY-127 `Map all ten font-weight names onto the real 300–900 axis`.
 
 ### C5 — Tailwind's JIT only emits utilities that appear in scanned source
 
@@ -1605,11 +1406,6 @@ black (900 -> 870) move; the three files using font-light/font-extralight were
 checked."
 ```
 
-- [ ] **Step 7: Update Linear**
-
-Comment with the ten measured widths from Step 4 and the three files checked in Step 5
-(`invites/[inviteId]/page.tsx`, `blog/blog-cover.tsx`, `use-cases/covers.tsx`), noting
-whether each still reads correctly. Then set the issue to `Done`.
 
 ---
 
@@ -1756,10 +1552,6 @@ a test asserting it stays proportional — MONO=60 is NOT monospaced, so it must
 never be used for code or column-aligned tables."
 ```
 
-- [ ] **Step 8: Update Linear**
-
-Comment with the SemiMono test output and the `pnpm i18n:audit` result, attach
-`/tmp/semimono-section.png`, then set the issue to `Done`.
 
 ---
 
@@ -1769,7 +1561,6 @@ Comment with the SemiMono test output and the `pnpm i18n:audit` result, attach
 
 - **No files modified.** This task only runs checks and records evidence. Explicitly does NOT touch `tests/visual/__screenshots__/` — see C7.
 
-**Linear:** issue `Verify locally across three engines and refresh visual baselines`. Set `In Progress` before Step 1. If any baseline pixel cannot be traced to this work, comment the diff and stop rather than accepting the snapshot.
 
 - [ ] **Step 1: Run the whole typography suite across all three engines**
 
@@ -1795,6 +1586,36 @@ du -ch apps/web/public/fonts/roobert/*.woff2 | tail -1
 Expected: one file, ~300 KB, down from 528 KB across four — 43% smaller.
 
 - [ ] **Step 3: Record the visual-baseline state — but do NOT refresh (C7)**
+
+### C8 — collapsing to one family breaks two things that "just worked" before
+
+Found by the final whole-branch review, after every per-task review had passed. Both are
+consequences of the same shift — meaning now lives in inherited custom properties rather
+than in the family name — and both were invisible to width-based tests.
+
+**1. Italic rendered at ~24° instead of ~11°.** The single `@font-face` declares
+`font-style: normal`, so a request for `font-style: italic` finds no italic face and
+`font-synthesis-style: auto` applies a synthetic oblique **on top of** the real `ital 11`
+axis. Measured H-stem slant at 200px: intent 11.11°, shipped 24.06° in Chromium and
+WebKit. A regression against `main`, where `roobert.ts` registered a real italic face.
+Fixed with `font-synthesis-style: none` on the italic selector — the axis does the
+slanting, nothing synthesizes on top. Now 10.89° in all three engines.
+
+*Why the tests missed it:* the only italic assertion compared **advance width**, and
+synthetic oblique does not change advance width. Slant must be measured as an angle.
+
+**2. `.font-sans` could not escape a mono context.** `--rb-mono: 100` inherits from
+`code, pre, .font-mono`, and `.font-sans` only changes `font-family` — which is now a
+no-op, since all three tokens name `Roobert`. So `<span class="font-sans">` inside
+`.font-mono`, and `<pre class="font-sans">`, both rendered **monospaced**. Real sites
+included the marketing landing page (`cli-demo.tsx:747,832`). `font-variant-ligatures`
+and `font-feature-settings` inherited the same way and were equally un-undoable.
+Fixed by routing all three through custom properties and giving `.font-sans` a reset.
+`.not-italic` had the identical problem on the `ital` axis and got the same treatment.
+
+**The general rule this leaves behind:** any property that carries meaning through an
+*inherited* custom property needs an explicit escape hatch on the utility that is
+supposed to cancel it. Adding a new axis stop means adding its reset in the same change.
 
 ### C7 — the visual baselines are already stale and are not a gate for this PR
 
@@ -1867,11 +1688,6 @@ git add tests/visual/__screenshots__
 git commit -m "test(web): refresh landing visual baselines for the Roobert consolidation"
 ```
 
-- [ ] **Step 7: Update Linear**
-
-Comment with the full three-engine `pnpm test:typography` output, the a11y result, the
-build result, and a one-line justification for every refreshed baseline pixel. Then set
-the issue to `Done`.
 
 ---
 
@@ -1879,7 +1695,6 @@ the issue to `Done`.
 
 Local verification does not replace the deployed check, and a dev smoke test does not replace focused local tests. Both are required.
 
-**Linear:** issue `Ship: PR, merge, Deploy Dev, verify on dev.kortix.com`. Set `In Progress` before Step 1. This issue and the Linear **project** both stay open until Step 5 passes against `dev.kortix.com` — merged is not shipped.
 
 - [ ] **Step 1: Confirm the diff is scoped**
 
@@ -1922,10 +1737,8 @@ EOF
 )"
 ```
 
-Do **not** put a Linear URL, a Claude Code footer, or a session link in the PR body —
-the repo rule is that the description carries only the summary and test plan. Link the
-other direction instead: after the PR exists, add it to the Linear issue via
-`save_issue` `links: [{ url: "<pr url>", title: "PR: Roobert single-file font" }]`.
+Do **not** put a Claude Code footer or a session link in the PR body — the repo rule is
+that the description carries only the summary and test plan.
 
 - [ ] **Step 3: Wait for required checks, then merge**
 
@@ -1963,25 +1776,6 @@ curl -sI https://dev.kortix.com/fonts/roobert/RoobertCollectionVF.woff2 | grep -
 
 Expected: `200`, `content-length` ~300000, `cache-control: public, max-age=31536000, immutable`.
 
-- [ ] **Step 6: Close out Linear**
-
-Only now, with the deployed evidence in hand:
-
-1. Comment on the ship issue with the PR number, the merge SHA, the Deploy Dev run ID,
-  the deployed-SHA evidence, the dev `pnpm test:typography` output, and the `curl -sI`
-   headers. Set it to `Done`.
-2. Set the project `Roobert Single-File Font` to `Completed`.
-3. Leave the `Decide the tenth weight token name` issue `Done` if it was answered. If
-  Jay never answered and Task 4 shipped under the recommended `font-heavy`, say so in
-   a comment rather than closing it silently.
-4. If R1 (licence tier) is still unanswered, open a follow-up issue in the `Jay` team —
-  `Confirm Displaay licence covers self-hosted webfonts` — at `Backlog`, and note in
-   its description that this is pre-existing exposure, not something this work
-   introduced.
-5. Open a `Backlog` follow-up for the deferred `apps/mobile` consolidation
-  (~150 Roobert files, `RoobertCollectionVF` already present, adds Expo/NativeWind
-   loading risk).
-
 - [ ] **Step 7: Report**
 
 Record in the final response, per the CLAUDE.md communication standard:
@@ -1990,8 +1784,7 @@ Record in the final response, per the CLAUDE.md communication standard:
 2. Deploy Dev run ID and the deployed SHA evidence.
 3. The exact `pnpm test:typography` output against `https://dev.kortix.com`.
 4. Before/after payload: 528 KB / 4 requests → 300 KB / 1 request.
-5. The Linear project URL and the final state of all 8 issues.
-6. Anything still unverified, in one line each — including R1 (licence tier) if Jay has not answered.
+5. Anything still unverified, in one line each — including R1 (licence tier) if Jay has not answered.
 
 ---
 
@@ -2034,7 +1827,6 @@ Resolve 1 before Task 4. The rest do not block.
 | Verification 6 cross-browser                   | Task 6 Step 1                                            |
 | Verification 7 deployed                        | Task 7 Steps 4–5                                         |
 | Files-this-touches list                        | Section C                                                |
-| Progress tracked in Linear (`Jay` team)        | Section D + Task 0; per-task transitions in Tasks 1–7    |
 
 
 Two spec items are deliberately **not** implemented as written, both documented in Section B with measurements: D4/D5 move from `@font-face` to element level (C1), and D3's `950` becomes a named token (C3).
