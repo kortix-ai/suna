@@ -299,6 +299,9 @@ export interface FileContentRendererProps {
    * "file does not exist" state. No effect on the default viewer chrome.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
+   *  default. No effect on any other file category. */
+  fitOnOpen?: boolean;
 }
 
 export function FileContentRenderer({
@@ -314,6 +317,7 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
+  fitOnOpen = false,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -887,6 +891,7 @@ export function FileContentRenderer({
                 fileContent={fileContent.content}
                 fileName={fileName}
                 className="h-full"
+                fitOnOpen={fitOnOpen}
               />
             </Suspense>
           )}
