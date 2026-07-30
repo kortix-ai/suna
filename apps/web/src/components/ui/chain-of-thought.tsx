@@ -54,7 +54,7 @@ export function ChainOfThoughtTrigger({
               {leftIcon}
             </span>
             {swapIconOnHover && (
-              <CaretDownIcon className="absolute size-4 opacity-0 transition-opacity group-hover/cot:opacity-100 group-data-[state=open]:rotate-180" />
+              <CaretDownIcon className="absolute size-4 opacity-0 transition-opacity group-hover/cot:opacity-100 group-data-[state=open]/cot:rotate-180" />
             )}
           </>
         ) : (

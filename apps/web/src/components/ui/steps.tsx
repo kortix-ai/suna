@@ -42,7 +42,7 @@ export function StepsTrigger({
   return (
     <CollapsibleTrigger
       className={cn(
-        'group text-muted-foreground hover:text-foreground',
+        'group/steps text-muted-foreground hover:text-foreground',
         'flex w-full cursor-pointer items-center gap-2 text-left text-sm transition-colors',
         className,
       )}
@@ -50,15 +50,17 @@ export function StepsTrigger({
     >
       {leftIcon ? (
         <span className="relative inline-flex size-4 flex-none items-center justify-center">
-          <span className={cn('transition-opacity', swapIconOnHover && 'group-hover:opacity-0')}>
+          <span
+            className={cn('transition-opacity', swapIconOnHover && 'group-hover/steps:opacity-0')}
+          >
             {leftIcon}
           </span>
           {swapIconOnHover && (
-            <CaretDownIcon className="absolute size-4 opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=open]:rotate-180" />
+            <CaretDownIcon className="absolute size-4 opacity-0 transition-opacity group-hover/steps:opacity-100 group-data-[state=open]/steps:rotate-180" />
           )}
         </span>
       ) : (
-        <CaretDownIcon className="size-4 flex-none transition-transform group-data-[state=open]:rotate-180" />
+        <CaretDownIcon className="size-4 flex-none transition-transform group-data-[state=open]/steps:rotate-180" />
       )}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing ? <span className="flex flex-none items-center gap-1.5">{trailing}</span> : null}
