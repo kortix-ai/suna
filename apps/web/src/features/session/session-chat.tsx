@@ -63,8 +63,14 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { SessionTurnMeta } from './session-turn-meta';
+import {
+  sessionTurnDurationMs,
+  sessionTurnEndedAt,
+  sessionTurnSpan,
+} from './session-turn-meta-rows';
 
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -136,9 +142,7 @@ import {
   type Turn,
   collectTurnParts,
   findLastTextPart,
-  formatCost,
   formatDuration,
-  formatTokens,
   getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
@@ -2785,25 +2789,26 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  const [duration, setDuration] = useState('');
+  // A settled turn's duration is a pure function of its timestamps — deriving it
+  // during render removes the extra "" -> "2m 15s" pass the old effect forced on
+  // every completed turn. The effect below now only ticks the LIVE case.
+  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
+  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
+  const settledDuration = useMemo(
+    () => (turnDurationMs != null ? formatDuration(turnDurationMs) : ''),
+    [turnDurationMs],
+  );
+  const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
-    const startTime = (turn.userMessage.info as any)?.time?.created;
-    if (!startTime) return;
-
-    if (!working) {
-      const lastMsg = turn.assistantMessages[turn.assistantMessages.length - 1];
-      const endTime =
-        (lastMsg?.info as any)?.time?.completed ||
-        (lastMsg?.info as any)?.time?.created ||
-        startTime;
-      setDuration(formatDuration(endTime - startTime));
-      return;
-    }
-    const update = () => setDuration(formatDuration(Date.now() - startTime));
+    if (!working) return;
+    const { startedAt } = sessionTurnSpan(turn);
+    if (startedAt == null) return;
+    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [working, turn]);
+  const duration = working ? liveDuration : settledDuration;
 
   // ---- Copy response ----
   const handleCopy = async () => {
@@ -3330,26 +3335,17 @@ function SessionTurn({
               secondsLeft={retrySecondsLeft}
             />
           )}
-          <div
-            className={cn(
-              'flex items-center gap-2 py-1 text-xs transition-colors',
-              'text-muted-foreground',
-            )}
-          >
-            <span className="relative flex size-3">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-            </span>
-            {retryInfo ? (
-              <span className="text-muted-foreground/70">
-                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
-              </span>
-            ) : (
-              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
-            )}
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </div>
+          <SessionBusyIndicator
+            statusText={throttledStatus || undefined}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+            elapsed={duration}
+          />
         </div>
       )}
 
@@ -3358,22 +3354,15 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only) ── */}
+      {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-          {/* Duration & cost */}
-          {duration && (
-            <span className="text-muted-foreground/50 mr-1 text-xs">
-              {duration}
-              {costInfo && (
-                <>
-                  {' '}
-                  · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
-                </>
-              )}
-            </span>
-          )}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
+              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
+              different kinds on one dot-separated line, which reads as a list of
+              comparable things and is not one. They are a labelled list inside
+              `SessionTurnMeta` now. `focus-within` because a keyboard user could
+              otherwise tab into — and open — a control at `opacity-0`. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
@@ -3382,6 +3371,7 @@ function SessionTurn({
             </TooltipTrigger>
             <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
           </Tooltip>
+          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
         </div>
       )}
 
