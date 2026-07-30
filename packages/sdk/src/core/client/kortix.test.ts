@@ -282,6 +282,33 @@ test('project(id).setAgentScope binds the project id + agent name', async () => 
   expect(last().method).toBe('PUT');
 });
 
+test('project(id).agents binds direct agent config creation and repair endpoints', async () => {
+  await kortix.project('PID123').agents.preview({
+    agentName: 'reliance-cto',
+    block: { opencode: { prompt: 'You are the CTO.' } },
+  });
+  expect(last().url).toContain('/projects/PID123/agents/preview');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').agents.create({
+    agentName: 'reliance-cto',
+    block: { opencode: { prompt: 'You are the CTO.' } },
+    preview_revision: 'a'.repeat(64),
+  });
+  expect(last().url).toContain('/projects/PID123/agents');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').agents.config('support');
+  expect(last().url).toContain('/projects/PID123/agents/support/config');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').agents.repairBehavior('support', {
+    behavior_markdown: 'You help.',
+  });
+  expect(last().url).toContain('/projects/PID123/agents/support/behavior-repair');
+  expect(last().method).toBe('POST');
+});
+
 test('kortix.github covers install/list/link/repo endpoints (account-scoped, not project-scoped)', async () => {
   await kortix.github.getInstallation('ACC1');
   expect(last().url).toContain('/projects/github/installation?account_id=ACC1');

@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type AgentConfigBlock,
+  createAgentConfig,
   getAgentConfig,
+  previewAgentConfig,
+  repairAgentBehavior,
   updateAgentConfig,
 } from './agent-config';
 
@@ -114,5 +117,113 @@ describe('getAgentConfig', () => {
     const response = await getAgentConfig('project-1', 'support');
     expect(response.block?.connectors_required).toEqual(['gmail']);
     expect(response.block).not.toHaveProperty('connectors_personal');
+  });
+
+  test('returns behavior-file state fields from the backend', async () => {
+    nextBody = {
+      agent: 'support',
+      schema_version: 2,
+      editable: true,
+      default_agent: 'support',
+      behavior_path: '.kortix/opencode/agents/support.md',
+      behavior_file_state: 'missing',
+      block: { enabled: true, opencode: {} },
+    };
+    const response = await getAgentConfig('project-1', 'support');
+    expect(response.behavior_path).toBe('.kortix/opencode/agents/support.md');
+    expect(response.behavior_file_state).toBe('missing');
+  });
+});
+
+describe('previewAgentConfig', () => {
+  test('posts the create draft and serializes connector aliases as canonical', async () => {
+    nextBody = {
+      agent_name: 'reliance-cto',
+      manifest_path: 'kortix.yaml',
+      behavior_path: '.kortix/opencode/agents/reliance-cto.md',
+      manifest_content: 'kortix_version: 2\n',
+      behavior_markdown: 'You are the CTO.',
+      preview_revision: 'a'.repeat(64),
+      files: [
+        { path: 'kortix.yaml', content: 'kortix_version: 2\n' },
+        { path: '.kortix/opencode/agents/reliance-cto.md', content: 'You are the CTO.' },
+      ],
+    };
+
+    const response = await previewAgentConfig('project-1', {
+      agentName: 'reliance-cto',
+      block: {
+        connectors_personal: ['gmail', 'gmail'],
+        opencode: { prompt: 'You are the CTO.' },
+      },
+    });
+
+    expect(calls[0]?.url).toBe('http://test.local/projects/project-1/agents/preview');
+    expect(calls[0]?.body).toEqual({
+      agentName: 'reliance-cto',
+      block: {
+        connectors_required: ['gmail'],
+        opencode: { prompt: 'You are the CTO.' },
+      },
+    });
+    expect(response.preview_revision).toBe('a'.repeat(64));
+    expect(response.behavior_path).toBe('.kortix/opencode/agents/reliance-cto.md');
+  });
+});
+
+describe('createAgentConfig', () => {
+  test('posts the reviewed preview revision to the create route', async () => {
+    nextBody = {
+      agent_name: 'reliance-cto',
+      manifest_path: 'kortix.yaml',
+      behavior_path: '.kortix/opencode/agents/reliance-cto.md',
+      preview_revision: 'b'.repeat(64),
+      branch: 'kortix/agents/create/reliance-cto-20260730120000-deadbeef',
+      commit_sha: 'c'.repeat(40),
+      change_request: { cr_id: 'CR1', number: 1 },
+    };
+
+    await createAgentConfig('project-1', {
+      agentName: 'reliance-cto',
+      preview_revision: 'b'.repeat(64),
+      block: {
+        connectors_personal: ['github'],
+        opencode: { prompt: 'You are the CTO.' },
+      },
+    });
+
+    expect(calls[0]?.url).toBe('http://test.local/projects/project-1/agents');
+    expect(calls[0]?.body).toEqual({
+      agentName: 'reliance-cto',
+      preview_revision: 'b'.repeat(64),
+      block: {
+        connectors_required: ['github'],
+        opencode: { prompt: 'You are the CTO.' },
+      },
+    });
+  });
+});
+
+describe('repairAgentBehavior', () => {
+  test('posts user-reviewed markdown to the behavior repair route', async () => {
+    nextBody = {
+      agent_name: 'support',
+      manifest_path: 'kortix.yaml',
+      behavior_path: '.kortix/opencode/agents/support.md',
+      branch: 'kortix/agents/repair/support-20260730120000-deadbeef',
+      commit_sha: 'd'.repeat(40),
+      change_request: { cr_id: 'CR2', number: 2 },
+    };
+
+    await repairAgentBehavior('project-1', 'support', {
+      behavior_markdown: '---\ndescription: Support\n---\n\nYou help.',
+    });
+
+    expect(calls[0]?.url).toBe(
+      'http://test.local/projects/project-1/agents/support/behavior-repair',
+    );
+    expect(calls[0]?.body).toEqual({
+      behavior_markdown: '---\ndescription: Support\n---\n\nYou help.',
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import type { ChangeRequest } from './change-requests';
 import { unwrap } from './shared';
 
 // ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
@@ -66,6 +67,8 @@ export interface AgentConfigBlock {
   opencode?: OpencodeAgentConfig;
 }
 
+export type AgentBehaviorFileState = 'exists' | 'missing' | 'read_error';
+
 export interface AgentConfigResponse {
   agent: string;
   /** The manifest's declared schema version — 2 means the full editor applies. */
@@ -74,8 +77,61 @@ export interface AgentConfigResponse {
   editable: boolean;
   /** The manifest's top-level `default_agent` (v2 only; null for v1). */
   default_agent: string | null;
+  /** The native OpenCode agent markdown path for v2 projects. */
+  behavior_path?: string | null;
+  /** Whether the native OpenCode agent markdown file exists on the default branch. */
+  behavior_file_state?: AgentBehaviorFileState | null;
+  /** Backend read error detail when `behavior_file_state` is `read_error`. */
+  behavior_file_error?: string;
   /** The declared block, or null for a v1 manifest / an agent not declared yet. */
   block: AgentConfigBlock | null;
+}
+
+export interface PreviewAgentConfigInput {
+  agentName: string;
+  block: AgentConfigBlock;
+}
+
+export interface AgentConfigFilePreview {
+  path: string;
+  content: string;
+}
+
+export interface PreviewAgentConfigResponse {
+  agent_name: string;
+  manifest_path: string;
+  behavior_path: string;
+  manifest_content: string;
+  behavior_markdown: string;
+  preview_revision: string;
+  files: AgentConfigFilePreview[];
+}
+
+export interface CreateAgentConfigInput extends PreviewAgentConfigInput {
+  preview_revision: string;
+}
+
+export interface CreateAgentConfigResponse {
+  agent_name: string;
+  manifest_path: string;
+  behavior_path: string;
+  preview_revision: string;
+  branch: string;
+  commit_sha: string;
+  change_request: ChangeRequest;
+}
+
+export interface RepairAgentBehaviorInput {
+  behavior_markdown: string;
+}
+
+export interface RepairAgentBehaviorResponse {
+  agent_name: string;
+  manifest_path: string;
+  behavior_path: string;
+  branch: string;
+  commit_sha: string;
+  change_request: ChangeRequest;
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {
@@ -88,6 +144,50 @@ export async function getAgentConfig(projectId: string, agentName: string) {
     ...response,
     block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
   };
+}
+
+export async function previewAgentConfig(
+  projectId: string,
+  input: PreviewAgentConfigInput,
+) {
+  return unwrap(
+    await backendApi.post<PreviewAgentConfigResponse>(
+      `/projects/${projectId}/agents/preview`,
+      {
+        agentName: input.agentName,
+        block: canonicalizeRequiredConnectors(input.block),
+      },
+    ),
+  );
+}
+
+export async function createAgentConfig(
+  projectId: string,
+  input: CreateAgentConfigInput,
+) {
+  return unwrap(
+    await backendApi.post<CreateAgentConfigResponse>(
+      `/projects/${projectId}/agents`,
+      {
+        agentName: input.agentName,
+        preview_revision: input.preview_revision,
+        block: canonicalizeRequiredConnectors(input.block),
+      },
+    ),
+  );
+}
+
+export async function repairAgentBehavior(
+  projectId: string,
+  agentName: string,
+  input: RepairAgentBehaviorInput,
+) {
+  return unwrap(
+    await backendApi.post<RepairAgentBehaviorResponse>(
+      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/behavior-repair`,
+      input,
+    ),
+  );
 }
 
 export async function updateAgentConfig(

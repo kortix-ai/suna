@@ -628,6 +628,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Set the agent used when a new project session does not name one explicitly. */
       setDefaultAgent: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
 
+      /** Project agent configuration: preview/create via CR, edit, default, and scope. */
+      agents: {
+        config: (...a: DropFirst<Parameters<typeof P.getAgentConfig>>) =>
+          P.getAgentConfig(projectId, ...a),
+        updateConfig: (...a: DropFirst<Parameters<typeof P.updateAgentConfig>>) =>
+          P.updateAgentConfig(projectId, ...a),
+        preview: (...a: DropFirst<Parameters<typeof P.previewAgentConfig>>) =>
+          P.previewAgentConfig(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createAgentConfig>>) =>
+          P.createAgentConfig(projectId, ...a),
+        repairBehavior: (...a: DropFirst<Parameters<typeof P.repairAgentBehavior>>) =>
+          P.repairAgentBehavior(projectId, ...a),
+        setDefault: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
+        setScope: (...a: DropFirst<Parameters<typeof P.setAgentScope>>) =>
+          P.setAgentScope(projectId, ...a),
+      },
+
       /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
       sandbox: {
         list: () => P.listProjectSandboxes(projectId),

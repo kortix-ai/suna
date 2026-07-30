@@ -4212,6 +4212,12 @@ and deployed OpenCode REST verification.
 
 **Status:** IN PROGRESS.
 
+Evidence so far:
+
+- RED 2026-07-30: `pnpm --filter @kortix/sdk test -- src/core/rest/projects-client/agent-config.test.ts src/core/client/kortix.test.ts src/react/use-agent-config.test.ts` failed with missing `previewAgentConfig`, missing `./use-agent-config`, and missing `project(id).agents`.
+- GREEN 2026-07-30: `pnpm --filter @kortix/sdk test` returned `1352 pass`, `2 skip`, `0 fail`, `5920 expect() calls`, `Ran 1354 tests across 117 files`.
+- Typecheck 2026-07-30: `pnpm --filter @kortix/sdk typecheck` exited `0`.
+
 **SDK package shippable to production: NOT YET.**
 
 ---
