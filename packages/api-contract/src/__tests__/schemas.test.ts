@@ -88,6 +88,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: { onboarding_completed_at: NOW },
+    icon: '🚀',
     last_opened_at: NOW,
     created_at: NOW,
     updated_at: NOW,
@@ -274,6 +275,16 @@ describe('ProjectSchema', () => {
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('accepts a null icon', () => {
+    const parsed = ProjectSchema.parse(projectFixture({ icon: null }));
+    expect(parsed.icon).toBeNull();
+  });
+
+  test('rejects a project with no icon field (icon is always emitted, never omitted)', () => {
+    const { icon: _dropped, ...withoutIcon } = projectFixture();
+    expect(() => ProjectSchema.strict().parse(withoutIcon)).toThrow();
   });
 });
 
