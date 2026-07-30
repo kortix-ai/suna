@@ -118,6 +118,8 @@ export function RuntimeLayerFields({
               max={2}
               step={0.05}
               className="max-w-[240px]"
+              thumbLabel="Temperature"
+              formatValue={(v) => v.toFixed(2)}
               onValueChange={([v]) => setOc('temperature', v)}
             />
             {oc.temperature !== undefined ? (
@@ -149,6 +151,8 @@ export function RuntimeLayerFields({
               max={1}
               step={0.01}
               className="max-w-[240px]"
+              thumbLabel="Top-p"
+              formatValue={(v) => v.toFixed(2)}
               onValueChange={([v]) => setOc('top_p', v)}
             />
             {oc.top_p !== undefined ? (

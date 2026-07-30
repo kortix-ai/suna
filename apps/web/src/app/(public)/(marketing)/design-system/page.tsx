@@ -2683,7 +2683,14 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="max-w-sm space-y-4">
-                    <Slider value={sliderValue} onValueChange={setSliderValue} max={100} step={1} />
+                    <Slider
+                      value={sliderValue}
+                      onValueChange={setSliderValue}
+                      max={100}
+                      step={1}
+                      thumbLabel="Example value"
+                      formatValue={(value) => `${value}%`}
+                    />
                     <span className="text-muted-foreground font-mono text-xs">
                       Value: {sliderValue[0]}
                     </span>
