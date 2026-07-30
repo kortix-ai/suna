@@ -19,7 +19,7 @@ import {
   CopyIcon as Copy,
   DownloadIcon as Download,
   ClockCounterClockwiseIcon as History,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   ArrowsClockwiseIcon as RefreshCw,
   ScissorsIcon as Scissors,
   TrashIcon as Trash2,
@@ -399,7 +399,7 @@ export function FileTreeItem({
                 setTimeout(() => startRenaming(), 100);
               }}
             >
-              <Pencil className="mr-2 h-4 w-4" />
+              <PencilSimpleIcon className="mr-2 h-4 w-4" />
               Rename
             </ContextMenuItem>
           </>

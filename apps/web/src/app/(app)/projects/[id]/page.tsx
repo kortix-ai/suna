@@ -1,20 +1,26 @@
 'use client';
 
+import type { AttachedFile } from '@/features/session/session-chat-input';
+
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
 } from '@/features/workspace/project-layout/project-home';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
-import type { AttachedFile } from '@/features/session/session-chat-input';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
+import {
+  billingDialogArgs,
+  billingStateAllowsRun,
+  resolveBillingState,
+} from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
-import { writeStartStash } from '@kortix/sdk/react';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { getProjectDetail } from '@kortix/sdk';
+import { writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -34,28 +40,29 @@ export default function ProjectIndexPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const newSession = useNewProjectSession(projectId);
+  const warmSession = useWarmProjectSession(projectId);
+  const newSession = useNewProjectSession(
+    projectId,
+    warmSession.data?.session,
+    warmSession.resolveSession,
+  );
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);
 
+  // One-time "you're on Free" onboarding pitch. Keyed off the SAME resolved
+  // billing state every other surface uses — the old `tier_key === 'free'`
+  // guess pitched the Free plan to per-seat Team accounts, whose tier_key stays
+  // 'free' (the PR #5141 lesson).
   useEffect(() => {
     if (!isBillingEnabled() || !accountState || !projectAccountId) return;
-
-    const tierKey = (
-      accountState.subscription?.tier_key ||
-      accountState.tier?.name ||
-      ''
-    ).toLowerCase();
-    const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-    const shouldShow = (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-    if (!shouldShow) return;
+    if (resolveBillingState(accountState) !== 'no_subscription') return;
 
     const storageKey = `${FREE_ONBOARDING_UPGRADE_MODAL_KEY}:${projectAccountId}`;
     if (window.localStorage.getItem(storageKey) === '1') return;
 
     window.localStorage.setItem(storageKey, '1');
-    openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
+    openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
   }, [accountState, projectAccountId, openUpgradeDialog]);
 
   const handleSend = useCallback(
@@ -66,10 +73,10 @@ export default function ProjectIndexPage() {
 
       // Gate accounts that cannot run before navigating so we never strand the
       // user on a shell that cannot provision. Free accounts with the monthly
-      // sandbox grant are allowed through because `can_run` is true.
-      const noPlan = isBillingEnabled() && !billingLoading && !canRun;
-      if (noPlan) {
-        openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
+      // sandbox grant are allowed through because their state is `active`.
+      const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
+      if (isBillingEnabled() && !billingLoading && !billingStateAllowsRun(billingState)) {
+        openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
         return;
       }
 
@@ -85,12 +92,13 @@ export default function ProjectIndexPage() {
       setSending(true);
       newSession({
         create: buildNewSessionCreateInput(options),
+        scope: options?.scope,
         // Create failed (already surfaced by the hook) — we never left this
         // page, so just unlock the composer with the text still in it.
         onError: () => setSending(false),
         onNavigate: (sessionId) => {
           // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // pin the session page resolves later (`useCanonicalRuntimeSession`
           // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
           // route id via the SDK's canonical `writeStartStash` — the session
           // page's `migrateStash` hands this off onto the resolved pin once it
@@ -108,12 +116,8 @@ export default function ProjectIndexPage() {
         },
       });
     },
-    [billingLoading, canRun, projectAccountId, openUpgradeDialog, newSession],
+    [billingLoading, accountState, projectAccountId, openUpgradeDialog, newSession],
   );
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
-    </ProjectShell>
-  );
+  return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;
 }

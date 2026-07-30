@@ -191,6 +191,65 @@ describe('validateManifest — kortix_version 2 happy path', () => {
   });
 });
 
+describe('validateManifest — per-agent sandbox templates', () => {
+  test('accepts a declared template and the reserved platform default', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+sandbox:
+  default: node
+  templates:
+    - slug: node
+      name: Node
+      image: node:22
+    - slug: ml
+      name: ML
+      image: python:3.12
+agents:
+  researcher:
+    sandbox: ml
+  fallback:
+    sandbox: default
+`);
+    expect(valid).toBe(true);
+    expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('accepts a valid dashboard-managed template slug', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+sandbox:
+  templates:
+    - slug: node
+      name: Node
+      image: node:22
+agents:
+  researcher:
+    sandbox: missing
+`);
+    expect(valid).toBe(true);
+    expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('rejects an invalid agent sandbox slug', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+agents:
+  researcher:
+    sandbox: "Not Valid!"
+`);
+    expect(valid).toBe(false);
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        path: 'agents.researcher.sandbox',
+        severity: 'error',
+      }),
+    );
+  });
+});
+
 describe('validateManifest — kortix_version 2 format gate', () => {
   test('kortix_version 2 in a TOML file is a validation error pointing at kortix.yaml', () => {
     const { valid, errorPaths, issues } = summarize(
@@ -362,7 +421,9 @@ connectors:
 `);
     expect(valid).toBe(false);
     expect(errorPaths).toContain('connectors[0].credential');
-    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain('kortix_version 2');
+    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain(
+      'kortix_version 2',
+    );
   });
 
   test('v2 accepts "shared" (the only mode) cleanly', () => {
@@ -408,6 +469,61 @@ connectors:
 `);
     expect(valid).toBe(false);
     expect(errorPaths).toContain('connectors[0].credential');
+  });
+});
+
+describe('validateManifest — connector authorization strategy', () => {
+  test('accepts project and user connector profiles for the same provider app', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail-read
+    name: Gmail read only
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+  - slug: gmail-send
+    name: Gmail send
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('rejects a both authorization strategy', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: both
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('connectors[0].authorization_strategy');
+  });
+
+  test('defaults an omitted authorization strategy without a warning', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+`);
+    expect(valid).toBe(true);
+    expect(issues.find((issue) => issue.path === 'connectors[0].authorization_strategy')).toBeUndefined();
   });
 });
 
@@ -750,6 +866,83 @@ agents:
   });
 });
 
+describe('validateManifest — kortix_version 2 required connectors', () => {
+  test('accepts the canonical field when every required connector is granted', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+`);
+    expect(valid).toBe(true);
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts the deprecated input alias with a warning', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail]
+    connectors_personal: [gmail]
+`);
+    expect(valid).toBe(true);
+    expect(warningPaths).toContain('agents.w.connectors_personal');
+  });
+
+  test('accepts both aliases when their normalized values match', () => {
+    const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail, slack]
+    connectors_personal: [slack, gmail, gmail]
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('rejects conflicting canonical and deprecated values', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+    connectors_personal: [slack]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_personal');
+  });
+
+  test('rejects a required connector outside the resolved connector grant', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail]
+    connectors_required: [slack]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_required');
+  });
+
+  test('rejects required connectors when the connector grant resolves to none', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors_required: [gmail]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_required');
+  });
+});
+
 describe('validateManifest — kortix_version 2 `skills` governance grant', () => {
   test('an explicit skill-name list is accepted', () => {
     const { valid, errorPaths } = summarize(`
@@ -810,9 +1003,9 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 3 is rejected as unsupported', () => {
+  test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 3
+kortix_version: 4
 default_agent: w
 agents:
   w: {}
@@ -877,7 +1070,6 @@ connectors:
 `);
     expect(errorPaths).toContain('connectors[0].provider');
   });
-
 });
 
 // ─── validateAgentMdFrontmatter ─────────────────────────────────────────────

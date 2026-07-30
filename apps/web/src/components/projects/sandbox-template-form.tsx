@@ -37,7 +37,7 @@ import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 type Mode = 'image' | 'dockerfile';
 

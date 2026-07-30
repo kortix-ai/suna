@@ -21,8 +21,8 @@ locals {
   data_mount_path = "/mnt/kortix-data"
 }
 
-#checkov:skip=CKV2_AWS_9:backups are handled by the aws_dlm_lifecycle_policy in this module (daily snapshots, retention-capped) — an AWS Backup plan would duplicate it
 resource "aws_ebs_volume" "data" {
+  #checkov:skip=CKV2_AWS_9:Backups use the aws_dlm_lifecycle_policy in this module with daily, retention-capped snapshots; AWS Backup would duplicate them.
   # DELIBERATELY NOT aws_instance.this.availability_zone: AZ is ForceNew on
   # aws_ebs_volume, so if this depended on the instance's (post-apply-known)
   # AZ attribute, ANY instance replacement (taint, -replace, instance_type

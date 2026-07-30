@@ -1,6 +1,6 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
+import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
 import {
@@ -11,22 +11,21 @@ import {
   renderMetrics,
   metricsEnabled,
 } from './lib/metrics';
-import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
-import { getRequestUrl } from './lib/request-url';
+import { getDiagnosticFields, getRequestContext, runWithContext, setContextField } from './lib/request-context';
+import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 import { sendDemoRequestNotification } from './lib/demo-request-email';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
 import { config } from './config';
 import { BillingError } from './errors';
 
-// ─── Sub-Service Imports ──────────────────────────────────────────────────── 
+// ─── Sub-Service Imports ────────────────────────────────────────────────────
 
 import { router } from './router';
 import { billingApp, accountDeletionApp } from './billing';
@@ -34,8 +33,15 @@ import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { inspectDatabaseError } from './shared/database-errors';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import {
+  isDaytonaTransientProviderError,
+  primeDaytonaTransientClassifier,
+} from './shared/daytona-transient';
 import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
@@ -43,29 +49,51 @@ import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { db, hasDatabase } from './shared/db';
+import { computeEtag, etagMatches } from './shared/http-cache';
 import { getPlatformRole } from './shared/platform-roles';
 import { platformSettings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService } from './tunnel';
+import {
+  tunnelApp,
+  wsHandlers as tunnelWsHandlers,
+  startTunnelService,
+  stopTunnelService,
+} from './tunnel';
+import { voiceMcpRoutes } from './channels/voice/routes';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, runsSingletonWorkers } from './shared/leader-election';
+import {
+  isLeader,
+  startLeaderElection,
+  stopLeaderElection,
+  runsSingletonWorkers,
+} from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
+import { skillsApp } from './skills';
 import { oauthApp } from './oauth';
+import { nativeOAuth2CallbackApp } from './executor/oauth2-callback';
 import {
   projectWebhooksApp,
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
+import {
+  startSunaMigrationWorker,
+  stopSunaMigrationWorker,
+} from './projects/suna-migration/suna-migration-worker';
+import {
+  startProviderTransitionWorker,
+  stopProviderTransitionWorker,
+} from './projects/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -104,10 +132,15 @@ process.on('unhandledRejection', (reason: unknown) => {
 process.on('uncaughtException', (err: Error) => {
   try {
     if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport exception', { error: err?.message ?? String(err) });
+      appLogger.localError('Dropped logging-transport exception', {
+        error: err?.message ?? String(err),
+      });
       return;
     }
-    appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
+    appLogger.error('Uncaught exception', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
     captureException(err, { handler: 'uncaughtException' });
   } catch {
     // never let the crash guard itself crash the process
@@ -148,59 +181,20 @@ app.use('*', async (c, next) => {
   }
 });
 
-// === Global Middleware === 
+// === Global Middleware ===
 
-// CORS origins: production domains + localhost for local dev + any extras from env.
-const cloudOrigins = [
-  'https://www.kortix.com',
-  'https://kortix.com',
-  'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
-  'https://dev-new.kortix.com',
-  'https://staging.kortix.com',
-  'https://kortix.cloud',
-  'https://www.kortix.cloud',
-  'https://new.kortix.com',
-];
-const localOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
-  'http://localhost:3010',
-  'http://127.0.0.1:3010',
-];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   : [];
-const corsOrigins = [
-  ...new Set([
-    ...cloudOrigins,
-    ...localOrigins,  // Always include — needed for local dev and self-hosted
-    ...extraOrigins,
-  ]),
-];
-
-// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
-// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
-// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
-// only — dev/prod keep the strict static allowlist.
-const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
-const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
 
 app.use(
   '*',
-  cors({
-    origin: (origin) => {
-      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
-      if (!origin) return origin;
-      if (corsOrigins.includes(origin)) return origin;
-      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
-      return null; // not allowed → no Access-Control-Allow-Origin
-    },
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
-    credentials: true,
-  })
+  createCorsMiddleware({
+    internalEnvironment: config.INTERNAL_KORTIX_ENV,
+    extraOrigins,
+  }),
 );
 
 // ─── Request context (AsyncLocalStorage) ────────────────────────────────────
@@ -208,27 +202,31 @@ app.use(
 // (auth, route handlers, console.error calls) automatically gets context fields
 // (requestId, userId, accountId, sandboxId) attached to every log.
 app.use('*', async (c, next) => {
-  await runWithContext(c.req.method, c.req.path, async () => {
-    // Auto-extract common resource IDs from URL patterns for logs/traces.
-    const path = c.req.path;
-    const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch) {
-      setContextField('projectId', projectSessionMatch[1]);
-      setContextField('sessionId', projectSessionMatch[2]);
-    } else {
-      const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch) setContextField('projectId', projectMatch[1]);
-    }
-    const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) ||
-                    path.match(/\/p\/([^/]+)/);
-    if (sbMatch) setContextField('sandboxId', sbMatch[1]);
-    await next();
-    const ctx = getRequestContext();
-    if (ctx) {
-      c.header('X-Request-Id', ctx.requestId);
-      c.header('traceparent', ctx.traceparent);
-    }
-  }, c.req.header('traceparent'));
+  await runWithContext(
+    c.req.method,
+    c.req.path,
+    async () => {
+      // Auto-extract common resource IDs from URL patterns for logs/traces.
+      const path = c.req.path;
+      const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
+      if (projectSessionMatch) {
+        setContextField('projectId', projectSessionMatch[1]);
+        setContextField('sessionId', projectSessionMatch[2]);
+      } else {
+        const projectMatch = path.match(/\/projects\/([^/]+)/);
+        if (projectMatch) setContextField('projectId', projectMatch[1]);
+      }
+      const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
+      if (sbMatch) setContextField('sandboxId', sbMatch[1]);
+      await next();
+      const ctx = getRequestContext();
+      if (ctx) {
+        c.header('X-Request-Id', ctx.requestId);
+        c.header('traceparent', ctx.traceparent);
+      }
+    },
+    c.req.header('traceparent'),
+  );
 });
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
@@ -250,37 +248,40 @@ app.use('*', async (c, next) => {
   if (accountId) setContextField('accountId', accountId);
 
   // Add breadcrumb to Sentry for request context on future errors
-  addBreadcrumb(`${c.req.method} ${c.req.path} ${status}`, {
-    method,
-    path,
-    status,
-    duration,
-    userAgent: c.req.header('user-agent')?.slice(0, 100),
-  }, 'http');
+  addBreadcrumb(
+    `${c.req.method} ${c.req.path} ${status}`,
+    {
+      method,
+      path,
+      status,
+      duration,
+      userAgent: c.req.header('user-agent')?.slice(0, 100),
+    },
+    'http',
+  );
 
   // Expected sandbox proxy noise we intentionally suppress:
   // - long-poll/SSE event stream timing out after ~30s (504)
   // - sandbox startup probes returning 502/503 before services are ready
   const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll = isSandboxProxyPath && (
-    path.includes('/global/event') ||
-    path.includes('/session/status') ||
-    /\/session\/[^/]+\/message(?:$|\?)/.test(path)
-  );
-  const isProxyStartupProbe = isSandboxProxyPath && (
-    path.includes('/global/health') ||
-    path.includes('/kortix/health') ||
-    /\/sessions(?:\/|$)/.test(path)
-  );
-  const isExpectedProxyNoise = method === 'GET' && (
-    (isProxyLongPoll && (
-      (status === 200 && duration > 5000) ||
-      status === 504 ||
-      status === 502 ||
-      status === 503
-    )) ||
-    (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
-  );
+  const isProxyLongPoll =
+    isSandboxProxyPath &&
+    (path.includes('/global/event') ||
+      path.includes('/session/status') ||
+      /\/session\/[^/]+\/message(?:$|\?)/.test(path));
+  const isProxyStartupProbe =
+    isSandboxProxyPath &&
+    (path.includes('/global/health') ||
+      path.includes('/kortix/health') ||
+      /\/sessions(?:\/|$)/.test(path));
+  const isExpectedProxyNoise =
+    method === 'GET' &&
+    ((isProxyLongPoll &&
+      ((status === 200 && duration > 5000) ||
+        status === 504 ||
+        status === 502 ||
+        status === 503)) ||
+      (isProxyStartupProbe && (status === 502 || status === 503 || status === 504)));
 
   // Health/liveness probes fire every few seconds from the ALB + kubelet across
   // every pod — by far the highest-volume request. A healthy probe carries no
@@ -296,6 +297,10 @@ app.use('*', async (c, next) => {
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
+      // Allowlisted, non-identifying only — see getDiagnosticFields. This is what
+      // makes turn-stream `kind` queryable in CloudWatch Logs Insights; the full
+      // request context (which carries identity) still goes to Better Stack only.
+      ...getDiagnosticFields(),
     });
     void emitOtelSpan({
       name: `${method} ${path}`,
@@ -343,7 +348,9 @@ const API_INSTANCE = process.env.HOSTNAME || 'unknown';
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
-mountOpenApiDocs(app, API_VERSION);
+// Internal routers are always stripped from the spec; this flag can suppress
+// the whole docs surface for hardened self-host deployments.
+if (config.OPENAPI_PUBLIC_DOCS) mountOpenApiDocs(app, API_VERSION);
 
 const HealthSchema = z
   .object({
@@ -352,6 +359,11 @@ const HealthSchema = z
     timestamp: z.string(),
     environment: z.string(),
     version: z.string(),
+    commit: z.string(),
+    started_at: z.string(),
+    instance: z.string(),
+    scheduler_leader: z.boolean(),
+    trigger_scheduler: z.record(z.string(), z.unknown()),
   })
   .openapi('Health');
 
@@ -362,6 +374,11 @@ const healthHandler = (c: any) =>
     timestamp: new Date().toISOString(),
     environment: config.INTERNAL_KORTIX_ENV,
     version: API_VERSION,
+    commit: API_COMMIT,
+    started_at: STARTED_AT,
+    instance: API_INSTANCE,
+    scheduler_leader: isLeader(),
+    trigger_scheduler: getTriggerSchedulerHealth(),
   });
 
 app.openapi(
@@ -519,15 +536,34 @@ app.openapi(
     summary: 'Read the maintenance config (public — banner + maintenance page)',
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
+  // Cacheable: the response never varies per tenant/user (no auth, same row
+  // for every caller), so `public` is safe. `max-age=5` + ETag revalidation
+  // shaves the repeat-poll DB roundtrip most callers pay without risking a
+  // stale kill switch — this is the platform's emergency maintenance toggle,
+  // so a long `stale-while-revalidate` (which would let a just-flipped-on
+  // lockdown keep serving the OLD state to clients for minutes) is
+  // deliberately not used here.
   async (c: any) => {
-  if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const [row] = await db
-    .select({ value: platformSettings.value })
-    .from(platformSettings)
-    .where(eq(platformSettings.key, MAINTENANCE_KEY))
-    .limit(1);
-  return c.json(row?.value ?? DEFAULT_MAINTENANCE);
-});
+    if (!hasDatabase) {
+      const etag = computeEtag(DEFAULT_MAINTENANCE);
+      c.header('Cache-Control', 'public, max-age=5, must-revalidate');
+      c.header('ETag', etag);
+      if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
+      return c.json(DEFAULT_MAINTENANCE);
+    }
+    const [row] = await db
+      .select({ value: platformSettings.value })
+      .from(platformSettings)
+      .where(eq(platformSettings.key, MAINTENANCE_KEY))
+      .limit(1);
+    const payload = row?.value ?? DEFAULT_MAINTENANCE;
+    const etag = computeEtag(payload);
+    c.header('Cache-Control', 'public, max-age=5, must-revalidate');
+    c.header('ETag', etag);
+    if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
+    return c.json(payload);
+  },
+);
 
 app.openapi(
   createRoute({
@@ -548,11 +584,18 @@ app.openapi(
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
     const body = await c.req.json().catch(() => ({}));
-    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    const maintenanceConfig = {
+      ...DEFAULT_MAINTENANCE,
+      ...body,
+      updatedAt: new Date().toISOString(),
+    };
     await db
       .insert(platformSettings)
       .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value: maintenanceConfig, updatedAt: new Date() },
+      });
     return c.json(maintenanceConfig);
   },
 );
@@ -647,7 +690,6 @@ app.route('/v1/account-invites', accountInvitesRouter);
 
 app.route('/v1/ops', opsApp);
 
-
 app.openapi(
   createRoute({
     method: 'get',
@@ -657,23 +699,26 @@ app.openapi(
     ...auth,
     middleware: [supabaseAuth] as const,
     responses: {
-      200: json(z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'), 'Platform role'),
+      200: json(
+        z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'),
+        'Platform role',
+      ),
       ...errors(401),
     },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  const isAdmin = role === 'admin' || role === 'super_admin';
+    const accountId = c.get('userId') as string;
+    const role = await getPlatformRole(accountId);
+    const isAdmin = role === 'admin' || role === 'super_admin';
 
-  return c.json({ isAdmin, role });
+    return c.json({ isAdmin, role });
   },
 );
 
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
   // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
@@ -686,14 +731,30 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 import { generationApp } from './router/routes/generation';
 import { usageApp } from './router/routes/usage';
 app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
-app.route('/v1/usage', usageApp);       // GET /v1/usage[?start&end&group_by] — account usage rollup
+app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — account usage rollup
 
-app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
+app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+// Voice routes are registered BEFORE projectsApp: Hono matches in registration
+// order, and projectsApp's auth middleware would otherwise claim the worker's
+// MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
+// before its own per-call HMAC check ever runs. The worker is not a Kortix
+// session and cannot present session auth.
+app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+
+// /v1/skills — the kortix-managed system skills (how Kortix itself works), served
+// straight out of @kortix/starter so the text always matches this deploy. This is
+// what lets an agent in ANY harness, holding only the `kortix` binary and a token,
+// read the platform's own instructions with no repo checkout and no sandbox.
+// combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
+// KORTIX_CLI_TOKEN both work; see ./skills/index.ts for the full auth rationale.
+app.use('/v1/skills', combinedAuth);
+app.use('/v1/skills/*', combinedAuth);
+app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -715,7 +776,16 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const {
+  slackWebhookApp,
+  teamsWebhookApp,
+  teamsIdentityApp,
+  teamsOauthApp,
+  telegramWebhookApp,
+  slackOauthApp,
+  slackIdentityApp,
+  emailWebhookApp,
+} = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
@@ -724,7 +794,6 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
-app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -739,6 +808,15 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Approval links — AUTHENTICATED, unlike the setup links above. The token names
+// which pending decision is being asked for; it never confers the right to make
+// it (see setup-links/approval-app.ts for why an approval must not be a bearer
+// capability). supabaseAuth 401s an anonymous hit so the page can bounce the
+// human through login and return them here.
+import { approvalLinksApp } from './setup-links/approval-app';
+app.use('/v1/approval-links/*', supabaseAuth);
+app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
+
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
 // (any resource type SESS-13's CRUD creates); backs the logged-out
@@ -747,10 +825,17 @@ app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,co
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
+// Anonymous resolve step for a `voice_spawn` join link: exchanges the short,
+// ungessable id for a freshly-minted LiveKit access token + server URL. Backs
+// the logged-out `/voice/[token]` page the same way publicSessionSharesApp
+// backs `/share/[shareId]` above — see join-links.ts / public-join-routes.ts.
+import { voiceJoinPublicApp } from './channels/voice/public-join-routes';
+app.route('/v1/public/voice-join', voiceJoinPublicApp); // /v1/public/voice-join/:token
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-  app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
+  app.route('/v1/setup', setupApp); // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
 // requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
@@ -758,6 +843,7 @@ app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
+app.route('/v1/integrations/oauth2', nativeOAuth2CallbackApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -807,10 +893,41 @@ app.onError((err, c) => {
   // shared/platinum.ts PlatinumSandboxNotRunningError.
   if (isPlatinumSandboxNotRunningError(err)) {
     appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
-      method, path, errorType: 'PlatinumSandboxNotRunningError',
+      method,
+      path,
+      errorType: 'PlatinumSandboxNotRunningError',
     });
     c.header('Retry-After', '10');
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
+  }
+
+  // Daytona's org-wide throttler surfaces any HTTP 429 from the Daytona API as
+  // `DaytonaRateLimitError: ThrottlerException: Too Many Requests`. That is an
+  // EXPECTED, transient provider state — every Daytona call site (preview link
+  // resolution, transcript / public-share reads, lease discover, reaper health,
+  // env-sync fan-out, snapshot reconciliation, …) must NOT page Sentry for it.
+  // Prior PRs (#3567, #4605) guarded call sites one-by-one but new paths kept
+  // reintroducing the same Better Stack fingerprint (`ec26b248…`) because a
+  // forgotten try/catch still let the 429 propagate here → captureException →
+  // Sentry. This single classifier covers EVERY remaining + future call site:
+  // it downgrades the expected Daytona 429 to a retryable 503 + Retry-After
+  // WITHOUT paging Sentry (mirroring the Platinum / git-timeout / request-
+  // deadline patterns). Other Daytona failures (404 missing box, 409 conflict,
+  // 5xx outage, timeout, disk quota) still throw a generic error and fall
+  // through to the generic capture below, so unexpected failures stay loud.
+  // See shared/daytona-rate-limit.ts.
+  if (isDaytonaRateLimitError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaRateLimitError] ${err.message}`, {
+      method,
+      path,
+      errorType: 'DaytonaRateLimitError',
+      errorName: err.name,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily rate-limited', status: 503 },
+      503,
+    );
   }
 
   // A bare-clone / fetch of a project's git mirror that exceeds its timeout
@@ -827,16 +944,63 @@ app.onError((err, c) => {
   // projects/git/mirror.ts.
   if (isGitOperationError(err) && err.kind === 'timeout') {
     appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
-      method, path, errorType: 'GitOperationError', gitKind: 'timeout',
-      gitArgs: err.gitArgs, signal: err.signal,
+      method,
+      path,
+      errorType: 'GitOperationError',
+      gitKind: 'timeout',
+      gitArgs: err.gitArgs,
+      signal: err.signal,
     });
     c.header('Retry-After', '10');
-    return c.json({ error: true, message: 'git mirror is temporarily unavailable', status: 503 }, 503);
+    return c.json(
+      { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+      503,
+    );
+  }
+
+  // A transient Daytona provider gateway / connection / timeout failure is
+  // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
+  // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
+  // SDK's own bounded call timing out. The SDK surfaces these as a generic
+  // `DaytonaError` whose `message` is the raw upstream response body — when
+  // the gateway 502s with an HTML error page, that HTML becomes the error
+  // message verbatim, which is exactly what produced the recurring Better
+  // Stack pattern `e98d61f1…` (`DaytonaError` with message
+  // `<html>…<h1>502 Bad Gateway</h1>…</html>`, thrown from the SDK's axios
+  // response interceptor at `createDaytonaError`). The 429 throttler case
+  // is owned by `shared/daytona-rate-limit.ts` (`isDaytonaRateLimitError`)
+  // and is NOT matched here — this classifier is the sibling for transient
+  // gateway / connection / timeout failures. It downgrades those to a
+  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the
+  // Platinum / git-timeout / request-deadline patterns), so a forgotten
+  // try/catch at any Daytona call site (preview-link resolution, lease
+  // discover, reaper health, env-sync fan-out, snapshot reconciliation, …)
+  // can no longer page Better Stack for an upstream blip. Other Daytona
+  // failures (404 missing box, 409 conflict, 401/403 auth, 400 validation,
+  // disk quota, unexpected 5xx with a JSON body) still throw a generic
+  // error and fall through to the generic capture below, so unexpected
+  // failures stay loud. See shared/daytona-transient.ts.
+  if (isDaytonaTransientProviderError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`, {
+      method,
+      path,
+      errorType: 'DaytonaError',
+      errorName: err.name,
+      statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily unavailable', status: 503 },
+      503,
+    );
   }
 
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
-      statusCode: err.statusCode, message: err.message, path, method,
+      statusCode: err.statusCode,
+      message: err.message,
+      path,
+      method,
     });
     return c.json({ error: err.message }, err.statusCode as any);
   }
@@ -853,7 +1017,10 @@ app.onError((err, c) => {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
-      status: err.status, message: err.message, path, method,
+      status: err.status,
+      message: err.message,
+      path,
+      method,
     });
 
     const response: Record<string, unknown> = {
@@ -871,23 +1038,65 @@ app.onError((err, c) => {
   }
 
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
-  const isDbError = errName === 'PostgresError' || (err as any).severity || (err as any).code?.match?.(/^[0-9]{5}$/);
-  if (isDbError) {
-    const pgErr = err as any;
-    captureException(err, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, schema: pgErr.schema_name || pgErr.schema,
-    });
-    appLogger.error(`${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, hint: pgErr.hint, detail: pgErr.detail,
-      message: err.message.split('\n')[0],
-    });
+  const databaseError = inspectDatabaseError(err);
+  if (databaseError) {
+    // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
+    // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
+    // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in
+    // session mode - max_size: 20` fires when the `FreeTierRotation`/
+    // `YearlyRotation` cron ticks + `llm-gateway` catalog loads + a user
+    // `GET /v1/projects` contend for the pooler's 20-session pool. It
+    // resolves when load drops. Reusing `isSentryIgnoredError` keeps the
+    // classification in one place (mirrors the #4709 ignore list + the
+    // #5167/#5175 Daytona transient no-capture pattern). The DIRECT
+    // `captureException` below would otherwise page Sentry despite
+    // `ignoreErrors` (a direct call bypasses that list); skip it but STILL
+    // log + STILL 500 so the client sees the error and retries. The infra
+    // follow-up (raise the shadow pooler's `pool_size` / move to transaction
+    // mode) is a human-owned external action recorded in the sweep ledger.
+    // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
+    const databaseMessage =
+      databaseError.causeMessage ?? databaseError.outerMessage;
+    const isPoolExhaustion = isSentryIgnoredError(
+      databaseError.causeName ?? databaseError.outerName,
+      databaseMessage,
+    );
+    if (!isPoolExhaustion) {
+      captureException(err, {
+        method,
+        path,
+        errorType: 'database',
+        pgCode: databaseError.pgCode,
+        table: databaseError.table,
+        schema: databaseError.schema,
+      });
+    }
+    appLogger.error(
+      `${method} ${path} -> 500 [DB ${databaseError.severity || 'ERROR'} ${databaseError.pgCode || '?'}]`,
+      {
+        method,
+        path,
+        errorType: isPoolExhaustion ? 'database-pool-exhaustion' : 'database',
+        transient: isPoolExhaustion || undefined,
+        outerErrorType: databaseError.outerName,
+        causeErrorType: databaseError.causeName,
+        pgCode: databaseError.pgCode,
+        severity: databaseError.severity,
+        table: databaseError.table,
+        schema: databaseError.schema,
+        hint: databaseError.hint,
+        detail: databaseError.detail,
+        message: databaseError.outerMessage.split('\n')[0],
+        causeMessage: databaseError.causeMessage?.split('\n')[0] ?? null,
+      },
+    );
   } else {
     // Generic unhandled error — capture to Sentry + structured log
     captureException(err, { method, path, errorType: errName });
     appLogger.error(`${method} ${path} -> 500 [${errName}] ${err.message}`, {
-      method, path, errorType: errName,
+      method,
+      path,
+      errorType: errName,
       stack: err.stack?.split('\n').slice(0, 5).join('\n'),
     });
   }
@@ -898,7 +1107,7 @@ app.onError((err, c) => {
       message: 'Internal server error',
       status: 500,
     },
-    500
+    500,
   );
 });
 
@@ -911,11 +1120,29 @@ app.notFound((c) => {
       message: 'Not found',
       status: 404,
     },
-    404
+    404,
   );
 });
 
 // === Start Server ===
+
+// Pre-load the Daytona SDK's `DaytonaRateLimitError` class so the synchronous
+// `isDaytonaRateLimitError` classifier (on the global `app.onError` hot path)
+// has its strongest instanceof signal available the first time a 429 throws —
+// see shared/daytona-rate-limit.ts. Fire-and-forget: the classifier's
+// name/statusCode/message fallbacks already cover the rare race where a 429
+// throws before this resolves, so we never block startup on it.
+void primeDaytonaRateLimitClassifier();
+
+// Pre-load the Daytona SDK's `DaytonaTimeoutError` / `DaytonaConnectionError`
+// classes so the synchronous `isDaytonaTransientProviderError` classifier (on
+// the global `app.onError` hot path) has its strongest instanceof signal
+// available the first time a transient gateway / connection / timeout failure
+// throws — see shared/daytona-transient.ts. Fire-and-forget: the classifier's
+// name / statusCode / message fallbacks already cover the rare race where a
+// transient failure throws before this resolves, so we never block startup on
+// it.
+void primeDaytonaTransientClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
@@ -944,12 +1171,14 @@ console.log(`
 
 // Load LLM pricing from models.dev (non-blocking if it fails).
 // Awaited so pricing is available before the first billing request.
-initModelPricing().catch((err) =>
+await initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
 );
-runtimeModelCatalog.start().catch((err) =>
-  console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
-);
+runtimeModelCatalog
+  .start()
+  .catch((err) =>
+    console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+  );
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
@@ -1001,6 +1230,10 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startSunaMigrationWorker();
+  // Resume durable sandbox-provider migrations (prepare→verify→activate) that
+  // were mid-flight when the API last stopped — a crash at building/ready/
+  // activating converges instead of stranding. Safe across replicas (lease CAS).
+  startProviderTransitionWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1013,6 +1246,7 @@ async function stopSingletonWorkers() {
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopSunaMigrationWorker();
+  stopProviderTransitionWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }
@@ -1028,7 +1262,9 @@ async function bootServices() {
   // holding it while running nothing and starving the scheduler fleet-wide.
   const eligible = runsSingletonWorkers();
   if (!eligible) {
-    appLogger.info('[workers] API-only pod — singleton workers disabled; not joining leader election');
+    appLogger.info(
+      '[workers] API-only pod — singleton workers disabled; not joining leader election',
+    );
   }
   startLeaderElection(
     {
@@ -1085,7 +1321,11 @@ if (import.meta.main) {
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
 import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
-import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from './sandbox-proxy/ws-proxy';
+import {
+  matchPreviewWsPath,
+  preparePreviewWsUpgrade,
+  previewWsHandlers,
+} from './sandbox-proxy/ws-proxy';
 
 export default {
   port: config.PORT,
@@ -1097,9 +1337,27 @@ export default {
   // stuck request surfaces as the middleware's clean 503 (with Retry-After)
   // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
   // server.timeout(req, 0) below.
-  idleTimeout: 30,
+  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
+  // the client's own 30s timeout, whichever fired first was a coin flip, and
+  // the socket-kill path returns an empty reply that the load balancer turns
+  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
+  // error rather than a timeout.
+  idleTimeout: 45,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
+    // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,
+    // `"/nice%20ports%2C/Tri%6Eity.txt%2ebak"`, …) for requests that arrive
+    // WITHOUT a `Host` header — raw HTTP/1.0 port-scanner probes and malformed
+    // clients. Every downstream `new URL(c.req.url)` / `new URL(req.url)`
+    // call site (auth middleware, OpenAPI server URL, sandbox preview /
+    // public-share proxy, git proxy, Slack/Teams webhook routers, …) assumes
+    // an absolute URL and would otherwise throw
+    // `TypeError: "…" cannot be parsed as a URL.` → app.onError → Sentry.
+    // Rebuild the Request once, here, with the absolute URL so all of those
+    // call sites are safe. No-op for normal requests (which already carry an
+    // absolute `req.url`). See lib/request-url.ts ensureAbsoluteRequestUrl.
+    // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
+    req = ensureAbsoluteRequestUrl(req, config.PORT);
     const url = getRequestUrl(req, config.PORT);
     const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
 
@@ -1160,13 +1418,16 @@ export default {
       const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
       const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
       if (!wsRateCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Too many connection attempts',
-          retryAfterMs: wsRateCheck.retryAfterMs,
-        }), {
-          status: 429,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            error: 'Too many connection attempts',
+            retryAfterMs: wsRateCheck.retryAfterMs,
+          }),
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       const success = server.upgrade(req, {
@@ -1213,7 +1474,11 @@ export default {
     // heartbeat mechanism (30s ping/pong) for liveness detection.
     idleTimeout: 0,
 
-    open(ws: { data: any; send: (data: any) => void; close: (code?: number, reason?: string) => void }) {
+    open(ws: {
+      data: any;
+      send: (data: any) => void;
+      close: (code?: number, reason?: string) => void;
+    }) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
@@ -1223,10 +1488,15 @@ export default {
         return;
       }
       // No other WS upgrades are accepted.
-      try { ws.close(1011, 'unsupported websocket upgrade'); } catch {}
+      try {
+        ws.close(1011, 'unsupported websocket upgrade');
+      } catch {}
     },
 
-    message(ws: { data: any; close: (code?: number, reason?: string) => void }, message: string | Buffer) {
+    message(
+      ws: { data: any; close: (code?: number, reason?: string) => void },
+      message: string | Buffer,
+    ) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
         return;

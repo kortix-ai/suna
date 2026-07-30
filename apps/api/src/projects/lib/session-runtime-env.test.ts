@@ -8,9 +8,25 @@ const BASE_INPUT = {
   baseRef: 'main',
   agentName: 'default',
   apiUrl: 'https://api.kortix.test/v1',
+  opencodeProcessTransport: 'acp' as const,
 };
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
+  test('passes the server-selected OpenCode process transport into the sandbox', () => {
+    expect(
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        opencodeProcessTransport: 'acp',
+      }).KORTIX_OPENCODE_PROCESS_TRANSPORT,
+    ).toBe('acp');
+    expect(
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        opencodeProcessTransport: 'rest',
+      }).KORTIX_OPENCODE_PROCESS_TRANSPORT,
+    ).toBe('rest');
+  });
+
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
     expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
@@ -36,5 +52,15 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  test('ignores legacy attribution input and emits no attribution variables', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      originRef: 'legacy-reference',
+    } as Parameters<typeof buildSessionRuntimeEnv>[0]);
+
+    expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
+    expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
   });
 });

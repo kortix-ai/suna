@@ -8,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { upsertProjectSecret } from '@kortix/sdk';
 import {
   CaretLeftIcon as ChevronLeft,
   ArrowSquareOutIcon as ExternalLink,
@@ -23,6 +23,7 @@ import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
+import { ClaudeSubscriptionConnect } from './claude-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
 
 // LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
@@ -40,7 +41,7 @@ export function ApiKeyConnectForm({
   projectId: string;
   provider: LlmProviderEntry;
   onBack: () => void;
-  onConnected: () => void;
+  onConnected: (providerId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -62,7 +63,7 @@ export function ApiKeyConnectForm({
       successToast(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
       refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
-      onConnected();
+      onConnected(provider.id);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
   });
@@ -115,6 +116,9 @@ export function ApiKeyConnectForm({
 
       {provider.id === 'openai' && (
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
+      )}
+      {provider.id === 'anthropic' && (
+        <ClaudeSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">

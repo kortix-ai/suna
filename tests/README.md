@@ -54,22 +54,22 @@ tests/
 
 ### Playwright E2E Specs (`tests/e2e/specs/`)
 
-| Spec | Tests | What it verifies |
-|------|-------|------------------|
-| `01-containers` | 6 | All Docker containers running |
-| `02-services` | 4 | HTTP health checks on all ports |
-| `03-frontend-config` | 4 | Runtime config URLs correct (no placeholders) |
-| `04-auth-flow` | 4 | API auth + browser login |
-| `08-accounts-project-access` | 4 | Accounts, invites, project access, and no legacy route leaks |
-| `09-admin-ops` | 2 | Admin overview and operations dashboard |
-| `10-production-golden-paths` | gated | SPEC 10.5 golden paths when enabled |
-| `11-production-boundaries` | gated | SPEC 10.6/10.7 boundaries, SLOs, and negative-space probes |
-| `12-sandbox-templates` | gated | Sandbox template and snapshot behavior |
+| Spec                         | Tests | What it verifies                                             |
+| ---------------------------- | ----- | ------------------------------------------------------------ |
+| `01-containers`              | 6     | All Docker containers running                                |
+| `02-services`                | 4     | HTTP health checks on all ports                              |
+| `03-frontend-config`         | 4     | Runtime config URLs correct (no placeholders)                |
+| `04-auth-flow`               | 4     | API auth + browser login                                     |
+| `08-accounts-project-access` | 4     | Accounts, invites, project access, and no legacy route leaks |
+| `09-admin-ops`               | 2     | Admin overview and operations dashboard                      |
+| `10-production-golden-paths` | gated | SPEC 10.5 golden paths when enabled                          |
+| `11-production-boundaries`   | gated | SPEC 10.6/10.7 boundaries, SLOs, and negative-space probes   |
+| `12-sandbox-templates`       | gated | Sandbox template and snapshot behavior                       |
 
 ### Shell Checks (`tests/shell/`)
 
-| Suite | What it verifies |
-|-------|------------------|
+| Suite                 | What it verifies                               |
+| --------------------- | ---------------------------------------------- |
 | `vps/test-vps-e2e.sh` | Caddy HTTPS, basic auth, firewall (run on VPS) |
 
 ## pnpm Scripts
@@ -86,13 +86,72 @@ pnpm --filter @kortix/tests test:shell:vps               # VPS checks
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `E2E_OWNER_EMAIL` | `test-e2e@kortix.ai` | Test owner email |
-| `E2E_OWNER_PASSWORD` | `e2e-testpass-123` | Test owner password |
-| `E2E_BASE_URL` | `http://localhost:13737` | Frontend URL |
-| `E2E_API_URL` | `http://localhost:13738/v1` | API URL |
-| `E2E_SUPABASE_URL` | `http://localhost:13740` | Supabase URL |
+| Variable             | Default                     | Description         |
+| -------------------- | --------------------------- | ------------------- |
+| `E2E_OWNER_EMAIL`    | `test-e2e@kortix.ai`        | Test owner email    |
+| `E2E_OWNER_PASSWORD` | `e2e-testpass-123`          | Test owner password |
+| `E2E_BASE_URL`       | `http://localhost:13737`    | Frontend URL        |
+| `E2E_API_URL`        | `http://localhost:13738/v1` | API URL             |
+| `E2E_SUPABASE_URL`   | `http://localhost:13740`    | Supabase URL        |
+
+## ACP Multi-Harness Protocol Smoke
+
+Run `tests/e2e/scripts/acp-multi-harness-smoke.ts` against a live API. The
+script verifies session creation, the headless prompt, a follow-up prompt,
+transcript reload, immutable runtime identity, restart, and a post-restart
+prompt. The default harness set is `opencode,claude,codex,pi`.
+
+Start the local stack first. The command below loads the encrypted API
+environment and the web Supabase anon key without printing either value:
+
+```bash
+pnpm dev
+```
+
+In another shell:
+
+```bash
+E2E_ACP_MULTI_HARNESS_HARNESSES=codex,pi \
+E2E_ACP_MULTI_HARNESS_PROVIDER=daytona \
+pnpm exec dotenvx run --ignore=MISSING_ENV_FILE \
+  -f apps/api/.env.local -f apps/api/.env -f apps/web/.env \
+  -- bun tests/e2e/scripts/acp-multi-harness-smoke.ts
+```
+
+The script creates a disposable user and project. It stops every created
+session and archives the project in `finally`.
+
+Set `E2E_ACP_MULTI_HARNESS_READINESS_ONLY=1` to stop after ACP session
+readiness. Each harness prints `create_to_session_ready_ms`. This mode excludes
+prompt dispatch and model latency.
+
+Set `E2E_ACP_OPENCODE_FORK_ISOLATION=1` to create two OpenCode sessions in
+parallel from one version 2 compatibility-project snapshot. Version 3 projects
+use ACP identity instead of `opencode_session_id`. This mode verifies distinct
+Kortix session and sandbox identities. It accepts an equal snapshot-inherited
+`opencode_session_id` only when the sandbox-scoped transcripts remain isolated.
+It sends unique markers and rejects cross-session transcript content. The public
+`createKortix().session().ensureReady()` result must match each authoritative
+`/start` `opencode_session_id`.
+
+Set `E2E_ACP_MULTI_HARNESS_RESULT_PATH` to save the identity and timing evidence
+as JSON. The path is relative to the repository root.
+
+| Variable                                 | Default            | Description                                                                    |
+| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
+| `E2E_ACP_MULTI_HARNESS_HARNESSES`        | All four harnesses | Comma-separated harness subset                                                 |
+| `E2E_ACP_MULTI_HARNESS_PROVIDER`         | Project default    | Sandbox provider                                                               |
+| `E2E_ACP_MULTI_HARNESS_MODEL`            | Harness default    | Explicit session model                                                         |
+| `E2E_ACP_MULTI_HARNESS_OPENAI_API_KEY`   | Unset              | Temporary direct key for the disposable project                                |
+| `E2E_ACP_OPENCODE_FORK_ISOLATION`        | `0`                | Run the two-session OpenCode snapshot-isolation proof                          |
+| `E2E_ACP_MULTI_HARNESS_RESULT_PATH`      | Unset              | Persist non-secret JSON evidence                                               |
+| `E2E_KEEP_ACP_MULTI_HARNESS_FIXTURE`     | `0`                | Set to `1` to preserve the fixture for debugging                               |
+| `E2E_ACP_MULTI_HARNESS_REUSE_PROJECT_ID` | Unset              | Reuse an existing test project                                                 |
+| `E2E_ACP_MULTI_HARNESS_REUSE_EMAIL`      | Unset              | Login email for the reused project; both reuse variables are required together |
+
+Do not use the gateway provider verification endpoint as harness acceptance.
+Run the exact harness and model. The smoke must receive a real assistant reply
+and persist the same runtime identity across restart.
 
 ## Note on Unit Tests
 

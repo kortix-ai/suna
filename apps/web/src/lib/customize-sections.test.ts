@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   CUSTOMIZE_SECTIONS,
   DEFAULT_CUSTOMIZE_SECTION,
+  legacyCustomizeFilesRedirect,
   parseCustomizeSection,
 } from './customize-sections';
 
@@ -11,6 +12,20 @@ describe('customize sections', () => {
     expect(parseCustomizeSection('files')).toBeNull();
     expect(CUSTOMIZE_SECTIONS).not.toContain('files');
     expect(DEFAULT_CUSTOMIZE_SECTION).not.toBe('files');
+  });
+
+  test('git replaces the legacy changes and dev sections', () => {
+    expect(CUSTOMIZE_SECTIONS).toContain('git');
+    expect(CUSTOMIZE_SECTIONS).not.toContain('changes');
+    expect(CUSTOMIZE_SECTIONS).not.toContain('dev');
+  });
+
+  test('redirects legacy files and changes links into the standalone files surface', () => {
+    expect(legacyCustomizeFilesRedirect('project-1', 'files')).toBe('/projects/project-1/files');
+    expect(legacyCustomizeFilesRedirect('project-1', 'changes')).toBe(
+      '/projects/project-1/files?panel=proposed-changes',
+    );
+    expect(legacyCustomizeFilesRedirect('project-1', 'git')).toBeNull();
   });
 
   test('parses every canonical section and rejects unknowns', () => {

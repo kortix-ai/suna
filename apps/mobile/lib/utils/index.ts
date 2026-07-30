@@ -16,15 +16,8 @@ export * from './fonts';
 export * from './icon-mapping';
 
 // Parsing & formatting
-// message-grouping moved to @agentpress/shared/utils
-// tool-parser moved to @agentpress/shared/tools
-// tool-display moved to @agentpress/shared/tools
-// credit-formatter moved to @agentpress/shared
-export { formatCredits, formatCreditsWithSign, dollarsToCredits, creditsToDollars, formatDollarsAsCredits, CREDITS_PER_DOLLAR } from '@agentpress/shared';
+export { formatCredits, formatCreditsWithSign, dollarsToCredits, creditsToDollars, formatDollarsAsCredits, CREDITS_PER_DOLLAR } from '@kortix/shared';
 
-// Streaming & tool call utilities (portable from frontend)
-// streaming-utils moved to @agentpress/shared/streaming
-export * from './tool-call-utils';
 export * from './tool-data-extractor';
 
 // Domain-specific utilities
@@ -38,4 +31,3 @@ export * from './auth-types';
 
 // i18n
 export * from './i18n';
-

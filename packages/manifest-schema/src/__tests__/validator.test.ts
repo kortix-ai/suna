@@ -396,6 +396,63 @@ spec = "https://example.com/openapi.json"
     expect(errorPaths).toContain('connectors[0].auth.secret');
   });
 
+  test('a valid `headers` table is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  Accept = "application/json"
+  "X-Tenant-Id" = "acme"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('an illegal header name is an error', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X Tenant Id" = "acme"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('invalid header name'))).toBe(true);
+  });
+
+  test('CR/LF in a header value is an error (header injection)', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X-Tenant-Id" = "acme\\r\\nX-Admin: true"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('CR or LF'))).toBe(true);
+  });
+
+  test('headers on a platform-called provider are a warning (inert at runtime)', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "gmail"
+provider = "pipedream"
+app = "gmail"
+  [connectors.headers]
+  Accept = "application/json"
+`);
+    expect(warningPaths).toContain('connectors[0].headers');
+    expect(valid).toBe(true);
+  });
+
   test('policy action must be one of the known values', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
@@ -475,25 +532,25 @@ provider = "computer"
 
   // The platform now also writes a `meet` channel connector — mirrors
   // connectors.ts's CHANNEL_PLATFORMS (which already included it) and
-  // RESERVED_SLUG_PROVIDERS (`kortix_meet`). Was previously rejected by the
+  // RESERVED_SLUG_PROVIDERS (`kortix_voice`). Was previously rejected by the
   // schema gate even though the runtime accepted it.
-  test('a platform-written "meet" channel connector is valid', () => {
+  test('a platform-written "voice" channel connector is valid', () => {
     const { valid, errorPaths } = summarize(`
 kortix_version = 1
 [[connectors]]
-slug = "kortix_meet"
+slug = "kortix_voice"
 provider = "channel"
-platform = "meet"
+platform = "voice"
 `);
     expect(errorPaths).toEqual([]);
     expect(valid).toBe(true);
   });
 
-  test('reserved slug "kortix_meet" rejects a mismatched provider', () => {
+  test('reserved slug "kortix_voice" rejects a mismatched provider', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
 [[connectors]]
-slug = "kortix_meet"
+slug = "kortix_voice"
 provider = "http"
 base_url = "https://example.com"
 `);

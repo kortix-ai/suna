@@ -168,7 +168,10 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-executor-runtime.attestation.json ./apps/cli/dist/kortix-executor-runtime.attestation.json
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
+COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
+COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 COPY packages/executor-sdk ./packages/executor-sdk
 

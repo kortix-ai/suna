@@ -48,7 +48,7 @@ function baseTrace(overrides: Partial<GatewayTrace> = {}): GatewayTrace {
     latencyMs: 850,
     attempts: 1,
     candidatesTried: ['claude-sonnet-4-5'],
-    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10, cacheWriteTokens: 0 },
+    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10, cacheWriteTokens: 7 },
     upstreamCost: 0.002,
     finalCost: 0.003,
     request: {},
@@ -120,6 +120,7 @@ describe('emitGatewayGenAiSpan', () => {
     expect(attrScalar(span, 'kortix.upstream_cost_usd')).toBe(0.002);
     expect(attrScalar(span, 'kortix.provider')).toBe('bedrock');
     expect(attrScalar(span, 'kortix.cached_tokens')).toBe('10');
+    expect(attrScalar(span, 'kortix.cache_write_tokens')).toBe('7');
     expect(attrScalar(span, 'kortix.streaming')).toBe(false);
     expect(attrScalar(span, 'kortix.billing_mode')).toBe('credits');
     expect(attrScalar(span, 'kortix.request_id')).toBe('req_gw_1');

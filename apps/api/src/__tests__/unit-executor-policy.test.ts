@@ -299,3 +299,31 @@ describe('sensitive connector — reads gate too', () => {
     ).toEqual({ action: 'always_run', source: 'connector' });
   });
 });
+
+describe('authorization policy removal', () => {
+  test('two authorizations use the same connector profile policy', () => {
+    const base = {
+      fullPath: 'gmail.send_email',
+      relPath: 'send_email',
+      projectPolicies: [],
+      connectorPolicies: [{ match: 'send_email', action: 'block' as const }],
+      risk: 'write' as const,
+      defaultMode: 'risk' as const,
+    };
+    const expected = {
+      action: 'block',
+      source: 'connector',
+    } as const;
+    const firstAuthorization = {
+      ...base,
+      connectionPolicies: [{ match: 'send_email', action: 'always_run' as const }],
+    };
+    const secondAuthorization = {
+      ...base,
+      connectionPolicies: [{ match: 'send_email', action: 'require_approval' as const }],
+    };
+
+    expect(resolveEffectiveAction(firstAuthorization)).toEqual(expected);
+    expect(resolveEffectiveAction(secondAuthorization)).toEqual(expected);
+  });
+});

@@ -16,6 +16,7 @@
  */
 
 import {
+  getManagedSkillFiles,
   getMarketplaceFiles,
   getProjectTemplateFiles,
   getStarterCatalogSourceMap,
@@ -199,7 +200,6 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     network: ["api.replicate.com"],
   },
   "deep-research": { tools: ["web_search"] },
-  "research-report": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },
   "draft-outreach": { tools: ["web_search"] },
@@ -345,6 +345,7 @@ function memSource(map: Map<string, string>): BuildSource {
 
 function buildStarterRegistry(): RegistryJson {
   const files = [
+    ...getManagedSkillFiles(),
     ...getStarterFiles({
       projectName: "Kortix Starter",
       template: "general-knowledge-worker",
@@ -487,7 +488,8 @@ function buildStarterKitProjectItem(): RegistryItem {
     .map((it) => it.name)
     .sort((a, b) => a.localeCompare(b));
   const files = getStarterFiles({
-    projectName: "Kortix Starter",
+    projectName: "{{projectName}}",
+    repoFullName: "{{repoFullName}}",
     template: "general-knowledge-worker",
   }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
   // Give the project a proper, curated marketplace README (the base template's
@@ -1671,9 +1673,12 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 // The one-click importables the marketplace surfaces to users: skills, agents,
 // commands, and bundles (curated starters / use-cases). Tools, rules, and other
 // support files still exist in registries for dependency resolution but aren't
-// browse/install choices on their own. Install is capability-gated per committed
-// file path (see projects/routes/r10 assertCommitCapabilities), so widening this
-// set never bypasses authz.
+// browse/install choices on their own. Install has no per-type authz of its own:
+// POST /:projectId/marketplace/install-session gates on a single project.write
+// check up front (see handleMarketplaceInstallSession in projects/routes/r10.ts),
+// then runs the install as an agent session that reads the item's source and
+// opens a change request — there is no per-committed-file capability gate. So
+// widening this set never bypasses authz.
 // Agents/commands/bundles are still installable (the install engine handles
 // any type generically) but are hidden from browse for now — just Projects
 // (clone) and Skills (add) keeps the marketplace's taxonomy simple.

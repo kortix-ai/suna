@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { AccountRole } from '@kortix/sdk/projects-client';
+import type { AccountRole } from '@kortix/sdk';
 import { QuestionIcon as HelpCircle } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {

@@ -7,7 +7,7 @@ import { I18nextProvider } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { downloadFile } from '@/features/files/api/opencode-files';
+import { downloadFile } from '@/features/files/api/runtime-files';
 import { cn } from '@/lib/utils';
 
 import { getPptxI18n } from './pptx-i18n';

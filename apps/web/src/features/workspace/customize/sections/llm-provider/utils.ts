@@ -1,22 +1,42 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
-import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
+import {
+  CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
+  CODEX_AUTH_JSON_SECRET_NAME,
+  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
+} from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
+  if (provider.id === 'claude') return 'Claude subscription';
   if (provider.id === 'codex') return 'ChatGPT subscription';
   if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
 }
 
-type OpenCodeProvidersSnapshot =
+export function buildClaudeSubscriptionProvider(): LlmProviderEntry {
+  return {
+    id: 'claude',
+    label: 'Claude Code',
+    envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME],
+    authRequirement: {
+      methods: [{ envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME] }],
+    },
+    helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
+    hint: 'Claude Pro, Max, Team, or Enterprise subscription',
+    models: [],
+    featured: true,
+  };
+}
+
+type RuntimeProvidersSnapshot =
   | {
       connected?: string[];
       all?: Array<{ id: string; models?: Record<string, unknown> }>;
     }
   | undefined;
 
-export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmProviderEntry {
+export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmProviderEntry {
   const connectedIds = new Set(ocProviders?.connected ?? []);
   const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
   const models: LlmProviderModel[] =
@@ -49,7 +69,7 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
   return {
     id: 'codex',
     label: 'ChatGPT',
-    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME],
     // EITHER secret alone is a full ChatGPT subscription connection (current
     // vs. legacy secret name) — two alternative single-var methods, not one
     // AND-of-both requirement. Matches the `hasCodexSubscription` OR check in
@@ -57,7 +77,7 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
     authRequirement: {
       methods: [
         { envVars: [CODEX_AUTH_JSON_SECRET_NAME] },
-        { envVars: [LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME] },
+        { envVars: [LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME] },
       ],
     },
     helpUrl: null,
@@ -74,7 +94,7 @@ export function pickInitialTab(
   if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
-  return hasConnections ? 'connected' : 'catalog';
+  return 'catalog';
 }
 
 export function helpHostnameFromUrl(helpUrl: string | null): string | null {
@@ -150,12 +170,10 @@ export function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): s
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * The literal model id you'd pass as `model` in a gateway request body
- * (`POST /v1/chat/completions`, `/v1/messages`, …) — `provider/model` for
- * BYOK providers (e.g. `anthropic/claude-sonnet-4.6`), the bare id for
- * Kortix-managed models (single-segment by design — see `@kortix/llm-catalog`'s
- * `MANAGED_MODELS` doc comment), and `codex/<id>` for the ChatGPT-subscription
- * provider.
+ * The gateway wire id for a model listed under a PROVIDER entry (the "Add
+ * provider" catalog, which browses providers rather than the project's served
+ * models). Surfaces that work from the served catalog have the wire id already
+ * and use `modelKeyToWire` instead — see model-rows.ts.
  */
 export function gatewayModelId(
   provider: Pick<LlmProviderEntry, 'id' | 'managed'>,

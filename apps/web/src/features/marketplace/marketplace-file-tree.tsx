@@ -11,7 +11,7 @@ interface TreeNode {
 }
 
 /** Build a nested tree from flat install targets like
- *  `@skills/generic-recruiting/references/sourcing.md`. */
+ *  `@skills/outbound-sourcing/references/sourcing.md`. */
 function buildTree(targets: string[]): TreeNode {
   const root: TreeNode = { name: '', path: '', children: new Map(), isFile: false };
   for (const target of targets) {
@@ -31,7 +31,7 @@ function buildTree(targets: string[]): TreeNode {
 }
 
 /** Collapse a single-child folder chain into one row, git-style
- *  (`@skills/generic-recruiting/`), so the tree stays compact. */
+ *  (`@skills/outbound-sourcing/`), so the tree stays compact. */
 function collapse(node: TreeNode): { label: string; node: TreeNode } {
   let label = node.name;
   let current = node;

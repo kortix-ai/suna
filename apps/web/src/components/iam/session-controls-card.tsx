@@ -33,7 +33,7 @@ import {
   revokeAccountSession,
   updateSessionPolicy,
 } from '@/lib/iam-client';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAccountMembers } from '@kortix/sdk';
 
 const MAX_MINUTES = 10080; // 7 days, matches the server cap
 

@@ -19,16 +19,29 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { RuntimeNotReadyError } from '../core/runtime/client';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { getClient, RuntimeNotReadyError } from '../core/runtime/client';
 import {
-  setOpenCodeHealth,
-  setSandboxStatus,
-} from '../browser/stores/sandbox-connection-store';
+  commitSessionRewind,
+  messagesBeforeRewind,
+  reconcileCommittedSessionRewind,
+  type SessionRewindState,
+} from '../core/session/rewind';
+import {
+  createSessionRuntimePolicy,
+  type SessionRuntimeTransport,
+} from '../core/session/runtime-transport';
+import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { useSyncStore } from '../browser/stores/sync-store';
+import {
+  beginSessionPromptObservation,
+  endSessionPromptObservation,
+} from '../browser/session-sync/session-sync-registry';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import {
   isSessionStartError,
@@ -41,15 +54,25 @@ import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
+import { useAcpSessionRuntime } from './use-acp-session-runtime';
+import { isSessionRuntimeActionReady } from './session-runtime-identity';
+import { resolveSessionBusy } from './session-busy';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
+import { formatModelString } from './use-opencode-local';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
+import { usePermissionSelfHeal } from './use-permission-self-heal';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { useSessionPicks } from './use-session-picks';
 import { useSessionSync } from './use-session-sync';
+import {
+  readAcpSessionTitle,
+  refreshSessionTitleQueryUntilResolved,
+  syncAcpSessionTitleQuery,
+} from './session-title-sync';
 import { useVisibleAgents } from './use-visible-agents';
 import {
   rejectQuestion as rejectQuestionApi,
@@ -58,7 +81,9 @@ import {
   useAbortOpenCodeSession,
   useExecuteOpenCodeCommand,
   useSendOpenCodeMessage,
+  type PromptPart,
 } from './use-opencode-sessions';
+import { unwrap } from './use-opencode-sessions/shared';
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
@@ -145,7 +170,12 @@ export function classifySendError(error: unknown): KortixSendError {
   if (error && typeof error === 'object') {
     const parsed = parseBillingError(error);
     if (parsed instanceof BillingError) {
-      return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
+      return {
+        kind: 'billing',
+        message: parsed.message,
+        billing: parsed,
+        cause: error,
+      };
     }
   }
 
@@ -181,6 +211,28 @@ export interface SendState {
   sendError: KortixSendError | null;
 }
 
+export interface SessionCommandOptions {
+  agent?: string | null;
+  model?: ModelKey | null;
+  variant?: string | null;
+}
+
+export function buildSessionCommandInput(
+  sessionId: string,
+  command: string,
+  args: string,
+  options: SessionCommandOptions = {},
+) {
+  return {
+    sessionId,
+    command,
+    args,
+    ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.model ? { model: formatModelString(options.model) } : {}),
+    ...(options.variant ? { variant: options.variant } : {}),
+  };
+}
+
 const IDLE_SEND_STATE: SendState = { pending: null, sendError: null };
 
 /** New state when a send is kicked off — always clears any previous error. */
@@ -192,6 +244,42 @@ export function sendStateOnStart(text: string): SendState {
  * the error. */
 export function sendStateOnError(error: unknown): SendState {
   return { pending: null, sendError: classifySendError(error) };
+}
+
+/**
+ * Keep the REST compatibility transcript reconciler active after
+ * `promptAsync()` accepts a prompt.
+ *
+ * The runtime can accept the prompt before the browser receives its first SSE
+ * status event. Without this optimistic busy state, the 10-second liveness
+ * reconciliation never starts. The transcript can then stay at the user
+ * message even though the agent completed the turn.
+ */
+export function beginRestPromptObservation(sessionId: string): void {
+  beginSessionPromptObservation(sessionId);
+  useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+}
+
+/** Clear the optimistic REST busy state when the prompt never starts or stops. */
+export function endRestPromptObservation(sessionId: string): void {
+  endSessionPromptObservation(sessionId);
+  useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+}
+
+/** Stage a reversible OpenCode rollback on one canonical session. */
+export async function rewindOpenCodeSession(sessionId: string, messageId: string): Promise<void> {
+  if (!messageId) throw new Error('Session rewind requires a message id');
+  unwrap(
+    await getClient().session.revert({
+      sessionID: sessionId,
+      messageID: messageId,
+    }),
+  );
+}
+
+/** Restore a staged OpenCode rollback before a replacement prompt commits it. */
+export async function restoreOpenCodeSessionRewind(sessionId: string): Promise<void> {
+  unwrap(await getClient().session.unrevert({ sessionID: sessionId }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,6 +332,12 @@ export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
+   * Override the server-selected AI transport for this hook instance.
+   * Hosts can use this for page-scoped diagnostics without changing project
+   * configuration. Omit it to use `/start.runtime_transport`.
+   */
+  runtimeTransport?: SessionRuntimeTransport;
+  /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
    * screen) once the runtime is ready and the thread is empty. Default true. Hosts
    * with their own first-message hand-off (e.g. apps/web) set this false.
@@ -255,6 +349,14 @@ export interface UseSessionOptions {
    * a query `enabled` flag.
    */
   enabled?: boolean;
+  /**
+   * A server-authorized OpenCode session pin already associated with this
+   * Kortix session. The hook uses it only to hydrate cached transcript content
+   * while `/start` runs. The pin returned by `/start` remains authoritative.
+   *
+   * Do not accept this value from an untrusted browser tenant selector.
+   */
+  initialOpenCodeSessionId?: string | null;
   /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
    * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
@@ -291,18 +393,21 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   isLoading: false,
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
   todos: [] as ReturnType<typeof useSessionSync>['todos'],
+  hasOlder: false,
+  isLoadingOlder: false,
+  loadOlder: async () => {},
 };
 
-export function useSession(
-  projectId: string,
-  sessionId: string,
-  options: UseSessionOptions = {},
-) {
+export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
+  const queryClient = useQueryClient();
+  const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
     waitMs = 15_000,
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
+    initialOpenCodeSessionId = null,
+    runtimeTransport: runtimeTransportOverride,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
@@ -327,6 +432,12 @@ export function useSession(
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
+  const runtimePolicy = createSessionRuntimePolicy(
+    startData?.runtime_transport,
+    runtimeTransportOverride,
+  );
+  const runtimeTransport = runtimePolicy.transport;
+  const usesAcp = runtimePolicy.useAcp;
 
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
   // sandbox we switched to (not a bare bool) so navigating between sessions (this
@@ -341,14 +452,17 @@ export function useSession(
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
     // health effect below seeds connected+healthy with no client poll.
-    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id);
+    setCurrentRuntime(
+      getSandboxUrlForExternalId(sandbox.external_id),
+      sandbox.external_id,
+      sandbox.sandbox_id,
+    );
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched =
-    startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -363,24 +477,96 @@ export function useSession(
   // 4. Open the live SSE stream. This was a provider component (OpenCodeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useOpenCodeEventStream();
+  useOpenCodeEventStream({
+    enabled: switched && runtimePolicy.streamOpenCodeEvents,
+  });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
-  const { rootSessionId } = useCanonicalOpenCodeSession({
+  const canonicalSession = useCanonicalOpenCodeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
+    initialPin: initialOpenCodeSessionId,
+    listRuntimeSessions: switched && runtimePolicy.listOpenCodeSessions,
   });
+  const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';
+  const runtimeUrl = sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : null;
+  const acpRuntime = useAcpSessionRuntime({
+    projectId,
+    runtimeUrl,
+    sessionId,
+    acpServerId: startData?.acp_server_id ?? null,
+    acpSessionId: startData?.acp_session_id ?? null,
+    runtimeHarness: startData?.runtime_harness ?? null,
+    nativeAgent: startData?.native_agent ?? null,
+    legacySessionId: rootSessionId,
+    enabled: enabled && switched && usesAcp,
+  });
+  const acpSessionTitle = readAcpSessionTitle(acpRuntime.projection.sessionInfo);
+  useEffect(() => {
+    if (!usesAcp || !acpSessionTitle) return;
+    syncAcpSessionTitleQuery(queryClient, projectId, sessionId, { title: acpSessionTitle });
+  }, [queryClient, projectId, sessionId, usesAcp, acpSessionTitle]);
+  useEffect(
+    () => () => {
+      titleRefreshAbortRef.current?.abort();
+      titleRefreshAbortRef.current = null;
+    },
+    [projectId, sessionId],
+  );
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
   // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
   // a falsy/non-canonical session id) — and use a fixed, type-stable empty
   // result instead of whatever it happens to return for that starved call.
-  const rawSync = useSessionSync(chatEngine ? ocSessionId : '');
-  const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  const rawSync = useSessionSync(
+    chatEngine && runtimePolicy.syncOpenCodeMessages ? ocSessionId : '',
+    {
+      kortixSessionScope: `${projectId}/${sessionId}`,
+      networkEnabled: switched,
+    },
+  );
+  const acpSync = useMemo(
+    () => ({
+      messages: acpRuntime.projection.messages,
+      status: acpRuntime.projection.status,
+      isBusy: acpRuntime.projection.status.type !== 'idle',
+      isLoading: !acpRuntime.ready,
+      diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
+      todos: acpRuntime.projection.todos,
+      hasOlder: false,
+      isLoadingOlder: false,
+      loadOlder: async () => {},
+    }),
+    [acpRuntime.projection, acpRuntime.ready],
+  );
+  const sync = !chatEngine ? DISABLED_CHAT_ENGINE_SYNC : usesAcp ? acpSync : rawSync;
   const runtimePhase = useRuntimePhase();
+  const [restRewind, setRestRewind] = useState<SessionRewindState | null>(null);
+  const [rewindPending, setRewindPending] = useState(false);
+  const [rewindError, setRewindError] = useState<KortixSendError | null>(null);
+  const rewindMessageId = usesAcp
+    ? (acpRuntime.rewindState?.messageId ?? null)
+    : restRewind?.staged
+      ? restRewind.messageId
+      : null;
+  const messages = useMemo(
+    () =>
+      usesAcp ? sync.messages : messagesBeforeRewind(sync.messages, restRewind?.messageId ?? null),
+    [usesAcp, sync.messages, restRewind?.messageId],
+  );
+
+  useEffect(() => {
+    setRestRewind(null);
+    setRewindPending(false);
+    setRewindError(null);
+  }, [sessionId, ocSessionId]);
+
+  useEffect(() => {
+    setRestRewind((current) => reconcileCommittedSessionRewind(sync.messages, current));
+  }, [restRewind, sync.messages]);
 
   // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store) — see
@@ -388,22 +574,49 @@ export function useSession(
   // hydration in `useOpenCodeEventStream`. Disabled entirely when `chatEngine`
   // is off — see that option's jsdoc: a host mounting its own chat surface
   // already runs its own copy of this poller for the same session.
-  useQuestionSelfHeal(ocSessionId, sync.messages, { enabled: chatEngine && !!ocSessionId });
+  useQuestionSelfHeal(ocSessionId, sync.messages, {
+    enabled: switched && !usesAcp && chatEngine && !!ocSessionId,
+  });
+  usePermissionSelfHeal(ocSessionId, sync.messages, {
+    enabled: switched && !usesAcp && chatEngine && !!ocSessionId,
+  });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
   const questionMap = useOpenCodePendingStore((s) => s.questions);
   const permissionMap = useOpenCodePendingStore((s) => s.permissions);
+  const isCompacting = useOpenCodeCompactionStore(
+    (state) =>
+      switched &&
+      !usesAcp &&
+      Boolean(state.compactingBySession[ocSessionId]),
+  );
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
-    () => Object.values(questionMap).filter((q) => q.sessionID === ocSessionId),
-    [questionMap, ocSessionId],
+    () =>
+      usesAcp
+        ? acpRuntime.projection.questions
+        : switched
+          ? Object.values(questionMap).filter((q) => q.sessionID === ocSessionId)
+          : [],
+    [usesAcp, acpRuntime.projection.questions, questionMap, ocSessionId, switched],
   );
   const permissions = useMemo(
-    () => Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId),
-    [permissionMap, ocSessionId],
+    () =>
+      usesAcp
+        ? acpRuntime.projection.permissions
+        : switched
+          ? Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId)
+          : [],
+    [usesAcp, acpRuntime.projection.permissions, permissionMap, ocSessionId, switched],
   );
+
+  const runtimeActionReady = isSessionRuntimeActionReady({
+    switched,
+    usesAcp,
+    opencodeSessionId: rootSessionId,
+  });
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
   const models = useProjectModels(projectId);
@@ -420,8 +633,8 @@ export function useSession(
   // lands (count grows) — robust to server-normalized text where a text-equality
   // match would clear too early or never (wedging the composer). 30s backstop.
   const userMsgCount = useMemo(
-    () => sync.messages.filter((m) => m.info.role === 'user').length,
-    [sync.messages],
+    () => messages.filter((m) => m.info.role === 'user').length,
+    [messages],
   );
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
@@ -433,50 +646,206 @@ export function useSession(
   }, [userMsgCount, pending]);
   useEffect(() => {
     if (!pending) return;
-    const t = setTimeout(() => setSendState((s) => (s.pending ? { ...s, pending: null } : s)), 30_000);
+    const t = setTimeout(
+      () => setSendState((s) => (s.pending ? { ...s, pending: null } : s)),
+      30_000,
+    );
     return () => clearTimeout(t);
   }, [pending]);
 
-  const send = (
-    text: string,
-    override?: { model?: ModelKey | null; agent?: string | null; variant?: string | null },
-  ) => {
-    if (!ocSessionId) return;
-    pendingBaseCount.current = userMsgCount;
-    setSendState(sendStateOnStart(text));
+  const sendParts = async (
+    parts: PromptPart[],
+    override?: {
+      model?: ModelKey | null;
+      agent?: string | null;
+      variant?: string | null;
+      directory?: string | null;
+    },
+  ): Promise<void> => {
+    if (!runtimeActionReady) {
+      throw new RuntimeNotReadyError();
+    }
+    titleRefreshAbortRef.current?.abort();
+    const titleRefreshAbort = new AbortController();
+    titleRefreshAbortRef.current = titleRefreshAbort;
+    void refreshSessionTitleQueryUntilResolved(queryClient, projectId, sessionId, {
+      signal: titleRefreshAbort.signal,
+    }).finally(() => {
+      if (titleRefreshAbortRef.current === titleRefreshAbort) {
+        titleRefreshAbortRef.current = null;
+      }
+    });
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;
     const variant = override?.variant;
+    if (usesAcp) {
+      const acpParts = parts.map((part) => {
+        if (part.type === 'text') {
+          return { type: 'text' as const, text: part.text };
+        }
+        if (part.type === 'agent') {
+          return { type: 'text' as const, text: `@${part.name}` };
+        }
+        return {
+          type: 'resource_link' as const,
+          uri: part.url,
+          name: part.filename,
+          mimeType: part.mime,
+        };
+      });
+      await acpRuntime.send(acpParts, {
+        model: model ? formatModelString(model) : null,
+        agent,
+      });
+      return;
+    }
     const opts = {
       ...(model ? { model } : {}),
       ...(agent ? { agent } : {}),
       ...(variant ? { variant } : {}),
+      ...(override?.directory ? { directory: override.directory } : {}),
     };
-    sendMutation.mutate(
-      {
-        sessionId: ocSessionId,
-        parts: [{ type: 'text', text }],
-        ...(Object.keys(opts).length ? { options: opts } : {}),
-      },
-      { onError: (err) => setSendState(sendStateOnError(err)) },
-    );
+    await sendMutation.mutateAsync({
+      sessionId: ocSessionId,
+      parts,
+      ...(Object.keys(opts).length ? { options: opts } : {}),
+    });
+    setRestRewind(commitSessionRewind);
+  };
+
+  const send = (
+    text: string,
+    override?: {
+      model?: ModelKey | null;
+      agent?: string | null;
+      variant?: string | null;
+    },
+  ) => {
+    if (!runtimeActionReady) return;
+    pendingBaseCount.current = userMsgCount;
+    if (!usesAcp) beginRestPromptObservation(ocSessionId);
+    setSendState(sendStateOnStart(text));
+    void sendParts([{ type: 'text', text }], override).catch((error) => {
+      if (!usesAcp) endRestPromptObservation(ocSessionId);
+      setSendState(sendStateOnError(error));
+    });
   };
 
   // Run a project slash-command (server-side `/command`), distinct from a prompt.
-  const runCommand = (command: string, args: string) => {
-    if (!ocSessionId) return;
-    commandMutation.mutate({ sessionId: ocSessionId, command, args });
+  const runCommand = (
+    command: string,
+    args: string,
+    options: SessionCommandOptions = {},
+  ): Promise<void> => {
+    if (!runtimeActionReady) {
+      return Promise.resolve();
+    }
+    if (usesAcp) {
+      return acpRuntime.runCommand(command, args, {
+        model: options.model ? formatModelString(options.model) : null,
+        agent: options.agent,
+      });
+    }
+    return commandMutation.mutateAsync(
+      buildSessionCommandInput(ocSessionId, command, args, options),
+    );
+  };
+
+  const rewind = async (messageId: string): Promise<void> => {
+    if (!runtimeActionReady) {
+      throw new RuntimeNotReadyError();
+    }
+    if (!messageId) throw new Error('Session rewind requires a message id');
+    if (sync.isBusy || pending || rewindPending) {
+      throw new Error('Cannot rewind a busy session');
+    }
+    setRewindPending(true);
+    setRewindError(null);
+    try {
+      if (usesAcp) {
+        await acpRuntime.rewind(messageId);
+      } else {
+        await rewindOpenCodeSession(ocSessionId, messageId);
+        setRestRewind({ messageId, staged: true });
+      }
+    } catch (error) {
+      const classified = classifySendError(error);
+      setRewindError(classified);
+      throw classified;
+    } finally {
+      setRewindPending(false);
+    }
+  };
+
+  const restoreRewind = async (): Promise<void> => {
+    if (!runtimeActionReady) throw new RuntimeNotReadyError();
+    if (!rewindMessageId || rewindPending) return;
+    setRewindPending(true);
+    setRewindError(null);
+    try {
+      if (usesAcp) {
+        await acpRuntime.restoreRewind();
+      } else {
+        await restoreOpenCodeSessionRewind(ocSessionId);
+        setRestRewind(null);
+      }
+    } catch (error) {
+      const classified = classifySendError(error);
+      setRewindError(classified);
+      throw classified;
+    } finally {
+      setRewindPending(false);
+    }
   };
 
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
   const cancel = () => {
-    if (ocSessionId) abortMutation.mutate(ocSessionId);
+    if (runtimeActionReady) {
+      if (usesAcp) void acpRuntime.cancel();
+      else {
+        endRestPromptObservation(ocSessionId);
+        abortMutation.mutate(ocSessionId);
+      }
+    }
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
     setSendState(IDLE_SEND_STATE);
   };
 
-  const phase: SessionPhase = terminal || startError ? 'error' : switched ? 'ready' : 'starting';
+  const answerSessionQuestion = async (requestId: string, answers: string[][]): Promise<void> => {
+    if (!usesAcp) return answerQuestion(requestId, answers);
+    try {
+      await acpRuntime.answerQuestion(requestId, answers);
+    } catch (error) {
+      throw classifySendError(error);
+    }
+  };
+
+  const rejectSessionQuestion = async (requestId: string): Promise<void> => {
+    if (!usesAcp) return rejectQuestion(requestId);
+    try {
+      await acpRuntime.rejectQuestion(requestId);
+    } catch (error) {
+      throw classifySendError(error);
+    }
+  };
+
+  const answerSessionPermission = async (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+    message?: string,
+  ): Promise<void> => {
+    if (!usesAcp) return answerPermission(requestId, reply, message);
+    try {
+      await acpRuntime.answerPermission(requestId, reply);
+    } catch (error) {
+      throw classifySendError(error);
+    }
+  };
+
+  const runtimeSessionError = usesAcp ? acpRuntime.error : canonicalSession.error;
+  const phase: SessionPhase =
+    terminal || startError || runtimeSessionError ? 'error' : switched ? 'ready' : 'starting';
 
   // 10. Replay the new-session hand-off once ready + thread empty (exactly once).
   // Force-disabled when `chatEngine` is off: this reads `sync.isLoading`/
@@ -494,7 +863,11 @@ export function useSession(
     if (sync.messages.length > 0) return;
     if (stash.model) picks.setModel(stash.model);
     if (stash.agent) picks.setAgent(stash.agent);
-    send(stash.prompt, { model: stash.model, agent: stash.agent, variant: stash.variant });
+    send(stash.prompt, {
+      model: stash.model,
+      agent: stash.agent,
+      variant: stash.variant,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash, chatEngine]);
 
@@ -503,14 +876,25 @@ export function useSession(
     sessionId,
     /** Canonical OpenCode root id, or null while resolving. */
     opencodeSessionId: rootSessionId ?? null,
+    /** Server-selected SDK client transport. */
+    runtimeTransport,
+    /** Runtime sessions available for legacy deep-link selection.
+     * ACP exposes only the canonical session during this canary. */
+    runtimeSessions: canonicalSession.sessions,
+    runtimeSessionsLoading: canonicalSession.isLoading,
+    runtimeSessionsListed: canonicalSession.listed,
+    runtimeError: runtimeSessionError,
 
     // live data
-    messages: sync.messages,
+    messages,
     status: sync.status,
     questions,
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
+    hasOlder: sync.hasOlder,
+    isLoadingOlder: sync.isLoadingOlder,
+    loadOlder: sync.loadOlder,
 
     // lifecycle
     phase,
@@ -526,9 +910,15 @@ export function useSession(
     startError,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
-    isBusy: sync.isBusy || !!pending,
+    isBusy: resolveSessionBusy({
+      syncBusy: sync.isBusy,
+      hasPendingText: !!pending,
+      usesAcp,
+      acpSending: acpRuntime.sending,
+    }),
+    isCompacting,
     isLoading: sync.isLoading,
-    isError: terminal || !!startError,
+    isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,
     /** Latest /start reason (e.g. 'runtime_waking'), surfaced for boot/error UI. */
@@ -536,30 +926,42 @@ export function useSession(
     /** Pending optimistic message text, or null. */
     pending,
     /** True while the current `send` mutation is in flight. */
-    isSending: sendMutation.isPending,
+    isSending: usesAcp ? acpRuntime.sending : sendMutation.isPending,
     /** Last `send` failure, typed (billing / runtime-not-ready / runtime-error),
      * or null. Reset on every new `send` call. */
     sendError: sendState.sendError,
+    /** Selected user message while a reversible history rewind is staged. */
+    rewindMessageId,
+    /** True while the runtime stages or restores a history rewind. */
+    rewindPending,
+    /** Last history rewind failure, or null. */
+    rewindError,
 
     // server-side capabilities (pre-runtime)
     models,
     agents,
-    defaultAgent: config?.open_code_default_agent ?? null,
+    defaultAgent: config?.default_agent ?? config?.open_code_default_agent ?? null,
     commands: config?.commands ?? [],
     picks,
 
     // actions
     send,
+    /** Send text and file prompt parts through the selected SDK transport. */
+    sendParts,
+    /** Rewind this canonical session to one user message. */
+    rewind,
+    /** Restore the removed path before a replacement prompt commits it. */
+    restoreRewind,
     cancel,
     runCommand,
     /** Answer an agent question through the server and drop it from pending
      * state on success; throws a `KortixSendError` and leaves it pending on
      * failure. */
-    answerQuestion,
+    answerQuestion: answerSessionQuestion,
     /** Reject an agent question through the server (see `answerQuestion`). */
-    rejectQuestion,
+    rejectQuestion: rejectSessionQuestion,
     /** Answer an agent permission request through the server (see `answerQuestion`). */
-    answerPermission,
+    answerPermission: answerSessionPermission,
     /** @deprecated Drops the question from local state WITHOUT replying to the
      * server — the agent run stays blocked waiting on it. Use `answerQuestion`
      * / `rejectQuestion` instead. */

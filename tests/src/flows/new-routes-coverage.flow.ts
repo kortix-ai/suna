@@ -290,7 +290,9 @@ flow(
     });
 
     await ctx.step('unauthenticated project catalog route is gated', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/llm-catalog', { params });
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/llm-catalog', { params });
       r.status(401);
     });
 
@@ -400,6 +402,99 @@ flow(
         query: { start: '2026-01-02T00:00:00Z', end: '2026-01-01T00:00:00Z' },
       });
       r.status(400);
+    });
+  },
+);
+
+flow(
+  'COV-10',
+  {
+    domain: 'coverage',
+    routes: [
+      'GET /v1/projects/:projectId/connector-profiles/all',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/acp',
+      'GET /v1/projects/:projectId/sessions/:sessionId/acp',
+      'GET /v1/projects/:projectId/sessions/:sessionId/acp/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
+      'POST /v1/projects/:projectId/sessions/:sessionId/acp',
+      'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/acp-identity',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/model',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: ZERO_UUID };
+    const profileParams = { ...projectParams, profileId: ZERO_UUID };
+    const sessionParams = { ...projectParams, sessionId: ZERO_UUID };
+
+    await ctx.step('unknown project hides the connector authorization roster', async () => {
+      const roster = await owner.get('/v1/projects/:projectId/connector-profiles/all', {
+        params: projectParams,
+      });
+      roster.status(404);
+    });
+
+    await ctx.step('unknown project blocks connector profile mutations', async () => {
+      const makeDefault = await owner.put(
+        '/v1/projects/:projectId/connector-profiles/:profileId/default',
+        {},
+        { params: profileParams },
+      );
+      makeDefault.status(404);
+    });
+
+    await ctx.step('unknown project blocks session scope reads and mutations', async () => {
+      const scopeRead = await owner.get(
+        '/v1/projects/:projectId/sessions/:sessionId/scope',
+        { params: sessionParams },
+      );
+      scopeRead.status(404);
+      const identity = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/acp-identity',
+        {
+          acp_server_id: ZERO_UUID,
+          runtime_harness: 'codex',
+          acp_session_id: 'codex-native-1',
+        },
+        { params: sessionParams },
+      );
+      identity.status(404);
+      const model = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/model',
+        { opencode_model: 'openai/gpt-5' },
+        { params: sessionParams },
+      );
+      model.status(404);
+      const scope = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/scope',
+        { secrets: [] },
+        { params: sessionParams },
+      );
+      scope.status(404);
+    });
+
+    await ctx.step('unknown project hides managed ACP routes', async () => {
+      const stream = await owner.get('/v1/projects/:projectId/sessions/:sessionId/acp', {
+        params: sessionParams,
+      });
+      stream.status(404);
+      const transcript = await owner.get(
+        '/v1/projects/:projectId/sessions/:sessionId/acp/transcript',
+        { params: sessionParams },
+      );
+      transcript.status(404);
+      const prompt = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/acp',
+        { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: {} },
+        { params: sessionParams },
+      );
+      prompt.status(404);
+      const close = await owner.del('/v1/projects/:projectId/sessions/:sessionId/acp', {
+        params: sessionParams,
+      });
+      close.status(404);
     });
   },
 );

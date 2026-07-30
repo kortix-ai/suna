@@ -36,12 +36,12 @@ import {
   getManagedModel,
   pricingRefLookupCandidates,
 } from '@kortix/llm-catalog';
-import type { GatewayModelGenerationConfig } from '@kortix/sdk/projects-client';
+import type { GatewayModelGenerationConfig } from '@kortix/sdk';
 
 /** See the module doc comment — this is the client-side mirror of
  *  apps/api's `catalogModelForWireModel`. Kept in lockstep deliberately:
  *  same precedence (codex/<id> → openai/<id>, provider/model, managed
- *  bare id via pricingRef, synthetic `auto`), same permissive fallback for
+ *  bare id via pricingRef), same permissive fallback for
  *  a managed model models.dev doesn't carry under its own id. */
 export function catalogModelForGateway(wireModel: string): LlmProviderModel | undefined {
   if (wireModel.startsWith('codex/')) {
@@ -75,17 +75,6 @@ export function catalogModelForGateway(wireModel: string): LlmProviderModel | un
       tool_call: true,
       temperature: true,
       limit: managed.limit,
-    };
-  }
-  if (wireModel === 'auto' || wireModel === 'kortix/auto') {
-    return {
-      id: 'auto',
-      name: 'Auto',
-      released: null,
-      reasoning: false,
-      tool_call: true,
-      temperature: true,
-      limit: { context: 1_000_000, output: 128_000 },
     };
   }
   return undefined;

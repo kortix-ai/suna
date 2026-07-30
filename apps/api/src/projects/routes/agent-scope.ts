@@ -19,7 +19,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents } from '../agents';
-import { applyAgentScopeV2 } from '../lib/agent-config-v2';
+import { applyAgentScopeV2, normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -32,6 +32,8 @@ const GrantSetSchema = z.union([z.literal('all'), z.array(z.string().min(1).max(
 const AgentScopeBody = z.object({
   env: GrantSetSchema.optional(),
   connectors: GrantSetSchema.optional(),
+  connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+  connectors_personal: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
 });
 
 projectsApp.openapi(
@@ -45,7 +47,10 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), agentName: z.string() }),
       body: { content: { 'application/json': { schema: AgentScopeBody } } },
     },
-    responses: { 200: json(z.any(), 'Updated agent scope'), ...errors(400, 403, 404) },
+    responses: {
+      200: json(z.any(), 'Updated agent scope'),
+      ...errors(400, 403, 404, 409, 502),
+    },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -57,13 +62,30 @@ projectsApp.openapi(
     // 'manage' → project.write, so unchecking agent.write did nothing here.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+    );
 
     const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const { env, connectors } = parsed.data;
-    if (env === undefined && connectors === undefined) {
-      return c.json({ error: 'Provide env and/or connectors', code: 'nothing_to_update' }, 400);
+    const { env, connectors, connectors_required, connectors_personal } = parsed.data;
+    const normalizedRequired = normalizeRequiredConnectorAliases({
+      connectors_required,
+      connectors_personal,
+    });
+    if (!normalizedRequired.ok) {
+      return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
+    }
+    const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
+    if (env === undefined && connectors === undefined && connectorsRequired === undefined) {
+      return c.json(
+        { error: 'Provide env, connectors and/or connectors_required', code: 'nothing_to_update' },
+        400,
+      );
     }
 
     let manifest;
@@ -82,7 +104,11 @@ projectsApp.openapi(
     // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
     // edit on a YAML project 404'd "agent not found" — branch on the schema.
     if (manifest.schemaVersion >= 2) {
-      const applied = applyAgentScopeV2(manifest, agentName, { env, connectors });
+      const applied = applyAgentScopeV2(manifest, agentName, {
+        env,
+        connectors,
+        connectorsRequired,
+      });
       if (!applied.ok) {
         return applied.notFound
           ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
@@ -93,6 +119,15 @@ projectsApp.openapi(
       const current = Array.isArray(manifest.raw.agents)
         ? (manifest.raw.agents as Record<string, unknown>[])
         : [];
+      if (connectorsRequired !== undefined) {
+        return c.json(
+          {
+            error: 'connectors_required requires a v2 (kortix.yaml) manifest',
+            code: 'unsupported_in_v1',
+          },
+          400,
+        );
+      }
       const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
       if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
       manifest.raw.agents = applied.agents;
@@ -110,7 +145,7 @@ projectsApp.openapi(
       `chore: scope agent ${agentName} (secrets/connectors)`,
     );
     if ('error' in committed) {
-      return c.json({ error: committed.error }, (committed.status as 400) ?? 400);
+      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
 
     const spec = check.specs.find((s) => s.name === agentName);
@@ -119,6 +154,7 @@ projectsApp.openapi(
       agent: agentName,
       env: spec?.env ?? 'all',
       connectors: spec?.connectors ?? [],
+      connectors_required: spec?.connectorsRequired ?? [],
     });
   },
 );

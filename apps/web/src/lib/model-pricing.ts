@@ -1,21 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { getManagedModel } from '@kortix/llm-catalog';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk/turns';
+import { useEffect, useMemo, useState } from 'react';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const FETCH_TIMEOUT_MS = 15_000;
-
-const normModelId = (id: string): string => id.toLowerCase().replace(/\./g, '-');
 
 let pricingCache: Map<string, ModelCostRates> | null = null;
 let pricingPromise: Promise<Map<string, ModelCostRates>> | null = null;
 
 type ModelsDevModel = {
   id?: string;
-  cost?: { input?: number; output?: number; cache_read?: number };
+  cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number };
 };
 
 type ModelsDevProvider = {
@@ -58,15 +55,11 @@ export function buildModelsDevPricingMap(
         outputPer1M: output,
         cacheReadPer1M: model.cost?.cache_read,
       };
+      if (typeof model.cost?.cache_write === 'number') {
+        entry.cacheWritePer1M = model.cost.cache_write;
+      }
       const modelId = model.id ?? modelKey;
-      const keys = new Set([
-        modelId,
-        normModelId(modelId),
-        `${providerId}/${modelId}`,
-        normModelId(`${providerId}/${modelId}`),
-        `${providerId}/${modelKey}`,
-        normModelId(`${providerId}/${modelKey}`),
-      ]);
+      const keys = new Set([`${providerId}/${modelId}`, `${providerId}/${modelKey}`]);
       for (const key of keys) {
         if (key && !map.has(key)) map.set(key, entry);
       }
@@ -89,17 +82,12 @@ function lookupCachedPricing(
   cache: ReadonlyMap<string, ModelCostRates> | null | undefined,
 ): ModelCostRates | null {
   if (!cache) return null;
-  const candidates = [
-    `${providerID}/${modelID}`,
-    modelID,
-    modelID.includes('/') ? modelID : `${providerID}/${modelID}`,
-  ];
-  for (const candidate of candidates) {
-    const hit = cache.get(candidate) ?? cache.get(normModelId(candidate));
+  const modelCandidates = [modelID, ...(modelID.includes('/') ? [] : [`${providerID}/${modelID}`])];
+  for (const modelCandidate of modelCandidates) {
+    const hit = cache.get(`${providerID}/${modelCandidate}`);
     if (hit) return hit;
   }
-  const tail = modelID.split('/').pop() ?? modelID;
-  return cache.get(tail) ?? cache.get(normModelId(tail)) ?? null;
+  return null;
 }
 
 export function createModelPricingLookup(
@@ -110,22 +98,22 @@ export function createModelPricingLookup(
   return (providerID: string, modelID: string) => {
     const provider = providers?.all?.find((p) => p.id === providerID);
     const model = provider?.models?.[modelID] as
-      | { cost?: { input?: number; output?: number; cache_read?: number } }
+      | { cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number } }
       | undefined;
     if (model?.cost && (model.cost.input || model.cost.output)) {
-      return {
+      const rates: ModelCostRates = {
         inputPer1M: model.cost.input ?? 0,
         outputPer1M: model.cost.output ?? 0,
         cacheReadPer1M: model.cost.cache_read,
       };
+      if (typeof model.cost.cache_write === 'number') {
+        rates.cacheWritePer1M = model.cost.cache_write;
+      }
+      return rates;
     }
 
     if (providerID === 'kortix') {
-      const managed = getManagedModel(modelID);
-      if (managed?.pricingRef) {
-        const fromRef = lookupCachedPricing('kortix', managed.pricingRef, cache);
-        if (fromRef) return fromRef;
-      }
+      return null;
     }
 
     return lookupCachedPricing(providerID, modelID, cache);
@@ -144,7 +132,8 @@ export function useModelPricingLookup(
   }, []);
 
   return useMemo(
-    () => createModelPricingLookup(providers, pricingReady ? pricingCache ?? undefined : undefined),
+    () =>
+      createModelPricingLookup(providers, pricingReady ? (pricingCache ?? undefined) : undefined),
     [providers, pricingReady],
   );
 }

@@ -16,6 +16,7 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const terminalLines = [
   { id: 'install', type: 'command', text: KORTIX_CLI_INSTALL_COMMAND },
@@ -35,7 +36,7 @@ export function CliInstallSection() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   const copyInstallCommand = useCallback(() => {

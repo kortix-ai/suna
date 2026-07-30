@@ -21,7 +21,7 @@ import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downloadFile } from '../api/opencode-files';
+import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';
@@ -41,10 +41,19 @@ import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
+import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
 
-export function FileExplorerPage({
-  embedded = false,
-}: { embedded?: boolean; shareContext?: unknown } = {}) {
+const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
+
+/**
+ * The project-level file explorer. It has no session context — sharing is
+ * scoped to a session's sandbox — so it renders no share control, matching
+ * `AppFilePreviewHost`. It previously declared a `shareContext` prop that it
+ * never destructured and never forwarded, so any caller passing one got silence
+ * instead of a share button; the honest signature is no prop at all. The
+ * in-session explorer threads share context through `DriveExplorer` instead.
+ */
+export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -91,8 +100,6 @@ export function FileExplorerPage({
 
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';
   const normalizedCurrentPath = isRootPath ? '' : currentPath.replace(/\/$/, '');
-
-  const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
   const { elevatedDirs, dirs, fileItems } = useMemo(() => {
     if (!files)
@@ -318,10 +325,9 @@ export function FileExplorerPage({
 
   const [historyPopoverPath, setHistoryPopoverPath] = useState<string | null>(null);
 
-  type RightPanel = 'history' | 'proposed-changes' | null;
-  const [rightPanel, setRightPanel] = useState<RightPanel>(null);
+  const [rightPanel, setRightPanel] = useState<FilesRightPanel>(null);
   const [createdCrId, setCreatedCrId] = useState<string | null>(null);
-  const toggleRightPanel = (panel: RightPanel) =>
+  const toggleRightPanel = (panel: FilesRightPanel) =>
     setRightPanel((current) => (current === panel ? null : panel));
 
   const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
@@ -332,10 +338,13 @@ export function FileExplorerPage({
   const pathname = usePathname();
   useEffect(() => {
     const cr = searchParams.get('cr');
-    if (!cr) return;
-    setCreatedCrId(cr);
+    const requestedPanel = requestedFilesRightPanel(searchParams.get('panel'));
+    if (!cr && !requestedPanel) return;
+    if (cr) setCreatedCrId(cr);
+    if (requestedPanel) setRightPanel(requestedPanel);
     const params = new URLSearchParams(searchParams.toString());
     params.delete('cr');
+    params.delete('panel');
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [searchParams, pathname, router]);

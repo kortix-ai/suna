@@ -167,11 +167,16 @@ export async function createOrJoinThreadSession(input: {
     source: 'slack',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
+      // Title from the user's actual words, not the scaffolded envelope — the
+      // rendered prompt carries team/channel ids and turn instructions, and the
+      // title is project-visible.
+      title_source: event.text ?? null,
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',

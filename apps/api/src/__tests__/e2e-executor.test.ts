@@ -16,7 +16,12 @@ import {
   type ProjectPoliciesViewResponse,
   type ProjectPolicyView,
 } from '../executor/router';
-import type { GatewayAction, GatewayConnector, GatewayDeps, ExecutionRecord } from '../executor/gateway';
+import type {
+  GatewayAction,
+  GatewayConnector,
+  GatewayDeps,
+  ExecutionRecord,
+} from '../executor/gateway';
 import { resolveEffectiveAction, type Policy } from '../executor/policy';
 import type { ConnectorAuthDiscovery } from '../executor/auth-discovery';
 
@@ -41,6 +46,10 @@ interface World {
   upstreamStatus: number;
   upstreamBody: string;
   connectorDrafts: Record<string, unknown>[];
+  connectorCreateError: { error: string; status: number } | null;
+  credentialInputs: unknown[];
+  authorizationStrategyInputs: Array<{ slug: string; strategy: 'project' | 'user' }>;
+  credentialError: Error | null;
 }
 
 let world: World;
@@ -61,7 +70,12 @@ function freshWorld(): World {
     relPath: 'charges.create',
     inputSchema: { type: 'object', properties: { amount: {} } },
     risk: 'write',
-    binding: { kind: 'openapi', method: 'POST', path: '/v1/charges', server: 'https://api.stripe.com' },
+    binding: {
+      kind: 'openapi',
+      method: 'POST',
+      path: '/v1/charges',
+      server: 'https://api.stripe.com',
+    },
   };
   return {
     connectors: new Map([['stripe', stripe]]),
@@ -76,13 +90,20 @@ function freshWorld(): World {
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
     connectorDrafts: [],
+    connectorCreateError: null,
+    credentialInputs: [],
+    authorizationStrategyInputs: [],
+    credentialError: null,
   };
 }
 
 const detectedBearer: ConnectorAuthDiscovery = {
   status: 'detected',
   recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
-  candidates: [], warnings: [], totalRequests: 12,
+  candidates: [],
+  warnings: [],
+  totalRequests: 12,
+  title: null,
 };
 
 function credKey(connectorId: string, userId: string | null) {
@@ -93,12 +114,18 @@ function makeGatewayDeps(): GatewayDeps {
   return {
     loadConnectorBySlug: async (_p, slug) => world.connectors.get(slug) ?? null,
     loadAction: async (connectorId, rel) => world.actions.get(`${connectorId}|${rel}`) ?? null,
-    resolveCredential: async (connector, userId) => world.credentials.get(credKey(connector.connectorId, userId)) ?? null,
+    resolveCredential: async (connector, userId) => {
+      if (world.credentialError) throw world.credentialError;
+      return world.credentials.get(credKey(connector.connectorId, userId)) ?? null;
+    },
     loadPolicies: async (connectorId) => world.policiesByConnector.get(connectorId) ?? [],
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,
     enforcePolicies: true,
-    recordExecution: async (r) => { world.executions.push(r); return null; },
+    recordExecution: async (r) => {
+      world.executions.push(r);
+      return null;
+    },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
       return {
@@ -111,7 +138,13 @@ function makeGatewayDeps(): GatewayDeps {
 }
 
 function principalFor(userId: string): ExecutorPrincipal {
-  return { userId, accountId: ACCOUNT, projectId: PROJECT, sessionId: 'sess-1', subject: { userId, groupIds: world.groups.get(userId) ?? [] } };
+  return {
+    userId,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    sessionId: 'sess-1',
+    subject: { userId, groupIds: world.groups.get(userId) ?? [] },
+  };
 }
 
 function catalogFor(p: ExecutorPrincipal): CatalogConnector[] {
@@ -124,18 +157,31 @@ function catalogFor(p: ExecutorPrincipal): CatalogConnector[] {
     const connectorPolicies = world.policiesByConnector.get(conn.connectorId) ?? [];
     const actions = [...world.actions.entries()]
       .filter(([k]) => k.startsWith(`${conn.connectorId}|`))
-      .filter(([, a]) =>
-        resolveEffectiveAction({
-          fullPath: a.path,
-          relPath: a.relPath,
-          projectPolicies: world.projectPolicies,
-          connectorPolicies,
-          risk: a.risk,
-          defaultMode: world.defaultMode,
-        }).action !== 'block',
+      .filter(
+        ([, a]) =>
+          resolveEffectiveAction({
+            fullPath: a.path,
+            relPath: a.relPath,
+            projectPolicies: world.projectPolicies,
+            connectorPolicies,
+            risk: a.risk,
+            defaultMode: world.defaultMode,
+          }).action !== 'block',
       )
-      .map(([, a]) => ({ path: a.relPath, name: a.path, description: '', risk: a.risk, inputSchema: a.inputSchema }));
-    out.push({ slug: conn.slug, name: conn.slug, provider: conn.provider, status: 'active', actions });
+      .map(([, a]) => ({
+        path: a.relPath,
+        name: a.path,
+        description: '',
+        risk: a.risk,
+        inputSchema: a.inputSchema,
+      }));
+    out.push({
+      slug: conn.slug,
+      name: conn.slug,
+      provider: conn.provider,
+      status: 'active',
+      actions,
+    });
   }
   return out;
 }
@@ -161,13 +207,15 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-reader') ?? c.req.header('x-test-admin');
     return u ? { accountId: ACCOUNT, userId: u } : null;
   },
-  listConnectors: async (_projectId, viewerUserId): Promise<AdminConnectorView[]> =>
+  listConnectors: async (): Promise<AdminConnectorView[]> =>
     [...world.connectors.values()].map((conn) => ({
       slug: conn.slug,
       name: conn.slug,
       provider: conn.provider,
       status: 'active',
       credentialMode: conn.credentialMode,
+      authorizationStrategy: 'project',
+      requestAuthType: 'bearer',
       sensitive: false,
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
@@ -185,24 +233,50 @@ const deps: ExecutorRouterDeps = {
   discoverConnectorAuth: async () => detectedBearer,
   createConnector: async (_projectId, _accountId, draft) => {
     world.connectorDrafts.push(draft);
+    if (world.connectorCreateError) {
+      return { ok: false, ...world.connectorCreateError };
+    }
     return { ok: true, sync: { synced: 1, errors: [] } };
+  },
+  setConnectorCredential: async (_projectId, _slug, input) => {
+    world.credentialInputs.push(input);
+    return { ok: true };
+  },
+  setAuthorizationStrategy: async (_projectId, _accountId, slug, strategy) => {
+    if (!world.connectors.has(slug)) {
+      return { ok: false, error: 'connector not found', status: 404 };
+    }
+    world.authorizationStrategyInputs.push({ slug, strategy });
+    return { ok: true };
   },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
     defaultMode: world.defaultMode,
     errors: [],
   }),
-  setProjectPolicies: async (_projectId, _accountId, policies: ProjectPolicyView[], defaultMode) => {
-    world.projectPolicies = policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+  setProjectPolicies: async (
+    _projectId,
+    _accountId,
+    policies: ProjectPolicyView[],
+    defaultMode,
+  ) => {
+    world.projectPolicies = policies.map((p, i) => ({
+      match: p.match,
+      action: p.action,
+      position: i,
+    }));
     world.defaultMode = defaultMode;
     return { ok: true, sync: { synced: world.connectors.size, errors: [] } };
   },
 };
 
 const app = createExecutorRouter(deps);
-const req = (path: string, init: RequestInit = {}) => app.fetch(new Request(`http://x${path}`, init));
+const req = (path: string, init: RequestInit = {}) =>
+  app.fetch(new Request(`http://x${path}`, init));
 
-beforeEach(() => { world = freshWorld(); });
+beforeEach(() => {
+  world = freshWorld();
+});
 
 describe('gateway auth', () => {
   test('401 without token', async () => {
@@ -220,7 +294,9 @@ describe('GET /connectors', () => {
 
   test('connector with no credential hidden until connected', async () => {
     world.credentials.delete('conn-stripe|shared');
-    expect((await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors).toHaveLength(0);
+    expect(
+      (await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors,
+    ).toHaveLength(0);
   });
 });
 
@@ -229,7 +305,11 @@ describe('POST /call', () => {
     const res = await req('/call', {
       method: 'POST',
       headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: { amount: 999 } }),
+      body: JSON.stringify({
+        connector: 'stripe',
+        action: 'charges.create',
+        args: { amount: 999 },
+      }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, data: { id: 'ch_1', paid: true }, risk: 'write' });
@@ -239,24 +319,60 @@ describe('POST /call', () => {
   });
 
   test('400 missing fields', async () => {
-    expect((await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: '{}' })).status).toBe(400);
+    expect(
+      (
+        await req('/call', {
+          method: 'POST',
+          headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(400);
   });
 
   test('404 unknown connector', async () => {
-    const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'nope', action: 'x' }) });
+    const res = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'nope', action: 'x' }),
+    });
     expect(res.status).toBe(404);
   });
 
   test('403 needs_auth when credential missing', async () => {
     world.credentials.delete('conn-stripe|shared');
-    const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+    const res = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
     expect(res.status).toBe(403);
     expect((await res.json()).reason).toBe('needs_auth');
   });
 
+  test('500 returns a structured error when OAuth2 token refresh fails', async () => {
+    world.credentialError = new Error('OAuth2 token request failed (503): temporarily_unavailable');
+    const response = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      ok: false,
+      status: 'error',
+      reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+    });
+  });
+
   test('500 upstream failure (NOT 502 — Cloudflare replaces origin 502 bodies)', async () => {
     world.upstreamStatus = 500;
-    const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+    const res = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
     expect(res.status).toBe(500);
     expect((await res.json()).reason).toBeTruthy();
   });
@@ -292,12 +408,46 @@ describe('admin routes', () => {
 
   test('list shows credential mode + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
-    const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', secretSet: true });
+    const json = await (
+      await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })
+    ).json();
+    expect(json.connectors[0]).toMatchObject({
+      slug: 'stripe',
+      credentialMode: 'shared',
+      secretSet: true,
+    });
   });
 
   test('sync returns count', async () => {
-    expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
+    expect(
+      (
+        await (
+          await req(`/projects/${PROJECT}/connectors/sync`, {
+            method: 'POST',
+            headers: { 'x-test-admin': ALICE },
+          })
+        ).json()
+      ).synced,
+    ).toBe(1);
+  });
+
+  test('accepts a native OAuth2 client-credentials configuration', async () => {
+    const oauth2 = {
+      type: 'oauth2_client_credentials',
+      token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+      client_id: 'client-id',
+      token_endpoint_auth_method: 'client_secret_post',
+      client_secret: 'client-secret',
+      scopes: ['https://graph.microsoft.com/.default'],
+    };
+    const response = await req(`/projects/${PROJECT}/connectors/sharepoint/credential`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ oauth2 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(world.credentialInputs).toEqual([{ oauth2 }]);
   });
 
   test('previews source authentication metadata', async () => {
@@ -314,7 +464,11 @@ describe('admin routes', () => {
     const res = await req(`/projects/${PROJECT}/connectors`, {
       method: 'POST',
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: 'hubspot', provider: 'postman', spec: 'https://example.com/repo' }),
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'postman',
+        spec: 'https://example.com/repo',
+      }),
     });
     expect(res.status).toBe(200);
     expect(world.connectorDrafts[0]).toMatchObject({ auth: detectedBearer.recommended });
@@ -326,7 +480,9 @@ describe('admin routes', () => {
       method: 'POST',
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
       body: JSON.stringify({
-        slug: 'public-api', provider: 'openapi', spec: 'https://example.com/openapi.json',
+        slug: 'public-api',
+        provider: 'openapi',
+        spec: 'https://example.com/openapi.json',
         auth: { type: 'none' },
       }),
     });
@@ -335,11 +491,78 @@ describe('admin routes', () => {
     expect((await res.json()).authDiscovery).toBeUndefined();
   });
 
+  test('returns a create-only slug conflict without changing the response envelope', async () => {
+    world.connectorCreateError = {
+      error: 'Connector profile slug "hubspot" already exists',
+      status: 409,
+    };
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: true,
+      }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Connector profile slug "hubspot" already exists',
+    });
+    expect(world.connectorDrafts).toHaveLength(1);
+    expect(world.connectorDrafts[0]?.create_only).toBe(true);
+  });
+
+  test('returns a manifest provider failure with its 502 status', async () => {
+    world.connectorCreateError = {
+      error: 'Failed to commit kortix.yaml',
+      status: 502,
+    };
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: true,
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'Failed to commit kortix.yaml' });
+  });
+
+  test('rejects a non-boolean create-only flag before connector creation', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: 'true',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'create_only must be a boolean' });
+    expect(world.connectorDrafts).toHaveLength(0);
+  });
+
   test('a read-tier member can LIST connectors (project.connector.read is member-baseline)', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-reader': ALICE } });
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      headers: { 'x-test-reader': ALICE },
+    });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', secretSet: true });
+    expect(json.connectors[0]).toMatchObject({
+      slug: 'stripe',
+      requestAuthType: 'bearer',
+      secretSet: true,
+    });
   });
 
   test('a read-tier member still cannot administer connectors (sync stays write-gated)', async () => {
@@ -350,24 +573,80 @@ describe('admin routes', () => {
     expect(res.status).toBe(403);
   });
 
+  test('updates a connector profile authorization strategy', async () => {
+    for (const strategy of ['project', 'user'] as const) {
+      const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+        method: 'PUT',
+        headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+        body: JSON.stringify({ authorization_strategy: strategy }),
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(world.authorizationStrategyInputs).toEqual([
+      { slug: 'stripe', strategy: 'project' },
+      { slug: 'stripe', strategy: 'user' },
+    ]);
+  });
+
+  test('rejects an unsupported connector profile authorization strategy', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'both' }),
+    });
+    expect(response.status).toBe(400);
+    expect(world.authorizationStrategyInputs).toHaveLength(0);
+  });
+
+  test('authorization strategy updates require connector administration', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'project' }),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  test('authorization strategy updates return 404 for an unknown connector profile', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/missing/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'project' }),
+    });
+    expect(response.status).toBe(404);
+  });
+
   test('the old connector sharing route is gone (404)', async () => {
     const put = await req(`/projects/${PROJECT}/connectors/stripe/sharing`, {
-      method: 'PUT', headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'members', memberIds: [ALICE] }),
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'members', memberIds: [ALICE] }),
     });
     expect(put.status).toBe(404);
   });
 
   test('a connector with no scoping is usable by any user (bob included)', async () => {
-    const bob = await req('/call', { method: 'POST', headers: { 'x-test-user': BOB, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+    const bob = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': BOB, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
     expect(bob.status).toBe(200);
   });
 });
 
 describe('connector-scoped policy enforcement', () => {
-  const callCharges = () => req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+  const callCharges = () =>
+    req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
 
   test('block → 403, no upstream', async () => {
-    world.policiesByConnector.set('conn-stripe', [{ match: '*.create', action: 'block', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: '*.create', action: 'block', position: 0 },
+    ]);
     const res = await callCharges();
     expect(res.status).toBe(403);
     expect((await res.json()).reason).toBe('policy_block');
@@ -375,23 +654,37 @@ describe('connector-scoped policy enforcement', () => {
   });
 
   test('require_approval → 202', async () => {
-    world.policiesByConnector.set('conn-stripe', [{ match: 'charges.*', action: 'require_approval', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: 'charges.*', action: 'require_approval', position: 0 },
+    ]);
     expect((await callCharges()).status).toBe(202);
   });
 
   test('always_run catch-all → 200', async () => {
-    world.policiesByConnector.set('conn-stripe', [{ match: '*', action: 'always_run', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: '*', action: 'always_run', position: 0 },
+    ]);
     expect((await callCharges()).status).toBe(200);
   });
 
   test('blocked tool hidden from catalog', async () => {
-    world.policiesByConnector.set('conn-stripe', [{ match: 'charges.*', action: 'block', position: 0 }]);
-    expect((await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors[0].actions).toHaveLength(0);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: 'charges.*', action: 'block', position: 0 },
+    ]);
+    expect(
+      (await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors[0]
+        .actions,
+    ).toHaveLength(0);
   });
 });
 
 describe('project-scoped policy enforcement', () => {
-  const callCharges = () => req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+  const callCharges = () =>
+    req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
 
   test('project [[policies]] use fully-qualified match (stripe.charges.*)', async () => {
     world.projectPolicies = [{ match: 'stripe.charges.*', action: 'block', position: 0 }];
@@ -402,13 +695,17 @@ describe('project-scoped policy enforcement', () => {
 
   test('project block overrides connector always_run (admin trust)', async () => {
     world.projectPolicies = [{ match: '*.charges.*', action: 'block', position: 0 }];
-    world.policiesByConnector.set('conn-stripe', [{ match: '*', action: 'always_run', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: '*', action: 'always_run', position: 0 },
+    ]);
     expect((await callCharges()).status).toBe(403);
   });
 
   test('project require_approval beats connector always_run', async () => {
     world.projectPolicies = [{ match: 'stripe.*', action: 'require_approval', position: 0 }];
-    world.policiesByConnector.set('conn-stripe', [{ match: '*', action: 'always_run', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: '*', action: 'always_run', position: 0 },
+    ]);
     expect((await callCharges()).status).toBe(202);
   });
 
@@ -420,7 +717,12 @@ describe('project-scoped policy enforcement', () => {
 });
 
 describe('default_mode (risk-driven)', () => {
-  const callCharges = () => req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+  const callCharges = () =>
+    req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
 
   test('allow_all (legacy default): unmatched write → runs', async () => {
     world.defaultMode = 'allow_all';
@@ -436,17 +738,30 @@ describe('default_mode (risk-driven)', () => {
     world.defaultMode = 'risk';
     // Add a read action.
     world.actions.set('conn-stripe|charges.list', {
-      path: 'stripe.charges.list', relPath: 'charges.list',
-      inputSchema: null, risk: 'read',
-      binding: { kind: 'openapi', method: 'GET', path: '/v1/charges', server: 'https://api.stripe.com' },
+      path: 'stripe.charges.list',
+      relPath: 'charges.list',
+      inputSchema: null,
+      risk: 'read',
+      binding: {
+        kind: 'openapi',
+        method: 'GET',
+        path: '/v1/charges',
+        server: 'https://api.stripe.com',
+      },
     });
-    const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.list', args: {} }) });
+    const res = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.list', args: {} }),
+    });
     expect(res.status).toBe(200);
   });
 
   test('risk: explicit connector always_run beats risk-default', async () => {
     world.defaultMode = 'risk';
-    world.policiesByConnector.set('conn-stripe', [{ match: 'charges.create', action: 'always_run', position: 0 }]);
+    world.policiesByConnector.set('conn-stripe', [
+      { match: 'charges.create', action: 'always_run', position: 0 },
+    ]);
     expect((await callCharges()).status).toBe(200);
   });
 });
@@ -471,7 +786,9 @@ describe('admin policy CRUD', () => {
       }),
     });
     expect(put.status).toBe(200);
-    const get = await (await req(`/projects/${PROJECT}/policies`, { headers: { 'x-test-admin': ALICE } })).json();
+    const get = await (
+      await req(`/projects/${PROJECT}/policies`, { headers: { 'x-test-admin': ALICE } })
+    ).json();
     expect(get.defaultMode).toBe('risk');
     expect(get.policies).toEqual([
       { match: '*.delete*', action: 'block' },
@@ -488,7 +805,11 @@ describe('admin policy CRUD', () => {
         defaultMode: 'allow_all',
       }),
     });
-    const call = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
+    const call = await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }),
+    });
     expect(call.status).toBe(403);
     expect((await call.json()).reason).toBe('policy_block');
   });
@@ -497,7 +818,10 @@ describe('admin policy CRUD', () => {
     const put = await req(`/projects/${PROJECT}/policies`, {
       method: 'PUT',
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ policies: [{ match: '*', action: 'skip' }], defaultMode: 'allow_all' }),
+      body: JSON.stringify({
+        policies: [{ match: '*', action: 'skip' }],
+        defaultMode: 'allow_all',
+      }),
     });
     expect(put.status).toBe(400);
   });
@@ -513,6 +837,8 @@ describe('admin policy CRUD', () => {
 
   test('GET/PUT require admin auth (403 without)', async () => {
     expect((await req(`/projects/${PROJECT}/policies`)).status).toBe(403);
-    expect((await req(`/projects/${PROJECT}/policies`, { method: 'PUT', body: '{}' })).status).toBe(403);
+    expect((await req(`/projects/${PROJECT}/policies`, { method: 'PUT', body: '{}' })).status).toBe(
+      403,
+    );
   });
 });

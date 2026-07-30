@@ -1,26 +1,43 @@
-import { executorExecutions, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { executorExecutions, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { isHarnessId, type HarnessId } from '@kortix/shared/harnesses';
+import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { mayRequeueFailedCreate } from './requeue-policy';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
+import { secretsAllowlistPayloadConflicts } from '../secrets';
+import {
+  requireConnectorsConflicts,
+  runtimeContextConflicts,
+} from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
+import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
+import { appendAcpEnvelope } from '../lib/acp-transcript';
 import { openSession } from '../routes/shared';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  deliverHeadlessAcpPrompt,
+  queueInitialAcpPrompt,
+  shouldScheduleInitialAcpPrompt,
+} from './headless-acp';
+import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,
   resultFromExistingCommand,
 } from './store';
 import type { QueuedContinueSessionPayload } from './store';
+import { crossAccountIdempotencyResult } from './idempotency-guard';
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
@@ -77,6 +94,18 @@ export async function createSession(
     reason,
   });
   if (claimed.existing) {
+    // Cross-tenant guard: a colliding idempotency key that is not the caller's
+    // OWN create_session for this account+project must never return the foreign
+    // command/session — see crossAccountIdempotencyResult.
+    const crossAccount = crossAccountIdempotencyResult(
+      {
+        accountId: claimed.row.accountId,
+        projectId: claimed.row.projectId,
+        commandType: claimed.row.commandType,
+      },
+      { accountId: command.project.accountId, projectId: command.project.projectId },
+    );
+    if (crossAccount) return crossAccount;
     const existingPayload = (claimed.row.payload ?? {}) as Record<string, unknown>;
     const existingBody =
       existingPayload.body && typeof existingPayload.body === 'object'
@@ -101,6 +130,58 @@ export async function createSession(
         },
       };
     }
+    if (
+      secretsAllowlistPayloadConflicts(
+        existingBody.secrets as string[] | null | undefined,
+        command.body.secrets as string[] | null | undefined,
+      )
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different secrets allowlist',
+            code: 'IDEMPOTENCY_SECRETS_CONFLICT',
+          },
+        },
+      };
+    }
+    if (runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different runtime_context',
+            code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
+          },
+        },
+      };
+    }
+    // require_connectors resolves to member bindings at create; a replay with a
+    // different required set would otherwise return the first session, which was
+    // resolved against a different set of the user's own connections.
+    if (
+      requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different require_connectors',
+            code: 'IDEMPOTENCY_REQUIRE_CONNECTORS_CONFLICT',
+          },
+        },
+      };
+    }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
       const [row] = await db
@@ -108,7 +189,28 @@ export async function createSession(
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, existingResult.sessionId))
         .limit(1);
-      if (row) existingResult.row = row;
+      if (row) {
+        // A soft-deleted session is gone — deleteSession() stamps
+        // metadata.deletedAt and leaves status 'stopped'. Handing the tombstone
+        // back as a create "success" poisons the key forever (every follow-up
+        // continueSession → no-session). Treat it as spent: 409, use a new key.
+        const rowMeta = (row.metadata ?? {}) as Record<string, unknown>;
+        if (typeof rowMeta.deletedAt === 'string') {
+          return {
+            status: 'failed',
+            commandId: claimed.row.commandId,
+            retryable: false,
+            error: {
+              status: 409,
+              body: {
+                error: 'Idempotency key maps to a deleted session — use a new key',
+                code: 'IDEMPOTENCY_KEY_SESSION_DELETED',
+              },
+            },
+          };
+        }
+        existingResult.row = row;
+      }
     }
     return existingResult;
   }
@@ -163,8 +265,16 @@ export async function createSession(
   }
 
   const message = String(result.error?.body?.error ?? result.reason ?? 'Failed to create session');
+  // This is the INLINE path — the queued branch returned above — so `result` is
+  // about to be handed to a waiting caller. Marking it retryable would leave the
+  // command row queued for the drainer as well, and the caller (told by the
+  // guide that a 429/503 is worth retrying) retries with a fresh key: two billed
+  // sandboxes for one intent, both running initial_prompt.
   await markCommandFailed(claimed.row.commandId, message, {
-    retryable: result.retryable ?? false,
+    retryable: mayRequeueFailedCreate({
+      answeredSynchronously: true,
+      errorIsRetryable: result.retryable ?? false,
+    }),
     attempts: claimed.row.attempts + 1,
   });
   return { ...result, commandId: claimed.row.commandId };
@@ -239,12 +349,34 @@ export async function continueSession(
   // the user explicitly deleted.
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  const runtimeHarness = isHarnessId(sessionMeta.runtime_harness)
+    ? sessionMeta.runtime_harness
+    : null;
+  const acpServerId =
+    typeof sessionMeta.acp_server_id === 'string' ? sessionMeta.acp_server_id : null;
+  let acpSessionId =
+    typeof sessionMeta.acp_session_id === 'string' ? sessionMeta.acp_session_id : null;
+  const nativeAgent =
+    typeof sessionMeta.native_agent === 'string' ? sessionMeta.native_agent : null;
+  const usesAcp = sessionMeta.runtime_transport === 'acp' && !!runtimeHarness && !!acpServerId;
 
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
   }
+
+  // Server-side delivery is the FIRST prompt for any session created without
+  // one (email, warm/UI sessions a trigger later reuses). Titling here rather
+  // than at the transport makes it identical for REST and ACP; already-titled
+  // sessions no-op.
+  void generateSessionTitleFromFirstPrompt({
+    sessionId,
+    projectId: session.projectId,
+    accountId: session.accountId,
+    userId,
+    firstPromptText: text,
+  });
 
   const [project] = await db
     .select()
@@ -309,7 +441,7 @@ export async function continueSession(
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    opencodeSessionId: o.opencode_session_id,
+    opencodeSessionId: usesAcp ? acpServerId : o.opencode_session_id,
   });
 
   return deliverWithRetry({
@@ -319,8 +451,24 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId),
+    send: async (externalId, runtimeId) => {
+      if (!usesAcp || !runtimeHarness || !acpServerId) {
+        return postPrompt(externalId, runtimeId, text, userId, sessionId);
+      }
+      const delivered = await postAcpPrompt({
+        externalId,
+        acpServerId,
+        acpSessionId,
+        runtimeHarness,
+        nativeAgent,
+        projectId: session.projectId,
+        projectSessionId: sessionId,
+        text,
+        userId,
+      });
+      if (delivered.acpSessionId) acpSessionId = delivered.acpSessionId;
+      return delivered.ok;
+    },
   });
 }
 
@@ -328,10 +476,16 @@ export async function drainSessionLifecycleQueue(
   input: {
   workerId?: string;
   limit?: number;
+  /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
+  availableBefore?: Date;
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
-  const rows = await claimDueLifecycleCommands({ workerId, limit: input.limit ?? 10 });
+  const rows = await claimDueLifecycleCommands({
+    workerId,
+    limit: input.limit ?? 10,
+    availableBefore: input.availableBefore,
+  });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
   for (const row of rows) {
     if (row.commandType === 'continue_session') {
@@ -499,17 +653,40 @@ async function executeQueuedCreate(
       error: { status: 409, body: { error: 'No account owner available to own the session' } },
     };
   }
+  let requestingPrincipalType = payload.requestingPrincipalType;
+  if (requestingPrincipalType !== 'human' && requestingPrincipalType !== 'service_account') {
+    const [serviceAccount] = row.actorUserId
+      ? await db
+          .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+          .from(serviceAccounts)
+          .where(
+            and(
+              eq(serviceAccounts.serviceAccountId, row.actorUserId),
+              eq(serviceAccounts.accountId, project.accountId),
+            ),
+          )
+          .limit(1)
+      : [];
+    requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
+  }
   return executeCreateSession({
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
+    requestingPrincipalType,
     body: payload.body ?? {},
     metadata: payload.metadata,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
+    mayManageSystemConnectorProfiles: payload.mayManageSystemConnectorProfiles,
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
+    // Replay the origin-derivation signals captured at enqueue time so a
+    // queued backend create keeps origin 'backend'.
+    authType: payload.authType,
+    apiKeyType: payload.apiKeyType,
+    inSession: payload.inSession,
   });
 }
 
@@ -523,12 +700,17 @@ async function executeCreateSession(
   const result = await createProjectSession({
     project: command.project,
     userId: command.userId,
+    requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
     enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    inSession: command.inSession,
+    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 
   if (result.error) {
@@ -538,6 +720,41 @@ async function executeCreateSession(
       headers: result.headers,
       retryable: isRetryableCreateError(result.error.status),
     };
+  }
+  const initialPrompt =
+    typeof command.body.initial_prompt === 'string' ? command.body.initial_prompt.trim() : '';
+  const runtimeMetadata = (result.row?.metadata ?? {}) as Record<string, unknown>;
+  const postCreateOwnsPrompt = command.postCreate?.some(
+    (action) => action.type === 'deliver_prompt',
+  );
+  if (
+    result.row &&
+    shouldScheduleInitialAcpPrompt({
+      initialPrompt,
+      runtimeMetadata,
+      postCreateOwnsPrompt: !!postCreateOwnsPrompt,
+      hasSessionRow: true,
+    })
+  ) {
+    await queueInitialAcpPrompt(
+      {
+        source: command.source,
+        projectId: command.project.projectId,
+        accountId: command.project.accountId,
+        sessionId: result.row.sessionId,
+        actorUserId: command.userId,
+        text: initialPrompt,
+      },
+      {
+        enqueue: enqueueContinueSessionCommand,
+        drain: () => drainSessionLifecycleQueue({ limit: 1 }),
+      },
+    ).catch((error) => {
+      console.warn('[session-lifecycle] initial ACP prompt enqueue failed', {
+        sessionId: result.row?.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
   return {
     status: 'created',
@@ -597,18 +814,59 @@ function sandboxExternalId(
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
 }
 
+async function postAcpPrompt(input: {
+  externalId: string;
+  acpServerId: string;
+  acpSessionId: string | null;
+  runtimeHarness: HarnessId;
+  nativeAgent: string | null;
+  projectId: string;
+  projectSessionId: string;
+  text: string;
+  userId: string;
+}): Promise<{ ok: boolean; acpSessionId: string | null }> {
+  return deliverHeadlessAcpPrompt(input, {
+    request: (method, route, query, headers, body) =>
+      forwardToSandbox(
+        input.externalId,
+        DAEMON_PORT,
+        {
+          kind: 'principal',
+          userId: input.userId,
+          callerSessionId: input.projectSessionId,
+          // The API is delivering this prompt (trigger, cron, Slack, email,
+          // CLI, mobile), so it is a control-plane OBSERVATION and may extend
+          // the deadline. forwardToSandbox does that once the box accepts it.
+          sandboxAuthored: false,
+        },
+        method,
+        route,
+        query,
+        headers,
+        body ? (body.slice().buffer as ArrayBuffer) : undefined,
+        config.KORTIX_URL ?? '',
+      ),
+    persistIdentity: (identity) =>
+      persistAcpSessionIdentity({ db }, identity).then(() => undefined),
+    persistEnvelope: appendAcpEnvelope,
+  });
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
   text: string,
   userId: string,
+  /** The session this prompt is FOR. Passed as the caller binding so the
+   *  isolation guard proves the target matches, rather than being waived. */
+  callerSessionId: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
   try {
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId },
+      { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,

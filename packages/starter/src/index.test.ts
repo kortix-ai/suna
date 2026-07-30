@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  getStarterFiles,
-  normalizeStarterTemplateId,
-  listGeneralKnowledgeWorkerSkills,
-  STARTER_TEMPLATE_IDS,
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
-  getMarketplaceFiles,
-  isKortixManagedSkillName,
+  STARTER_TEMPLATE_IDS,
   type StarterFile,
+  getManagedSkillFiles,
+  getMarketplaceFiles,
+  getProjectTemplateFiles,
+  getStarterFiles,
+  isKortixManagedSkillName,
+  listGeneralKnowledgeWorkerSkills,
+  normalizeStarterTemplateId,
 } from './index';
 
 function byPath(files: StarterFile[]): Map<string, string> {
@@ -16,8 +18,12 @@ function byPath(files: StarterFile[]): Map<string, string> {
 }
 
 describe('STARTER_TEMPLATE_IDS', () => {
-  test('contains the two known templates', () => {
-    expect([...STARTER_TEMPLATE_IDS]).toEqual(['minimal', 'general-knowledge-worker']);
+  test('contains the three known templates', () => {
+    expect([...STARTER_TEMPLATE_IDS]).toEqual([
+      'minimal',
+      'general-knowledge-worker',
+      'acp-multi-harness',
+    ]);
   });
 
   test('default template is the general knowledge worker (base + all domain skills)', () => {
@@ -29,6 +35,7 @@ describe('normalizeStarterTemplateId', () => {
   test('returns a known id unchanged', () => {
     expect(normalizeStarterTemplateId('minimal')).toBe('minimal');
     expect(normalizeStarterTemplateId('general-knowledge-worker')).toBe('general-knowledge-worker');
+    expect(normalizeStarterTemplateId('acp-multi-harness')).toBe('acp-multi-harness');
   });
 
   test('falls back to the default for an unknown string', () => {
@@ -81,7 +88,10 @@ describe('getStarterFiles', () => {
   });
 
   test('interpolates the projectName placeholder', () => {
-    const files = getStarterFiles({ projectName: 'My Cool Project', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'My Cool Project',
+      template: 'general-knowledge-worker',
+    });
     const memory = byPath(files).get('.kortix/memory/MEMORY.md');
     expect(memory).toBeDefined();
     expect(memory!).toContain('My Cool Project');
@@ -90,7 +100,11 @@ describe('getStarterFiles', () => {
 
   test('defaults repoFullName when omitted', () => {
     const withoutRepo = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    const withRepo = getStarterFiles({ projectName: 'X', template: 'minimal', repoFullName: 'me/mine' });
+    const withRepo = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      repoFullName: 'me/mine',
+    });
     const joinedDefault = withoutRepo.map((f) => f.content).join('\n');
     const joinedCustom = withRepo.map((f) => f.content).join('\n');
     if (joinedDefault.includes('your-org/your-repo') || joinedCustom.includes('me/mine')) {
@@ -113,8 +127,14 @@ describe('getStarterFiles', () => {
   });
 
   test('minimal template files are a subset of general-knowledge-worker paths', () => {
-    const minimalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path));
-    const generalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map((f) => f.path));
+    const minimalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path),
+    );
+    const generalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map(
+        (f) => f.path,
+      ),
+    );
     for (const p of minimalPaths) {
       expect(generalPaths.has(p)).toBe(true);
     }
@@ -127,7 +147,10 @@ describe('getStarterFiles', () => {
   });
 
   test('produces no content containing a leftover {{projectName}} token', () => {
-    const files = getStarterFiles({ projectName: 'Determinism', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'Determinism',
+      template: 'general-knowledge-worker',
+    });
     for (const file of files) {
       expect(file.content.includes('{{projectName}}')).toBe(false);
     }
@@ -145,15 +168,78 @@ describe('getStarterFiles', () => {
   });
 
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
-    // The one user-facing starter (the default) carries the full skill kit.
+    // The one user-facing starter (the default) carries the domain skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
+      true,
+    );
     expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
+      false,
+    );
     expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  });
+
+  /**
+   * `walk()` here and the snapshot generator filter independently, so a filter
+   * added to only one of them means the compiled binary and a source checkout
+   * scaffold different files. That drift shipped three `__pycache__/*.pyc` files
+   * into every API-created project.
+   */
+  test('scaffolds no build artifacts or OS cruft', () => {
+    const junk = getStarterFiles({ projectName: 'X' }).filter((f) =>
+      /(^|\/)(__pycache__|node_modules|\.venv|\.mypy_cache|\.pytest_cache|\.ruff_cache|\.tox|\.cache)\//.test(
+        f.path,
+      ) || /(^|\/)(\.DS_Store|Thumbs\.db)$/.test(f.path) || f.path.endsWith('.pyc'),
+    );
+    expect(junk.map((f) => f.path)).toEqual([]);
+  });
+
+  /**
+   * The config summary matches skills with a GREEDY `skills/(.+)/SKILL.md`, so a
+   * SKILL.md nested inside another skill registers as a phantom entity named
+   * `parent/child` and pads the Skills UI. Keep SKILL.md exactly one level deep.
+   */
+  test('no SKILL.md is nested inside another skill', () => {
+    const nested = getStarterFiles({ projectName: 'X' })
+      .map((f) => f.path.match(/^\.kortix\/opencode\/skills\/(.+)\/SKILL\.md$/)?.[1])
+      .filter((slug): slug is string => typeof slug === 'string' && slug.includes('/'));
+    expect(nested).toEqual([]);
+  });
+
+  /**
+   * The scaffold floor. Anything beyond this is a marketplace install — the
+   * point of the cut, and the thing most likely to creep back one "surely this
+   * one is universal" skill at a time.
+   */
+  test('the scaffold ships exactly the agreed skill floor', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const names = new Set<string>();
+    for (const f of getStarterFiles({ projectName: 'X' })) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name) names.add(name);
+    }
+    expect([...names].sort()).toEqual([
+      // Design quality for every artifact below (CSS, PPT, matplotlib, PDF).
+      'design-foundations',
+      // Documents & decks.
+      'docx',
+      'pdf',
+      'presentations',
+      'xlsx',
+      // Platform front door.
+      'kortix-cli',
+      // Computer basics — driving a real browser.
+      'agent-browser',
+      // Web artifacts, and the skill that puts them on a public URL.
+      'web-publishing-and-deployments',
+      'webapp',
+      'website-building',
+    ].sort());
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
@@ -161,7 +247,10 @@ describe('getStarterFiles', () => {
     const paths = new Set(files.map((f) => f.path));
 
     expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
+    // `kortix-*` family lives in `templates/managed/` and is injected at boot.
+    expect(paths.has('.kortix/opencode/skills/kortix-cli/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
     expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
     expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
@@ -176,7 +265,11 @@ describe('getStarterFiles', () => {
     const paths = new Set(getMarketplaceFiles().map((f) => f.path));
 
     expect(paths.has('kortix.registry.json')).toBe(true);
-    expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(true);
+    expect(paths.has('runtime/skills/email-triage/SKILL.md')).toBe(true);
+    // `agent-browser` is scaffolded now (driving a browser is a floor capability,
+    // not an optional install), so it must NOT also sit in the marketplace root —
+    // its hand-written kortix.registry.json entry was removed with the move.
+    expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(false);
     expect(paths.has('runtime/pty/pty-tools.ts')).toBe(false);
     expect(paths.has('runtime/tools/memory.ts')).toBe(false);
     expect(paths.has('runtime/tools/web_search.ts')).toBe(false);
@@ -193,7 +286,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-computer',
       'kortix-executor',
       'kortix-marketplace',
-      'kortix-meet',
+      'kortix-voice',
       'kortix-memory',
       'kortix-onboarding',
       'kortix-slack',
@@ -206,6 +299,51 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect(isKortixManagedSkillName('kortix')).toBe(false);
     expect(isKortixManagedSkillName('memory-reflector')).toBe(false);
     expect(isKortixManagedSkillName('web_search')).toBe(false);
+  });
+
+  /**
+   * Being LISTED as managed does not inject anything — the baked
+   * `/opt/kortix/managed-skills` set is built by walking template roots, so a
+   * managed skill living in a root the bake does not walk is declared managed and
+   * reaches no sandbox at all. That silently stranded `kortix-computer` under
+   * `templates/marketplace/` for its entire life.
+   *
+   * `templates/managed/` now owns the family and `scripts/write-managed-skills.ts`
+   * walks it alongside the starter roots (which still carry `kortix-cli`), so the
+   * gap is closed by construction. This test is the guard: adding a managed name
+   * without putting its SKILL.md in a walked root fails here.
+   */
+  test('every managed skill is actually in the injected set', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const injected = new Set<string>();
+    for (const f of [
+      ...getManagedSkillFiles(),
+      ...getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' }),
+    ]) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name && isKortixManagedSkillName(name)) injected.add(name);
+    }
+
+    const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * The managed family is injected at boot (force-overwriting whatever the repo
+   * holds), so committing a second copy into every new project bought nothing and
+   * padded the Skills UI with ~10 entries the user cannot meaningfully edit.
+   * `kortix-cli` is the deliberate exception — the visible front door to the rest.
+   */
+  test('only kortix-cli is scaffolded into a new project', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const scaffolded = new Set<string>();
+    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name && isKortixManagedSkillName(name)) scaffolded.add(name);
+    }
+    expect([...scaffolded]).toEqual(['kortix-cli']);
   });
 });
 
@@ -303,5 +441,23 @@ describe('marketplace registry — first-party use-case templates', () => {
       const optional = ((t.meta as Record<string, any>)?.template?.env_optional as string[]) ?? [];
       for (const key of Object.keys(envVars)) expect(optional).toContain(key);
     }
+  });
+});
+
+
+describe('marketplace projects — full project templates', () => {
+  /**
+   * The bundled department templates (SEO / Marketing / Website Studio) were
+   * retired: the marketplace leads with the single Kortix Starter project rather
+   * than a wall of half-relevant verticals, and the synthetic starter item is
+   * built in the API catalog, not from this root.
+   *
+   * The `registry:project` machinery itself stays — this root is the extension
+   * point for bundling an example project again — so the contract worth pinning
+   * is that an EMPTY root degrades cleanly instead of throwing the catalog build.
+   */
+  test('an empty project-template root yields no files and does not throw', () => {
+    expect(() => getProjectTemplateFiles()).not.toThrow();
+    expect(getProjectTemplateFiles()).toEqual([]);
   });
 });

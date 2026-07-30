@@ -18,10 +18,10 @@ import { validateManifest } from '@kortix/manifest-schema';
 import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
-import { compileAgentConfig } from '../projects/lib/compile-agent-config';
+import { compileRuntimeConfig } from '../projects/lib/compile-runtime-config';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
-  test('seeds kortix.yaml (kortix_version 2), not a v1 kortix.toml', async () => {
+  test('seeds a v3 kortix.yaml, not a v1 kortix.toml', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -30,7 +30,9 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       now: new Date('2026-07-05T00:00:00Z').toISOString(),
     });
 
-    expect(seed.files.some((f) => f.path === 'kortix.yaml')).toBe(true);
+    const manifest = seed.files.find((f) => f.path === 'kortix.yaml');
+    expect(manifest).toBeDefined();
+    expect(manifest?.content).toContain('kortix_version: 3');
     expect(seed.files.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
@@ -72,10 +74,15 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     if (!governed.ok) {
       throw new Error(`expected ok:true, got AGENT_NOT_DECLARED: ${governed.error}`);
     }
-    expect(governed.grant?.agent).toBe('kortix');
+    expect(governed.grant).toEqual({
+      agent: 'opencode',
+      connectors: 'all',
+      kortixCli: 'all',
+      env: 'all',
+    });
   });
 
-  test('the compiled v2 agent config reaches the session (no illegal-frontmatter compile failure)', async () => {
+  test('the seeded manifest compiles all four runtime launch plans', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -86,18 +93,20 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
     const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
 
-    const promptFiles: Record<string, string> = {};
-    for (const f of seed.files) {
-      if (f.path.startsWith('.kortix/opencode/agents/')) promptFiles[f.path] = f.content;
-    }
-
-    const compiled = compileAgentConfig(manifest.raw, 'opencode', promptFiles);
+    const compiled = compileRuntimeConfig(manifest.raw);
     expect(compiled).not.toBeNull();
-    expect(compiled?.agent?.kortix).toBeDefined();
-    // The starter's default agent grants `skills: all` alongside
-    // `permission: allow`, so the compiler expands the bare action into an
-    // explicit permission object (skills governance owns `permission.skill`)
-    // — every other capability stays "allow", `skill` is explicitly "allow" too.
-    expect(compiled?.agent?.kortix?.permission).toMatchObject({ edit: 'allow', bash: 'allow', skill: 'allow' });
+    expect(compiled?.version).toBe(3);
+    expect(compiled?.defaultAgent).toBe('opencode');
+    expect(Object.values(compiled?.runtimes ?? {}).map((runtime) => runtime.harness).sort()).toEqual([
+      'claude',
+      'codex',
+      'opencode',
+      'pi',
+    ]);
+    expect(compiled?.agents.opencode).toMatchObject({
+      runtime: 'opencode',
+      harness: 'opencode',
+      nativeAgent: 'kortix',
+    });
   });
 });

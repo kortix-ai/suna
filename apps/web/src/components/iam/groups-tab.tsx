@@ -230,8 +230,17 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.source}
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      className={g.source === 'scim' ? undefined : 'capitalize'}
+                      title={
+                        g.source === 'scim'
+                          ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
+                          : undefined
+                      }
+                    >
+                      {g.source === 'scim' ? 'Synced from IdP' : g.source}
                     </Badge>
                   </div>
                   <span className="text-muted-foreground text-xs">

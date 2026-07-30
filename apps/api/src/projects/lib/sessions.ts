@@ -7,9 +7,17 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import {
+  isModelServableForAccount,
+  resolveEffectiveModel,
+} from '../../llm-gateway/resolution/default-model';
+import { type ModelSource, toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -26,12 +34,26 @@ import {
   grantFromLoadedAgents,
   loadProjectAgents,
   projectRequiresDeclaredAgents,
+  requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
+  sandboxFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
+import { resolveSessionSecretGrant } from './secret-grant';
+import {
+  AmbiguousSecretGrantError,
+  intersectSecretGrants,
+  listProjectSecretsSnapshotForUser,
+  listResolvedProjectSecrets,
+  parseSessionSecretsAllowlist,
+  secretKeyCollisionInAllowlist,
+} from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
-import { resolveProjectGitAuth } from './git';
+import {
+  resolveCompiledRuntimeConfigForSession,
+  type CompiledRuntimeConfig,
+} from './compile-runtime-config';
+import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -46,15 +68,26 @@ import {
   normalizeString,
 } from './serializers';
 import {
+  canonicalConnectorAlias,
   parseSessionConnectorBindings,
+  resolveRequiredConnectorProfiles,
+  sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import {
+  TITLE_SOURCE_MAX_CHARS,
+  generateSessionTitleFromFirstPrompt,
+  titleSourceForCreate,
+} from '../session-title-generate';
+import { canOverride, resolveSessionOrigin } from './session-origin';
+import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildSessionRuntimeEnv, shouldResolvePlatformDefaultModel } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
@@ -236,14 +269,20 @@ export async function buildSessionSandboxEnvVars(input: {
    *  grant defaults to 'all' (back-compat, no narrowing). */
   defaultBranch?: string;
   manifestPath?: string;
+  /** Effective project ACP experiment. */
+  acpRuntimeEnabled?: boolean;
+  /** Immutable create-time launch plan. Restarts pass the stored plan. */
+  compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the launching user so their own CODEX_AUTH_JSON override (if
-  // any) wins; every OTHER secret is project-wide (secret sharing was retired —
-  // authorization is centralized on the running agent's `secrets` grant, applied
-  // below by identifier).
+  // Resolved AS the session's OWNER (createdBy, read below) so their own
+  // CODEX_AUTH_JSON override (if any) wins — consistently, whether this run is
+  // provisioned by the owner (create) or by a manager/admin (restart/open); see
+  // secretsPrincipalUserId below. Every OTHER secret is project-wide (secret
+  // sharing was retired — authorization is centralized on the running agent's
+  // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
@@ -254,6 +293,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
+  let compiledRuntimeConfig: CompiledRuntimeConfig | null = input.compiledRuntimeConfig ?? null;
   if (input.defaultBranch) {
     compiledAgentConfig = await resolveCompiledAgentConfigForSession({
       projectId: input.projectId,
@@ -262,6 +302,15 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
+    if (input.acpRuntimeEnabled && !compiledRuntimeConfig) {
+      compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }).catch(() => null);
+    }
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -269,23 +318,65 @@ export async function buildSessionSandboxEnvVars(input: {
     // No-op (undefined → 'all') for back-compat grants and projects without
     // an `agents:` map or git context. This is the ONLY gate on agent secret
     // access — there is no resource-side allow-list on the secret itself.
-    const loadedAgents = await loadProjectAgents({
+    //
+    // FAIL CLOSED: this used to `.catch(() => null)`, which collapsed a loader
+    // throw into an unrestricted grant — a transient git/parse failure silently
+    // handed the session every project secret. It now throws
+    // SecretGrantResolutionError and the provision fails instead. Shares one
+    // resolver with the per-prompt hot push (lib/secret-grant.ts) so the two
+    // paths can no longer disagree about what this agent may read.
+    agentGrantEnv = await resolveSessionSecretGrant({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    }).catch(() => null);
-    const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
-    agentGrantEnv = grant?.env;
+      manifestPath: input.manifestPath,
+      sessionAgent: input.agentName,
+    });
   }
+
+  // Per-session secret policy, read by sessionId inside the builder so all three
+  // call sites (create, restart, open/ensure) are covered — no caller can
+  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
+  // so a backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB).
+  const [sessionPolicyRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      createdBy: projectSessions.createdBy,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  const grantEnvForSession = intersectSecretGrants(
+    agentGrantEnv,
+    sessionPolicyRow?.secretsAllowlist ?? null,
+  );
+
+  // The secrets principal is the session's OWNER (`createdBy`), read here by
+  // sessionId — NOT `input.userId`, which is whoever is provisioning this run.
+  // On create those coincide, but restart/open/ensure-runtime provision on
+  // behalf of any project manager/admin, and a per-user secret override (today
+  // CODEX_AUTH_JSON) resolves per principal (`listResolvedProjectSecrets`). If a
+  // manager restarted another member's session we'd inject the MANAGER's personal
+  // secret at boot, which the first prompt's hot-push (`resolveOwnerRawEnv`, keyed
+  // on `createdBy`) would then clobber back — a cross-principal bleed + flip-flop.
+  // Deriving the principal from `createdBy` here unifies all three provisioning
+  // paths with hot-push and the admin provider-migrate path. Falls back to
+  // `input.userId` only if the row somehow isn't found (create races its own row
+  // in some callers). The agent grant — not the human — remains the authority on
+  // WHICH identifiers are eligible; this only picks the per-user override owner.
+  const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
 
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
-      input.userId,
-      agentGrantEnv,
+      secretsPrincipalUserId,
+      grantEnvForSession,
+      // Non-`runtime` rows are delivered as a per-session handle, so the
+      // chokepoint needs the session this env is being built FOR. Without it it
+      // withholds them rather than falling back to plaintext.
+      input.sessionId,
     );
   } catch (err) {
     if (err instanceof AmbiguousSecretGrantError) {
@@ -342,14 +433,20 @@ export async function buildSessionSandboxEnvVars(input: {
     // that one is an intentional native provider).
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: '1',
-    // Force a FULL clone (no blobless partial clone). The blobless default
-    // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
-    // through the Kortix git proxy; when the proxy's partial-clone capability
-    // isn't advertised consistently, git intermittently stalls on an on-demand
-    // blob fetch and the clone never finishes (repo_ready stuck false → the
-    // session never reaches runtimeReady). A full clone transfers one pack with
-    // no on-demand fetches — reliable. Starter/project repos are small so the
-    // size cost is negligible. Empty string = full clone (see daemon config.ts).
+    // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
+    // on-demand fetches, which stall through the Kortix git proxy when its
+    // partial-clone capability isn't advertised consistently — the clone then
+    // never finishes and the session never reaches runtimeReady. It is also
+    // simply slower: measured on kortix-ai/company, blobless 6161ms vs a full
+    // clone's 4288ms.
+    //
+    // Shallowness is the safe lever instead (KORTIX_CLONE_DEPTH=1, the daemon
+    // default): one pack, one commit, no on-demand fetches, with history
+    // restored in the background right after boot (scheduleHistoryBackfill).
+    // It is worth ~1.5x on the clone, no more — the dominant cost is the
+    // working tree plus the transatlantic git-proxy hop (sandbox US → API
+    // eu-west-2 → GitHub US). See
+    // docs/specs/2026-07-25-session-boot-latency-attribution.md, Finding 1.
     KORTIX_CLONE_FILTER: '',
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
@@ -364,10 +461,16 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
-      // Per-session model override (e.g. Slack turns pin a specific model).
-      // The sandbox agent reads this and sets it on every opencode prompt call.
+      // Concrete session model after explicit → agent → project → account →
+      // platform resolution. The sandbox uses it for the first OpenCode turn
+      // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
+      // OpenCode ACP starts its internal REST server. Existing REST clients
+      // continue to work while the project experiment selects the ACP client.
+      opencodeProcessTransport: 'acp',
       compiledAgentConfig,
+      compiledRuntimeConfig: input.acpRuntimeEnabled ? compiledRuntimeConfig : null,
+      runtimeModel: input.opencodeModel,
     }),
   };
 }
@@ -434,6 +537,7 @@ export function sandboxCallbackUnreachableReason(providerName: SandboxProviderNa
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
@@ -446,6 +550,21 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
+  /**
+   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
+   * for authType==='apiKey'), and whether the token operates from inside a
+   * running session (`inSession`: session-bound or agent-scoped). Combined with
+   * the invocation source these derive the session ORIGIN — never trusted from
+   * the body. A programmatic customer credential (service_account, pat, or a
+   * 'user' apiKey) that is NOT in-session resolves to 'backend' and may set
+   * backend-only override fields. See session-origin.ts.
+   */
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
+  /** The request-time capability verdict for operator-managed (non-member)
+   * connection profiles. Personal profiles ignore this and remain owner-only. */
+  mayManageSystemConnectorProfiles?: boolean;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -480,22 +599,230 @@ export async function createProjectSession(input: {
     };
   }
 
+  // `inherit_unbound` is a benign binding modifier: when this session binds any
+  // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
+  // failing closed. It can only ever inherit the project default (never another
+  // owner's profile), so unlike secrets it is NOT origin-gated.
+  let inheritUnbound = body.inherit_unbound === true;
+  const connectorBindingsConfigured = body.connector_bindings !== undefined;
+  const requireConnectors: string[] = Array.isArray(body.require_connectors)
+    ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
+    : [];
+
+  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
+  // + invocation source (metadata.source), NEVER the body. It gates which
+  // override fields the caller may set.
+  const origin = resolveSessionOrigin({
+    authType: input.authType,
+    apiKeyType: input.apiKeyType,
+    inSession: input.inSession,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+  });
+  // Backend-only per-session secrets allowlist. Presence-gate on the raw body
+  // FIRST (a non-backend caller that even mentions the field is rejected, before
+  // shape is considered), then validate shape, then existence — narrowing the
+  // sandbox env to (agent grant) ∩ (this list). `[]` = inject zero secrets.
+  if (body.secrets !== undefined && !canOverride(origin, 'secrets')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'secrets may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  const parsedSecrets = parseSessionSecretsAllowlist(body.secrets);
+  if (!parsedSecrets.ok) {
+    return {
+      error: { status: 400, body: { error: parsedSecrets.error, code: 'INVALID_SESSION_SECRETS' } },
+    };
+  }
+  const secretsAllowlist = parsedSecrets.value ?? null;
+  if (secretsAllowlist && secretsAllowlist.length > 0) {
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // Every allowlisted identifier must name an existing runtime secret in the
+    // project (KORTIX_*/connector rows are already excluded by the resolver), so
+    // a typo fails fast at create rather than silently injecting nothing.
+    const known = new Set(resolvedProjectSecrets.map((r) => r.identifier.toUpperCase()));
+    const missing = secretsAllowlist.filter((id) => !known.has(id.toUpperCase()));
+    if (missing.length > 0) {
+      return {
+        error: {
+          status: 404,
+          body: {
+            error: `unknown secret identifier(s): ${missing.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_NOT_FOUND',
+          },
+        },
+      };
+    }
+    // Reject a KEY collision at create — two allowlisted identifiers resolving to
+    // one env KEY throw AmbiguousSecretGrantError at boot, and the immutable
+    // allowlist would leave the session permanently unbootable.
+    const collision = secretKeyCollisionInAllowlist(resolvedProjectSecrets, secretsAllowlist);
+    if (collision) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+          },
+        },
+      };
+    }
+  }
+
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  // Explicit request wins; otherwise fall back to the project's default agent
-  // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
-  // `[opencode] default_agent` — synced to project metadata, or a UI/Slack
-  // override), so EVERY session — UI, triggers, channels — inherits the
-  // project's chosen agent without each caller passing one. Unset → 'default'.
+  // The literal "default" is a non-binding legacy sentinel. It must not block
+  // the configured project default. This rule applies to every caller,
+  // including older triggers and channel adapters that still send the sentinel.
+  const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
-  const agentName =
-    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+  let agentName =
+    (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
+    projectDefaultAgent ??
+    'default';
+  const acpRuntimeEnabled = resolveExperimentalFeature(project.metadata, 'acp_runtime');
+  const compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
+    projectId,
+    repoUrl: project.repoUrl,
+    defaultBranch: project.defaultBranch,
+    manifestPath: project.manifestPath,
+    gitAuthToken: null,
+  }).catch(() => null);
+  if (compiledRuntimeConfig?.version === 3 && !acpRuntimeEnabled) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'kortix_version 3 requires the ACP & Multi-Harness project experiment',
+          code: 'ACP_RUNTIME_REQUIRED',
+        },
+      },
+    };
+  }
+  const runtimeAgent =
+    compiledRuntimeConfig?.agents[agentName] ??
+    (agentName === 'default'
+      ? compiledRuntimeConfig?.agents[compiledRuntimeConfig.defaultAgent]
+      : undefined);
+  if (acpRuntimeEnabled && compiledRuntimeConfig && (!runtimeAgent || !runtimeAgent.enabled)) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `Agent "${agentName}" is not declared and enabled in kortix.yaml`,
+          code: 'AGENT_NOT_DECLARED',
+        },
+      },
+    };
+  }
+  if (runtimeAgent) agentName = runtimeAgent.name;
+  const loadedAgents = await loadProjectAgents(project);
+
+  const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+    ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
+    : false;
+  const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
+
+  // Model: normalize + fail-fast at create. An unservable / retired / typo'd
+  // model pin was previously stored verbatim and only failed at prompt time (a
+  // dead turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
+  // daemon's default because opencode addresses managed models as `kortix/<id>`.
+  // Validate against the same servability resolver the gateway uses, and store
+  // the OPENCODE ref form. Runs BEFORE the billing hold so a bad model never
+  // costs a credit reservation. Mirrors the channel-model gate
+  // (routes/channel-bindings.ts) and the plan's §4.7 fail-fast.
+  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  let opencodeModel: string | null = null;
+  let opencodeModelSource: ModelSource | null = null;
+  if (requestedModel) {
+    if (/\s/.test(requestedModel)) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `"${requestedModel}" doesn't look like a model id`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+        },
+      };
+    }
+    const servable = await isModelServableForAccount({
+      userId,
+      accountId,
+      projectId,
+      freeModelsOnly,
+      model: requestedModel,
+    });
+    if (!servable) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Model "${requestedModel}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+        },
+      };
+    }
+    opencodeModel = toOpencodeModelRef(requestedModel);
+    opencodeModelSource = 'explicit';
+  } else if (
+    llmGatewayEnabled &&
+    shouldResolvePlatformDefaultModel(acpRuntimeEnabled, runtimeAgent?.harness)
+  ) {
+    try {
+      const resolved = await resolveEffectiveModel({
+        userId,
+        accountId,
+        projectId,
+        agentName,
+        explicit: null,
+        freeModelsOnly,
+      });
+      const concreteModel =
+        resolved.model ?? (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+      if (concreteModel) {
+        opencodeModel = toOpencodeModelRef(concreteModel);
+        opencodeModelSource = resolved.model ? resolved.source : 'platform';
+      }
+    } catch (error) {
+      console.error('[projects] Failed to resolve the session default model:', error);
+      return {
+        error: {
+          status: 503,
+          body: {
+            error: 'The session default model could not be resolved',
+            code: 'SESSION_MODEL_RESOLUTION_FAILED',
+          },
+        },
+      };
+    }
+  }
+
+  const agentRequiredConnectors = requiredConnectorsForAgent(agentName, loadedAgents);
+  const effectiveRequireConnectors = Array.from(
+    new Set<string>([...requireConnectors, ...agentRequiredConnectors]),
+  );
+
+  // Every connector this session touches — whether the caller bound it explicitly
+  // or the agent requires it — must be granted to the session's agent.
+  const grantCheckAliases = new Set<string>([
+    ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
+    ...effectiveRequireConnectors,
+  ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
-  if (parsedConnectorBindings.bindings) {
-    loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
-    for (const alias of Object.keys(parsedConnectorBindings.bindings)) {
-      if (!agentMayUseConnector(loadedAgentGrant, alias)) {
+  if (grantCheckAliases.size > 0) {
+    loadedAgentGrant = grantFromLoadedAgents(agentName, loadedAgents);
+    for (const alias of grantCheckAliases) {
+      if (!agentMayUseConnector(loadedAgentGrant, canonicalConnectorAlias(alias))) {
         return {
           error: {
             status: 403,
@@ -511,6 +838,9 @@ export async function createProjectSession(input: {
   const validatedConnectorBindings = await validateSessionConnectorBindings({
     accountId,
     projectId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+    mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
   if (!validatedConnectorBindings.ok) {
@@ -520,6 +850,47 @@ export async function createProjectSession(input: {
         body: {
           error: validatedConnectorBindings.error,
           code: validatedConnectorBindings.code,
+        },
+      },
+    };
+  }
+  if (effectiveRequireConnectors.length > 0) {
+    const required = await resolveRequiredConnectorProfiles({
+      accountId,
+      projectId,
+      actingUserId: userId,
+      actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+      aliases: effectiveRequireConnectors,
+      explicitBindings: validatedConnectorBindings.bindings,
+    });
+    if (!required.ok) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            code: required.code,
+            message: 'Connect the required connector profiles before starting this session.',
+            connector_profiles: required.connectorProfiles,
+          },
+        },
+      };
+    }
+    const boundAliases = new Set(validatedConnectorBindings.bindings.map((b) => b.alias));
+    for (const binding of required.bindings) {
+      if (!boundAliases.has(binding.alias)) validatedConnectorBindings.bindings.push(binding);
+    }
+    if (!connectorBindingsConfigured) inheritUnbound = true;
+  }
+  if (
+    visibility !== 'private' &&
+    sessionConnectorBindingsRequirePrivateVisibility(validatedConnectorBindings.bindings)
+  ) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Sessions using a personal connector profile must remain private',
+          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
         },
       },
     };
@@ -535,7 +906,6 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = await loadProjectAgents(project);
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,
@@ -544,18 +914,16 @@ export async function createProjectSession(input: {
       return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
     }
   }
-  // Explicit request wins; otherwise fall back to the project's default sandbox
-  // template (`sandbox.default` in kortix.yaml — `[sandbox] default` in a
-  // legacy v1 kortix.toml — synced to project metadata), so EVERY session — UI,
-  // triggers, channels — inherits the project's chosen box without each
-  // caller passing `sandbox_slug`. Unset → platform default.
+  // Explicit request wins. The selected agent environment is next. The
+  // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
-  const sandboxSlug =
-    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ??
-    projectDefaultSandboxSlug ??
-    undefined;
+  const sandboxSlug = resolveSessionSandboxSlug({
+    explicit: normalizeString(body.sandbox_slug ?? body.sandboxSlug),
+    agent: sandboxFromLoadedAgents(agentName, loadedAgents),
+    project: projectDefaultSandboxSlug,
+  });
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
@@ -637,6 +1005,13 @@ export async function createProjectSession(input: {
           message: billingCheck.message,
           code: billingCheck.reason,
           balance: billingCheck.balance,
+          // Lets the client tell a genuinely-free/no-plan account ("subscribe")
+          // from a paying Team account whose wallet ran dry ("top up") instead
+          // of pitching the Free plan to a Team account. See web error-handler.
+          billing_model: billingCheck.billingModel,
+          has_subscription: billingCheck.hasSubscription,
+          // The unambiguous state — the one field a client should branch on.
+          billing_state: billingCheck.billingState,
           // The account that actually needs the upgrade — the project's owning
           // (team) account, NOT the caller's primary account. The upgrade dialog
           // scopes itself to this so a non-billing member sees the *team's*
@@ -654,15 +1029,36 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
+  // An explicit `title_source` means the baked prompt is a rendered envelope
+  // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
+  // are the user's actual words. Store it so a LATER fallback hook — which only
+  // ever sees the envelope — titles from the same clean text the create hook
+  // would have used, instead of leaking the scaffolding into a project-visible
+  // title when this create-time attempt fails.
+  const explicitTitleSource = normalizeString(body.title_source ?? body.titleSource);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(explicitTitleSource
+      ? { title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS) }
+      : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
+    ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
+    runtime_transport: acpRuntimeEnabled ? 'acp' : 'rest',
+    runtime_harness: acpRuntimeEnabled ? (runtimeAgent?.harness ?? 'opencode') : 'opencode',
+    ...(acpRuntimeEnabled && runtimeAgent
+      ? {
+          runtime_name: runtimeAgent.runtime,
+          native_agent: runtimeAgent.nativeAgent,
+          acp_server_id: sessionId,
+          compiled_runtime_plan: compiledRuntimeConfig,
+        }
+      : {}),
     ...(input.metadata ?? {}),
+    sandbox_slug: sandboxSlug,
   };
 
   let sessionRow: ProjectSessionRow | null = null;
@@ -678,12 +1074,18 @@ export async function createProjectSession(input: {
         baseRef,
         sandboxProvider: providerName,
         sandboxId: sessionId,
+        // Do not set opencodeSessionId during wrapper-session creation.
+        // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
         status: 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).
         createdBy: userId,
         visibility,
+        origin,
+        secretsAllowlist,
+        connectorBindingsConfigured,
+        connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
         updatedAt: new Date(),
       })
@@ -741,6 +1143,20 @@ export async function createProjectSession(input: {
     };
   }
 
+  // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
+  // inside the box — it never crosses the API again, so this is the only moment
+  // it can be titled. No modelHint: the row already carries `opencode_model`.
+  const titleSource = titleSourceForCreate(body);
+  if (titleSource) {
+    void generateSessionTitleFromFirstPrompt({
+      sessionId,
+      projectId,
+      accountId,
+      userId,
+      firstPromptText: titleSource,
+    });
+  }
+
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
   // status endpoint and shows the ConnectingScreen during the long tail.
   void (async () => {
@@ -749,14 +1165,10 @@ export async function createProjectSession(input: {
       // Resolve git auth and user env concurrently. Git auth is needed for
       // background freshness checks / remote branch publishing, but a warm
       // session can boot from an existing ready snapshot without waiting for it.
-      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
+      const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
         tl.mark('git-auth');
-        return gitAuth;
+        return gitProject;
       });
-      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
-        ...project,
-        gitAuthToken: gitAuth.auth?.token ?? null,
-      }));
       // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
       // can skip the in-guest fetch when the baked scaffold already IS base.
       // Best-effort + timeout-guarded (never block create): on failure/timeout
@@ -778,7 +1190,9 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           opencodeModel,
-          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
+          llmGatewayEnabled,
+            acpRuntimeEnabled,
+            compiledRuntimeConfig,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,
@@ -791,19 +1205,10 @@ export async function createProjectSession(input: {
       });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
-        const [current] = await db
-          .select({ metadata: projectSessions.metadata })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sessionId))
-          .limit(1);
-        const currentMetadata =
-          current?.metadata && typeof current.metadata === 'object'
-            ? (current.metadata as Record<string, unknown>)
-            : {};
         await db
           .update(projectSessions)
           .set({
-            metadata: { ...currentMetadata, ...extra },
+            metadata: projectSessionMetadataMerge(extra),
             updatedAt: new Date(),
           })
           .where(eq(projectSessions.sessionId, sessionId));
@@ -852,6 +1257,7 @@ export async function createProjectSession(input: {
         accountId,
         projectId,
         userId,
+        agentName,
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,
@@ -863,7 +1269,7 @@ export async function createProjectSession(input: {
           manifestPath: project.manifestPath,
           gitAuthToken: null,
         },
-        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
+        resolveGitProject: async () => projectWithGitAuthPromise,
         baseRef,
         sandboxSlug,
       });
@@ -885,7 +1291,10 @@ export async function createProjectSession(input: {
           .set({
             status: 'failed',
             error: message,
-            metadata: { ...metadata, provisioning_error: message },
+            // Merge, never re-write the create-time snapshot: by the time
+            // provisioning fails the row may already carry a generated title,
+            // acp_session_id, remote_branch or the start timeline.
+            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
             updatedAt: new Date(),
           })
           .where(eq(projectSessions.sessionId, sessionId));

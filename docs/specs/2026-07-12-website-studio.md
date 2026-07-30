@@ -1,5 +1,9 @@
 # Website Studio — an email-first, self-running web agency (spec)
 
+> **Runtime scope.** The shipped marketplace template uses
+> `kortix_version: 2` and an OpenCode-native `studio` agent. A project can
+> migrate this logical agent to a version 3 runtime profile.
+
 **Status:** draft · **Date:** 2026-07-12 · **Owner:** Marko
 
 ## The idea

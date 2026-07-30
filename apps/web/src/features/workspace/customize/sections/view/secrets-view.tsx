@@ -53,7 +53,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -64,10 +64,10 @@ import {
   getProjectDetail,
   listProjectSecrets,
   upsertProjectSecret,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   WarningIcon as DangerTriangleSolid,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   MagnifyingGlassIcon as Search,
   TrashIcon as TrashSolid,
 } from '@phosphor-icons/react';
@@ -466,7 +466,7 @@ function SecretTableRow({
                 )}
               >
                 {busy ? (
-                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                  <Loading className="size-3.5 shrink-0" />
                 ) : (
                   <MoreHorizontal className="size-3.5 shrink-0" />
                 )}
@@ -474,7 +474,7 @@ function SecretTableRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="size-3.5 shrink-0" />
+                <PencilSimpleIcon className="size-3.5 shrink-0" />
                 {row.configured ? 'Edit secret' : 'Set value'}
               </DropdownMenuItem>
               {row.configured && (
@@ -670,7 +670,7 @@ function SecretDialog({
                 (!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending
               }
             >
-              {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
+              {save.isPending && <Loading className="size-4 shrink-0" />}
               Save
             </Button>
           </ModalFooter>

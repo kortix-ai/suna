@@ -2,7 +2,8 @@
 /**
  * ke2e — Kortix end-to-end REST API test runner.
  *
- *   ke2e run [--domain d] [--id ID] [--tag t] [--grep s] [--workers N] [--smoke]
+ *   ke2e run [--domain d] [--id ID] [--tag t] [--grep s] [--workers N]
+ *            [--api-workers N] [--sandbox-workers N] [--smoke]
  *   ke2e list
  *   ke2e coverage
  *   ke2e gc [--older-than 2h] [--dry-run]
@@ -129,6 +130,8 @@ async function main() {
     tags: list(flags.tag),
     grep: typeof flags.grep === "string" ? flags.grep : undefined,
     workers: flags.workers ? Number(flags.workers) : undefined,
+    apiWorkers: flags["api-workers"] ? Number(flags["api-workers"]) : undefined,
+    sandboxWorkers: flags["sandbox-workers"] ? Number(flags["sandbox-workers"]) : undefined,
     smoke: !!flags.smoke,
     runId,
     gitSha,

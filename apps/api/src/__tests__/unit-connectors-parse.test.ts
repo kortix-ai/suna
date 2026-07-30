@@ -279,6 +279,7 @@ connectors:
 `);
     expect(errors).toEqual([]);
     expect(specs[0]!.credentialMode).toBe('shared');
+    expect(specs[0]!.authorizationStrategy).toBe('project');
   });
 
   test('rejects bad credential mode', () => {
@@ -290,6 +291,95 @@ connectors:
     credential: team
 `);
     expect(errors[0]!.error).toContain('credential must be');
+  });
+});
+
+describe('connectors: — authorization strategy', () => {
+  test('defaults legacy entries to project authorization', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-shared
+    name: Shared Gmail
+    provider: pipedream
+    app: gmail
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.authorizationStrategy).toBe('project');
+  });
+
+  test('preserves a user authorization strategy through serialization', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-personal
+    name: Personal Gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'gmail-personal',
+      name: 'Personal Gmail',
+      app: 'gmail',
+      authorizationStrategy: 'user',
+    });
+    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
+      slug: 'gmail-personal',
+      name: 'Personal Gmail',
+      app: 'gmail',
+      authorization_strategy: 'user',
+    });
+  });
+
+  test('allows two connector profiles to reference one provider app', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-read
+    name: Gmail read only
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+  - slug: gmail-send
+    name: Gmail send
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(errors).toEqual([]);
+    expect(specs.map((spec) => [spec.slug, spec.app, spec.authorizationStrategy])).toEqual([
+      ['gmail-read', 'gmail', 'project'],
+      ['gmail-send', 'gmail', 'user'],
+    ]);
+  });
+
+  test('rejects an unsupported authorization strategy', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: both
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('authorization_strategy must be "project" or "user"');
+  });
+
+  test('includes authorization strategy in the materialization hash', () => {
+    const project = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+`).specs[0]!;
+    const user = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`).specs[0]!;
+    expect(manifestHashForConnector(project)).not.toBe(manifestHashForConnector(user));
   });
 });
 
@@ -365,6 +455,18 @@ connectors:
 `);
     expect(errors).toHaveLength(1);
     expect(errors[0]!.error).toContain('missing a slug');
+  });
+
+  test('explicit blank name', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail
+    name: ""
+    provider: pipedream
+    app: gmail
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('name must be a non-empty string');
   });
 
   test('bad slug', () => {
@@ -541,6 +643,28 @@ connectors:
     expect(roundTrip(original)).toEqual(original);
   });
 
+  test('http + static headers survives round-trip', () => {
+    const original = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    auth:
+      type: custom
+      name: X-API-Key
+    headers:
+      Accept: application/json
+      X-Tenant-Id: acme
+      user-agent: kortix/1.0
+`).specs[0]!;
+    expect(original.headers).toEqual({
+      Accept: 'application/json',
+      'X-Tenant-Id': 'acme',
+      'user-agent': 'kortix/1.0',
+    });
+    expect(roundTrip(original)).toEqual(original);
+  });
+
   test('mcp + custom auth survives round-trip', () => {
     const original = parseAndExtract(`
 connectors:
@@ -556,6 +680,145 @@ connectors:
       secret: NOTION_MCP_TOKEN
 `).specs[0]!;
     expect(roundTrip(original)).toEqual(original);
+  });
+});
+
+describe('connectors: — static `headers:`', () => {
+  test('parsed into an ordered map, verbatim names, trimmed values', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Accept: application/json
+      X-Tenant-Id: acme
+      X-Api-Version: 2
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.headers).toEqual({
+      Accept: 'application/json',
+      'X-Tenant-Id': 'acme',
+      'X-Api-Version': '2',
+    });
+    expect(Object.keys(specs[0]!.headers)).toEqual(['Accept', 'X-Tenant-Id', 'X-Api-Version']);
+  });
+
+  test('absent headers → {} (and nothing is emitted back into the manifest)', () => {
+    const spec = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+`).specs[0]!;
+    expect(spec.headers).toEqual({});
+    expect(connectorSpecToTomlEntry(spec).headers).toBeUndefined();
+  });
+
+  test('an invalid header name fails the whole entry', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      "X Tenant Id": acme
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('invalid header name');
+  });
+
+  test('a CR/LF-bearing value fails the whole entry (header injection)', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      X-Tenant-Id: "acme\\r\\nX-Admin: true"
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('must not contain CR or LF');
+  });
+
+  test('caps: too many headers / over-long name / over-long value', () => {
+    const many = Array.from({ length: 33 }, (_, i) => `      X-H${i}: v`).join('\n');
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+${many}
+`).errors[0]!.error,
+    ).toContain('too many headers');
+
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      ${'X'.repeat(129)}: v
+`).errors[0]!.error,
+    ).toContain('too long');
+
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      X-Big: ${'v'.repeat(2049)}
+`).errors[0]!.error,
+    ).toContain('too long');
+  });
+
+  test('transport-owned headers are rejected', () => {
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Host: evil.example.com
+`).errors[0]!.error,
+    ).toContain('controlled by the transport');
+  });
+
+  test('platform-called providers reject `headers` (it would be inert)', () => {
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    headers:
+      Accept: application/json
+`).errors[0]!.error,
+    ).toContain('not supported');
+  });
+
+  test('headers change the manifest hash (a header edit must re-materialize)', () => {
+    const a = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+`).specs[0]!;
+    const b = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Accept: application/json
+`).specs[0]!;
+    expect(manifestHashForConnector(a)).not.toBe(manifestHashForConnector(b));
   });
 });
 

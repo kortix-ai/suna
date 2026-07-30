@@ -53,7 +53,6 @@ describe('sandbox provider parity across shared subsystems', () => {
       expect(typeof card.cpuPerCoreSecond).toBe('number');
       expect(typeof card.memoryPerGbSecond).toBe('number');
       expect(typeof card.diskPerGbSecond).toBe('number');
-      expect(typeof card.providerCostMultiplier).toBe('number');
     });
 
     test(`${name}: has a registered snapshot-build adapter`, () => {

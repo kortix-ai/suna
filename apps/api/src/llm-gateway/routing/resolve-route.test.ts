@@ -17,15 +17,15 @@ describe('gateway control-plane route resolver', () => {
     supportsImage: (model) => model === 'model-default' || model === 'model-vision',
   });
 
-  test('resolves auto and attaches the matching declarative fallback policy', async () => {
+  test('does not resolve stale auto into the platform default', async () => {
     expect(await resolveRoute(principal, {
       requestedModel: 'auto',
       requires: { imageInput: false },
     })).toEqual({
-      policyId: 'default-degrade',
-      primaryModel: 'model-default',
-      fallbackModels: ['model-fallback'],
-      fallbackOn: 'any-error',
+      policyId: 'direct',
+      primaryModel: 'auto',
+      fallbackModels: [],
+      fallbackOn: 'transient',
       generationDefaults: undefined,
       generationDefaultsForModel: expect.any(Function),
     });
@@ -33,7 +33,7 @@ describe('gateway control-plane route resolver', () => {
 
   test('uses the principal default without changing explicit model requests', async () => {
     expect((await resolveRoute({ ...principal, defaultModel: 'account-model' }, {
-      requestedModel: 'auto',
+      requestedModel: 'account-model',
       requires: { imageInput: false },
     }))?.primaryModel).toBe('account-model');
     expect(await resolveRoute(principal, {
@@ -51,7 +51,7 @@ describe('gateway control-plane route resolver', () => {
 
   test('selects the configured vision model only when the chosen model lacks image input', async () => {
     const route = await resolveRoute({ ...principal, defaultModel: 'text-only' }, {
-      requestedModel: 'auto',
+      requestedModel: 'text-only',
       requires: { imageInput: true },
     });
     expect(route?.primaryModel).toBe('model-vision');
@@ -105,7 +105,7 @@ describe('gateway control-plane route resolver', () => {
     });
   });
 
-  test('auto uses project default fallback, project vision, and permits explicitly disabling fallback', async () => {
+  test('the concrete default uses project fallback and vision policies', async () => {
     let disabled = false;
     const projectResolver = createGatewayRouteResolver({
       defaultModel: 'platform-default',
@@ -123,7 +123,7 @@ describe('gateway control-plane route resolver', () => {
     });
 
     expect(await projectResolver({ ...principal, projectId: 'p1', defaultModel: 'project-default' }, {
-      requestedModel: 'auto',
+      requestedModel: 'project-default',
       requires: { imageInput: false },
     })).toEqual({
       policyId: 'project:default',
@@ -136,7 +136,7 @@ describe('gateway control-plane route resolver', () => {
 
     const vision = await projectResolver(
       { ...principal, projectId: 'p1', defaultModel: 'text-only' },
-      { requestedModel: 'auto', requires: { imageInput: true } },
+      { requestedModel: 'text-only', requires: { imageInput: true } },
     );
     expect(vision.primaryModel).toBe('project-vision');
     expect(vision.fallbackModels).toEqual(['project-fallback']);
@@ -144,7 +144,7 @@ describe('gateway control-plane route resolver', () => {
     disabled = true;
     const noFallback = await projectResolver(
       { ...principal, projectId: 'p1' },
-      { requestedModel: 'auto', requires: { imageInput: false } },
+      { requestedModel: 'platform-default', requires: { imageInput: false } },
     );
     expect(noFallback.fallbackModels).toEqual([]);
     expect(noFallback.policyId).toBe('project:default');

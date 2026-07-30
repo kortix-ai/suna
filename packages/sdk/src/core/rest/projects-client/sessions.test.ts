@@ -1,18 +1,24 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { isSessionFresh } from '../../http/fresh-sessions';
+import type { CreateProjectSessionInput, ProjectSession } from './sessions';
 import {
   createProjectSession,
   createSessionPublicShare,
+  claimWarmProjectSession,
   deleteProjectSession,
+  ensureWarmProjectSession,
   getProjectSession,
+  getProjectSessionScope,
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionTranscript,
+  getVoiceTranscript,
   listProjectSessions,
   listSessionPublicShares,
   restartProjectSession,
   revokeSessionPublicShare,
+  setProjectSessionScope,
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
@@ -40,12 +46,22 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
+type IsNever<T> = [T] extends [never] ? true : false;
+type SessionAttributionKey<T> = Extract<keyof T, `${'end_user' | 'origin'}_${'ref'}`>;
+
 test('listProjectSessions hits GET /projects/:id/sessions', async () => {
   nextResponse = { status: 200, body: [] };
   const result = await listProjectSessions('P1');
   expect(last().url).toContain('/projects/P1/sessions');
   expect(last().method).toBe('GET');
   expect(result).toEqual([]);
+});
+
+test('listProjectSessions requests the manager-only project inventory scope', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { scope: 'project' });
+  expect(last().url).toContain('/projects/P1/sessions?scope=project');
+  expect(last().method).toBe('GET');
 });
 
 test('listProjectSessions throws when the response is unsuccessful', async () => {
@@ -124,6 +140,34 @@ test('createProjectSession serializes non-secret runtime_context unchanged', asy
   });
 });
 
+test('createProjectSession serializes canonical connector authorization bindings', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-BINDING', name: null } };
+  await createProjectSession('P1', {
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+});
+
+test('createProjectSession retains deprecated profile_id input compatibility', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-LEGACY-BINDING', name: null } };
+  await createProjectSession('P1', {
+    connector_bindings: {
+      gmail: { profile_id: 'AUTH-1' },
+    },
+  });
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { profile_id: 'AUTH-1' },
+    },
+  });
+});
+
 test('createProjectSession does NOT mark the session fresh when an initial_prompt is set', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-2', name: null } };
   await createProjectSession('P1', { initial_prompt: 'hello' });
@@ -134,6 +178,71 @@ test('createProjectSession defaults the body to {} when no input is given', asyn
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');
   expect(last().body).toEqual({});
+});
+
+test('ensureWarmProjectSession POSTs the server-owned warm-session request', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-1' },
+      reused: true,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  const result = await ensureWarmProjectSession('P1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({});
+  expect(result.session.session_id).toBe('WARM-1');
+  expect(result.reused).toBe(true);
+});
+
+test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
+  nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
+  const result = await claimWarmProjectSession('P1', {
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm/claim');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(result.session_id).toBe('WARM-1');
+});
+
+test('claimWarmProjectSession keeps recoverable claim conflicts out of the global error sink', async () => {
+  const onError = mock(() => {});
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError,
+  });
+  nextResponse = {
+    status: 409,
+    body: {
+      message: 'The warm session does not match the selected agent or sandbox',
+      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+    },
+  };
+
+  try {
+    await expect(
+      claimWarmProjectSession('P1', {
+        session_id: 'WARM-1',
+        agent_name: 'reviewer',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+    });
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
 });
 
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {
@@ -162,6 +271,19 @@ test('getSessionTranscript builds the query string from limit/chars options', as
 
   await getSessionTranscript('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
+});
+
+test('getVoiceTranscript hits GET .../voice-transcript and builds the query string from cursor/limit', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', call_id: 'S1', live: true, cursor: 3, count: 0, turns: [] },
+  };
+  await getVoiceTranscript('P1', 'S1', { cursor: 12, limit: 50 });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript?cursor=12&limit=50');
+  expect(last().method).toBe('GET');
+
+  await getVoiceTranscript('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript');
 });
 
 test('updateProjectSession PATCHes the name/metadata input', async () => {
@@ -193,4 +315,58 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1/stop');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('stopped');
+});
+
+test('getProjectSessionScope reads canonical session scope', async () => {
+  const scope = {
+    secrets_allowlist: ['GMAIL_TOKEN'],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-1' } },
+    dropped_secrets: [],
+    added_secrets: [],
+    dropped_bindings: [],
+    retroactive: true,
+    detail: 'Current session scope.',
+  };
+  nextResponse = { status: 200, body: scope };
+  const result = await getProjectSessionScope('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(scope);
+});
+
+test('setProjectSessionScope replaces connector authorizations with canonical input', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: [],
+      connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      detail: 'Applies from the next prompt.',
+    },
+  };
+  const result = await setProjectSessionScope('P1', 'S1', {
+    secrets: [],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({
+    secrets: [],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+  });
+  expect(result.connector_bindings).toEqual({
+    gmail: { authorization_id: 'AUTH-2' },
+  });
+});
+
+test('session contracts omit usage attribution keys', () => {
+  type ListOptions = NonNullable<Parameters<typeof listProjectSessions>[1]>;
+  const createInput: IsNever<SessionAttributionKey<CreateProjectSessionInput>> = true;
+  const response: IsNever<SessionAttributionKey<ProjectSession>> = true;
+  const listOptions: IsNever<SessionAttributionKey<ListOptions>> = true;
+
+  expect([createInput, response, listOptions]).toEqual([true, true, true]);
 });

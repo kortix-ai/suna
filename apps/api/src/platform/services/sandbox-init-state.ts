@@ -1,4 +1,4 @@
-import { WarmRuntimeUnavailableError } from '../providers';
+import { WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
@@ -190,6 +190,11 @@ export async function retrySandboxProvisionCreate(
     onAttemptStart?: (attempt: number) => Promise<void> | void;
     onAttemptFailure?: (attempt: number, error: unknown, willRetry: boolean) => Promise<void> | void;
   } = {},
+  // FIX-A: how a single attempt boots. Defaults to the provider's name-based
+  // create(); the boot path passes a createFromExternalId-backed fn to boot the
+  // exact pinned template id (with the same retry/backoff behavior on transient
+  // errors, but fail-fast on a definitive GC'd-pin 404 — see below).
+  createFn: (opts: CreateSandboxOpts) => Promise<ProvisionResult> = (opts) => provider.create(opts),
 ): Promise<{ result: ProvisionResult; attempts: number }> {
   let lastError: unknown;
   // Outer bound is the longest patience-window we'd extend for any retry class.
@@ -197,14 +202,18 @@ export async function retrySandboxProvisionCreate(
   for (let attempt = 1; attempt <= HARD_CAP; attempt++) {
     await hooks.onAttemptStart?.(attempt);
     try {
-      const result = await provider.create(createOpts);
+      const result = await createFn(createOpts);
       return { result, attempts: attempt };
     } catch (error) {
       lastError = error;
       // Memory-snapshot restore gave up (experimental restore kept dropping the
       // runtime). Not retryable here — the caller falls back to the normal
       // snapshot path; retrying would just create more flaky restores.
-      if (error instanceof WarmRuntimeUnavailableError) {
+      //
+      // FIX-A: a DEFINITIVE GC'd-pin 404 (SandboxTemplateNotFoundError) is
+      // likewise non-retryable here — fail fast so the boot path falls back to a
+      // name-boot immediately, rather than burning retries on an id that is gone.
+      if (error instanceof WarmRuntimeUnavailableError || error instanceof SandboxTemplateNotFoundError) {
         await hooks.onAttemptFailure?.(attempt, error, false);
         throw error;
       }

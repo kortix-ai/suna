@@ -17,15 +17,50 @@
  * The UI exposes only three shapes (`*`, `prefix.*`, exact); the engine supports
  * arbitrary `*` positions for power users authoring kortix.yaml by hand.
  */
-type PolicyAction = 'always_run' | 'require_approval' | 'block';
-type Risk = 'read' | 'write' | 'destructive';
+export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+export type Risk = 'read' | 'write' | 'destructive';
 export type DefaultMode = 'risk' | 'allow_all';
+
+/**
+ * One condition on the ARGUMENTS of a call, not just its tool name.
+ *
+ * A tool-name pattern can only ever say "may the agent call `gmail.send_email`".
+ * It cannot say "…but only to these two addresses" — the question every real
+ * guardrail actually asks. A rule carrying `conditions` applies only when the
+ * tool path matches AND every condition holds.
+ *
+ * `arg` is a dot path into the call args (`to`, `message.channel`). `match` uses
+ * the SAME grammar as a tool-path matcher: a glob by default, or an explicit
+ * `/regex/flags` when slash-wrapped.
+ */
+export interface PolicyArgCondition {
+  arg: string;
+  match: string;
+  /** Invert: the condition holds when the value does NOT match. */
+  negate?: boolean;
+}
 
 export interface Policy {
   match: string;
   action: PolicyAction;
   /** Authoring order; lower = evaluated first. */
   position?: number;
+  /**
+   * Argument conditions — ALL must hold for the rule to apply. Absent/empty =
+   * a plain tool-name rule (unchanged behaviour).
+   */
+  conditions?: PolicyArgCondition[] | null;
+  /**
+   * Set by the loader when stored conditions exist but are MALFORMED (written
+   * before validation, or by a direct SQL edit).
+   *
+   * This must never collapse to "no conditions": silently dropping a broken
+   * condition from an `always_run` rule would convert a narrow permit into
+   * allow-everything — a fail-OPEN escalation. Instead it is treated exactly
+   * like an unevaluable condition (see `ruleApplies`), which resolves toward
+   * less privilege.
+   */
+  conditionsInvalid?: boolean;
 }
 
 /** Convert a glob (`*`, `vercel.*`, `*.delete*`, exact) into an anchored regex. */
@@ -108,17 +143,154 @@ function matchesPolicy(pattern: string, path: string): boolean {
   return compileMatcher(pattern).test(path);
 }
 
+/** Arg paths are dotted identifiers — no globs, no indexes, no traversal. */
+const ARG_PATH_REGEX = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+/**
+ * Segments that would walk off the payload and into the prototype chain.
+ * `__proto__` is a valid identifier, so the regex above admits it — a rule like
+ * `{arg: '__proto__.constructor'}` would then read engine internals rather than
+ * the call's data. Rejected at write time AND skipped at read time
+ * (`valueAtPath`), because rows predating this check already exist.
+ */
+const FORBIDDEN_ARG_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+/** Bound the condition list so one rule can't turn into a regex workload. */
+const MAX_CONDITIONS_PER_POLICY = 10;
+
+/**
+ * Validate the arg conditions on a rule at WRITE time, so a malformed guardrail
+ * is rejected on save rather than silently never matching (a never-matching
+ * `block` rule is an outage-shaped security hole).
+ */
+export function areValidConditions(conditions: unknown): conditions is PolicyArgCondition[] {
+  if (conditions === null || conditions === undefined) return true;
+  if (!Array.isArray(conditions)) return false;
+  if (conditions.length > MAX_CONDITIONS_PER_POLICY) return false;
+  return conditions.every((raw) => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const candidate = raw as Record<string, unknown>;
+    if (typeof candidate.arg !== 'string' || !ARG_PATH_REGEX.test(candidate.arg)) return false;
+    if (candidate.arg.split('.').some((s) => FORBIDDEN_ARG_SEGMENTS.has(s))) return false;
+    if (typeof candidate.match !== 'string' || !isValidMatcher(candidate.match)) return false;
+    if (candidate.negate !== undefined && typeof candidate.negate !== 'boolean') return false;
+    return true;
+  });
+}
+
+/** Normalize a persisted/parsed condition list into the engine's shape. */
+export function normalizeConditions(conditions: unknown): PolicyArgCondition[] | null {
+  if (!areValidConditions(conditions) || !conditions || conditions.length === 0) return null;
+  return conditions.map((c) => ({
+    arg: c.arg,
+    match: c.match,
+    ...(c.negate ? { negate: true as const } : {}),
+  }));
+}
+
+/**
+ * Read a stored `conditions` jsonb value into the engine's fields.
+ *
+ * Distinguishes the three cases a loader must not conflate:
+ *   • absent (NULL / `[]`)      → unconditional rule
+ *   • present and well-formed    → the conditions
+ *   • present but MALFORMED      → `conditionsInvalid`, so the rule fails closed
+ *                                  instead of quietly losing its restriction
+ */
+export function parseStoredConditions(
+  raw: unknown,
+): Pick<Policy, 'conditions' | 'conditionsInvalid'> {
+  if (raw === null || raw === undefined) return { conditions: null };
+  if (Array.isArray(raw) && raw.length === 0) return { conditions: null };
+  if (!areValidConditions(raw)) return { conditions: null, conditionsInvalid: true };
+  return { conditions: normalizeConditions(raw) };
+}
+
+/** Read a dot path (`to`, `message.channel`) out of a call's args. */
+function valueAtPath(args: Record<string, unknown> | null | undefined, path: string): unknown {
+  if (!args) return undefined;
+  let cursor: unknown = args;
+  for (const segment of path.split('.')) {
+    if (cursor === null || typeof cursor !== 'object') return undefined;
+    // Own properties only: never follow a path into the prototype chain, even if
+    // a rule stored before `FORBIDDEN_ARG_SEGMENTS` existed names one.
+    if (!Object.hasOwn(cursor as object, segment)) return undefined;
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return cursor;
+}
+
+/**
+ * Does a single arg value satisfy `pattern`?
+ *
+ * A MISSING value never matches — so an allow-list condition fails closed when
+ * the arg it guards isn't present at all, rather than vacuously passing.
+ * An ARRAY (a `to:` with several recipients) matches only when EVERY element
+ * matches; one off-list recipient is enough to fail the condition, which is the
+ * only sound reading for an allow-list.
+ */
+function argValueMatches(value: unknown, pattern: string): boolean {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return false;
+    return value.every((item) => argValueMatches(item, pattern));
+  }
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    // Not a scalar we can responsibly compare — treat as "no match" (fail closed).
+    return false;
+  }
+  return matchesPolicy(pattern, String(value));
+}
+
+function conditionHolds(
+  condition: PolicyArgCondition,
+  args: Record<string, unknown> | null | undefined,
+): boolean {
+  const matched = argValueMatches(valueAtPath(args, condition.arg), condition.match);
+  return condition.negate ? !matched : matched;
+}
+
+/**
+ * Does a conditional rule apply, given what we know about the args?
+ *
+ * When args were NOT supplied (a call site that doesn't have them), a condition
+ * is UNDECIDABLE. Resolving that ambiguity is the whole safety story:
+ *   • a restrictive rule (`block` / `require_approval`) is treated as MATCHING —
+ *     we refuse to skip a guardrail we merely failed to evaluate;
+ *   • a permissive rule (`always_run`) is treated as NOT matching — an unproven
+ *     condition must never open a tool.
+ * In both directions the undecidable case resolves toward less privilege.
+ */
+function ruleApplies(
+  policy: Policy,
+  args: Record<string, unknown> | null | undefined,
+  argsAvailable: boolean,
+): boolean {
+  // Malformed stored conditions are undecidable, NOT absent — see
+  // `Policy.conditionsInvalid`.
+  if (policy.conditionsInvalid) return policy.action !== 'always_run';
+  const conditions = policy.conditions;
+  if (!conditions || conditions.length === 0) return true;
+  if (!argsAvailable) return policy.action !== 'always_run';
+  return conditions.every((condition) => conditionHolds(condition, args));
+}
+
 /**
  * Resolve the effective action for a single policy list against a path. Policies
  * are evaluated in `position` order (stable, authoring order); first match wins.
  * Returns `null` when nothing matches (so the caller can fall through to the
  * next scope).
  */
-function firstMatchOrNull(path: string, policies: Policy[]): PolicyAction | null {
+function firstMatchOrNull(
+  path: string,
+  policies: Policy[],
+  args?: Record<string, unknown> | null,
+  argsAvailable = false,
+): PolicyAction | null {
   if (policies.length === 0) return null;
   const ordered = [...policies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   for (const p of ordered) {
-    if (matchesPolicy(p.match, path)) return p.action;
+    if (!matchesPolicy(p.match, path)) continue;
+    if (!ruleApplies(p, args, argsAvailable)) continue;
+    return p.action;
   }
   return null;
 }
@@ -140,6 +312,15 @@ export interface EffectiveResolveInput {
   defaultMode: DefaultMode;
   /** Connector marked `sensitive` — its reads default to require_approval too. */
   sensitive?: boolean;
+  /**
+   * The call's actual arguments, for rules carrying `conditions`. Pass
+   * `argsAvailable: true` alongside — an absent `args` and an empty-args call
+   * are different facts, and conditional rules resolve them differently (see
+   * `ruleApplies`).
+   */
+  args?: Record<string, unknown> | null;
+  /** True when `args` reflects the real call payload. Defaults to false. */
+  argsAvailable?: boolean;
 }
 
 export interface EffectiveResolveResult {
@@ -159,10 +340,18 @@ export interface EffectiveResolveResult {
  * by them — admin trust property.
  */
 export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveResolveResult {
-  const projectHit = firstMatchOrNull(input.fullPath, input.projectPolicies);
+  const args = input.args ?? null;
+  const argsAvailable = input.argsAvailable ?? false;
+
+  const projectHit = firstMatchOrNull(input.fullPath, input.projectPolicies, args, argsAvailable);
   if (projectHit) return { action: projectHit, source: 'project' };
 
-  const connectorHit = firstMatchOrNull(input.relPath, input.connectorPolicies);
+  const connectorHit = firstMatchOrNull(
+    input.relPath,
+    input.connectorPolicies,
+    args,
+    argsAvailable,
+  );
   if (connectorHit) return { action: connectorHit, source: 'connector' };
 
   // A `sensitive` connector gates EVERYTHING by default — reads included —

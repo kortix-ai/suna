@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { listProjectSessions } from '@kortix/sdk';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -19,7 +20,6 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
 
 import {
   MeterRow,

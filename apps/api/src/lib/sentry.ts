@@ -54,8 +54,39 @@ export const SENTRY_IGNORE_ERRORS = [
   // upstream/network noise — drop it instead of paging
   // (Better Stack pattern c672fb5e…).
   'The operation timed out.',
+  // Bun/WHATWG `new URL()` throws `TypeError: "<input>" cannot be parsed as
+  // a URL.` when given a relative URL with no base. This is scanner noise:
+  // raw HTTP/1.0 port probes (`GET / HTTP/1.0\r\n\r\n`) and the Trinity
+  // scanner fingerprint (`/nice%20ports%2C/Tri%6Eity.txt%2ebak`) arrive at
+  // Bun.serve with no `Host` header, so `req.url` is path-only and every
+  // downstream `new URL(c.req.url)` call site throws. The root-cause fix in
+  // lib/request-url.ts (ensureAbsoluteRequestUrl at the Bun.serve boundary)
+  // prevents the throw for the request handler path; this filter is
+  // defense-in-depth so any residual edge case (a fire-and-forget path that
+  // re-parses a stale path-only URL, a future call site that bypasses the
+  // rebuild) stops paging instead of surfacing as a 0-user Sentry event.
+  // Better Stack pattern 28e9a65c…, first seen 2026-04-27, 0 users.
+  'cannot be parsed as a URL',
   // Expected HTTP errors (auth failures, not found, etc.)
   'HTTPException',
+  // Supabase pooler / PgBouncer session-mode pool exhaustion — the
+  // `postgres` driver surfaces it as a `PostgresError` whose message reads
+  // `(EMAXCONNSESSION) max clients reached in session mode - max clients are
+  // limited to pool_size: 20`. This is a TRANSIENT pool-saturation class on
+  // the us-east-2 shadow deployment (the `FreeTierRotation`/`YearlyRotation`
+  // cron ticks + `llm-gateway` catalog loads + user `GET /v1/projects`
+  // contending for the pooler's 20-session pool), NOT a code bug — `pool_size`
+  // is a Supabase-pooler config, not in this codebase. It resolves when load
+  // drops, and is a sibling of the Daytona transient class (#5167/#5175) and
+  // the bare-timeout filter (#4709). The stable, deploy-agnostic substring is
+  // `max clients reached in session mode` (the `pool_size: 20` suffix is
+  // pooler-config-specific and may change); `EMAXCONNSESSION` is added as a
+  // second entry for robustness across driver versions. Defense in depth: the
+  // `index.ts` DB-error handler also guards its DIRECT `captureException`
+  // call (a direct call bypasses this `ignoreErrors` list). Better Stack
+  // patterns 721b7efe… (API) + b38179c5… (frontend symptom).
+  'max clients reached in session mode',
+  'EMAXCONNSESSION',
 ] as const;
 
 /**

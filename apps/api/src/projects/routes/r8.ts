@@ -22,13 +22,14 @@ import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
-import {
-  refreshCrTips,
-} from './shared';
+import { resolveProjectRuntimeTransport } from '../../experimental/features';
+import { refreshCrTips } from './shared';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -54,8 +55,7 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId))
-      return c.json({ error: 'Invalid session id' }, 400);
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // Floor 'session' (= project.session.start) so the human gate matches
     // restart/stop and a custom role that withholds session.start is denied here
@@ -65,7 +65,7 @@ projectsApp.openapi(
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // Same gate as wake/create: resuming or provisioning spends compute.
@@ -77,6 +77,12 @@ projectsApp.openapi(
           message: billing.message,
           code: billing.reason,
           balance: billing.balance,
+          // Same discrimination the create/start 402 carries — a resume block on
+          // a paying-but-drained Team account must not read as "no plan".
+          billing_model: billing.billingModel,
+          has_subscription: billing.hasSubscription,
+          billing_state: billing.billingState,
+          account_id: loaded.row.accountId,
         },
         402,
       );
@@ -87,8 +93,55 @@ projectsApp.openapi(
     // killing the ~800ms client poll-tick latency. Clamped; omitted = one-shot.
     const waitMsRaw = Number(c.req.query('wait_ms'));
     const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
-    const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId, waitMs });
-    return c.json(result.start, 200);
+    const result = await startSession({
+      source: 'ui',
+      loaded,
+      visible,
+      projectId,
+      sessionId,
+      waitMs,
+    });
+    const [freshSession] = await db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    const sessionMetadata =
+      freshSession?.metadata && typeof freshSession.metadata === 'object'
+        ? (freshSession.metadata as Record<string, unknown>)
+        : {};
+    const boundTransport =
+      sessionMetadata.runtime_transport === 'acp' || sessionMetadata.runtime_transport === 'rest'
+        ? sessionMetadata.runtime_transport
+        : resolveProjectRuntimeTransport(loaded.row.metadata);
+    const runtimeHarness = ['claude', 'codex', 'opencode', 'pi'].includes(
+      String(sessionMetadata.runtime_harness),
+    )
+      ? (sessionMetadata.runtime_harness as 'claude' | 'codex' | 'opencode' | 'pi')
+      : 'opencode';
+    const storedAcpServerId =
+      typeof sessionMetadata.acp_server_id === 'string' ? sessionMetadata.acp_server_id : null;
+    const legacyOpenCodeAcpId =
+      boundTransport === 'acp' && runtimeHarness === 'opencode'
+        ? result.start.opencode_session_id
+        : null;
+    return c.json(
+      {
+        ...result.start,
+        runtime_transport: boundTransport,
+        runtime_harness: runtimeHarness,
+        native_agent:
+          typeof sessionMetadata.native_agent === 'string' ? sessionMetadata.native_agent : null,
+        acp_server_id: storedAcpServerId ?? legacyOpenCodeAcpId,
+        acp_session_id:
+          typeof sessionMetadata.acp_session_id === 'string'
+            ? sessionMetadata.acp_session_id
+            : storedAcpServerId
+              ? null
+              : legacyOpenCodeAcpId,
+      },
+      200,
+    );
   },
 );
 
@@ -116,8 +169,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId))
-      return c.json({ error: 'Invalid session id' }, 400);
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -126,13 +178,12 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or an account owner/admin.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
         {
-          error:
-            'Only the session owner or an account owner/admin can restart this session',
+          error: 'Only the session owner or an account owner/admin can restart this session',
         },
         403,
       );
@@ -169,8 +220,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId))
-      return c.json({ error: 'Invalid session id' }, 400);
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -180,11 +230,17 @@ projectsApp.openapi(
     // Human gate: stopping has its own leaf (project.session.stop), distinct from
     // start, so a custom role can allow one and withhold the other. Every
     // built-in role holds it, so member/editor/manager are unaffected.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
@@ -246,9 +302,7 @@ projectsApp.openapi(
       if (!['open', 'merged', 'closed'].includes(statusFilter)) {
         return c.json({ error: 'Invalid status filter' }, 400);
       }
-      whereClauses.push(
-        eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'),
-      );
+      whereClauses.push(eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'));
     }
 
     const rows = await db
@@ -289,7 +343,13 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Human-side capability gate (Git Ops). Editors hold it; a custom
     // role omits project.gitops.push to take Git-Ops away from a department.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
     // Default-deny — a scoped agent must be granted project.cr.open.
@@ -300,16 +360,12 @@ projectsApp.openapi(
     const description = normalizeString(body.description) ?? '';
     const headRef = normalizeString(body.head_ref ?? body.headRef);
     if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
-    const baseRef =
-      normalizeString(body.base_ref ?? body.baseRef) ??
-      loaded.row.defaultBranch;
+    const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? loaded.row.defaultBranch;
     if (baseRef === headRef) {
       return c.json({ error: 'head_ref and base_ref must differ' }, 400);
     }
 
-    let originSessionId: string | null = normalizeString(
-      body.session_id ?? body.sessionId,
-    );
+    let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
     if (originSessionId) {
       const [sessionRow] = await db
         .select({ sessionId: projectSessions.sessionId })
@@ -345,10 +401,7 @@ projectsApp.openapi(
     } catch (error) {
       return c.json(
         {
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Failed to resolve branches',
+          error: error instanceof Error ? error.message : 'Failed to resolve branches',
         },
         400,
       );
@@ -392,8 +445,7 @@ projectsApp.openapi(
         if (!/duplicate key/.test(message)) throw error;
       }
     }
-    if (!inserted)
-      return c.json({ error: 'Failed to allocate CR number' }, 500);
+    if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
 
     return c.json(serializeChangeRequest(inserted), 201);
   },
@@ -432,7 +484,27 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
+
+    // The capability check above is PROJECT-wide, and in Kortix-as-a-Backend the
+    // sandbox's own token holds it — every KaaB session shares the wrapper's
+    // credential, so "may push in this project" is true for every end-user's
+    // agent. Without this, end-user A's sandbox could commit and push end-user
+    // B's working tree to B's branch. A sandbox token acts for exactly one
+    // session (sandbox_id == session_id by construction); bind it to that one.
+    const callerSandboxSessionId = callerKortixSessionId(c);
+    if (
+      callerSandboxSessionId !== null &&
+      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+    ) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+    }
 
     const body = await readBody(c);
     const message = normalizeString(body.message) ?? undefined;
@@ -452,18 +524,11 @@ projectsApp.openapi(
       return c.json({ error: 'Session sandbox not found' }, 404);
     }
     if (row.status !== 'active') {
-      return c.json(
-        { error: 'Session sandbox is not running', status: row.status },
-        409,
-      );
+      return c.json({ error: 'Session sandbox is not running', status: row.status }, 409);
     }
 
     const providerName = row.provider as SandboxProviderName;
-    if (
-      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-        providerName,
-      )
-    ) {
+    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
       return c.json({ error: 'Unsupported sandbox provider' }, 409);
     }
 
@@ -472,14 +537,11 @@ projectsApp.openapi(
     // validates against KORTIX_TOKEN — same contract as /kortix/env.
     let endpoint: { url: string; headers: Record<string, string> };
     try {
-      endpoint = await getProvider(providerName).resolveEndpoint(
-        row.externalId,
-      );
+      endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
     } catch (error) {
       return c.json(
         {
-          error:
-            error instanceof Error ? error.message : 'Failed to reach sandbox',
+          error: error instanceof Error ? error.message : 'Failed to reach sandbox',
         },
         502,
       );
@@ -487,15 +549,12 @@ projectsApp.openapi(
 
     let daemonRes: Response;
     try {
-      daemonRes = await fetch(
-        `${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`,
-        {
+      daemonRes = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
           method: 'POST',
           headers: endpoint.headers,
           body: JSON.stringify({ message }),
           signal: AbortSignal.timeout(30_000),
-        },
-      );
+      });
     } catch (error) {
       return c.json(
         {
@@ -606,10 +665,7 @@ projectsApp.openapi(
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
     if (cr.status !== 'open') {
-      return c.json(
-        { error: `Cannot edit a ${cr.status} change request` },
-        409,
-      );
+      return c.json({ error: `Cannot edit a ${cr.status} change request` }, 409);
     }
 
     const updates: Partial<typeof changeRequests.$inferInsert> = {
@@ -617,8 +673,7 @@ projectsApp.openapi(
     };
     const title = normalizeString(body.title);
     if (title) updates.title = title;
-    if (typeof body.description === 'string')
-      updates.description = body.description;
+    if (typeof body.description === 'string') updates.description = body.description;
 
     const [row] = await db
       .update(changeRequests)
@@ -695,12 +750,25 @@ projectsApp.openapi(
         sessionId: cr.originSessionId,
         text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
         userId: loaded.userId,
-      }).catch((err) => {
-        console.warn('[change-requests] request-changes delivery failed', {
-          crId,
-          error: String(err),
+      })
+        .then((outcome) => {
+          // The response already told the user willDeliver=true and nothing
+          // retries this — a non-delivered outcome (incl. 'pending') means the
+          // feedback silently never reached the agent. Make it loud.
+          if (outcome !== 'delivered') {
+            console.error('[change-requests] request-changes prompt not delivered', {
+              crId,
+              sessionId: cr.originSessionId,
+              outcome,
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn('[change-requests] request-changes delivery failed', {
+            crId,
+            error: String(err),
+          });
         });
-      });
     }
 
     return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });
@@ -739,14 +807,9 @@ projectsApp.openapi(
     const projectForGit = await withProjectGitAuth(loaded.row);
 
     try {
-      const useSnapshot =
-        cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
+      const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
       const diff = useSnapshot
-        ? await getDiffBetweenShas(
-            projectForGit,
-            cr.baseCommitSha!,
-            cr.headCommitSha!,
-          )
+        ? await getDiffBetweenShas(projectForGit, cr.baseCommitSha!, cr.headCommitSha!)
         : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
       return c.json({
         cr_id: cr.crId,
@@ -764,8 +827,7 @@ projectsApp.openapi(
     } catch (error) {
       return c.json(
         {
-          error:
-            error instanceof Error ? error.message : 'Failed to compute diff',
+          error: error instanceof Error ? error.message : 'Failed to compute diff',
         },
         400,
       );
@@ -809,8 +871,7 @@ projectsApp.openapi(
     } catch (error) {
       return c.json(
         {
-          error:
-            error instanceof Error ? error.message : 'Failed to preview merge',
+          error: error instanceof Error ? error.message : 'Failed to preview merge',
         },
         400,
       );

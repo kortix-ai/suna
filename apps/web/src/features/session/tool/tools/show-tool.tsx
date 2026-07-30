@@ -20,12 +20,12 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   buildHtmlStaticUrl,
   ServicePreviewViewport,
-  SHOW_BORDER_STYLES,
   SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowCarouselItem,
   ShowContentRenderer,
   showDomain,
+  ShowFileActions,
   showTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
@@ -88,7 +88,6 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   const activePath = isCarousel ? currentItem?.path || '' : path;
   const activeTitle = isCarousel ? currentItem?.title || '' : title;
 
-  const borderStyle = SHOW_BORDER_STYLES[theme] || SHOW_BORDER_STYLES.default;
   const activeHasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
 
   const activeIsHtmlFilePath =
@@ -102,6 +101,17 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       ? buildHtmlStaticUrl(activePath)
       : '';
   const isWebsitePreview = !!resolvedPreviewUrl;
+
+  /**
+   * A file-backed show gets its actions INSIDE the renderer's own header —
+   * `ShowContentRenderer` routes them to each viewer's native toolbar slot, or
+   * supplies the row itself for the viewers that ship none. There is never a
+   * second header stacked above the viewer.
+   */
+  const fileActions =
+    !isWebsitePreview && activePath ? (
+      <ShowFileActions path={activePath} inPanel={fill} />
+    ) : undefined;
   const preview = useServicePreview(
     resolvedPreviewUrl,
     activeTitle || title || description || undefined,
@@ -187,7 +197,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       <div
         className={cn(
           'overflow-hidden',
-          fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
+          fill ? 'flex h-full flex-col' : cn('border-border rounded-md border'),
         )}
       >
         {isWebsitePreview && (
@@ -210,6 +220,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
                 fill={fill}
+                toolbarActions={fileActions}
               />
             </ActiveServicePreviewContext.Provider>
           ) : isWebsitePreview ? (
@@ -229,6 +240,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
+                  toolbarActions={fileActions}
                 />
               </div>
               {description && !title && (

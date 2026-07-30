@@ -19,7 +19,7 @@
 
 import { Icon } from '@/features/icon/icon';
 import { WALLPAPERS } from '@/lib/wallpapers';
-import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
+import type { ExperimentalFeatureKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   SquaresFourIcon as Blocks,
@@ -30,6 +30,7 @@ import {
   GearSixIcon as CogOneSolid,
   CoinsIcon as Coins,
   CompassIcon as Compass,
+  ShippingContainerIcon as Container,
   CreditCardIcon as CreditCardSolid,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
@@ -291,6 +292,17 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'browser preview app port localhost session',
     requiresSession: true,
   },
+  {
+    id: 'open-session-files',
+    label: 'Open Files',
+    icon: FolderOpen,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionFiles',
+    keywords: 'files explorer workspace session',
+    requiresSession: true,
+  },
 
   {
     id: 'restart-config',
@@ -346,9 +358,9 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
-    // the href is only a non-palette fallback and points at the project root
-    // (the session-list page was removed in favour of the composer landing).
-    href: '/projects/{projectId}',
+    // the href is the routed fallback for surfaces that consume this registry
+    // without the palette's nested picker.
+    href: '/projects/{projectId}/sessions',
     requiresProject: true,
     keywords: 'sessions runs threads project conversations open',
   },
@@ -443,16 +455,27 @@ export const menuRegistry: MenuItemDef[] = [
       'policies approval block require_approval rules tools executor guardrails project customize',
   },
   {
-    id: 'proj-changes',
-    label: 'Customize · Changes',
+    id: 'proj-git',
+    label: 'Customize · Git',
     icon: GitPullRequest,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/changes',
+    href: '/projects/{projectId}/customize/git',
     requiresProject: true,
     keywords:
-      'checkpoint checkpoints changes change requests proposed review merge pull request diff commits git history timeline versions branches project customize',
+      'git repository provider github code storage clone proxy branch sync project customize',
+  },
+  {
+    id: 'proj-sandbox',
+    label: 'Customize · Sandbox templates',
+    icon: Container,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/sandbox',
+    requiresProject: true,
+    keywords: 'sandbox templates image snapshot runtime environment project customize',
   },
   {
     id: 'proj-marketplace',

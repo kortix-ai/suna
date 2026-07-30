@@ -1,7 +1,8 @@
 'use client';
 
+import { automaticMaintenanceConfig } from '@/lib/maintenance-client';
+import type { MaintenanceConfig } from '@/lib/maintenance-store';
 import { useQuery } from '@tanstack/react-query';
-import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
 
 // Re-export types for consumers
 export type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
@@ -36,12 +37,12 @@ async function fetchMaintenanceConfig(): Promise<MaintenanceConfig> {
     const response = await fetch('/api/maintenance');
     if (!response.ok) {
       console.warn('Failed to fetch maintenance config:', response.status);
-      return { level: 'none', title: '', message: '', updatedAt: new Date().toISOString() };
+      return automaticMaintenanceConfig();
     }
     return await response.json();
   } catch (error) {
     console.warn('Failed to fetch maintenance config:', error);
-    return { level: 'none', title: '', message: '', updatedAt: new Date().toISOString() };
+    return automaticMaintenanceConfig();
   }
 }
 
@@ -50,7 +51,8 @@ async function fetchMaintenanceConfig(): Promise<MaintenanceConfig> {
  * so existing consumers (layout-content.tsx) continue to work during migration.
  */
 function toLegacyFormat(config: MaintenanceConfig): SystemStatusResponse {
-  const isWarningOrAbove = config.level === 'warning' || config.level === 'critical' || config.level === 'blocking';
+  const isWarningOrAbove =
+    config.level === 'warning' || config.level === 'critical' || config.level === 'blocking';
   const isActive = config.level !== 'none';
 
   return {
@@ -64,7 +66,12 @@ function toLegacyFormat(config: MaintenanceConfig): SystemStatusResponse {
       message: config.message || undefined,
       statusUrl: config.statusUrl ?? undefined,
       affectedServices: config.affectedServices,
-      severity: config.level === 'critical' ? 'outage' : config.level === 'warning' ? 'degraded' : undefined,
+      severity:
+        config.level === 'critical'
+          ? 'outage'
+          : config.level === 'warning'
+            ? 'degraded'
+            : undefined,
     },
     updatedAt: config.updatedAt,
     maintenanceConfig: config,
@@ -113,7 +120,12 @@ export const useSystemStatusQuery = (options?: { enabled?: boolean }) => {
     placeholderData: {
       maintenanceNotice: { enabled: false },
       technicalIssue: { enabled: false },
-      maintenanceConfig: { level: 'none', title: '', message: '', updatedAt: new Date().toISOString() },
+      maintenanceConfig: {
+        level: 'none',
+        title: '',
+        message: '',
+        updatedAt: new Date().toISOString(),
+      },
     },
     ...options,
   });

@@ -32,6 +32,22 @@ export class WarmRuntimeUnavailableError extends Error {
   }
 }
 
+/**
+ * Thrown by a runtime provider's {@link SandboxProvider.createFromExternalId} when
+ * the pinned template id is DEFINITIVELY gone (a 404 — the template was
+ * garbage-collected). FIX-A: this is the ONLY signal the boot path treats as
+ * license to fall back to a name-boot. A transient 5xx throws a normal
+ * (retryable) error instead, so a provider outage never silently boots a
+ * possibly-wrong template under a different (name) resolution while masking the
+ * outage. Non-retryable at the provision-retry layer (fail fast → name fallback).
+ */
+export class SandboxTemplateNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SandboxTemplateNotFoundError';
+  }
+}
+
 export interface CreateSandboxOpts {
   accountId: string;
   userId: string;
@@ -60,7 +76,8 @@ export interface ProvisionResult {
   metadata: Record<string, unknown>;
 }
 
-export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
+export type { SandboxStatus } from './status';
+import type { SandboxStatus } from './status';
 export type InPlaceRecoveryStatus = 'running' | 'recovering' | 'unavailable';
 
 export interface ResolvedEndpoint {
@@ -147,6 +164,19 @@ export interface SandboxProvider {
   sandboxFacingApiOrigin?(): string;
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
+  /**
+   * FIX-A: boot a sandbox from an EXACT provider template id (not a name). The
+   * boot path uses this to honor a project's activated
+   * `active_sandbox_external_template_id` pin, so the running sandbox is the
+   * precise warm image activation chose — the name path can drift behind a
+   * truncated template list or an idempotent-adopt that reused a name. OPTIONAL:
+   * only providers with a durable external template id implement it (Platinum;
+   * Daytona/e2b/local-docker keep the name-only default). On a DEFINITIVE
+   * not-found (404 = GC'd pin) it MUST throw {@link SandboxTemplateNotFoundError}
+   * so the caller can fall back to a name-boot; a transient 5xx throws a normal
+   * (retryable) error and MUST NOT be turned into a name fallback.
+   */
+  createFromExternalId?(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;
@@ -183,18 +213,50 @@ export interface SandboxProvider {
 }
 
 /**
- * Provider-native auto-stop is a BACKSTOP, not the primary stop mechanism.
- * The reaper (projects/sandbox-reaper.ts) is the primary: it asks the box's
- * own opencode whether a turn is running before stopping, so it never kills
- * mid-work. The provider's native timer only sees inbound traffic — blind to
- * local tool runs — so at the reaper's TTL it WOULD kill working boxes (the
- * 2026-06-24 "stopped too quickly mid-session" class). Its sole job is to
- * stop boxes when this API is dead or the box has no DB row, so it sits well
- * above the reaper's window.
+ * PROVIDER-SAFETY POLICY. Nothing to do with billing — see the sibling constant
+ * `billingLivenessGraceMinutes()` in billing/services/compute-liveness.ts, which
+ * this function used to double as and must never be re-welded to. One number was
+ * answering two unrelated questions:
+ *
+ *   billing grace     "how long after the last CONTROL-PLANE observation may we
+ *                      still charge?" — a money guarantee, must stay TIGHT.
+ *   provider backstop "how long may the PROVIDER let an unreachable box run
+ *                      before killing it itself?" — a safety net, must stay
+ *                      LOOSE or it kills working boxes.
+ *
+ * Tightening one used to loosen the other, so neither could be tuned.
+ *
+ * This is a BACKSTOP, not the primary stop mechanism. `deadline_at`
+ * (projects/sandbox-deadline.ts) is primary: the reaper stops any active box
+ * past its deadline, extended only by control-plane-observed turn starts. The
+ * provider's native timer only sees INBOUND traffic — blind to local tool runs,
+ * and no longer reset by an in-box keep-alive now that the execution lease is
+ * deleted — so at the reaper's TTL it WOULD kill working boxes (the 2026-06-24
+ * "stopped too quickly mid-session" class). Its sole job is to stop boxes when
+ * this API is dead or the box has no DB row.
+ *
+ * WHY 12h. It must exceed the longest plausible stretch of a real run with zero
+ * inbound requests, which is a whole turn spent in local tools. Measured on 30
+ * days of prod: the p99 turn is ~78 min and the MAX is ~8.4h, and the p99.9 gap
+ * between consecutive usage_events is already ~1h (long local tool runs emit
+ * none at all). 12h is ~1.4x the worst turn ever observed and ~12x that p99.9
+ * gap, so it cannot plausibly pre-empt a working box; it is 3x the 4h turn grant
+ * and below ABSOLUTE_RUN_CAP_MS (24h), so while the API is alive the
+ * activity-aware deadline always fires first, and when the API is dead an orphan
+ * bleeds at most 12 box-hours instead of the 264h measured on 2026-07-29.
+ *
+ * FLOOR 60. Never below the value this function returned before the split, so a
+ * mis-set env var cannot resurrect the mid-work-kill class. Callers needing a
+ * deliberately short timer pass an explicit override instead (the trigger path
+ * does: KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES). The floor is also what makes
+ * the required ordering `billingLivenessGraceMinutes() <= this` structural
+ * rather than coincidental — the billing grace floors at the same 60 and only
+ * leaves that floor above a 30-minute idle window, which no environment sets.
+ * Asserted in ./autostop-backstop.test.ts; lowering this default below the
+ * billing grace fails CI there.
  */
 export function providerAutoStopBackstopMinutes(): number {
-  const ttl = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15);
-  return Math.max(60, ttl * 2);
+  return Math.max(60, config.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES || 720);
 }
 
 const providers = new Map<ProviderName, SandboxProvider>();

@@ -12,11 +12,15 @@ mock.module('../lib/logger', () => ({
     debug: mock(() => {}),
   },
 }));
+const actualBillingGate = await import('../billing/services/billing-gate');
 mock.module('../billing/services/billing-gate', () => ({
+  ...actualBillingGate,
   assertBillingActive: async () => undefined,
 }));
 mock.module('./budgets', () => ({ checkBudget: async () => ({ exceeded: false }) }));
+const actualHooks = await import('./hooks');
 mock.module('./hooks', () => ({
+  ...actualHooks,
   authenticatePrincipal: async () => null,
   authorizeRequest: async () => ({ ok: true }),
   persistGatewayTrace: async () => {},

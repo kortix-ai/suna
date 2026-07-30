@@ -21,7 +21,7 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk/projects-client';
+import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
 import {
   GlobeIcon as Globe,
   LockIcon as LockSolid,

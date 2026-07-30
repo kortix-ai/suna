@@ -11,13 +11,11 @@ import {
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
-
-interface ConnectorLinkInfo {
-  project_name: string;
-  slug: string;
-  app: string | null;
-  expires_at: string;
-}
+import {
+  getConnectorSetupLink,
+  startConnectorSetupLink,
+  type ConnectorSetupLinkInfo,
+} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened';
 
@@ -41,26 +39,24 @@ export function ConnectorIntake({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
-  const [info, setInfo] = useState<ConnectorLinkInfo | null>(null);
+  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${base}/setup-links/connector/${encodeURIComponent(token)}`);
-        const body = await res.json().catch(() => ({}));
+        const body = await getConnectorSetupLink(token, { backendUrl: base });
         if (cancelled) return;
-        if (!res.ok) {
-          setError(body?.error || 'This link is invalid or has expired.');
-          setPhase('error');
-          return;
-        }
         setInfo(body);
         setPhase('ready');
-      } catch {
+      } catch (cause) {
         if (!cancelled) {
-          setError('Could not reach Kortix. Check your connection and try again.');
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Could not reach Kortix. Check your connection and try again.',
+          );
           setPhase('error');
         }
       }
@@ -74,21 +70,17 @@ export function ConnectorIntake({
     setPhase('starting');
     setError(null);
     try {
-      const res = await fetch(`${base}/setup-links/connector/${encodeURIComponent(token)}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.connect_url) {
-        setError(body?.error || 'Could not start the connect flow.');
+      const body = await startConnectorSetupLink(token, { backendUrl: base });
+      if (!body.connect_url) {
+        setError('Could not start the connect flow.');
         setPhase('ready');
         return;
       }
       window.open(body.connect_url, '_blank', 'noopener,noreferrer,width=520,height=720');
       setPhase('opened');
       onOpened?.();
-    } catch {
-      setError('Could not start the connect flow. Try again.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.');
       setPhase('ready');
     }
   }

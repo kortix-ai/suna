@@ -6,6 +6,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon as ArrowRight,
@@ -1369,7 +1370,7 @@ export function InteractiveDemoSection({
 
     const tabCenter = tab.offsetLeft + tab.offsetWidth / 2;
     const targetLeft = tabCenter - strip.clientWidth / 2;
-    strip.scrollTo({
+    safeScrollTo(strip, {
       left: Math.max(0, Math.min(targetLeft, strip.scrollWidth - strip.clientWidth)),
       behavior: 'smooth',
     });

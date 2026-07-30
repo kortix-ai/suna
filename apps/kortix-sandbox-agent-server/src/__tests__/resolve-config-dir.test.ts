@@ -39,6 +39,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',
+    cloneDepth: 1,
     ...overrides,
   }
 }

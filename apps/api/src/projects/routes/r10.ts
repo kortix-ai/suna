@@ -14,15 +14,20 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
+import { getAgentGrant } from '../../iam/agent-scope';
 import { getCatalogEntry } from '../../marketplace/catalog';
-import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
+import {
+  buildRegistryProjectInstallPrompt,
+  buildTemplateInstallPrompt,
+} from './marketplace-install-prompts';
 import { auth, errors, json } from '../../openapi';
 import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { sendSessionCreateError } from '../lib/sessions';
+import { createSession } from '../session-lifecycle';
 
 /** The project's manifest raw text, preferring kortix.yaml over kortix.toml
  *  (dual-format). */
@@ -37,65 +42,6 @@ async function manifestRawOrNull(
   return found?.content ?? null;
 }
 
-/** Build the initial prompt for an agent-driven merge of a `registry:project`
- *  item into an EXISTING project. This is judgment-heavy (does the incoming
- *  agent persona collide with one that already exists? does the target project
- *  even want a new default agent?) — so an agent reads both sides and opens
- *  a change request rather than a blind file overwrite. */
-function buildRegistryProjectInstallPrompt(
-  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
-  targetManifestRaw: string | null,
-): string {
-  const item = entry.item;
-  const ownFiles = (item.files ?? []).filter((f) => typeof f.content === 'string');
-  // Today every registry:project item is a base (inline-content) item, so
-  // `files[].content` is always populated here. If an EXTERNAL project item
-  // ever lands in the catalog, its file content is fetched lazily and isn't
-  // present on `item.files` — silently falling through would produce a prompt
-  // with none of the template's actual files, i.e. a no-op merge. Fail loudly
-  // instead of degrading silently (a full fix would resolve content via
-  // `getCatalogItemFile` per file).
-  if ((item.files ?? []).length > 0 && ownFiles.length === 0) {
-    throw new Error(
-      `Project template "${item.name}" has no resolvable file content (likely an external registry item) — install-session merge only supports base project items today.`,
-    );
-  }
-  const deps = item.registryDependencies ?? [];
-
-  const lines: string[] = [
-    `Integrate the "${item.title ?? item.name}" project template into THIS project — without breaking anything already here.`,
-    '',
-    item.description ?? '',
-    '',
-    "This project's current kortix.yaml:",
-    '```yaml',
-    targetManifestRaw ?? '(no manifest found)',
-    '```',
-    '',
-    'The template contributes these files. Its own kortix.yaml is a reference for what agent it expects to exist — do NOT overwrite this project\'s kortix.yaml with it verbatim.',
-  ];
-  for (const file of ownFiles) {
-    lines.push('', `--- ${file.path} ---`, '```', file.content ?? '', '```');
-  }
-  if (deps.length > 0) {
-    lines.push(
-      '',
-      "It also depends on these marketplace skills — install each one (they're additive, they won't conflict with anything already installed):",
-      ...deps.map((d) => `- ${d}`),
-    );
-  }
-  lines.push(
-    '',
-    'Steps:',
-    "1. Read this project's current kortix.yaml and .kortix/opencode/agents/ to see what already exists.",
-    '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
-    "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
-    '4. Install the marketplace skills listed above.',
-    '5. Open a change request with the result — do not push directly to the default branch.',
-  );
-  return lines.join('\n');
-}
-
 /** Agent-driven install of a skill/agent/command/tool into THIS project: the
  *  session installs its files, then wires up whatever it needs (connectors,
  *  secrets). */
@@ -105,7 +51,9 @@ function buildItemInstallPrompt(
 ): string {
   const item = entry.item;
   const typeLabel = item.type.replace('registry:', '');
-  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const meta = (item.meta ?? {}) as {
+    capabilities?: { connectors?: string[]; secrets?: string[] };
+  };
   const needs = [
     ...(meta.capabilities?.connectors ?? []),
     ...(meta.capabilities?.secrets ?? []),
@@ -160,20 +108,29 @@ async function handleMarketplaceInstallSession(c: any) {
     return c.json({ error: (err as Error).message }, 400);
   }
 
-  const result = await createProjectSession({
+  const result = await createSession({
+    source: 'ui',
     project: loaded.row,
     userId: loaded.userId,
+    requestingPrincipalType: c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
       metadata: { kind: 'marketplace-install', item_id: id },
     },
     visibility: 'project',
+    // Derive origin from the caller's token kind, same as POST /sessions (r7),
+    // so a backend-driven install records origin='backend' rather than 'user'.
+    authType: c.get('authType') as string | undefined,
+    apiKeyType: c.get('apiKeyType') as string | undefined,
+    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
+    queuePolicy: 'never',
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
 
-  return c.json({ session_id: result.row!.sessionId }, 201);
+  return c.json({ session_id: result.row.sessionId }, 201);
 }
 
 projectsApp.openapi(

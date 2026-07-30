@@ -18,6 +18,10 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
+// Keep this package runtime-independent. The API self-host image loads this
+// source without installing workspace links for sibling packages.
+// harnesses.contract.test.ts enforces parity with @kortix/shared.
+export const V3_HARNESS_VALUES = ['claude', 'codex', 'opencode', 'pi'] as const;
 // Providers a kortix.yaml may declare. `channel` is included because the
 // platform itself writes a `connectors:` entry with `provider: channel` into the
 // manifest when a Slack/email channel is connected (see executor/channel-manifest.ts), so
@@ -25,10 +29,30 @@ export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 // runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
-export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel'] as const;
-export const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'oauth1', 'none'] as const;
+export const CONNECTOR_PROVIDERS = [
+  'pipedream',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+  'channel',
+] as const;
+export const CONNECTOR_AUTH_TYPES = [
+  'bearer',
+  'basic',
+  'custom',
+  'api_key',
+  'oauth1',
+  'hmac',
+  'aws_sigv4',
+  'mtls',
+  'none',
+] as const;
+/** The exclusive owner model for authorizations under one connector profile. */
+export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'meet'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'voice'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -38,7 +62,7 @@ export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
   kortix_teams: 'channel',
   kortix_email: 'channel',
-  kortix_meet: 'channel',
+  kortix_voice: 'channel',
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;

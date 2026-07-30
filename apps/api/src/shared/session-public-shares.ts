@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { projectSessionPublicShares, sessionSandboxes } from '@kortix/db';
+import {
+  executorConnectionProfiles,
+  projectSessionConnectorBindings,
+  projectSessionPublicShares,
+  sessionSandboxes,
+} from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
 
@@ -259,6 +264,31 @@ export async function resolvePublicShare(token: string) {
   if (row.revokedAt) return { ok: false as const, status: 410, error: 'Share link revoked' };
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
+  }
+  // Fail closed for links created before personal-profile sharing was
+  // prohibited. A public preview/file link delegates access to the same fixed
+  // session runtime token, so it must never indirectly delegate a member's
+  // private connector credentials.
+  const [personalBinding] = await db
+    .select({ profileId: projectSessionConnectorBindings.profileId })
+    .from(projectSessionConnectorBindings)
+    .innerJoin(
+      executorConnectionProfiles,
+      eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
+    )
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.sessionId, row.sessionId),
+        eq(executorConnectionProfiles.ownerType, 'member'),
+      ),
+    )
+    .limit(1);
+  if (personalBinding) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: 'Sessions using a personal connector profile cannot be shared publicly',
+    };
   }
   if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {

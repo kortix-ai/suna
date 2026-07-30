@@ -424,19 +424,19 @@ export async function listSessionsNeedingInput(
 
 /** Resolve a pending approval. Allowed for a project manager or the session
  *  launcher; approve lets the action proceed on retry, deny records a refusal. */
+// A decision applies to exactly the call that asked for it. The `scope`
+// parameter ('session' / 'session_all') was REMOVED: a one-click "stop asking"
+// pre-authorised every later call of a tool regardless of its arguments, which
+// is precisely what an approval gate exists to prevent. To run a tool
+// unattended, author an `always_run` policy rule instead.
 export async function resolveApproval(
   projectId: string,
   executionId: string,
   decision: 'approve' | 'deny',
-  // 'once' (default) = just this call; 'session' = also stop asking for this
-  // connector+action for the rest of the session; 'session_all' = stop asking
-  // for ANY gated action for the rest of the session.
-  scope: 'once' | 'session' | 'session_all' = 'once',
 ) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; scope?: 'once' | 'session' | 'session_all' }>(
-      `/projects/${projectId}/approvals/${executionId}`,
-      { decision, scope },
-    ),
+    await backendApi.post<{ ok: boolean }>(`/projects/${projectId}/approvals/${executionId}`, {
+      decision,
+    }),
   );
 }

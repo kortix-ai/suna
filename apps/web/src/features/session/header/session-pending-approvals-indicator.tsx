@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import {
   isPendingAction,
   relativeTime,
@@ -23,8 +24,6 @@ import {
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import { cn } from '@/lib/utils';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   CheckIcon as Check,
   ShieldWarningIcon as ShieldAlert,
@@ -69,8 +68,8 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
   };
 
   const openAudit = () => {
-    useSessionBrowserStore.getState().setView(sessionId, 'audit');
-    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    // Same Advanced-only `viewBySession` dead end as the other chips.
+    openSessionQuickView('audit', 'chip');
     setOpen(false);
   };
 
@@ -131,7 +130,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     onClick={() => decide(a.execution_id, 'deny')}
                   >
                     {b === 'deny' ? (
-                      <Loading className="size-3 animate-spin" />
+                      <Loading className="size-3" />
                     ) : (
                       <X className="size-3" />
                     )}
@@ -144,7 +143,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     onClick={() => decide(a.execution_id, 'approve')}
                   >
                     {b === 'approve' ? (
-                      <Loading className="size-3 animate-spin" />
+                      <Loading className="size-3" />
                     ) : (
                       <Check className="size-3" />
                     )}

@@ -2,12 +2,8 @@
 # (resource manifests + EBS volume snapshots) to S3, restorable per-namespace or
 # whole-cluster. A daily backup of all namespaces is kept for 30 days (TTL 720h).
 #
-# PREREQUISITES (Terraform first — the values below are placeholders):
-#   1. An S3 bucket for backups (here: kortix-velero-backups, eu-west-2).
-#   2. An IRSA role granting Velero S3 access to that bucket AND EC2 snapshot
-#      permissions (CreateSnapshot / DeleteSnapshot / DescribeSnapshots /
-#      CreateVolume / DescribeVolumes etc). Wire its ARN into
-#      serviceAccount.server.annotations below before this syncs cleanly.
+# Terraform creates the S3 bucket, KMS key, and IRSA role in
+# infra/terraform/compliance-monitoring/velero.tf.
 #
 # Single-source: chart from the upstream helm repo, all config inline.
 apiVersion: argoproj.io/v1alpha1
@@ -36,7 +32,7 @@ spec:
         serviceAccount:
           server:
             annotations:
-              eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/kortix-velero
+              eks.amazonaws.com/role-arn: arn:aws:iam::935064898258:role/kortix-velero
         credentials:
           useSecret: false
         configuration:

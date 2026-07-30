@@ -29,6 +29,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
+import { SandboxTemplateNotFoundError } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
 
@@ -41,6 +42,18 @@ interface PlatinumSandbox {
   backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+
+/**
+ * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
+ * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
+ * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
+ * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
+ * platinumJson throws.
+ */
+function isDefinitiveTemplateNotFound(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return / -> 404\b/.test(message);
+}
 
 function isMissingSandboxError(error: unknown): boolean {
   const err = error as
@@ -90,7 +103,34 @@ export class PlatinumProvider implements SandboxProvider {
         '(a ready Platinum template id, e.g. kortix-computer).',
       );
     }
+    return this.provisionFromTemplate(template, opts);
+  }
 
+  /**
+   * FIX-A: boot from an EXACT pinned template id (the activation-recorded
+   * `active_sandbox_external_template_id`). Same POST /v1/sandboxes provisioning
+   * as create() — the only difference is error classification: a DEFINITIVE 404
+   * (the pinned id was GC'd) becomes {@link SandboxTemplateNotFoundError} so the
+   * boot path can fall back to a name-boot; a transient 5xx (or any other error)
+   * propagates UNCHANGED so it is surfaced/retried, never silently name-booted.
+   */
+  async createFromExternalId(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    if (!externalTemplateId || externalTemplateId.trim() === '') {
+      throw new Error('[platinum] createFromExternalId called without a template id');
+    }
+    try {
+      return await this.provisionFromTemplate(externalTemplateId, opts);
+    } catch (err) {
+      if (isDefinitiveTemplateNotFound(err)) {
+        throw new SandboxTemplateNotFoundError(
+          `[platinum] pinned template ${externalTemplateId} not found (404) — GC'd pin`,
+        );
+      }
+      throw err;
+    }
+  }
+
+  private async provisionFromTemplate(template: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
@@ -111,10 +151,11 @@ export class PlatinumProvider implements SandboxProvider {
     //
     // Platinum AUTO-STOPS idle boxes natively and resumes them CoW on reopen
     // (the CH UFFD resume bug that once forced persistent is fixed; verified
-    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API
-    // is dead — the activity-aware reaper (sandbox-reaper.ts) is the primary
-    // stop, so the native interval sits well above the reaper's TTL to never
-    // kill a box mid-work (providerAutoStopBackstopMinutes).
+    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API is
+    // dead — `deadline_at` (projects/sandbox-deadline.ts) is the primary stop, so
+    // the native interval sits well above the longest real turn and never kills a
+    // box mid-work. See providerAutoStopBackstopMinutes(), which is now that
+    // policy alone and no longer doubles as the billing clamp's grace.
     const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
 
     const _t0 = Date.now();
@@ -238,6 +279,10 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'running') return 'running';
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
+      // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
+      // reported as `unknown` is a box `decideReconcile` never acts on, and
+      // compute billing then accrues wall-clock against it indefinitely.
+      if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
       if (isMissingSandboxError(err)) return 'removed';

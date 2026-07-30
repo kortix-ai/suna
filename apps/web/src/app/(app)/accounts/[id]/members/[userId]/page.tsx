@@ -3,8 +3,11 @@
 import {
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
+  DotsThreeIcon as MoreHorizontal,
   EyeIcon as Eye,
   FolderOpenIcon as FolderOpen,
+  ShieldIcon as Shield,
+  ShieldSlashIcon as ShieldOff,
   UsersIcon as Users,
   XIcon as X,
 } from '@phosphor-icons/react';
@@ -17,6 +20,13 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
@@ -42,7 +52,7 @@ import {
 } from '@/lib/iam-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -111,9 +121,10 @@ export default function MemberDetailPage() {
     () => (membersQuery.data ?? []).find((m) => m.user_id === memberUserId),
     [membersQuery.data, memberUserId],
   );
-  // canPromoteSuperAdmin gates the bypass toggle below.
+  // canPromoteSuperAdmin gates the Grant/Revoke super-admin menu items below —
+  // it's the caller's own member.super_admin.grant permission, the same
+  // action the PATCH .../super-admin route asserts server-side.
   const canPromoteSuperAdmin = usePermission(accountId, 'member.super_admin.grant').allowed;
-  void canPromoteSuperAdmin;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -121,9 +132,9 @@ export default function MemberDetailPage() {
 
   const account = accountQuery.data;
 
-  // Note: we don't currently surface is_super_admin in listAccountMembers, so
-  // we can't show a pre-existing on/off state. Wire the column once the
-  // members endpoint includes it.
+  // listAccountMembers's AccountMember.is_super_admin is what decides Grant
+  // vs Revoke below — it's a required field on the wire (AccountMemberSchema),
+  // so `member` always carries the real current state, no extra fetch needed.
 
   const memberLabel = member?.email ?? memberUserId ?? 'Member';
 
@@ -138,25 +149,70 @@ export default function MemberDetailPage() {
           {account?.name ?? 'Account'}
         </Link>
 
-        <div className="flex min-w-0 items-center gap-3.5">
-          {membersQuery.isLoading ? (
-            <Skeleton className="size-10 rounded-full" />
-          ) : (
-            <UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />
-          )}
-          <div className="min-w-0 space-y-0.5">
+        <div className="flex min-w-0 items-center justify-between gap-3.5">
+          <div className="flex min-w-0 items-center gap-3.5">
             {membersQuery.isLoading ? (
-              <Skeleton className="h-6 w-52" />
+              <Skeleton className="size-10 rounded-full" />
             ) : (
-              <h2 className="text-foreground truncate text-xl font-medium">{memberLabel}</h2>
+              <UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />
             )}
-            {member ? (
-              <InlineMeta className="text-sm">
-                <span>{ROLE_LABEL[member.account_role] ?? member.account_role}</span>
-                <span>Joined {formatDate(member.joined_at)}</span>
-              </InlineMeta>
-            ) : null}
+            <div className="min-w-0 space-y-0.5">
+              {membersQuery.isLoading ? (
+                <Skeleton className="h-6 w-52" />
+              ) : (
+                <h2 className="text-foreground truncate text-xl font-medium">{memberLabel}</h2>
+              )}
+              {member ? (
+                <InlineMeta className="text-sm">
+                  <span>{ROLE_LABEL[member.account_role] ?? member.account_role}</span>
+                  <span>Joined {formatDate(member.joined_at)}</span>
+                </InlineMeta>
+              ) : null}
+            </div>
           </div>
+
+          {account && member ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground size-7 shrink-0"
+                  aria-label={`Actions for ${memberLabel}`}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onSelect={() => setViewAsOpen(true)} className="gap-2">
+                  <Eye className="size-3.5" />
+                  View as this member
+                </DropdownMenuItem>
+                {canPromoteSuperAdmin ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    {member.is_super_admin ? (
+                      <DropdownMenuItem
+                        onSelect={() => setRevokeConfirmOpen(true)}
+                        className="gap-2"
+                      >
+                        <ShieldOff className="size-3.5" />
+                        Revoke super-admin
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onSelect={() => setGrantConfirmOpen(true)}
+                        className="gap-2"
+                      >
+                        <Shield className="size-3.5" />
+                        Grant super-admin
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </div>
 

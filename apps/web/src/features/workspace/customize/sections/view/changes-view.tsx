@@ -21,10 +21,10 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
+import { getProject, type ProjectCommit } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -151,7 +151,13 @@ function ChangeRequestRow({
   const onMerge = () =>
     merge.mutate(cr.cr_id, {
       onSuccess: () => successToast('Changes applied'),
-      onError: (err) => errorToast(err.message),
+      onError: (err) => {
+        if ((err as { code?: string }).code === 'MERGE_CONFLICT') {
+          onOpen(cr.cr_id);
+          return;
+        }
+        errorToast(err.message);
+      },
     });
   const onClose = () =>
     close.mutate(cr.cr_id, {

@@ -75,6 +75,11 @@ export {
   BellIcon as IconNotification,
   PauseIcon as IconPause,
   PlayIcon as IconPlay,
+  // ── Voice / call ────────────────────────────────────────────
+  MicrophoneIcon as IconMic,
+  MicrophoneSlashIcon as IconMicOff,
+  PhoneDisconnectIcon as IconPhoneOff,
+  SpeakerHighIcon as IconVolume,
   // ── Files & folders ─────────────────────────────────────────
   GitBranchIcon as IconProject,
   ArrowClockwiseIcon as IconRefresh,

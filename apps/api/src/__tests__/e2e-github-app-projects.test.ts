@@ -8,6 +8,8 @@ import {
   createRepo,
   getFileSha,
   getGitHubAppInstallation,
+  listLinkableGitHubAppInstallations,
+  verifyGitHubInstallationAdmin,
 } from '../projects/github';
 import { runWithContext } from '../lib/request-context';
 
@@ -203,5 +205,111 @@ describe('GitHub App project repository auth', () => {
     const writeBody = JSON.parse(String(writeFile?.init?.body));
     expect(writeBody.author).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
     expect(writeBody.committer).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
+  });
+
+  test('accepts the personal installation owner', async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      return json({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      verifyGitHubInstallationAdmin('user-token', {
+        id: 42,
+        account: { login: 'markokraemer', type: 'User' },
+      }),
+    ).resolves.toEqual({ login: 'markokraemer' });
+  });
+
+  test('accepts an active organization admin', async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/orgs/kortix-ai/memberships/markokraemer')) {
+        return json({ state: 'active', role: 'admin' });
+      }
+      return json({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      verifyGitHubInstallationAdmin('user-token', {
+        id: 42,
+        account: { login: 'kortix-ai', type: 'Organization' },
+      }),
+    ).resolves.toEqual({ login: 'markokraemer' });
+  });
+
+  test('lists only personal and organization-admin installations for the authorized user', async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      requests.push({ url: href, init });
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.includes('/app/installations?')) {
+        return json([
+          {
+            id: 41,
+            account: { login: 'markokraemer', type: 'User' },
+            repository_selection: 'selected',
+          },
+          {
+            id: 42,
+            account: { login: 'kortix-ai', type: 'Organization' },
+            repository_selection: 'all',
+          },
+          {
+            id: 43,
+            account: { login: 'customer-org', type: 'Organization' },
+            repository_selection: 'selected',
+          },
+        ]);
+      }
+      if (href.includes('/user/memberships/orgs?')) {
+        return json([
+          {
+            state: 'active',
+            role: 'admin',
+            organization: { login: 'kortix-ai' },
+          },
+          {
+            state: 'active',
+            role: 'member',
+            organization: { login: 'customer-org' },
+          },
+        ]);
+      }
+      return json({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+
+    const result = await listLinkableGitHubAppInstallations('user-token');
+
+    expect(result.githubLogin).toBe('markokraemer');
+    expect(result.installations.map((installation) => installation.id)).toEqual([41, 42]);
+    const appRequest = requests.find((request) => request.url.includes('/app/installations?'));
+    const membershipRequest = requests.find((request) =>
+      request.url.includes('/user/memberships/orgs?'),
+    );
+    expect((appRequest?.init?.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
+    expect((membershipRequest?.init?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer user-token',
+    );
+  });
+
+  test('rejects a non-admin organization member', async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'member' });
+      if (href.endsWith('/orgs/kortix-ai/memberships/member')) {
+        return json({ state: 'active', role: 'member' });
+      }
+      return json({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      verifyGitHubInstallationAdmin('user-token', {
+        id: 42,
+        account: { login: 'kortix-ai', type: 'Organization' },
+      }),
+    ).rejects.toThrow('GitHub organization admin access is required');
   });
 });

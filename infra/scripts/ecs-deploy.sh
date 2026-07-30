@@ -12,7 +12,7 @@
 #   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
 #                 [--no-wait] [--dry-run]
 #
-#   env        dev | staging | prod
+#   env        dev | staging | prod | prod-use2-shadow
 #   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
 #   --version  explicit KORTIX_VERSION to stamp into the task-def env. When
 #              omitted, it is DERIVED from the image tag if the tag is a clean
@@ -47,7 +47,7 @@ if [ "${KORTIX_ECS_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-ENV="${1:?env required: dev|staging|prod}"
+ENV="${1:?env required: dev|staging|prod|prod-use2-shadow}"
 IMAGE="${2:?image required, e.g. kortix/kortix-api:dev-481dc551}"
 shift 2
 
@@ -69,25 +69,41 @@ done
 
 # ── per-environment coordinates ──────────────────────────────────────────────
 case "$ENV" in
-  dev)     REGION="us-west-2" ;;
-  staging) REGION="us-west-2" ;;
-  prod)    REGION="eu-west-2" ;;
+  dev)
+    REGION="us-west-2"
+    SERVICE_PREFIX="kortix-dev"
+    SECRET_NAME="kortix-dev-env"
+    ;;
+  staging)
+    REGION="us-west-2"
+    SERVICE_PREFIX="kortix-staging"
+    SECRET_NAME="kortix-staging-env"
+    ;;
+  prod)
+    REGION="eu-west-2"
+    SERVICE_PREFIX="kortix-prod"
+    SECRET_NAME="kortix-prod-env"
+    ;;
+  prod-use2-shadow)
+    REGION="us-east-2"
+    SERVICE_PREFIX="kortix-prod-use2"
+    SECRET_NAME="kortix-prod-us-east-2-env"
+    ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
 esac
 
 # Each service lives in its own cluster (the ecs-api module names cluster==service):
-#   api     → cluster/service kortix-<env>,         container "api"
-#   gateway → cluster/service kortix-<env>-gateway,  container "gateway"
+#   api     → cluster/service <service-prefix>,         container "api"
+#   gateway → cluster/service <service-prefix>-gateway, container "gateway"
 if [ "$SVC_KIND" = "gateway" ]; then
-  CLUSTER="kortix-${ENV}-gateway"
-  SERVICE="kortix-${ENV}-gateway"
+  CLUSTER="${SERVICE_PREFIX}-gateway"
+  SERVICE="${SERVICE_PREFIX}-gateway"
   CONTAINER="gateway"
 else
-  CLUSTER="kortix-${ENV}"
-  SERVICE="kortix-${ENV}"
+  CLUSTER="$SERVICE_PREFIX"
+  SERVICE="$SERVICE_PREFIX"
   CONTAINER="api"
 fi
-SECRET_NAME="kortix-${ENV}-env"
 
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"
@@ -134,17 +150,21 @@ NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
           .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-      # override image + full secrets on the target container, and stamp
-      # KORTIX_VERSION as explicit container env (env beats the image-baked
-      # value) so ECS reports the same clean version EKS does. On non-release
-      # tags ($ver == "") any stale stamp from a previous release roll is
-      # REMOVED so the image-baked dev/staging version reports again.
+      # Override image + full secrets on the target container. Stamp
+      # KORTIX_VERSION as explicit container env so ECS reports the same clean
+      # version EKS reports. Always remove KORTIX_COMMIT from the task
+      # definition. The immutable image contains the source commit. Preserving
+      # a task-definition override can make a new image report an old commit.
+      # On non-release tags ($ver == ""), remove any stale version stamp so the
+      # image-baked dev/staging version reports again.
       | .containerDefinitions |= map(
           if .name == $c then
             .image = $img
             | .secrets = $secrets
             | .environment = (
-                ((.environment // []) | map(select(.name != "KORTIX_VERSION")))
+                ((.environment // []) | map(
+                  select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")
+                ))
                 + (if $ver == "" then [] else [{name: "KORTIX_VERSION", value: $ver}] end))
           else . end)')"
 

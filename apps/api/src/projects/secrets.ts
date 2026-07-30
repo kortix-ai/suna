@@ -5,10 +5,17 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
+import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
+import {
+  type SecretEgressPolicy,
+  type SecretStrategy,
+  emitsValue,
+  resolveSecretDelivery,
+} from '../secrets/strategy';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -182,6 +189,12 @@ export interface ResolvedProjectSecret {
   identifier: string;
   key: string;
   value: string;
+  /** Delivery strategy for this row. Absent on rows resolved before the column
+   *  existed; `resolveSecretDelivery` reads absence as "no opinion", NOT as
+   *  `runtime`, so an older row cannot silently downgrade a narrowed one. */
+  strategy?: SecretStrategy;
+  egressPolicy?: SecretEgressPolicy | null;
+  handlePrefix?: string | null;
 }
 
 /**
@@ -203,6 +216,9 @@ export async function listResolvedProjectSecrets(
       scope: projectSecrets.scope,
       ownerUserId: projectSecrets.ownerUserId,
       active: projectSecrets.active,
+      strategy: projectSecrets.strategy,
+      egressPolicy: projectSecrets.egressPolicy,
+      handlePrefix: projectSecrets.handlePrefix,
     })
     .from(projectSecrets)
     .where(and(
@@ -225,7 +241,14 @@ export async function listResolvedProjectSecrets(
   for (const [identifier, slot] of byIdentifier) {
     const chosen = slot.personal && slot.personal.active ? slot.personal : slot.shared;
     if (!chosen) continue;
-    out.push({ identifier, key: chosen.name, value: decryptProjectSecret(projectId, chosen.valueEnc) });
+    out.push({
+      identifier,
+      key: chosen.name,
+      value: decryptProjectSecret(projectId, chosen.valueEnc),
+      strategy: chosen.strategy ?? undefined,
+      egressPolicy: chosen.egressPolicy ?? null,
+      handlePrefix: chosen.handlePrefix ?? null,
+    });
   }
   return out;
 }
@@ -299,6 +322,118 @@ export function resolveGrantedSecretEnv(
   return { env, identifiers: allowed.map((r) => r.identifier) };
 }
 
+// Single source of truth in @kortix/api-contract (route-contract validation);
+// re-exported here so internal callers keep the same import site.
+export { SESSION_SECRETS_ALLOWLIST_MAX_KEYS };
+
+/**
+ * Shape-validate a session-create body's `secrets` field (the per-session
+ * allowlist). Pure — no DB. `undefined` (absent) → { ok, value: undefined };
+ * anything present must be an array of ≤128 valid secret identifiers. Mirrors
+ * parseSessionConnectorBindings so every createProjectSession caller (incl. the
+ * internal ones that bypass the api-contract) gets the same guardrail.
+ */
+export function parseSessionSecretsAllowlist(
+  raw: unknown,
+): { ok: true; value: string[] | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(raw)) return { ok: false, error: 'secrets must be an array of identifiers' };
+  if (raw.length > SESSION_SECRETS_ALLOWLIST_MAX_KEYS) {
+    return {
+      ok: false,
+      error: `secrets may contain at most ${SESSION_SECRETS_ALLOWLIST_MAX_KEYS} identifiers`,
+    };
+  }
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || !isValidIdentifier(entry)) {
+      return { ok: false, error: `invalid secret identifier: ${String(entry)}` };
+    }
+  }
+  return { ok: true, value: raw as string[] };
+}
+
+/**
+ * Narrow an agent's secret grant by a per-session allowlist (Kortix-as-a-Backend).
+ * The result is ALWAYS a subset of what `grant` alone would allow — this is a
+ * pure NARROWING, never a widening, so it can be composed with the existing
+ * agent-grant/reserved-name/connector-scope filters without weakening any of
+ * them. Pure — DB-free, fully unit-testable.
+ *
+ *   allowlist == null | undefined → return `grant` unchanged (no session
+ *     restriction; byte-identical to the pre-KaaB path).
+ *   grant == undefined | 'all'    → return `allowlist` (the session list
+ *     becomes the explicit grant — narrowing from "every secret" to the named
+ *     set). `[]` therefore means inject ZERO project secrets.
+ *   both lists                    → case-insensitive intersection (only
+ *     identifiers named in BOTH survive).
+ */
+export function intersectSecretGrants(
+  grant: string[] | 'all' | undefined,
+  allowlist: string[] | null | undefined,
+): string[] | 'all' | undefined {
+  if (allowlist === null || allowlist === undefined) return grant;
+  if (grant === undefined || grant === 'all') return allowlist;
+  const grantUpper = new Set(grant.map((g) => g.toUpperCase()));
+  return allowlist.filter((id) => grantUpper.has(id.toUpperCase()));
+}
+
+/**
+ * Detect an env-KEY collision AMONG the allowlisted identifiers, using rows
+ * already resolved for the project. Two distinct identifiers naming the same
+ * env KEY (e.g. GMAPS_PRIMARY / GMAPS_BACKUP → GOOGLE_MAPS_API_KEY) are a valid
+ * project config, but naming BOTH in one session allowlist makes the boot-time
+ * resolver throw AmbiguousSecretGrantError — and because the allowlist is
+ * immutable, that permanently bricks the session. Surfacing it here lets create
+ * reject with a clean 409 the caller can fix. Conservative: ignores the agent
+ * grant (which could have dropped one), so it may reject a shade more than the
+ * boot resolver strictly would — deterministic, cheap, and fail-closed. Pure.
+ * Returns the first colliding { key, identifiers } (identifiers sorted) or null.
+ */
+export function secretKeyCollisionInAllowlist(
+  rows: ResolvedProjectSecret[],
+  allowlist: string[],
+): { key: string; identifiers: string[] } | null {
+  const allowUpper = new Set(allowlist.map((id) => id.toUpperCase()));
+  const byKey = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!allowUpper.has(row.identifier.toUpperCase())) continue;
+    const ids = byKey.get(row.key) ?? [];
+    ids.push(row.identifier);
+    byKey.set(row.key, ids);
+  }
+  for (const [key, identifiers] of byKey) {
+    if (identifiers.length > 1) return { key, identifiers: [...identifiers].sort() };
+  }
+  return null;
+}
+
+/**
+ * Canonical form of a secrets allowlist for idempotency-conflict comparison:
+ * upper-cased (identifier matching is case-insensitive), de-duplicated, sorted.
+ * null/undefined → null (absence is distinct from an empty list).
+ */
+export function canonicalizeSecretsAllowlist(
+  allowlist: string[] | null | undefined,
+): string[] | null {
+  if (allowlist === null || allowlist === undefined) return null;
+  return [...new Set(allowlist.map((id) => id.toUpperCase()))].sort();
+}
+
+/**
+ * True if two secrets allowlists differ meaningfully (order/case/dupes ignored)
+ * — a replayed idempotent create naming a DIFFERENT secret set must conflict
+ * rather than silently reuse the first. Mirrors connectorBindingPayloadConflicts.
+ */
+export function secretsAllowlistPayloadConflicts(
+  a: string[] | null | undefined,
+  b: string[] | null | undefined,
+): boolean {
+  const ca = canonicalizeSecretsAllowlist(a);
+  const cb = canonicalizeSecretsAllowlist(b);
+  if (ca === null || cb === null) return ca !== cb;
+  return ca.length !== cb.length || ca.some((id, i) => id !== cb[i]);
+}
+
 export function projectSecretsRevision(env: Record<string, string>): string {
   const hash = createHash('sha256');
   for (const [name, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
@@ -329,13 +464,82 @@ export async function listProjectSecretsSnapshot(projectId: string): Promise<{
  * running agent's `secrets` grant (`AgentGrant.env`); omitted/`'all'` = every
  * secret in the project reaches this session (see resolveGrantedSecretEnv).
  */
+/**
+ * THE chokepoint: everything a sandbox is handed passes through here.
+ *
+ * Two production callers — sandbox boot (`buildSessionSandboxEnvVars`) and the
+ * per-prompt hot push (`resolveOwnerRawEnv`) — which is why the delivery
+ * decision belongs here rather than at either of them. A row's `strategy`
+ * decides whether its value may enter the box AT ALL; the pre-existing grant and
+ * allowlist narrowing decide only WHICH rows are considered.
+ *
+ * `sessionId` is required to deliver anything non-`runtime`: a brokered value is
+ * represented in the box by a per-session handle, and with no session there is
+ * nothing to mint against. Absent it, non-`runtime` rows are withheld rather
+ * than falling back to plaintext — the fallback would defeat the whole point.
+ */
+/**
+ * Delete from `env` every KEY that no longer has a deliverable value.
+ *
+ * Mutates in place because the caller owns the map and this is a pure narrowing
+ * of it — a row whose delivery says "nothing" is removed from the values, and
+ * therefore from `names`, which the daemon derives from the same map. (A name
+ * emitted without a value, or the reverse, desynchronises the box's env store.)
+ *
+ * The subtlety is the SHARED KEY. Two identifiers may resolve to one env KEY —
+ * that is deliberate, so an agent can be granted one specific value among
+ * several candidates for the same variable. A KEY may therefore only be dropped
+ * when EVERY identifier behind it is undeliverable; if one is still `runtime`,
+ * the KEY has a legitimate value and dropping it would break a working session.
+ */
+export function withholdUndeliverable(
+  rows: ResolvedProjectSecret[],
+  env: Record<string, string>,
+  sessionId: string | null,
+): void {
+  const deliverableKeys = new Set<string>();
+  const seenKeys = new Set<string>();
+  for (const row of rows) {
+    seenKeys.add(row.key);
+    const delivery = resolveSecretDelivery({
+      identifier: row.identifier,
+      strategy: row.strategy,
+      sessionId,
+      // The agent grant and the session allowlist were BOTH applied upstream by
+      // resolveGrantedSecretEnv; re-applying them here would double-count and
+      // could withhold a row the caller already admitted.
+      agentGrantEnv: 'all',
+      sessionAllowlist: null,
+    });
+    if (emitsValue(delivery)) deliverableKeys.add(row.key);
+  }
+  for (const key of seenKeys) {
+    if (!deliverableKeys.has(key)) delete env[key];
+  }
+}
+
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,
   userId: string | null,
   grantEnv?: string[] | 'all',
+  sessionId?: string | null,
 ): Promise<{ env: Record<string, string>; names: string[]; revision: string }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env } = resolveGrantedSecretEnv(rows, grantEnv);
+  const { env, identifiers } = resolveGrantedSecretEnv(rows, grantEnv);
+
+  // Only the GRANTED rows may vote on a shared KEY. Passing the full resolved
+  // set let an UNGRANTED sibling keep a key alive for a denied one: identifiers
+  // A ('denied') and B ('runtime') share KEY X, B is outside the agent grant so
+  // it contributed nothing to `env`, yet it still marked X deliverable — and X
+  // held A's plaintext. A row that could not put a value in the map must not be
+  // able to keep one there.
+  const granted = new Set(identifiers.map((id) => id.toUpperCase()));
+  withholdUndeliverable(
+    rows.filter((row) => granted.has(row.identifier.toUpperCase())),
+    env,
+    sessionId ?? null,
+  );
+
   const names = Object.keys(env).sort();
   return { env, names, revision: projectSecretsRevision(env) };
 }

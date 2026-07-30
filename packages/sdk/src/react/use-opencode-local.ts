@@ -11,19 +11,20 @@
  * - Variant persistence via useModelStore
  */
 
-import { flattenModels, type FlatModel } from './model-flatten';
-import { featureFlags } from '../core/http/feature-flags';
-import { listProjectSecrets } from '../core/rest/projects-client';
-import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/llm-catalog';
-import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useKortixRouteProjectId } from './route-project';
+import { featureFlags } from '../core/http/feature-flags';
+import { listProjectSecrets } from '../core/rest/projects-client';
+import { createAgentSelectionScope } from './agent-selection-scope';
+import { type FlatModel, flattenModels } from './model-flatten';
 import {
   connectedGatewayProviderIdsFromSecretNames,
   normalizeProviderList,
 } from './provider-selection';
-import { useModelStore, type ModelKey } from './use-model-store';
+import { useKortixRouteProjectId } from './route-project';
+import { type ModelKey, useModelStore } from './use-model-store';
+import type { RuntimeAgent } from './use-opencode-sessions/agents';
 
 export type { ModelKey };
 
@@ -32,7 +33,7 @@ export type { ModelKey };
 // ============================================================================
 
 export interface UseOpenCodeLocalOptions {
-  agents?: Agent[];
+  agents?: RuntimeAgent[];
   providers?: ProviderListResponse;
   config?: Config;
   /** Session ID — used to persist agent selection per-session in localStorage */
@@ -66,9 +67,9 @@ export interface UseOpenCodeLocalOptions {
 
 export interface OpenCodeLocalAgent {
   /** Currently selected agent (or first available) */
-  current: Agent | undefined;
+  current: RuntimeAgent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
-  list: Agent[];
+  list: RuntimeAgent[];
   /** Set agent by name */
   set: (name: string | undefined) => void;
   /** Cycle to next/previous agent */
@@ -80,7 +81,7 @@ export interface OpenCodeLocalModel {
   current: FlatModel | undefined;
   /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
   currentKey: ModelKey | undefined;
-  /** Wire model to SEND: `auto` when on the default (gateway resolves it), else the explicit pick. */
+  /** Concrete wire model to send. */
   sendKey: ModelKey | undefined;
   /** True when no explicit pick is active — the picker shows currentKey as the resolved default. */
   onDefault: boolean;
@@ -169,33 +170,31 @@ export function formatPromptModel(model: ModelKey): ModelKey {
   return model;
 }
 
+function isRemovedAutoModel(model: ModelKey | undefined): boolean {
+  return model?.modelID === 'auto' || model?.modelID === 'kortix/auto';
+}
+
+/** Resolve the concrete model sent to OpenCode. Stale Auto values fail closed. */
+export function resolvePromptModel(
+  explicit: ModelKey | undefined,
+  current: ModelKey | undefined,
+): ModelKey | undefined {
+  if (explicit && !isRemovedAutoModel(explicit)) return explicit;
+  return current && !isRemovedAutoModel(current) ? current : undefined;
+}
+
 /**
- * Substitute the synthetic `auto` pseudo-model when the host has it hidden
- * (`enableAutoModel: false`) — e.g. mid-rollout, or a host that doesn't want to
- * expose "auto" in its picker at all. Falls back to an explicit managed default
- * when one validates, otherwise drops the selection entirely (`undefined`) so
- * callers fall through their own next fallback.
+ * @deprecated The Auto model was removed. Stale Auto values resolve to
+ * `undefined`; concrete values pass through unchanged.
  */
 export function resolveHiddenAutoModel(
   resolved: ModelKey | undefined,
-  {
-    enableAutoModel,
-    isModelValid,
-  }: {
+  _options: {
     enableAutoModel: boolean;
     isModelValid: (model: ModelKey) => boolean;
   },
 ): ModelKey | undefined {
-  if (
-    enableAutoModel ||
-    resolved?.providerID !== 'kortix' ||
-    resolved.modelID !== AUTO_MODEL_ID
-  ) {
-    return resolved;
-  }
-
-  const explicit = { providerID: 'kortix', modelID: AUTO_DEFAULT_MODEL_ID };
-  return isModelValid(explicit) ? explicit : undefined;
+  return resolvePromptModel(resolved, undefined);
 }
 
 export type ModelProviderMode = 'native' | 'gateway';
@@ -324,7 +323,7 @@ export function useOpenCodeLocal({
   // Project-only agents (orchestrator/project-maintainer/worker) are hidden
   // when the project paradigm is off; their bodies reference project
   // tools that aren't registered in default mode.
-  const visibleAgents = useMemo<Agent[]>(() => {
+  const visibleAgents = useMemo<RuntimeAgent[]>(() => {
     // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
     const projectOnlyAgents = new Set(['project-manager']);
     return (Array.isArray(rawAgents) ? rawAgents : []).filter(
@@ -335,15 +334,21 @@ export function useOpenCodeLocal({
   // Resolve the current agent name (see `resolveCurrentAgentName`): per-session
   // slot -> server-bound project agent -> project default -> global last-used.
   const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
-  const agentSelectionScope = `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${defaultAgentName ?? ''}`;
+  // Scope a composer override to the route project, not the asynchronously
+  // loaded project default. Project-config hydration can change
+  // `defaultAgentName` after the user picks an agent. Including that value in
+  // this key discarded the explicit pick and reset the composer to the default.
+  const agentSelectionScope = createAgentSelectionScope({
+    sessionId,
+    boundAgentName,
+    projectId,
+  });
   const [explicitAgentSelection, setExplicitAgentSelection] = useState<{
     scope: string;
     name: string | undefined;
   }>({ scope: '', name: undefined });
   const explicitAgentName =
-    explicitAgentSelection.scope === agentSelectionScope
-      ? explicitAgentSelection.name
-      : undefined;
+    explicitAgentSelection.scope === agentSelectionScope ? explicitAgentSelection.name : undefined;
   const currentAgentName = resolveCurrentAgentName({
     sessionId,
     sessionAgentName,
@@ -376,16 +381,11 @@ export function useOpenCodeLocal({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      sessionId,
-      agentSelectionScope,
-      modelStore.setSessionAgentName,
-      modelStore.setLastAgentName,
-    ],
+    [sessionId, agentSelectionScope, modelStore.setSessionAgentName, modelStore.setLastAgentName],
   );
 
   // Resolve current agent (matching SolidJS: find by name or fall back to first)
-  const currentAgent = useMemo<Agent | undefined>(() => {
+  const currentAgent = useMemo<RuntimeAgent | undefined>(() => {
     if (visibleAgents.length === 0) return undefined;
     if (currentAgentName) {
       const found = visibleAgents.find((a) => a.name === currentAgentName);
@@ -479,13 +479,10 @@ export function useOpenCodeLocal({
       getFirstValidModel(
         () => serverDefaultKey,
         () => modelStore.globalDefault,
-        () => (currentAgent?.model as ModelKey | undefined),
+        () => currentAgent?.model as ModelKey | undefined,
         () => fallbackModel,
       );
-    return resolveHiddenAutoModel(resolved, {
-      enableAutoModel: featureFlags.enableAutoModel,
-      isModelValid,
-    });
+    return resolved;
   }, [
     explicitModelKey,
     serverDefaultKey,
@@ -496,18 +493,13 @@ export function useOpenCodeLocal({
     fallbackModel,
   ]);
 
-  // True when the user hasn't made an explicit pick — the picker shows the
-  // resolved default with a "Default" badge and the client sends `auto`.
+  // True when the user has not made an explicit pick.
   const onDefaultModel = !explicitModelKey;
 
-  // Wire key actually SENT to opencode/the gateway. On default we send `auto`
-  // (when the catalog offers it) so the gateway resolves the account/agent
-  // default server-side; otherwise the concrete display key.
-  const sendModelKey = useMemo<ModelKey | undefined>(() => {
-    if (explicitModelKey) return explicitModelKey;
-    const auto: ModelKey = { providerID: 'kortix', modelID: AUTO_MODEL_ID };
-    return isModelValid(auto) ? auto : currentModelKey;
-  }, [explicitModelKey, isModelValid, currentModelKey]);
+  const sendModelKey = useMemo<ModelKey | undefined>(
+    () => resolvePromptModel(explicitModelKey, currentModelKey),
+    [explicitModelKey, currentModelKey],
+  );
 
   const currentModel = useMemo<FlatModel | undefined>(
     () => (currentModelKey ? findModel(currentModelKey) : undefined),
@@ -696,11 +688,10 @@ export function useOpenCodeLocal({
     model: {
       current: currentModel,
       currentKey: currentModelKey,
-      // The wire model to SEND: `auto` when on the default (gateway resolves it),
-      // otherwise the explicit pick. Callers should send this, not currentKey.
+      // The concrete model to send. Callers should send this, not stale storage.
       sendKey: sendModelKey,
       // True when no explicit pick is active — the picker shows currentKey as the
-      // resolved default and the wire send is `auto`.
+      // resolved default.
       onDefault: onDefaultModel,
       recent: recentModels,
       list: flatModels,

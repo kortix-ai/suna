@@ -2,7 +2,9 @@
 
 import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { unwrap, type ConnectorSharing } from './shared';
+import { type ConnectorSharing, unwrap } from './shared';
+
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -29,6 +31,11 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  runtime_transport?: 'acp' | 'rest';
+  runtime_harness?: SessionRuntimeHarness;
+  native_agent?: string | null;
+  acp_server_id?: string | null;
+  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.
@@ -48,10 +55,25 @@ export interface ProjectSession {
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
+  owner_name?: string | null;
+  owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
+  /** How the session was started — a policy class derived from the caller's
+   *  token kind, not the surface. A backend (PAT/service-account) create is
+   *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
+  origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
+  /** The per-session secrets allowlist that was applied (identifiers); null = none. */
+  secrets_allowlist?: string[] | null;
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
+  /** Whether the current viewer may open/read this session. */
+  can_access?: boolean;
+  /** Exact lifecycle state of the backing runtime resource, when present. */
+  runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
+  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -59,9 +81,21 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  profile_id: string;
+  authorization_id: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
+export type SessionConnectorBindingInput =
+  | {
+      authorization_id: string;
+      /** @deprecated Use `authorization_id`. Equal dual IDs remain accepted. */
+      profile_id?: string;
+    }
+  | {
+      authorization_id?: never;
+      /** @deprecated Use `authorization_id`. */
+      profile_id: string;
+    };
+export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
 /** Public body for POST /projects/:projectId/sessions. */
 export interface CreateProjectSessionInput {
@@ -79,8 +113,45 @@ export interface CreateProjectSessionInput {
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
-  /** Manager-authorized logical connector alias -> concrete connection profile. */
-  connector_bindings?: SessionConnectorBindings;
+  /** Logical connector alias -> active authorization available to the caller. */
+  connector_bindings?: SessionConnectorBindingsInput;
+  /**
+   * When `connector_bindings` is set, unbound aliases fail closed.
+   * `inherit_unbound: true` keeps strategy-based default resolution for them.
+   */
+  inherit_unbound?: boolean;
+  /**
+   * Connector profiles that must resolve a strategy-compatible authorization
+   * before provisioning. Missing authorizations return
+   * `CONNECTOR_AUTHORIZATION_REQUIRED`.
+   */
+  require_connectors?: string[];
+  /**
+   * Kortix-as-a-Backend (backend-origin callers only). Narrow which project
+   * secrets (by identifier) this session's sandbox receives, from the agent's
+   * default set down to this list. `[]` = inject zero project secrets. Pure
+   * narrowing — can't widen beyond the agent's grant. Non-backend caller → 403.
+   */
+  secrets?: string[];
+}
+
+export interface WarmProjectSessionWorkspaceRefresh {
+  status: 'skipped' | 'unchanged' | 'updated' | 'failed';
+  before_sha?: string | null;
+  after_sha?: string | null;
+  error?: string;
+}
+
+export interface WarmProjectSessionResult {
+  session: ProjectSession;
+  reused: boolean;
+  workspace_refresh: WarmProjectSessionWorkspaceRefresh;
+}
+
+export interface ClaimWarmProjectSessionInput {
+  session_id: string;
+  agent_name?: string;
+  sandbox_slug?: string;
 }
 
 export interface ProjectOpenCodeSession {
@@ -93,8 +164,15 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
-export async function listProjectSessions(projectId: string) {
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`));
+/** @param options.scope - `project` asks for the manager-only full inventory. */
+export async function listProjectSessions(
+  projectId: string,
+  options?: { scope?: 'visible' | 'project' },
+) {
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  const query = params.size > 0 ? `?${params}` : '';
+  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
 /**
@@ -218,6 +296,27 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+export async function ensureWarmProjectSession(projectId: string) {
+  const result = unwrap(
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
+  );
+  markSessionFresh(result.session.session_id);
+  return result;
+}
+
+export async function claimWarmProjectSession(
+  projectId: string,
+  input: ClaimWarmProjectSessionInput,
+) {
+  const session = unwrap(
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
+      showErrors: false,
+    }),
+  );
+  markSessionFresh(session.session_id);
+  return session;
+}
+
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
@@ -249,9 +348,19 @@ export interface SessionAuditAction {
    *  still awaiting a decision. */
   resolved_by: string | null;
   resolved_by_email: string | null;
+  /**
+   * Redacted detail the gateway recorded. For a gated call this carries
+   * `args_preview` — the (secret-stripped) arguments the call would run with,
+   * which is what makes an approval decidable rather than a guess.
+   */
   result_summary: Record<string, unknown> | null;
   at: string;
   resolved_at: string | null;
+  /**
+   * Standalone page for reviewing and deciding this call. Non-null only while
+   * the row is unresolved; a settled decision carries no live link.
+   */
+  approval_url?: string | null;
 }
 
 export interface SessionAudit {
@@ -325,6 +434,53 @@ export async function getSessionTranscript(
   );
 }
 
+/** One line of a session's voice-call transcript (`kortix.voice_call_turns`).
+ *  'user'/'agent' are either side of the spoken conversation; 'tool' is a
+ *  record of an `ask_kortix`/`run_command` call the voice-agent worker made
+ *  through the voice MCP (see apps/api/src/channels/voice/mcp.ts) — not
+ *  spoken, but part of "what did the voice agent DO" during the call. */
+export interface VoiceTranscriptTurn {
+  cursor: number;
+  role: 'user' | 'agent' | 'tool' | (string & {});
+  speaker: string | null;
+  text: string;
+  at: string;
+}
+
+export interface VoiceTranscript {
+  session_id: string;
+  call_id: string;
+  /** Whether a voice-agent worker is in the call's LiveKit room right now. */
+  live: boolean;
+  /** Highest `cursor` returned — pass back as `cursor` to page for only what's new. */
+  cursor: number;
+  count: number;
+  turns: VoiceTranscriptTurn[];
+}
+
+/** A session's live voice-call transcript — every spoken turn plus every
+ *  ask_kortix/run_command the worker issued, in one monotonic feed (a call's
+ *  `callId` IS its `sessionId`, so there is nothing else to key this by).
+ *  Visible to anyone who can see the session (same gate as `/audit`,
+ *  `/transcript`). Returns `{ turns: [] }` for a session that never made a
+ *  voice call — not a 404, since "no call yet" is the common case. */
+export async function getVoiceTranscript(
+  projectId: string,
+  sessionId: string,
+  options?: { cursor?: number; limit?: number; showErrors?: boolean },
+) {
+  const search = new URLSearchParams();
+  if (options?.cursor != null) search.set('cursor', String(options.cursor));
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<VoiceTranscript>(
+      `/projects/${projectId}/sessions/${sessionId}/voice-transcript${qs ? `?${qs}` : ''}`,
+      { showErrors: options?.showErrors },
+    ),
+  );
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
@@ -359,6 +515,88 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
+    ),
+  );
+}
+
+/**
+ * Change the model a session uses, mid-flight.
+ *
+ * `opencode_model` is set at create; this re-points an existing session. When
+ * the sandbox is live the change takes effect immediately (opencode restarts to
+ * rebuild its config), which ends any in-flight turn. `applied_live: false`
+ * means it was stored and will apply when the sandbox next starts.
+ */
+/** What a re-scope may change, and what it reports back. */
+export interface SessionScopeInput {
+  /**
+   * FULL new allowlist — this REPLACES the previous one. `null` stops narrowing
+   * (fall back to the agent's own grant); `[]` means "no project secrets at
+   * all". Those two are opposite, so the field is optional: omit it to leave
+   * secrets untouched.
+   */
+  secrets?: string[] | null;
+  /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
+  connector_bindings?: SessionConnectorBindingsInput;
+}
+
+export interface SessionScope {
+  secrets_allowlist: string[] | null;
+  connector_bindings: SessionConnectorBindings;
+  dropped_secrets: string[];
+  added_secrets: string[];
+  dropped_bindings: string[];
+  /**
+   * False when a secret was dropped. Connector bindings resolve server-side at
+   * call time so they take effect immediately, but a secret the agent has
+   * already read stays in its context and in shells it already started —
+   * dropping it stops future DELIVERY, it does not un-read the value. Surface
+   * this rather than reporting a plain success.
+   */
+  retroactive: boolean;
+  detail: string;
+}
+
+/** @deprecated Use `SessionScope`. */
+export type SessionScopeResult = SessionScope;
+
+export async function getProjectSessionScope(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionScope> {
+  return unwrap(
+    await backendApi.get<SessionScope>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+    ),
+  );
+}
+
+/**
+ * Re-scope a RUNNING session. Set semantics: what you send replaces what was
+ * there, and takes effect from the next prompt.
+ */
+export async function setProjectSessionScope(
+  projectId: string,
+  sessionId: string,
+  scope: SessionScopeInput,
+): Promise<SessionScope> {
+  return unwrap(
+    await backendApi.put<SessionScope>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      scope,
+    ),
+  );
+}
+
+export async function setProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+  opencodeModel: string,
+): Promise<{ opencode_model: string; applied_live: boolean; detail?: string }> {
+  return unwrap(
+    await backendApi.put<{ opencode_model: string; applied_live: boolean; detail?: string }>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
+      { opencode_model: opencodeModel },
     ),
   );
 }

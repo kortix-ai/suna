@@ -19,7 +19,9 @@ export function SubSessionModal({ open, onOpenChange, sessionId, title }: SubSes
         hideCloseButton
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'h-[80vh] max-h-[840px] w-[92vw] max-w-5xl',
+          // sm:max-w-* is required — the base dialog sets sm:max-w-lg, which
+          // tailwind-merge won't strip for an unprefixed max-w-* override.
+          'h-[80vh] max-h-[840px] w-[92vw] max-w-6xl sm:max-w-6xl',
         )}
         aria-describedby={undefined}
       >

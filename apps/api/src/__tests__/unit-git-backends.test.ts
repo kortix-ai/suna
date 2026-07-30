@@ -10,6 +10,7 @@ import {
   getDefaultManagedBackend,
   githubBackend,
   hasBackend,
+  parseBasicAuthHeader,
   type GitConnectionRef,
 } from '../projects/git-backends';
 
@@ -61,6 +62,14 @@ describe('basicAuthHeader', () => {
   test('encodes x-access-token:<token>', () => {
     const h = basicAuthHeader('tok123');
     expect(h.Authorization).toBe(`Basic ${Buffer.from('x-access-token:tok123').toString('base64')}`);
+  });
+
+  test('parses a provider-selected basic username and token', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64');
+    expect(parseBasicAuthHeader(`Basic ${encoded}`)).toEqual({
+      username: 't',
+      token: 'code-storage-jwt',
+    });
   });
 });
 

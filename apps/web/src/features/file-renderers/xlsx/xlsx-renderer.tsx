@@ -19,6 +19,10 @@ interface XlsxRendererProps {
   content?: string | null;
   filePath?: string;
   fileName: string;
+  /** Extra controls for the viewer's own toolbar, rendered after zoom and
+   *  before the file menu. */
+  compact?: boolean;
+  toolbarActions?: React.ReactNode;
   className?: string;
   sandboxId?: string;
   project?: {
@@ -31,7 +35,13 @@ interface XlsxRendererProps {
   isDownloading?: boolean;
 }
 
-export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProps) {
+export function XlsxRenderer({
+  filePath,
+  fileName,
+  className,
+  compact = false,
+  toolbarActions,
+}: XlsxRendererProps) {
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +63,7 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
           if (!cancelled) setSrc(xlsxPath);
           return;
         }
-        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
+        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
         const blob = await readFileAsBlob(xlsxPath);
         if (cancelled) return;
         if (!blob || blob.size === 0) throw new Error('Empty file received');
@@ -107,8 +117,10 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
       fileName={fileName}
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
+      showToolbar={!compact}
       showUpload={false}
       className={cn('h-full w-full', className)}
+      toolbarActions={toolbarActions}
     />
   );
 }

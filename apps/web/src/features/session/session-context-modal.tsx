@@ -11,14 +11,14 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import { useSyncStore } from '@/stores/opencode-sync-store';
 import type { MessageWithParts } from '@/ui/types';
-import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk/opencode-client';
+import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk';
 import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { allDescendantIds, childMapByParent, formatCost, getSessionCost } from '@kortix/sdk/turns';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -512,8 +512,8 @@ export function SessionContextModal({
   }, [ctx?.input, messages]);
 
   // ---- Sub-session aggregation ----
-  const storeMessages = useSyncStore((s) => s.messages);
-  const storeParts = useSyncStore((s) => s.parts);
+  const storeMessages = useSessionStateStore((s) => s.messages);
+  const storeParts = useSessionStateStore((s) => s.parts);
 
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),

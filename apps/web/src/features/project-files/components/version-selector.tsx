@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import type { ProjectBranch } from '@kortix/sdk/projects-client';
+import type { ProjectBranch } from '@kortix/sdk';
 import {
   ArrowDownLeftIcon as ArrowDownLeft,
   ArrowUpRightIcon as ArrowUpRight,

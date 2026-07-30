@@ -1,16 +1,16 @@
 'use client';
 
 import {
-  type ConnectorDraftInput,
-  type DiscoverIntegration,
-  type DiscoverIntegrationVariant,
-  type PipedreamApp,
   createConnector,
   getConnectStatus,
   getDiscoverIntegration,
   listDiscoverIntegrations,
   listPipedreamApps,
-} from '@kortix/sdk/projects-client';
+  type ConnectorDraftInput,
+  type DiscoverIntegration,
+  type DiscoverIntegrationVariant,
+  type PipedreamApp,
+} from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
   CaretRightIcon as ChevronRight,
@@ -22,7 +22,7 @@ import {
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,14 +39,28 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { isConnectorsEnabled } from '@/lib/config';
+
+import {
+  connectorAuthorizationStrategyIsEditable,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  proposeConnectorProfileSlug,
+  type EasyConnectProfileInput,
+} from './connector-profile-form';
+import { ConnectorProfileModal } from './connector-profile-modal';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
 type DiscoverCard =
   { source: 'integration'; item: DiscoverIntegration } | { source: 'pipedream'; app: PipedreamApp };
+
+type DiscoverProfileTarget =
+  | { source: 'integration'; item: DiscoverIntegration; variant: DiscoverIntegrationVariant }
+  | { source: 'pipedream'; app: PipedreamApp };
 
 function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVariant): string {
   return `${item.slug}-${variant.kind}`
@@ -59,14 +73,17 @@ function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVa
 
 export function DiscoverCatalogue({
   projectId,
+  existingSlugs,
   onAdded,
 }: {
   projectId: string;
+  existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
 }) {
   const [q, setQ] = useState('');
-  const deferredQuery = useDeferredValue(q.trim());
+  const { debouncedValue: deferredQuery } = useDebounce(q.trim(), 300);
   const [selectedIntegration, setSelectedIntegration] = useState<DiscoverIntegration | null>(null);
+  const [profileTarget, setProfileTarget] = useState<DiscoverProfileTarget | null>(null);
   const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
@@ -116,56 +133,68 @@ export function DiscoverCatalogue({
     .map((app) => ({ source: 'pipedream' as const, app }));
   const discoverCards = [...integrationCards, ...pipedreamOAuthCards];
 
-  const addPipedream = useMutation({
-    mutationFn: (app: { slug: string; name: string }) =>
-      createConnector(projectId, {
-        slug: app.slug,
-        provider: 'pipedream',
-        app: app.slug,
-        account: 'default',
-      }).then(() => app),
-    onSuccess: (app) => {
-      successToast(`Added ${app.name} — click Connect to authorize`);
-      onAdded(app.slug);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add'),
-  });
-
-  const addVariant = useMutation({
+  const addProfile = useMutation({
     mutationFn: async ({
-      item,
-      variant,
+      target,
+      profile,
     }: {
-      item: DiscoverIntegration;
-      variant: DiscoverIntegrationVariant;
+      target: DiscoverProfileTarget;
+      profile: EasyConnectProfileInput;
     }) => {
-      if (!variant.connector) throw new Error('This surface needs manual configuration');
-      const template = variant.connector;
-      const slug = connectorSlug(item, variant);
-      const auth = template.auth
-        ? {
-            type: template.auth.type,
-            in: template.auth.in,
-            ...(template.auth.name ? { name: template.auth.name } : {}),
-            ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
-          }
-        : undefined;
-      const draft: ConnectorDraftInput = {
-        slug,
-        name: variant.name,
-        provider: template.provider,
-        ...(template.spec ? { spec: template.spec } : {}),
-        ...(template.url ? { url: template.url } : {}),
-        ...(template.transport ? { transport: template.transport } : {}),
-        ...(template.endpoint ? { endpoint: template.endpoint } : {}),
-        ...(auth ? { auth } : {}),
+      let draft: ConnectorDraftInput;
+      if (target.source === 'pipedream') {
+        draft = {
+          slug: profile.slug,
+          name: profile.name.trim(),
+          provider: 'pipedream',
+          app: target.app.slug,
+          account: 'default',
+          authorization_strategy: profile.authorizationStrategy,
+        };
+      } else {
+        if (!target.variant.connector) {
+          throw new Error('This surface needs manual configuration');
+        }
+        const template = target.variant.connector;
+        const auth = template.auth
+          ? {
+              type: template.auth.type,
+              in: template.auth.in,
+              ...(template.auth.name ? { name: template.auth.name } : {}),
+              ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
+            }
+          : undefined;
+        draft = {
+          slug: profile.slug,
+          name: profile.name.trim(),
+          provider: template.provider,
+          authorization_strategy: profile.authorizationStrategy,
+          ...(template.spec ? { spec: template.spec } : {}),
+          ...(template.url ? { url: template.url } : {}),
+          ...(template.transport ? { transport: template.transport } : {}),
+          ...(template.endpoint ? { endpoint: template.endpoint } : {}),
+          ...(auth ? { auth } : {}),
+        };
+      }
+      const createDraft = createOnlyConnectorDraft(draft);
+      const result = await createConnector(projectId, createDraft);
+      return {
+        slug: createDraft.slug,
+        name: createDraft.name ?? createDraft.slug,
+        pipedream: target.source === 'pipedream',
+        syncError: connectorSyncErrorForSlug(result, createDraft.slug),
       };
-      await createConnector(projectId, draft);
-      return { slug, name: variant.name };
     },
-    onSuccess: ({ slug, name }) => {
-      successToast(`Added ${name}`);
-      setSelectedIntegration(null);
+    onSuccess: ({ slug, name, pipedream, syncError }) => {
+      setProfileTarget(null);
+      if (syncError) {
+        warningToast(
+          `Added ${name} to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
+        );
+        onAdded();
+        return;
+      }
+      successToast(pipedream ? `Added ${name} — click Connect to authorize` : `Added ${name}`);
       onAdded(slug);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to add'),
@@ -226,10 +255,10 @@ export function DiscoverCatalogue({
                 <button
                   key={key}
                   type="button"
-                  disabled={addPipedream.isPending || addVariant.isPending}
+                  disabled={addProfile.isPending}
                   onClick={() =>
                     isOAuth
-                      ? addPipedream.mutate({ slug: card.app.slug, name: card.app.name })
+                      ? setProfileTarget({ source: 'pipedream', app: card.app })
                       : setSelectedIntegration(card.item)
                   }
                   className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex min-h-28 flex-col rounded-md border p-3.5 text-left transition-[background-color,transform] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96] disabled:opacity-60"
@@ -366,12 +395,16 @@ export function DiscoverCatalogue({
                         <Button
                           size="sm"
                           className="shrink-0"
-                          disabled={addVariant.isPending}
-                          onClick={() =>
-                            addVariant.mutate({ item: detailQuery.data.item, variant })
-                          }
+                          disabled={addProfile.isPending}
+                          onClick={() => {
+                            setSelectedIntegration(null);
+                            setProfileTarget({
+                              source: 'integration',
+                              item: detailQuery.data.item,
+                              variant,
+                            });
+                          }}
                         >
-                          {addVariant.isPending ? <Loading className="size-4 shrink-0" /> : null}
                           Add direct
                         </Button>
                       ) : href ? (
@@ -401,6 +434,43 @@ export function DiscoverCatalogue({
           </ModalBody>
         </ModalContent>
       </Modal>
+      <ConnectorProfileModal
+        open={profileTarget !== null}
+        idPrefix="discover-profile"
+        title={`Add ${
+          profileTarget?.source === 'pipedream'
+            ? profileTarget.app.name
+            : (profileTarget?.variant.name ?? 'integration')
+        }`}
+        description="Create a connector profile. The display name and slug identify this specific connection in project configuration."
+        initialName={
+          profileTarget?.source === 'pipedream'
+            ? profileTarget.app.name
+            : (profileTarget?.variant.name ?? '')
+        }
+        initialSlug={
+          profileTarget
+            ? proposeConnectorProfileSlug(
+                profileTarget.source === 'pipedream'
+                  ? profileTarget.app.slug
+                  : connectorSlug(profileTarget.item, profileTarget.variant),
+                existingSlugs,
+              )
+            : ''
+        }
+        existingSlugs={existingSlugs}
+        pending={addProfile.isPending}
+        authorizationStrategyDisabled={
+          profileTarget?.source === 'integration' && profileTarget.variant.connector
+            ? !connectorAuthorizationStrategyIsEditable(profileTarget.variant.connector.provider)
+            : false
+        }
+        onOpenChange={(open) => !open && setProfileTarget(null)}
+        onSubmit={(profile) => {
+          if (!profileTarget) return;
+          addProfile.mutate({ target: profileTarget, profile });
+        }}
+      />
     </div>
   );
 }

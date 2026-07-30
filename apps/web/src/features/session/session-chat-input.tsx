@@ -2,40 +2,23 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
-import { ProgressRing } from '@/components/ui/progress-ring';
-import { STATUS_TEXT } from '@/components/ui/status';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { getFileIcon } from '@/features/project-files';
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import type {
-  Agent,
   Command,
   MessageWithParts,
   ProviderListResponse,
+  RuntimeAgent,
   Session,
-} from '@/hooks/opencode/use-opencode-sessions';
-import {
-  useOpenCodeSessionTodo,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+} from '@kortix/sdk/react';
+import { useRuntimeSessions } from '@kortix/sdk/react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
-  ArrowUpIcon as ArrowUp,
   ArrowUpLeftIcon as ArrowUpLeft,
-  CheckIcon as Check,
-  CaretDownIcon as ChevronDown,
   ClockIcon as Clock,
-  FolderIcon as Folder,
-  ListChecksIcon as ListTodo,
-  ChatIcon as MessageSquare,
-  PaperclipIcon as Paperclip,
   ArrowBendUpLeftIcon as Reply,
   TerminalIcon as Terminal,
   XIcon as X,
@@ -44,6 +27,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { AttachmentPreview } from './composer/attachment-preview';
+import { ComposerToolbar } from './composer/composer-toolbar';
+import { MentionPopover } from './composer/mention-popover';
+import { SlashCommandPopover } from './composer/slash-command-popover';
+import { TodoChip } from './composer/todo-chip';
+import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
@@ -54,25 +43,18 @@ import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
+  resolveAvailableSelectedModel,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import { type ModelDefaultControls, ModelSelector } from './model-selector';
-import { ReasoningEffortSelector } from './reasoning-effort-selector';
+import { type ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
-import { VoiceRecorder } from './voice-recorder';
 
-import {
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandPopover,
-  CommandPopoverContent,
-  CommandPopoverTrigger,
-} from '@/components/ui/command';
-import Loading from '@/components/ui/loading';
-
+// Re-exported for backward compatibility — `AgentSelector` moved to
+// `./composer/agent-selector`, but is a public export of this module (see
+// e.g. `channels-view.tsx`, `schedule-view.tsx`).
+export { AgentSelector } from './composer/agent-selector';
 export type { ProviderListResponse };
+export type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -89,1033 +71,14 @@ function formatRelativeTime(timestamp: number): string {
 // ============================================================================
 // Flat model list helper
 // ============================================================================
-
-export interface FlatModel {
-  providerID: string;
-  providerName: string;
-  modelID: string;
-  modelName: string;
-  variants?: Record<string, Record<string, unknown>>;
-  /** Capabilities extracted from the provider API response */
-  capabilities?: {
-    reasoning?: boolean;
-    vision?: boolean;
-    toolcall?: boolean;
-  };
-  /** Context window size in tokens */
-  contextWindow?: number;
-  /** ISO date string for release date */
-  releaseDate?: string;
-  /** Model family (used for "latest" logic) */
-  family?: string;
-  /** Cost per token (input/output) */
-  cost?: {
-    input: number;
-    output: number;
-  };
-  /** True for zero-cost managed models exposed by the gateway. */
-  free?: boolean;
-  /** Provider source (env, api, config, custom) */
-  providerSource?: string;
-  /**
-   * The REAL upstream provider this model resolves against ('anthropic',
-   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
-   * served model (`GatewayModel.provider`, apps/api's catalog-models.ts) so
-   * the picker never has to recover it by string-splitting `modelID`. Every
-   * gateway model is registered under `providerID: 'kortix'`; this is the
-   * field that identifies who ACTUALLY serves it. Falls back to undefined
-   * for providers/models predating this field (e.g. a stale baked catalog on
-   * an old sandbox image) — consumers should still fall back to splitting
-   * `modelID` in that case.
-   */
-  provider?: string;
-  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
-   *  the model exposes one — same shape the composer's effort selector reads
-   *  off the baked/live catalog, threaded onto the live per-session model too. */
-  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
-  /** Free-text blurb models.dev publishes for the model. */
-  description?: string;
-  /** True when the model's weights are publicly released (open-weights) vs.
-   *  closed API-only. models.dev's `open_weights` field, mirrored. */
-  openWeights?: boolean;
-  /** When models.dev last refreshed this model's own entry. */
-  lastUpdated?: string;
-}
-
-function catalogModelFor(providerID: string, modelID: string) {
-  let lookupProviderID = providerID;
-  let lookupModelID = modelID;
-  if (providerID === 'kortix') {
-    const slash = modelID.indexOf('/');
-    if (slash !== -1) {
-      lookupProviderID = modelID.slice(0, slash);
-      lookupModelID = modelID.slice(slash + 1);
-    }
-  }
-  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find(
-    (model) => model.id === lookupModelID,
-  );
-}
-
-export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
-  if (!providers) return [];
-  const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
-  const result: FlatModel[] = [];
-  for (const p of all) {
-    if (!connected.includes(p.id)) continue;
-    for (const [modelID, model] of Object.entries(p.models)) {
-      const caps = (model as any).capabilities;
-      const modalities = (model as any).modalities;
-      const catalogModel = catalogModelFor(p.id, modelID);
-      result.push({
-        providerID: p.id,
-        providerName: p.name,
-        modelID,
-        modelName: (model.name || catalogModel?.name || modelID).replace('(latest)', '').trim(),
-        variants: model.variants,
-        capabilities: caps
-          ? {
-              reasoning: caps.reasoning ?? false,
-              vision: caps.input?.image ?? false,
-              toolcall: caps.toolcall ?? false,
-            }
-          : {
-              reasoning: (model as any).reasoning ?? false,
-              vision: modalities?.input?.includes('image') ?? false,
-              toolcall: (model as any).tool_call ?? false,
-            },
-        contextWindow: (model as any).limit?.context,
-        releaseDate:
-          (model as any).release_date ??
-          (model as any).released ??
-          catalogModel?.released ??
-          undefined,
-        family: (model as any).family,
-        cost: (model as any).cost
-          ? {
-              input: (model as any).cost.input ?? 0,
-              output: (model as any).cost.output ?? 0,
-            }
-          : undefined,
-        free: (model as any).free === true,
-        providerSource: (p as any).source,
-        provider: typeof (model as any).provider === 'string' ? (model as any).provider : undefined,
-        reasoningOptions: Array.isArray((model as any).reasoning_options)
-          ? (model as any).reasoning_options
-          : undefined,
-        description:
-          typeof (model as any).description === 'string' ? (model as any).description : undefined,
-        openWeights:
-          typeof (model as any).open_weights === 'boolean'
-            ? (model as any).open_weights
-            : undefined,
-        lastUpdated:
-          typeof (model as any).last_updated === 'string' ? (model as any).last_updated : undefined,
-      });
-    }
-  }
-  return result;
-}
-
-// ============================================================================
-// Agent Selector
-// ============================================================================
-
-export function AgentSelector({
-  agents,
-  selectedAgent,
-  onSelect,
-  disabled = false,
-}: {
-  agents: Agent[];
-  selectedAgent: string | null;
-  onSelect: (agentName: string | null) => void;
-  disabled?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [flash, setFlash] = useState(false);
-  const prevAgentRef = useRef(selectedAgent);
-
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
-
-  // Flash highlight when agent changes (e.g. via Tab cycling)
-  useEffect(() => {
-    if (prevAgentRef.current !== selectedAgent && prevAgentRef.current !== null) {
-      setFlash(true);
-      const timer = setTimeout(() => setFlash(false), 400);
-      return () => clearTimeout(timer);
-    }
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
-
-  useEffect(() => {
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
-
-  // Reset search when closing
-  useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
-
-  // Fuzzy filter
-  const filteredPrimary = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return primaryAgents;
-    return primaryAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
-    );
-  }, [primaryAgents, search]);
-
-  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
-
-  return (
-    // When locked we keep the trigger hoverable (no native `disabled`, which
-    // would suppress hover) but gate the popover shut, so the tooltip can still
-    // explain WHY the agent can't be switched mid-session.
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={disabled || undefined}
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
-              )}
-              className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                flash && 'bg-primary/10 text-foreground',
-                open && 'bg-muted text-foreground',
-                disabled &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-              )}
-            >
-              <span className="max-w-[100px] truncate">{displayName}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px]">
-          {disabled ? (
-            <p>
-              {
-                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
-              }
-            </p>
-          ) : (
-            <p>
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
-                Tab
-              </kbd>
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
-
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-        <CommandInput
-          compact
-          placeholder={tHardcodedUi.raw(
-            'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
-          )}
-          value={search}
-          onValueChange={setSearch}
-        />
-
-        <CommandList className="max-h-[320px]">
-          {/* Primary agents */}
-          {filteredPrimary.length > 0 && (
-            <CommandGroup heading="Agents" forceMount>
-              {filteredPrimary.map((agent) => {
-                const isSelected =
-                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
-                return (
-                  <CommandItem
-                    key={agent.name}
-                    value={`agent-${agent.name}`}
-                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
-                    onSelect={() => {
-                      if (disabled) return;
-                      onSelect(agent.name);
-                      setOpen(false);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div
-                        className={cn(
-                          'truncate text-sm leading-tight capitalize',
-                          isSelected
-                            ? 'text-foreground font-semibold'
-                            : 'text-foreground/90 font-medium',
-                        )}
-                      >
-                        {agent.name}
-                      </div>
-                      {agent.description && (
-                        <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                          {agent.description}
-                        </p>
-                      )}
-                    </div>
-                    {isSelected && <Check className="text-foreground shrink-0" />}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
-
-          {/* No results */}
-          {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
-              {tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
-              )}
-              {search.trim()}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
-            </div>
-          )}
-        </CommandList>
-      </CommandPopoverContent>
-    </CommandPopover>
-  );
-}
-
-// ModelSelector is now a standalone component: ./model-selector.tsx
-
-// ============================================================================
-// Variant / Thinking Mode Selector
-// ============================================================================
-
-function VariantSelector({
-  variants,
-  selectedVariant,
-  onSelect,
-}: {
-  variants: string[];
-  selectedVariant: string | null;
-  onSelect: (variant: string | null) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const currentIndex = selectedVariant ? variants.indexOf(selectedVariant) : -1;
-
-  function cycle() {
-    if (variants.length === 0) return;
-    const nextIndex = (currentIndex + 1) % (variants.length + 1);
-    onSelect(nextIndex === variants.length ? null : variants[nextIndex]);
-  }
-
-  const displayName = selectedVariant || 'Default';
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={cycle}
-          className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium capitalize transition-colors',
-            selectedVariant && 'text-foreground',
-          )}
-        >
-          {displayName}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        <p className="text-xs">
-          {tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}
-        </p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-// ============================================================================
-// Token Progress Circle
-// ============================================================================
-
-interface TokenProgressProps {
-  messages: MessageWithParts[] | undefined;
-  models?: FlatModel[];
-  selectedModel?: { providerID: string; modelID: string } | null;
-  onContextClick?: () => void;
-}
-
-function getLastAssistantTokenTotal(messages: MessageWithParts[] | undefined): number {
-  if (!messages) return 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.info.role !== 'assistant') continue;
-    const t = (msg.info as any).tokens;
-    if (!t) continue;
-    const total =
-      (t.input ?? 0) +
-      (t.output ?? 0) +
-      (t.reasoning ?? 0) +
-      (t.cache?.read ?? 0) +
-      (t.cache?.write ?? 0);
-    if (total > 0) return total;
-  }
-  return 0;
-}
-
-function getContextLimit(
-  models: FlatModel[] | undefined,
-  selectedModel: { providerID: string; modelID: string } | null | undefined,
-): number {
-  if (selectedModel && models) {
-    const model = models.find(
-      (m) => m.providerID === selectedModel.providerID && m.modelID === selectedModel.modelID,
-    );
-    if (model?.contextWindow && model.contextWindow > 0) return model.contextWindow;
-  }
-  return 200000;
-}
-
-function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
-  const contextLimit = useMemo(
-    () => getContextLimit(models, selectedModel),
-    [models, selectedModel],
-  );
-  const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
-
-  if (contextTokens === 0 && !onContextClick) return null;
-
-  const color =
-    ratio >= 0.9
-      ? STATUS_TEXT.destructive
-      : ratio > 0.8
-        ? STATUS_TEXT.warning
-        : 'text-muted-foreground';
-
-  return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="relative inline-flex">
-            <button
-              type="button"
-              className="flex size-6 cursor-pointer items-center justify-center"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onContextClick?.();
-              }}
-            >
-              <ProgressRing
-                value={Math.round(ratio * 100)}
-                className="size-5"
-                progressClassName={color}
-              />
-            </button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <div className="space-y-0.5 font-mono text-xs">
-            <div>
-              Context: {(contextTokens / 1000).toFixed(1)}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextK')}
-              {(contextLimit / 1000).toFixed(0)}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextKTokens')}
-            </div>
-            <div className="text-muted-foreground">
-              {Math.round(ratio * 100)}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line737JsxTextUsed')}
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-// ============================================================================
-// File Attachment Helpers
-// ============================================================================
-
-export type AttachedFile =
-  | {
-      kind: 'local';
-      file: File;
-      localUrl: string;
-      isImage: boolean;
-    }
-  | {
-      kind: 'remote';
-      url: string;
-      filename: string;
-      mime: string;
-      isImage: boolean;
-    };
-
-// ============================================================================
-// Attachment Preview Strip — grid-style file cards
-// ============================================================================
-
-/** Thumbnail for a locally attached file (not yet uploaded). */
-function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
-  const [textPreview, setTextPreview] = useState<string | null>(null);
-  const ext = name.split('.').pop()?.toLowerCase() || '';
-
-  // Check if this is an image — be generous with detection
-  const isImg =
-    af.isImage ||
-    (af.kind === 'local' && af.file.type.startsWith('image/')) ||
-    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'].includes(
-      ext,
-    );
-
-  // HEIC: convert to JPEG for preview (browsers can't render HEIC natively)
-  const isHeic = ext === 'heic' || ext === 'heif';
-  const [heicUrl, setHeicUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!isHeic || !isImg || af.kind !== 'local') return;
-    let cancelled = false;
-    let u: string | null = null;
-    import('@/lib/utils/heic-convert')
-      .then(({ convertHeicBlobToJpeg }) =>
-        convertHeicBlobToJpeg(af.file).then((jpeg) => {
-          if (cancelled) return;
-          u = URL.createObjectURL(jpeg);
-          setHeicUrl(u);
-        }),
-      )
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      if (u) URL.revokeObjectURL(u);
-    };
-  }, [af, isHeic, isImg]);
-
-  // For local text/code files, read first ~12 lines for preview
-  useEffect(() => {
-    if (af.kind !== 'local' || isImg) return;
-    const textExts = [
-      'js',
-      'jsx',
-      'ts',
-      'tsx',
-      'py',
-      'rb',
-      'go',
-      'rs',
-      'java',
-      'c',
-      'cpp',
-      'h',
-      'hpp',
-      'css',
-      'scss',
-      'html',
-      'vue',
-      'svelte',
-      'json',
-      'yaml',
-      'yml',
-      'toml',
-      'xml',
-      'md',
-      'mdx',
-      'txt',
-      'log',
-      'sh',
-      'bash',
-      'zsh',
-      'sql',
-      'swift',
-      'kt',
-      'scala',
-      'lua',
-      'r',
-      'php',
-      'pl',
-      'ini',
-      'conf',
-      'env',
-      'gitignore',
-      'dockerfile',
-    ];
-    if (!textExts.includes(ext)) return;
-    const reader = new FileReader();
-    reader.onload = () =>
-      setTextPreview((reader.result as string).split('\n').slice(0, 12).join('\n'));
-    reader.readAsText(af.file.slice(0, 2048));
-  }, [af, ext, isImg]);
-
-  // Image thumbnail — HEIC uses converted URL, everything else uses original
-  if (isImg) {
-    const src = isHeic ? heicUrl : af.kind === 'local' ? af.localUrl : af.url;
-    if (!src) return null; // HEIC still converting — show nothing briefly
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt={name}
-        className="absolute inset-0 h-full w-full object-cover"
-        draggable={false}
-      />
-    );
-  }
-
-  // Text/code thumbnail
-  if (textPreview) {
-    return (
-      <div className="absolute inset-0 overflow-hidden p-1">
-        <pre className="text-muted-foreground/70 pointer-events-none m-0 overflow-hidden p-0 font-mono text-xs leading-[1.4] whitespace-pre select-none">
-          {textPreview}
-        </pre>
-        <div className="from-muted/20 absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t to-transparent" />
-      </div>
-    );
-  }
-
-  // Fallback: large icon
-  return getFileIcon(name, { className: 'h-10 w-10', variant: 'monochrome' });
-}
-
-function AttachmentPreview({
-  files,
-  onRemove,
-}: {
-  files: AttachedFile[];
-  onRemove: (index: number) => void;
-}) {
-  if (files.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap gap-2 px-3 pt-2">
-      {files.map((af, i) => {
-        const name = af.kind === 'local' ? af.file.name : af.filename;
-        const ext = name.split('.').pop()?.toLowerCase() || '';
-
-        return (
-          <div key={i} className="group relative">
-            <div
-              className={cn(
-                'border-border/50 flex flex-col overflow-hidden rounded-2xl border',
-                'w-[120px] cursor-default select-none',
-                'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
-              )}
-            >
-              {/* Thumbnail area */}
-              <div className="bg-muted/20 relative flex h-[80px] items-center justify-center overflow-hidden">
-                <AttachmentThumbnail af={af} name={name} />
-                {/* Extension badge */}
-                {ext && !af.isImage && (
-                  <span className="text-muted-foreground/50 bg-background/80 absolute right-1 bottom-1 z-[5] rounded px-1 py-0.5 text-xs font-medium tracking-wider uppercase">
-                    {ext.toUpperCase()}
-                  </span>
-                )}
-              </div>
-              {/* Name bar */}
-              <div className="border-border/30 flex h-[32px] items-center border-t px-2 py-1.5">
-                <div className="flex w-full min-w-0 items-center gap-1">
-                  {getFileIcon(name, { className: 'h-3.5 w-3.5 shrink-0', variant: 'monochrome' })}
-                  <span className="text-foreground truncate text-xs">{name}</span>
-                </div>
-              </div>
-            </div>
-            {/* Remove button */}
-            <button
-              type="button"
-              onClick={() => onRemove(i)}
-              className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
-              aria-label={`Remove ${name}`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ============================================================================
-// Slash Command Popover — uses fixed positioning to escape overflow-hidden ancestors
-// ============================================================================
-
-function SlashCommandPopover({
-  commands,
-  filter,
-  selectedIndex,
-  onSelect,
-  anchorRef,
-}: {
-  commands: Command[];
-  filter: string;
-  selectedIndex: number;
-  onSelect: (command: Command) => void;
-  anchorRef: React.RefObject<HTMLElement | null>;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const filtered = useMemo(() => {
-    const q = filter.toLowerCase();
-    return commands.filter(
-      (c) =>
-        (c.name || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q),
-    );
-  }, [commands, filter]);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const item = container.children[selectedIndex] as HTMLElement | undefined;
-    if (item) {
-      item.scrollIntoView({ block: 'nearest' });
-    }
-  }, [selectedIndex]);
-
-  if (filtered.length === 0) return null;
-
-  // Read position synchronously from the anchor ref — fixed positioning
-  // escapes overflow-hidden ancestors without needing a portal.
-  const el = anchorRef.current;
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-
-  return (
-    <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
-      style={{
-        bottom: window.innerHeight - r.top + 4,
-        left: r.left,
-        width: Math.min(r.width, 480),
-      }}
-    >
-      <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
-        {filtered.map((cmd, i) => (
-          <button
-            key={cmd.name}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onSelect(cmd);
-            }}
-            className={cn(
-              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors',
-              i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
-            )}
-          >
-            <span className="text-foreground font-mono text-sm">/{cmd.name}</span>
-            {cmd.description && (
-              <span className="text-muted-foreground/40 line-clamp-2 text-xs">
-                {cmd.description}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// @ Mention Types & Popover
-// ============================================================================
-
-export interface MentionItem {
-  kind: 'file' | 'agent' | 'session';
-  label: string;
-  value?: string;
-  description?: string;
-}
-
-export interface TrackedMention {
-  kind: 'file' | 'agent' | 'session';
-  label: string;
-  value?: string; // session ID for session mentions
-}
-
-function MentionPopover({
-  items,
-  selectedIndex,
-  onSelect,
-  loading,
-  anchorRef,
-}: {
-  items: MentionItem[];
-  selectedIndex: number;
-  onSelect: (item: MentionItem) => void;
-  loading?: boolean;
-  anchorRef: React.RefObject<HTMLElement | null>;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const listRef = useRef<HTMLDivElement>(null);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    const el = listRef.current?.querySelector(
-      `[data-mention-index="${selectedIndex}"]`,
-    ) as HTMLElement | null;
-    el?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex]);
-
-  const visible = items.length > 0 || !!loading;
-  if (!visible) return null;
-
-  const el = anchorRef.current;
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-
-  const agents = items.filter((i) => i.kind === 'agent');
-  const sessions = items.filter((i) => i.kind === 'session');
-  const files = items.filter((i) => i.kind === 'file');
-
-  let globalIndex = 0;
-
-  return (
-    <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
-      style={{
-        bottom: window.innerHeight - r.top + 4,
-        left: r.left,
-        width: Math.min(r.width, 480),
-      }}
-    >
-      <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
-        {agents.length > 0 && (
-          <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
-              Agents
-            </div>
-            {agents.map((item) => {
-              const idx = globalIndex++;
-              return (
-                <button
-                  key={`agent-${item.value}`}
-                  data-mention-index={idx}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelect(item);
-                  }}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                    idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                  )}
-                >
-                  <span className="bg-foreground/10 text-foreground/60 flex size-4 shrink-0 items-center justify-center rounded text-xs font-semibold">
-                    @
-                  </span>
-                  <span className="truncate font-medium capitalize">{item.label}</span>
-                  {item.description && (
-                    <span className="text-muted-foreground/40 truncate text-xs">
-                      {item.description}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </>
-        )}
-        {sessions.length > 0 && (
-          <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
-              Sessions
-            </div>
-            {sessions.map((item) => {
-              const idx = globalIndex++;
-              return (
-                <button
-                  key={`session-${item.value}`}
-                  data-mention-index={idx}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelect(item);
-                  }}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                    idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                  )}
-                >
-                  <MessageSquare className="text-foreground/50 size-4 shrink-0" />
-                  <span className="truncate text-sm font-medium">{item.label}</span>
-                  {item.description && (
-                    <span className="text-muted-foreground/35 ml-auto truncate text-xs">
-                      {item.description}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </>
-        )}
-        {files.length > 0 && (
-          <>
-            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold tracking-wider uppercase">
-              Files
-            </div>
-            {files.map((item) => {
-              const idx = globalIndex++;
-              const filePath = item.value || item.label;
-              const isDir = filePath.endsWith('/');
-              const cleanPath = isDir ? filePath.slice(0, -1) : filePath;
-              const fileName = cleanPath.split('/').pop() || cleanPath;
-              return (
-                <button
-                  key={`file-${item.value}`}
-                  data-mention-index={idx}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelect(item);
-                  }}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                    idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                  )}
-                >
-                  {isDir ? (
-                    <Folder className="text-foreground/50 size-4 shrink-0" />
-                  ) : (
-                    getFileIcon(fileName, { className: 'size-4 shrink-0 text-foreground/50' })
-                  )}
-                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-                    <span className="truncate text-sm font-medium">{fileName}</span>
-                    <span className="text-muted-foreground/35 min-w-0 flex-shrink truncate font-mono text-xs">
-                      {cleanPath}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </>
-        )}
-        {/* Loading indicator while searching for files */}
-        {loading && files.length === 0 && (
-          <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
-            <Loading className="size-3.5" />
-            <span className="text-xs">
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// SessionChatInput - The unified chat input
-// ============================================================================
-
-// --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
-
-function TodoChip({ sessionId }: { sessionId: string }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: todos } = useOpenCodeSessionTodo(sessionId);
-  const [expanded, setExpanded] = useState(false);
-
-  if (!Array.isArray(todos) || todos.length === 0) return null;
-
-  const completed = todos.filter((t: any) => t.status === 'completed').length;
-  const total = todos.length;
-  const inProgress = todos.find((t: any) => t.status === 'in_progress');
-
-  // Sort: in_progress first, then pending, then completed/cancelled
-  const sorted = [...todos].sort((a: any, b: any) => {
-    const order: Record<string, number> = {
-      in_progress: 0,
-      pending: 1,
-      completed: 2,
-      cancelled: 3,
-    };
-    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
-  });
-
-  return (
-    <div className="bg-muted/50 overflow-hidden rounded-2xl">
-      {/* Header row */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="hover:bg-muted/80 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors"
-      >
-        <ListTodo className="text-muted-foreground size-3.5 flex-shrink-0" />
-        <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
-          {completed} of {total}
-          {tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{' '}
-          {inProgress && (
-            <span className="text-foreground/80 font-medium"> · {inProgress.content}</span>
-          )}
-        </span>
-        <ChevronDown
-          className={cn(
-            'text-muted-foreground/40 size-3 transition-transform',
-            expanded && 'rotate-180',
-          )}
-        />
-      </button>
-
-      {/* Expanded task list */}
-      {expanded && (
-        <div className="border-border/30 scrollbar-hide max-h-[160px] space-y-px overflow-y-auto border-t px-3 py-1.5">
-          {sorted.map((todo: any, i: number) => {
-            const done = todo.status === 'completed';
-            const cancelled = todo.status === 'cancelled';
-            const active = todo.status === 'in_progress';
-            if (cancelled) return null;
-            return (
-              <div
-                key={todo.id || i}
-                className={cn('flex items-center gap-2 py-0.5', done && 'opacity-40')}
-              >
-                <span
-                  className={cn(
-                    'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
-                    done
-                      ? 'border-border bg-muted'
-                      : active
-                        ? 'border-foreground/30'
-                        : 'border-border',
-                  )}
-                >
-                  {done && (
-                    <svg viewBox="0 0 12 12" fill="none" width="8" height="8">
-                      <path
-                        d="M3 7.17905L5.02703 8.85135L9 3.5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="square"
-                        className="text-foreground"
-                      />
-                    </svg>
-                  )}
-                  {active && <div className="bg-foreground size-1 rounded-full" />}
-                </span>
-                <span
-                  className={cn(
-                    'truncate text-xs leading-tight',
-                    done && 'text-muted-foreground line-through',
-                    !done && 'text-foreground',
-                  )}
-                >
-                  {todo.content}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+//
+// Extracted to ./model-flatten — it's data, not UI, and this file is already
+// far past the size where new logic belongs in it. Re-exported here so the
+// many existing `from '@/features/session/session-chat-input'` importers keep
+// working.
+import type { FlatModel } from './model-flatten';
+
+export { type FlatModel, flattenModels } from './model-flatten';
 
 export interface SessionChatInputProps {
   onSend: (
@@ -1148,7 +111,7 @@ export interface SessionChatInputProps {
    * running" and shows a stop button instead.
    */
   isSending?: boolean;
-  agents?: Agent[];
+  agents?: RuntimeAgent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
   /** Show the selected agent but prevent switching inside an immutable session. */
@@ -1365,7 +328,12 @@ function SessionChatInputImpl({
   const prefillFiles = prefill?.files;
   const prefillMode = prefill?.mode;
   useEffect(() => {
-    if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
+    if (
+      prefillId === undefined ||
+      (!prefillText && !prefillFiles?.length && prefillMode !== 'replace')
+    ) {
+      return;
+    }
     setText((current) =>
       prefillMode === 'merge' ? mergeFailedSubmissionText(current, prefillText) : prefillText,
     );
@@ -1443,7 +411,7 @@ function SessionChatInputImpl({
   }, [disabled]);
 
   // Sessions for @ mention search
-  const { data: allSessions } = useOpenCodeSessions();
+  const { data: allSessions } = useRuntimeSessions();
 
   useEffect(() => {
     if (text.trim().length > 0) return;
@@ -1720,11 +688,6 @@ function SessionChatInputImpl({
     }
   }, [mentionItems.length]);
 
-  const modelUnavailable = isModelRequiredButUnavailable({
-    modelRequired,
-    selectedModel,
-    lockForQuestion,
-  });
   // Drives the "connect a model" bar under the input. Two distinct dead-end
   // states both surface it — either way the composer cannot send and needs to
   // say why:
@@ -1738,13 +701,22 @@ function SessionChatInputImpl({
   // provider catalog, `entitlementsPending` for account/secrets/project), so
   // the bar renders exactly once with the final answer instead of flashing in
   // on half-loaded data and vanishing when the account state arrives.
-  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const { hasSelectableModels, isSelectableModel, entitlementsPending } =
+    useModelConnectionGate(models);
+  const availableSelectedModel = entitlementsPending
+    ? selectedModel
+    : resolveAvailableSelectedModel(selectedModel, isSelectableModel);
+  const modelUnavailable = isModelRequiredButUnavailable({
+    modelRequired,
+    selectedModel: availableSelectedModel,
+    lockForQuestion,
+  });
   const noModelsConnected =
     modelRequired &&
     !lockForQuestion &&
     !modelsLoading &&
     !entitlementsPending &&
-    (!selectedModel || !hasSelectableModels);
+    (!availableSelectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -2327,181 +1299,57 @@ function SessionChatInputImpl({
             </div>
           </div>
 
-          {/* Bottom toolbar */}
-          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
-            {/* LEFT: Attach + Agent + Model + Variant */}
-            <div className="flex min-w-0 items-center gap-0 overflow-visible">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={tHardcodedUi.raw(
-                  'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
-                )}
-                multiple
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
-                    aria-label="Attach files"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>
-                    {tHardcodedUi.raw(
-                      'componentsSessionSessionChatInput.line2252JsxTextAttachFiles',
-                    )}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-
-              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
-                <AgentSelector
-                  agents={primaryAgents}
-                  selectedAgent={selectedAgent}
-                  onSelect={onAgentChange ?? (() => {})}
-                  disabled={agentSelectorLocked}
-                />
-              )}
-              {(models.length > 0 || modelRequired) && onModelChange && (
-                <ModelSelector
-                  models={models}
-                  selectedModel={selectedModel}
-                  onSelect={onModelChange}
-                  providers={providers}
-                  defaultControls={modelDefaultControls}
-                />
-              )}
-              {variants.length > 0 && onVariantChange && (
-                <VariantSelector
-                  variants={variants}
-                  selectedVariant={selectedVariant}
-                  onSelect={onVariantChange}
-                />
-              )}
-              {/* Reasoning-effort control — independent of the legacy opencode
-                  variant list above. Renders nothing unless the selected
-                  model actually exposes a reasoning_options effort knob (see
-                  reasoning-effort-selector.tsx for why this is capability-
-                  gated off the live catalog rather than the empty variant
-                  list models.dev models never populate). */}
-              <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
-            </div>
-
-            {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
-            <div className="flex shrink-0 items-center gap-0">
-              <TokenProgress
-                messages={messages}
-                models={models}
-                selectedModel={selectedModel}
-                onContextClick={onContextClick}
-              />
-
-              {toolbarSlot}
-
-              <VoiceRecorder
-                onTranscription={handleTranscription}
-                disabled={submitDisabled || isBusy}
-              />
-
-              {isSending && !lockForQuestion && (
-                <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-                  <Loading className="size-4" />
-                </Button>
-              )}
-              {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
-                <div className="relative flex items-center">
-                  {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
-                  {escCount > 0 && (
-                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
-                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
-                          ESC
-                        </kbd>
-                        <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
-                      </div>
-                      {/* Arrow matching TooltipContent */}
-                      <div className="-mt-px flex justify-center">
-                        <div className="bg-primary size-2.5 -translate-y-[calc(50%_-_2px)] rotate-45 rounded-[2px]" />
-                      </div>
-                    </div>
-                  )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="sm"
-                        onClick={onStop}
-                        disabled={stopDisabled || !onStop}
-                        className="h-8 w-8 flex-shrink-0 rounded-full p-0"
-                      >
-                        <div className="h-3 w-3 rounded-[3px] bg-current" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      <p>
-                        Stop{' '}
-                        <kbd className="bg-background/20 text-primary-foreground ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
-                          ESC
-                        </kbd>{' '}
-                        ×3
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              {!isSending && (!isBusy || lockForQuestion) && (
-                <div className="opacity-100">
-                  {lockForQuestion && questionButtonLabel && !text.trim() ? (
-                    <Button
-                      size="sm"
-                      disabled={!questionCanAct || disabled}
-                      onClick={handleSubmit}
-                      className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
-                    >
-                      {questionButtonLabel}
-                    </Button>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex rounded-full">
-                          <Button
-                            size="sm"
-                            disabled={
-                              lockForQuestion
-                                ? (!canSubmit && !questionCanAct) || disabled
-                                : !canSubmit || submitDisabled
-                            }
-                            onClick={handleSubmit}
-                            aria-label={
-                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
-                            }
-                            className="h-8 w-8 flex-shrink-0 rounded-full p-0"
-                          >
-                            {disabled ? (
-                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                            ) : (
-                              <ArrowUp className="size-4" />
-                            )}
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      {modelUnavailable && (
-                        <TooltipContent side="top" className="max-w-[260px] text-xs">
-                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Bottom toolbar — hidden file input stays here since it needs
+              `appendAttachedFiles`/`disabled`/`lockForQuestion` from this
+              component's state; the visible attach button lives in
+              ComposerToolbar and just triggers this ref. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={tHardcodedUi.raw(
+              'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+            )}
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          <ComposerToolbar
+            onAttachClick={() => fileInputRef.current?.click()}
+            modelsLoading={modelsLoading}
+            agents={primaryAgents}
+            selectedAgent={selectedAgent}
+            onAgentChange={onAgentChange}
+            agentSelectorLocked={agentSelectorLocked}
+            models={models}
+            selectedModel={availableSelectedModel}
+            onModelChange={onModelChange}
+            modelDefaultControls={modelDefaultControls}
+            providers={providers}
+            modelRequired={modelRequired}
+            variants={variants}
+            selectedVariant={selectedVariant}
+            onVariantChange={onVariantChange}
+            projectId={projectId}
+            messages={messages}
+            onContextClick={onContextClick}
+            toolbarSlot={toolbarSlot}
+            onTranscription={handleTranscription}
+            voiceDisabled={submitDisabled || isBusy}
+            isSending={isSending}
+            isBusy={isBusy}
+            onStop={onStop}
+            stopDisabled={stopDisabled}
+            escCount={escCount}
+            lockForQuestion={lockForQuestion}
+            questionButtonLabel={questionButtonLabel}
+            questionCanAct={questionCanAct}
+            hasText={text.trim().length > 0}
+            canSubmit={canSubmit}
+            submitDisabled={submitDisabled}
+            disabled={disabled}
+            modelUnavailable={modelUnavailable}
+            onSubmit={handleSubmit}
+          />
         </div>
       </div>
       <ModelConnectionBar show={noModelsConnected} />

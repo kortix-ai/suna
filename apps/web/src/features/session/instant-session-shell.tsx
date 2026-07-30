@@ -7,20 +7,21 @@ import { createPortal } from 'react-dom';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
-import type { AttachedFile } from '@/features/session/session-chat-input';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import type { Command } from '@kortix/sdk/react';
 import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
+import type { SessionStartStage } from '@kortix/sdk';
 import { GridFileCard } from './grid-file-card';
 
 /**
@@ -98,7 +99,7 @@ export function InstantSessionShell({
 
       // Hand the message to the real chat: it auto-sends from this stash once
       // the runtime is healthy. `sessionId` here is the route/Kortix-session
-      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
+      // id, not the eventual OpenCode pin (`useCanonicalRuntimeSession`
       // resolves those independently — see `ensureOpencodeSessionPin` in
       // apps/api/src/projects/routes/shared.ts); the session page's
       // `migrateStash` hands this canonical stash off onto the resolved pin
@@ -121,6 +122,24 @@ export function InstantSessionShell({
     [sessionId, submitted, onSubmit],
   );
 
+  // Messages typed AFTER the first send, while the computer is still booting.
+  // The composer's isBusy queue path routes them here instead of onSend — the
+  // old onSend fallback silently swallowed them (handleSend ignores everything
+  // while `submitted` is set) AFTER the input had already cleared, losing the
+  // draft. They render as the standard queued chips above the input and hand
+  // off to the real SessionChat, which seeds its own queue from this store and
+  // drains it at the first safe boundary.
+  const queuedMessages = usePendingQueueStore((s) => s.messages);
+  const handleQueueMessage = useCallback(
+    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
+      usePendingQueueStore.getState().queueMessage(text, files, mentions);
+    },
+    [],
+  );
+  const handleRemoveQueuedMessage = useCallback((id: string) => {
+    usePendingQueueStore.getState().removeMessage(id);
+  }, []);
+
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       // Defer slash-commands through the same handoff as a normal first message.
@@ -142,10 +161,14 @@ export function InstantSessionShell({
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
-      // chat's live stop takes over the instant it crossfades in. (A duplicate
-      // send is harmless — handleSend ignores it while `submitted` is set.)
+      // chat's live stop takes over the instant it crossfades in. Further
+      // messages typed during boot queue (see handleQueueMessage above) rather
+      // than falling into handleSend, which drops everything once `submitted`.
       isBusy={!!submitted}
       stopDisabled={!!submitted}
+      queuedMessages={queuedMessages}
+      onQueueMessage={handleQueueMessage}
+      onRemoveQueuedMessage={handleRemoveQueuedMessage}
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.

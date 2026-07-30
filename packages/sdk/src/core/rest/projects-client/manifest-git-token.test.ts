@@ -40,11 +40,13 @@ test('validateProjectManifest posts { raw } and returns the verdict', async () =
 });
 
 test('getProjectGitToken posts to git-token and returns the push token', async () => {
-  nextResponse = { status: 200, body: { push_token: 'tok_abc', repo_id: 'r1', repo_url: 'https://github.com/x/y' } };
+  nextResponse = { status: 200, body: { push_token: 'tok_abc', git_username: 't', repo_id: 'r1', repo_url: 'https://kortix.code.storage/x.git' } };
   const result = await getProjectGitToken('P1');
   expect(last().url).toContain('/projects/P1/git-token');
   expect(last().method).toBe('POST');
   expect(result.push_token).toBe('tok_abc');
+  const gitUsername: string = result.git_username;
+  expect(gitUsername).toBe('t');
 });
 
 test('getProjectGitToken throws on a 409 (BYO project, not managed)', async () => {

@@ -1,19 +1,26 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
-import { proxyToOpenRouter, extractUsage, calculateCost, getModel, getAllModels } from '../services/llm';
-import { checkCredits, deductLLMCredits } from '../services/billing';
 import {
-  applyActorSpend,
-  dollarsToCents,
-  getSandboxMemberCapStatus,
-} from '../services/member-spend';
-import {
-  resolveActorFromRequest,
-  type ActorContext,
-} from '../../shared/actor-context';
+  accumulateUsageChunk,
+  proxyToOpenRouter,
+  extractUsage,
+  calculateCost,
+  getModel,
+  getAllModels,
+  type UsageAccumulator,
+} from '../services/llm';
+import { getSandboxMemberCapStatus } from '../services/member-spend';
+import { resolveActorFromRequest, type ActorContext } from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';
+import {
+  refundLlmReservation,
+  reserveEstimatedLlmCredits,
+  settleLlmReservation,
+  type LlmCreditReservation,
+} from '../services/llm-reservation';
+import { KORTIX_MARKUP } from '../../config';
 
 const llm = makeOpenApiApp<{ Variables: AppContext }>();
 
@@ -58,105 +65,165 @@ llm.openapi(
     },
   }),
   async (c) => {
-  const accountId = c.get('accountId');
+    const accountId = c.get('accountId');
 
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    throw new HTTPException(400, { message: 'Invalid JSON body' });
-  }
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new HTTPException(400, { message: 'Invalid JSON body' });
+    }
 
-  if (!body.model || typeof body.model !== 'string') {
-    throw new HTTPException(400, { message: 'Validation error: model is required' });
-  }
-  if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
-    throw new HTTPException(400, { message: 'Validation error: messages is required and must be a non-empty array' });
-  }
-
-  const modelId = body.model as string;
-  const isStreaming = body.stream === true;
-  const sessionId =
-    (typeof body.session_id === 'string' ? body.session_id : undefined) ??
-    c.req.header('X-Session-ID') ??
-    c.get('sandboxId') ??
-    c.get('keyId');
-
-  const actor = resolveActor(c);
-  if (actor) {
-    const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
-    if (status && status.capCents !== null && status.currentCents >= status.capCents) {
-      throw new HTTPException(402, {
-        message: `Spending cap reached ($${(status.capCents / 100).toFixed(2)} / month). Ask the instance owner to raise or remove the cap.`,
+    if (!body.model || typeof body.model !== 'string') {
+      throw new HTTPException(400, { message: 'Validation error: model is required' });
+    }
+    if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
+      throw new HTTPException(400, {
+        message: 'Validation error: messages is required and must be a non-empty array',
       });
     }
-  }
 
-  const creditCheck = await checkCredits(accountId);
-  if (!creditCheck.hasCredits) {
-    throw new HTTPException(402, { message: creditCheck.message || 'Insufficient credits' });
-  }
+    const modelId = body.model as string;
+    const isStreaming = body.stream === true;
+    const sessionId =
+      (typeof body.session_id === 'string' ? body.session_id : undefined) ??
+      c.req.header('X-Session-ID') ??
+      c.get('sandboxId') ??
+      c.get('keyId');
 
-  const modelConfig = getModel(modelId);
-  const response = await proxyToOpenRouter(body, isStreaming, undefined, getTraceHeaders());
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error(`[LLM] OpenRouter error ${response.status}: ${errorBody}`);
-    return new Response(errorBody, {
-      status: response.status,
-      headers: { 'Content-Type': response.headers.get('Content-Type') || 'application/json' },
-    });
-  }
-
-  if (isStreaming) {
-    const upstreamBody = response.body;
-    if (!upstreamBody) {
-      throw new HTTPException(502, { message: 'No response body from upstream' });
+    const actor = resolveActor(c);
+    if (actor) {
+      const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
+      if (status && status.capCents !== null && status.currentCents >= status.capCents) {
+        throw new HTTPException(402, {
+          message: `Spending cap reached ($${(status.capCents / 100).toFixed(2)} / month). Ask the instance owner to raise or remove the cap.`,
+        });
+      }
     }
 
-    const [clientStream, billingStream] = upstreamBody.tee();
-
-    extractUsageFromStream(billingStream, modelConfig, modelId, accountId, sessionId, actor);
-
-    return new Response(clientStream, {
-      status: response.status,
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
-  }
-
-  const responseBody = await response.json();
-
-  const usage = extractUsage(responseBody);
-  if (usage) {
-    const cost = calculateCost(modelConfig, usage.promptTokens, usage.completionTokens, usage.cachedTokens, usage.cacheWriteTokens);
-    deductLLMCredits(
+    const reservation = await reserveEstimatedLlmCredits(
       accountId,
-      modelId,
-      usage.promptTokens,
-      usage.completionTokens,
-      cost,
-      sessionId,
-    )
-      .then((res) => {
-        if (res.success && actor && cost > 0) {
-          applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
-            (err) => console.error('[LLM] Actor spend attribution failed:', err),
-          );
-        }
-      })
-      .catch((err) => console.error(`[LLM] Failed to deduct credits for ${modelId}:`, err));
-    const cacheInfo = usage.cachedTokens || usage.cacheWriteTokens
-      ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
-      : '';
-    console.log(`[LLM] ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`);
-  }
+      JSON.stringify(body),
+      KORTIX_MARKUP,
+      actor,
+      'openrouter',
+    );
+    const modelConfig = reservation?.modelConfig ?? getModel(modelId, 'openrouter');
+    if (!modelConfig) {
+      throw new HTTPException(422, {
+        message: `No billing price for openrouter/${modelId}. The request was not sent upstream.`,
+      });
+    }
+    let response: Response;
+    try {
+      response = await proxyToOpenRouter(body, isStreaming, undefined, getTraceHeaders());
+    } catch (error) {
+      await refundLlmReservation(
+        reservation,
+        `LLM router reservation refund after dispatch error: ${modelId}`,
+      );
+      throw error;
+    }
 
-  return c.json(responseBody);
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[LLM] OpenRouter error ${response.status}: ${errorBody}`);
+      await refundLlmReservation(
+        reservation,
+        `LLM router reservation refund after upstream error: ${modelId}`,
+      );
+      return new Response(errorBody, {
+        status: response.status,
+        headers: { 'Content-Type': response.headers.get('Content-Type') || 'application/json' },
+      });
+    }
+
+    if (isStreaming) {
+      const upstreamBody = response.body;
+      if (!upstreamBody) {
+        await refundLlmReservation(
+          reservation,
+          `LLM router reservation refund after missing stream body: ${modelId}`,
+        );
+        throw new HTTPException(502, { message: 'No response body from upstream' });
+      }
+
+      const [clientStream, billingStream] = upstreamBody.tee();
+
+      extractUsageFromStream(
+        billingStream,
+        modelConfig,
+        modelId,
+        accountId,
+        sessionId,
+        actor,
+        reservation,
+      );
+
+      return new Response(clientStream, {
+        status: response.status,
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+      });
+    }
+
+    let responseBody: any;
+    try {
+      responseBody = await response.json();
+    } catch {
+      await refundLlmReservation(
+        reservation,
+        `LLM router reservation refund after invalid JSON response: ${modelId}`,
+      );
+      throw new HTTPException(502, { message: 'OpenRouter returned an invalid JSON response' });
+    }
+
+    const usage = extractUsage(responseBody);
+    if (usage) {
+      const cost = calculateCost(
+        modelConfig,
+        usage.promptTokens,
+        usage.completionTokens,
+        usage.cachedTokens,
+        usage.cacheWriteTokens,
+        KORTIX_MARKUP,
+        usage.upstreamCost,
+      );
+      await settleLlmReservation({
+        accountId,
+        modelId,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        actualCost: cost,
+        reservation,
+        actor,
+        logPrefix: 'LLM router billing',
+        provider: 'openrouter',
+        route: '/v1/router/chat/completions',
+        cachedTokens: usage.cachedTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        upstreamCost: usage.upstreamCost,
+        upstreamStatus: response.status,
+        sessionId,
+      });
+      const cacheInfo =
+        usage.cachedTokens || usage.cacheWriteTokens
+          ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
+          : '';
+      console.log(
+        `[LLM] ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
+      );
+    } else {
+      await refundLlmReservation(
+        reservation,
+        `LLM router reservation refund after missing usage: ${modelId}`,
+      );
+    }
+
+    return c.json(responseBody);
   },
 );
 
@@ -231,12 +298,14 @@ async function extractUsageFromStream(
   accountId: string,
   sessionId?: string,
   actor?: ActorContext | null,
+  reservation?: LlmCreditReservation | null,
 ) {
+  let settlementStarted = false;
   try {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let lastUsage: { promptTokens: number; completionTokens: number; cachedTokens: number; cacheWriteTokens: number } | null = null;
+    let usageState: UsageAccumulator | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -251,44 +320,65 @@ async function extractUsageFromStream(
         if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
         try {
           const chunk = JSON.parse(line.slice(6));
-          if (chunk.usage) {
-            const details = chunk.usage.prompt_tokens_details;
-            lastUsage = {
-              promptTokens: chunk.usage.prompt_tokens ?? 0,
-              completionTokens: chunk.usage.completion_tokens ?? 0,
-              cachedTokens: details?.cached_tokens ?? 0,
-              cacheWriteTokens: details?.cache_write_tokens ?? 0,
-            };
-          }
-        } catch {
-        }
+          usageState = accumulateUsageChunk(usageState, chunk);
+        } catch {}
       }
     }
 
-    if (lastUsage) {
-      const cost = calculateCost(modelConfig, lastUsage.promptTokens, lastUsage.completionTokens, lastUsage.cachedTokens, lastUsage.cacheWriteTokens);
-      const deductRes = await deductLLMCredits(
+    if (usageState) {
+      const usage = usageState.usage;
+      const cost = calculateCost(
+        modelConfig,
+        usage.promptTokens,
+        usage.completionTokens,
+        usage.cachedTokens,
+        usage.cacheWriteTokens,
+        KORTIX_MARKUP,
+        usage.upstreamCost,
+      );
+      settlementStarted = true;
+      await settleLlmReservation({
         accountId,
         modelId,
-        lastUsage.promptTokens,
-        lastUsage.completionTokens,
-        cost,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        actualCost: cost,
+        reservation: reservation ?? null,
+        actor: actor ?? null,
+        logPrefix: 'LLM router stream billing',
+        provider: 'openrouter',
+        route: '/v1/router/chat/completions',
+        cachedTokens: usage.cachedTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        upstreamCost: usage.upstreamCost,
+        streaming: true,
+        upstreamStatus: 200,
         sessionId,
+      });
+      const cacheInfo =
+        usage.cachedTokens || usage.cacheWriteTokens
+          ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
+          : '';
+      console.log(
+        `[LLM] Stream ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
       );
-      if (deductRes.success && actor && cost > 0) {
-        applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
-          (err) => console.error('[LLM] Actor spend attribution failed:', err),
-        );
-      }
-      const cacheInfo = lastUsage.cachedTokens || lastUsage.cacheWriteTokens
-        ? ` (cache: ${lastUsage.cachedTokens}read/${lastUsage.cacheWriteTokens}write)`
-        : '';
-      console.log(`[LLM] Stream ${modelId}: ${lastUsage.promptTokens}/${lastUsage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`);
     } else {
       console.warn(`[LLM] Stream ${modelId}: no usage data found in stream — billing skipped`);
+      await refundLlmReservation(
+        reservation ?? null,
+        `LLM router reservation refund after missing stream usage: ${modelId}`,
+      );
     }
   } catch (err) {
     console.error(`[LLM] Error extracting usage from stream for billing:`, err);
+    if (!settlementStarted) {
+      await refundLlmReservation(
+        reservation ?? null,
+        `LLM router reservation refund after stream usage error: ${modelId}`,
+      ).catch((refundError) =>
+        console.error('[LLM] LLM router reservation refund failed:', refundError),
+      );
+    }
   }
 }
 

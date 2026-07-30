@@ -12,7 +12,7 @@
 import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { parseCustomizeSection } from '@/lib/customize-sections';
+import { legacyCustomizeFilesRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 export default function ProjectCustomizeRedirect() {
@@ -23,10 +23,11 @@ export default function ProjectCustomizeRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files graduated out of Customize into its own page — send legacy
-    // ?section=files links there instead of opening the overlay.
-    if (searchParams.get('section') === 'files') {
-      router.replace(`/projects/${projectId}/files`);
+    // Files and Changes graduated out of Customize into the standalone Files
+    // surface. Preserve old bookmarks and open Proposed changes when requested.
+    const filesRedirect = legacyCustomizeFilesRedirect(projectId, searchParams.get('section'));
+    if (filesRedirect) {
+      router.replace(filesRedirect);
       return;
     }
     const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;

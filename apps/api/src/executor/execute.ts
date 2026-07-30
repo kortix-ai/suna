@@ -8,12 +8,22 @@
  * string from the field + selection — is a follow-up; normalization already
  * works.) See docs/specs/executor.md §7.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import type { ActionBinding } from './types';
 
 export interface ExecutorAuth {
-  type: 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
-  in: 'header' | 'query';
+  type:
+    | 'bearer'
+    | 'basic'
+    | 'custom'
+    | 'api_key'
+    | 'oauth1'
+    | 'hmac'
+    | 'aws_sigv4'
+    | 'mtls'
+    | 'none';
+  in: 'header' | 'query' | 'cookie';
   name: string | null;
   prefix: string | null;
 }
@@ -25,6 +35,7 @@ interface BuiltRequest {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  tls?: { cert: string; key: string; ca?: string };
 }
 
 export interface ExecResult {
@@ -47,7 +58,16 @@ function applyAuth(
   auth: ExecutorAuth,
   secret: string | null,
 ): void {
-  if (auth.type === 'none' || auth.type === 'oauth1' || !secret) return;
+  if (
+    auth.type === 'none' ||
+    auth.type === 'oauth1' ||
+    auth.type === 'hmac' ||
+    auth.type === 'aws_sigv4' ||
+    auth.type === 'mtls' ||
+    !secret
+  ) {
+    return;
+  }
   if (auth.type === 'bearer') {
     const prefix = auth.prefix ?? 'Bearer';
     headers['Authorization'] = `${prefix} ${secret}`.trim();
@@ -58,11 +78,184 @@ function applyAuth(
     headers['Authorization'] = `Basic ${Buffer.from(secret).toString('base64')}`;
     return;
   }
-  // custom
+  // custom / api_key
   const value = auth.prefix ? `${auth.prefix}${secret}` : secret;
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
+  else if (auth.in === 'cookie') {
+    const cookie = `${name}=${encodeURIComponent(value)}`;
+    headers.Cookie = headers.Cookie ? `${headers.Cookie}; ${cookie}` : cookie;
+  }
   else headers[name] = value;
+}
+
+/**
+ * The header name the connector's credential OWNS, or null when the credential
+ * doesn't land in a header (query placement, or no auth at all).
+ *
+ * Deliberately independent of whether a secret is actually resolved: the slot
+ * belongs to the credential either way, so a connector's outbound headers don't
+ * silently change shape depending on whether the credential happens to be set.
+ */
+function reservedAuthHeader(auth: ExecutorAuth): string | null {
+  if (auth.type === 'none') return null;
+  if (auth.type === 'custom' || auth.type === 'api_key') {
+    return auth.in === 'header' ? (auth.name ?? 'Authorization') : auth.in === 'cookie' ? 'Cookie' : null;
+  }
+  if (auth.type === 'hmac') return auth.name ?? 'X-Signature';
+  if (auth.type === 'mtls') return null;
+  // bearer / basic / oauth1 all sign into Authorization.
+  return 'Authorization';
+}
+
+function parseObjectCredential(secret: string | null, kind: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(secret ?? '') as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') throw new Error();
+    const values = Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    return values;
+  } catch {
+    throw new Error(`${kind} credential must be a JSON object`);
+  }
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function hmacSha256(key: string | Buffer, value: string, encoding?: 'hex'): Buffer | string {
+  const digest = createHmac('sha256', key).update(value);
+  return encoding === 'hex' ? digest.digest('hex') : digest.digest();
+}
+
+function canonicalQuery(url: URL): string {
+  return [...url.searchParams.entries()]
+    .map(([key, value]) => [rfc3986(key), rfc3986(value)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak === bk ? av.localeCompare(bv) : ak.localeCompare(bk)))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
+
+function applyAdvancedAuth(
+  request: BuiltRequest,
+  auth: ExecutorAuth,
+  secret: string | null,
+  now: () => Date,
+): void {
+  if (!secret) return;
+  if (auth.type === 'hmac') {
+    const credential = parseObjectCredential(secret, 'hmac');
+    if (!credential.secret) throw new Error('hmac credential requires secret');
+    const timestamp = now().toISOString();
+    const url = new URL(request.url);
+    const canonical = [
+      request.method,
+      `${url.pathname}${url.search}`,
+      timestamp,
+      sha256(request.body ?? ''),
+    ].join('\n');
+    const header = auth.name ?? 'X-Signature';
+    request.headers[header] = String(hmacSha256(credential.secret, canonical, 'hex'));
+    request.headers[`${header}-Timestamp`] = timestamp;
+    if (credential.key_id) request.headers[`${header}-Key-Id`] = credential.key_id;
+    return;
+  }
+  if (auth.type === 'aws_sigv4') {
+    const credential = parseObjectCredential(secret, 'aws_sigv4');
+    const { access_key_id, secret_access_key, region, service, session_token } = credential;
+    if (!access_key_id || !secret_access_key || !region || !service) {
+      throw new Error(
+        'aws_sigv4 credential requires access_key_id, secret_access_key, region, and service',
+      );
+    }
+    const date = now();
+    const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.slice(0, 8);
+    const url = new URL(request.url);
+    const payloadHash = sha256(request.body ?? '');
+    request.headers.Host = url.host;
+    request.headers['X-Amz-Date'] = amzDate;
+    request.headers['X-Amz-Content-Sha256'] = payloadHash;
+    if (session_token) request.headers['X-Amz-Security-Token'] = session_token;
+    const signedHeaderNames = Object.keys(request.headers)
+      .map((name) => name.toLowerCase())
+      .sort();
+    const canonicalHeaders = signedHeaderNames
+      .map((name) => {
+        const source = Object.keys(request.headers).find((key) => key.toLowerCase() === name)!;
+        return `${name}:${request.headers[source]!.trim().replace(/\s+/g, ' ')}\n`;
+      })
+      .join('');
+    const signedHeaders = signedHeaderNames.join(';');
+    const canonicalRequest = [
+      request.method,
+      url.pathname || '/',
+      canonicalQuery(url),
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+    const scope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      scope,
+      sha256(canonicalRequest),
+    ].join('\n');
+    const dateKey = hmacSha256(`AWS4${secret_access_key}`, dateStamp) as Buffer;
+    const regionKey = hmacSha256(dateKey, region) as Buffer;
+    const serviceKey = hmacSha256(regionKey, service) as Buffer;
+    const signingKey = hmacSha256(serviceKey, 'aws4_request') as Buffer;
+    const signature = hmacSha256(signingKey, stringToSign, 'hex');
+    request.headers.Authorization =
+      `AWS4-HMAC-SHA256 Credential=${access_key_id}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    return;
+  }
+  if (auth.type === 'mtls') {
+    const credential = parseObjectCredential(secret, 'mtls');
+    if (!credential.certificate || !credential.private_key) {
+      throw new Error('mtls credential requires certificate and private_key');
+    }
+    request.tls = {
+      cert: credential.certificate,
+      key: credential.private_key,
+      ...(credential.ca ? { ca: credential.ca } : {}),
+    };
+  }
+}
+
+/**
+ * Merge a connector's static `headers` (kortix.yaml) into the outbound request.
+ *
+ * Call this BEFORE the credential is attached — the credential must win:
+ *   - any static header whose name matches the auth header (case-INsensitively,
+ *     since HTTP header names are case-insensitive) is DROPPED, so a static
+ *     header can neither spoof nor clobber the credential;
+ *   - anything that fails the shared validation (illegal name, CR/LF or other
+ *     control chars in the value, over-long, transport-owned) is dropped too —
+ *     the parser/CRUD layer already rejects those loudly, this is the
+ *     fail-safe backstop for a row that predates that validation.
+ * A static header REPLACES a same-named default/arg-derived header (matching
+ * case-insensitively, so the request can never carry two spellings of one
+ * header): what the author typed is what goes on the wire, Postman-style.
+ */
+export function applyConnectorHeaders(
+  headers: Record<string, string>,
+  staticHeaders: Record<string, string> | null | undefined,
+  auth: ExecutorAuth,
+): void {
+  const clean = sanitizeConnectorHeaders(staticHeaders);
+  const reserved = reservedAuthHeader(auth)?.toLowerCase() ?? null;
+  for (const [name, value] of Object.entries(clean)) {
+    const lower = name.toLowerCase();
+    if (reserved && lower === reserved) continue;
+    for (const existing of Object.keys(headers)) {
+      if (existing.toLowerCase() === lower) delete headers[existing];
+    }
+    headers[name] = value;
+  }
 }
 
 /* ─── OAuth 1.0a (RFC 5849) — HMAC-SHA1 request signing ─────────────────── */
@@ -196,6 +389,8 @@ function buildHttpRequest(opts: {
   method: string;
   pathTemplate: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
@@ -234,6 +429,8 @@ function buildHttpRequest(opts: {
   }
 
   const auth = opts.auth ?? NO_AUTH;
+  // Static headers first — the credential is attached after and always wins.
+  applyConnectorHeaders(headers, opts.headers, auth);
   if (auth.type === 'oauth1') {
     // Signed over method + URL + query (JSON bodies are excluded per RFC 5849
     // §3.4.1.3.1) — must run after the query is final, so not in applyAuth.
@@ -296,6 +493,8 @@ function setDefaultHeader(headers: Record<string, string>, name: string, value: 
 function buildPostmanRequest(opts: {
   binding: Extract<ActionBinding, { kind: 'postman' }>;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
 }): BuiltRequest {
@@ -305,6 +504,8 @@ function buildPostmanRequest(opts: {
     Object.entries(opts.binding.headers).map(([key, value]) => [key, renderPostmanTemplate(value, args, false)]),
   );
   const auth = opts.auth ?? NO_AUTH;
+  // Static headers override the collection's own headers, but never the auth one.
+  applyConnectorHeaders(headers, opts.headers, auth);
   if (auth.type === 'oauth1') {
     const creds = parseOauth1Secret(opts.secret ?? null);
     if (!creds) {
@@ -359,6 +560,8 @@ function buildGraphqlRequest(opts: {
   operation: 'query' | 'mutation';
   field: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
 }): BuiltRequest {
@@ -371,7 +574,9 @@ function buildGraphqlRequest(opts: {
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const search = new URLSearchParams();
-  applyAuth(headers, search, opts.auth ?? NO_AUTH, opts.secret ?? null);
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, search, auth, opts.secret ?? null);
   let url = opts.endpoint;
   const qs = search.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -382,6 +587,8 @@ function buildGraphqlRequest(opts: {
 function buildMcpRequest(opts: {
   url: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   toolName: string;
   args?: Record<string, unknown>;
@@ -391,7 +598,9 @@ function buildMcpRequest(opts: {
     Accept: 'application/json, text/event-stream',
   };
   const query = new URLSearchParams();
-  applyAuth(headers, query, opts.auth ?? NO_AUTH, opts.secret ?? null);
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, query, auth, opts.secret ?? null);
   let url = opts.url;
   const qs = query.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -404,7 +613,15 @@ function buildMcpRequest(opts: {
   return { url, method: 'POST', headers, body };
 }
 
-export type FetchImpl = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<{
+export type FetchImpl = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    tls?: { cert: string; key: string; ca?: string };
+  },
+) => Promise<{
   status: number;
   ok: boolean;
   text: () => Promise<string>;
@@ -435,8 +652,20 @@ export function parseResponseBody(text: string): unknown {
 }
 
 /** Perform a built request and parse the response (JSON or SSE-framed JSON). */
-async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
-  const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
+async function performRequest(
+  req: BuiltRequest,
+  fetchImpl: FetchImpl,
+  auth: ExecutorAuth,
+  secret: string | null,
+  now: () => Date,
+): Promise<ExecResult> {
+  applyAdvancedAuth(req, auth, secret, now);
+  const res = await fetchImpl(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    tls: req.tls,
+  });
   const text = await res.text();
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
 }
@@ -449,9 +678,16 @@ export async function executeCall(opts: {
   binding: ActionBinding;
   baseUrl?: string | null;
   auth?: ExecutorAuth;
+  /**
+   * The connector's static `headers:` table (kortix.yaml) — sent on every
+   * request this connector makes. Merged in BEFORE the credential, so the auth
+   * header always wins on a (case-insensitive) name collision.
+   */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  now?: () => Date;
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
@@ -460,9 +696,10 @@ export async function executeCall(opts: {
     return performRequest(buildPostmanRequest({
       binding,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
-    }), opts.fetchImpl);
+    }), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'openapi') {
@@ -473,11 +710,12 @@ export async function executeCall(opts: {
       method: binding.method,
       pathTemplate: binding.path,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'http') {
@@ -487,11 +725,12 @@ export async function executeCall(opts: {
       method: binding.method,
       pathTemplate: binding.path,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'mcp') {
@@ -499,11 +738,12 @@ export async function executeCall(opts: {
     const req = buildMcpRequest({
       url: opts.baseUrl,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       toolName: binding.tool,
       args: opts.args,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'graphql') {
@@ -513,10 +753,11 @@ export async function executeCall(opts: {
       operation: binding.operation,
       field: binding.field,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
     });
-    return performRequest(req, opts.fetchImpl);
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   throw new Error(`execution for "${binding.kind}" connectors is not implemented yet`);

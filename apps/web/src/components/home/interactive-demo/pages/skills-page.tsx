@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { cn } from '@/lib/utils';
 import {
   SparkleIcon as HiMiniSparkles,
@@ -48,7 +49,7 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
       const scroller = el?.closest('[data-demo-panel-scroll]');
       if (!el || !(scroller instanceof HTMLElement)) return;
       const top = el.offsetTop - (scroller.clientHeight - el.offsetHeight) / 2;
-      scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      safeScrollTo(scroller, { top: Math.max(0, top), behavior: 'smooth' });
     }, 150);
     return () => window.clearTimeout(t);
   }, [focusedSkill]);

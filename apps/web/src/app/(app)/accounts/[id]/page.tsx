@@ -29,11 +29,13 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
+import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { IdentityIntro } from '@/components/iam/identity-intro';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
@@ -92,6 +94,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
+import { isGitHubAppInstallationId } from '@/lib/github-installations';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -113,7 +116,7 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import {
   GearSixIcon as CogOne,
@@ -184,7 +187,7 @@ const NAV_GROUPS: Array<{
     label: 'Billing',
     items: [
       { id: 'billing', label: 'Plan', icon: CreditCard },
-      { id: 'transactions', label: 'Credits', icon: Coins },
+      { id: 'transactions', label: 'Usage', icon: Coins },
     ],
   },
   {
@@ -202,7 +205,10 @@ const NAV_GROUPS: Array<{
 const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
   members: { title: 'Members', description: 'People with access to this account.' },
   billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
-  transactions: { title: 'Credits', description: 'Every credit movement on this account.' },
+  transactions: {
+    title: 'Usage',
+    description: 'Session costs and credit ledger for this account.',
+  },
   tokens: {
     title: 'Tokens',
     description: 'Token policy and machine identities for CI and automations.',
@@ -323,11 +329,6 @@ export default function AccountSettingsPage() {
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
-  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
-  // can also gate the cloud GitHubConnectionCard on it below — same query,
-  // same cache entry, so this doesn't add a second network round-trip.
-  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
-
   const prefersReducedMotion = useReducedMotion();
 
   if (authLoading || !user) {
@@ -342,9 +343,8 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
-  // Self-host billing-disabled: no Stripe/credit ledger to show — see
-  // isBillingEnabled() (mirrors the backend's KORTIX_BILLING_INTERNAL_ENABLED)
-  // instead of only checking permission.
+  // Self-host billing-disabled: no Stripe plan controls to show. Session costs
+  // remain available because they do not require the internal billing engine.
   const billingActive = isBillingEnabled();
 
   // Which rail items this caller can see. Mirrors the per-section gates the
@@ -356,7 +356,7 @@ export default function AccountSettingsPage() {
     roles: canManageRoles === true,
     identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
-    transactions: canWriteAccount === true && billingActive,
+    transactions: canWriteAccount === true,
     git: canWriteAccount === true,
     tokens: canWriteAccount === true,
     audit: canReadAudit === true,
@@ -577,20 +577,8 @@ export default function AccountSettingsPage() {
 
             {activeSection === 'git' && canWriteAccount ? (
               <div className="space-y-8">
-                {/* One coherent managed-git card covering all three setup
-                    methods (manifest App, pasted App, PAT) — rendered for any
-                    admin regardless of source. The cloud per-account
-                    installations card below is a DIFFERENT thing (per-account
-                    App installs on the hosted deployment) and only makes
-                    sense when managed-git itself is env-configured (source
-                    'env'); on self-host (source 'db' | 'pat' | 'none') it
-                    would just confusingly show "No connections yet" next to
-                    the card above, so it's hidden until the status query
-                    resolves to 'env'. */}
+                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
                 <GitHubAppSetupCard canManage={canWriteAccount} />
-                {githubAppStatusQuery.data?.source === 'env' ? (
-                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-                ) : null}
               </div>
             ) : null}
 
@@ -617,18 +605,9 @@ export default function AccountSettingsPage() {
                   <Skeleton className="h-40 w-full rounded-md" />
                 ) : enterpriseIdentityEnabled ? (
                   <>
-                    <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-md border px-4 py-3">
-                      <p className="text-foreground text-xs font-medium">Why connect both?</p>
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        <span className="text-foreground font-medium">SAML SSO</span> is how people
-                        sign in — with your identity provider's own credentials and MFA, never a
-                        Kortix password.{' '}
-                        <span className="text-foreground font-medium">SCIM directory sync</span> is
-                        who exists — it keeps your Kortix roster matched to your IdP and
-                        automatically removes access the moment someone leaves. Most enterprises
-                        want both; set up SSO first, then Directory Sync.
-                      </p>
-                    </div>
+                    {/* Onboarding copy only — self-hides once either surface
+                        is configured (see IdentityIntro). */}
+                    <IdentityIntro accountId={account.account_id} />
                     <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                     <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                   </>
@@ -719,6 +698,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -748,31 +728,16 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
-  async function handleConnect() {
+  function handleConnect() {
     if (!canManage) return;
     setIsConnecting(true);
-    try {
-      const result = await installationsQuery.refetch();
-      if (result.error) throw result.error;
-      const installUrl = result.data?.install_url;
-      if (!installUrl) {
-        errorToast(
-          result.data?.configured === false
-            ? 'GitHub App is not configured'
-            : 'GitHub install URL unavailable',
-        );
-        return;
-      }
-      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-      window.location.assign(installUrl);
-    } catch (err) {
-      errorToast((err as Error).message || 'Failed to start GitHub setup');
-    } finally {
-      setIsConnecting(false);
-    }
+    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
-  const installations = installationsQuery.data?.installations ?? [];
+  const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
+    isGitHubAppInstallationId(installation.installation_id),
+  );
 
   return (
     <div className="space-y-4">
@@ -793,7 +758,7 @@ function GitHubConnectionCard({
             </Hint>
           </span>
           <p className="text-muted-foreground text-xs">
-            Connect GitHub users or organizations to import repositories.
+            Link an existing App installation or install the App for a GitHub account.
           </p>
         </div>
         <Button
@@ -806,7 +771,7 @@ function GitHubConnectionCard({
           title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
         >
           {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
-          {isConnecting ? 'Connecting' : 'Connect GitHub'}
+          {isConnecting ? 'Connecting' : 'Add account'}
         </Button>
       </div>
 
@@ -822,7 +787,7 @@ function GitHubConnectionCard({
         // Quiet contained empty state — the toolbar above already carries the
         // single "Connect GitHub" CTA.
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No GitHub connections yet. Connect the Kortix GitHub App to import repositories.
+          No GitHub connections yet. Add an existing App installation or install the App.
         </div>
       ) : (
         <ul className="space-y-2">
@@ -1074,6 +1039,12 @@ function MembersCard({
     });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Staged like removeTarget/leaveConfirmOpen above — role changes (including
+  // the hard-to-undo promote-to-Owner) go through a confirmation instead of
+  // firing on click. See roleMutation below for the actual mutate call.
+  const [pendingRole, setPendingRole] = useState<{ userId: string; role: AccountRole } | null>(
+    null,
+  );
   // Free-text search over email + user_id. Lives in component state so
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
@@ -1277,6 +1248,15 @@ function MembersCard({
       setBulkBusy(false);
     }
   }
+
+  // Looked up from the full roster (not the filtered `sorted` list) so the
+  // pending-role dialog's copy stays correct even if the search box changes
+  // while it's open.
+  const pendingRoleMember = pendingRole
+    ? members.find((m) => m.user_id === pendingRole.userId)
+    : undefined;
+  const pendingRoleLabel = pendingRole ? ROLE_LABEL[pendingRole.role] : '';
+  const pendingRoleBlurb = pendingRole ? ACCOUNT_ROLE_DESCRIPTORS[pendingRole.role].blurb : '';
 
   return (
     <div className="space-y-4">
@@ -1551,10 +1531,7 @@ function MembersCard({
                                         key={role}
                                         disabled={role === member.account_role}
                                         onSelect={() =>
-                                          roleMutation.mutate({
-                                            userId: member.user_id,
-                                            role,
-                                          })
+                                          setPendingRole({ userId: member.user_id, role })
                                         }
                                         className="gap-2"
                                       >
@@ -1636,6 +1613,30 @@ function MembersCard({
         onOpenChange={setInviteOpen}
         accountId={account.account_id}
         onInvited={invalidateMembers}
+      />
+
+      <ConfirmDialog
+        open={!!pendingRole}
+        onOpenChange={(o) => {
+          if (!o) setPendingRole(null);
+        }}
+        title="Change role"
+        description={
+          <span>
+            Change{' '}
+            <span className="text-foreground font-medium">
+              {pendingRoleMember ? memberLabel(pendingRoleMember) : ''}
+            </span>{' '}
+            to <span className="text-foreground font-medium">{pendingRoleLabel}</span>.{' '}
+            {pendingRoleBlurb}
+          </span>
+        }
+        confirmLabel="Change role"
+        onConfirm={() => {
+          if (pendingRole) roleMutation.mutate(pendingRole);
+          setPendingRole(null);
+        }}
+        isPending={roleMutation.isPending}
       />
 
       <ConfirmDialog
@@ -2006,8 +2007,13 @@ function InviteMemberModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                  <SelectItem value="admin">Admin — can invite members</SelectItem>
+                  <SelectItem value="member">
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.label} —{' '}
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2341,9 +2347,15 @@ function BulkSetRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Owner — full control</SelectItem>
-                <SelectItem value="admin">Admin — everything except ownership</SelectItem>
-                <SelectItem value="member">Member — no implicit access</SelectItem>
+                <SelectItem value="owner">
+                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
+                </SelectItem>
+                <SelectItem value="admin">
+                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                </SelectItem>
+                <SelectItem value="member">
+                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

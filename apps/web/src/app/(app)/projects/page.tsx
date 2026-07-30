@@ -2,8 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import Link from 'next/link';
-
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -25,14 +23,22 @@ import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
-import { billingApi } from '@/lib/api/billing';
+import { syncSubscription } from '@kortix/sdk';
+import { fireConfetti } from '@/lib/confetti';
 import { isBillingEnabled } from '@/lib/config';
 import {
   ensureFirstProject,
-  hasFirstProjectBootstrapSignal,
+  isAutoProjectSuppressed,
+  isManagedGitUnavailableError,
+  navigationMayCreateProject,
   shouldAutoCreateFirstProject,
+  suppressAutoProjectAfterDelete,
 } from '@/lib/onboarding/ensure-first-project';
+import {
+  clearLastProjectId,
+  readLastProjectId,
+  writeLastProjectId,
+} from '@/lib/onboarding/last-project-cookie';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import {
@@ -40,7 +46,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { FolderPlusIcon as FolderPlus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -70,7 +76,7 @@ function ProjectsLoadingScreen() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {PROJECT_SKELETON_KEYS.map((key) => (
-              <Skeleton key={key} className="h-[92px] rounded-2xl" />
+              <Skeleton key={key} className="h-[92px] rounded-md" />
             ))}
           </div>
         </div>
@@ -95,9 +101,6 @@ export default function ProjectsPage() {
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
   const [cloneSourceItemId, setCloneSourceItemId] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const [firstProjectBootstrapRequested, setFirstProjectBootstrapRequested] = useState(() => {
-    return hasFirstProjectBootstrapSignal(searchParams);
-  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -125,30 +128,6 @@ export default function ProjectsPage() {
       window.history.replaceState(null, '', url.toString());
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (searchParams.get('team_signup') !== 'success') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await billingApi.syncSubscription();
-        if (cancelled) return;
-        await invalidateAccountState(queryClient);
-        successToast('Subscription activated', {
-          description: 'Your team is on Kortix Team. Compute and LLM credits are ready.',
-        });
-      } catch {
-        invalidateAccountState(queryClient);
-      } finally {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('team_signup');
-        window.history.replaceState(null, '', url.toString());
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, queryClient]);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -230,14 +209,11 @@ export default function ProjectsPage() {
         .filter((group) => group.projects.length > 0)
     : [];
 
-  const legacyMachinesQuery = useLegacyMachines({
-    enabled: !!user && !!activeAccountId,
-    accountId: activeAccountId,
-  });
-
-  // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
-  // first project. A normal empty projects list can come from deleting the last
-  // project, and must stay empty instead of recreating it.
+  // ── Onboarding: an empty account provisions its first project automatically,
+  // so "create your first project" is never a step the user has to perform. The
+  // one exception is the empty list you get by deleting your last project —
+  // `suppressAutoProjectAfterDelete` marks that so the app does not immediately
+  // undo the delete.
   const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,
@@ -247,10 +223,8 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const accountId = activeAccountId;
-    const legacySandboxes = legacyMachinesQuery.data?.sandboxes;
     if (
       !shouldAutoCreateFirstProject({
-        bootstrapRequested: firstProjectBootstrapRequested,
         activeAccountId: accountId,
         canCreateProjects,
         autoCreateAttempted: accountId ? autoCreateAttempted.current.has(accountId) : false,
@@ -259,11 +233,12 @@ export default function ProjectsPage() {
         projectsError: projectsQuery.isError,
         projectsLoaded: !!projectsQuery.data,
         projectCount: projectsQuery.data?.length ?? 0,
-        legacyMachinesLoaded: legacyMachinesQuery.isSuccess,
-        legacyMachineCount: legacySandboxes?.length ?? 0,
+        legacyMachinesLoaded: true,
+        legacyMachineCount: 0,
         billingEnabled: isBillingEnabled(),
         accountStateLoading,
         canRun: !!accountState?.credits?.can_run,
+        suppressedAfterDelete: isAutoProjectSuppressed(),
       })
     ) {
       return;
@@ -271,21 +246,33 @@ export default function ProjectsPage() {
     if (!accountId) return;
 
     autoCreateAttempted.current.add(accountId);
-    setFirstProjectBootstrapRequested(false);
     setAutoCreating(true);
-    ensureFirstProject(accountId)
+    ensureFirstProject(accountId, {
+      preferredProjectId: readLastProjectId(user?.id),
+      // Same CWE-352 gate as the landing door: a cross-site link must not be
+      // able to mint a managed git repo just because the visitor is signed in.
+      allowCreate: navigationMayCreateProject(),
+    })
       .then((project) => {
         if (!project) {
           setAutoCreating(false);
-          autoCreateAttempted.current.delete(accountId);
           return;
         }
+        writeLastProjectId(user?.id, project.project_id);
         queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
         router.replace(`/projects/${project.project_id}`);
       })
       .catch((err) => {
         autoCreateAttempted.current.delete(accountId);
         setAutoCreating(false);
+        // Managed git not configured (self-host with no MANAGED_GIT_*) is an
+        // operator state, not a user error: fall back to the manual create flow
+        // so the BYO-repo path stays reachable instead of dead-ending.
+        if (isManagedGitUnavailableError(err)) {
+          setCreateAccountId(accountId);
+          setModalOpen(true);
+          return;
+        }
         console.error('[onboarding] auto-create first project failed', err);
       });
   }, [
@@ -295,9 +282,6 @@ export default function ProjectsPage() {
     projectsQuery.isLoading,
     projectsQuery.isError,
     projectsQuery.data,
-    legacyMachinesQuery.isSuccess,
-    legacyMachinesQuery.data,
-    firstProjectBootstrapRequested,
     accountStateLoading,
     accountState?.credits?.can_run,
     queryClient,
@@ -309,6 +293,14 @@ export default function ProjectsPage() {
     onMutate: (projectId) => setArchivingId(projectId),
     onSettled: () => setArchivingId(null),
     onSuccess: (_data, projectId) => {
+      // Archiving the LAST project must leave the account empty. Without this
+      // the auto-provision effect below would see projectCount === 0 and
+      // immediately recreate a project, undoing the delete the user just
+      // confirmed. Scoped to this tab — see suppressAutoProjectAfterDelete.
+      if ((projectsQuery.data?.length ?? 0) <= 1) {
+        suppressAutoProjectAfterDelete();
+      }
+      if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');
@@ -328,10 +320,6 @@ export default function ProjectsPage() {
     () => filterProjects(projectsQuery.data ?? []),
     [filterProjects, projectsQuery.data],
   );
-
-  // Legacy machines are no longer shown inline on Projects; the count only drives
-  // the discreet link to the hidden /legacy-machines archive.
-  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
 
   if (authLoading || !user) {
     return <ProjectsLoadingScreen />;
@@ -444,7 +432,7 @@ export default function ProjectsPage() {
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-md" />
                   ))}
                 </div>
               )}
@@ -519,7 +507,7 @@ export default function ProjectsPage() {
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-md" />
                   ))}
                 </div>
               )}
@@ -606,16 +594,6 @@ export default function ProjectsPage() {
                     </div>
                   </section>
                 ))}
-            </div>
-          )}
-          {hasLegacyMachines && (
-            <div className="pt-2 text-center">
-              <Link
-                href="/legacy-machines"
-                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-4 transition-colors"
-              >
-                Looking for older machines?
-              </Link>
             </div>
           )}
         </div>

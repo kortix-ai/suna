@@ -5,24 +5,73 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
-import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { validateRef } from '../git-ref';
+import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
+import { FIELD_SEP } from './commits';
 import {
   hostFromRepoUrl,
   invalidateProjectMirror,
+  isGitOperationError,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
   runGit,
   runGitCapture,
 } from './mirror';
-import { FIELD_SEP } from './commits';
 import type { GitBackedProject, GitBranchInfo } from './types';
 
 // Bounded concurrency for blob hashing below — enough to cut many-file
 // install wall-clock time without spawning an unbounded pile of `git
 // hash-object` subprocesses per commit.
 const HASH_CONCURRENCY = 8;
+
+export interface ExpectedFileRevision {
+  path: string;
+  sha: string | null;
+  /** Logical file candidates in winner-priority order. */
+  candidatePaths?: readonly string[];
+}
+
+export class GitFileRevisionConflictError extends Error {
+  constructor(readonly path: string) {
+    super(`File "${path}" changed since it was read`);
+    this.name = 'GitFileRevisionConflictError';
+  }
+}
+
+export function isExpectedFileRevisionRace(error: unknown): boolean {
+  if (!isGitOperationError(error)) return false;
+  const details = `${error.message}\n${error.stderr}`;
+  if (error.gitArgs[0] === 'update-ref') {
+    return details.includes(' but expected ') || details.includes('reference already exists');
+  }
+  return (
+    details.includes('[rejected]') ||
+    details.includes('non-fast-forward') ||
+    details.includes('fetch first') ||
+    details.includes('stale info') ||
+    (error.gitArgs[0] === 'push' && details.includes('failed to update ref'))
+  );
+}
+
+async function readRemoteBranchTip(
+  project: GitBackedProject,
+  repoPath: string,
+  branch: string,
+  authHost: string,
+): Promise<string | null | undefined> {
+  const remote = await runGitCapture(
+    ['ls-remote', '--heads', 'origin', `refs/heads/${branch}`],
+    repoPath,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    project.gitAuthHeaders,
+  );
+  if (remote.exitCode !== 0) return undefined;
+  const sha = remote.stdout.trim().split(/\s+/, 1)[0] ?? '';
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
 
 /**
  * Hash every file's content into a git blob object (`git hash-object -w`),
@@ -81,9 +130,7 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
         tip_short: tipShort,
         subject,
         committer_name: committerName,
-        committer_email: committerEmail
-          .replace(/^</, '')
-          .replace(/>$/, ''),
+        committer_email: committerEmail.replace(/^</, '').replace(/>$/, ''),
         committed_at: committedAt,
         ahead: null,
         behind: null,
@@ -162,6 +209,8 @@ export async function createRemoteSessionBranch(
       project.gitAuthToken,
       undefined,
       authHost,
+      undefined,
+      project.gitAuthHeaders,
     );
     await runGit(
       ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
@@ -170,6 +219,8 @@ export async function createRemoteSessionBranch(
       project.gitAuthToken,
       undefined,
       authHost,
+      undefined,
+      project.gitAuthHeaders,
     );
     invalidateProjectMirror(project.projectId);
   } finally {
@@ -187,13 +238,31 @@ export async function deleteRemoteSessionBranch(
 
   const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);
-  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken, undefined, authHost)
-    .catch(() => ({ stdout: '', stderr: '' }));
+  const remote = await runGit(
+    ['ls-remote', '--heads', 'origin', branchName],
+    repoPath,
+    true,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    undefined,
+    project.gitAuthHeaders,
+  ).catch(() => ({ stdout: '', stderr: '' }));
   if (!remote.stdout.trim()) return false;
 
-  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost);
-  await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false)
-    .catch(() => undefined);
+  await runGit(
+    ['push', 'origin', `:${branchName}`],
+    repoPath,
+    true,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    undefined,
+    project.gitAuthHeaders,
+  );
+  await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false).catch(
+    () => undefined,
+  );
   return true;
 }
 
@@ -210,6 +279,7 @@ export async function commitFileToBranch(
     branch?: string;
     authorName?: string;
     authorEmail?: string;
+    expectedFileRevision?: ExpectedFileRevision;
   },
 ): Promise<{ commitSha: string }> {
   if (!normalizeTreePath(opts.path)) throw new Error('File path is required');
@@ -219,6 +289,7 @@ export async function commitFileToBranch(
     branch: opts.branch,
     authorName: opts.authorName,
     authorEmail: opts.authorEmail,
+    expectedFileRevision: opts.expectedFileRevision,
   });
   return { commitSha };
 }
@@ -242,12 +313,15 @@ export async function commitMultipleFilesToBranch(
     branch?: string;
     authorName?: string;
     authorEmail?: string;
+    expectedFileRevision?: ExpectedFileRevision;
   },
 ): Promise<{ commitSha: string; branch: string; fileCount: number }> {
   const files = (opts.files ?? [])
     .map((f) => ({ path: normalizeTreePath(f.path), content: f.content }))
     .filter((f): f is { path: string; content: string } => Boolean(f.path));
-  const deletes = (opts.deletes ?? []).map((p) => normalizeTreePath(p)).filter((p): p is string => Boolean(p));
+  const deletes = (opts.deletes ?? [])
+    .map((p) => normalizeTreePath(p))
+    .filter((p): p is string => Boolean(p));
   if (files.length === 0 && deletes.length === 0) throw new Error('Nothing to commit');
   const branch = validateRef(opts.branch || project.defaultBranch);
   const authHost = hostFromRepoUrl(project.repoUrl);
@@ -255,6 +329,52 @@ export async function commitMultipleFilesToBranch(
 
   const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
   const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
+  const expectedPath = opts.expectedFileRevision
+    ? normalizeTreePath(opts.expectedFileRevision.path)
+    : undefined;
+  if (opts.expectedFileRevision && !expectedPath) {
+    throw new Error('Expected file revision path is required');
+  }
+  const expectedFileRevision =
+    opts.expectedFileRevision && expectedPath
+      ? {
+          path: expectedPath,
+          sha: opts.expectedFileRevision.sha,
+          candidatePaths: Array.from(
+            new Set(
+              (opts.expectedFileRevision.candidatePaths ?? [expectedPath])
+                .map((path) => normalizeTreePath(path))
+                .filter((path): path is string => Boolean(path)),
+            ),
+          ),
+        }
+      : undefined;
+  if (expectedFileRevision) {
+    if (!expectedFileRevision.candidatePaths.includes(expectedFileRevision.path)) {
+      expectedFileRevision.candidatePaths.push(expectedFileRevision.path);
+    }
+    const current = parentSha
+      ? await runGitCapture(
+          ['ls-tree', parentSha, '--', ...expectedFileRevision.candidatePaths],
+          repoPath,
+        )
+      : { stdout: '', stderr: '', exitCode: 0 };
+    if (current.exitCode !== 0) {
+      throw new Error(`Failed to read current revision for "${expectedFileRevision.path}"`);
+    }
+    const revisions = new Map<string, string>();
+    for (const line of current.stdout.split('\n')) {
+      const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+      if (match?.[1] && match[2]) revisions.set(match[2], match[1]);
+    }
+    const currentWinner =
+      expectedFileRevision.candidatePaths.find((path) => revisions.has(path)) ?? null;
+    const expectedWinner = expectedFileRevision.sha === null ? null : expectedFileRevision.path;
+    const currentSha = revisions.get(expectedFileRevision.path) ?? null;
+    if (currentWinner !== expectedWinner || currentSha !== expectedFileRevision.sha) {
+      throw new GitFileRevisionConflictError(expectedFileRevision.path);
+    }
+  }
 
   const author = opts.authorName || 'Kortix';
   const email = opts.authorEmail || 'noreply@kortix.ai';
@@ -296,24 +416,48 @@ export async function commitMultipleFilesToBranch(
       await runGit(['update-index', '--force-remove', path], repoPath, false, null, deleteEnv);
     }
     const treeSha = (await runGit(['write-tree'], repoPath, false, null, indexEnv)).stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(treeSha)) throw new Error('git write-tree did not return a tree SHA');
+    if (!/^[0-9a-f]{40}$/.test(treeSha))
+      throw new Error('git write-tree did not return a tree SHA');
 
     const commitArgs = ['commit-tree', treeSha];
     if (parentSha) commitArgs.push('-p', parentSha);
     commitArgs.push('-m', opts.message);
     const commitSha = (await runGit(commitArgs, repoPath, false, null, identEnv)).stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(commitSha)) throw new Error('git commit-tree did not return a commit SHA');
+    if (!/^[0-9a-f]{40}$/.test(commitSha))
+      throw new Error('git commit-tree did not return a commit SHA');
 
-    if (parentSha) await runGit(['update-ref', `refs/heads/${branch}`, commitSha, parentSha], repoPath, false);
-    else await runGit(['update-ref', `refs/heads/${branch}`, commitSha], repoPath, false);
-    await runGit(
-      ['push', 'origin', `${commitSha}:refs/heads/${branch}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      authHost,
-    );
+    try {
+      const pushArgs = ['push'];
+      if (expectedFileRevision) {
+        pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
+      }
+      pushArgs.push('origin', `${commitSha}:refs/heads/${branch}`);
+      await runGit(
+        pushArgs,
+        repoPath,
+        true,
+        project.gitAuthToken,
+        undefined,
+        authHost,
+        undefined,
+        project.gitAuthHeaders,
+      );
+    } catch (error) {
+      invalidateProjectMirror(project.projectId);
+      if (expectedFileRevision) {
+        const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
+        if (remoteTip === commitSha) {
+          return { commitSha, branch, fileCount: files.length };
+        }
+        if (remoteTip !== undefined && remoteTip !== parentSha) {
+          throw new GitFileRevisionConflictError(expectedFileRevision.path);
+        }
+        if (isExpectedFileRevisionRace(error)) {
+          throw new GitFileRevisionConflictError(expectedFileRevision.path);
+        }
+      }
+      throw error;
+    }
 
     invalidateProjectMirror(project.projectId);
     return { commitSha, branch, fileCount: files.length };

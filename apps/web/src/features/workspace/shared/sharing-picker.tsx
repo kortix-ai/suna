@@ -9,7 +9,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
-import { listProjectAccess } from '@kortix/sdk/projects-client';
+import { listProjectAccess } from '@kortix/sdk';
 import {
   CheckCircleIcon as CheckCircleSolid,
   MagnifyingGlassIcon as Search,

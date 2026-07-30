@@ -62,14 +62,14 @@ feature works.
 | # | Improvement | Wave | Why it matters |
 |---|---|---|---|
 | **P0** | **Alerting** — Alertmanager on + multi-window multi-burn-rate SLO `PrometheusRule`s → Slack/PagerDuty | 4 | Today there are **0 alerting rules**; prod outages are human-detected. Highest-leverage gap. |
-| **P0** | **Velero backup + DR drill** (`scripts/dr-test.sh`) | 3 | No backups of in-cluster state; DR targets are unvalidated (`docs/runbooks/disaster-recovery.md`). |
+| **P1** | **Full cluster DR drill** (`scripts/dr-test.sh`) | 3 | Velero backup and scoped restore passed on 2026-07-27. The full cluster rebuild RTO remains unvalidated. |
 | **P1** | **Workload hardening** — `securityContext` (non-root, no-priv-esc, drop caps, seccomp, read-only rootfs), ServiceMonitor | 2 | Least-privilege; required for the SLO scrape targets Wave 4 depends on. |
 | **P1** | **Cluster guardrails** — Kyverno (audit→enforce), PodSecurityAdmission `restricted`, NetworkPolicy default-deny | 3 | Deny-by-default posture; staged audit-before-enforce. |
 | **P1** | **Supply chain** — Trivy image scan gate, syft SBOM, cosign keyless sign/attest, SLSA provenance | 1 | Currently SLSA L0–1; target **L3**. |
 | **P2** | **Progressive delivery** — re-enable Argo Rollouts canary + analysis in prod | 5 | Auto-rollback on bad releases once real traffic makes metric analysis meaningful (post-cutover). |
 | **P2** | **Tracing + DORA** — OTel → Tempo, DORA dashboard | 4 | No distributed tracing; DORA metrics not measured. |
 | **P2** | **Drift cleanup** — retire Lightsail/ECS modules, fix-or-remove `external-dns` | 5 | Eliminate desired-vs-actual drift after EKS cutover. |
-| **P3** | **Cost visibility** — OpenCost/Kubecost, spot node pool for dev/preview | 5 | No cost attribution; spot would trim the parallel-run bill. |
+| **P3** | **Infrastructure cost visibility** — OpenCost/Kubecost, spot node pool for dev/preview | 5 | Session-level LLM and compute costs exist. Kubernetes namespace, workload, and node-pool allocation does not. |
 | **P3** | **Falco runtime detection** + `staging` env | 3 / 10 | Runtime threat detection; a real pre-prod tier (previews share dev today). |
 
 ---
@@ -116,8 +116,8 @@ Tooling alone does not equal compliance — several gaps are **process**, not co
   yet wired into the security-event pipeline.
 - **No formal SLOs / error budget policy** — burn-rate alerts and SLO definitions
   are Wave 4; without them there's no measured availability commitment (A1.1).
-- **DR not drill-validated** — RTO/RPO in `docs/runbooks/disaster-recovery.md`
-  are **proposed**, not proven; SOC 2 A1.2/A1.3 expect tested backup/restore.
+- **Full cluster DR is not drill-validated** — a scoped Velero restore passed
+  on 2026-07-27. The proposed cluster rebuild RTO remains unproven.
 - **Vulnerability management gate** — no Trivy CRITICAL gate on images yet
   (Wave 1), so there's no enforced SLA on shipping known-vulnerable components
   (CC7.1 / OWASP A06).

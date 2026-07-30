@@ -189,14 +189,19 @@ async function createThreadSession(
     source: 'email',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: 'default',
       connector_bindings: {
-        email: { profile_id: emailProfileId },
+        email: { authorization_id: emailProfileId },
       },
+      // Email delivers its prompt via postCreate, so create is the only moment
+      // this session has any user text — title from the subject.
+      title_source: messageSubject(event) ?? messageSummary(event),
     },
     enforceAccountCap: false,
+    mayManageSystemConnectorProfiles: true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: claimKey,
     postCreate: [

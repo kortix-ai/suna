@@ -10,7 +10,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import {
   getChildSessionError,
   getRetryInfo,
@@ -103,7 +103,7 @@ function SubAgentStatusBanner({
   childSessionId?: string;
   childMessages?: MessageWithParts[];
 }) {
-  const childStatus = useSyncStore((s) =>
+  const childStatus = useSessionStateStore((s) =>
     childSessionId ? s.sessionStatus[childSessionId] : undefined,
   );
   const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);

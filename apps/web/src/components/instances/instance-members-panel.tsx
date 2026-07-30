@@ -42,7 +42,38 @@ import {
   type SandboxMember,
   type SandboxMemberRole,
   type SandboxPendingInvite,
-} from '@kortix/sdk/platform-client';
+} from '@kortix/sdk';
+import { cn } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { UserRow } from '@/components/ui/user-row';
+import { useCan } from '@/hooks/platform/use-can';
+import {
+  IconCheck,
+  IconDelete,
+  IconInvite,
+  IconMore,
+  IconUsers,
+} from '@/components/ui/kortix-icons';
 import { WarningCircleIcon as AlertCircle, UserIcon as User } from '@phosphor-icons/react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

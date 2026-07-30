@@ -98,14 +98,13 @@ function repo(owner: string, name: string) {
 }
 
 describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister', () => {
-  test('an org owner lists via GET /orgs/{owner}/repos, paginated', async () => {
+  test('an org owner returns one bounded page ordered by recent activity', async () => {
     const requests: string[] = [];
     const firstPage = Array.from({ length: 100 }, (_, i) => repo('acme-corp', `repo-${i}`));
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input instanceof Request ? input.url : input);
       requests.push(url);
-      const body = url.includes('page=2') ? [repo('acme-corp', 'last-one')] : firstPage;
-      return new Response(JSON.stringify(body), {
+      return new Response(JSON.stringify(url.includes('page=2') ? [] : firstPage), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -117,12 +116,35 @@ describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister',
       auth: { token: 'pat-token' },
     });
 
-    expect(repos).toHaveLength(101);
-    expect(repos[100]!.full_name).toBe('acme-corp/last-one');
-    expect(requests[0]).toBe(
-      'https://api.github.com/orgs/acme-corp/repos?type=all&per_page=100&page=1',
-    );
+    expect(repos).toHaveLength(100);
+    expect(requests).toEqual([
+      'https://api.github.com/orgs/acme-corp/repos?' +
+        'type=all&sort=updated&direction=desc&per_page=100&page=1',
+    ]);
     expect(requests.some((u) => u.includes('/user/repos'))).toBe(false);
+  });
+
+  test('searches the full org repository set through GitHub search', async () => {
+    let requested = '';
+    const match = repo('acme-corp', 'customer-portal');
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested = String(input instanceof Request ? input.url : input);
+      return Response.json({ total_count: 1, incomplete_results: false, items: [match] });
+    }) as typeof fetch;
+
+    const repos = await listOwnerRepositories({
+      owner: 'acme-corp',
+      ownerType: 'Organization',
+      auth: { token: 'pat-token' },
+      search: 'customer portal',
+      limit: 25,
+    });
+
+    expect(repos).toEqual([match]);
+    expect(requested).toBe(
+      'https://api.github.com/search/repositories?' +
+        'q=org%3Aacme-corp+customer+portal+in%3Aname%2Cdescription&sort=updated&order=desc&per_page=25&page=1',
+    );
   });
 
   test('a personal (User) owner lists via GET /user/repos, filtered back down to that owner', async () => {
@@ -144,7 +166,8 @@ describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister',
 
     expect(repos).toEqual([ownRepo]);
     expect(requested).toBe(
-      'https://api.github.com/user/repos?affiliation=owner,collaborator&per_page=100&page=1',
+      'https://api.github.com/user/repos?' +
+        'affiliation=owner%2Ccollaborator&sort=updated&direction=desc&per_page=100&page=1',
     );
   });
 

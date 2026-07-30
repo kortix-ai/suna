@@ -1,5 +1,11 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
 
+export {
+  DEFAULT_ENABLEMENT_WINDOW_MONTHS,
+  defaultEnabledModelIds,
+  type EnablementCandidate,
+} from './enablement';
+
 // ─── Kortix-owned provider auth requirements ────────────────────────────────
 //
 // *** THE PROBLEM THIS FIXES ***
@@ -425,12 +431,17 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`z-ai/glm-5.2`)
+  //   'openrouter'   → an OpenRouter slug (`deepseek/deepseek-v4-flash`)
+  //   'aster'        → an AsterLab OpenAI-compatible model id (`glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  transport: 'bedrock' | 'openrouter';
+  //   'aster'        → AsterLab openai-compatible chat completions
+  transport: 'aster' | 'bedrock' | 'openrouter';
+  // Optional provider id used for model-picker branding. Routing still uses
+  // `transport`; this field does not select or authenticate an upstream.
+  providerBrand?: string;
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
   // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
@@ -439,6 +450,14 @@ export interface ManagedModel {
   // net for consumers, but this field itself should always be the correct
   // dashed id so pricing/capability lookups hit on the first try.
   pricingRef: string;
+  // Explicit upstream pricing for providers that do not return cost metadata
+  // and whose direct price differs from models.dev's provider entry.
+  pricing?: {
+    inputPerMillion: number;
+    outputPerMillion: number;
+    cachedInputPerMillion?: number;
+    cacheWritePerMillion?: number;
+  };
   tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
@@ -486,8 +505,8 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
 // markup, so the gateway enforces budgets/logging/spend on all of them. Claude
-// runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else goes via OpenRouter.
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport). GLM
+// runs through AsterLab. DeepSeek V4 Flash remains on OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
@@ -495,6 +514,12 @@ export const MANAGED_MODELS: ManagedModel[] = [
     upstreamModelId: 'us.anthropic.claude-opus-4-8',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-opus-4-8',
+    pricing: {
+      inputPerMillion: 5,
+      cachedInputPerMillion: 0.5,
+      cacheWritePerMillion: 6.25,
+      outputPerMillion: 25,
+    },
     tier: 'flagship',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -505,6 +530,12 @@ export const MANAGED_MODELS: ManagedModel[] = [
     upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4-6',
+    pricing: {
+      inputPerMillion: 3,
+      cachedInputPerMillion: 0.3,
+      cacheWritePerMillion: 3.75,
+      outputPerMillion: 15,
+    },
     tier: 'balanced',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -512,43 +543,33 @@ export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'glm-5.2',
     name: 'GLM 5.2',
-    upstreamModelId: 'z-ai/glm-5.2',
-    transport: 'openrouter',
+    upstreamModelId: 'glm-5.2',
+    transport: 'aster',
     pricingRef: 'z-ai/glm-5.2',
+    pricing: {
+      inputPerMillion: 1,
+      cachedInputPerMillion: 0.2,
+      cacheWritePerMillion: 1,
+      outputPerMillion: 4,
+    },
     tier: 'balanced',
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
-    // Prefer Z.AI's first-party endpoint (99.9%+ uptime, native fp8). Fallbacks
-    // stay enabled so an actual Z.AI outage still routes rather than failing.
-    openrouterProvider: { order: ['z-ai'], allow_fallbacks: true },
-  },
-  {
-    id: 'qwen3.7-max',
-    name: 'Qwen3.7 Max',
-    upstreamModelId: 'qwen/qwen3.7-max',
-    transport: 'openrouter',
-    pricingRef: 'qwen/qwen3.7-max',
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  {
-    id: 'deepseek-v4-pro',
-    name: 'DeepSeek V4 Pro',
-    upstreamModelId: 'deepseek/deepseek-v4-pro',
-    transport: 'openrouter',
-    pricingRef: 'deepseek/deepseek-v4-pro',
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-flash',
     name: 'DeepSeek V4 Flash',
     upstreamModelId: 'deepseek/deepseek-v4-flash',
     transport: 'openrouter',
-    pricingRef: 'deepseek/deepseek-v4-flash',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-flash',
+    pricing: {
+      inputPerMillion: 0.0938,
+      cachedInputPerMillion: 0.01876,
+      cacheWritePerMillion: 0.0938,
+      outputPerMillion: 0.1876,
+    },
     tier: 'balanced',
+    providerBrand: 'deepseek',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
@@ -570,79 +591,70 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
-// ─── AUTO: managed model selection ──────────────────────────────────────────
-// The catalog advertises a synthetic `auto` model presented to users as
-// "automatically picks the cheapest, most efficient model for the task." When a
-// request asks for it, the gateway resolves it to a concrete managed model and
-// bills it as the resolved model.
-//
-// AUTO resolves to Codex GPT-5.6 Sol. The gateway's finite model-fallback policy
-// then falls back to managed GLM 5.2 if Codex cannot serve the turn.
-//
-// AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
-// explicitly opts into a concrete model. The resolution path below stays fully
-// intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
-// and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
-// the toggle is a one-line flip.
-export const AUTO_MODEL_ID = 'auto';
+/** Concrete Kortix-managed default used when no account or project default exists. */
+export const PLATFORM_DEFAULT_MODEL_ID = 'glm-5.2';
 
-// Whether AUTO is exposed in the model picker. Off for now: we want an explicit
-// opt-in on which model to use, and will bring AUTO back later. The web app reads
-// this through `featureFlags.enableAutoModel`, which can override it per-deploy via
-// NEXT_PUBLIC_ENABLE_AUTO_MODEL. The server keeps serving + resolving `auto`
-// regardless, so this only gates the UI.
-export const AUTO_MODEL_ENABLED = false;
-
-// The single "what to choose for auto" knob: a gateway wire model. It may be a
-// managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
-export const AUTO_DEFAULT_MODEL_ID = 'codex/gpt-5.6-sol';
-
-const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
-const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
-
-function requestHasImage(body: Record<string, unknown>): boolean {
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  for (const message of messages) {
-    const content = (message as { content?: unknown }).content;
-    if (
-      Array.isArray(content) &&
-      content.some(
-        (part) =>
-          !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'image_url',
-      )
-    ) {
-      return true;
-    }
+function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
+  const byId = new Map<string, CatalogModel>();
+  for (const provider of catalog.providers) {
+    for (const model of provider.models) byId.set(`${provider.id}/${model.id}`, model);
   }
-  return false;
+  return byId;
 }
 
 /**
- * Map a requested model to a concrete managed model when (and only when) it is
- * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
- * the caller treats as "use the requested model as-is"). Pure + dependency-free
- * so both the in-process mount and the standalone gateway can call it locally.
+ * Resolve a gateway WIRE model id to its full `CatalogModel` — the capability
+ * record `generationControlCapabilities`/`clampGenerationConfig` gate against.
+ * The CANONICAL wire-id → model resolver: it stitches together the three id
+ * shapes a gateway request can carry, so a caller never has to string-split
+ * `<provider>/<model>` or special-case managed slugs itself.
  *
- * `opts.defaultModel` is the account/agent-configured default for the calling
- * principal (a concrete wire model, never `auto`). It takes precedence over the
- * platform text default, so `auto` resolves to what the account actually wants.
- * The vision override still applies: if the chosen target is a managed text-only
- * model and the request carries an image, swap to a vision-capable model so
- * attachments aren't silently dropped. A vision-capable or BYOK default is kept.
+ *   - `codex/<id>`      → the genuine OpenAI catalog entry (`openai/<id>`).
+ *   - `<provider>/<id>` → that provider's catalog entry (BYOK models).
+ *   - bare `<id>`       → a managed slug, resolved via its `pricingRef` (the
+ *                         model's real models.dev id) so e.g. `claude-opus-4.8`
+ *                         gets Claude's real `reasoning_options`/`limit` instead
+ *                         of a permissive fallback; a synthesized minimal record
+ *                         (reasoning/tool_call/temperature all true) when the
+ *                         managed slug has no models.dev entry to borrow from.
+ *
+ * `catalog` defaults to the bundled static `CATALOG`. apps/api passes the LIVE
+ * models.dev snapshot instead (its own thin wrapper of the same name) so the
+ * host-side generation-controls clamp sees fresh capabilities; the standalone
+ * gateway transport, which has no runtime snapshot, uses the bundled catalog.
  */
-export function pickAutoModel(
-  model: string,
-  body: Record<string, unknown>,
-  opts?: { defaultModel?: string | null },
-): string | null {
-  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
-  const target = opts?.defaultModel || AUTO_TARGET_MODEL;
-  if (requestHasImage(body)) {
-    const bareId = target.startsWith('kortix/') ? target.slice('kortix/'.length) : target;
-    const managed = getManagedModel(bareId);
-    if (managed && !managed.vision) return AUTO_VISION_MODEL;
+export function catalogModelForWireModel(
+  wireModel: string,
+  catalog: Catalog = CATALOG,
+): CatalogModel | undefined {
+  if (wireModel.startsWith('codex/')) {
+    return modelsByWireId(catalog).get(`openai/${wireModel.slice('codex/'.length)}`);
   }
-  return target;
+  const slash = wireModel.indexOf('/');
+  if (slash > 0) {
+    const providerId = wireModel.slice(0, slash);
+    const modelId = wireModel.slice(slash + 1);
+    return catalog.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((model) => model.id === modelId);
+  }
+  const managed = getManagedModel(wireModel);
+  if (managed) {
+    const catalogById = modelsByWireId(catalog);
+    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
+      .map((ref) => catalogById.get(ref))
+      .find((entry): entry is CatalogModel => entry !== undefined);
+    if (byPricingRef) return byPricingRef;
+    return {
+      id: managed.id,
+      name: managed.name,
+      reasoning: true,
+      tool_call: true,
+      temperature: true,
+      limit: managed.limit,
+    };
+  }
+  return undefined;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
@@ -667,7 +679,16 @@ export const PROVIDER_LABELS: Record<string, string> = {
   opencode: 'OpenCode Zen',
   kortix: 'Kortix',
   firmware: 'Firmware',
-  bedrock: 'AWS Bedrock',
+  // models.dev's canonical provider id is `amazon-bedrock` (see
+  // `PROVIDER_AUTH_REQUIREMENT_OVERRIDES` above and `catalog.generated.json`),
+  // and that is the id the gateway stamps onto `GatewayModel.provider`. The
+  // short `bedrock` alias is kept for legacy call sites, mirroring the icon
+  // map in apps/web's provider-branding. Missing the canonical key here is
+  // what made the picker label the whole Bedrock group "Kortix": the label
+  // lookup fell through to `FlatModel.providerName`, which is always "Kortix"
+  // under the gateway.
+  'amazon-bedrock': 'Amazon Bedrock',
+  bedrock: 'Amazon Bedrock',
   openrouter: 'OpenRouter',
   'github-copilot': 'GitHub Copilot',
   vercel: 'Vercel',

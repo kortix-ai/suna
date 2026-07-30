@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
-import { AccountState } from '@/lib/api/billing';
+import type { AccountState } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
 import React, { useEffect } from 'react';
 import { create } from 'zustand';
@@ -121,9 +121,11 @@ export function useSubscriptionContext() {
           credits: {
             balance: dollarsToCredits(store.accountState.credits?.total ?? 0),
             tier_credits: dollarsToCredits(store.accountState.tier?.monthly_credits ?? 0),
-            lifetime_granted: 0,
-            lifetime_purchased: 0,
-            lifetime_used: 0,
+            lifetime_granted: dollarsToCredits(store.accountState.credits?.lifetime_granted ?? 0),
+            lifetime_purchased: dollarsToCredits(
+              store.accountState.credits?.lifetime_purchased ?? 0,
+            ),
+            lifetime_used: dollarsToCredits(store.accountState.credits?.lifetime_used ?? 0),
             can_purchase_credits: store.accountState.subscription.can_purchase_credits,
           },
         }
@@ -200,9 +202,9 @@ export function useSubscriptionData() {
       credits: {
         balance: dollarsToCredits(state.credits?.total ?? 0),
         tier_credits: dollarsToCredits(state.tier?.monthly_credits ?? 0),
-        lifetime_granted: 0,
-        lifetime_purchased: 0,
-        lifetime_used: 0,
+        lifetime_granted: dollarsToCredits(state.credits?.lifetime_granted ?? 0),
+        lifetime_purchased: dollarsToCredits(state.credits?.lifetime_purchased ?? 0),
+        lifetime_used: dollarsToCredits(state.credits?.lifetime_used ?? 0),
         can_purchase_credits: state.subscription.can_purchase_credits,
       },
       current_usage: (() => {

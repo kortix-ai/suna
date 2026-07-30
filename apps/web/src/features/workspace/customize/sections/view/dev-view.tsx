@@ -23,14 +23,10 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  getProject,
-  inviteRepoCollaborator,
-  isManagedGithubProject,
-} from '@kortix/sdk/projects-client';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {
@@ -347,7 +343,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
           />
         </div>
         <Button type="submit" className="shrink-0" disabled={!username.trim() || invite.isPending}>
-          {invite.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
+          {invite.isPending ? <Loading className="size-3.5" /> : null}
           {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
         </Button>
       </div>

@@ -48,7 +48,23 @@ const {
   GitOperationError,
   refreshMirror,
   repoCachePath,
+  runGit,
 } = await import('../projects/git/mirror');
+
+test('runGit applies backend-produced Authorization headers without rebuilding GitHub auth', async () => {
+  const basic = `Basic ${Buffer.from('t:code-storage-jwt').toString('base64')}`;
+  const result = await runGit(
+    ['config', '--get-all', 'http.https://kortix.code.storage/.extraheader'],
+    undefined,
+    true,
+    null,
+    undefined,
+    'kortix.code.storage',
+    30_000,
+    { Authorization: basic },
+  );
+  expect(result.stdout.trim()).toBe(`Authorization: ${basic}`);
+});
 
 async function git(args: string[], cwd: string) {
   await execFileAsync('git', args, {
@@ -208,6 +224,47 @@ describe('refreshMirror — partial-clone cleanup on failure', () => {
       // Second call is a warm hit (no network) and must still resolve.
       const repoPath2 = await refreshMirror(project);
       expect(repoPath2).toBe(repoPath);
+    } finally {
+      process.env.KORTIX_GIT_CACHE_DIR = prevCacheDir;
+      await rm(workdir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test('an existing non-git cache directory is removed and recloned', async () => {
+    const workdir = await mkdtemp(join(tmpdir(), 'mirror-corrupt-'));
+    const cacheDir = join(workdir, 'cache');
+    const upstream = join(workdir, 'upstream');
+    await mkdir(upstream, { recursive: true });
+    await mkdir(cacheDir, { recursive: true });
+    await git(['init', '-b', 'main'], upstream);
+    await writeFile(join(upstream, 'README.md'), '# hi\n');
+    await git(['add', '.'], upstream);
+    await git(['commit', '-m', 'init'], upstream);
+
+    const project = {
+      projectId: 'eeeeeeee-0000-0000-0000-000000000005',
+      repoUrl: upstream,
+      defaultBranch: 'main',
+      manifestPath: '',
+      gitAuthToken: 'caller-supplied-token',
+    } as never;
+
+    const prevCacheDir = process.env.KORTIX_GIT_CACHE_DIR;
+    process.env.KORTIX_GIT_CACHE_DIR = cacheDir;
+    try {
+      const repoPath = repoCachePath(project);
+      await mkdir(repoPath, { recursive: true });
+      await writeFile(join(repoPath, 'not-a-repo.txt'), 'poisoned cache entry\n', {
+        flag: 'wx',
+        mode: 0o600,
+      });
+
+      const healedPath = await refreshMirror(project);
+
+      expect(healedPath).toBe(repoPath);
+      expect(existsSync(join(repoPath, 'HEAD'))).toBe(true);
+      expect(existsSync(join(repoPath, 'objects'))).toBe(true);
+      expect(existsSync(join(repoPath, 'not-a-repo.txt'))).toBe(false);
     } finally {
       process.env.KORTIX_GIT_CACHE_DIR = prevCacheDir;
       await rm(workdir, { recursive: true, force: true }).catch(() => {});

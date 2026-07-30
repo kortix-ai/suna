@@ -19,6 +19,7 @@ import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 
@@ -41,7 +42,7 @@ export default function Home() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   return (

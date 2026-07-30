@@ -1,17 +1,14 @@
 'use client';
 
-import { LinkSimpleIcon as Link2 } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
+import { CheckIcon as Check, LinkSimpleIcon as Link2 } from '@phosphor-icons/react';
+import { AnimatePresence, motion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { toast } from '@/lib/toast';
+import type { CreateSessionPublicShareInput } from '@kortix/sdk';
+import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { cn } from '@/lib/utils';
-import {
-  createSessionPublicShare,
-  type CreateSessionPublicShareInput,
-} from '@kortix/sdk/projects-client';
 
 export function PublicShareLinkButton({
   projectId,
@@ -20,6 +17,8 @@ export function PublicShareLinkButton({
   tooltip = 'Copy a public view-only link',
   title = 'Copy public link',
   className,
+  iconClassName = 'size-4',
+  tooltipSideOffset,
 }: {
   projectId?: string;
   sessionId?: string;
@@ -27,51 +26,52 @@ export function PublicShareLinkButton({
   tooltip?: string;
   title?: string;
   className?: string;
+  /** Icon size override. Defaults to this component's own 16px. */
+  iconClassName?: string;
+  /** Tooltip sideOffset override. Omit to keep `Hint`'s own default. */
+  tooltipSideOffset?: number;
 }) {
-  const share = useMutation({
-    mutationFn: async () => {
-      if (!projectId || !sessionId || !input) {
-        throw new Error('Nothing is selected to share');
-      }
-      const result = await createSessionPublicShare(projectId, sessionId, input);
-      if (!result.share.public_path) {
-        throw new Error('Share link was not returned');
-      }
-      const publicUrl = `${window.location.origin}${result.share.public_path}`;
-      await navigator.clipboard.writeText(publicUrl);
-      return publicUrl;
-    },
-    onSuccess: () => {
-      toast.success('Public link copied');
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Could not create public link');
-    },
-  });
-
-  const disabled = !projectId || !sessionId || !input || share.isPending;
+  const share = usePublicShareLink({ projectId, sessionId, input });
+  const disabled = !share.canShare || share.isPending;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn('h-8 w-8', className)}
-          onClick={() => share.mutate()}
-          disabled={disabled}
-          title={title}
-        >
-          {share.isPending ? (
-            <Loading className="h-4 w-4" />
-          ) : (
-            <Link2 className="h-4 w-4" />
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-56 text-xs">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
+    <Hint
+      label={share.copied ? 'Copied' : tooltip}
+      side="bottom"
+      sideOffset={tooltipSideOffset}
+      className="max-w-56 text-xs"
+    >
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn('size-8 active:scale-[0.96]', className)}
+        onClick={share.copyLink}
+        disabled={disabled}
+        title={title}
+      >
+        {share.isPending ? (
+          <Loading className={cn(iconClassName, 'shrink-0')} />
+        ) : (
+          <span className={cn('relative inline-flex items-center justify-center', iconClassName)}>
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={share.copied ? 'check' : 'link'}
+                initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                className="absolute inset-0 inline-flex items-center justify-center"
+              >
+                {share.copied ? (
+                  <Check className={cn(iconClassName, 'text-kortix-green')} />
+                ) : (
+                  <Link2 className={iconClassName} />
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        )}
+      </Button>
+    </Hint>
   );
 }

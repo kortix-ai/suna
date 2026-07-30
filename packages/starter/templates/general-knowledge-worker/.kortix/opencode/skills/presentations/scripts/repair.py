@@ -5,7 +5,7 @@ Fixes issues that cause PowerPoint to show "cannot read" or "repair" dialogs:
   - ZIP directory entries (violate Open Packaging Convention)
 
 Usage:
-    python skills/pptx/scripts/repair.py presentation.pptx
+    uv run skills/presentations/scripts/repair.py presentation.pptx
 """
 
 import re
@@ -70,7 +70,7 @@ def repair(filename):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python repair.py <pptx_file>", file=sys.stderr)
+        print("Usage: uv run repair.py <pptx_file>", file=sys.stderr)
         sys.exit(1)
     if not repair(sys.argv[1]):
         sys.exit(1)

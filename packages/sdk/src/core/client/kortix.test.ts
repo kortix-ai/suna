@@ -47,9 +47,76 @@ test('session(projectId, sessionId) binds both ids', async () => {
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
 });
 
+test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
+  await kortix.session('PID123', 'SID456').cost();
+
+  expect(calls).toHaveLength(1);
+  expect(last().url).toBe(
+    'http://test.local/usage/session-costs/SID456?project_id=PID123',
+  );
+  expect(last().method).toBe('GET');
+});
+
 test('project(id).session(sid) is the same session handle', async () => {
   await kortix.project('PA').session('SB').get();
   expect(last().url).toContain('/projects/PA/sessions/SB');
+});
+
+test('session(...).scope reads the authoritative session scope', async () => {
+  await kortix.session('PID123', 'SID456').scope();
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().method).toBe('GET');
+});
+
+test('session(...).rescope writes canonical connector authorization bindings', async () => {
+  await kortix.session('PID123', 'SID456').rescope({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+});
+
+test('project(id).sessions.list forwards manager inventory scope', async () => {
+  await kortix.project('PID123').sessions.list({ scope: 'project' });
+  expect(last().url).toContain('/projects/PID123/sessions?scope=project');
+});
+
+test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    const requestUrl = String(url);
+    calls.push({
+      url: requestUrl,
+      method: opts.method ?? 'GET',
+      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+    });
+    const body = requestUrl.endsWith('/warm/claim')
+      ? { session_id: 'SID456' }
+      : {
+          session: { session_id: 'SID456' },
+          reused: true,
+          workspace_refresh: { status: 'unchanged' },
+        };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await kortix.project('PID123').sessions.ensureWarm();
+  expect(last().url).toContain('/projects/PID123/sessions/warm');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' });
+  expect(last().url).toContain('/projects/PID123/sessions/warm/claim');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ session_id: 'SID456' });
 });
 
 test('top-level projects.list hits /projects', async () => {
@@ -156,7 +223,7 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('PUT');
 
   await kortix.project('PID123').gateway.routing.preview({
-    requestedModel: 'auto',
+    requestedModel: 'codex/gpt-5.6-sol',
     imageInput: false,
   });
   expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');
@@ -166,18 +233,15 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).channels covers slack, email and meet', async () => {
+test('project(id).channels covers slack, email and voice', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
 
   await kortix.project('PID123').channels.email.mode();
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
 
-  await kortix.project('PID123').channels.meet.voices();
-  expect(last().url).toContain('/projects/PID123/channels/meet/voices');
-
-  await kortix.project('PID123').channels.meet.setVoice('voice-1');
-  expect(last().url).toContain('/projects/PID123/channels/meet/voice');
+  await kortix.project('PID123').channels.voice.setBotName('Kortix');
+  expect(last().url).toContain('/projects/PID123/channels/meet/name');
   expect(last().method).toBe('PUT');
 });
 
@@ -329,6 +393,11 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.setCredentialMode('slack-1', 'shared');
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential-mode');
 
+  await kortix.project('PID123').connectors.setAuthorizationStrategy('slack-1', 'user');
+  expect(last().url).toContain(
+    '/executor/projects/PID123/connectors/slack-1/authorization-strategy',
+  );
+
   await kortix.project('PID123').connectors.setSensitive('slack-1', true);
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sensitive');
 
@@ -356,6 +425,21 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
   expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect/finalize');
   expect(last().method).toBe('POST');
+});
+
+test('project(id).connectors exposes canonical authorizations with a profiles alias', async () => {
+  await kortix.project('PID123').connectors.authorizations.list();
+  expect(last().url).toContain('/projects/PID123/connector-profiles');
+
+  await kortix.project('PID123').connectors.authorizations.reconcile({
+    connector_alias: 'gmail',
+    owner_type: 'project',
+    label: 'Project Gmail',
+  });
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.profiles.list();
+  expect(last().url).toContain('/projects/PID123/connector-profiles');
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
@@ -526,12 +610,6 @@ test('project(id).channels.slack covers file download + upload proxies', async (
   expect(last().method).toBe('POST');
 });
 
-test('project(id).channels.meet.speak posts bot id + text', async () => {
-  await kortix.project('PID123').channels.meet.speak('bot-1', 'hello there');
-  expect(last().url).toContain('/projects/PID123/channels/meet/speak');
-  expect(last().method).toBe('POST');
-});
-
 test('project(id).gateway.playground posts prompt + models', async () => {
   await kortix.project('PID123').gateway.playground('Say hi', ['gpt-4o', 'claude-3']);
   expect(last().url).toContain('/projects/PID123/gateway/playground');
@@ -586,6 +664,28 @@ test('kortix.billing.credits covers purchase + auto-topup get/configure', async 
   await kortix.billing.credits.configureAutoTopup({ enabled: true, threshold: 5, amount: 20 });
   expect(last().url).toContain('/billing/auto-topup/configure');
   expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.sessionCosts covers paginated list and detail reads', async () => {
+  await kortix.billing.sessionCosts.list({
+    accountId: 'ACC1',
+    projectId: 'PID1',
+    limit: 20,
+    offset: 0,
+  });
+  expect(last().url).toBe(
+    'http://test.local/usage/session-costs?account_id=ACC1&project_id=PID1&limit=20&offset=0',
+  );
+  expect(last().method).toBe('GET');
+
+  await kortix.billing.sessionCosts.get('SID/1', {
+    accountId: 'ACC1',
+    projectId: 'PID1',
+  });
+  expect(last().url).toBe(
+    'http://test.local/usage/session-costs/SID%2F1?account_id=ACC1&project_id=PID1',
+  );
+  expect(last().method).toBe('GET');
 });
 
 test('kortix.marketplace covers public catalog browse + authed sources CRUD (top-level, not project-scoped)', async () => {
@@ -690,6 +790,194 @@ test('two session handles resolve independent runtimes: A.send never crosses to 
   const aAbortCall = calls.find((c) => c.url.includes('/abort'));
   expect(aAbortCall?.url).toContain('/p/sb-A/8000');
   expect(aAbortCall?.url).not.toContain('sb-B');
+});
+
+test('send applies persisted session defaults when the OpenCode pin came from a snapshot', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-INHERITED/start')) {
+      return jsonResponse(sessionStartPayload('sb-inherited', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-INHERITED')) {
+      return jsonResponse({
+        session_id: 'SESS-INHERITED',
+        agent_name: 'kortix',
+        metadata: { opencode_model: 'kortix/glm-5.2' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
+
+  const promptCall = calls.find((call) => call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(promptCall?.body).toMatchObject({
+    agent: 'kortix',
+    model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    parts: [{ type: 'text', text: 'hello from inherited state' }],
+  });
+});
+
+test('changeModel invalidates the persisted default before the next send', async () => {
+  let persistedModel = 'kortix/glm-5.2';
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    const body = bodyText ? JSON.parse(bodyText) : undefined;
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body,
+    });
+    if (url.includes('/sessions/SESS-MODEL-CHANGE/start')) {
+      return jsonResponse(sessionStartPayload('sb-model-change', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
+      persistedModel = body.opencode_model;
+      return jsonResponse({
+        opencode_model: persistedModel,
+        applied_live: true,
+      });
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE')) {
+      return jsonResponse({
+        session_id: 'SESS-MODEL-CHANGE',
+        agent_name: 'kortix',
+        metadata: { opencode_model: persistedModel },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-MODEL-CHANGE');
+  await handle.send('before change');
+  await handle.changeModel('kortix/gpt-5.6-mini');
+  await handle.send('after change');
+
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts.map((call) => call.body)).toEqual([
+    expect.objectContaining({
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    }),
+    expect.objectContaining({
+      model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
+    }),
+  ]);
+});
+
+test('per-call and handle prompt choices override persisted session defaults', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-OVERRIDES/start')) {
+      return jsonResponse(sessionStartPayload('sb-overrides', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES')) {
+      return jsonResponse({
+        session_id: 'SESS-OVERRIDES',
+        agent_name: 'persisted-agent',
+        metadata: { opencode_model: 'persisted/model' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-OVERRIDES');
+  await handle.send('persisted');
+  handle.setModel({ providerID: 'sticky', modelID: 'model' });
+  handle.setAgent('sticky-agent');
+  await handle.send('sticky');
+  await handle.send('per-call', {
+    model: { providerID: 'per-call', modelID: 'model' },
+    agent: 'per-call-agent',
+  });
+
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts.map((call) => call.body)).toEqual([
+    expect.objectContaining({
+      model: { providerID: 'persisted', modelID: 'model' },
+      agent: 'persisted-agent',
+    }),
+    expect.objectContaining({
+      model: { providerID: 'sticky', modelID: 'model' },
+      agent: 'sticky-agent',
+    }),
+    expect.objectContaining({
+      model: { providerID: 'per-call', modelID: 'model' },
+      agent: 'per-call-agent',
+    }),
+  ]);
+  expect(calls.filter((call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET')).toHaveLength(1);
+});
+
+test('a failed persisted-default read is retried by the next send', async () => {
+  let sessionReads = 0;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-DEFAULT-RETRY/start')) {
+      return jsonResponse(sessionStartPayload('sb-default-retry', 'shared-snapshot-pin'));
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY')) {
+      sessionReads += 1;
+      if (sessionReads <= 3) throw new TypeError('transient session read failure');
+      return jsonResponse({
+        session_id: 'SESS-DEFAULT-RETRY',
+        agent_name: 'persisted-agent',
+        metadata: { opencode_model: 'persisted/model' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-DEFAULT-RETRY');
+  await expect(handle.send('first')).rejects.toThrow('transient session read failure');
+  await handle.send('second');
+
+  expect(sessionReads).toBe(4);
+  const prompts = calls.filter((call) => call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]?.body).toMatchObject({
+    model: { providerID: 'persisted', modelID: 'model' },
+    agent: 'persisted-agent',
+    parts: [{ type: 'text', text: 'second' }],
+  });
 });
 
 test('previewUrl uses the handle\'s own sandbox id, not whichever session resolved last', async () => {
@@ -798,6 +1086,47 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
   const promptCall = calls.find((c) => c.url.includes('/message'));
   expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
   expect(startCount).toBe(2);
+});
+
+test('session rewind and restore stay bound to the same canonical OpenCode session', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-REWIND/start')) {
+      return jsonResponse(sessionStartPayload('sb-rewind', 'ocs-rewind'));
+    }
+    return jsonResponse({ id: 'ocs-rewind' });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-REWIND');
+
+  await handle.rewind('msg_2');
+  await handle.restoreRewind();
+
+  const historyCalls = calls.filter((call) => call.url.includes('/session/ocs-rewind/revert'));
+  expect(historyCalls).toEqual([
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/revert'),
+      method: 'POST',
+      body: { messageID: 'msg_2' },
+    }),
+  ]);
+  expect(calls).toContainEqual(
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/unrevert'),
+      method: 'POST',
+    }),
+  );
 });
 
 // ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent
@@ -952,4 +1281,120 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   await s.files.mkdir('/workspace/new-dir');
   const mkdirCall = calls.find((c) => c.url.includes('/file/mkdir'));
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
+});
+
+// ── ensureReady() polls a slow cold-start to ready instead of throwing on the
+// first non-ready check (a backend waiting to send its first turn must not
+// give up while the sandbox is still provisioning/starting) ─────────────────
+test('ensureReady() polls through provisioning/starting until the runtime reports ready', async () => {
+  const stages = ['provisioning', 'starting', 'ready'] as const;
+  let polls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const stage = stages[Math.min(polls, stages.length - 1)];
+      polls += 1;
+      const ready = stage === 'ready';
+      return jsonResponse({
+        stage,
+        agent_name: 'default',
+        retriable: !ready,
+        sandbox: ready ? { external_id: 'sb-poll' } : null,
+        opencode_session_id: ready ? 'ocs-poll' : null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
+  expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.sandboxId).toBe('sb-poll');
+  expect(polls).toBeGreaterThanOrEqual(3);
+});
+
+test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes ready before the deadline', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      return jsonResponse({
+        stage: 'provisioning',
+        agent_name: 'default',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await expect(
+    k.session('PROJ', 'SESS-TIMEOUT').ensureReady({ readyTimeoutMs: 20 }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+});
+
+test('ensureReady() treats a transient null /start result as retriable and resolves once ready', async () => {
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      n += 1;
+      // startProjectSession returns null (not throws) for a 5xx/408/429/network
+      // blip AND the create→start 404 race — ensureReady only ever sees `null`,
+      // not the cause, so this one 503 stands in for all of them. It must poll
+      // through the null, not give up.
+      if (n <= 1) return jsonResponse({ error: 'gateway' }, 503);
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-transient' },
+        opencode_session_id: 'ocs-transient',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  // Small budget → the inter-poll pause (min(1000, remaining)) stays small.
+  const ready = await k.session('PROJ', 'SESS-TRANSIENT').ensureReady({ readyTimeoutMs: 300 });
+  expect(ready.opencodeSessionId).toBe('ocs-transient');
+  expect(n).toBeGreaterThanOrEqual(2);
+});
+
+test('ensureReady() caps each /start long-poll to the remaining deadline budget', async () => {
+  const waits: number[] = [];
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const m = url.match(/wait_ms=(\d+)/);
+      if (m) waits.push(Number(m[1]));
+      n += 1;
+      if (n === 1) {
+        return jsonResponse({
+          stage: 'provisioning',
+          agent_name: 'default',
+          retriable: true,
+          sandbox: null,
+          opencode_session_id: null,
+        });
+      }
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-cap' },
+        opencode_session_id: 'ocs-cap',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await k.session('PROJ', 'SESS-CAP').ensureReady({ readyTimeoutMs: 300 });
+  expect(waits.length).toBeGreaterThan(0);
+  // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
+  expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });

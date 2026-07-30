@@ -1,9 +1,12 @@
 'use server';
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
-import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
-import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  isInviteReturnUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
 import {
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
@@ -12,8 +15,14 @@ import {
 } from '@/lib/auth/unified-auth-flow';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
-import { headers } from 'next/headers';
+import {
+  checkAccessEmail,
+  fetchAccountStateWithToken,
+  recordPlatformLogout,
+  submitAccessRequest,
+} from '@kortix/sdk';
+import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -99,17 +108,14 @@ async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
     const requestHeaders = await headers();
     const forwardedFor = requestHeaders.get('x-forwarded-for') || requestHeaders.get('x-real-ip');
-    const res = await fetch(`${backendUrl}/access/check-email`, {
-      method: 'POST',
+    const body = await checkAccessEmail(email, {
+      backendUrl,
       headers: {
-        'Content-Type': 'application/json',
         ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
       },
-      body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(4_000),
     });
-    if (!res.ok) return 'unknown';
-    return resolveEmailFlowMode(await res.json());
+    return resolveEmailFlowMode(body);
   } catch {
     // Fail open — 'unknown' routes through the adaptive signup action, which
     // signs in existing users and registers new ones.
@@ -136,7 +142,7 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
  */
 export async function sendEmailCode(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const referralCode = formData.get('referralCode') as string | undefined;
@@ -155,6 +161,15 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   if (flowMode === 'sso') {
     return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
   }
+
+  // `flowMode === 'signup'` means the API just confirmed this address has no
+  // account, so resolve the return URL against the signup rule HERE — before it
+  // is baked into the email link. That link can be opened minutes or days
+  // later, long after the "created in the last 60s?" heuristic the callback
+  // uses stops being true, and a stale link is precisely how a fresh account
+  // ends up staring at a stranger's "Request access" page.
+  const returnUrl =
+    flowMode === 'signup' ? resolveNewAccountReturnUrl(requestedReturnUrl) : requestedReturnUrl;
 
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
@@ -200,22 +215,18 @@ export async function requestAccess(prevState: any, formData: FormData) {
 
   try {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-    const res = await fetch(`${backendUrl}/access/request-access`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await submitAccessRequest(
+      {
         email: email.trim().toLowerCase(),
         company: company?.trim() || undefined,
         useCase: useCase?.trim() || undefined,
-      }),
-    });
-    if (res.ok) {
-      return {
-        success: true,
-        message: "Your access request has been submitted. We'll be in touch!",
-      };
-    }
-    return { message: 'Failed to submit request. Please try again.' };
+      },
+      { backendUrl },
+    );
+    return {
+      success: true,
+      message: "Your access request has been submitted. We'll be in touch!",
+    };
   } catch {
     return { message: 'Failed to submit request. Please try again.' };
   }
@@ -320,8 +331,11 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
 
-  // Return success — let the client redirect after auth state hydrates.
-  const finalReturnUrl = returnUrl;
+  // Return success — let the client redirect after auth state hydrates. An
+  // account this young signed up moments ago (the sign-up form ends in a
+  // password sign-in), so it gets the signup destination rule, not a return URL
+  // pointing at a resource that predates it.
+  const finalReturnUrl = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
@@ -356,7 +370,11 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  // This is the sign-up form: unless the account turns out to already exist
+  // (`alreadyExists` below), the identity about to be created cannot own
+  // anything the visitor was looking at before they got here.
+  const newAccountReturnUrl = resolveNewAccountReturnUrl(requestedReturnUrl);
   const origin = formData.get('origin') as string;
   const mobileState = mobileCallbackState(formData);
 
@@ -385,7 +403,9 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
     origin,
-    returnUrl,
+    // The confirmation link outlives the "new user" heuristic downstream, so
+    // the signup rule has to be applied before it is minted, not after.
+    returnUrl: newAccountReturnUrl,
     email,
     mobileState,
   });
@@ -435,35 +455,14 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
-  const runtimeEnv = getServerPublicEnv();
-  const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  let redirectTo = returnUrl;
-
-  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
-  // dialog verbatim; don't override with a freshly-provisioned first project.
-  if (
-    billingEnabled &&
-    !alreadyExists &&
-    !isInviteReturnUrl(returnUrl) &&
-    signInData.session?.access_token
-  ) {
-    try {
-      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
-        /\/v1\/?$/,
-        '',
-      );
-      if (backendUrl) {
-        const projectPath = await resolveFirstProjectPathForNewUser({
-          backendUrl,
-          accessToken: signInData.session.access_token,
-          isNewUser: true,
-        });
-        if (projectPath) redirectTo = projectPath;
-      }
-    } catch {
-      // Fall back to the default return URL.
-    }
-  }
+  // A signup enters through the landing door, which paints instantly and
+  // provisions the first project behind the UI. This action used to await a
+  // managed git repo create + a full starter push here (up to 90s) before it
+  // could return a redirect, which blocked the sign-up form itself.
+  //
+  // `alreadyExists` means the address had an account and the password was
+  // right — that is a sign-IN, so the visitor's own return URL still stands.
+  const redirectTo = alreadyExists ? requestedReturnUrl : newAccountReturnUrl;
 
   return {
     success: true,
@@ -493,14 +492,9 @@ export async function signOut() {
     } = await supabase.auth.getSession();
     if (session?.access_token) {
       const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-      await fetch(`${backendUrl}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: '{}',
-        // Short timeout — logout should never hang on a slow backend.
+      await recordPlatformLogout({
+        backendUrl,
+        accessToken: session.access_token,
         signal: AbortSignal.timeout(3_000),
       });
     }
@@ -514,6 +508,11 @@ export async function signOut() {
   if (error) {
     return { message: error.message || 'Could not sign out' };
   }
+
+  // Forget the remembered project. Ownership binding already stops the next
+  // account from following it, but leaving one user's project id sitting in a
+  // shared browser after they sign out is needless.
+  (await cookies()).delete(LAST_PROJECT_COOKIE);
 
   return redirect('/');
 }
@@ -553,7 +552,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   // repo-first app surface starts from /projects; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  let finalDestination = returnUrl;
+  // `sendEmailCode` already applied this rule when the API could tell us the
+  // address was new. Re-applying it here covers the case where it could not
+  // (a fail-open 'unknown' flow mode), so a fresh account never rides a
+  // pre-signup return URL into a project it cannot open.
+  let finalDestination = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
 
   // Invited users (returnUrl → /invites/:id) must land on the accept/decline
   // dialog verbatim — skip the billing-aware landing (account page or a freshly
@@ -570,17 +573,12 @@ export async function verifyOtp(prevState: any, formData: FormData) {
           accessToken: data.session.access_token,
           timeoutMs: 5000,
         });
-        if (accountState) {
-          if (!accountHasAppAccess(accountState)) {
-            finalDestination = '/accounts';
-          } else {
-            const projectPath = await resolveFirstProjectPathForNewUser({
-              backendUrl,
-              accessToken: data.session.access_token,
-              isNewUser: true,
-            });
-            if (projectPath) finalDestination = projectPath;
-          }
+        // Entitlement is the only reason to override the destination here.
+        // First-project provisioning used to run on this path too and blocked
+        // the OTP form for the length of a managed git repo create plus a full
+        // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
+        if (accountState && !accountHasAppAccess(accountState)) {
+          finalDestination = '/accounts';
         }
       }
     } catch {

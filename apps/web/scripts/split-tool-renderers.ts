@@ -223,7 +223,7 @@ writeFileSync(
 import { Badge } from '@/components/ui/badge';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
-import { Check, ChevronRight, Clock, Loader2 } from 'lucide-react';
+import { CheckIcon as Check, CaretRightIcon as ChevronRight, ClockIcon as Clock, CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { stripAnsi } from '@/ui';
@@ -239,7 +239,7 @@ writeFileSync(
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { FileIcon, Folder } from 'lucide-react';
+import { FileIcon, FolderIcon as Folder } from '@phosphor-icons/react';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
 
@@ -259,7 +259,7 @@ import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import { useEffect, useMemo, useState } from 'react';
 
 ${slice(5075, 5144).replace(/^function /gm, 'export function ')}
@@ -273,7 +273,7 @@ writeFileSync(
 
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
-import { Plug } from 'lucide-react';
+import { PlugIcon as Plug } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
 ${slice(VALIDATION_ISSUE, TOOL_ERROR_EXPORT)
@@ -417,7 +417,7 @@ import {
 } from '@/features/session/tool/shared/error-and-executor';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeMessages } from '@kortix/sdk/react';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
@@ -436,7 +436,7 @@ import {
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import {
   getActivePanelSessionId,
   sessionPreviewTabId,
@@ -444,55 +444,55 @@ import {
 } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
-  AlertTriangle,
-  Ban,
-  BookOpen,
-  Brain,
-  CalendarClock,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  CircleAlert,
-  Clock,
-  Code2,
-  Cpu,
-  ExternalLink,
-  FileCode2,
+  WarningIcon as AlertTriangle,
+  ProhibitIcon as Ban,
+  BookOpenIcon as BookOpen,
+  BrainIcon as Brain,
+  CalendarDotsIcon as CalendarClock,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CircleIcon as Circle,
+  WarningCircleIcon as CircleAlert,
+  ClockIcon as Clock,
+  CodeIcon as Code2,
+  CpuIcon as Cpu,
+  ArrowSquareOutIcon as ExternalLink,
+  FileCodeIcon as FileCode2,
   FileIcon,
-  FileText,
-  Fingerprint,
-  Folder,
-  Glasses,
-  Globe,
-  Hash,
-  Image as ImageIcon,
-  Layers,
-  ListTodo,
-  ListTree,
-  Loader2,
-  Maximize2,
-  MessageCircle,
-  Minimize2,
-  MonitorPlay,
-  Music,
-  PanelRight,
-  Plug,
-  Plus,
-  Presentation,
-  RefreshCw,
-  Scissors,
-  Search,
-  SquareKanban,
-  StopCircle,
-  Tags,
-  Terminal,
-  Trash2,
-  Type,
-  Video,
-  X,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  FingerprintIcon as Fingerprint,
+  FolderIcon as Folder,
+  EyeglassesIcon as Glasses,
+  GlobeIcon as Globe,
+  HashIcon as Hash,
+  ImageIcon,
+  StackIcon as Layers,
+  ListChecksIcon as ListTodo,
+  TreeStructureIcon as ListTree,
+  CircleNotchIcon as Loader2,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatCircleIcon as MessageCircle,
+  ArrowsInSimpleIcon as Minimize2,
+  MonitorPlayIcon as MonitorPlay,
+  MusicNoteIcon as Music,
+  SidebarSimpleIcon as PanelRight,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  PresentationIcon as Presentation,
+  ArrowsClockwiseIcon as RefreshCw,
+  ScissorsIcon as Scissors,
+  MagnifyingGlassIcon as Search,
+  KanbanIcon as SquareKanban,
+  StopCircleIcon as StopCircle,
+  TagIcon as Tags,
+  TerminalIcon as Terminal,
+  TrashIcon as Trash2,
+  TextTIcon as Type,
+  VideoCameraIcon as Video,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import React, {
   type ComponentType,
@@ -549,7 +549,7 @@ import {
   normalizeToolOutput,
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
-import { Ban, ChevronRight, CircleAlert } from 'lucide-react';
+import { ProhibitIcon as Ban, CaretRightIcon as ChevronRight, WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -569,7 +569,7 @@ import {
   partOutput,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { Cpu } from 'lucide-react';
+import { CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 ${slice(PARSE_TOOL_NAME, PERMISSION_PROMPT)}
@@ -599,7 +599,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { Button } from '@/components/ui/button';
 import { PERMISSION_LABELS, type PermissionRequest, type QuestionRequest, type ToolPart } from '@/ui';
-import { CircleAlert } from 'lucide-react';
+import { WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';

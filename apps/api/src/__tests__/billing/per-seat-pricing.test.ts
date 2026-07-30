@@ -3,14 +3,13 @@
 
 import { describe, test, expect } from 'bun:test';
 import {
+  CREDITS_PER_DOLLAR,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
   COMPUTE_CPU_PRICE_PER_CORE_SECOND,
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
-  COMPUTE_PRICE_MARKUP,
-  DAYTONA_DISCOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT,
   AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT,
   DEFAULT_LLM_PRICE_MARKUP,
@@ -129,23 +128,33 @@ describe('Compute cost calculation', () => {
     expect(calculateComputeCost(spec, -5)).toBe(0);
   });
 
-  test('cost matches reserved-spec × time × markup formula', () => {
+  test('cost matches 1.2× the published Daytona resource rates', () => {
     const seconds = 3600; // one hour
     const expected =
       (spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * seconds +
         spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * seconds +
-        spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds) *
-      DAYTONA_DISCOUNT *
-      COMPUTE_PRICE_MARKUP;
+        spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds);
 
     const actual = calculateComputeCost(spec, seconds);
     expect(Math.abs(actual - expected)).toBeLessThan(1e-9);
   });
 
-  test('hourly cost for a 2vCPU/4GB/20GB sandbox is roughly $0.10–0.15', () => {
+  test('hourly cost for a 2vCPU/4GB/20GB sandbox is exactly $0.201312', () => {
     const hourCost = calculateComputeCost(spec, 3600);
-    expect(hourCost).toBeGreaterThan(0.10);
-    expect(hourCost).toBeLessThan(0.15);
+    expect(hourCost).toBeCloseTo(0.201312, 8);
+  });
+
+  test('2,500 credits covers about 125 hours of default compute', () => {
+    const creditValueUsd = 2500 / CREDITS_PER_DOLLAR;
+    const computeHours = creditValueUsd / calculateComputeCost(spec, 3600);
+    expect(computeHours).toBeCloseTo(124.1853, 4);
+  });
+
+  test('all hosted providers use the same customer compute price', () => {
+    const daytona = calculateComputeCost(spec, 3600, 'daytona');
+    expect(calculateComputeCost(spec, 3600, 'platinum')).toBeCloseTo(daytona, 8);
+    expect(calculateComputeCost(spec, 3600, 'e2b')).toBeCloseTo(daytona, 8);
+    expect(calculateComputeCost(spec, 3600, 'local-docker')).toBe(0);
   });
 
   test('cost scales linearly with both spec and time', () => {
@@ -160,13 +169,14 @@ describe('Compute cost calculation', () => {
     expect(doubleSpec / baseline).toBeCloseTo(2, 5);
   });
 
-  test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
+  test('monthly heavy usage exceeds the typical compute budget', () => {
     // 8h × 22 days of compute exceeds the $15 typical compute budget per seat,
     // funded from the fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);
     expect(monthlyCost).toBeGreaterThan(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD);
     expect(monthlyCost).toBeLessThan(PER_SEAT_PRICE_USD);
+    expect(monthlyCost).toBeCloseTo(35.430912, 5);
   });
 });
 

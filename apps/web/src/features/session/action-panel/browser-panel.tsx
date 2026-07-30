@@ -1,5 +1,7 @@
 'use client';
 
+import { SessionSharesModal } from '@/components/projects/session-shares-modal';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,9 +13,10 @@ import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
@@ -29,10 +32,7 @@ import {
 } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useTabStore } from '@/stores/tab-store';
-import {
-  createSessionPublicShare,
-  type CreateSessionPublicShareInput,
-} from '@kortix/sdk/projects-client';
+import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
@@ -42,11 +42,12 @@ import {
   LinkSimpleIcon as Link2,
   DotsThreeIcon as MoreHorizontal,
   ArrowsClockwiseIcon as RefreshCw,
+  GearSixIcon as Settings2,
   ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface PreviewTabContentProps {
   tabId: string;
@@ -464,29 +465,16 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   const hasPreview = !!previewUrl;
   const showRecents = mounted && recents.length > 0;
 
-  // Copy-public-link action, surfaced from the "⋯" overflow menu. Same flow
-  // as PublicShareLinkButton: create the share, copy the URL, toast the result.
-  const shareLink = useMutation({
-    mutationFn: async () => {
-      if (!projectId || !projectSessionId || !shareInput) {
-        throw new Error('Nothing is selected to share');
-      }
-      const result = await createSessionPublicShare(projectId, projectSessionId, shareInput);
-      if (!result.share.public_path) {
-        throw new Error('Share link was not returned');
-      }
-      const publicUrl = `${window.location.origin}${result.share.public_path}`;
-      await navigator.clipboard.writeText(publicUrl);
-      return publicUrl;
-    },
-    onSuccess: () => {
-      successToast('Public link copied');
-    },
-    onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Could not create public link');
-    },
+  // Copy-public-link action, surfaced from the "⋯" overflow menu.
+  const shareLink = usePublicShareLink({
+    projectId,
+    sessionId: projectSessionId,
+    input: shareInput,
   });
-  const canShare = hasPreview && !!projectId && !!projectSessionId && !!shareInput;
+  const canShare = hasPreview && shareLink.canShare;
+
+  const [sharesOpen, setSharesOpen] = useState(false);
+  const { liveShares } = useSessionPublicShares(projectId, projectSessionId);
 
   return (
     <div className="bg-background flex h-full flex-col">
@@ -594,15 +582,38 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               )}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => shareLink.mutate()}
+              onClick={shareLink.copyLink}
               disabled={!canShare || shareLink.isPending}
             >
               <Link2 />
               Copy public link
             </DropdownMenuItem>
+            {/* The only route to revoking a link. Enabled whenever the session
+                has project context — unlike Copy link it does not need a live
+                preview, since the links you want to revoke usually outlive the
+                app that produced them. */}
+            <DropdownMenuItem
+              onClick={() => setSharesOpen(true)}
+              disabled={!projectId || !projectSessionId}
+            >
+              <Settings2 />
+              Manage public links
+              {liveShares.length > 0 && (
+                <Badge variant="secondary" size="xs" className="ml-auto">
+                  {liveShares.length}
+                </Badge>
+              )}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <SessionSharesModal
+        projectId={projectId}
+        sessionId={projectSessionId}
+        open={sharesOpen}
+        onOpenChange={setSharesOpen}
+      />
 
       {hasPreview ? (
         /* Iframe container */

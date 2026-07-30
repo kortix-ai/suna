@@ -13,7 +13,7 @@
 import {
   CopyIcon as Copy,
   LockIcon as Lock,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
   ShieldIcon as Shield,
@@ -384,7 +384,7 @@ function RoleRow({
                       disabled={!rbacEnabled}
                       aria-label={`Edit role ${role.name}`}
                     >
-                      <Pencil className="size-3.5" />
+                      <PencilSimpleIcon className="size-3.5" />
                     </Button>
                   </span>
                 </Hint>

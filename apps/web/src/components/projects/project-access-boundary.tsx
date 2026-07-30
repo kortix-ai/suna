@@ -13,7 +13,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,10 +31,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
+import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { setAdminBypass } from '@/lib/api-client';
+import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
-import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
 
 interface ProjectAccessBoundaryProps {
   projectId: string;
@@ -51,8 +51,8 @@ function errorStatus(error: unknown): number | undefined {
 export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const query = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId, { showErrors: false }),
+    queryKey: ['project-access-boundary', projectId],
+    queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
     retry: false,
   });
@@ -135,12 +135,24 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [bypassError, setBypassError] = useState<string | null>(null);
 
+  // Stop this screen from becoming the user's permanent landing page. If the
+  // remembered project is one they cannot read, every `/` hit and every sign-in
+  // would redirect straight back here. The shell's self-heal does not fire for
+  // this case: a private project is a legitimate 403 surface, not a failed
+  // fetch. Forget it and let the landing door resolve a project they can open.
+  useEffect(() => {
+    if (readLastProjectId(user?.id) !== projectId) return;
+    clearLastProjectId();
+  }, [projectId, user?.id]);
+
   const requestMutation = useMutation({
     mutationFn: () => requestProjectAccess(projectId, message),
     onMutate: () => setInlineError(null),
     onSuccess: (result) => {
       if (result.status === 'already_has_access') {
-        void queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+        void queryClient.invalidateQueries({
+          queryKey: ['project-access-boundary', projectId],
+        });
         return;
       }
       setSent(true);
@@ -151,7 +163,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   });
 
   // Platform-admin escape hatch: flips the client-wide admin-bypass header
-  // on, then re-fetches this same ['project-detail', projectId] query so the
+  // on, then re-fetches this same ['project-access-boundary', projectId] query so the
   // boundary above (which shares this query cache) picks up the result and
   // renders the actual project. Read-only server-side (see
   // apps/api/src/projects/lib/access.ts) and audit-logged against the
@@ -160,8 +172,8 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     mutationFn: async () => {
       setAdminBypass(true);
       return queryClient.fetchQuery({
-        queryKey: ['project-detail', projectId],
-        queryFn: () => getProjectDetail(projectId, { showErrors: false }),
+        queryKey: ['project-access-boundary', projectId],
+        queryFn: () => getProject(projectId, { showErrors: false }),
       });
     },
     onMutate: () => setBypassError(null),

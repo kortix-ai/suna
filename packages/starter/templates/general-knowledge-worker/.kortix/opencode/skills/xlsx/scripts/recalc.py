@@ -3,7 +3,7 @@ Recalculate all formulas in an Excel file via LibreOffice headless, then
 scan for residual errors (#REF!, #DIV/0!, etc.).
 
 Usage:
-    python recalc.py <excel_file> [timeout_seconds]
+    uv run --with openpyxl recalc.py <excel_file> [timeout_seconds]
 """
 
 import json
@@ -178,7 +178,7 @@ def recalc(filename: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python recalc.py <excel_file> [timeout_seconds]")
+        print("Usage: uv run --with openpyxl recalc.py <excel_file> [timeout_seconds]")
         sys.exit(1)
 
     filename = sys.argv[1]

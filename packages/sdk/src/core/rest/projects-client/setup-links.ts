@@ -70,3 +70,47 @@ export async function requestProjectConnector(
     'Failed to mint connect link',
   );
 }
+
+/** What a human is being asked to approve, behind an approval link. */
+export interface ApprovalLinkDetails {
+  kind: 'approval';
+  project_id: string;
+  project_name: string;
+  execution_id: string;
+  session_id: string | null;
+  /** Fully-qualified tool path, e.g. `gmail.send_email`. */
+  action: string;
+  connector: string | null;
+  /** read | write | destructive | null */
+  risk: string | null;
+  status: string;
+  /** False once resolved (or expired) — render the outcome, not buttons. */
+  pending: boolean;
+  /**
+   * REDACTED arguments the call would run with — the answer to "where is this
+   * actually going?". Credential-shaped fields are replaced server-side and
+   * never leave the API.
+   */
+  args_preview: Record<string, unknown> | null;
+  /** One-line rendering of the fields that identify the target. */
+  args_summary: string | null;
+  policy_source: string | null;
+  requested_at: string;
+  resolved_at: string | null;
+  expires_at: string;
+}
+
+/**
+ * Read a pending approval by its link token.
+ *
+ * REQUIRES A SIGNED-IN, AUTHORISED ACCOUNT: unlike the secret/connect links
+ * above, the token is only a pointer to which decision is being asked for — it
+ * carries no authority to make it. 401 = sign in; 403 = signed in but not a
+ * manager/launcher on that project.
+ */
+export async function getApprovalLink(token: string): Promise<ApprovalLinkDetails> {
+  return unwrap(
+    await backendApi.get<ApprovalLinkDetails>(`/approval-links/${token}`),
+    'Failed to load approval',
+  );
+}

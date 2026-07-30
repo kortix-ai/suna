@@ -38,6 +38,16 @@ export interface ApiResponse<T = any> {
   success: boolean;
 }
 
+/**
+ * Stable error code the platform API returns (HTTP 501) when an OPTIONAL
+ * capability isn't wired on the current deployment — e.g. connector
+ * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
+ * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
+ * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
+ * `apps/api/src/executor/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ */
+export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -60,17 +70,12 @@ const isIdempotentMethod = (method?: string): boolean => {
   return m === 'GET' || m === 'HEAD';
 };
 
-/**
- * Bounded retry count for transient gateway (502/503/504) responses on
- * idempotent reads. Two retries (3 total attempts) with 250ms→500ms backoff
- * absorbs a single transient ALB/proxy blip — the signature of Better Stack
- * frontend pattern `994987…` (`ApiError: HTTP 502: ` on the background
- * `useSessionAudit` poll) — without surfacing it to `onError` / Sentry.
- * Persistent gateway failures exhaust the loop and surface normally, so real
- * outages still report. Mirrors the established retry pattern in
- * `apps/api/src/git-proxy/upstream.ts` (`fetchUpstreamBuffered`).
- */
-const TRANSIENT_GATEWAY_RETRIES = 2;
+const TRANSIENT_READ_RETRIES = 2;
+
+const isAbortError = (error: unknown): boolean =>
+  (error as { name?: string } | null)?.name === 'AbortError' ||
+  (error as { name?: string } | null)?.name === 'AbortSignal' ||
+  (error instanceof Error && error.message.includes('aborted'));
 
 // Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
 // persisted — so it resets on reload and can't linger silently. When on, every
@@ -149,61 +154,55 @@ async function makeRequest<T = any>(
     // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
     // The backend handles token refresh via Supabase directly.
 
-    let response = await fetch(url, {
-      ...fetchOptions,
-      headers,
-      signal: controller.signal,
-      // API auth is bearer-token based. Don't send browser cookies to the
-      // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
-      // before the request reaches the API.
-      credentials: fetchOptions.credentials ?? 'omit',
-    });
+    const retryableRead = isIdempotentMethod(fetchOptions.method);
+    const maxAttempts = retryableRead ? TRANSIENT_READ_RETRIES + 1 : 1;
+    let response!: Response;
 
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-    }
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await sleep(250 * 2 ** (attempt - 1));
+      }
 
-    // Absorb a single transient gateway blip (502/503/504) on idempotent reads
-    // instead of surfacing it to `onError` / Sentry on the first response. The
-    // next attempt usually succeeds; persistent gateway failures exhaust the
-    // loop and fall through to the normal error path below (so real outages
-    // still report). Non-idempotent methods (POST/PUT/PATCH/DELETE) and
-    // non-transient statuses are never retried.
-    if (
-      !response.ok &&
-      isIdempotentMethod(fetchOptions.method) &&
-      isTransientGatewayStatus(response.status)
-    ) {
-      for (let attempt = 0; attempt < TRANSIENT_GATEWAY_RETRIES; attempt++) {
-        // Drain + discard the transient error body before re-fetching.
-        try {
-          await response.arrayBuffer();
-        } catch {
-        }
-        await sleep(250 * 2 ** attempt);
-        const retryController = new AbortController();
-        let retryTimeoutId: NodeJS.Timeout | null = setTimeout(() => {
-          retryController.abort();
+      const attemptController = attempt === 0 ? controller : new AbortController();
+      if (attempt > 0) {
+        timeoutId = setTimeout(() => {
+          didTimeout = true;
+          attemptController.abort();
         }, timeout);
-        try {
-          response = await fetch(url, {
-            ...fetchOptions,
-            headers,
-            signal: retryController.signal,
-            credentials: fetchOptions.credentials ?? 'omit',
-          });
-        } catch {
-          // Network error / abort on the retry — give up retrying and surface
-          // the last (transient) response through the normal error path below.
-          break;
-        } finally {
-          if (retryTimeoutId) {
-            clearTimeout(retryTimeoutId);
-            retryTimeoutId = null;
-          }
+      }
+
+      try {
+        response = await fetch(url, {
+          ...fetchOptions,
+          headers,
+          signal: attemptController.signal,
+          credentials: fetchOptions.credentials ?? 'omit',
+        });
+      } catch (error) {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
         }
-        if (response.ok || !isTransientGatewayStatus(response.status)) break;
+        if (isAbortError(error) || attempt === maxAttempts - 1) {
+          throw error;
+        }
+        continue;
+      }
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      const retryableResponse =
+        retryableRead && isTransientGatewayStatus(response.status) && attempt < maxAttempts - 1;
+      if (!retryableResponse) {
+        break;
+      }
+
+      try {
+        await response.arrayBuffer();
+      } catch {
       }
     }
 
@@ -265,7 +264,26 @@ async function makeRequest<T = any>(
         });
       }
 
-      if (showErrors) {
+      // Expected "feature not enabled on this deployment" state — the backend
+      // returns a TYPED 501 with `code: 'feature_not_supported'` (see the
+      // executor router's `featureNotSupportedResponse`) when an OPTIONAL
+      // capability isn't wired on this deployment (e.g. connector
+      // auth-discovery, Pipedream). The dashboard already surfaces these as a
+      // graceful "unavailable" UI state (e.g. the connector-auth-discovery
+      // InfoBanner), so they must NEVER page Better Stack — a bare 501
+      // "not supported" previously leaked as an opaque `ApiError` in Sentry
+      // (pattern `1f3c4d96…`). Treat it as SILENT here: skip the global
+      // `onError` (Sentry) capture, but still return the `ApiError` so callers
+      // (React Query `onError` / the UI) can branch on `.code ===
+      // 'feature_not_supported'`. A genuine 501 server bug carries no such
+      // code and still reports normally. Mirrors the expected-state
+      // classification used for billing-gate 402s and the no-compaction-model
+      // sentinel (PR #5183): a typed code distinguishes "deployment doesn't
+      // offer this" from a real defect.
+      const isFeatureNotSupported =
+        response.status === 501 && errorData?.code === FEATURE_NOT_SUPPORTED_CODE;
+
+      if (showErrors && !isFeatureNotSupported) {
         platformConfig().onError?.(error, errorContext);
       }
 
@@ -299,18 +317,16 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const isAbortError = error?.name === 'AbortError' ||
-                         error?.name === 'AbortSignal' ||
-                         (error instanceof Error && error.message.includes('aborted'));
+    const requestWasAborted = isAbortError(error);
 
     // If it was aborted, mark it so we don't try to abort again
-    if (isAbortError) {
+    if (requestWasAborted) {
       isAborted = true;
     }
 
     let apiError: ApiError;
 
-    if (isAbortError) {
+    if (requestWasAborted) {
       // An external abort (Next.js client navigation, tab close, React Query
       // cancelling an in-flight request, a dropped connection) is NOT a
       // timeout — surfacing it as one produced the mysterious, URL-less

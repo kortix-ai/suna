@@ -37,7 +37,7 @@ import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
-import type { ReviewVerdict } from '@kortix/sdk/projects-client';
+import type { ReviewVerdict } from '@kortix/sdk';
 import {
   CheckCircleIcon as CheckCircleSolid,
   CaretDownIcon as ChevronDown,
@@ -320,6 +320,8 @@ export function ReviewCenter({
   onAct,
   onBulkAct,
   onOpenSession,
+  onRecoverChange,
+  recoveringCrId,
   onRefresh,
   isLoading,
   isFetching,
@@ -334,6 +336,9 @@ export function ReviewCenter({
   onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
+  /** Connected mode: start a recovery session for a conflicted change. */
+  onRecoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
+  recoveringCrId?: string | null;
   /** Connected mode: force an immediate poll instead of waiting for the
    *  interval — the "Live" indicator doubles as this refresh affordance. */
   onRefresh?: () => void;
@@ -528,6 +533,8 @@ export function ReviewCenter({
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
     approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
     openSession: onOpenSession,
+    recoverChange: onRecoverChange,
+    recoveringCrId,
     connected,
     pendingId,
     pendingDecision,

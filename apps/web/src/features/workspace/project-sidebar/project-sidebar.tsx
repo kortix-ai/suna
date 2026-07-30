@@ -12,7 +12,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -47,14 +46,13 @@ import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { listProjectSessions } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
   DotsThreeIcon as HiDotsHorizontal,
   ListIcon as List,
   EnvelopeIcon as Mail,
   ChatsIcon as MessagesSquare,
-  SidebarSimpleIcon as PanelLeft,
   UsersIcon as UsersSolid,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
@@ -62,6 +60,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react';
+import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -79,7 +78,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, toggleSidebar, peek, holdPeek } = useSidebar();
+  const { state, setOpenMobile, holdPeek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -177,20 +176,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <div className="w-full min-w-0">
             <ProjectSwitcher variant="sidebar" />
           </div>
-          {!peek && (
-            <Hint label="Collapse sidebar" side="bottom">
-              <Button
-                type="button"
-                aria-label="Collapse sidebar"
-                variant="ghost"
-                size="icon"
-                onClick={toggleSidebar}
-                className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-              >
-                <PanelLeft className="cn-rtl-flip size-4" />
-              </Button>
-            </Hint>
-          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
@@ -219,12 +204,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {/* Sessions are always expanded — no collapse toggle. The header
-                label only carries the active filter; the ⋯ button opens the
-                filter menu. */}
+                label opens the full sessions page and carries the active
+                filter; the ⋯ button opens the filter menu. */}
             <div className="flex min-h-0 flex-1 flex-col space-y-2">
               <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
-                  <div className="flex min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
+                  <Link
+                    href={`/projects/${projectId}/sessions`}
+                    className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
+                  >
                     <span>Sessions</span>
                     {sessionFilter !== 'all' && (
                       <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
@@ -234,7 +222,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                         {activeFilterOption.label}
                       </span>
                     )}
-                  </div>
+                  </Link>
                   <DropdownMenu onOpenChange={holdPeek}>
                     <DropdownMenuContent align="start" className="w-44 p-1">
                       {SESSION_FILTER_OPTIONS.map((option) => {
@@ -284,13 +272,20 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
               <ProjectManifestUpgradeAlert projectId={projectId} />
+              {/* Billing sits ABOVE the permanent nav on purpose. This group is
+                  bottom-anchored (mt-auto), so it grows upward as items appear:
+                  anything below a late-arriving item gets shoved up the moment
+                  billing state lands. Keeping the async items on top means
+                  Files/Customize/Connect never move — only the session list
+                  above them gives up the space. */}
+              <SidebarBalanceWarning accountId={accountId} />
+              <SidebarUpgradeButton accountId={accountId} />
               {/* Files used to live on the collapsed icon rail; with the rail
                   gone (offcanvas + hover flyout) it needs a docked entry. Above
                   Customize — files aren't gated behind customize access. */}
               <ProjectFilesNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
-              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>

@@ -5,7 +5,7 @@ To edit a .docx file, unpack it into raw XML, apply your changes, then repack in
 ## Stage 1: Unpack
 
 ```bash
-python skills/docx/scripts/unpack.py document.docx working/
+uv run --with lxml skills/docx/scripts/unpack.py document.docx working/
 ```
 
 This command extracts the ZIP archive, reformats all XML for readability, consolidates adjacent runs that share identical formatting, and simplifies sequential tracked changes from the same author. Apostrophes and quotation marks are converted to XML entities so they survive round-trip editing.
@@ -108,9 +108,9 @@ Within a `<w:del>` block, use `<w:delText>` in place of `<w:t>`, and `<w:delInst
 The `comment.py` helper manages the boilerplate across multiple XML parts (comments.xml, commentsExtended.xml, etc.):
 
 ```bash
-python skills/docx/scripts/comment.py working/ 0 "Suggest rephrasing this section for clarity"
-python skills/docx/scripts/comment.py working/ 1 "Agreed, see my revision below" --parent 0
-python skills/docx/scripts/comment.py working/ 2 "Flagged by legal team" --author "Maria Lopez"
+uv run --with lxml skills/docx/scripts/comment.py working/ 0 "Suggest rephrasing this section for clarity"
+uv run --with lxml skills/docx/scripts/comment.py working/ 1 "Agreed, see my revision below" --parent 0
+uv run --with lxml skills/docx/scripts/comment.py working/ 2 "Flagged by legal team" --author "Maria Lopez"
 ```
 
 After creating the comment entries, insert markers into `document.xml`. Markers sit alongside `<w:r>` elements as siblings -- never nest them inside a run.
@@ -166,7 +166,7 @@ To embed an image in an existing document:
 ## Stage 3: Repack
 
 ```bash
-python skills/docx/scripts/pack.py working/ output.docx
+uv run --with lxml skills/docx/scripts/pack.py working/ output.docx
 ```
 
 This compresses XML whitespace and assembles the final .docx file. Validation (schema compliance, tracked change correctness) runs automatically when the document is shared.

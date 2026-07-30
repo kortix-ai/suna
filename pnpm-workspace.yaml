@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'tests/e2e'
 
 # --- supply-chain hardening ---------------------------------------------------
 # These mirror pnpm 11 defaults and are duplicated here for clarity / older clients.
@@ -70,7 +71,7 @@ overrides:
   'icu-minify@>=4.0.0 <4.9.2': '4.9.2'
   'uuid@>=7.0.0 <11.1.1': '11.1.1'
   'uuid@>=13.0.0 <13.0.1': '13.0.1'
-  'postcss@>=8.0.0 <8.5.10': '8.5.10'
+  'postcss@>=8.0.0 <8.5.18': '8.5.18'
   'fast-xml-parser@>=5.0.0 <5.7.0': '5.7.0'
   '@xmldom/xmldom@>=0.0.0 <0.8.13': '0.8.13'
   'dompurify@>=3.0.0 <3.4.11': '3.4.11'
@@ -81,7 +82,7 @@ overrides:
   'flatted@>=3.0.0 <3.4.2': '3.4.2'
   'socket.io-parser@>=4.0.0 <4.2.6': '4.2.6'
   'undici@>=6.0.0 <6.27.0': '6.27.0'
-  'brace-expansion@>=5.0.0 <5.0.6': '5.0.6'
+  'brace-expansion@>=5.0.0 <5.0.8': '5.0.8'
   'brace-expansion@>=1.0.0 <1.1.13': '1.1.13'
   'picomatch@>=2.0.0 <2.3.2': '2.3.2'
   'diff@>=7.0.0 <8.0.3': '8.0.3'
@@ -91,7 +92,7 @@ overrides:
   'yaml@>=1.0.0 <1.10.3': '1.10.3'
   'picomatch@>=4.0.0 <4.0.4': '4.0.4'
   'picomatch@>=3.0.0 <3.0.2': '3.0.2'
-  'tar@>=7.0.0 <7.5.16': '7.5.16'
+  'tar@>=7.0.0 <7.5.21': '7.5.21'
   'file-type@>=21.0.0 <21.3.1': '21.3.1'
   'minimatch@>=3.0.0 <3.1.4': '3.1.4'
   'minimatch@>=9.0.0 <9.0.7': '9.0.7'

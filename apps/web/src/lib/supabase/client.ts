@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants'
 import { getEnv } from '@/lib/env-config'
 
@@ -64,6 +65,27 @@ export function createClient() {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
       path: '/',
       sameSite: 'lax',
+    },
+  })
+}
+
+export function createEphemeralOAuthClient() {
+  const runtimeEnv = getEnv()
+  const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL)
+  const key = runtimeEnv.SUPABASE_ANON_KEY
+
+  if (!url || !key) {
+    throw new Error('Missing Supabase browser environment variables')
+  }
+
+  return createSupabaseClient(url, key, {
+    auth: {
+      storage: window.sessionStorage,
+      storageKey: 'kortix-github-proof',
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      autoRefreshToken: false,
     },
   })
 }

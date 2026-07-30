@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { backendApi } from '@/lib/api-client';
 import { accountStateKeys } from './use-account-state';
+import { getBillingTierConfigurations } from '@kortix/sdk';
 
 export interface TierConfiguration {
   tier_key: string;
@@ -23,10 +23,8 @@ export interface TierConfigurationsResponse {
  * This is the SINGLE SOURCE OF TRUTH for tier configurations
  */
 async function fetchTierConfigurations(): Promise<TierConfigurationsResponse> {
-  const response = await backendApi.get<TierConfigurationsResponse>(
-    '/billing/tier-configurations'
-  );
-  return response.data!;
+  const response = await getBillingTierConfigurations();
+  return response as TierConfigurationsResponse;
 }
 
 export function useTierConfigurations() {

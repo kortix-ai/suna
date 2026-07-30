@@ -8,10 +8,10 @@ import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
-import { capabilitiesForModel } from '../models/catalog-models';
+import { isModelEnabledForProject } from '../model-enablement';
+import { capabilitiesForModel, gatewayModelCatalog } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
-import { resolveGatewayRoute } from '../routing';
 import {
   bedrockByokBaseUrl,
   codexDescriptor,
@@ -77,22 +77,26 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  // The gateway normally applies the API-owned route plan before calling this hook.
-  // Keep the same fallback here so a stale standalone gateway that asks the API
-  // to resolve raw "auto" still gets a concrete upstream instead of 400ing — and
-  // resolve it against the same account/agent default the control plane used.
-  // Free-tier principals cannot use managed Kortix models, so stale AUTO below
-  // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel =
-    model === 'auto' || model === 'kortix/auto'
-      ? (
-          await resolveGatewayRoute(principal, {
-            requestedModel: model,
-            requires: { imageInput: false },
-          })
-        ).primaryModel
-      : model;
+  const effectiveModel = model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
+
+  // Per-project enablement: a model the project doesn't offer is refused before
+  // any provider-specific resolution, so it's uniformly unusable everywhere.
+  // Judged against everything the project could route — not the picker's
+  // narrowed projection — so a raw-API caller is held to the same set.
+  if (
+    !(await isModelEnabledForProject(
+      principal.projectId,
+      effectiveModel,
+      gatewayModelCatalog(principal.projectId),
+    ))
+  ) {
+    throw new GatewayResolutionError(
+      'model_disabled',
+      'This model is turned off for this project.',
+      'Re-enable it in the project model settings, or pick an enabled model.',
+    );
+  }
 
   if (provider === 'codex') {
     if (!principal.projectId) {
@@ -162,8 +166,7 @@ export async function resolveCandidates(
         byok.kind === 'bedrock'
           ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
           : undefined;
-      const baseUrl =
-        byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
+      const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
@@ -181,6 +184,7 @@ export async function resolveCandidates(
         // models.dev catalog only knows the base model id. See
         // stripBedrockInferenceProfilePrefix's doc comment.
         pricing: livePricing(
+          provider,
           byok.kind === 'bedrock'
             ? stripBedrockInferenceProfilePrefix(resolvedModelId)
             : resolvedModelId,

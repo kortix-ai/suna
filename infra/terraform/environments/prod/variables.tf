@@ -7,7 +7,12 @@ variable "aws_region" {
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string
-  default     = ""
+  # The kortix.com zone id. Not a secret — it is already exposed as the
+  # CLOUDFLARE_ZONE_ID repo variable and appears in every Cloudflare API URL.
+  # It defaults here because an empty value resolves zone_id to null on every
+  # cloudflare_record, and zone_id forces replacement: a plan run without the
+  # gitignored tfvars proposed destroying and recreating live production DNS.
+  default = "af378d3df4e4dd5052a1fcbf263b685d"
 }
 
 variable "extra_api_hostnames" {
@@ -18,7 +23,12 @@ variable "extra_api_hostnames" {
     canonical api.kortix.com record stays tunnel-locked on the old box.
   EOT
   type        = list(string)
-  default     = []
+  # This is a live SAN on the certificate currently serving api.kortix.com, so
+  # it belongs in version control rather than only in a gitignored tfvars. With
+  # the old default of [], any plan run without that local file — CI, or a
+  # second machine — proposed REPLACING the production certificate, because
+  # subject_alternative_names forces replacement.
+  default = ["api-ecs-fargate.kortix.com"]
 }
 
 variable "manage_dns" {

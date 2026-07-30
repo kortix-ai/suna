@@ -1,8 +1,10 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { BRAND } from '@/config/brand';
 import { setSessionToken } from '@/lib/session';
-import { Loader2, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
 import { Button } from './ui/button';
@@ -81,7 +83,7 @@ export function LoginGate({ onReady }: { onReady: () => void }) {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={pending || !email.trim() || !password}>
-            {pending ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+            {pending ? <Loading className="size-4" /> : <LogIn className="size-4" />}
             Sign in
           </Button>
         </form>

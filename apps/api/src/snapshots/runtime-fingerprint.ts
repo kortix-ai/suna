@@ -1,103 +1,15 @@
-import { createHash, type Hash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, open, readdir, readlink } from 'node:fs/promises';
-import { join } from 'node:path';
-
-interface RuntimeArtifact {
-  label: string;
-  path: string;
-  /**
-   * Directory entry names to skip when walking this artifact. Lets callers
-   * exclude generated/install state like `node_modules` (pnpm symlink targets
-   * can shift across installs even when the source hasn't changed, which would
-   * otherwise flip the fingerprint and force every project to rebuild).
-   */
-  excludeNames?: readonly string[];
-}
-
-interface RuntimeArtifactFingerprintInput {
-  sandboxVersion: string;
-  opencodeVersion: string;
-  artifacts: RuntimeArtifact[];
-}
-
 /**
- * True for a directory entry that holds test sources only. `__tests__` dirs and
- * `*.test.ts` / `*.spec.ts` files are excluded from the runtime fingerprint: they
- * are never copied into a sandbox image nor compiled into the CLI/agent binary, so
- * editing them can't change what a session runs — but hashing them re-minted every
- * template's identity on every test change, defeating the warm cache. Matches by
- * entry name so it works both for `__tests__` subdirs and loose colocated tests.
+ * Re-export shim. Runtime artifact hashing is shared by the API snapshot
+ * identity and the CLI build attestation.
  */
-function isTestEntry(name: string): boolean {
-  return name === '__tests__' || /\.(test|spec)\.[cm]?tsx?$/.test(name);
-}
-
-export async function buildRuntimeArtifactFingerprint(
-  input: RuntimeArtifactFingerprintInput,
-): Promise<string> {
-  const hash = createHash('sha256');
-  hash.update(`sandbox_version\0${input.sandboxVersion}\0`);
-  hash.update(`opencode_version\0${input.opencodeVersion}\0`);
-
-  for (const artifact of [...input.artifacts].sort((a, b) => a.label.localeCompare(b.label))) {
-    await hashPath(hash, artifact.path, artifact.label, artifact.excludeNames);
-  }
-
-  return `kortix-runtime:${input.sandboxVersion}:artifacts:${hash.digest('hex')}`;
-}
-
-async function hashPath(
-  hash: Hash,
-  path: string,
-  logicalPath: string,
-  excludeNames?: readonly string[],
-): Promise<void> {
-  if (await hashFileIfRegular(hash, path, logicalPath)) return;
-
-  const stats = await lstat(path);
-  if (stats.isDirectory()) {
-    hash.update(`dir\0${logicalPath}\0`);
-    const entries = await readdir(path, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      if (excludeNames && excludeNames.includes(entry.name)) continue;
-      // Test sources never ship into a sandbox image (nothing COPYs `__tests__`
-      // or `*.test.ts`, and `bun build` doesn't compile them into the CLI/agent
-      // binary), so they can't change what a session runs — yet hashing them made
-      // every test edit re-mint every project's runtime identity, forcing a mass
-      // cache miss. Skip them so the fingerprint moves only on real runtime code.
-      if (isTestEntry(entry.name)) continue;
-      await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`, excludeNames);
-    }
-    return;
-  }
-
-  if (stats.isSymbolicLink()) {
-    hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
-    return;
-  }
-
-  hash.update(`other\0${logicalPath}\0`);
-}
-
-async function hashFileIfRegular(hash: Hash, path: string, logicalPath: string): Promise<boolean> {
-  let file;
-  try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch {
-    return false;
-  }
-
-  try {
-    const stats = await file.stat();
-    if (!stats.isFile()) return false;
-    const contents = await file.readFile();
-    hash.update(`file\0${logicalPath}\0${stats.size}\0`);
-    hash.update(contents);
-    hash.update('\0');
-    return true;
-  } finally {
-    await file.close();
-  }
-}
+export {
+  buildArtifactContentDigest,
+  buildCliExecutorSourceDigest,
+  buildRuntimeArtifactFingerprint,
+  CLI_EXECUTOR_RUNTIME_FILES,
+  cliExecutorRuntimeArtifacts,
+} from '@kortix/shared/sandbox-runtime-artifact';
+export type {
+  RuntimeArtifact,
+  RuntimeArtifactFingerprintInput,
+} from '@kortix/shared/sandbox-runtime-artifact';

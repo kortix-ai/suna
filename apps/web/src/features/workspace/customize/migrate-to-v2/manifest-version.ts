@@ -11,7 +11,7 @@
  * treating it as "not yet migrated" is the safer UI default).
  */
 
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 export type ManifestVersion = 1 | 2;

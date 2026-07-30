@@ -17,6 +17,8 @@ interface CsvRendererProps {
   compact?: boolean;
   containerHeight?: number;
   fileName?: string;
+  /** Extra controls for this viewer's own toolbar. */
+  toolbarActions?: React.ReactNode;
 }
 
 export function CsvRenderer({
@@ -25,6 +27,7 @@ export function CsvRenderer({
   compact = false,
   containerHeight,
   fileName,
+  toolbarActions,
 }: CsvRendererProps) {
   if (!hasCsvContent(content)) {
     return (
@@ -65,6 +68,7 @@ export function CsvRenderer({
           fileName={fileName}
           search={!compact}
           showToolbar={!compact}
+          toolbarActions={toolbarActions}
           className="h-full"
         />
       </Suspense>

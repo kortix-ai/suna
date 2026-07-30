@@ -37,14 +37,16 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { resolveSwitcherLabel } from '@/features/workspace/project-sidebar/project-switcher-label';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
 import {
+  getProjectDetail,
   listAccounts,
   listProjectsForAccount,
   type KortixProject,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 import {
   CheckCircleIcon as CheckCircleSolid,
@@ -104,6 +106,20 @@ export function ProjectSwitcher({
     [projectsQuery.data, activeProjectId],
   );
 
+  // The project list is the slow way to learn the open project's name — it
+  // waits on `accounts` first. This is the SAME cache entry the project shell
+  // already fetches on mount, so subscribing costs no extra request and names
+  // the project as early as anything on the page can.
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', activeProjectId],
+    queryFn: () => getProjectDetail(activeProjectId as string),
+    enabled: !!activeProjectId,
+  });
+  const { label: switcherLabel, pending: labelPending } = resolveSwitcherLabel({
+    activeProjectId,
+    activeProjectName: activeProject?.name ?? projectDetailQuery.data?.project?.name ?? null,
+  });
+
   useEffect(() => {
     if (!activeProjectId) return;
     const target = useProjectSwitchStore.getState().targetProjectId;
@@ -135,18 +151,26 @@ export function ProjectSwitcher({
     router.push(`/projects/${project.project_id}`);
   };
 
-  const label = activeProject?.name ?? 'Projects';
-  const tile = activeProject ? (
-    <EntityAvatar label={activeProject.name} size={variant === 'header' ? 'xs' : 'sm'} />
+  const avatarSize = variant === 'header' ? 'xs' : 'sm';
+  const tile = labelPending ? (
+    // Placeholder, not a guess: the initial tile is derived from the name, so
+    // showing one before we have the name would swap letters mid-load.
+    <Skeleton className={cn('shrink-0 rounded-sm', variant === 'header' ? 'size-5' : 'size-6')} />
+  ) : activeProjectId && switcherLabel ? (
+    <EntityAvatar label={switcherLabel} size={avatarSize} />
   ) : (
-    <EntityAvatar icon={FolderGit2} size={variant === 'header' ? 'xs' : 'sm'} />
+    <EntityAvatar icon={FolderGit2} size={avatarSize} />
   );
 
   const trigger =
     variant === 'header' ? (
       <Button type="button" className={cn(className)}>
         {tile}
-        <span className="max-w-40 truncate text-sm font-medium">{label}</span>
+        {labelPending ? (
+          <Skeleton className="h-3.5 w-24 rounded-sm" />
+        ) : (
+          <span className="max-w-40 truncate text-sm font-medium">{switcherLabel}</span>
+        )}
         <ChevronsUpDownSolid weight="fill" className="text-muted-foreground size-3" />
       </Button>
     ) : (
@@ -157,9 +181,13 @@ export function ProjectSwitcher({
         )}
       >
         {tile}
-        <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-          {label}
-        </span>
+        {labelPending ? (
+          <Skeleton className="h-3.5 w-28 rounded-sm group-data-[collapsible=icon]:hidden" />
+        ) : (
+          <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            {switcherLabel}
+          </span>
+        )}
         <ChevronsUpDown className="text-muted-foreground/40 ml-auto size-4 shrink-0 group-data-[collapsible=icon]:hidden" />
       </SidebarMenuButton>
     );

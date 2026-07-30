@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,7 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, UserMinus } from 'lucide-react';
+import { MoreHorizontal, UserMinus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -123,7 +125,7 @@ export function MembersSection({ accountId }: { accountId: string }) {
             </SelectContent>
           </Select>
           <Button type="submit" disabled={!email.trim() || invite.isPending}>
-            {invite.isPending && <Loader2 className="size-4 animate-spin" />}
+            {invite.isPending && <Loading className="size-4" />}
             Invite
           </Button>
         </form>
@@ -176,11 +178,7 @@ export function MembersSection({ accountId }: { accountId: string }) {
                     disabled={!userId || busy}
                     aria-label={`Manage ${label}`}
                   >
-                    {busy ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <MoreHorizontal className="size-4" />
-                    )}
+                    {busy ? <Loading className="size-4" /> : <MoreHorizontal className="size-4" />}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">

@@ -10,16 +10,29 @@
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { channelApiBase, channelAuth } from './channels';
+import type { PolicyArgCondition } from './policy';
 
 export interface DesiredPolicy {
   match: string;
   action: 'always_run' | 'require_approval' | 'block';
   position: number;
+  /** Optional ARGUMENT conditions (see ProjectPolicySpec.conditions). Null =
+   *  an unconditional tool-name rule, which is what every rule was before. */
+  conditions?: PolicyArgCondition[] | null;
 }
 
 /** Provider-specific config blob stored on the connector row. */
-export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | null): Record<string, unknown> {
-  const auth = { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix };
+export function connectorConfig(
+  spec: ConnectorSpec,
+  openapiServer?: string | null,
+  iconUrl?: string | null,
+): Record<string, unknown> {
+  const auth = {
+    type: spec.auth.type,
+    in: spec.auth.in,
+    name: spec.auth.name,
+    prefix: spec.auth.prefix,
+  };
   const base: Record<string, unknown> = (() => {
     switch (spec.provider) {
       case 'pipedream':
@@ -40,7 +53,7 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
         // The credential is the platform install token (resolved server-side); the
         // connector carries the platform's API base + its auth placement so
         // authOf()/baseUrlOf() resolve and executeCall attaches the credential.
-        // Slack/email → `Bearer <token>`; meet (Recall.ai) → `Authorization: Token <key>`.
+        // Slack/Teams/email all authenticate with `Bearer <token>`.
         return {
           platform: spec.platform,
           baseUrl: channelApiBase(spec.platform ?? ''),
@@ -58,15 +71,33 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
   // Sensitive gates the connector's reads too — carried in config so the gateway
   // loader (toGatewayConnector) reads it back when resolving policy.
   if (spec.sensitive) base.sensitive = true;
+  if (iconUrl) base.icon_url = iconUrl;
+  // Static request headers, carried alongside `auth` so the gateway loader can
+  // hand them to executeCall. Omitted when empty (keeps existing config blobs
+  // byte-identical for connectors that declare none). Never secrets — plaintext
+  // in git AND here, same as `baseUrl`; the auth header always wins on collision.
+  if (Object.keys(spec.headers).length > 0) base.headers = { ...spec.headers };
   return base;
 }
 
 /** Map a connector's policies → ordered policy rows (authoring order = position). */
 export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
-  return spec.policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+  return spec.policies.map((p, i) => ({
+    match: p.match,
+    action: p.action,
+    position: i,
+    ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  }));
 }
 
 /** Map project-level [[policies]] → ordered policy rows (same shape as connector). */
 export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolicy[] {
-  return policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+  // `conditions` is OMITTED (not set to null) for an unconditional rule, so the
+  // row shape for the overwhelmingly common case stays exactly as it was.
+  return policies.map((p, i) => ({
+    match: p.match,
+    action: p.action,
+    position: i,
+    ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  }));
 }

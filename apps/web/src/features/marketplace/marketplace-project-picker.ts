@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { listProjectsForAccount } from '@kortix/sdk/projects-client';
+import { listProjectsForAccount } from '@kortix/sdk';
 
 /**
  * Shared "pick a project to add this item to" query + auto-select state, used

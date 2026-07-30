@@ -2,21 +2,26 @@
 
 import {
   WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
   ArrowSquareOutIcon as ExternalLink,
+  WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
+import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import {
   type SharingSelection,
@@ -24,18 +29,17 @@ import {
   selectionToIntent,
 } from '@/features/workspace/shared/sharing-picker';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
-import { toast } from '@/lib/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   listProjectSecrets,
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
-export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
+export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [], groupIds: [] };
 
@@ -47,7 +51,7 @@ type ChatGptChallenge = { url: string; code: string | null };
 export function isChatGptSubscriptionConnected(secretNames: Set<string>): boolean {
   return (
     secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-    secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME)
+    secretNames.has(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME)
   );
 }
 
@@ -145,9 +149,6 @@ export function ChatGptSubscriptionConnect({
       });
       if (cancelledRef.current) return;
       setChallenge({ url: start.verification_url, code: start.user_code });
-      if (start.verification_url) {
-        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
-      }
 
       const interval = Math.max(2000, start.interval_ms || 3000);
       const deadline = start.expires_at || Date.now() + 10 * 60_000;
@@ -163,7 +164,7 @@ export function ChatGptSubscriptionConnect({
         if (cancelledRef.current) return;
         if (res.status === 'success') {
           setPhase('done');
-          toast.success('ChatGPT subscription connected to this project');
+          successToast('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
@@ -204,7 +205,7 @@ export function ChatGptSubscriptionConnect({
   const waiting = phase === 'waiting';
 
   return (
-    <div className="border-border/50 bg-muted/20 rounded-2xl border p-4">
+    <div className="bg-popover rounded-md border p-4">
       <div className="flex items-start gap-3">
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
@@ -222,7 +223,7 @@ export function ChatGptSubscriptionConnect({
       </div>
 
       {waiting && (
-        <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
+        <div className="border-border bg-muted/30 mt-3 rounded-md border p-3">
           {challenge ? (
             <>
               <div className="text-foreground text-xs font-medium">
@@ -230,32 +231,9 @@ export function ChatGptSubscriptionConnect({
                   'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
                 )}
               </div>
-              {challenge.url && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 h-8 gap-1.5 px-3"
-                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsProjectProviderModalJsxTextOpenAuthPaged0381841',
-                  )}
-                </Button>
-              )}
-              {challenge.code ? (
-                <div className="mt-3">
-                  <div className="text-muted-foreground text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
-                    )}
-                  </div>
-                  <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
-                    {challenge.code}
-                  </div>
-                </div>
-              ) : null}
+              <div className="mt-3">
+                <ChatGptDeviceChallenge url={challenge.url} code={challenge.code} />
+              </div>
             </>
           ) : (
             <div className="text-foreground text-xs font-medium">
@@ -265,25 +243,24 @@ export function ChatGptSubscriptionConnect({
             </div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loading className="h-3.5 w-3.5" />
+            <Loading className="size-3.5 shrink-0" />
             {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
           </div>
         </div>
       )}
 
       {phase === 'done' && (
-        <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
+        <InfoBanner tone="success" icon={CheckCircle2} className="mt-3 text-xs">
           {tI18nHardcoded.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
           )}
-        </div>
+        </InfoBanner>
       )}
 
       {error && (
-        <div className="bg-destructive/5 text-destructive mt-3 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
+        <InfoBanner tone="destructive" icon={TriangleAlert} className="mt-3 text-xs">
+          {error}
+        </InfoBanner>
       )}
 
       {!autoStartOnOpen && (
@@ -337,14 +314,14 @@ export function ChatGptSubscriptionConnectDialog({
   }, [onOpenChange]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 space-y-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="space-y-1 px-5 pt-5 pb-3">
-          <DialogTitle className="text-base font-semibold">Connect GPT subscription</DialogTitle>
-          <DialogDescription className="text-xs">
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-md">
+        <ModalHeader className="space-y-1 pb-3">
+          <ModalTitle>Connect GPT subscription</ModalTitle>
+          <ModalDescription className="text-xs">
             Use your ChatGPT Plus or Pro subscription for premium models on the free plan.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <div className="px-5 pb-5">
           {open ? (
             <ChatGptSubscriptionConnect
@@ -354,7 +331,7 @@ export function ChatGptSubscriptionConnectDialog({
             />
           ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

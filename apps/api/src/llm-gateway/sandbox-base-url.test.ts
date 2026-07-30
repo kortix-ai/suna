@@ -41,17 +41,17 @@ describe('resolveLlmGatewayBaseUrl', () => {
     );
   });
 
-  test('proxy mode (LLM_GATEWAY_PROXY_PORT set): {origin}/v1/llm-gateway/v1/llm', () => {
+  test('proxy mode includes the standalone gateway OpenAI v1 prefix', () => {
     config.LLM_GATEWAY_PROXY_PORT = 8090;
     expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(
-      'http://kortix-api:8008/v1/llm-gateway/v1/llm',
+      'http://kortix-api:8008/v1/llm-gateway/v1',
     );
   });
 
   test('proxy mode via LLM_GATEWAY_PROXY_TARGET (K8s-style) takes the same branch', () => {
     config.LLM_GATEWAY_PROXY_TARGET = 'llm-gateway:8090';
     expect(resolveLlmGatewayBaseUrl('https://api.example.com')).toBe(
-      'https://api.example.com/v1/llm-gateway/v1/llm',
+      'https://api.example.com/v1/llm-gateway/v1',
     );
   });
 

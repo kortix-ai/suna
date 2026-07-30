@@ -1,94 +1,33 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect } from "react";
-import { getClient } from "../core/runtime/client";
-import { useSyncStore } from "../browser/stores/sync-store";
-import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
+import { useCallback } from 'react';
 import {
-  saveSessionToIDB,
-  loadSessionFromIDB,
-  pruneIDBCache,
-} from "../browser/cache/idb-sync-cache";
-import { canQueryOpenCodeSession, type Session } from "./use-opencode-sessions";
+  ACTIVE_SESSION_PREFETCH_SOURCE,
+  clearActiveSessionPrefetches,
+  prefetchSessionSyncOnce,
+} from '../browser/session-sync/session-sync-registry';
+import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { getClientForUrl } from '../core/runtime/client';
+import { canQueryOpenCodeSession, type Session } from './use-opencode-sessions';
 
-const prefetchedSessions = new Set<string>();
-const inFlightPrefetches = new Map<string, Promise<void>>();
-
-/**
- * Prefetch a single session's messages into the sync store + IDB cache.
- * Skips if the session is already in the sync store.
- */
-export async function prefetchSession(sessionId: string): Promise<void> {
+/** Load a bounded session tail before navigation or through a known runtime URL. */
+export async function prefetchSession(sessionId: string, runtimeUrl?: string): Promise<void> {
   if (!canQueryOpenCodeSession(sessionId)) return;
-  if (useSandboxConnectionStore.getState().healthy !== true) return;
-  if (prefetchedSessions.has(sessionId)) return;
-  const existingPrefetch = inFlightPrefetches.get(sessionId);
-  if (existingPrefetch) return existingPrefetch;
-
-  const run = (async () => {
-    const state = useSyncStore.getState();
-    if (sessionId in state.messages && (state.messages[sessionId]?.length ?? 0) > 0) {
-      prefetchedSessions.add(sessionId);
-      return;
-    }
-
-    // Try IDB cache first
-    const cached = await loadSessionFromIDB(sessionId);
-    if (cached && cached.messages.length > 0) {
-      const currentState = useSyncStore.getState();
-      if (!(sessionId in currentState.messages) || (currentState.messages[sessionId]?.length ?? 0) === 0) {
-        currentState.hydrate(
-          sessionId,
-          cached.messages.map((info) => ({
-            info,
-            parts: cached.parts[info.id] ?? [],
-          })),
-        );
-      }
-    }
-
-    // Fetch fresh data from server in background
-    try {
-      const res = await getClient().session.messages({ sessionID: sessionId });
-      const data = res.data ?? [];
-      if (data.length > 0) {
-        useSyncStore.getState().hydrate(sessionId, data);
-        const parts = useSyncStore.getState().parts;
-        const msgs = useSyncStore.getState().messages[sessionId] ?? [];
-        saveSessionToIDB(sessionId, msgs, parts);
-      }
-      prefetchedSessions.add(sessionId);
-    } catch {
-      // Non-critical — cache is still warm from IDB
-    }
-  })().finally(() => {
-    inFlightPrefetches.delete(sessionId);
-  });
-
-  inFlightPrefetches.set(sessionId, run);
-  return run;
+  if (!runtimeUrl && useSandboxConnectionStore.getState().healthy !== true) return;
+  await prefetchSessionSyncOnce(
+    sessionId,
+    runtimeUrl ?? ACTIVE_SESSION_PREFETCH_SOURCE,
+    runtimeUrl ? getClientForUrl(runtimeUrl) : undefined,
+  );
 }
 
-/**
- * Reset prefetch tracking (e.g., on server switch).
- */
 export function resetPrefetchState(): void {
-  prefetchedSessions.clear();
-  inFlightPrefetches.clear();
+  clearActiveSessionPrefetches();
 }
 
-/**
- * Hook: background-prefetch top N sessions after session list loads.
- * Uses requestIdleCallback to avoid blocking UI.
- */
-export function useBackgroundSessionPrefetch(sessions: Session[] | undefined) {
-  useEffect(() => {
-    if (!sessions || sessions.length === 0) return;
-    void pruneIDBCache();
-  }, [sessions]);
-
+export function useBackgroundSessionPrefetch(_sessions: Session[] | undefined) {
   const prefetchOnHover = useCallback((sessionId: string) => {
-    prefetchSession(sessionId);
+    void prefetchSession(sessionId);
   }, []);
 
   return { prefetchOnHover };

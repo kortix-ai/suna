@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
 import { AdminSidebar } from './admin-sidebar';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const BREADCRUMBS: Record<string, string> = {
   '/admin': 'Overview',
@@ -65,11 +66,9 @@ export function AdminShell({
             </p>
           </div>
           <Link
-            href="/projects"
-            className="text-foreground inline-flex text-sm font-medium underline-offset-4 hover:underline"
-          >
-            {tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}
-          </Link>
+            href={PROJECT_LANDING_PATH}
+            className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
+          >{tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}</Link>
         </div>
       </div>
     );

@@ -52,7 +52,13 @@ export interface OpencodeAgentConfig {
  *  module doc above). */
 export interface AgentConfigBlock {
   enabled?: boolean;
+  sandbox?: string;
   connectors?: AgentGrantSetV2;
+  /** Connector profiles that must resolve before the session starts. */
+  connectors_required?: string[];
+  /** @deprecated Input alias for `connectors_required`. Responses use only
+   *  `connectors_required`. */
+  connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
   kortix_cli?: AgentGrantSetV2;
@@ -73,11 +79,15 @@ export interface AgentConfigResponse {
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {
-  return unwrap(
+  const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
       `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
     ),
   );
+  return {
+    ...response,
+    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+  };
 }
 
 export async function updateAgentConfig(
@@ -85,14 +95,52 @@ export async function updateAgentConfig(
   agentName: string,
   block: AgentConfigBlock,
 ) {
-  return unwrap(
+  const canonicalBlock = canonicalizeRequiredConnectors(block);
+  const response = unwrap(
     await backendApi.put<{
       ok: boolean;
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, block),
+    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
   );
+  return {
+    ...response,
+    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+  };
+}
+
+function normalizeConnectorList(values: string[]): string[] {
+  const normalized: string[] = [];
+  for (const value of values) {
+    const slug = value.trim();
+    if (slug && !normalized.includes(slug)) normalized.push(slug);
+  }
+  return normalized;
+}
+
+function equalConnectorSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
+}
+
+function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlock {
+  const canonical = block.connectors_required
+    ? normalizeConnectorList(block.connectors_required)
+    : undefined;
+  const legacy = block.connectors_personal
+    ? normalizeConnectorList(block.connectors_personal)
+    : undefined;
+  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
+    throw new Error('connectors_personal must match connectors_required when both fields are present');
+  }
+  const next = { ...block };
+  delete next.connectors_personal;
+  if (canonical !== undefined || legacy !== undefined) {
+    next.connectors_required = canonical ?? legacy;
+  }
+  return next;
 }
 
 export interface UpdateProjectDefaultAgentResponse {

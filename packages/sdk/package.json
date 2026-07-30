@@ -1,6 +1,6 @@
 {
   "name": "@kortix/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
   "type": "module",
   "license": "Elastic-2.0",
@@ -168,7 +168,9 @@
   "devDependencies": {
     "@tanstack/react-query": "^5.75.2",
     "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.2.3",
     "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
     "typescript": "^5.4.0"

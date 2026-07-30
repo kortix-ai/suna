@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { useKortixComputerStore, QUICK_VIEW_TTL_MS } from './kortix-computer-store';
+import { beforeEach, describe, expect, it, test } from 'bun:test';
+import { QUICK_VIEW_TTL_MS, useKortixComputerStore } from './kortix-computer-store';
 
 describe('ready chip state (W1)', () => {
   beforeEach(() => {
@@ -8,7 +8,12 @@ describe('ready chip state (W1)', () => {
 
   test('set → read → clear', () => {
     const s = useKortixComputerStore.getState();
-    s.setReadyChip({ sessionId: 's1', outcome: 'ready', count: 3, primaryName: 'Quarterly report' });
+    s.setReadyChip({
+      sessionId: 's1',
+      outcome: 'ready',
+      count: 3,
+      primaryName: 'Quarterly report',
+    });
     expect(useKortixComputerStore.getState().readyChip?.primaryName).toBe('Quarterly report');
     useKortixComputerStore.getState().clearReadyChip();
     expect(useKortixComputerStore.getState().readyChip).toBeNull();
@@ -35,7 +40,7 @@ describe('ready chip state (W1)', () => {
     s.setActiveSession('s1');
     s.requestQuickView('terminal');
     expect(useKortixComputerStore.getState().consumeQuickView('other')).toBeNull();
-    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('terminal');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')?.view).toBe('terminal');
     expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
   });
 
@@ -44,7 +49,7 @@ describe('ready chip state (W1)', () => {
     s.setActiveSession('s1');
     s.requestQuickView('browser');
     expect(useKortixComputerStore.getState().consumeQuickView('other')).toBeNull();
-    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('browser');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')?.view).toBe('browser');
     expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
   });
 
@@ -56,7 +61,7 @@ describe('ready chip state (W1)', () => {
     s.setActiveSession(null);
     s.requestQuickView('terminal', 's1');
     expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
-    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('terminal');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')?.view).toBe('terminal');
   });
 
   test('quick-view request opens the panel and updates the per-session map', () => {
@@ -71,7 +76,7 @@ describe('ready chip state (W1)', () => {
     expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
   });
 
-  test('quick-view request clears only the active session\'s own ready chip', () => {
+  test("quick-view request clears only the active session's own ready chip", () => {
     const s = useKortixComputerStore.getState();
     s.setReadyChip({ sessionId: 'other', outcome: 'ready', count: 1 });
     s.setActiveSession('s1');
@@ -96,7 +101,7 @@ describe('ready chip state (W1)', () => {
   // chip that belongs to the session actually being opened. Covers all three
   // panel-opening actions: setIsSidePanelOpen(true), openSidePanel, focusToolCall. ──
   describe('chip clearing is session-scoped, not global', () => {
-    test('setIsSidePanelOpen(true): another session\'s chip survives; this session\'s chip clears', () => {
+    test("setIsSidePanelOpen(true): another session's chip survives; this session's chip clears", () => {
       const s = useKortixComputerStore.getState();
       s.setReadyChip({ sessionId: 'other', outcome: 'ready', count: 1 });
       s.setActiveSession('s1');
@@ -108,7 +113,7 @@ describe('ready chip state (W1)', () => {
       expect(useKortixComputerStore.getState().readyChip).toBeNull();
     });
 
-    test('openSidePanel: another session\'s chip survives; this session\'s chip clears', () => {
+    test("openSidePanel: another session's chip survives; this session's chip clears", () => {
       const s = useKortixComputerStore.getState();
       s.setReadyChip({ sessionId: 'other', outcome: 'ready', count: 1 });
       s.setActiveSession('s1');
@@ -120,7 +125,7 @@ describe('ready chip state (W1)', () => {
       expect(useKortixComputerStore.getState().readyChip).toBeNull();
     });
 
-    test('focusToolCall: another session\'s chip survives; this session\'s chip clears', () => {
+    test("focusToolCall: another session's chip survives; this session's chip clears", () => {
       const s = useKortixComputerStore.getState();
       s.setReadyChip({ sessionId: 'other', outcome: 'ready', count: 1 });
       s.setActiveSession('s1');
@@ -218,7 +223,7 @@ describe('pendingQuickView staleness', () => {
     const s = useKortixComputerStore.getState();
     s.requestQuickView('terminal', 'session-a');
     const now = useKortixComputerStore.getState().pendingQuickView!.requestedAt;
-    expect(useKortixComputerStore.getState().consumeQuickView('session-a', now + 1000)).toBe(
+    expect(useKortixComputerStore.getState().consumeQuickView('session-a', now + 1000)?.view).toBe(
       'terminal',
     );
     expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
@@ -255,5 +260,67 @@ describe('pendingQuickView staleness', () => {
     s.requestQuickView('terminal', 'session-a');
     s.setActiveSession('session-b'); // no-op re-activation
     expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+});
+
+describe('files quick-view destination', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  it('carries a files quick-view request through to its consumer', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('files', 's1');
+    expect(useKortixComputerStore.getState().pendingQuickView?.view).toBe('files');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')?.view).toBe('files');
+  });
+
+  it('clears the files request after one consume', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('files', 's1');
+    useKortixComputerStore.getState().consumeQuickView('s1');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
+  });
+
+  // ─── A quick-view that names WHERE it wants to land. Before this existed,
+  // every caller that knew its destination (the show-tool preview button, a
+  // localhost link in chat, the header chips) wrote `viewBySession` instead —
+  // a key only Advanced mode reads, so in Easy the panel opened on the home
+  // card and the destination was silently dropped. ──────────────────────────
+
+  it('carries a browser target through to the consumer', () => {
+    useKortixComputerStore
+      .getState()
+      .requestQuickView('browser', 's1', { url: 'https://proxy.test/p/3000', title: 'My app' });
+
+    const request = useKortixComputerStore.getState().consumeQuickView('s1');
+
+    expect(request?.view).toBe('browser');
+    expect(request?.target?.url).toBe('https://proxy.test/p/3000');
+    expect(request?.target?.title).toBe('My app');
+  });
+
+  it('carries the files Changes target, so a chip can land on the diff', () => {
+    useKortixComputerStore.getState().requestQuickView('files', 's1', { changes: true });
+
+    const request = useKortixComputerStore.getState().consumeQuickView('s1');
+
+    expect(request?.view).toBe('files');
+    expect(request?.target?.changes).toBe(true);
+  });
+
+  it('leaves target undefined for an untargeted request', () => {
+    useKortixComputerStore.getState().requestQuickView('terminal', 's1');
+
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')?.target).toBeUndefined();
+  });
+
+  it('drops a stale targeted request rather than replaying it later', () => {
+    useKortixComputerStore.getState().requestQuickView('browser', 's1', { url: 'https://a.test' });
+    const at = useKortixComputerStore.getState().pendingQuickView!.requestedAt;
+
+    expect(
+      useKortixComputerStore.getState().consumeQuickView('s1', at + QUICK_VIEW_TTL_MS + 1),
+    ).toBeNull();
   });
 });

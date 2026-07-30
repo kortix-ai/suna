@@ -1,22 +1,29 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
-import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
+import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
+import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
+import {
+  type AttachedFile,
+  SessionChatInput,
+  type TrackedMention,
+} from '@/features/session/session-chat-input';
+import { useRuntimeConfig } from '@kortix/sdk/react';
+import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
 import {
   type Command,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-} from '@/hooks/opencode/use-opencode-sessions';
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeProviders,
+} from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
   model?: ModelKey;
   variant?: string;
+  scope?: SessionScopeCommit;
 }
 
 /**
@@ -26,7 +33,7 @@ export interface ComposerOptions {
  * and the instant session shell so neither hand-rolls the selector wiring.
  *
  * The current selections are handed to `onSend` / `onCommand` as `options`, so
- * callers never need their own `useOpenCodeLocal`.
+ * callers never need their own `useRuntimeLocal`.
  */
 export function ComposerChatInput({
   onSend,
@@ -45,6 +52,9 @@ export function ComposerChatInput({
   cardClassName,
   boundAgentName,
   clearOnSend,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -73,13 +83,17 @@ export function ComposerChatInput({
   cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** Queued-while-busy support, passed straight through to SessionChatInput. */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
 }) {
-  const { data: agents } = useOpenCodeAgents({ projectId });
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: commands } = useOpenCodeCommands();
-  const { data: config } = useOpenCodeConfig();
+  const { data: agents } = useRuntimeAgents({ projectId });
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: commands } = useRuntimeCommands();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,
@@ -91,6 +105,39 @@ export function ComposerChatInput({
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  const selectedAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
+  const [newSessionScope, setNewSessionScope] = useState<{
+    agentName: string | null;
+    commit: SessionScopeCommit;
+  } | null>(null);
+  const handleCommittedScope = useCallback(
+    (commit: SessionScopeCommit | undefined) => {
+      setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
+    },
+    [selectedAgentName],
+  );
+  const sessionScopeToolbar = useMemo(
+    () =>
+      projectId ? (
+        <SessionScopeToolbar
+          projectId={projectId}
+          sessionId={sessionId}
+          agentName={selectedAgentName ?? undefined}
+          onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+        />
+      ) : null,
+    [handleCommittedScope, projectId, selectedAgentName, sessionId],
+  );
+  const combinedToolbarSlot = useMemo(
+    () =>
+      toolbarSlot || sessionScopeToolbar ? (
+        <>
+          {toolbarSlot}
+          {sessionScopeToolbar}
+        </>
+      ) : undefined,
+    [sessionScopeToolbar, toolbarSlot],
+  );
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
@@ -99,6 +146,9 @@ export function ComposerChatInput({
     else if (local.agent.current) o.agent = local.agent.current.name;
     if (local.model.currentKey) o.model = local.model.currentKey;
     if (local.model.variant.current) o.variant = local.model.variant.current;
+    if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
+      o.scope = newSessionScope.commit;
+    }
     return o;
   };
 
@@ -107,6 +157,9 @@ export function ComposerChatInput({
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
+      queuedMessages={queuedMessages}
+      onQueueMessage={onQueueMessage}
+      onRemoveQueuedMessage={onRemoveQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
       isSending={isSending}
@@ -115,13 +168,13 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       inputSlot={inputSlot}
-      toolbarSlot={toolbarSlot}
+      toolbarSlot={combinedToolbarSlot}
       cardClassName={cardClassName}
       sessionId={sessionId}
       projectId={projectId}
       providers={providers}
       agents={local.agent.list}
-      selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+      selectedAgent={selectedAgentName}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
       models={local.model.list}

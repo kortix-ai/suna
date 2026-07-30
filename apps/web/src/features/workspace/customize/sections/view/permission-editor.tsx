@@ -10,7 +10,7 @@ import type {
   PermissionAction,
   PermissionConfig,
   PermissionRule,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   PlusIcon as Plus,
   SlidersIcon as Sliders,

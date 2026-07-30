@@ -29,11 +29,14 @@ function makeApp() {
   };
   app.get('/v1/projects/x/change-requests', slow); // bounded
   app.get('/v1/p/sandbox/3000/index.html', slow);  // exempt prefix
-  app.get('/v1/projects/x/turn-stream', slow);      // exempt fragment
+  app.get('/v1/projects/x/turn-stream', slow);      // JSON relay, bounded
   app.get('/v1/router/chat/completions', slow);      // exempt prefix
   app.get('/v1/llm/chat/completions', slow);          // exempt prefix (LLM streaming)
   app.post('/v1/billing/webhooks/stripe', slow);      // exempt prefix (webhook)
   app.post('/v1/projects/x/sessions/y/start', slow);  // exempt fragment (long sync op)
+  app.post('/v1/projects/x/sessions/y/acp', slow);    // exact ACP JSON-RPC turn
+  app.get('/v1/projects/x/sessions/y/acp', slow);     // bounded — only POST is exempt
+  app.post('/v1/projects/x/acp', slow);               // bounded — wrong route shape
   app.post('/v1/projects/x/oauth/openai/start', slow); // exempt fragment (OAuth device flow — start can be slow on a cold replica)
   app.post('/v1/projects', slow);                      // exempt method+path (provision)
   app.get('/v1/projects', slow);                       // bounded — only POST is exempt
@@ -58,9 +61,9 @@ describe('requestDeadline', () => {
     expect(res.status).toBe(200); // would be 503 if bounded
   });
 
-  it('exempts streaming fragments (turn-stream) from the deadline', async () => {
+  it('bounds the JSON turn-stream relay', async () => {
     const res = await makeApp().request('/v1/projects/x/turn-stream');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
   });
 
   it('exempts the LLM router prefix from the deadline', async () => {
@@ -88,6 +91,18 @@ describe('requestDeadline', () => {
   it('exempts long sync sandbox ops (start) via fragment', async () => {
     const res = await makeApp().request('/v1/projects/x/sessions/y/start', { method: 'POST' });
     expect(res.status).toBe(200);
+  });
+
+  it('exempts only the ACP JSON-RPC POST route', async () => {
+    const app = makeApp();
+    const post = await app.request('/v1/projects/x/sessions/y/acp', { method: 'POST' });
+    expect(post.status).toBe(200);
+
+    const get = await app.request('/v1/projects/x/sessions/y/acp');
+    expect(get.status).toBe(503);
+
+    const wrongShape = await app.request('/v1/projects/x/acp', { method: 'POST' });
+    expect(wrongShape.status).toBe(503);
   });
 
   it('exempts the provider OAuth device flow start (can be slow on a cold replica)', async () => {

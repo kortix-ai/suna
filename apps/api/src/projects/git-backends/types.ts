@@ -87,7 +87,29 @@ export interface InviteResult {
   alreadyCollaborator: boolean;
 }
 
+export interface BasicGitCredential {
+  username: string;
+  token: string;
+}
+
 export function basicAuthHeader(token: string): Record<string, string> {
   const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
   return { Authorization: `Basic ${encoded}` };
+}
+
+/** Decode a backend-produced HTTP Basic header without assuming a provider username. */
+export function parseBasicAuthHeader(value?: string | null): BasicGitCredential | null {
+  if (!value) return null;
+  const match = value.match(/^Basic\s+(.+)$/i);
+  if (!match) return null;
+  try {
+    const decoded = Buffer.from(match[1]!, 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    if (separator <= 0) return null;
+    const username = decoded.slice(0, separator);
+    const token = decoded.slice(separator + 1);
+    return username && token ? { username, token } : null;
+  } catch {
+    return null;
+  }
 }

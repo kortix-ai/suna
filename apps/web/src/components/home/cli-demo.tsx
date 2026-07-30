@@ -174,7 +174,7 @@ const initTail = (name: string): Line[] => [
   [t('  + ', 'faded'), t('.kortix/Dockerfile')],
   [t('  + ', 'faded'), t('.kortix/opencode/opencode.jsonc')],
   [t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')],
-  [t('  + ', 'faded'), t('.kortix/opencode/skills/kortix-system/SKILL.md')],
+  [t('  + ', 'faded'), t('.kortix/opencode/skills/kortix-cli/SKILL.md')],
   [t('  + ', 'faded'), t('.claude/skills/kortix/SKILL.md')],
   [t('Git: initialized (main)', 'dim')],
   [],

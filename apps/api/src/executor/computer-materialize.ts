@@ -18,8 +18,22 @@
  * support. The `agent_tunnel` flag now only gates the dedicated Computers
  * management UI (device-auth / per-machine permissions), not the connector.
  * See docs/specs/computer-connector.md.
+ *
+ * "Connected machine" means the tunnel has completed a real WS handshake at
+ * least once (`last_heartbeat_at IS NOT NULL`) — NOT merely that a
+ * `tunnel_connections` row exists. Approving a device-auth request creates the
+ * row up front with `status: 'offline'` and no heartbeat, and the CLI then
+ * dials in and flips it live within seconds; requiring a heartbeat costs that
+ * flow nothing. What it excludes is a pairing that was approved (or seeded —
+ * e.g. by a test) and then never actually connected: without this check that
+ * row sits forever and silently materializes an "active" `computer` connector
+ * across every project in the account, looking exactly like a real,
+ * intentionally-added connector even though nothing is or ever was connected.
+ * Once a machine has connected at least once, its connector correctly stays
+ * materialized through later offline periods (closed laptop, etc.) — only a
+ * connection that never came online even once is excluded.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { projects, tunnelConnections } from '@kortix/db';
 import { db } from '../shared/db';
 import { COMPUTER_SLUG, computerLabel } from './computers';
@@ -34,6 +48,7 @@ function computerSpec(): ConnectorSpec {
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
+    authorizationStrategy: 'project',
     sensitive: false,
     app: null,
     account: null,
@@ -44,6 +59,9 @@ function computerSpec(): ConnectorSpec {
     platform: null,
     spec: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    // Platform-called connector — the request isn't built by executeCall's
+    // HTTP builders, so a static header table would be inert. Always empty.
+    headers: {},
     policies: [],
   };
 }
@@ -56,8 +74,10 @@ function alreadyDeclared(declared: ConnectorSpec[]): boolean {
 /**
  * A single synthetic `computer` ConnectorSpec when this project's account has a
  * connected machine — never written to git, never shadowing an explicit
- * declaration. Returns `[]` otherwise. Machine presence is the only gate (no
- * experimental flag): it's a regular connector, materialized like Slack.
+ * declaration. Returns `[]` otherwise. A machine that has connected at least
+ * once is the only gate (no experimental flag): it's a regular connector,
+ * materialized like Slack. A tunnel row that has never completed a handshake
+ * (never online, ever) does not count — see the module doc for why.
  */
 export async function synthesizeComputerConnectors(
   projectId: string,
@@ -75,7 +95,12 @@ export async function synthesizeComputerConnectors(
   const [tunnel] = await db
     .select({ tunnelId: tunnelConnections.tunnelId })
     .from(tunnelConnections)
-    .where(eq(tunnelConnections.accountId, proj.accountId))
+    .where(
+      and(
+        eq(tunnelConnections.accountId, proj.accountId),
+        isNotNull(tunnelConnections.lastHeartbeatAt),
+      ),
+    )
     .limit(1);
   if (!tunnel) return [];
 

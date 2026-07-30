@@ -85,12 +85,16 @@ test('getStatus() reports missing Daytona sandboxes as removed', async () => {
   await expect(provider.getStatus('sbx_missing')).resolves.toBe('removed');
 });
 
-test('native auto-stop is a backstop clamped well above the reaper TTL', async () => {
+// 720 (12h), not the 60 this returned while it doubled as the billing grace —
+// see providerAutoStopBackstopMinutes() and ./autostop-backstop.test.ts. The
+// timer sees only inbound traffic, so a turn spent in local tools resets
+// nothing; 12h clears the 8.4h worst turn measured on 30 days of prod.
+test('native auto-stop is a backstop that clears the longest measured turn', async () => {
   const { daytonaLifecycle } = await import('./daytona');
   const { providerAutoStopBackstopMinutes } = await import('./index');
 
-  expect(providerAutoStopBackstopMinutes()).toBe(60);
-  expect(daytonaLifecycle().autoStopInterval).toBe(60);
+  expect(providerAutoStopBackstopMinutes()).toBe(720);
+  expect(daytonaLifecycle().autoStopInterval).toBe(720);
   expect(daytonaLifecycle(5).autoStopInterval).toBe(5);
   expect(daytonaLifecycle(0).autoStopInterval).toBe(1);
 });

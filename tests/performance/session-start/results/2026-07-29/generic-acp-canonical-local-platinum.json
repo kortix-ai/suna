@@ -1,0 +1,106 @@
+{
+  "measured_at": "2026-07-29T17:14:28Z",
+  "environment": "local",
+  "api": "http://localhost:13308/v1",
+  "provider": "platinum",
+  "starter_template": "general-knowledge-worker",
+  "manifest_version": 3,
+  "default_agent": "opencode",
+  "boundary": "POST session creation to ACP session readiness",
+  "excludes": [
+    "prompt dispatch",
+    "model execution",
+    "first token"
+  ],
+  "runtime_artifact": {
+    "provider_artifact_ref": "kortix-default-6ebe2014635b",
+    "artifact_type": "platinum_template",
+    "content_hash": "6ebe2014635b9878cbf9cf41d62aa043facdc8e42161b5d9901acb8ca0525d28",
+    "is_platform_default": true
+  },
+  "attempts": [
+    {
+      "status": "pass",
+      "pi_create_to_session_ready_ms": 17213,
+      "opencode_create_to_session_ready_ms": 32581,
+      "attribution": false
+    },
+    {
+      "status": "instrumentation_error_after_pi_ready",
+      "pi_create_to_session_ready_ms": 16838,
+      "error": "The timing probe consumed the health response body twice.",
+      "attribution": false
+    },
+    {
+      "status": "pass",
+      "attribution": true,
+      "samples": [
+        {
+          "harness": "pi",
+          "create_to_session_ready_ms": 15503,
+          "session_start_timeline": {
+            "marks": [
+              { "label": "git-auth", "at_ms": 5, "delta_ms": 5 },
+              { "label": "env-vars", "at_ms": 38, "delta_ms": 33 },
+              { "label": "kicked", "at_ms": 117, "delta_ms": 78 }
+            ],
+            "total_ms": 117
+          },
+          "provision_timeline": {
+            "marks": [
+              { "label": "row+tokens", "at_ms": 78, "delta_ms": 78 },
+              { "label": "image-cached", "at_ms": 3081, "delta_ms": 3003 },
+              { "label": "provider-create:1x", "at_ms": 6212, "delta_ms": 3131 }
+            ],
+            "total_ms": 6212
+          },
+          "guest_boot_timeline": [
+            { "label": "static-web", "at_ms": 22 },
+            { "label": "git-identity", "at_ms": 56 },
+            { "label": "proxy-up", "at_ms": 67 },
+            { "label": "repo-materialized", "at_ms": 2354 },
+            { "label": "selected-harness-config-ready", "at_ms": 2356 },
+            { "label": "opencode-skipped", "at_ms": 2360 },
+            { "label": "runtime-process-spawned", "at_ms": 2364 },
+            { "label": "runtime-acp-first-output", "at_ms": 2796 },
+            { "label": "runtime-acp-initialized", "at_ms": 2797 },
+            { "label": "acp-runtime-ready", "at_ms": 2797 }
+          ]
+        },
+        {
+          "harness": "opencode",
+          "create_to_session_ready_ms": 62577,
+          "session_start_timeline": {
+            "marks": [
+              { "label": "git-auth", "at_ms": 7, "delta_ms": 7 },
+              { "label": "env-vars", "at_ms": 46, "delta_ms": 39 },
+              { "label": "kicked", "at_ms": 121, "delta_ms": 75 }
+            ],
+            "total_ms": 121
+          },
+          "provision_timeline": {
+            "marks": [
+              { "label": "row+tokens", "at_ms": 75, "delta_ms": 75 },
+              { "label": "image-cached", "at_ms": 3571, "delta_ms": 3496 },
+              { "label": "provider-create:1x", "at_ms": 5865, "delta_ms": 2294 }
+            ],
+            "total_ms": 5865
+          },
+          "guest_boot_timeline": [
+            { "label": "static-web", "at_ms": 22 },
+            { "label": "git-identity", "at_ms": 53 },
+            { "label": "proxy-up", "at_ms": 64 },
+            { "label": "repo-materialized", "at_ms": 2794 },
+            { "label": "selected-harness-config-ready", "at_ms": 2798 },
+            { "label": "opencode-skipped", "at_ms": 2802 },
+            { "label": "runtime-process-spawned", "at_ms": 2807 },
+            { "label": "runtime-acp-first-output", "at_ms": 52960 },
+            { "label": "runtime-acp-initialized", "at_ms": 53712 },
+            { "label": "acp-runtime-ready", "at_ms": 53712 }
+          ]
+        }
+      ]
+    }
+  ],
+  "cleanup": "All disposable sessions, projects, accounts, and users were removed."
+}

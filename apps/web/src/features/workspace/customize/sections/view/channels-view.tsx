@@ -62,16 +62,16 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import {
   type Agent,
-  useOpenCodeProviders,
+  useRuntimeProviders,
   useVisibleAgents,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
+import { getProject, listProjectAccess } from '@kortix/sdk';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -377,7 +377,7 @@ function ChannelBindingTableRow({
   }, [visibleAgents, projectDefaultAgent, binding.agentName]);
   const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = binding.opencodeModel
     ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel))
@@ -553,7 +553,7 @@ function SlackChannelRow({
                 }
               >
                 {disconnect.isPending ? (
-                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                  <Loading className="size-3.5 shrink-0" />
                 ) : null}
                 Disconnect
               </Button>
@@ -638,7 +638,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
                 }
               >
                 {disconnect.isPending ? (
-                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                  <Loading className="size-3.5 shrink-0" />
                 ) : null}
                 Disconnect
               </Button>
@@ -746,7 +746,7 @@ function EmailChannelRow({
                   }
                 >
                   {disconnect.isPending ? (
-                    <Loading className="size-3.5 shrink-0 animate-spin" />
+                    <Loading className="size-3.5 shrink-0" />
                   ) : null}
                   Disconnect
                 </Button>
@@ -991,7 +991,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
             onClick={submit}
             disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
           >
-            {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0 animate-spin" /> : null}
+            {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextConnectSlack5ad82c3b',
             )}

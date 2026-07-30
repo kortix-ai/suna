@@ -28,7 +28,7 @@ import {
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   DotsThreeVerticalIcon as MoreVertical,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   ScissorsIcon as Scissors,
   TrashIcon as TrashSolid,
 } from '@phosphor-icons/react';
@@ -129,7 +129,7 @@ export function FolderDriveMenuItems({
           <Separator />
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
-              <Pencil />
+              <PencilSimpleIcon />
               Rename
             </Item>
           )}
@@ -218,7 +218,7 @@ export function FileDriveMenuItems({
           <Separator />
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
-              <Pencil />
+              <PencilSimpleIcon />
               Rename
             </Item>
           )}

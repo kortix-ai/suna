@@ -1,7 +1,15 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
-import { gatewayBudgets, gatewayRequestLogs, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
-import { calculateCost, callUpstream, GatewayResolutionError, type AuthedPrincipal } from '@kortix/llm-gateway';
+import {
+  gatewayBudgets,
+  gatewayRequestLogs,
+} from '@kortix/db';
+import {
+  calculateCost,
+  callUpstream,
+  GatewayResolutionError,
+  type AuthedPrincipal,
+} from '@kortix/llm-gateway';
 import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
@@ -13,7 +21,11 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
-import { createGatewayKey, listGatewayKeys, revokeGatewayKey } from '../../llm-gateway/gateway-keys';
+import {
+  createGatewayKey,
+  listGatewayKeys,
+  revokeGatewayKey,
+} from '../../llm-gateway/gateway-keys';
 import {
   assertGatewayBudget,
   persistGatewayTrace,
@@ -33,8 +45,14 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
 
-async function canDo(c: any, projectId: string, accountId: string, action: string): Promise<boolean> {
+async function canDo(
+  c: any,
+  projectId: string,
+  accountId: string,
+  action: string,
+): Promise<boolean> {
   const verdict = await authorize(
     c.get('userId'),
     accountId,
@@ -70,6 +88,7 @@ const LIST_COLUMNS = {
   inputTokens: gatewayRequestLogs.inputTokens,
   outputTokens: gatewayRequestLogs.outputTokens,
   cachedTokens: gatewayRequestLogs.cachedTokens,
+  cacheWriteTokens: gatewayRequestLogs.cacheWriteTokens,
   upstreamCost: gatewayRequestLogs.upstreamCost,
   finalCost: gatewayRequestLogs.finalCost,
   streaming: gatewayRequestLogs.streaming,
@@ -95,6 +114,7 @@ function serializeLogRow(r: Record<string, any>) {
     input_tokens: r.inputTokens,
     output_tokens: r.outputTokens,
     cached_tokens: r.cachedTokens,
+    cache_write_tokens: r.cacheWriteTokens,
     upstream_cost: Number(r.upstreamCost ?? 0),
     final_cost: Number(r.finalCost ?? 0),
     streaming: r.streaming,
@@ -125,9 +145,18 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
-    const limit = Math.min(Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1), LIST_LIMIT_MAX);
+    const limit = Math.min(
+      Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1),
+      LIST_LIMIT_MAX,
+    );
     const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
     const okFilter = c.req.query('ok');
 
@@ -145,7 +174,10 @@ projectsApp.openapi(
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
-    return c.json({ logs: page.map(serializeLogRow), next_offset: hasMore ? offset + limit : null });
+    return c.json({
+      logs: page.map(serializeLogRow),
+      next_offset: hasMore ? offset + limit : null,
+    });
   },
 );
 
@@ -166,7 +198,13 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
     const [row] = await db
       .select()
@@ -202,7 +240,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const [agg] = await db
@@ -249,7 +293,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -323,100 +373,22 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-
-    const [llmRows, computeRows] = await Promise.all([
-      db
-        .select({
-          sessionId: gatewayRequestLogs.sessionId,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-          models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
-          lastAt: sql<string>`max(${gatewayRequestLogs.createdAt})`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.sessionId} is not null`,
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.sessionId),
-      db
-        .select({
-          sessionId: sandboxComputeSessions.sessionId,
-          cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-          seconds: sql<string>`coalesce(sum(extract(epoch from coalesce(${sandboxComputeSessions.endedAt}, ${sandboxComputeSessions.lastBilledAt}, now()) - ${sandboxComputeSessions.startedAt})), 0)::bigint`,
-          lastAt: sql<string>`max(${sandboxComputeSessions.lastBilledAt})`,
-        })
-        .from(sandboxComputeSessions)
-        .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId))
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, projectId),
-            sql`${sandboxComputeSessions.sessionId} is not null`,
-            sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(sandboxComputeSessions.sessionId),
-    ]);
-
-    type Row = {
-      session_id: string;
-      llm_cost: number;
-      compute_cost: number;
-      requests: number;
-      errors: number;
-      tokens: number;
-      models: number;
-      compute_seconds: number;
-      last_at: string | null;
-    };
-    const bySession = new Map<string, Row>();
-    for (const r of llmRows) {
-      if (!r.sessionId) continue;
-      bySession.set(r.sessionId, {
-        session_id: r.sessionId,
-        llm_cost: r.cost,
-        compute_cost: 0,
-        requests: r.requests,
-        errors: r.errors,
-        tokens: Number(r.tokens),
-        models: r.models,
-        compute_seconds: 0,
-        last_at: r.lastAt,
-      });
-    }
-    for (const r of computeRows) {
-      if (!r.sessionId) continue;
-      const e = bySession.get(r.sessionId) ?? {
-        session_id: r.sessionId,
-        llm_cost: 0,
-        compute_cost: 0,
-        requests: 0,
-        errors: 0,
-        tokens: 0,
-        models: 0,
-        compute_seconds: 0,
-        last_at: null,
-      };
-      e.compute_cost = r.cost;
-      e.compute_seconds = Number(r.seconds);
-      if (r.lastAt && (!e.last_at || r.lastAt > e.last_at)) e.last_at = r.lastAt;
-      bySession.set(r.sessionId, e);
-    }
-
-    const sessions = [...bySession.values()]
-      .map((e) => ({ ...e, total_cost: e.llm_cost + e.compute_cost }))
-      .sort((a, b) => b.total_cost - a.total_cost)
-      .slice(0, 50);
-
-    return c.json({ window_days: days, sessions });
+    return c.json(
+      await listProjectGatewaySessionSpend({
+        accountId: loaded.row.accountId,
+        projectId,
+        days,
+      }),
+    );
   },
 );
 
@@ -437,7 +409,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -488,7 +466,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const budgets = await db
       .select()
@@ -672,7 +656,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -890,9 +880,12 @@ projectsApp.openapi(
           const usage = data?.usage ?? {};
           const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
           const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
-          const cachedTokens = Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+          const cachedTokens =
+            Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
           const cacheWriteTokens =
-            Number(usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0) || 0;
+            Number(
+              usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0,
+            ) || 0;
           const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
           const { upstreamCost, finalCost } = calculateCost(
             resolvedModel,
@@ -914,7 +907,9 @@ projectsApp.openapi(
             streaming: false,
             status: res.status,
             ok: res.ok,
-            errorMessage: res.ok ? undefined : data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
+            errorMessage: res.ok
+              ? undefined
+              : (data?.error?.message ?? data?.message ?? `HTTP ${res.status}`),
             latencyMs,
             attempts: 1,
             candidatesTried: [descriptor.provider],
@@ -988,7 +983,10 @@ projectsApp.openapi(
     summary: 'POST /:projectId/gateway/providers/:providerId/verify',
     ...auth,
     request: { params: z.object({ projectId: z.string(), providerId: z.string() }) },
-    responses: { 200: json(z.any(), 'Provider credential verification result'), ...errors(403, 404) },
+    responses: {
+      200: json(z.any(), 'Provider credential verification result'),
+      ...errors(403, 404),
+    },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -1046,10 +1044,10 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
   const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
   const defaultModelSource = projectDefault
-    ? 'project' as const
+    ? ('project' as const)
     : defaults.account
-      ? 'account' as const
-      : 'platform' as const;
+      ? ('account' as const)
+      : ('platform' as const);
   const route = await resolveGatewayRoute(
     {
       userId: ctx.userId,
@@ -1057,7 +1055,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       projectId: ctx.projectId,
       defaultModel: effectiveDefault,
     },
-    { requestedModel: 'auto', requires: { imageInput: false } },
+    { requestedModel: effectiveDefault, requires: { imageInput: false } },
   );
   return {
     version: 1 as const,
@@ -1073,10 +1071,10 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       // it were still honored. Entries that clamp to nothing are dropped.
       modelGenerationConfig: Object.fromEntries(
         Object.entries(stored?.modelGenerationConfig ?? {})
-          .map(([model, entry]) => [
-            model,
-            clampGenerationConfig(entry, catalogModelForWireModel(model)),
-          ] as const)
+          .map(
+            ([model, entry]) =>
+              [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+          )
           .filter(([, clamped]) => Object.keys(clamped).length > 0),
       ),
     },
@@ -1123,11 +1121,16 @@ projectsApp.openapi(
       loaded.row.accountId,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, canWrite));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        canWrite,
+      ),
+    );
   },
 );
 
@@ -1148,23 +1151,36 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     let policy;
     try {
       policy = parseProjectRoutingPolicyInput(await c.req.json());
     } catch (error) {
-      return c.json({
-        error: error instanceof Error ? error.message : 'Invalid routing policy',
-        code: 'invalid_routing_policy',
-      }, 400);
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : 'Invalid routing policy',
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const effectivePrimary = policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+    const effectivePrimary =
+      policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
-      return c.json({
-        error: `model "${effectivePrimary}" cannot fall back to itself`,
-        code: 'invalid_routing_policy',
-      }, 400);
+      return c.json(
+        {
+          error: `model "${effectivePrimary}" cannot fall back to itself`,
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
     }
     // Clamp every configured entry against the model's LIVE catalog
     // capabilities before it's ever persisted — never store a temperature
@@ -1174,10 +1190,10 @@ projectsApp.openapi(
     // entirely rather than stored as an empty object.
     const clampedGenerationConfig = Object.fromEntries(
       Object.entries(policy.modelGenerationConfig)
-        .map(([model, entry]) => [
-          model,
-          clampGenerationConfig(entry, catalogModelForWireModel(model)),
-        ] as const)
+        .map(
+          ([model, entry]) =>
+            [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+        )
         .filter(([, clamped]) => Object.keys(clamped).length > 0),
     );
     await setProjectRoutingPolicy({
@@ -1187,11 +1203,16 @@ projectsApp.openapi(
       policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
     });
     invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, true));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
   },
 );
 
@@ -1209,14 +1230,25 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
     invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, true));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
   },
 );
 
@@ -1270,14 +1302,16 @@ projectsApp.openapi(
     // isn't servable — correct for an actual generation call, but here it
     // must degrade to `available: false` for JUST that model rather than
     // fail the whole Promise.all/response for every model in the list.
-    const availability = await Promise.all(models.map(async (model) => {
-      try {
-        return { model, available: (await resolveCandidates(principal, model)).length > 0 };
-      } catch (err) {
-        if (err instanceof GatewayResolutionError) return { model, available: false };
-        throw err;
-      }
-    }));
+    const availability = await Promise.all(
+      models.map(async (model) => {
+        try {
+          return { model, available: (await resolveCandidates(principal, model)).length > 0 };
+        } catch (err) {
+          if (err instanceof GatewayResolutionError) return { model, available: false };
+          throw err;
+        }
+      }),
+    );
     return c.json({ version: 1, route, models: availability });
   },
 );

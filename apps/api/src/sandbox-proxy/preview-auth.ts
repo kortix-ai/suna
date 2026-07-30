@@ -35,18 +35,36 @@ import { canAccessPreviewSandbox } from '../shared/preview-ownership';
  * principal id to forward downstream. Returns null on any failure (invalid
  * token, or valid token without access to this sandbox).
  */
-export async function authenticatePreviewPrincipal(
+export interface PreviewPrincipal {
+  /** The principal's id (user, service account, or account for a kortix key). */
+  userId: string;
+  /**
+   * The session this credential is BOUND to, when it is a sandbox token. Null
+   * for a laptop CLI PAT, a service account, or a JWT. Kortix-as-a-Backend
+   * shares one `created_by` across every end-user, so this is the only thing
+   * that distinguishes one end-user's sandbox from another's.
+   */
+  sessionId: string | null;
+}
+
+/**
+ * Same authentication as {@link authenticatePreviewPrincipal}, but also returns
+ * the session the credential is bound to. Prefer this on any surface that then
+ * makes a session-visibility decision.
+ */
+export async function authenticatePreviewPrincipalDetailed(
   token: string | null | undefined,
   sandboxId: string,
-): Promise<string | null> {
+): Promise<PreviewPrincipal | null> {
   if (!token) return null;
   try {
-    // CLI Personal Access Token — carries the minting user's real id.
+    // CLI Personal Access Token — carries the minting user's real id, and for a
+    // SANDBOX token also the session it was minted for.
     if (isAccountToken(token)) {
       const r = await validateAccountToken(token);
       if (!r.isValid || !r.userId) return null;
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.userId }))
-        ? r.userId
+        ? { userId: r.userId, sessionId: r.sessionId ?? null }
         : null;
     }
 
@@ -55,7 +73,7 @@ export async function authenticatePreviewPrincipal(
       const r = await validateServiceAccountToken(token);
       if (!r.isValid || !r.serviceAccountId) return null;
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.serviceAccountId }))
-        ? r.serviceAccountId
+        ? { userId: r.serviceAccountId, sessionId: null }
         : null;
     }
 
@@ -64,7 +82,7 @@ export async function authenticatePreviewPrincipal(
       const r = await validateSecretKey(token);
       if (!r.isValid || !r.accountId) return null;
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, accountId: r.accountId }))
-        ? r.accountId
+        ? { userId: r.accountId, sessionId: null }
         : null;
     }
 
@@ -72,7 +90,7 @@ export async function authenticatePreviewPrincipal(
     const local = await verifySupabaseJwt(token);
     if (local.ok) {
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: local.userId }))
-        ? local.userId
+        ? { userId: local.userId, sessionId: null }
         : null;
     }
     if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') return null;
@@ -81,7 +99,7 @@ export async function authenticatePreviewPrincipal(
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return null;
     return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: user.id }))
-      ? user.id
+      ? { userId: user.id, sessionId: null }
       : null;
   } catch (err) {
     console.warn('[preview-auth] token validation error:', (err as Error)?.message || err);
@@ -105,4 +123,15 @@ export function extractPreviewToken(req: Request, url: URL): string | null {
   const m = cookieHeader.match(/(?:^|;\s*)__preview_session=([^;]+)/);
   if (m) return decodeURIComponent(m[1]);
   return null;
+}
+
+/**
+ * Back-compat wrapper: the principal id only. Existing callers that make no
+ * session-scoped decision (subdomain gate) keep using this.
+ */
+export async function authenticatePreviewPrincipal(
+  token: string | null | undefined,
+  sandboxId: string,
+): Promise<string | null> {
+  return (await authenticatePreviewPrincipalDetailed(token, sandboxId))?.userId ?? null;
 }

@@ -9,7 +9,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeMessages } from '@kortix/sdk/react';
 import {
   getChildSessionId,
   getChildSessionToolParts,
@@ -34,7 +34,7 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];

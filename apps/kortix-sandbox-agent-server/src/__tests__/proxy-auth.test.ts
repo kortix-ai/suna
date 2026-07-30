@@ -11,7 +11,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'bun:test'
@@ -46,6 +46,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
     ...over,
   }
 }
@@ -156,6 +157,19 @@ describe('daemon proxy auth gate', () => {
     ])
   })
 
+  it('uses the provider-selected username for direct-upstream auth', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
+
+    expect(buildGitAuthArgs(
+      'https://kortix.code.storage/project-123.git',
+      'code-storage-jwt',
+      't',
+    )).toEqual([
+      '-c',
+      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+  })
+
   it('fetches clone credentials from the API v1 project endpoint', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
     const originalFetch = globalThis.fetch
@@ -207,6 +221,45 @@ describe('daemon proxy auth gate', () => {
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes inside a writable target when its parent is read-only', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-readonly-parent-'))
+    const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      const globalGitConfig = join(root, 'gitconfig')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'read-only parent\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      mkdirSync(target)
+      writeFileSync(globalGitConfig, '')
+      process.env.GIT_CONFIG_GLOBAL = globalGitConfig
+
+      chmodSync(root, 0o555)
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+      }))
+
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('read-only parent\n')
+      expect(readdirSync(root).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+      expect(readdirSync(target).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+    } finally {
+      chmodSync(root, 0o755)
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -540,6 +593,30 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
+  it('lets the API service bearer reach /kortix/refresh', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&restart=0', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { error: string; message: string }
+    expect(body.error).toBe('refresh failed')
+    expect(body.message).toContain('not materialized')
+  })
+
+  it('rejects an invalid base_sha before Git execution', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: 'invalid base_sha',
+    })
+  })
+
   it('rejects /kortix/abort without a signed user context', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/abort', { method: 'POST' })
@@ -618,6 +695,108 @@ describe('daemon proxy auth gate', () => {
       const body = (await res.json()) as { ok: boolean; repo: { before: { commit: string }; after: { commit: string } } }
       expect(body.ok).toBe(true)
       expect(body.repo.before.commit).not.toBe(body.repo.after.commit)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips the base fetch when the workspace already matches base_sha', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-unchanged-'))
+    try {
+      const worktree = join(root, 'worktree')
+      mkdirSync(worktree)
+      git(['init'], worktree)
+      git(['checkout', '-b', 'session-branch'], worktree)
+      writeFileSync(join(worktree, 'README.md'), 'current\n')
+      git(['add', 'README.md'], worktree)
+      git(
+        ['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'current'],
+        worktree,
+      )
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })
+
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: join(root, 'missing-remote.git'),
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok'),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        ok: true,
+        repo: {
+          before: { commit: baseSha },
+          after: { commit: baseSha },
+        },
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('checks out the requested base_sha without restarting opencode', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-base-sha-'))
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const worktree = join(root, 'worktree')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      git(['clone', remote, worktree])
+
+      writeFileSync(join(seed, 'README.md'), 'v2\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v2'], seed)
+      git(['push', 'origin', 'main'], seed)
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: seed })
+
+      writeFileSync(join(seed, 'README.md'), 'v3\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v3'], seed)
+      git(['push', 'origin', 'main'], seed)
+
+      let restartCalls = 0
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: remote,
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(readFileSync(join(worktree, 'README.md'), 'utf8')).toBe('v2\n')
+      expect(gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })).toBe(baseSha)
+      expect(restartCalls).toBe(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

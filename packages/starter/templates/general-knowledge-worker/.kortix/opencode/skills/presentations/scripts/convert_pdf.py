@@ -1,6 +1,6 @@
 """Convert HTML presentation slides to a single PDF.
 
-Usage: uv run convert_pdf.py <presentation_dir> <output_path>
+Usage: uv run --with playwright --with pypdf convert_pdf.py <presentation_dir> <output_path>
 
 Reads metadata.json from <presentation_dir>, renders each slide HTML
 at 1920x1080 via Playwright Chromium, merges into a single PDF.
@@ -19,12 +19,15 @@ from pypdf import PdfWriter, PdfReader
 
 def find_chromium() -> str | None:
     """Auto-detect Chromium executable path for the current platform."""
-    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or os.environ.get(
+        "AGENT_BROWSER_EXECUTABLE_PATH"
+    )
     if env_path and os.path.isfile(env_path):
         return env_path
     for p in (
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
+        "/home/kortix/.local/bin/chromium",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",

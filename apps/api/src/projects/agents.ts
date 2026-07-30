@@ -1,3 +1,4 @@
+import { canonicalizeGrantConnectors } from '../iam/agent-scope';
 /**
  * `agents` block parsing for `kortix.yaml` (a legacy v1 project may instead
  * declare `[[agents]]` in `kortix.toml` — both are parsed here).
@@ -35,6 +36,7 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import { resolveGrantSet, SLUG_RE, type GrantSetV2 } from '@kortix/manifest-schema';
+import { normalizeRequiredConnectorAliases } from './lib/agent-config-v2';
 
 const MANIFEST_FILENAME = 'kortix.toml';
 
@@ -84,6 +86,8 @@ export interface AgentSpec {
   enabled: boolean;
   /** Which connector profiles (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
+  /** Connector profiles that must resolve before the session starts. */
+  connectorsRequired?: string[];
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
@@ -103,6 +107,8 @@ export interface AgentSpec {
    * gateway is the source of truth for entitlement.
    */
   model: string | null;
+  /** Default sandbox template slug for sessions started with this agent. */
+  sandbox?: string | null;
 }
 
 export interface AgentParseError {
@@ -115,10 +121,10 @@ export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
   /**
-   * The manifest's own top-level `default_agent` (v2 only — `ManifestV2` in
-   * `@kortix/manifest-schema`; v1 has no such field, so this is always `null`
-   * for a v1 manifest). Lets grant resolution make the non-binding `"default"`
-   * sentinel resolve to a concrete declared agent's grant for a v2 project,
+   * The manifest's own top-level `default_agent` (v2 and v3; v1 has no such
+   * field, so this is always `null` for a v1 manifest). Lets grant resolution
+   * make the non-binding `"default"` sentinel resolve to a concrete declared
+   * agent's grant for a governed project,
    * instead of falling back to the permissive `null` (unrestricted) v1
    * behavior — see `grantFromLoadedAgents` (spec §2.1).
    */
@@ -132,7 +138,7 @@ export interface LoadedAgents {
  * write `agents` as an object still gets the v1 "must be an array" error
  * instead of silently routing into the v2 reader:
  *   - v1: `[[agents]]` — an array of tables (existing behavior, unchanged).
- *   - v2: `agents:` — a name → block map (spec §2.1/§2.2); see
+ *   - v2/v3: `agents:` — a name → block map (spec §2.1/§2.2); see
  *     `extractAgentsV2`.
  */
 export function extractAgents(manifest: ParsedManifest): LoadedAgents {
@@ -207,7 +213,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
         name: '(top-level)',
         path: filename,
         error:
-          '`agents` must be a map of agent name → agent block in kortix_version 2 (the v1 `[[agents]]` array becomes a map)',
+          `\`agents\` must be a map of agent name → agent block in kortix_version ${manifest.schemaVersion} (the v1 \`[[agents]]\` array becomes a map)`,
       }],
       defaultAgent: null,
     };
@@ -252,12 +258,26 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  * gap — a blank project's very first session-create with no agent forced now
  * resolves the same declared default the write path already promises.
  */
-export async function loadProjectAgents(project: GitBackedProject): Promise<LoadedAgents> {
+export async function loadProjectAgents(
+  project: GitBackedProject,
+  opts?: { rethrowReadErrors?: boolean },
+): Promise<LoadedAgents> {
   const { readManifest, synthesizeBlankManifest } = await import('./triggers');
   let manifest: ParsedManifest | null;
   try {
-    manifest = await readManifest(project);
+    manifest = await readManifest(project, opts);
   } catch (err) {
+    // FAIL CLOSED for callers that asked to. Both failure modes reaching here —
+    // an unreadable manifest (rethrown by readManifest) and an unparseable one
+    // (parseManifestString throwing) — mean the same thing: we cannot determine
+    // this agent's grant. Neither may be laundered into a permissive answer.
+    //
+    // Swallowing them is a fail-OPEN for the two most common session shapes: an
+    // unreadable manifest becomes a synthesized `secrets: 'all'` manifest below,
+    // and an unparseable one produces the error-carrying result below, which
+    // `grantFromLoadedAgents` resolves to null — i.e. UNRESTRICTED — for the
+    // `default` sentinel. See projects/lib/secret-grant.ts.
+    if (opts?.rethrowReadErrors) throw err;
     // The manifest failed to parse before we learned which candidate file it
     // actually was (.yaml/.yml/.toml) — fall back to the project's configured
     // manifestPath (best-effort; may be stale for a project that switched
@@ -308,7 +328,15 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {
-    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env };
+    // Canonicalize the connector list here so all three gates (catalog, call,
+    // session-create) compare the same spelling — a manifest may say `email` or
+    // `kortix_email` and both must mean the same connector.
+    return canonicalizeGrantConnectors({
+      agent: agentName,
+      kortixCli: spec.kortixCli,
+      connectors: spec.connectors,
+      env: spec.env,
+    });
   }
 
   // The `default` sentinel is non-binding for v1: no agent is ever named
@@ -322,31 +350,46 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // still capped at the launching user's role; identical to a project that
   // never adopted [[agents]]).
   //
-  // v2 CHANGES this: the manifest declares a top-level `default_agent` that
+  // v2 and v3 change this: the manifest declares a top-level `default_agent` that
   // MUST always resolve to a concrete declared agent (spec §2.1 — "closes
   // trigger seam 7(a) structurally"). `loaded.defaultAgent` is only ever
-  // non-null for a v2 manifest (see `extractAgentsV2`), so this branch is a
-  // pure v2 addition — a v1 project (defaultAgent always null) falls straight
+  // non-null for a v2 or v3 manifest (see `extractAgentsV2`), so this branch is
+  // absent from v1 behavior — a v1 project (defaultAgent always null) falls
   // through to the unchanged `return null` below.
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     if (loaded.defaultAgent) {
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
       if (declared) {
-        return {
+        // Canonicalize here for the SAME reason the concrete-agent branch does
+        // (see above): catalog / call / create all compare canonical slugs, so
+        // a manifest that writes `email` rather than `kortix_email` would be
+        // silently denied at the call gate.
+        return canonicalizeGrantConnectors({
           agent: loaded.defaultAgent,
           kortixCli: declared.kortixCli,
           connectors: declared.connectors,
           env: declared.env,
-        };
+        });
       }
     }
     // A project locks down its default by setting `default_agent` to a
     // CONCRETE declared agent, which reaches us by that name and gets its
     // (possibly narrow) grant — so this never weakens an intentionally-
     // restricted default. Falling through here means either v1 (no
-    // manifest-level default_agent to honor) or a v2 manifest whose declared
+    // manifest-level default_agent to honor) or a v2/v3 manifest whose declared
     // default_agent doesn't resolve to an enabled spec (a validation-time
     // error the CR-merge gate should already have caught).
+    //
+    // EXCEPT when the manifest could not be read or parsed. `null` here means
+    // NO RESTRICTION (agent-scope.ts), and the mint resolves this grant with
+    // `.catch(() => null)` — so an unreadable manifest on a GOVERNED project
+    // would hand the session a fully unrestricted token for the life of the
+    // sandbox. Never widen on an error: a session that cannot prove what it is
+    // allowed to use gets nothing, which is the same rule the secrets path
+    // already follows (secret-grant.ts passes rethrowReadErrors for this).
+    if (loaded.errors.length > 0) {
+      return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+    }
     return null;
   }
 
@@ -354,6 +397,29 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // everything, including secrets/env (an unlisted agent receives no project
   // secrets).
   return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+}
+
+/** Resolve the selected agent's sandbox template without repository I/O. */
+export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents): string | null {
+  const concreteName =
+    agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.defaultAgent
+      : agentName;
+  return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
+}
+
+/**
+ * Resolve the connector profiles that the selected agent requires at session
+ * start. The connector profile controls which authorization owner is valid.
+ */
+export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
+  if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];
+  const spec =
+    loaded.specs.find((s) => s.name === agentName && s.enabled) ??
+    (agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled)
+      : undefined);
+  return spec?.connectorsRequired ?? [];
 }
 
 /**
@@ -401,9 +467,9 @@ export type GovernedAgentGrantResult = { ok: true; grant: AgentGrant | null } | 
  *     that doesn't name a declared/enabled agent, is rejected the same way —
  *     this is what closes trigger/spec seam 7(a) structurally (§2.1).
  *     `opts.projectDefaultAgent` (the DB `project.metadata.default_agent`
- *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2
+ *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2/v3
  *     manifest's own top-level `default_agent` — always null for v1) is the
- *     fallback, so a v2 project that never separately configured the DB-side
+ *     fallback, so a project that never separately configured the DB-side
  *     field still resolves the sentinel to what it actually declared in git.
  *
  * Exported for tests. Callers needing the historical `AgentGrant | null`
@@ -520,6 +586,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
   const canonical = JSON.stringify({
     enabled: spec.enabled,
     connectors: spec.connectors,
+    connectorsRequired: spec.connectorsRequired,
     kortixCli: spec.kortixCli,
     env: spec.env,
     file: spec.file,
@@ -576,6 +643,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       env: envParsed.value,
       file,
       model,
+      sandbox: null,
     },
   };
 }
@@ -601,6 +669,9 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     return err(name, `agents.${name} must be a table/object`);
   }
   const row = block as Record<string, unknown>;
+  const normalizedRequired = normalizeRequiredConnectorAliases(row);
+  if (!normalizedRequired.ok) return err(name, `agents.${name}.${normalizedRequired.error}`);
+  const normalizedRow = normalizedRequired.block;
 
   // v2's `enabled` is a top-level Kortix-governance boolean (validated
   // upstream by manifest-schema); only a literal `false` disables. Behavior
@@ -613,13 +684,31 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   // which the session model-resolution chain already treats as "fall through
   // to account/platform" — the compiler (compile-agent-config.ts) is what
   // actually resolves a per-agent model now, straight from that same `.md`.
-  const enabled = row.enabled !== false;
+  const enabled = normalizedRow.enabled !== false;
   const file: string | null = null;
   const model: string | null = null;
+  const sandbox =
+    typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
+      ? normalizedRow.sandbox.trim()
+      : null;
 
-  const connectorsResolved = resolveGrantSet(row.connectors, 'none');
+  const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 
-  const kortixResolved = resolveGrantSet(row.kortix_cli, 'none');
+  const connectorsRequired = (normalizedRow.connectors_required as string[] | undefined) ?? [];
+  if (connectorsRequired.length > 0) {
+    if (connectorsResolved !== 'all') {
+      const granted = new Set<string>(connectorsResolved === 'none' ? [] : connectorsResolved);
+      const notGranted = connectorsRequired.filter((slug) => !granted.has(slug));
+      if (notGranted.length > 0) {
+        return err(
+          name,
+          `agents.${name}.connectors_required must be a subset of connectors — not granted: ${notGranted.join(', ')}`,
+        );
+      }
+    }
+  }
+
+  const kortixResolved = resolveGrantSet(normalizedRow.kortix_cli, 'none');
   if (Array.isArray(kortixResolved)) {
     for (const action of kortixResolved) {
       const problem = validateKortixAction(action);
@@ -631,7 +720,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   // shape as connectors/kortix_cli, same deny-by-default resolution — mapped
   // onto AgentSpec's `env` field, which the rest of the pipeline (secret
   // scoping in sessions.ts, `agentMayUseEnv`) already consumes.
-  const secretsResolved = resolveGrantSet(row.secrets, 'none');
+  const secretsResolved = resolveGrantSet(normalizedRow.secrets, 'none');
 
   return {
     ok: true,
@@ -640,10 +729,12 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       path: `${filename}#agents.${name}`,
       enabled,
       connectors: toGrantSet(connectorsResolved),
+      connectorsRequired,
       kortixCli: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
       file,
       model,
+      sandbox,
     },
   };
 }

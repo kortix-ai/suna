@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { GatewayLogRow } from './gateway';
 import {
   createGatewayKey,
   deleteGatewayBudget,
@@ -35,6 +36,15 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
+type GatewayLogCarriesCacheWrites = GatewayLogRow extends { cache_write_tokens: number }
+  ? true
+  : false;
+
+test('GatewayLogRow carries cache-write tokens from the API contract', () => {
+  const contractIncludesCacheWrites: GatewayLogCarriesCacheWrites = true;
+  expect(contractIncludesCacheWrites).toBe(true);
+});
+
 test('listGatewayLogs builds the query string from limit/offset/ok', async () => {
   nextResponse = { status: 200, body: { logs: [], next_offset: null } };
   await listGatewayLogs('P1', { limit: 10, offset: 20, ok: false });
@@ -47,7 +57,14 @@ test('listGatewayLogs builds the query string from limit/offset/ok', async () =>
 test('getGatewayOverview omits the days param when not provided', async () => {
   nextResponse = {
     status: 200,
-    body: { window_days: 7, requests: 0, errors: 0, total_cost: 0, input_tokens: 0, output_tokens: 0 },
+    body: {
+      window_days: 7,
+      requests: 0,
+      errors: 0,
+      total_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+    },
   };
   await getGatewayOverview('P1');
   expect(last().url).toBe('http://test.local/projects/P1/gateway/overview');
@@ -65,9 +82,19 @@ test('getGatewayBudgets hits the budgets collection', async () => {
 
 test('setGatewayBudget PUTs the budget input', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await setGatewayBudget('P1', { scope: 'project', limit_usd: 100, period: 'month', action: 'block' });
+  await setGatewayBudget('P1', {
+    scope: 'project',
+    limit_usd: 100,
+    period: 'month',
+    action: 'block',
+  });
   expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ scope: 'project', limit_usd: 100, period: 'month', action: 'block' });
+  expect(last().body).toEqual({
+    scope: 'project',
+    limit_usd: 100,
+    period: 'month',
+    action: 'block',
+  });
 });
 
 test('deleteGatewayBudget deletes by budget id', async () => {
@@ -78,7 +105,10 @@ test('deleteGatewayBudget deletes by budget id', async () => {
 });
 
 test('createGatewayKey posts a name and revokeGatewayKey deletes by id', async () => {
-  nextResponse = { status: 200, body: { key_id: 'k1', name: 'ci', key_prefix: 'sk_', secret_key: 'sk_full' } };
+  nextResponse = {
+    status: 200,
+    body: { key_id: 'k1', name: 'ci', key_prefix: 'sk_', secret_key: 'sk_full' },
+  };
   await createGatewayKey('P1', 'ci');
   expect(last().url).toContain('/projects/P1/gateway/keys');
   expect(last().method).toBe('POST');

@@ -26,6 +26,7 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from './db';
+import { isPlaceholderOpencodeTitle } from '../projects/lib/opencode-title';
 import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
 
@@ -63,7 +64,10 @@ export async function getPublicSessionInfo(sessionId: string): Promise<PublicSes
 
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   const customName = typeof metadata.custom_name === 'string' ? metadata.custom_name : null;
-  const autoName = typeof metadata.name === 'string' ? metadata.name : null;
+  // Same placeholder heal the authenticated serializer applies: never show an
+  // anonymous viewer a frozen "New session - …" as if it were a real title.
+  const rawAutoName = typeof metadata.name === 'string' ? metadata.name : null;
+  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
 
   return {
     ok: true,

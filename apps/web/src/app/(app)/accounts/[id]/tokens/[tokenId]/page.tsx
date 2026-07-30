@@ -15,8 +15,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { accountTokensApi } from '@/lib/api/account-tokens';
 import { usePermission } from '@/lib/use-permission';
+import { listAccountTokens } from '@kortix/sdk';
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -38,7 +38,7 @@ export default function TokenDetailPage() {
   // way to know about a token's metadata anyway.
   const tokensQuery = useQuery({
     queryKey: ['account-tokens', accountId],
-    queryFn: () => accountTokensApi.list(),
+    queryFn: () => listAccountTokens(accountId),
     enabled: !!user && !!accountId,
     staleTime: 30_000,
   });

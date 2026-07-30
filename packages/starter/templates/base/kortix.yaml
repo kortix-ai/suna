@@ -1,164 +1,157 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
 #
-# Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
-# model, mode, temperature, permission, the prompt itself, …) lives
-# entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
-# frontmatter + body — a stock OpenCode agent file, no Kortix-specific
-# split. The agent's NAME is the join between this map's keys and that
-# `.md`'s filename. See
-# docs/specs/2026-07-05-agent-first-config-unification.md (decision
-# 2026-07-05: "one home per concern").
-kortix_version: 2
+# Kortix project manifest. This file is the source of truth for project-wide
+# configuration stored with the repository.
+#
+# Version 3 supports ACP runtime profiles. The selected runtime profile becomes
+# immutable when a session starts. An in-place restart keeps the same harness.
+# Start a new session to use another harness.
+kortix_version: 3
 
-# The agent a session/trigger boots when it names no concrete agent (the
-# "default" sentinel). Must always resolve to a declared agent below.
-default_agent: kortix
+# The logical agent used when a session or trigger does not name one.
+default_agent: opencode
 
 project:
   name: "{{projectName}}"
   description: A Kortix project.
 
-# Env vars the runtime needs. Required values must be set in the Kortix
-# Secrets Manager before a session can start.
+# Environment names used by this project. `required` is advisory. Missing
+# values appear in project configuration, but they do not block session start.
 env:
   required: []
-  optional: [STRIPE_API_KEY]
+  optional:
+    - STRIPE_API_KEY
+    - ANTHROPIC_API_KEY
+    - ANTHROPIC_AUTH_TOKEN
+    - CLAUDE_CODE_OAUTH_TOKEN
+    - CODEX_AUTH_JSON
+    - OPENAI_API_KEY
+    - CODEX_API_KEY
 
-# ─── Sandbox templates ───────────────────────────────────────────────────
-# Sessions boot from a sandbox image. The platform's default image (Ubuntu +
-# the Kortix runtime layer) is always available — sessions clone your repo
-# into /workspace at boot, so no per-project build is needed by default.
+# Sessions boot from a sandbox image. The platform default image includes the
+# Kortix runtime layer and clones this repository into `/workspace`.
 #
-# Define `sandbox.templates` entries below if you want named custom images
-# for this project. Each entry can point at either a Dockerfile in the repo
-# (`dockerfile: …`) or a public Docker image (`image: …`). Pick one or
-# the other. The Kortix runtime layer is always added on top.
+# Define named custom images when the project needs additional system
+# dependencies. Use either `dockerfile` or `image` for each template.
 #
-# Hardware: cpu = cores, memory = GiB, disk = GiB. All optional.
-#
-# Example — custom Dockerfile:
 # sandbox:
-#   templates:
-#     - slug: ml
-#       name: ML Development
-#       dockerfile: .kortix/Dockerfile.ml
-#       cpu: 4
-#       memory: 16
-#       disk: 50
-#
-# Example — public Docker image:
-# sandbox:
+#   default: python
 #   templates:
 #     - slug: python
 #       name: Python 3.12
 #       image: python:3.12-slim
 #       cpu: 2
 #       memory: 4
+#       disk: 20
 #
-# Make one template the project-wide default — every session (UI, triggers,
-# channels) then boots it without passing a slug. Omit for the platform default.
-# sandbox:
-#   default: python
+# An agent can override the project default with
+# `agents.<name>.sandbox: <template-slug>`.
 
-# OpenCode runtime config dir. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
-# under this folder. `opencode.jsonc` remains OpenCode's native registry
-# for plugins, MCP servers, providers, models, and runtime defaults.
-# Defaults to `.kortix/opencode` — relocate if you want to share a
-# single opencode config across multiple Kortix repos.
-opencode:
-  config_dir: .kortix/opencode
+# Each profile selects one native harness and its repository configuration
+# directory. OpenCode keeps its agents, skills, commands, tools, plugins,
+# providers, and models under `.kortix/opencode`.
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+    config_dir: .codex
+  pi:
+    harness: pi
+    config_dir: .pi
 
-# ─── Agents ──────────────────────────────────────────────────────────────
-# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/
-# skills grants the runtime itself can't express, plus workspace (the git
-# boundary) and enabled. Everything else (description, mode, permission,
-# temperature, the prompt itself, …) lives in the matching
-# `.kortix/opencode/agents/<name>.md` — open those files to see/change what
-# each agent actually does. v2 is deny-by-default: an omitted connectors/
-# secrets/kortix_cli/skills grant resolves to "none", so a scoped specialist
-# starts locked down. The starter's own `kortix` agent is deliberately
-# granted "all" across the board so a fresh project is capable out of the
-# box — narrow it once you know what this project actually needs.
+# Logical agents select runtime profiles. Kortix applies project governance
+# fields such as connectors, secrets, skills, CLI grants, workspace, enabled,
+# and sandbox. Harness-native behavior stays in the selected runtime's files.
+#
+# Direct credentials differ by harness:
+# - Claude Code: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
+#   CLAUDE_CODE_OAUTH_TOKEN.
+# - Codex: CODEX_AUTH_JSON, OPENAI_API_KEY, or CODEX_API_KEY.
+# - Pi: OPENAI_API_KEY or CODEX_API_KEY.
+#
+# Kortix-managed model access needs no project credential when the platform
+# gateway supports the selected harness and model.
 agents:
-  kortix:
+  opencode:
+    runtime: opencode
+    agent: kortix
     connectors: all
     secrets: all
-    kortix_cli: all
     skills: all
+    kortix_cli: all
+
+  claude:
+    runtime: claude
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+
+  codex:
+    runtime: codex
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+
+  pi:
+    runtime: pi
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
 
   memory-reflector:
-    # Scoped specialist: only what its job needs (open — never merge — a
-    # memory CR). No connectors, no project secrets.
+    runtime: opencode
+    agent: memory-reflector
     kortix_cli: [project.cr.open]
 
-# ─── Triggers ────────────────────────────────────────────────────────────
-# Each entry spawns a fresh session that runs `prompt` as its initial
-# message. Add from the Kortix UI or uncomment one below. Slugs must be
-# lowercase URL-safe and unique per project. `agent` must name a declared
-# agent above (or be omitted to fall back to `default_agent`).
-
+# Each trigger creates a session and sends `prompt` as its initial message.
+# `agent` must name a logical agent above. Omit it to use `default_agent`.
 triggers:
-  # Memory reflector — surveys recent project activity and curates
-  # `.kortix/memory/` (the project brain). Reads its rubric from the
-  # `kortix-memory` skill. Opens a `memory: …` change request at the end
-  # of each run; exits silently when nothing is worth changing.
-  #
-  # Disabled by default. Flip `enabled: true` once your project has
-  # enough activity for reflection to find signal — usually after the
-  # first week or two.
+  # The memory reflector reviews recent project activity. It updates
+  # `.kortix/memory/` through a change request when it finds durable knowledge.
   - slug: memory-reflector
     name: Memory reflector
     type: cron
     agent: memory-reflector
     enabled: false
-    cron: "0 0 3 * * *" # 03:00 daily
+    cron: "0 0 3 * * *"
     timezone: UTC
     prompt: |
-      Load the `kortix-memory` skill, then reflect on the last 24h of
-      project activity: git log, merged CRs, and every session that ran
-      in the window (`kortix sessions digest --since 24h` — analyze what
-      each session actually did). Update `.kortix/memory/` per the rubric
-      and open a single CR titled `memory: …`. Exit silently if nothing is
-      worth changing.
+      Load the `kortix-memory` skill, then reflect on the last 24 hours of
+      project activity. Review git history, merged change requests, and
+      sessions from `kortix sessions digest --since 24h`. Update
+      `.kortix/memory/` and open one change request titled `memory: ...`.
+      Exit without a change request when there is no durable knowledge.
 
-  # Cron trigger — fires on a 6-field croner expression
-  # (second minute hour day month weekday).
+  # Example cron trigger:
   #
   # - slug: daily-digest
   #   name: Daily digest
   #   type: cron
-  #   agent: kortix                  # must name a declared agent above
+  #   agent: claude
   #   enabled: true
-  #   cron: "0 0 9 * * 1-5"          # 09:00 Mon–Fri
+  #   cron: "0 0 9 * * 1-5"
   #   timezone: America/Los_Angeles
   #   prompt: |
-  #     Summarize yesterday's commits across the repo. Save the result to
-  #     notes/digest-{{ fired_at }}.md and open a PR against main.
-  #
-  # Webhook trigger — fires on signed POSTs to
-  #   /v1/webhooks/projects/<project_id>/<slug>
-  # Signature header: `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 over
-  # the raw body using the secret named by `secret_env`).
-  # GitHub's `X-Hub-Signature-256` is also accepted.
-  #
-  # - slug: slack-hook
-  #   name: Slack handler
-  #   type: webhook
-  #   agent: kortix
-  #   enabled: true
-  #   secret_env: WEBHOOK_SLACK_SECRET  # add the value via Secrets Manager
-  #   prompt: |
-  #     Slack event from {{ headers.user_agent }}.
-  #     User said: {{ body.text }}
+  #     Summarize yesterday's repository changes.
 
-# ─── Channels ────────────────────────────────────────────────────────────
-# v2 removes `channels` from the manifest — channel↔agent routing (Slack
-# today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel integration
-# itself still shows up here as a `connectors` entry with
-# `provider: channel` once you connect one — that part is unchanged.
+  # Example webhook trigger:
+  #
+  # - slug: webhook-handler
+  #   name: Webhook handler
+  #   type: webhook
+  #   agent: codex
+  #   enabled: true
+  #   secret_env: WEBHOOK_SECRET
+  #   prompt: |
+  #     Process this webhook payload: {{ body }}
+
+# Channel routing is live project state. Configure it in Customize > Channels.
+# Connected channels appear as connectors after setup.

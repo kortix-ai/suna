@@ -1,10 +1,8 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { getClient } from '@/lib/opencode-sdk';
-import { requestRuntimeReconnect, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
+import { requestRuntimeReconnect, useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useRuntimeProjectInfo } from '@kortix/sdk/react';
+import type { ServerHealth } from '@/features/file-browser/types';
 import { fileServerHealthState } from './server-health-state';
 
 /**
@@ -19,9 +17,9 @@ import { fileServerHealthState } from './server-health-state';
  * but the data comes from the Zustand store, not a separate HTTP call.
  */
 export function useServerHealth(options?: { enabled?: boolean }) {
-  const status = useSandboxConnectionStore((s) => s.status);
-  const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
-  const version = useSandboxConnectionStore((s) => s.openCodeVersion);
+  const status = useRuntimeConnectionStore((s) => s.status);
+  const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy);
+  const version = useRuntimeConnectionStore((s) => s.openCodeVersion);
 
   // Return a shape compatible with the old UseQueryResult<ServerHealth>
   // so consumers don't need to change their destructuring pattern.
@@ -42,28 +40,11 @@ export function useServerHealth(options?: { enabled?: boolean }) {
 /**
  * Get current project info from the active OpenCode server.
  *
- * CONSOLIDATED: Now uses the same React Query key as useOpenCodeCurrentProject
- * (opencodeKeys.currentProject()) to share cache and prevent duplicate fetches.
+ * CONSOLIDATED: Now uses the same React Query key as useRuntimeCurrentProject
+ * (runtimeKeys.currentProject()) to share cache and prevent duplicate fetches.
  * Previously used a different key ['opencode-server', 'project', serverUrl]
  * which caused independent duplicate requests.
  */
 export function useCurrentProject(options?: { enabled?: boolean }) {
-  const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
-
-  return useQuery<OpenCodeProjectInfo>({
-    queryKey: opencodeKeys.currentProject(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.current();
-      if (result.error) {
-        const err = result.error as any;
-        throw new Error(err?.data?.message || err?.message || 'SDK request failed');
-      }
-      return result.data as OpenCodeProjectInfo;
-    },
-    enabled: runtimeReady && options?.enabled !== false,
-    staleTime: Infinity,
-    gcTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-  });
+  return useRuntimeProjectInfo(options);
 }

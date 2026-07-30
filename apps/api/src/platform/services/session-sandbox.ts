@@ -22,9 +22,12 @@ import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
   getProvider,
+  SandboxTemplateNotFoundError,
   type CreateSandboxOpts,
+  type ProvisionResult,
   type ProviderName,
 } from '../providers';
+import { readActiveRouting } from '../../projects/provider-transition/provider-transition-store';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
@@ -52,6 +55,21 @@ import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
+import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
+import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
+import { resolveProjectRuntimeTransport } from '../../experimental/features';
+
+/**
+ * Bound for the pre-active hook. Generous, because the hook is a data restore and
+ * cutting it short mid-write is worse than waiting — but finite, because it sits
+ * between "VM exists" and "row is active", i.e. directly on time-to-usable. See
+ * the call site for the measured cost of it being unbounded.
+ */
+const BEFORE_ACTIVE_HOOK_TIMEOUT_MS = configuredTimeoutMs(
+  'KORTIX_BEFORE_ACTIVE_HOOK_TIMEOUT_MS',
+  20_000,
+  1_000,
+);
 
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
@@ -155,6 +173,57 @@ async function mintExecutorToken(opts: {
   }
 }
 
+/**
+ * FIX-A kill-switch. Default ON: boot by the activated pinned template id, with
+ * a name-boot fallback ONLY on a definitive GC'd-pin 404. Set
+ * `KORTIX_SESSION_BOOT_BY_TEMPLATE_ID=0` (or off/false/no) to revert to the
+ * name-only boot — the safe escape hatch for the first rollout.
+ */
+export function sessionBootByTemplateIdEnabled(): boolean {
+  const raw = (process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID ?? '').trim().toLowerCase();
+  if (raw === '') return true; // default ON
+  return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
+}
+
+/**
+ * FIX-A: decide whether this boot should use the pinned EXACT template id. Pure
+ * (no I/O) so the gate is unit-testable. Returns the id ONLY when every guard
+ * holds:
+ *   - the kill-switch is ON,
+ *   - the provider actually supports id-boot (Platinum; others are name-only),
+ *   - a non-empty pinned id exists, AND
+ *   - MANDATORY provider-match: the pin belongs to the provider it was activated
+ *     for — `routing.activeProvider === providerName`. This is what makes a
+ *     rollback safe: a project reverted to Daytona with a leftover Platinum id
+ *     pin (activeProvider='daytona') booting a Daytona session must use the NAME,
+ *     never the stale Platinum id.
+ * `disabledForSession` lets the caller drop to name-boot after a 404 fallback.
+ */
+export function decideSessionBoot(input: {
+  killSwitchOn: boolean;
+  routing: { activeProvider: string | null; activeExternalTemplateId: string | null } | null;
+  providerName: string;
+  providerSupportsIdBoot: boolean;
+  imageIsDefault?: boolean;
+  disabledForSession?: boolean;
+}): { bootByTemplateId: string | null } {
+  const {
+    killSwitchOn,
+    routing,
+    providerName,
+    providerSupportsIdBoot,
+    imageIsDefault = true,
+    disabledForSession,
+  } = input;
+  if (disabledForSession || !killSwitchOn || !providerSupportsIdBoot || !imageIsDefault) {
+    return { bootByTemplateId: null };
+  }
+  const pinnedId = routing?.activeExternalTemplateId ?? null;
+  if (!pinnedId) return { bootByTemplateId: null };
+  if (routing?.activeProvider !== providerName) return { bootByTemplateId: null }; // provider-match
+  return { bootByTemplateId: pinnedId };
+}
+
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
@@ -183,7 +252,7 @@ export async function provisionSessionSandbox(opts: {
    * is omitted, defaults to `gitProject.defaultBranch`.
    */
   gitProject: GitBackedProject;
-  resolveGitAuthToken?: () => Promise<string | null>;
+  resolveGitProject?: () => Promise<GitBackedProject>;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -201,6 +270,7 @@ export async function provisionSessionSandbox(opts: {
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   const providerWasExplicitlySelected = opts.provider !== undefined;
+  const requireCurrentRuntime = resolveProjectRuntimeTransport(opts.projectMetadata) === 'acp';
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -212,12 +282,11 @@ export async function provisionSessionSandbox(opts: {
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
-  // Resolve the project + a fresh git auth token (the snapshot builder may need
-  // it to read the repo's Dockerfile when building a custom template).
+  // Resolve the project + fresh provider-neutral git access (the snapshot
+  // builder may need it to read the repo's Dockerfile).
   const resolveGitProject = async (): Promise<GitBackedProject> => {
-    if (!opts.resolveGitAuthToken) return opts.gitProject;
-    const token = await opts.resolveGitAuthToken();
-    return { ...opts.gitProject, gitAuthToken: token };
+    if (!opts.resolveGitProject) return opts.gitProject;
+    return opts.resolveGitProject();
   };
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
@@ -238,6 +307,7 @@ export async function provisionSessionSandbox(opts: {
       accountId,
       source: 'session-start',
       provider: providerName,
+      requireCurrentRuntime,
     });
     return { ...image, gitProject };
   })();
@@ -335,6 +405,13 @@ export async function provisionSessionSandbox(opts: {
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
+  // A WARM-POOL box is the one box the control plane can never observe again
+  // until somebody claims it: no turns, no LLM calls, no human preview traffic.
+  // Under the bare 20-minute boot floor every warm box was therefore reaped
+  // before it could be handed out, which defeats the whole feature. Grant its
+  // (bounded) lifetime here, at the one moment we know it is warm. No-op for
+  // every other box, and fire-and-forget: the row already carries the floor.
+  void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
   // provider.sandboxFacingApiOrigin() (optional) lets a same-machine provider
@@ -401,15 +478,16 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Idle lifecycle: each provider's NATIVE auto-stop is the primary stop
-    // mechanism. We pass NO explicit autoStopInterval for a normal session so the
-    // provider applies its own policy: Daytona → daytonaLifecycle()
-    // (KORTIX_SANDBOX_AUTOSTOP_MINUTES); Platinum → the same idle timeout (see
-    // platinum.ts). Platinum NO LONGER forces persistent — the CH resume-freeze
+    // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
+    // so each provider gets its native idle timer set from
+    // providerAutoStopBackstopMinutes() (Daytona → daytonaLifecycle(); Platinum →
+    // auto_stop_minutes). That timer is a LAST-RESORT backstop for a box this API
+    // can no longer reach — 12h, deliberately far above any real turn, because it
+    // sees only inbound traffic and nothing resets it during a local tool run.
+    // The primary stop is `deadline_at` (projects/sandbox-deadline.ts), enforced
+    // by the reaper. Platinum NO LONGER forces persistent — the CH resume-freeze
     // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
-    // idle-stops + CoW-resumes natively rather than depending on the maintenance
-    // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
-    // reaper stays as a secondary backstop only.
+    // idle-stops + CoW-resumes natively too.
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -424,6 +502,20 @@ export async function provisionSessionSandbox(opts: {
     // second provider, so a session never bounces between providers forever.
     let fallbackAttempted = false;
     let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
+    // FIX-A: the project's ACTIVATED routing pin (provider + exact template id),
+    // read once, best-effort — a DB hiccup yields null → name-boot. Set
+    // `idBootDisabled` once a definitive GC'd-pin 404 forces this session down to
+    // a name-boot, so the retry never re-attempts the dead pin.
+    let activeRouting: { activeProvider: string | null; activeExternalTemplateId: string | null } | null = null;
+    try {
+      activeRouting = await readActiveRouting(db, projectId);
+    } catch (routingErr) {
+      console.warn(
+        `[session-sandbox] readActiveRouting failed for ${projectId} (falling back to name-boot):`,
+        routingErr instanceof Error ? routingErr.message : String(routingErr),
+      );
+    }
+    let idBootDisabled = false;
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
@@ -445,6 +537,7 @@ export async function provisionSessionSandbox(opts: {
           accountId,
           source: 'session-start',
           provider: providerName,
+          requireCurrentRuntime,
         });
       }
       imageInfo = {
@@ -462,7 +555,30 @@ export async function provisionSessionSandbox(opts: {
       );
 
       const firstStage = provider.provisioning.stages[0];
-      const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
+      // FIX-A: honor the activated pinned template id (provider-matched) so the
+      // running sandbox is the EXACT warm image activation chose — behind the
+      // kill-switch, and only when the provider supports id-boot.
+      const bootDecision = decideSessionBoot({
+        killSwitchOn: sessionBootByTemplateIdEnabled(),
+        routing: activeRouting,
+        providerName,
+        providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
+        imageIsDefault: image.isDefault,
+        disabledForSession: idBootDisabled,
+      });
+      if (bootDecision.bootByTemplateId) {
+        console.log(
+          `[session-sandbox] booting ${sandbox.sandboxId} by PINNED template id ` +
+          `${bootDecision.bootByTemplateId} (provider ${providerName})`,
+        );
+      }
+      const createFn = bootDecision.bootByTemplateId
+        ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
+        : undefined;
+      let result: ProvisionResult;
+      let attempts: number;
+      try {
+      ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt) => {
           await db
             .update(sessionSandboxes)
@@ -493,7 +609,24 @@ export async function provisionSessionSandbox(opts: {
             })
             .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         },
-      });
+      }, createFn));
+      } catch (createErr) {
+        // FIX-A: a DEFINITIVE GC'd-pin 404 → fall back to a NAME boot for THIS
+        // session (re-enter the loop with id-boot disabled). Do NOT self-repair
+        // the pin here — that races the activation generation CAS; log it and let
+        // the provider-transition controller re-pin. A transient 5xx (or any
+        // other error) is re-thrown to the outer catch (failover/capacity/error)
+        // and surfaced — never silently name-booted onto a possibly-wrong image.
+        if (bootDecision.bootByTemplateId && createErr instanceof SandboxTemplateNotFoundError) {
+          console.warn(
+            `[session-sandbox] pinned template ${bootDecision.bootByTemplateId} for ${sandbox.sandboxId} ` +
+            `is gone (404) — booting by name; leaving the pin for the controller to re-pin`,
+          );
+          idBootDisabled = true;
+          continue provisioning;
+        }
+        throw createErr;
+      }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
@@ -585,13 +718,31 @@ export async function provisionSessionSandbox(opts: {
 
       // Pre-active hook (legacy migration chat restore). Runs while the row is
       // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
-      // Best-effort: never block the session opening on it.
+      //
+      // The comment here used to say "never block the session opening on it" while
+      // the code awaited it UNBOUNDED — and the telemetry shows what that cost
+      // when the hook was live: `before-active-hook` p50 12 267ms, p90 33 762ms,
+      // max 62 490ms across 162 provisions, every millisecond of it added to
+      // time-to-usable because the row cannot flip to 'active' until this returns
+      // (last live occurrence 2026-07-12; no caller passes `beforeActive` today,
+      // so this is currently unreachable).
+      //
+      // Left in place as the documented extension point it is, but now bounded so
+      // re-enabling it cannot silently reintroduce a 12-60s stall. On timeout the
+      // hook keeps running detached — it is a data-restore, so abandoning the WAIT
+      // is right while abandoning the WORK is not — and the session proceeds to
+      // 'active' as the original comment always promised.
       if (opts.beforeActive) {
         try {
-          await opts.beforeActive(result.externalId);
+          await withTimeout(
+            opts.beforeActive(result.externalId),
+            BEFORE_ACTIVE_HOOK_TIMEOUT_MS,
+            `beforeActive(${sandbox.sandboxId})`,
+          );
           tl.mark('before-active-hook');
         } catch (err) {
-          console.warn(`[session-sandbox] beforeActive hook failed for ${sandbox.sandboxId}:`, err);
+          console.warn(`[session-sandbox] beforeActive hook failed or timed out for ${sandbox.sandboxId}:`, err);
+          tl.mark('before-active-hook-abandoned');
         }
       }
 
@@ -786,7 +937,7 @@ export async function provisionSessionSandbox(opts: {
       // are transient outages, not session failures. Log them as a warning so
       // they don't read as code bugs in the console, and present a friendly
       // message to the user instead of the SDK stack trace.
-      const isCapacity = /no available runner|no runners available|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
+      const isCapacity = /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
       // Git auth / repo-access failures. These are NOT a provider fault — the
       // sandbox provider is fine; we couldn't clone the project's repo. Reporting
       // them as "Provisioning failed via daytona" actively misdirects debugging

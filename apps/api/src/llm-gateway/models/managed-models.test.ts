@@ -36,6 +36,26 @@ describe('runtime managed model registry', () => {
     })]);
   });
 
+  test('accepts AsterLab transport and provider branding', () => {
+    const configured = parseManagedModels(JSON.stringify([{
+      id: 'glm-5.2',
+      name: 'GLM 5.2',
+      upstreamModelId: 'glm-5.2',
+      transport: 'aster',
+      pricingRef: 'z-ai/glm-5.2',
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_000_000, output: 131_072 },
+      providerBrand: 'zhipuai',
+    }]));
+
+    expect(configured[0]).toMatchObject({
+      transport: 'aster',
+      upstreamModelId: 'glm-5.2',
+      providerBrand: 'zhipuai',
+    });
+  });
+
   test('rejects malformed and duplicate managed-model definitions', () => {
     expect(() => parseManagedModels('{broken')).toThrow('must be valid JSON');
     const duplicate = {

@@ -14,6 +14,8 @@ create extension if not exists pgcrypto;
 --> statement-breakpoint
 create extension if not exists pg_net;
 --> statement-breakpoint
+create extension if not exists pg_cron;
+--> statement-breakpoint
 create extension if not exists pg_trgm with schema public;
 --> statement-breakpoint
 -- public helpers (auth email reader)
@@ -68,6 +70,46 @@ CREATE TABLE IF NOT EXISTS "basejump"."account_user" (
   "account_role" "basejump"."account_role" NOT NULL,
   PRIMARY KEY ("user_id","account_id")
 );
+--> statement-breakpoint
+-- public: small control tables required by the hosted web and Auth paths
+CREATE TABLE IF NOT EXISTS public.contact_forms (
+  id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE public.contact_forms ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+CREATE POLICY contact_forms_insert
+  ON public.contact_forms
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (true);
+--> statement-breakpoint
+GRANT ALL ON TABLE public.contact_forms TO anon, authenticated, service_role;
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS public.webhook_config (
+  id integer DEFAULT 1 NOT NULL PRIMARY KEY,
+  backend_url text NOT NULL,
+  webhook_secret text NOT NULL,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT single_row CHECK (id = 1)
+);
+--> statement-breakpoint
+ALTER TABLE public.webhook_config ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+CREATE POLICY "No public access"
+  ON public.webhook_config
+  TO anon, authenticated
+  USING (false);
+--> statement-breakpoint
+CREATE POLICY "Service role can manage webhook config"
+  ON public.webhook_config
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+--> statement-breakpoint
+GRANT ALL ON TABLE public.webhook_config TO anon, authenticated, service_role;
 --> statement-breakpoint
 -- public: atomic credit RPC functions (operate on kortix.credit_accounts)
 CREATE OR REPLACE FUNCTION public.atomic_add_credits(p_account_id uuid, p_amount numeric, p_is_expiring boolean DEFAULT true, p_description text DEFAULT 'Credit added'::text, p_expires_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_type text DEFAULT NULL::text, p_stripe_event_id text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)

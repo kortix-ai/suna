@@ -150,6 +150,44 @@ export function registerGlobalMocks() {
       mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
   }));
 
+  // account-deletion.ts's stopAccountSandboxes reads active sandboxes and stops
+  // them via the provider before tearing down the account. None of the
+  // deletion-flow tests in this directory exercise sandbox-stopping, so the
+  // default here is simply "no active sandboxes" — a harmless no-op for every
+  // existing test, and enough for stopAccountSandboxes' static imports to
+  // resolve without needing a real DB/provider.
+  // A module mock REPLACES the whole module, so every export the code under
+  // test imports has to appear here — a missing one is not a silent undefined,
+  // it is a hard `SyntaxError: Export named 'x' not found` that kills the file.
+  mock.module('../../shared/db', () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }),
+    },
+    // Real shape is a boolean const, not a function. FALSE on purpose: these
+    // billing tests drive the no-DB path, and the stub `db` above answers only
+    // `select().from().where()`. Flipping this to true sends the code down real
+    // persistence branches this mock cannot serve (8 createCheckoutSession
+    // tests fail with "Stripe API error" — verified).
+    hasDatabase: false,
+  }));
+
+  mock.module('../../platform/providers', () => ({
+    getProvider: (_name: string) => ({
+      stop: async (_externalId: string) => undefined,
+    }),
+    // Real contract: no args, always a number >= 60.
+    providerAutoStopBackstopMinutes: () => 60,
+  }));
+
+  mock.module('../../projects/sandbox-reaper', () => ({
+    isAlreadyNotRunning: (_err: unknown) => false,
+    reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,
+  }));
+
   mock.module('../../billing/repositories/account-deletion', () => ({
     getActiveDeletionRequest: async (id: string) =>
       mockRegistry.getActiveDeletionRequest ? mockRegistry.getActiveDeletionRequest(id) : null,
@@ -340,6 +378,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
       })),
       create: overrides.subscriptionsCreate ?? (async (params: any) => defaultSubscription),
       cancel: overrides.subscriptionsCancel ?? (async (id: string) => ({})),
+      list: overrides.subscriptionsList ?? (async (params?: any) => ({ data: [] })),
     },
     customers: {
       create: overrides.customersCreate ?? (async (params: any) => ({

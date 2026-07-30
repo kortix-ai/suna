@@ -2,7 +2,6 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
   listAgentMailInstalls,
-  loadMeetInstall,
   loadSlackInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
@@ -29,6 +28,7 @@ function channelSpec(
   platform: ChannelPlatform,
   slug: string,
   name = channelLabel(platform),
+  baseUrl: string | null = null,
 ): ConnectorSpec {
   return {
     slug,
@@ -37,6 +37,7 @@ function channelSpec(
     enabled: true,
     provider: 'channel',
     credentialMode: 'shared',
+    authorizationStrategy: 'project',
     // Email is sensitive by default — reading a private inbox is an exfiltration
     // surface, so its actions ask before running (silence per-session with "allow
     // for session"). Slack/meet aren't gated by default.
@@ -46,10 +47,13 @@ function channelSpec(
     url: null,
     transport: null,
     endpoint: null,
-    baseUrl: null,
+    baseUrl,
     platform,
     spec: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    // Platform-called connector — the request isn't built by executeCall's
+    // HTTP builders, so a static header table would be inert. Always empty.
+    headers: {},
     policies: [],
   };
 }
@@ -101,13 +105,15 @@ export async function synthesizeChannelConnectors(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  // Meet (Recall.ai) — gated on the per-project `meet` experimental flag. Like
-  // Slack, a resolvable Recall key IS the registration (no OAuth / no [[connectors]]).
-  if (project && resolveExperimentalFeature(project.metadata, 'meet')) {
-    const meetSlug = channelDefaultSlug('meet');
-    if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
-      const install = await loadMeetInstall(projectId).catch(() => null);
-      if (install) specs.push(channelSpec('meet', meetSlug));
+  // Voice — gated on the per-project `voice` experimental flag. Unlike
+  // Slack/Teams/email there is no install to check: LiveKit config lives in
+  // this API's own env, not a per-project OAuth token, so the flag itself IS
+  // the registration (mirrors how `sensitive`-less channels work, minus the
+  // install lookup).
+  if (project && resolveExperimentalFeature(project.metadata, 'voice')) {
+    const voiceSlug = channelDefaultSlug('voice');
+    if (!channelAlreadyDeclared(declared, 'voice', voiceSlug)) {
+      specs.push(channelSpec('voice', voiceSlug));
     }
   }
 

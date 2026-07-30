@@ -4,10 +4,14 @@ export interface InvalidatableObservation<T> {
   invalidate(): void;
 }
 
-/** Collapse concurrent provider catalog reads and briefly reuse a confirmed result. */
+/**
+ * Collapse concurrent provider catalog reads and briefly reuse a confirmed
+ * result. `ttlMs` may be a function of the observed value so callers can hold
+ * a confirmed-positive result longer than a transient/negative one.
+ */
 export function shortLivedObservation<T>(
   observe: () => Promise<T>,
-  ttlMs = 2_000,
+  ttlMs: number | ((value: T) => number) = 2_000,
   shouldCache: (value: T) => boolean = () => true,
 ): InvalidatableObservation<T> {
   let cached: { value: T; expiresAt: number } | null = null;
@@ -21,8 +25,9 @@ export function shortLivedObservation<T>(
     const observationGeneration = generation;
     const promise = observe()
       .then((value) => {
-        if (generation === observationGeneration && shouldCache(value)) {
-          cached = { value, expiresAt: Date.now() + ttlMs };
+        const ttl = typeof ttlMs === 'function' ? ttlMs(value) : ttlMs;
+        if (generation === observationGeneration && ttl > 0 && shouldCache(value)) {
+          cached = { value, expiresAt: Date.now() + ttl };
         }
         return value;
       })

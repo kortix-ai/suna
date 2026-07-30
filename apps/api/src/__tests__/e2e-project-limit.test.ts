@@ -67,7 +67,9 @@ const stubBackend = {
   seedFiles: async () => { backendCalls.push('seedFiles'); },
 };
 
+const actualGitBackends = await import('../projects/git-backends');
 mock.module('../projects/git-backends', () => ({
+  ...actualGitBackends,
   hasBackend: (provider: string) => provider === 'github',
   getBackend: () => stubBackend,
   getDefaultManagedBackend: () => stubBackend,
@@ -109,7 +111,9 @@ mock.module('../middleware/auth', () => ({
 mockIamEngineAllowAll();
 mockIamMembershipSyncNoop();
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -154,6 +158,12 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => 'a'.repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: 'kortix-ppwarm-test',
+    tip: 'a'.repeat(40),
+    built: false,
+    provider: 'daytona',
+  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 

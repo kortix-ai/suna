@@ -1,6 +1,42 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatPricePerMillion, formatTokenCount, gatewayModelId } from './utils';
+import {
+  buildClaudeSubscriptionProvider,
+  formatPricePerMillion,
+  formatTokenCount,
+  gatewayModelId,
+  pickInitialTab,
+} from './utils';
+
+describe('Claude subscription provider', () => {
+  test('is a distinct Claude Code connection backed by the setup token', () => {
+    expect(buildClaudeSubscriptionProvider()).toMatchObject({
+      id: 'claude',
+      label: 'Claude Code',
+      envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
+      hint: 'Claude Pro, Max, Team, or Enterprise subscription',
+    });
+  });
+});
+
+describe('pickInitialTab', () => {
+  test('opens Add provider by default when providers are connected', () => {
+    expect(pickInitialTab(undefined, true)).toBe('catalog');
+  });
+
+  test('opens Add provider by default when no providers are connected', () => {
+    expect(pickInitialTab(undefined, false)).toBe('catalog');
+  });
+
+  test('honors an explicit Connected tab when providers are connected', () => {
+    expect(pickInitialTab('connected', true)).toBe('connected');
+  });
+
+  test('folds unavailable Connected and Models tabs back to Add provider', () => {
+    expect(pickInitialTab('connected', false)).toBe('catalog');
+    expect(pickInitialTab('models', false)).toBe('catalog');
+  });
+});
 
 describe('gatewayModelId', () => {
   test('BYOK provider gets a provider/model wire id', () => {

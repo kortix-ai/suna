@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ApiReviewItem } from '@kortix/sdk/projects-client';
+import type { ApiReviewItem } from '@kortix/sdk';
 import {
   PRIMARY_ACTION,
   agentInitials,
@@ -91,6 +91,7 @@ describe('mapApiReviewItem', () => {
     // The opaque head branch is dropped from the row summary (kept in Advanced).
     expect(item.summary).toBe('#7 → main');
     const d = changeDetailOf(item);
+    expect(d.number).toBe(7);
     expect(d.whatChanged).toEqual(['Updated the copy', 'Tightened the CTA']);
     expect(Array.isArray(d.verification)).toBe(true);
     expect(d.advanced.baseRef).toBe('main');

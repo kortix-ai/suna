@@ -1,4 +1,4 @@
-import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { rehypeCodeDefaultOptions, remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
 import { defineConfig, defineDocs, frontmatterSchema } from 'fumadocs-mdx/config';
 import { z } from 'zod';
 
@@ -36,6 +36,9 @@ export const useCases = defineDocs({
 
 export default defineConfig({
   mdxOptions: {
+    // ```mermaid fences compile to <Mermaid chart="..."/> (rendered by the
+    // docs MDX component map) instead of a highlighted code block.
+    remarkPlugins: [remarkMdxMermaid],
     rehypeCodeOptions: {
       // Keep fumadocs' defaults (defaultColor: false dual-theme CSS vars, lazy
       // grammars, notation transformers); only swap the palette.

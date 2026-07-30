@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
-import type { ProjectCommitFile } from '@kortix/sdk/projects-client';
+import type { ProjectCommitFile } from '@kortix/sdk';
 import {
   WarningCircleIcon as AlertCircle,
   CalendarIcon as Calendar,

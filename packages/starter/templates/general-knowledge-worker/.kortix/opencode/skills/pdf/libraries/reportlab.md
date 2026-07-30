@@ -142,7 +142,9 @@ For canvas-drawn text, manually adjust font size and y-offset — do not use Uni
 
 ## Custom Fonts (Google Fonts)
 
-Download TTF files at runtime from Google Fonts, register with ReportLab, and they embed automatically. See `skills/design-foundations/SKILL.md` for font pairings and rules.
+Download TTF files at runtime, register with ReportLab, and they embed automatically. See `skills/design-foundations/SKILL.md` for font pairings and rules.
+
+Use the fontsource CDN for static single-weight TTFs — the `github.com/google/fonts` raw paths frequently 404, and variable-font files (e.g. `Inter[opsz,wght].ttf`) do not register cleanly with ReportLab. Weight codes: `400`=Regular, `500`=Medium, `600`=SemiBold, `700`=Bold.
 
 ```python
 import urllib.request
@@ -153,12 +155,13 @@ from reportlab.pdfbase import pdfmetrics
 FONT_DIR = Path("/tmp/fonts")
 FONT_DIR.mkdir(exist_ok=True)
 
-font_url = "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf"
-font_path = FONT_DIR / "Inter.ttf"
-if not font_path.exists():
-    urllib.request.urlretrieve(font_url, font_path)
-
-pdfmetrics.registerFont(TTFont("Inter", str(font_path)))
+# https://cdn.jsdelivr.net/fontsource/fonts/<family>@latest/latin-<weight>-normal.ttf
+for name, weight in [("Inter", 400), ("Inter-Bold", 700)]:
+    font_path = FONT_DIR / f"{name}.ttf"
+    if not font_path.exists():
+        url = f"https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-{weight}-normal.ttf"
+        urllib.request.urlretrieve(url, font_path)
+    pdfmetrics.registerFont(TTFont(name, str(font_path)))
 ```
 
 **Fallback**: Helvetica (built-in, no download). **Blacklist**: see `skills/design-foundations/SKILL.md` Font Rules.

@@ -5,10 +5,7 @@ import { useTranslations } from 'next-intl';
 import { DiffView } from '@/components/diff/diff-view';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DiffStat, STATUS_TEXT, StatusBadge } from '@/components/ui/status';
-import {
-  useOpenCodeMessages,
-  useOpenCodeSessionDiff,
-} from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeMessages, useRuntimeSessionDiff } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import type { ApplyPatchFile, FileDiff } from '@/ui/types';
 import {
@@ -355,8 +352,8 @@ export function SessionDiffViewer({
   onToggleFullscreen,
 }: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  const { data: apiDiffs, isLoading, error } = useRuntimeSessionDiff(sessionId);
+  const { data: messages } = useRuntimeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
   // Fall back to extracting diffs from tool part metadata when the API returns empty

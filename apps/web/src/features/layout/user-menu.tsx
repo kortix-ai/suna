@@ -40,7 +40,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { listAccounts } from '@kortix/sdk/projects-client';
+import { listAccounts } from '@kortix/sdk';
 import {
   BookOpenIcon as BookOpen,
   GearSixIcon as CogOne,

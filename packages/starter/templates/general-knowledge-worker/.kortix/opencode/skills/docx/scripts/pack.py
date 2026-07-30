@@ -4,8 +4,8 @@ Condenses XML whitespace and assembles the ZIP archive. Validation is
 handled server-side when the file is shared.
 
 Usage:
-    python pack.py <unpacked_dir> <output.docx>
-    python pack.py working/ output.docx
+    uv run --with lxml pack.py <unpacked_dir> <output.docx>
+    uv run --with lxml pack.py working/ output.docx
 """
 
 import shutil

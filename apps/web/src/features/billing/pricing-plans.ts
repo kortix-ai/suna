@@ -11,6 +11,7 @@ export type PricingPlan = {
   highlight?: boolean;
   badge?: string;
   features: string[];
+  featureDetails?: Record<string, string>;
 };
 
 export const PRICING_PLANS: PricingPlan[] = [
@@ -21,7 +22,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Start with real sandbox credits.',
     features: [
       '200 credits / month for sandbox compute',
-      '3 projects',
+      '1 project',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
     ],
@@ -37,12 +38,16 @@ export const PRICING_PLANS: PricingPlan[] = [
     features: [
       'Everything in Free',
       '2,500 credits / month per seat, pooled',
-      'Access to the latest AI models',
+      'Optional managed models use pooled credits',
       'BYOK and ChatGPT subscription still supported',
       'Up to 200 projects, up to 100 seats',
       'Top up credits anytime',
       'Support via email',
     ],
+    featureDetails: {
+      '2,500 credits / month per seat, pooled':
+        'About 125 default Agent Computer hours when used only for compute.',
+    },
   },
   {
     id: 'enterprise',

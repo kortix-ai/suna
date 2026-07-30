@@ -6,6 +6,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import { useCallback } from 'react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /** The standard marketing CTA pair, reused inside blog posts. */
 export function BlogCta() {
@@ -14,7 +15,7 @@ export function BlogCta() {
 
   const handleStart = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   return (

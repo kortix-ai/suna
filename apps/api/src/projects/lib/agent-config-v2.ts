@@ -22,6 +22,7 @@
  */
 import {
   type AgentBlockV2,
+  resolveGrantSet,
   SLUG_RE,
   validateManifest,
   type ManifestIssue,
@@ -34,6 +35,72 @@ import type { ParsedManifest } from '../triggers';
  *  regex wasn't exported). */
 export function isValidAgentName(name: string): boolean {
   return SLUG_RE.test(name);
+}
+
+export type NormalizeRequiredConnectorsResult =
+  | { ok: true; block: Record<string, unknown> }
+  | { ok: false; error: string };
+
+function normalizeConnectorList(value: unknown, field: string): string[] | string {
+  if (!Array.isArray(value)) return `${field} must be a list of connector profile slugs`;
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || item.trim() === '') {
+      return `${field} must contain non-empty connector profile slugs`;
+    }
+    const slug = item.trim();
+    if (!normalized.includes(slug)) normalized.push(slug);
+  }
+  return normalized;
+}
+
+function equalConnectorSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
+}
+
+export function normalizeRequiredConnectorAliases(
+  source: Record<string, unknown>,
+): NormalizeRequiredConnectorsResult {
+  const canonicalRaw = source.connectors_required;
+  const legacyRaw = source.connectors_personal;
+  const canonical =
+    canonicalRaw === undefined ? undefined : normalizeConnectorList(canonicalRaw, 'connectors_required');
+  if (typeof canonical === 'string') return { ok: false, error: canonical };
+  const legacy =
+    legacyRaw === undefined ? undefined : normalizeConnectorList(legacyRaw, 'connectors_personal');
+  if (typeof legacy === 'string') return { ok: false, error: legacy };
+
+  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
+    return {
+      ok: false,
+      error: 'connectors_personal must match connectors_required when both fields are present',
+    };
+  }
+
+  const block = { ...source };
+  delete block.connectors_personal;
+  const required = canonical ?? legacy;
+  if (canonicalRaw !== undefined || legacyRaw !== undefined) {
+    block.connectors_required = required ?? [];
+  } else {
+    delete block.connectors_required;
+  }
+  return { ok: true, block };
+}
+
+function pruneRequiredConnectors(block: Record<string, unknown>): void {
+  const required = block.connectors_required;
+  if (!Array.isArray(required)) return;
+  const connectors = resolveGrantSet(block.connectors, 'none');
+  if (connectors === 'all') return;
+  const granted = new Set(connectors === 'none' ? [] : connectors);
+  const kept = required.filter(
+    (value): value is string => typeof value === 'string' && granted.has(value),
+  );
+  if (kept.length > 0) block.connectors_required = kept;
+  else delete block.connectors_required;
 }
 
 export type ReadAgentBlockResult =
@@ -68,7 +135,14 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
   }
-  return { ok: true, schemaVersion: 2, block: entry as AgentBlockV2, defaultAgent };
+  const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  return {
+    ok: true,
+    schemaVersion: 2,
+    block: normalized.block as AgentBlockV2,
+    defaultAgent,
+  };
 }
 
 export type ApplyAgentBlockResult =
@@ -147,8 +221,11 @@ export function applyAgentBlockV2(
   if (rawAgents !== undefined && rawAgents !== null && (Array.isArray(rawAgents) || typeof rawAgents !== 'object')) {
     return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
   }
+  const normalized = normalizeRequiredConnectorAliases(block as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  pruneRequiredConnectors(normalized.block);
   const nextAgents: Record<string, unknown> = { ...(rawAgents as Record<string, unknown> | undefined) };
-  nextAgents[agentName] = block;
+  nextAgents[agentName] = normalized.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
 
   const result = validateManifest(nextRaw, manifest.format);
@@ -181,7 +258,11 @@ export function applyAgentBlockV2(
 export function applyAgentScopeV2(
   manifest: ParsedManifest,
   agentName: string,
-  scope: { env?: string[] | 'all'; connectors?: string[] | 'all' },
+  scope: {
+    env?: string[] | 'all';
+    connectors?: string[] | 'all';
+    connectorsRequired?: string[];
+  },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   const rawAgents = manifest.raw.agents;
   const existing =
@@ -198,7 +279,9 @@ export function applyAgentScopeV2(
   if (typeof existing !== 'object' || Array.isArray(existing)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
   }
-  const merged: Record<string, unknown> = { ...(existing as Record<string, unknown>) };
+  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  const merged: Record<string, unknown> = normalized.block;
   if (scope.env !== undefined) {
     if (scope.env === 'all') merged.secrets = 'all';
     else if (scope.env.length === 0) delete merged.secrets;
@@ -208,6 +291,23 @@ export function applyAgentScopeV2(
     if (scope.connectors === 'all') merged.connectors = 'all';
     else if (scope.connectors.length === 0) delete merged.connectors;
     else merged.connectors = scope.connectors;
+  }
+  if (scope.connectorsRequired !== undefined) {
+    const required = Array.from(new Set(scope.connectorsRequired));
+    if (required.length === 0) delete merged.connectors_required;
+    else merged.connectors_required = required;
+  }
+  const effectiveConnectors = merged.connectors;
+  const effectiveRequired = merged.connectors_required;
+  if (Array.isArray(effectiveRequired)) {
+    if (effectiveConnectors === undefined || effectiveConnectors === 'none') {
+      delete merged.connectors_required;
+    } else if (Array.isArray(effectiveConnectors)) {
+      const granted = new Set(effectiveConnectors as string[]);
+      const kept = (effectiveRequired as string[]).filter((slug) => granted.has(slug));
+      if (kept.length === 0) delete merged.connectors_required;
+      else merged.connectors_required = kept;
+    }
   }
   return applyAgentBlockV2(manifest, agentName, merged as AgentBlockV2);
 }

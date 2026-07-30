@@ -52,6 +52,8 @@ export {
   archiveRepoSubtree,
   getFileAtRef,
   getFileHistory,
+  RepoFileNotFoundError,
+  isRepoFileNotFoundError,
 } from './git/files';
 
 export {
@@ -74,6 +76,7 @@ export {
   getBranchDiff,
   getDiffBetweenShas,
   previewMerge,
+  MergeConflictError,
   mergeBranches,
   diffStat,
   resolveBranchAheadState,

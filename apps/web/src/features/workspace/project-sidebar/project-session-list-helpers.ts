@@ -1,4 +1,4 @@
-import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk/projects-client';
+import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
 /**
  * Pure helpers extracted from `project-session-list.tsx` so the sidebar's
@@ -19,12 +19,22 @@ export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
-/** Newest-first sort by `created_at`. Extracted so the ordering rule (and its
- *  stability for equal timestamps) is independently testable. */
-export function sortSessionsByCreatedAt(sessions: ProjectSession[]): ProjectSession[] {
-  return sessions
-    .slice()
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+/** The latest user-visible activity for a session. Reused scheduled sessions
+ *  keep their original `created_at`, while `updated_at` advances on each run. */
+export function sessionLastActivityAt(session: ProjectSession): string {
+  return session.updated_at || session.created_at;
+}
+
+/** Newest-first sort by last activity. This keeps reused scheduled sessions
+ *  visible when a new trigger run updates an older session. */
+export function sortSessionsByLastActivity(sessions: ProjectSession[]): ProjectSession[] {
+  return sessions.slice().sort((a, b) => {
+    const parsedA = new Date(sessionLastActivityAt(a)).getTime();
+    const parsedB = new Date(sessionLastActivityAt(b)).getTime();
+    const aTime = Number.isFinite(parsedA) ? parsedA : 0;
+    const bTime = Number.isFinite(parsedB) ? parsedB : 0;
+    return bTime - aTime;
+  });
 }
 
 /**

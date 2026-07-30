@@ -93,9 +93,12 @@ describe('kortix sandboxes build --local --print', () => {
     expect(r.code).toBe(0);
     // The user's Dockerfile, verbatim and first.
     expect(r.stdout.startsWith('FROM ubuntu:24.04\nRUN echo hello\n')).toBe(true);
-    // The Kortix toolchain layer, including the pip floor.
+    // The Kortix toolchain layer, including checksum-verified runtime artifacts.
     expect(r.stdout).toContain('Kortix runtime layer (auto-injected)');
-    expect(r.stdout).toContain('/opt/kortix/pyfloor/bin/pip install');
+    expect(r.stdout).toContain('sha256sum -c -');
+    expect(r.stdout).toContain('uv python install --default');
+    expect(r.stdout).toContain('pnpm runtime set node');
+    expect(r.stdout).not.toContain('/opt/kortix/pyfloor');
     // …but not the artifact tail.
     expect(r.stdout).not.toContain('scaffold.git');
     expect(r.stdout).not.toContain('ENTRYPOINT');

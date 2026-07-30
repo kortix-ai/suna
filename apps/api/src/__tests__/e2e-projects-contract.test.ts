@@ -41,6 +41,9 @@ let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
+let deleteManagedRepoCalls: any[];
+let deleteManagedRepoError: Error | null;
+let deleteManagedRepoResult: boolean;
 let rejectedBranch: string | null;
 
 function setCurrentUser(userId: string, userEmail: string) {
@@ -92,6 +95,9 @@ function resetState() {
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
+  deleteManagedRepoCalls = [];
+  deleteManagedRepoError = null;
+  deleteManagedRepoResult = false;
   rejectedBranch = null;
 }
 
@@ -152,7 +158,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -207,6 +215,14 @@ mock.module('../projects/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
+mock.module('../projects/lib/project-deletion', () => ({
+  deleteManagedProjectRepo: async (project: ProjectRow) => {
+    deleteManagedRepoCalls.push(project);
+    if (deleteManagedRepoError) throw deleteManagedRepoError;
+    return deleteManagedRepoResult;
+  },
+}));
+
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
@@ -222,10 +238,18 @@ mock.module("../snapshots/builder", () => ({
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
@@ -602,11 +626,40 @@ describe('projects API contract', () => {
 
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
-    expect(await del.json()).toEqual({ ok: true });
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
+    expect(deleteManagedRepoCalls).toEqual([]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
+  });
+
+  test('purges a managed repository only when explicitly requested', async () => {
+    const app = createApp();
+    deleteManagedRepoResult = true;
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
+      method: 'DELETE',
+    });
+
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe(
+      'archived',
+    );
+  });
+
+  test('does not archive a project when managed repository deletion fails', async () => {
+    const app = createApp();
+    deleteManagedRepoError = new Error('provider unavailable');
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+
+    expect(del.status).toBe(502);
+    expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
   test('lists and manages explicit project access grants without overriding account managers', async () => {

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 494,
+  "count": 521,
   "routes": [
     {
       "method": "GET",
@@ -68,6 +68,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
+    },
+    {
+      "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
     },
     {
@@ -480,6 +484,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/session-limit"
+    },
+    {
+      "method": "POST",
       "path": "/v1/admin/api/accounts/:id/tier"
     },
     {
@@ -513,6 +521,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/approval-links/:token"
     },
     {
       "method": "POST",
@@ -727,6 +739,10 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
     },
     {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/authorization-strategy"
+    },
+    {
       "method": "GET",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/config"
     },
@@ -821,6 +837,10 @@
     {
       "method": "GET",
       "path": "/v1/health/live"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/integrations/oauth2/callback"
     },
     {
       "method": "POST",
@@ -937,6 +957,10 @@
     {
       "method": "GET",
       "path": "/v1/platform"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/boot-timeline"
     },
     {
       "method": "DELETE",
@@ -1152,22 +1176,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/speak"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/voice"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/meet/voices"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/voices/:voiceId/preview"
-    },
-    {
-      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/bind-thread"
     },
     {
@@ -1263,12 +1271,64 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/activate"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect/finalize"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
       "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/default"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status"
+    },
+    {
+      "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/all"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/me"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/oauth2/profile"
     },
     {
       "method": "PUT",
@@ -1439,6 +1499,10 @@
       "path": "/v1/projects/:projectId/model-defaults"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-enablement"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/model-picker"
     },
@@ -1501,6 +1565,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sandbox-provider"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sandbox-provider/transition"
     },
     {
       "method": "GET",
@@ -1571,12 +1639,40 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp-identity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp/transcript"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",
@@ -1599,6 +1695,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
     },
@@ -1613,6 +1717,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm/claim"
     },
     {
       "method": "GET",
@@ -1687,6 +1803,14 @@
       "path": "/v1/projects/github/installations/:installationId"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/linkable"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/github/repositories"
     },
@@ -1725,6 +1849,14 @@
     {
       "method": "GET",
       "path": "/v1/public/session-shares/:shareId/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token/transcript"
     },
     {
       "method": "POST",
@@ -1767,40 +1899,16 @@
       "path": "/v1/setup-links/secret/:token"
     },
     {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
+      "method": "GET",
+      "path": "/v1/skills"
     },
     {
       "method": "GET",
-      "path": "/v1/setup/health"
+      "path": "/v1/skills/:name"
     },
     {
       "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
+      "path": "/v1/skills/:name/file"
     },
     {
       "method": "POST",
@@ -1904,19 +2012,19 @@
     },
     {
       "method": "GET",
+      "path": "/v1/usage/session-costs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage/session-costs/:sessionId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/user-roles"
     },
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/realtime"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/status"
     },
     {
       "method": "POST",

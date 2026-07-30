@@ -1,6 +1,6 @@
 'use client';
 
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import {
   SignInIcon as LogIn,
   ChatsIcon as MessagesSquare,

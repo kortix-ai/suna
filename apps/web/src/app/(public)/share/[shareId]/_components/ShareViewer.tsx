@@ -48,7 +48,7 @@ import {
   type PublicSessionShareMeta,
   type PublicSessionTranscript,
   type PublicSessionTranscriptMessage,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   describeShareError,
   toShareLoadError,

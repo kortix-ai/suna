@@ -23,16 +23,18 @@ import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-sto
 import { resolveExperimentalFeature } from '../experimental/features';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch } from '../shared/ssrf-guard';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
 import {
   type ConnectorSpec,
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
-import { type GitBackedProject, readRepoFile } from '../projects/git';
+import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
-import { readManifest } from '../projects/triggers';
+import { extractTriggers, readManifest } from '../projects/triggers';
+import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { db } from '../shared/db';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
@@ -41,6 +43,7 @@ import { synthesizeComputerConnectors } from './computer-materialize';
 import { computerCatalog } from './computers';
 import { ensureDefaultProfile } from './credentials';
 import { parseResponseBody } from './execute';
+import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeGraphql,
@@ -50,7 +53,7 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
-import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import { browsePipedreamApps, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
 import {
@@ -67,8 +70,16 @@ export interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
+function connectorAuthTimeoutMs(): number {
+  return configuredTimeoutMs('KORTIX_CONNECTOR_AUTH_TIMEOUT_MS', 15_000, 1_000);
+}
+
+function connectorManifestTimeoutMs(): number {
+  return configuredTimeoutMs('KORTIX_CONNECTOR_MANIFEST_TIMEOUT_MS', 30_000, 1_000);
+}
+
 const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
-  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0,
+  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0, title: null,
 };
 
 export async function discoverDraftConnectorAuth(
@@ -90,15 +101,37 @@ async function discoverConnectorAuthFromSource(
   }
   const spec = typeof draft.spec === 'string' ? draft.spec.trim() : '';
   if (provider === 'openapi') {
-    return spec ? discoverOpenApiAuth(await loadSpecDoc(project, spec), spec) : EMPTY_AUTH_DISCOVERY;
+    // The spec may not exist in the repo (e.g. the user supplied a path that
+    // isn't there). `loadSpecDoc`/`loadSourceText` throws a clean `Error` for
+    // that case (see `readRepoFile`/`RepoFileNotFoundError`/#3537) — there's no
+    // auth to discover from a missing spec, so degrade to the empty discovery
+    // instead of letting the throw propagate as an unhandled 500 (Better Stack
+    // `a8d20288…`).
+    if (!spec) return EMPTY_AUTH_DISCOVERY;
+    try {
+      return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
+    } catch (e) {
+      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+        return EMPTY_AUTH_DISCOVERY;
+      }
+      throw e;
+    }
   }
   if (provider === 'postman') {
     if (!spec) return EMPTY_AUTH_DISCOVERY;
-    const documents = await resolvePostmanSource(spec, (source) => loadSourceText(project, source), {
-      githubDefaultBranch: resolveGithubDefaultBranch,
-      postmanApiKey: config.POSTMAN_API_KEY,
-      resolveWorkspace: resolvePostmanWorkspace,
-    });
+    let documents: PostmanSourceDocument[];
+    try {
+      documents = await resolvePostmanSource(spec, (source) => loadSourceText(project, source), {
+        githubDefaultBranch: resolveGithubDefaultBranch,
+        postmanApiKey: config.POSTMAN_API_KEY,
+        resolveWorkspace: resolvePostmanWorkspace,
+      });
+    } catch (e) {
+      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+        return EMPTY_AUTH_DISCOVERY;
+      }
+      throw e;
+    }
     return mergeAuthDiscoveries(documents.map((document) =>
       document.kind === 'openapi'
         ? discoverOpenApiAuth(document.doc, document.source)
@@ -220,6 +253,7 @@ interface ResolvedCatalog {
   actions: NormalizedAction[];
   /** OpenAPI server discovered from the doc (folded into config). */
   server: string | null;
+  iconUrl?: string | null;
   error?: string;
 }
 
@@ -236,16 +270,45 @@ export async function syncProjectConnectors(
   if (!row) return { synced: 0, errors: [{ slug: '(project)', error: 'project not found' }] };
   const accountId = row.accountId;
 
-  const gitProject = await withProjectGitAuth(row);
-  const manifest = await readManifest(gitProject).catch(() => null);
+  const errors: SyncResult['errors'] = [];
+  let gitProject: GitBackedProject = row;
+  try {
+    gitProject = await withTimeout(
+      withProjectGitAuth(row),
+      connectorAuthTimeoutMs(),
+      `resolve git auth ${projectId}`,
+    );
+  } catch (error) {
+    errors.push({
+      slug: '(git-auth)',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  let manifest: Awaited<ReturnType<typeof readManifest>> = null;
+  try {
+    manifest = await withTimeout(
+      readManifest(gitProject),
+      connectorManifestTimeoutMs(),
+      `read manifest ${projectId}`,
+    );
+  } catch (error) {
+    errors.push({
+      slug: '(manifest)',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   // Manifest-declared connectors + project policies are only reconciled when the
   // kortix.yaml is actually readable. A NULL manifest can mean "no repo / no
   // kortix.yaml" OR a transient git error — either way we must not treat it as
   // "zero declared connectors" and delete the project's real ones below.
-  const errors: SyncResult['errors'] = [];
   let declaredSpecs: ConnectorSpec[] = [];
   if (manifest) {
+    const triggers = extractTriggers(manifest);
+    await reconcileProjectTriggerRuntime(projectId, triggers.specs);
+    errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
+
     const parsed = extractConnectors(manifest);
     declaredSpecs = parsed.specs;
     errors.push(...parsed.errors.map((e) => ({ slug: e.slug, error: e.error })));
@@ -321,10 +384,23 @@ export async function syncProjectConnectors(
       // network catalog fetch. The DB row's cheap fields (name/enabled/
       // policies) are still reconciled inside upsertConnector. `force` (manual
       // sync) always re-fetches; error rows always retry.
+      //
+      // EXCEPT for channel connectors, which are never skipped. Their catalog is
+      // not fetched at all — `resolveCatalog` builds it locally from
+      // `channelCatalog(platform)`, i.e. from OUR OWN CODE — so there is no
+      // network cost to save, and `manifestHashForConnector` deliberately hashes
+      // only the spec (provider/platform/auth/...), which a code-side action
+      // change does not touch. Skipping therefore froze every existing channel
+      // connector's action list at whatever shipped the day it materialized:
+      // adding `read_transcript`/`send_prompt` to voice reached only brand-new
+      // projects, and the same was true of any Slack/Teams/email action ever
+      // added. Re-resolving locally on every sync is free and keeps deployed
+      // projects honest.
       const catalogUnchanged =
         !opts.force &&
         !!ex &&
         ex.status !== 'error' &&
+        spec.provider !== 'channel' &&
         ex.manifestHash === manifestHashForConnector(spec);
       const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
@@ -475,6 +551,7 @@ async function upsertConnector(
     enabled: spec.enabled,
     authSecret,
     credentialMode,
+    authorizationStrategy: spec.authorizationStrategy,
     manifestHash,
     status,
     lastError: catalog?.error ?? null,
@@ -496,7 +573,7 @@ async function upsertConnector(
       .update(executorConnectors)
       .set(
         catalog
-          ? { ...common, config: connectorConfig(spec, catalog.server) }
+          ? { ...common, config: connectorConfig(spec, catalog.server, catalog.iconUrl) }
           : { ...common, config: sensitivePatch },
       )
       .where(eq(executorConnectors.connectorId, connectorId));
@@ -510,13 +587,15 @@ async function upsertConnector(
         projectId,
         slug: spec.slug,
         ...common,
-        config: connectorConfig(spec, catalog?.server ?? null),
+        config: connectorConfig(spec, catalog?.server ?? null, catalog?.iconUrl),
       })
       .returning({ connectorId: executorConnectors.connectorId });
     connectorId = created!.connectorId;
   }
 
-  await ensureDefaultProfile({ projectId, connectorId });
+  if (spec.authorizationStrategy === 'project') {
+    await ensureDefaultProfile({ projectId, connectorId });
+  }
 
   // Actions only change when the catalog was re-resolved — leave them in place
   // on a cheap reconcile.
@@ -553,6 +632,7 @@ async function upsertConnector(
         match: p.match,
         action: p.action,
         position: p.position,
+        conditions: p.conditions ?? null,
       })),
     );
   }
@@ -611,8 +691,15 @@ export async function resolveCatalog(
       }
       case 'pipedream': {
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
-        const raw = await pipedreamCatalog(spec.app);
-        return { actions: normalizePipedream(raw, spec.app), server: null };
+        const [raw, apps] = await Promise.all([
+          pipedreamCatalog(spec.app),
+          browsePipedreamApps(spec.app).catch(() => ({ apps: [], hasMore: false })),
+        ]);
+        return {
+          actions: normalizePipedream(raw, spec.app),
+          server: null,
+          iconUrl: apps.apps.find((app) => app.slug === spec.app)?.imgSrc ?? null,
+        };
       }
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.
@@ -652,7 +739,21 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
     }
     raw = await res.text();
   } else {
-    raw = await readRepoFile(project, spec, project.defaultBranch);
+    // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
+    // in the repo at the ref (see #3537 / `isGitPathNotFoundError`) instead of
+    // letting the `GitOperationError` propagate as an unhandled 500. A
+    // connector spec pointing at a missing repo path is a user config error;
+    // rethrow it with the spec name so the best-effort
+    // `resolveCatalog`/`discoverConnectorAuthFromSource` wrappers can surface a
+    // clean message (Better Stack `a8d20288…`).
+    try {
+      raw = await readRepoFile(project, spec, project.defaultBranch);
+    } catch (err) {
+      if (isRepoFileNotFoundError(err)) {
+        throw new Error(`connector spec not found in repository: ${spec}`);
+      }
+      throw err;
+    }
   }
   return raw;
 }
@@ -740,9 +841,23 @@ async function loadHttpRoutes(
 ): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
   if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
-  const raw = /^https?:\/\//i.test(spec)
-    ? await (await safeEgressFetch(spec)).text()
-    : await readRepoFile(project, spec, project.defaultBranch);
+  let raw: string;
+  if (/^https?:\/\//i.test(spec)) {
+    raw = await (await safeEgressFetch(spec)).text();
+  } else {
+    // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
+    // in the repo (see #3537). A missing http-routes spec is a user config
+    // error surfaced as a clean message via the `resolveCatalog` best-effort
+    // wrapper, not an unhandled 500 (Better Stack `a8d20288…`).
+    try {
+      raw = await readRepoFile(project, spec, project.defaultBranch);
+    } catch (err) {
+      if (isRepoFileNotFoundError(err)) {
+        throw new Error(`http routes spec not found in repository: ${spec}`);
+      }
+      throw err;
+    }
+  }
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
   return routes as HttpRouteSpec[];
@@ -768,7 +883,7 @@ async function introspectGraphql(endpoint: string): Promise<any> {
 async function reconcileProjectPolicies(
   projectId: string,
   parsed: {
-    policies: { match: string; action: 'always_run' | 'require_approval' | 'block' }[];
+    policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
   },
 ): Promise<void> {
@@ -778,7 +893,15 @@ async function reconcileProjectPolicies(
     await db
       .insert(executorProjectPolicies)
       .values(
-      rows.map((p) => ({ projectId, match: p.match, action: p.action, position: p.position })),
+      rows.map((p) => ({
+        projectId,
+        match: p.match,
+        action: p.action,
+        position: p.position,
+        // Carried through, NOT dropped: reconcile is delete-then-insert from the
+        // manifest, so a field missing here is silently erased on every sync.
+        conditions: p.conditions ?? null,
+      })),
     );
   }
   // Upsert default_mode (one row per project).

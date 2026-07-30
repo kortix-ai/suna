@@ -74,8 +74,8 @@ mock.module('./descriptors', () => ({
     markup: 0,
     resolvedModel: model,
   }),
-  livePricing: (modelId: string) => {
-    livePricingCalls.push(modelId);
+  livePricing: (providerId: string, modelId: string) => {
+    livePricingCalls.push(`${providerId}/${modelId}`);
     return undefined;
   },
   stripBedrockInferenceProfilePrefix: (modelId: string) =>
@@ -120,6 +120,14 @@ mock.module('../models/managed-models', () => ({
 let capabilities = { reasoning: false, temperature: true };
 mock.module('../models/catalog-models', () => ({
   capabilitiesForModel: () => capabilities,
+  gatewayModelCatalog: () => ({}),
+}));
+
+let disabledModelId: string | null = null;
+mock.module('../model-enablement', () => ({
+  isModelEnabledForProject: async (_projectId: string | null | undefined, model: string) =>
+    model !== disabledModelId,
+  defaultEnabledFromCatalog: () => new Set<string>(),
 }));
 
 const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');
@@ -137,6 +145,7 @@ beforeEach(() => {
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     LLM_GATEWAY_BYOK_FALLBACK_MODEL: 'anthropic/claude-sonnet-4.6',
   });
+  disabledModelId = null;
   resolvedSecret = null;
   secretsByName = {};
   codexCredential = null;
@@ -150,6 +159,38 @@ beforeEach(() => {
   getCachedAccountTier.mockClear();
   getProjectSecretValue.mockClear();
   resolveCodexCredential.mockClear();
+});
+
+describe('resolveCandidates — per-project model enablement', () => {
+  test('a project-disabled model is rejected with model_disabled before provider resolution', async () => {
+    disabledModelId = 'anthropic/claude-sonnet-4.6';
+    // Set up an otherwise-servable BYOK model to prove the disable check wins.
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const promise = resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    await expect(promise).rejects.toBeInstanceOf(GatewayResolutionError);
+    await expect(promise).rejects.toMatchObject({ code: 'model_disabled' });
+  });
+
+  test('an enabled model resolves normally', async () => {
+    disabledModelId = 'codex/gpt-5.4';
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    expect(candidates.length).toBeGreaterThan(0);
+  });
 });
 
 describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
@@ -256,7 +297,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
 
     expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-4-8' });
-    expect(livePricingCalls).toEqual(['anthropic.claude-opus-4-8']);
+    expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
   });
 
   test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {
@@ -271,7 +312,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(livePricingCalls).toEqual(['claude-sonnet-4.6']);
+    expect(livePricingCalls).toEqual(['anthropic/claude-sonnet-4.6']);
   });
 
   test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {

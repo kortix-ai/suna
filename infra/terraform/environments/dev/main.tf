@@ -87,6 +87,13 @@ module "acm" {
 }
 
 # ── ECS Fargate API service (autoscaled) ──────────────────────────────────────
+# The env secret blob is the source of truth for which secrets exist:
+# ecs-deploy.sh wires every key in it into each task-def revision. Looked up by
+# name so the random ARN suffix is never hard-coded.
+data "aws_secretsmanager_secret" "env" {
+  name = "kortix-dev-env"
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -101,11 +108,12 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image           = var.api_image
-  container_port  = var.container_port
-  certificate_arn = one(module.acm[*].certificate_arn)
-  environment     = var.api_environment
-  secrets         = var.api_secrets
+  image            = var.api_image
+  container_port   = var.container_port
+  certificate_arn  = one(module.acm[*].certificate_arn)
+  environment      = var.api_environment
+  secrets          = var.api_secrets
+  secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
@@ -113,9 +121,9 @@ module "api" {
   # dev sizing: small + spot, floor of 1
   task_cpu         = 512
   task_memory      = 1024
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 3
+  desired_count    = 2
+  min_capacity     = 2
+  max_capacity     = 6
   use_fargate_spot = true
   # Validate the request-count scaling policy here before prod. Low traffic, so
   # this rarely triggers; primarily exercises the Terraform path.
@@ -147,8 +155,9 @@ module "gateway" {
   certificate_arn = var.gateway_certificate_arn
   # PORT is auto-injected by the module; the gateway also needs to call back to
   # the API, which on Fargate is the public (Cloudflare-fronted) dev-api host.
-  environment = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
-  secrets     = var.api_secrets
+  environment      = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
+  secrets          = var.api_secrets
+  secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

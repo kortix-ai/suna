@@ -2,7 +2,10 @@
 
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
-import { saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import {
+  noteSessionSyncEvent,
+  reconcileSessionTail,
+} from '../../browser/session-sync/session-sync-registry';
 import { logger } from '../../core/http/logger';
 import { getClient, resetClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
@@ -36,7 +39,7 @@ import { openEventStream } from '../../core/stream/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream() {
+export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const addPermission = useOpenCodePendingStore((s) => s.addPermission);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -105,7 +108,13 @@ export function useOpenCodeEventStream() {
     // runtime is starting/degraded. Otherwise every mounted dashboard tab
     // fans out into /session/*, /path, /permission, /question, and /lsp/*
     // requests that each sit for 30s and retry.
-    if (!activeServerUrl || sandboxStatus !== 'connected' || runtimeHealthy !== true) return;
+    if (
+      options.enabled === false ||
+      !activeServerUrl ||
+      sandboxStatus !== 'connected' ||
+      runtimeHealthy !== true
+    )
+      return;
 
     // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
     // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
@@ -135,6 +144,7 @@ export function useOpenCodeEventStream() {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
+      reconcileSessionTail,
     });
 
     // ---- CONSOLIDATED hydration function ----
@@ -207,16 +217,7 @@ export function useOpenCodeEventStream() {
           const status = syncState.sessionStatus[sid];
           if (status?.type !== 'busy' && status?.type !== 'retry') continue;
           if (!reserveMessageRehydrate(sid)) continue;
-          client.session
-            .messages({ sessionID: sid })
-            .then((res) => {
-              if (res.data) {
-                useSyncStore.getState().hydrate(sid, res.data);
-                const s = useSyncStore.getState();
-                const msgs = s.messages[sid] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
-              }
-            })
+          reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
             .finally(() => releaseMessageRehydrate(sid));
         }
@@ -232,7 +233,10 @@ export function useOpenCodeEventStream() {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
-      onEvent: handleEvent,
+      onEvent: (event) => {
+        noteSessionSyncEvent(event);
+        handleEvent(event);
+      },
       onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
     });
 
@@ -254,6 +258,7 @@ export function useOpenCodeEventStream() {
     activeServerUrl,
     sandboxStatus,
     runtimeHealthy,
+    options.enabled,
     applySyncEvent,
     stopCompaction,
   ]);

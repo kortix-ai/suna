@@ -5,7 +5,7 @@
  * labels and the actor are derived from the kind + agent. See review-center.tsx.
  */
 
-import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk/projects-client';
+import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import { looksLikeMarkdown } from './review-markdown';
 import type {
   ApprovalAction,
@@ -107,6 +107,7 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
   return {
     crId: str(d.cr_id),
+    number: typeof d.number === 'number' ? d.number : undefined,
     whatChanged,
     descriptionMarkdown,
     impact: str(d.impact) ?? '',

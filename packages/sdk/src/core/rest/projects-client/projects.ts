@@ -18,8 +18,9 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
-  | 'meet'
+  | 'voice'
   | 'llm_gateway'
+  | 'acp_runtime'
   | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
@@ -71,6 +72,9 @@ export interface ProjectConfigSummary {
   signals: Record<string, boolean>;
   manifest_raw: string | null;
   open_code_raw: string | null;
+  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  default_agent?: string | null;
+  /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
@@ -80,6 +84,14 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Agent-specific sandbox template. null or absent inherits the project default. */
+    sandbox?: string | null;
+    /** Immutable runtime profile selected for this logical agent. */
+    runtime?: string | null;
+    /** ACP harness selected by the runtime profile. */
+    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+    /** Harness-native agent or mode name. */
+    native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -102,19 +114,71 @@ export interface ProjectDetail {
   files: ProjectFileEntry[];
 }
 
+/**
+ * A single model as served by the project LLM catalog endpoint. Mirrors the
+ * API's `GatewayModel` (apps/api/src/llm-gateway/models/catalog-models.ts) —
+ * keep the two in sync. Declaring the full shape here is what lets the web's
+ * `flattenModels` read `provider` (and the models.dev passthrough fields)
+ * without an `as any` cast: this interface is the only place between the API
+ * and the picker where the field could go undeclared.
+ */
+export interface GatewayCatalogModel {
+  name: string;
+  free?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  attachment?: boolean;
+  temperature?: boolean;
+  limit?: { context?: number; output?: number };
+  variants?: Record<string, Record<string, unknown>>;
+  /**
+   * The REAL upstream provider serving this model ('anthropic', 'openai',
+   * 'amazon-bedrock', ...). Every gateway model is registered under the one
+   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * group/label a model by who actually serves it — Bedrock ids are
+   * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
+   * split-on-slash heuristic cannot recover it.
+   */
+  provider?: string;
+  release_date?: string;
+  released?: string;
+  family?: string;
+  cost?: { input?: number; output?: number };
+  modalities?: { input?: string[]; output?: string[] };
+  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  description?: string;
+  open_weights?: boolean;
+  last_updated?: string;
+  /**
+   * Whether the project OFFERS this model — server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway. Served by
+   * `/model-picker`; absent on the raw `/llm-catalog` (sandbox config) path,
+   * where enablement doesn't apply.
+   */
+  enabled?: boolean;
+}
+
 export interface ProjectLlmCatalogResponse {
-  models: Record<
-    string,
-    {
-      name: string;
-      free?: boolean;
-      reasoning?: boolean;
-      tool_call?: boolean;
-      attachment?: boolean;
-      temperature?: boolean;
-      limit?: { context?: number; output?: number };
-    }
-  >;
+  models: Record<string, GatewayCatalogModel>;
+  /**
+   * The project's stored EXCEPTIONS to the default model set
+   * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
+   * one model can PUT the merged map back. Read `GatewayCatalogModel.enabled`
+   * for the RESOLVED answer — this is only the delta.
+   */
+  modelOverrides?: Record<string, boolean>;
+  /**
+   * True while the project has made no exceptions and is running on the pure
+   * catalog default. What "reset to defaults" acts on; not derivable from the
+   * `enabled` flags alone.
+   */
+  usingDefaults?: boolean;
+  /**
+   * The wire model `auto` resolves to for this project. It can never be turned
+   * off (the PUT refuses it with 409 — disabling it would break every default
+   * request), so surfaces with a per-model switch must render this one locked.
+   */
+  defaultModel?: string;
 }
 
 export interface ProjectInput {
@@ -131,7 +195,9 @@ export interface CreateProjectRepoInput {
   installation_id?: string;
   private?: boolean;
   description?: string;
-  starter_template?: 'general-knowledge-worker' | 'minimal';
+  starter_template?: 'general-knowledge-worker' | 'acp-multi-harness' | 'minimal';
+  /** Clone a `registry:project` item into the new GitHub repository. */
+  source_item_id?: string;
 }
 
 export interface ProvisionProjectInput {
@@ -139,7 +205,7 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
-  starter_template?: 'general-knowledge-worker' | 'minimal';
+  starter_template?: 'general-knowledge-worker' | 'acp-multi-harness' | 'minimal';
   marketplace_items?: string[];
   /** Clone a `registry:project` marketplace item instead of the blank
    *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
@@ -214,6 +280,8 @@ export async function validateProjectManifest(
 
 export interface ProjectGitToken {
   push_token: string;
+  /** Provider-selected HTTP Basic username (`x-access-token` for GitHub, `t` for Code Storage). */
+  git_username: string;
   repo_id: string | null;
   repo_url: string | null;
 }
@@ -240,12 +308,19 @@ export function isManagedGithubProject(project: {
 }
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
-  return unwrap(
+  const detail = unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
       showErrors: false,
       ...options,
     }),
   );
+  return {
+    ...detail,
+    config: {
+      ...detail.config,
+      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+    },
+  };
 }
 
 export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
@@ -319,12 +394,22 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
  * default. No GitHub account or repo-name uniqueness needed; the starter is
  * seeded server-side so the project boots immediately.
  */
-export async function provisionProject(input: ProvisionProjectInput) {
+export async function provisionProject(
+  input: ProvisionProjectInput,
+  options: ApiClientOptions = {},
+) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/provision', {
-      seed_starter: true,
-      ...input,
-    }),
+    await backendApi.post<KortixProject>(
+      '/projects/provision',
+      {
+        seed_starter: true,
+        ...input,
+      },
+      {
+        timeout: 120_000,
+        ...options,
+      },
+    ),
   );
 }
 
@@ -374,17 +459,106 @@ export async function updateExperimentalFeature(
   );
 }
 
+/**
+ * The durable provider-migration transition the API returns on the PATCH prepare
+ * branch (a switch to a different, non-default enabled provider — e.g.
+ * Daytona→Platinum) and that {@link getProjectSandboxProviderTransition} polls.
+ * Distinguished from a plain project by `kind:'preparation'`. The switch does NOT
+ * flip the active provider synchronously; the target image is built + verified
+ * first, then activated, and the client polls until a terminal `status`.
+ */
+export interface PreparationView {
+  kind: 'preparation';
+  transition_id: string | null;
+  project_id: string;
+  /** ProviderTransitionStatus | 'noop' | 'cleared' — see the transition core. */
+  status: string;
+  source_provider: string | null;
+  target_provider: string | null;
+  active_provider: string | null;
+  label: string;
+  generation: number | null;
+  snapshot_name: string | null;
+  external_template_id: string | null;
+  commit_sha: string | null;
+  attempts: number;
+  last_error: string | null;
+  error_class: string | null;
+  requested_at: string | null;
+  ready_at: string | null;
+  activated_at: string | null;
+  immediate: boolean;
+}
+
+/**
+ * The result of {@link updateProjectSandboxProvider}: EITHER the updated project
+ * (a safe/immediate switch — null clear, the platform default, or the
+ * already-active provider) tagged `kind:'project'`, OR a {@link PreparationView}
+ * (the prepare branch) tagged `kind:'preparation'`. Both arrive under HTTP 200 —
+ * branch on `kind`, never shape-sniff. A `kind:'preparation'` result must NOT be
+ * written into the project cache; poll
+ * {@link getProjectSandboxProviderTransition} until it settles.
+ */
+export type UpdateProjectSandboxProviderResult =
+  | ({ kind: 'project' } & KortixProject)
+  | PreparationView;
+
 /** Set or clear the per-project sandbox-provider pin (Customize → Settings).
  *  Pass `null` to clear (follow the platform default/distribution). The value must
- *  be one of the project's `available_sandbox_providers`. */
+ *  be one of the project's `available_sandbox_providers`.
+ *
+ *  Returns a tagged union (see {@link UpdateProjectSandboxProviderResult}): a
+ *  `kind:'project'` immediate result, or a `kind:'preparation'` transition the
+ *  caller polls via {@link getProjectSandboxProviderTransition}. */
 export async function updateProjectSandboxProvider(
   projectId: string,
   provider: SandboxProviderName | null,
+): Promise<UpdateProjectSandboxProviderResult> {
+  return unwrap(
+    await backendApi.patch<UpdateProjectSandboxProviderResult>(
+      `/projects/${projectId}/sandbox-provider`,
+      { provider },
+    ),
+  );
+}
+
+/** PUBLIC provider-migration transition view served by the poll endpoint. Carries
+ *  only status / providers / generation / timestamps / a user-safe error class +
+ *  label — never internal build/lease detail. */
+export interface SandboxProviderTransitionView {
+  transition_id: string | null;
+  project_id: string;
+  status: string;
+  source_provider: string | null;
+  target_provider: string | null;
+  generation: number | null;
+  label: string;
+  error_class: string | null;
+  requested_at: string | null;
+  ready_at: string | null;
+  activated_at: string | null;
+  immediate: boolean;
+}
+
+export interface SandboxProviderTransitionState {
+  active_provider: string | null;
+  latest: SandboxProviderTransitionView | null;
+  history: SandboxProviderTransitionView[];
+}
+
+/** Poll the durable per-project sandbox-provider migration. After
+ *  {@link updateProjectSandboxProvider} returns a `kind:'preparation'` result,
+ *  poll this until `latest` reaches a terminal status (activated / failed /
+ *  superseded / cancelled) — or `latest` is null (no live transition). */
+export async function getProjectSandboxProviderTransition(
+  projectId: string,
+  options?: ApiClientOptions,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
-      provider,
-    }),
+    await backendApi.get<SandboxProviderTransitionState>(
+      `/projects/${projectId}/sandbox-provider/transition`,
+      { showErrors: false, ...options },
+    ),
   );
 }
 

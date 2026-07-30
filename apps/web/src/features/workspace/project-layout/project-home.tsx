@@ -2,10 +2,12 @@
 
 import {
   BellIcon as Bell,
+  RobotIcon as Bot,
   CalendarDotsIcon as CalendarClock,
   ShippingContainerIcon as Container,
   FileCodeIcon as FileCode,
   PackageIcon as Package,
+  SidebarSimpleIcon as PanelLeft,
   SparkleIcon as SparklesSolid,
   UsersThreeIcon as UsersGroupSolid,
 } from '@phosphor-icons/react';
@@ -24,11 +26,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import type { Command } from '@kortix/sdk/react';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -36,13 +39,10 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   getProjectDetail,
-  listConnectors,
-  listProjectAccess,
   listProjectAccessRequests,
   listProjectSandboxes,
-  listProjectTriggers,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
@@ -66,6 +66,9 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel =
+    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -102,10 +105,10 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        sandbox_slug: activeSlug,
+        ...(selectedSlug ? { sandbox_slug: selectedSlug } : {}),
       });
     },
-    [activeSlug, onSend],
+    [selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -126,6 +129,18 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
+      <Button
+        type="button"
+        aria-label={sidebarToggleLabel}
+        variant="ghost"
+        size="icon"
+        onClick={toggleSidebar}
+        onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+        onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
@@ -181,6 +196,7 @@ export function ProjectHome({
                 <SandboxPicker
                   items={sandboxItems}
                   activeSlug={activeSlug}
+                  selectedSlug={selectedSlug}
                   onSelect={setSelectedSlug}
                 />
               ) : null
@@ -241,7 +257,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections projectId={projectId} />
+        <ProjectHomeSections />
       </div>
     </div>
   );
@@ -285,11 +301,13 @@ export function StarterPromptChips({ onPick }: { onPick: (text: string) => void 
 function SandboxPicker({
   items,
   activeSlug,
+  selectedSlug,
   onSelect,
 }: {
   items: SandboxTemplate[];
   activeSlug: string;
-  onSelect: (slug: string) => void;
+  selectedSlug: string | null;
+  onSelect: (slug: string | null) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
@@ -314,7 +332,9 @@ function SandboxPicker({
           className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
         >
           <ActiveIcon className="size-3.5 shrink-0" />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className="max-w-[7rem] truncate">
+            {selectedSlug ? active.name : 'Agent environment'}
+          </span>
           <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
         </button>
       </DropdownMenuTrigger>
@@ -322,6 +342,23 @@ function SandboxPicker({
         <DropdownMenuLabel>
           {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSandboxe9c5fbaa')}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="flex items-start gap-2" onSelect={() => onSelect(null)}>
+          <Bot className="text-muted-foreground mt-0.5 size-4" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Agent environment</span>
+              {selectedSlug === null && (
+                <Badge variant="outline" size="xs">
+                  selected
+                </Badge>
+              )}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              Uses the selected agent, project, or platform default.
+            </div>
+          </div>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {items.map((tpl) => {
           const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
@@ -356,7 +393,7 @@ function SandboxPicker({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{tpl.name}</span>
-                  {tpl.slug === activeSlug && (
+                  {tpl.slug === selectedSlug && (
                     <Badge variant="outline" size="xs">
                       selected
                     </Badge>
@@ -377,90 +414,57 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  count: number | null;
   section: CustomizeSection;
 };
 
-/** The "set up your project" entries shown as the quiet pill row. */
-function useProjectSetupTiles(projectId: string): SetupTile[] {
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const connectors = useQuery({
-    queryKey: ['project-connectors', projectId],
-    queryFn: () => listConnectors(projectId),
-    ...Q,
-  });
-  const triggers = useQuery({
-    queryKey: ['project-triggers', projectId],
-    queryFn: () => listProjectTriggers(projectId),
-    ...Q,
-  });
-  const access = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    ...Q,
-  });
+/** Static navigation does not fetch counts before the user opens Customize. */
+const PROJECT_SETUP_TILES: SetupTile[] = [
+  {
+    icon: HiOutlineViewGrid,
+    title: 'Integrations',
+    desc: 'Connect tools your agent can act in.',
+    section: 'connectors',
+  },
+  {
+    icon: CalendarClock,
+    title: 'Scheduled tasks',
+    desc: 'Run work on a schedule or from an event.',
+    section: 'schedules',
+  },
+  {
+    icon: SparklesSolid,
+    title: 'Skills',
+    desc: 'Repeatable workflows your agent reuses.',
+    section: 'skills',
+  },
+  {
+    icon: Icon.Slack,
+    title: 'Slack',
+    desc: 'Run this project right from chat.',
+    section: 'channels',
+  },
+  {
+    icon: UsersGroupSolid,
+    title: 'Your team',
+    desc: 'Invite people to run and review work.',
+    section: 'members',
+  },
+  {
+    icon: Icon.Kortix,
+    title: 'Agent',
+    desc: 'Shape how your agent thinks and acts.',
+    section: 'agents',
+  },
+];
 
-  const memberCount = access.data?.members.length ?? 0;
-
-  return [
-    {
-      icon: HiOutlineViewGrid,
-      title: 'Integrations',
-      desc: 'Connect tools your agent can act in.',
-      count: connectors.data?.connectors.length ?? 0,
-      section: 'connectors',
-    },
-    {
-      icon: CalendarClock,
-      title: 'Scheduled tasks',
-      desc: 'Run work on a schedule or from an event.',
-      count: triggers.data?.triggers.length ?? 0,
-      section: 'schedules',
-    },
-    {
-      icon: SparklesSolid,
-      title: 'Skills',
-      desc: 'Repeatable workflows your agent reuses.',
-      count: detail.data?.config?.skills.length ?? 0,
-      section: 'skills',
-    },
-    {
-      icon: Icon.Slack,
-      title: 'Slack',
-      desc: 'Run this project right from chat.',
-      count: null,
-      section: 'channels',
-    },
-    {
-      icon: UsersGroupSolid,
-      title: 'Your team',
-      desc: 'Invite people to run and review work.',
-      count: memberCount > 1 ? memberCount : 0,
-      section: 'members',
-    },
-    {
-      icon: Icon.Kortix,
-      title: 'Agent',
-      desc: 'Shape how your agent thinks and acts.',
-      count: null,
-      section: 'agents',
-    },
-  ];
-}
-
-function ProjectHomeSections({ projectId }: { projectId: string }) {
+function ProjectHomeSections() {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const tiles = useProjectSetupTiles(projectId);
+  const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
-        const { icon: TileIcon, title, desc, count, section } = tile;
-        const isSet = (count ?? 0) > 0;
+        const { icon: TileIcon, title, desc, section } = tile;
 
         return (
           <Hint key={section} label={desc} side="top">
@@ -472,9 +476,6 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
               {title}
-              {isSet ? (
-                <span className="text-muted-foreground text-sm tabular-nums">{count}</span>
-              ) : null}
             </Button>
           </Hint>
         );

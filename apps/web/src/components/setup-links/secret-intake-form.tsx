@@ -13,18 +13,11 @@ import {
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
-
-interface SecretField {
-  name: string;
-  label: string | null;
-  description: string | null;
-}
-
-interface SecretLinkInfo {
-  project_name: string;
-  fields: SecretField[];
-  expires_at: string;
-}
+import {
+  getSecretSetupLink,
+  submitSecretSetupLink,
+  type SecretSetupLinkInfo,
+} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'submitting' | 'done';
 
@@ -45,7 +38,7 @@ export function SecretIntakeForm({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
-  const [info, setInfo] = useState<SecretLinkInfo | null>(null);
+  const [info, setInfo] = useState<SecretSetupLinkInfo | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -53,19 +46,17 @@ export function SecretIntakeForm({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${base}/setup-links/secret/${encodeURIComponent(token)}`);
-        const body = await res.json().catch(() => ({}));
+        const body = await getSecretSetupLink(token, { backendUrl: base });
         if (cancelled) return;
-        if (!res.ok) {
-          setError(body?.error || 'This link is invalid or has expired.');
-          setPhase('error');
-          return;
-        }
         setInfo(body);
         setPhase('ready');
-      } catch {
+      } catch (cause) {
         if (!cancelled) {
-          setError('Could not reach Kortix. Check your connection and try again.');
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Could not reach Kortix. Check your connection and try again.',
+          );
           setPhase('error');
         }
       }
@@ -89,21 +80,11 @@ export function SecretIntakeForm({
     setPhase('submitting');
     setError(null);
     try {
-      const res = await fetch(`${base}/setup-links/secret/${encodeURIComponent(token)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: filled }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body?.error || 'Could not save. The link may have expired.');
-        setPhase('ready');
-        return;
-      }
+      await submitSecretSetupLink(token, filled, { backendUrl: base });
       setPhase('done');
       onDone?.();
-    } catch {
-      setError('Could not save. Check your connection and try again.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save. Check your connection and try again.');
       setPhase('ready');
     }
   }

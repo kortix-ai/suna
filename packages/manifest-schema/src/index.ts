@@ -15,11 +15,13 @@
  * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
  */
 
+import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
-import { type ManifestFormat, parseManifestText } from './format';
+import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -34,6 +36,7 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
 } from './constants';
+import { type ManifestFormat, parseManifestText } from './format';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
 // imports them itself — but are kept in the re-export block just below for
@@ -45,6 +48,7 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+import { validateAgentsV3, validateManifestCrossRefsV3, validateRuntimesV3 } from './index.v3';
 
 export {
   type ManifestFormat,
@@ -60,11 +64,28 @@ export {
 // Re-exported for backward compatibility — these lived as local `const`s in
 // this file until the `constants.ts` extraction (see that module's doc for
 // why: it broke an index.ts ⇄ json-schema.ts import cycle).
+// `[[connectors]].headers` — arbitrary static request headers. Its own
+// dependency-free module (same rationale as `constants.ts`) so the validator,
+// the JSON Schema, apps/api's parser and the executor share ONE ruleset.
+export {
+  type ConnectorHeadersParse,
+  CONNECTOR_FORBIDDEN_HEADER_NAMES,
+  CONNECTOR_HEADER_NAME_RE,
+  CONNECTOR_HEADER_NAME_MAX_LENGTH,
+  CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+  CONNECTOR_HEADERS_MAX_COUNT,
+  connectorHeaderNameError,
+  connectorHeaderValueError,
+  parseConnectorHeaders,
+  sanitizeConnectorHeaders,
+} from './connector-headers';
+
 export {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -82,6 +103,7 @@ export {
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
+  V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 
@@ -106,6 +128,17 @@ export {
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
+export {
+  type HarnessV3,
+  type RuntimeBlockV3,
+  type AgentBlockV3,
+  type ManifestV3,
+  type RuntimesV3Scan,
+  type AgentsV3Scan,
+  validateRuntimesV3,
+  validateAgentsV3,
+  validateManifestCrossRefsV3,
+} from './index.v3';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -119,7 +152,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 2;
+const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -201,7 +234,9 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
+  if (version === 3) {
+    validateManifestBodyV3(parsed, format, issues);
+  } else if (version === 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -212,6 +247,39 @@ export function validateManifest(
     parsed,
     issues,
   };
+}
+
+function validateManifestBodyV3(
+  parsed: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): void {
+  validateProject(parsed.project, 'project', issues);
+  validateEnv(parsed.env, 'env', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
+  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  rejectRetiredApps(parsed.apps, 'apps', issues);
+  rejectChannelsV2(parsed.channels, 'channels', issues);
+  if (parsed.runtime !== undefined) {
+    issues.push({
+      path: 'runtime',
+      message: 'kortix_version 3 uses the `runtimes` map.',
+      severity: 'error',
+    });
+  }
+  if (parsed.opencode !== undefined) {
+    issues.push({
+      path: 'opencode',
+      message: 'kortix_version 3 configures OpenCode through a runtime profile.',
+      severity: 'error',
+    });
+  }
+  const runtimes = validateRuntimesV3(parsed.runtimes, 'runtimes', issues);
+  const agents = validateAgentsV3(parsed.agents, 'agents', issues);
+  validateManifestCrossRefsV3(parsed.default_agent, agents, runtimes, issues);
+  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agents.names, issues);
 }
 
 /**
@@ -314,7 +382,7 @@ export function validateGrantList(
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
-  version: 1 | 2 = 1,
+  version: 1 | 2 | 3 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -352,10 +420,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+            version >= 2
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: version >= 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -369,7 +437,12 @@ export function validateGrantList(
 }
 
 /** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
-function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateAgents(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -455,11 +528,10 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (version >= 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
-      message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+      message: `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml.`,
       severity: 'error',
     });
     return version;
@@ -537,7 +609,12 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandbox(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -594,13 +671,17 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
   }
 }
 
-function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandboxTemplates(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message:
-        listSectionHint('sandbox.templates', format),
+      message: listSectionHint('sandbox.templates', format),
       severity: 'error',
     });
     return;
@@ -715,7 +796,12 @@ function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[])
   });
 }
 
-function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateTriggers(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -805,6 +891,24 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
           message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
           severity: 'error',
         });
+      } else {
+        const timezone =
+          typeof entry.timezone === 'string' && entry.timezone.trim()
+            ? entry.timezone.trim()
+            : 'UTC';
+        if (isValidIanaTimeZone(timezone)) {
+          try {
+            new Cron(cron, { paused: true, timezone });
+          } catch (error) {
+            issues.push({
+              path: `${where}.cron`,
+              message: `invalid cron expression: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              severity: 'error',
+            });
+          }
+        }
       }
       if (entry.timezone !== undefined && typeof entry.timezone !== 'string') {
         issues.push({
@@ -817,11 +921,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
         entry.timezone.trim() &&
         !isValidIanaTimeZone(entry.timezone.trim())
       ) {
-        // Runtime rejects a non-IANA zone (e.g. "PST") and the trigger never fires.
         issues.push({
           path: `${where}.timezone`,
           message: `"${entry.timezone}" is not a valid IANA time zone (e.g. "America/New_York"); the runtime rejects it and the trigger would never fire.`,
-          severity: 'warning',
+          severity: 'error',
         });
       }
     } else if (type === 'webhook') {
@@ -861,10 +964,15 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
     let sessionMode: string | undefined;
     if (sessionModeRaw !== undefined) {
       sessionMode = sessionModeRaw.trim().toLowerCase();
-      if (sessionMode !== 'fresh' && sessionMode !== 'reuse' && sessionMode !== 'pinned') {
+      if (
+        sessionMode !== 'fresh' &&
+        sessionMode !== 'reuse' &&
+        sessionMode !== 'pinned' &&
+        sessionMode !== 'keyed'
+      ) {
         issues.push({
           path: `${where}.session_mode`,
-          message: 'session_mode must be "fresh", "reuse", or "pinned".',
+          message: 'session_mode must be "fresh", "reuse", "pinned", or "keyed".',
           severity: 'error',
         });
       }
@@ -886,7 +994,13 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  version: 1 | 2 = 1,
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -920,6 +1034,16 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       });
     } else {
       seenSlugs.add(slug);
+    }
+    if (
+      entry.name !== undefined &&
+      (typeof entry.name !== 'string' || entry.name.trim().length === 0)
+    ) {
+      issues.push({
+        path: `${where}.name`,
+        message: 'name must be a non-empty string when provided.',
+        severity: 'error',
+      });
     }
     // Runtime parser lowercases provider/auth.type/policy.action/platform before
     // matching — mirror that so a manifest using "MCP" or "Slack" isn't blocked.
@@ -1008,8 +1132,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
-        message:
-          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
+        message: `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1045,6 +1168,19 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
           severity: version === 2 ? 'error' : 'warning',
+        });
+      }
+    }
+    if (entry.authorization_strategy !== undefined) {
+      const strategy =
+        typeof entry.authorization_strategy === 'string'
+          ? entry.authorization_strategy.trim().toLowerCase()
+          : '';
+      if (!(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategy)) {
+        issues.push({
+          path: `${where}.authorization_strategy`,
+          message: `authorization_strategy must be one of: ${CONNECTOR_AUTHORIZATION_STRATEGIES.join(', ')} (got "${strategy || 'unset'}").`,
+          severity: 'error',
         });
       }
     }
@@ -1098,7 +1234,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
-        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
+        if (
+          t === 'oauth1' &&
+          provider !== 'openapi' &&
+          provider !== 'postman' &&
+          provider !== 'http'
+        ) {
           issues.push({
             path: `${where}.auth.type`,
             message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
@@ -1113,6 +1254,26 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
+      }
+    }
+    // Optional `headers` — arbitrary static request headers sent on every call.
+    // Same ruleset the runtime parser enforces (shared module), so what merges
+    // here is exactly what materializes. Values are plaintext in git: never a
+    // credential (that is `auth` + the platform credential store).
+    if (entry.headers !== undefined) {
+      const parsedHeaders = parseConnectorHeaders(entry.headers);
+      if (!parsedHeaders.ok) {
+        issues.push({
+          path: `${where}.headers`,
+          message: `${parsedHeaders.error}.`,
+          severity: 'error',
+        });
+      } else if (provider === 'pipedream' || provider === 'channel') {
+        issues.push({
+          path: `${where}.headers`,
+          message: `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
+          severity: 'warning',
+        });
       }
     }
     // Optional [[connectors.policies]]
@@ -1152,7 +1313,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
   });
 }
 
-function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateChannels(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({

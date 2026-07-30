@@ -35,4 +35,42 @@ describe('buildNewSessionCreateInput', () => {
     // proxy's `?? "default"` and 409 the first prompt.
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
   });
+
+  it('binds the complete committed connector selection at creation', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'builder',
+        scope: {
+          draft: {
+            secrets: ['MAIL_TOKEN'],
+            connector_bindings: {
+              mail: { authorization_id: 'authorization-mail-private' },
+            },
+          },
+          availability: { secrets: true, connector_bindings: true },
+        },
+      }),
+    ).toEqual({
+      agent_name: 'builder',
+      connector_bindings: {
+        mail: { authorization_id: 'authorization-mail-private' },
+      },
+      inherit_unbound: false,
+    });
+  });
+
+  it('does not bind connectors when their catalog was unavailable', () => {
+    expect(
+      buildNewSessionCreateInput({
+        scope: {
+          draft: {
+            connector_bindings: {
+              mail: { authorization_id: 'authorization-mail-private' },
+            },
+          },
+          availability: { secrets: true, connector_bindings: false },
+        },
+      }),
+    ).toBeUndefined();
+  });
 });

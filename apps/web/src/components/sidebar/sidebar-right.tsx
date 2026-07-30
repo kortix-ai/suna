@@ -15,8 +15,9 @@ import {
   useRightSidebar,
 } from '@/components/ui/sidebar-right-provider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
+import { useCreatePty } from '@kortix/sdk/react';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { SANDBOX_PORTS } from '@kortix/sdk';
 import {
   getNavItemsClustered,
   isItemActive,
@@ -29,7 +30,6 @@ import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback } from 'react';

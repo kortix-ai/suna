@@ -41,6 +41,10 @@ describe('runsSingletonWorkers (dead-weight-leader guard)', () => {
     expect(runsSingletonWorkers({})).toBe(true);
   });
 
+  test('global worker switch off → NOT an owner', () => {
+    expect(runsSingletonWorkers({ KORTIX_WORKERS_ENABLED: 'false' })).toBe(false);
+  });
+
   test('API-only profile (ALL four worker flags "false") → NOT an owner', () => {
     // This is the helm workers.enabled=false profile. Such a pod must never join
     // the election — otherwise it can win the lease and dead-weight-starve crons.

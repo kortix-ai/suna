@@ -1,3 +1,4 @@
+import { CATALOG, catalogModelForWireModel } from '@kortix/llm-catalog';
 import { InvalidPromptError, generateText, streamText } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
 import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
@@ -238,6 +239,16 @@ export async function callUpstreamViaAiSdk(
     // model.ts passed to createOpenAICompatible for this descriptor — see
     // request.ts's providerOptionsKeyFor / defect 5 comment.
     providerName: descriptor.provider,
+    // The resolved catalog model for the WIRE model id (managed slug, BYOK
+    // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
+    // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
+    // max_tokens against its real models.dev capabilities (see request.ts's
+    // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
+    // (permissive parity). Keyed off the client wire id, not descriptor
+    // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
+    // wouldn't resolve here). The bundled static CATALOG is authoritative for
+    // capability shape; the transport has no live snapshot.
+    model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
   });
   const clientWantsStream = body.stream === true;
   const ctx = {

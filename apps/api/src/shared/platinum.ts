@@ -107,7 +107,14 @@ export async function platinumJson<T>(path: string, init: RequestInit = {}): Pro
         `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`,
       );
     }
-    throw new Error(`platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
+    // Surface Retry-After (seconds) on a 429 so poll-error classification can
+    // honor it (PHASE 2 rate-limit handling). Harmless suffix for other callers.
+    let suffix = '';
+    if (res.status === 429) {
+      const ra = res.headers.get('retry-after');
+      if (ra && /^\d+$/.test(ra.trim())) suffix = ` retry-after=${ra.trim()}`;
+    }
+    throw new Error(`platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`);
   }
   return (text ? JSON.parse(text) : {}) as T;
 }

@@ -7,6 +7,7 @@ import {
   isInstallDisabled,
   projectMarketplaceHref,
 } from './marketplace-install';
+import { buildTemplateSetupPrompt } from './marketplace-setup-prompt';
 
 describe('buildInstallSuccessSummary', () => {
   test('singularizes "file" for a single-file install', () => {
@@ -38,6 +39,15 @@ describe('projectMarketplaceHref', () => {
     expect(projectMarketplaceHref('proj/weird id')).toBe(
       '/projects/proj%2Fweird%20id/customize/marketplace',
     );
+  });
+});
+
+describe('buildTemplateSetupPrompt', () => {
+  test('tells template setup sessions to read install.md when present', () => {
+    const prompt = buildTemplateSetupPrompt('SEO Department');
+
+    expect(prompt).toContain('install.md');
+    expect(prompt).toContain('template-specific setup guide');
   });
 });
 

@@ -1,26 +1,81 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ConnectorAuthorizationStrategySchema,
+  ConnectorAuthorizationMetadataSchema,
+  ConnectorAuthorizationSchema,
+  ReconcileConnectorAuthorizationInputSchema,
+  UpdateConnectorAuthorizationCredentialInputSchema,
   ConnectionProfileMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
   ErrorEnvelopeSchema,
   OkResponseSchema,
+  OAuth2ApplicationInputSchema,
+  OAuth2AuthorizationStartInputSchema,
+  OAuth2DeviceAuthorizationStartInputSchema,
   ProjectSchema,
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
   ReconcileConnectionProfileInputSchema,
   SecretSchema,
+  ConnectorAuthorizationRequiredErrorSchema,
+  ConnectorAuthorizationRequiredProfileSchema,
+  SessionConnectorBindingInputSchema,
+  SessionConnectorBindingSchema,
+  SessionConnectorBindingsInputSchema,
   SessionConnectorBindingsSchema,
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
+  SessionScopeInputSchema,
+  SessionScopeSchema,
   SessionRuntimeContextSchema,
   SessionStartResultSchema,
   SharingIntentSchema,
   TriggerListSchema,
   TriggerSchema,
   UpdateConnectionProfileCredentialInputSchema,
+  WarmProjectSessionResultSchema,
+  ClaimWarmProjectSessionInputSchema,
 } from '../index';
 
 const NOW = '2026-07-01T12:00:00.000Z';
+
+describe('connector authorization strategy', () => {
+  test('accepts exactly project or user', () => {
+    expect(ConnectorAuthorizationStrategySchema.parse('project')).toBe('project');
+    expect(ConnectorAuthorizationStrategySchema.parse('user')).toBe('user');
+    expect(ConnectorAuthorizationStrategySchema.safeParse('both').success).toBe(false);
+    expect(ConnectorAuthorizationStrategySchema.safeParse('').success).toBe(false);
+    expect(ConnectorAuthorizationStrategySchema.safeParse(undefined).success).toBe(false);
+  });
+});
+
+describe('connector authorization terminology', () => {
+  test('canonical authorization schemas preserve the compatibility wire shape', () => {
+    expect(ConnectorAuthorizationMetadataSchema).toBe(ConnectionProfileMetadataSchema);
+    expect(
+      ConnectorAuthorizationSchema.parse({
+        profile_id: '11111111-2222-4333-8444-555555555555',
+        connector_alias: 'gmail',
+        owner_type: 'project',
+        owner_id: null,
+        label: 'Project Gmail',
+        status: 'active',
+        is_default: true,
+        metadata: {},
+      }),
+    ).toMatchObject({ connector_alias: 'gmail', status: 'active' });
+    expect(
+      ReconcileConnectorAuthorizationInputSchema.parse({
+        connector_alias: 'gmail',
+        owner_type: 'project',
+        label: 'Project Gmail',
+      }),
+    ).toMatchObject({ connector_alias: 'gmail', owner_type: 'project' });
+    expect(
+      UpdateConnectorAuthorizationCredentialInputSchema.parse({ value: 'secret-value' }),
+    ).toEqual({ value: 'secret-value' });
+  });
+});
 
 function projectFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,8 +99,9 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      meet: false,
+      voice: false,
       llm_gateway: true,
+      acp_runtime: false,
       review_center: false,
     },
     experimental_features: [],
@@ -76,6 +132,8 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
     visibility: 'private',
+    origin: 'user',
+    secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
     can_manage_sharing: true,
@@ -120,6 +178,8 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
     session_id: null,
+    session_key: null,
+    filter: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
@@ -167,26 +227,42 @@ describe('ProjectSchema', () => {
   });
 
   test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
-    expect(() => ProjectSchema.parse(projectFixture({
-      default_sandbox_provider: 'e2b',
-      available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
-    }))).not.toThrow();
-    expect(() => ProjectSchema.parse(projectFixture({
-      default_sandbox_provider: 'managed',
-    }))).toThrow();
+    expect(() =>
+      ProjectSchema.parse(
+        projectFixture({
+          default_sandbox_provider: 'e2b',
+          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      ProjectSchema.parse(
+        projectFixture({
+          default_sandbox_provider: 'managed',
+        }),
+      ),
+    ).toThrow();
     // The RETIRED single-instance provider ('local_docker', underscore) stays
     // rejected — a genuinely different identifier from the new EXPERIMENTAL
     // 'local-docker' (hyphen) provider below.
-    expect(() => ProjectSchema.parse(projectFixture({
-      available_sandbox_providers: ['daytona', 'local_docker'],
-    }))).toThrow();
+    expect(() =>
+      ProjectSchema.parse(
+        projectFixture({
+          available_sandbox_providers: ['daytona', 'local_docker'],
+        }),
+      ),
+    ).toThrow();
   });
 
   test('accepts the EXPERIMENTAL local-docker (hyphenated) sandbox provider', () => {
-    expect(() => ProjectSchema.parse(projectFixture({
-      default_sandbox_provider: 'local-docker',
-      available_sandbox_providers: ['local-docker'],
-    }))).not.toThrow();
+    expect(() =>
+      ProjectSchema.parse(
+        projectFixture({
+          default_sandbox_provider: 'local-docker',
+          available_sandbox_providers: ['local-docker'],
+        }),
+      ),
+    ).not.toThrow();
   });
 
   test('rejects an unknown status', () => {
@@ -207,6 +283,20 @@ describe('ProjectSessionSchema', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
 
+  test('accepts immutable ACP runtime identity', () => {
+    expect(() =>
+      ProjectSessionSchema.strict().parse(
+        sessionFixture({
+          runtime_transport: 'acp',
+          runtime_harness: 'codex',
+          native_agent: 'reviewer',
+          acp_server_id: 'server-1',
+          acp_session_id: 'native-1',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   test.each([
     { mode: 'project' },
     { mode: 'private', ownerId: 'u1' },
@@ -225,6 +315,38 @@ describe('ProjectSessionSchema', () => {
     expect(() =>
       ProjectSessionSchema.parse(sessionFixture({ created_at: new Date(NOW) })),
     ).toThrow();
+  });
+});
+
+describe('warm project session schemas', () => {
+  test('accepts the ensure response with workspace refresh state', () => {
+    expect(
+      WarmProjectSessionResultSchema.parse({
+        session: sessionFixture(),
+        reused: true,
+        workspace_refresh: {
+          status: 'updated',
+          before_sha: 'abc123',
+          after_sha: 'def456',
+        },
+      }),
+    ).toMatchObject({
+      reused: true,
+      workspace_refresh: { status: 'updated' },
+    });
+  });
+
+  test('requires an RFC 4122 v4 session_id for claims', () => {
+    expect(
+      ClaimWarmProjectSessionInputSchema.safeParse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        agent_name: 'default',
+        sandbox_slug: 'default',
+      }).success,
+    ).toBe(true);
+    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -365,8 +487,9 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'meet',
+      'voice',
       'llm_gateway',
+      'acp_runtime',
       'review_center',
     ]);
   });
@@ -448,13 +571,13 @@ describe('SessionCreateInputSchema runtime_context', () => {
   test('retains deprecated camelCase inputs already accepted by the route', () => {
     expect(
       SessionCreateInputSchema.safeParse({
-      baseRef: 'main',
-      agentName: 'veyris',
-      sandboxSlug: 'default',
-      initialPrompt: 'hello',
-      opencodeModel: 'kortix/auto',
-      sessionId: '11111111-1111-4111-a111-111111111111',
-      branchAlreadyCreated: true,
+        baseRef: 'main',
+        agentName: 'veyris',
+        sandboxSlug: 'default',
+        initialPrompt: 'hello',
+        opencodeModel: 'kortix/glm-5.2',
+        sessionId: '11111111-1111-4111-a111-111111111111',
+        branchAlreadyCreated: true,
       }).success,
     ).toBe(true);
   });
@@ -463,19 +586,62 @@ describe('SessionCreateInputSchema runtime_context', () => {
 describe('session connector profile contracts', () => {
   const profileId = '11111111-1111-4111-a111-111111111111';
 
-  test('accepts typed connector bindings and rejects escape hatches', () => {
+  test('normalizes canonical, deprecated, and equal dual binding input', () => {
     expect(
-      SessionCreateInputSchema.safeParse({
-        connector_bindings: { veyris: { profile_id: profileId } },
+      SessionConnectorBindingInputSchema.parse({ authorization_id: profileId }),
+    ).toEqual({ authorization_id: profileId });
+    expect(SessionConnectorBindingInputSchema.parse({ profile_id: profileId })).toEqual({
+      authorization_id: profileId,
+    });
+    expect(
+      SessionConnectorBindingInputSchema.parse({
+        authorization_id: profileId,
+        profile_id: profileId,
+      }),
+    ).toEqual({ authorization_id: profileId });
+  });
+
+  test('rejects missing, conflicting, and unknown binding input', () => {
+    expect(SessionConnectorBindingInputSchema.safeParse({}).success).toBe(false);
+    expect(
+      SessionConnectorBindingInputSchema.safeParse({
+        authorization_id: profileId,
+        profile_id: '22222222-2222-4222-8222-222222222222',
       }).success,
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      SessionConnectorBindingInputSchema.safeParse({
+        authorization_id: profileId,
+        credential: 'secret',
+      }).success,
+    ).toBe(false);
+  });
+
+  test('emits only canonical connector binding output', () => {
+    expect(SessionConnectorBindingSchema.parse({ authorization_id: profileId })).toEqual({
+      authorization_id: profileId,
+    });
+    expect(SessionConnectorBindingSchema.safeParse({ profile_id: profileId }).success).toBe(false);
     expect(
       SessionConnectorBindingsSchema.safeParse({
+        veyris: { authorization_id: profileId, profile_id: profileId },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('normalizes connector binding maps before session creation', () => {
+    expect(
+      SessionCreateInputSchema.parse({
+        connector_bindings: { veyris: { profile_id: profileId } },
+      }).connector_bindings,
+    ).toEqual({ veyris: { authorization_id: profileId } });
+    expect(
+      SessionConnectorBindingsInputSchema.safeParse({
         veyris: { profile_id: profileId, credential: 'secret' },
       }).success,
     ).toBe(false);
     expect(
-      SessionConnectorBindingsSchema.safeParse({
+      SessionConnectorBindingsInputSchema.safeParse({
         VEYRIS: { profile_id: profileId },
       }).success,
     ).toBe(false);
@@ -485,7 +651,7 @@ describe('session connector profile contracts', () => {
     const tooMany = Object.fromEntries(
       Array.from({ length: 65 }, (_, index) => [`connector_${index}`, { profile_id: profileId }]),
     );
-    expect(SessionConnectorBindingsSchema.safeParse(tooMany).success).toBe(false);
+    expect(SessionConnectorBindingsInputSchema.safeParse(tooMany).success).toBe(false);
     expect(ConnectionProfileMetadataSchema.safeParse({ access_token: 'nope' }).success).toBe(false);
     expect(ConnectionProfileMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
       false,
@@ -506,6 +672,198 @@ describe('session connector profile contracts', () => {
     ).toBe(false);
     expect(
       UpdateConnectionProfileCredentialInputSchema.safeParse({ value: 'x'.repeat(65537) }).success,
+    ).toBe(false);
+    expect(
+      UpdateConnectionProfileCredentialInputSchema.safeParse({
+        oauth2: {
+          type: 'oauth2_client_credentials',
+          token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+          client_id: 'client-id',
+          token_endpoint_auth_method: 'client_secret_post',
+          client_secret: 'client-secret',
+          scopes: ['https://graph.microsoft.com/.default'],
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateConnectionProfileCredentialInputSchema.safeParse({
+        oauth2: {
+          type: 'oauth2_client_credentials',
+          token_url: 'http://localhost/token',
+          client_id: 'client-id',
+          token_endpoint_auth_method: 'client_secret_post',
+          client_secret: 'client-secret',
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('session scope contracts', () => {
+  const authorizationId = '11111111-1111-4111-a111-111111111111';
+
+  test('normalizes deprecated binding input and rejects an empty replacement', () => {
+    expect(
+      SessionScopeInputSchema.parse({
+        connector_bindings: { gmail: { profile_id: authorizationId } },
+      }),
+    ).toEqual({
+      connector_bindings: { gmail: { authorization_id: authorizationId } },
+    });
+    expect(SessionScopeInputSchema.safeParse({}).success).toBe(false);
+    expect(SessionScopeInputSchema.safeParse({ secret_values: [] }).success).toBe(false);
+  });
+
+  test('emits only authorization_id in authoritative scope output', () => {
+    const value = {
+      secrets_allowlist: ['GMAIL_TOKEN'],
+      connector_bindings: { gmail: { authorization_id: authorizationId } },
+      dropped_secrets: [],
+      added_secrets: ['GMAIL_TOKEN'],
+      dropped_bindings: [],
+      retroactive: true,
+      detail: 'Applies from the next prompt.',
+    };
+    expect(SessionScopeSchema.parse(value)).toEqual(value);
+    expect(
+      SessionScopeSchema.safeParse({
+        ...value,
+        connector_bindings: { gmail: { profile_id: authorizationId } },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('connector authorization required contracts', () => {
+  const profile = {
+    id: '11111111-1111-4111-a111-111111111111',
+    slug: 'gmail-read',
+    name: 'Gmail read only',
+    authorization_strategy: 'user' as const,
+  };
+
+  test('accepts the public missing-profile shape', () => {
+    expect(ConnectorAuthorizationRequiredProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  test('accepts the structured session-create conflict and rejects extra fields', () => {
+    const value = {
+      code: 'CONNECTOR_AUTHORIZATION_REQUIRED' as const,
+      message: 'Connect the required connector profiles before starting this session.',
+      connector_profiles: [profile],
+    };
+    expect(ConnectorAuthorizationRequiredErrorSchema.parse(value)).toEqual(value);
+    expect(
+      ConnectorAuthorizationRequiredErrorSchema.safeParse({
+        ...value,
+        connector_profiles: [{ ...profile, authorization_id: profile.id }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('native OAuth2 lifecycle schemas', () => {
+  test('accepts a provider-independent Authorization Code application with PKCE', () => {
+    expect(
+      OAuth2ApplicationInputSchema.parse({
+        authorization_url: 'https://identity.example.com/oauth2/authorize',
+        token_url: 'https://identity.example.com/oauth2/token',
+        revocation_url: 'https://identity.example.com/oauth2/revoke',
+        client_id: 'client-123',
+        token_endpoint_auth_method: 'client_secret_basic',
+        client_secret: 'secret-123',
+        scopes: ['files.read', 'files.write'],
+      }),
+    ).toMatchObject({ client_id: 'client-123' });
+  });
+
+  test('accepts public clients and rejects non-HTTPS provider endpoints', () => {
+    expect(
+      OAuth2ApplicationInputSchema.safeParse({
+        authorization_url: 'https://identity.example.com/authorize',
+        token_url: 'https://identity.example.com/token',
+        client_id: 'public-client',
+        token_endpoint_auth_method: 'none',
+      }).success,
+    ).toBe(true);
+    expect(
+      OAuth2ApplicationInputSchema.safeParse({
+        authorization_url: 'http://127.0.0.1/authorize',
+        token_url: 'https://identity.example.com/token',
+        client_id: 'public-client',
+        token_endpoint_auth_method: 'none',
+      }).success,
+    ).toBe(false);
+  });
+
+  test('requires the selected client credential', () => {
+    expect(
+      OAuth2ApplicationInputSchema.safeParse({
+        token_url: 'https://identity.example.com/token',
+        client_id: 'confidential-client',
+        token_endpoint_auth_method: 'client_secret_jwt',
+      }).success,
+    ).toBe(false);
+    expect(
+      OAuth2ApplicationInputSchema.safeParse({
+        token_url: 'https://identity.example.com/token',
+        client_id: 'confidential-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        private_key: 'private-key',
+      }).success,
+    ).toBe(true);
+  });
+
+  test('validates authorization and device start inputs', () => {
+    expect(
+      OAuth2AuthorizationStartInputSchema.parse({
+        success_redirect_uri: 'https://dev.kortix.com/projects/p1',
+      }),
+    ).toEqual({ success_redirect_uri: 'https://dev.kortix.com/projects/p1' });
+    expect(
+      OAuth2AuthorizationStartInputSchema.safeParse({
+        success_redirect_uri: 'http://localhost:15300/projects/p1',
+      }).success,
+    ).toBe(true);
+    expect(
+      OAuth2AuthorizationStartInputSchema.safeParse({
+        success_redirect_uri: 'http://example.com/projects/p1',
+      }).success,
+    ).toBe(false);
+    expect(OAuth2DeviceAuthorizationStartInputSchema.parse({ scopes: ['read'] })).toEqual({
+      scopes: ['read'],
+    });
+  });
+});
+
+describe('removed usage-attribution fields', () => {
+  test('rejects usage-attribution fields in session-create input', () => {
+    expect(SessionCreateInputSchema.safeParse({ end_user_ref: 'customer-1' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ origin_ref: 'customer-1' }).success).toBe(false);
+  });
+
+  test('rejects usage-attribution fields in serialized sessions', () => {
+    expect(ProjectSessionSchema.strict().safeParse(sessionFixture()).success).toBe(true);
+    expect(
+      ProjectSessionSchema.strict().safeParse(sessionFixture({ end_user_ref: 'customer-1' }))
+        .success,
+    ).toBe(false);
+    expect(
+      ProjectSessionSchema.strict().safeParse(sessionFixture({ origin_ref: 'customer-1' })).success,
+    ).toBe(false);
+  });
+});
+
+describe('SessionCreateInputSchema backend secret bounds', () => {
+  test('secrets: accepts an identifier list and [] (narrow to zero), rejects an over-long list', () => {
+    expect(
+      SessionCreateInputSchema.safeParse({ secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'] }).success,
+    ).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ secrets: [] }).success).toBe(true);
+    expect(
+      SessionCreateInputSchema.safeParse({
+        secrets: Array.from({ length: 129 }, (_, i) => `S${i}`),
+      }).success,
     ).toBe(false);
   });
 });

@@ -7,7 +7,12 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { getCrById, serializeChangeRequest } from '../change-requests';
-import { invalidateProjectMirror, mergeBranches, readManifestFromRepo } from '../git';
+import {
+  invalidateProjectMirror,
+  MergeConflictError,
+  mergeBranches,
+  readManifestFromRepo,
+} from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
@@ -106,6 +111,16 @@ projectsApp.openapi(
         authorEmail: 'noreply@kortix.ai',
       });
     } catch (error) {
+      if (error instanceof MergeConflictError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            conflicts: error.conflicts,
+          },
+          409,
+        );
+      }
       return c.json(
         {
           error: error instanceof Error ? error.message : 'Merge failed',

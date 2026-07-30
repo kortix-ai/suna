@@ -11,11 +11,11 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
-import { KortixProject } from '@kortix/sdk/projects-client';
+import { KortixProject } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   DotsThreeIcon as MoreHorizontal,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   TrashIcon as TrashSolid,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -81,7 +81,7 @@ const ProjectCard = ({
               {tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onRename} disabled={!canManageProject}>
-              <Pencil className="size-4" />
+              <PencilSimpleIcon className="size-4" />
               Rename
             </DropdownMenuItem>
             <DropdownMenuSeparator />

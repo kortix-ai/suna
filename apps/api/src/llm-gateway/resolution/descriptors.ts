@@ -67,19 +67,41 @@ export function stripBedrockInferenceProfilePrefix(modelId: string): string {
   return modelId;
 }
 
-export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | undefined {
-  const p = getModelPricing(modelId);
+export function livePricing(
+  providerId: string,
+  modelId: string,
+): UpstreamDescriptor['pricing'] | undefined {
+  const p = getModelPricing(providerId, modelId);
   if (!p) return undefined;
   return {
     inputPerMillion: p.inputPer1M,
     outputPerMillion: p.outputPer1M,
     cachedInputPerMillion: p.cacheReadPer1M,
     cacheWritePerMillion: p.cacheWritePer1M,
+    tiers: p.tiers?.map((tier) => ({
+      inputPerMillion: tier.inputPer1M,
+      outputPerMillion: tier.outputPer1M,
+      cachedInputPerMillion: tier.cacheReadPer1M,
+      cacheWritePerMillion: tier.cacheWritePer1M,
+      contextThreshold: tier.contextThreshold,
+    })),
+    contextOver200k: p.contextOver200k
+      ? {
+          inputPerMillion: p.contextOver200k.inputPer1M,
+          outputPerMillion: p.contextOver200k.outputPer1M,
+          cachedInputPerMillion: p.contextOver200k.cacheReadPer1M,
+          cacheWritePerMillion: p.contextOver200k.cacheWritePer1M,
+          contextThreshold: p.contextOver200k.contextThreshold,
+        }
+      : undefined,
   };
 }
 
 function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
-  return livePricing(managed.pricingRef);
+  if (managed.pricing) return managed.pricing;
+  const slash = managed.pricingRef.indexOf('/');
+  if (slash <= 0) return undefined;
+  return livePricing(managed.pricingRef.slice(0, slash), managed.pricingRef.slice(slash + 1));
 }
 
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -96,6 +118,20 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     resolvedModel: managed.upstreamModelId,
     pricing: managedPricing(managed),
     ...(managed.openrouterProvider ? { bodyExtras: { provider: managed.openrouterProvider } } : {}),
+  };
+}
+
+function asterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.ASTER_API_KEY) return null;
+  return {
+    provider: 'aster',
+    kind: 'openai-compat',
+    baseUrl: config.ASTER_API_URL,
+    apiKey: config.ASTER_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.upstreamModelId,
+    pricing: managedPricing(managed),
   };
 }
 
@@ -133,13 +169,14 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
   // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
   // so this only ever reaches a real ManagedModel when the flag is on — but
-  // guard here too so neither AWS_BEDROCK_API_KEY nor OPENROUTER_API_KEY is
-  // ever read for managed routing if some future caller reaches this directly.
+  // guard here too so no managed credential is read if some future caller
+  // reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const d =
-    managed.transport === 'openrouter'
-      ? openRouterManagedDescriptor(managed)
-      : bedrockManagedDescriptor(managed);
+  const d = {
+    aster: asterManagedDescriptor,
+    bedrock: bedrockManagedDescriptor,
+    openrouter: openRouterManagedDescriptor,
+  }[managed.transport](managed);
   return d ? [d] : [];
 }
 

@@ -9,6 +9,7 @@ import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const Hero = () => {
   const { user } = useAuth();
@@ -21,7 +22,7 @@ const Hero = () => {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   return (

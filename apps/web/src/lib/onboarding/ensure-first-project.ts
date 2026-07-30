@@ -1,12 +1,8 @@
-import { listDefaultProjectMarketplaceItems } from '@/lib/marketplace-client';
-import {
-  listProjectsForAccount,
-  provisionProject,
-  type KortixProject,
-} from '@kortix/sdk/projects-client';
+import { type KortixProject, listProjectsForAccount, provisionProject } from '@kortix/sdk';
+
+import { isValidProjectId } from '@/lib/onboarding/landing-destination';
 
 export type FirstProjectAutoCreateState = {
-  bootstrapRequested: boolean;
   activeAccountId: string | null;
   canCreateProjects: boolean;
   autoCreateAttempted: boolean;
@@ -20,12 +16,73 @@ export type FirstProjectAutoCreateState = {
   billingEnabled: boolean;
   accountStateLoading: boolean;
   canRun: boolean;
+  suppressedAfterDelete: boolean;
 };
 
-export function hasFirstProjectBootstrapSignal(searchParams: URLSearchParams): boolean {
-  return (
-    searchParams.get('team_signup') === 'success' || searchParams.get('auth_event') === 'signup'
-  );
+/** Name + template for every auto-provisioned first project. */
+export const FIRST_PROJECT_NAME = 'My First Project';
+export const FIRST_PROJECT_TEMPLATE = 'general-knowledge-worker';
+
+/**
+ * Set when the user archives their LAST project. Auto-provisioning is otherwise
+ * unconditional, and without this flag deleting your only project would
+ * immediately recreate it — the app undoing the action the user just took.
+ * Tab-scoped on purpose: the suppression is about *this* deliberate delete, so a
+ * later sign-in or a fresh tab provisions again like any other empty account.
+ */
+const SUPPRESS_AUTO_PROJECT_KEY = 'kortix:suppress-auto-project';
+
+function safeSessionStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage;
+  } catch {
+    // Private browsing / blocked storage — fall back to "not suppressed".
+    return null;
+  }
+}
+
+export function suppressAutoProjectAfterDelete(): void {
+  safeSessionStorage()?.setItem(SUPPRESS_AUTO_PROJECT_KEY, '1');
+}
+
+export function isAutoProjectSuppressed(): boolean {
+  return safeSessionStorage()?.getItem(SUPPRESS_AUTO_PROJECT_KEY) === '1';
+}
+
+export function clearAutoProjectSuppression(): void {
+  safeSessionStorage()?.removeItem(SUPPRESS_AUTO_PROJECT_KEY);
+}
+
+/**
+ * Whether this navigation may CREATE a project, as opposed to only opening one
+ * that already exists.
+ *
+ * Provisioning mints a real managed git repository, so a cross-site link must
+ * not trigger it just because the visitor happens to be signed in (CWE-352).
+ * Both auto-provisioning entry points — the landing door and the empty projects
+ * list — gate creation on this. Opening an EXISTING project stays allowed from
+ * anywhere.
+ *
+ * A same-origin referrer covers the real entry points (`/auth/callback`, `/`,
+ * in-app links). An EMPTY referrer covers a typed URL or a bookmark, which is
+ * genuine user intent. A referrer naming another origin is what we refuse.
+ *
+ * This is defense in depth, not a complete control: an attacker can send
+ * `referrerpolicy="no-referrer"` and be indistinguishable from a typed
+ * navigation. What bounds the residual risk is that creation only ever fires
+ * for an account with ZERO projects, and the free tier caps such an account at
+ * one project anyway — so the worst case is the user getting the project that
+ * sign-up would have created for them regardless.
+ */
+export function navigationMayCreateProject(): boolean {
+  if (typeof document === 'undefined') return false;
+  const referrer = document.referrer;
+  if (!referrer) return true;
+  try {
+    return new URL(referrer).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 export function isProjectLimitError(err: unknown): boolean {
@@ -50,37 +107,66 @@ export function isManagedGitUnavailableError(err: unknown): boolean {
 }
 
 /**
- * Return the account's first project, creating "My First Project" when none
- * exist. If the free-tier cap is already consumed, recover by listing again
- * and returning the existing project instead of surfacing a dead-end error.
- * If managed git isn't configured on this server, there is nothing to
- * auto-create — return null so the caller falls back to its normal empty
- * "create a project" state instead of treating it as a hard failure.
+ * Pick which existing project to open: the one the browser last had open, else
+ * the first. `preferredProjectId` is untrusted (it comes from a cookie), so it
+ * only ever selects from the list the server already said this account owns.
  */
-export async function ensureFirstProject(accountId: string): Promise<KortixProject | null> {
+export function pickLandingProject(
+  projects: KortixProject[],
+  preferredProjectId?: string | null,
+): KortixProject | null {
+  if (projects.length === 0) return null;
+  if (isValidProjectId(preferredProjectId)) {
+    const preferred = projects.find((project) => project.project_id === preferredProjectId);
+    if (preferred) return preferred;
+  }
+  return projects[0] ?? null;
+}
+
+/**
+ * Return the project this account should open, creating one when the account
+ * has none.
+ *
+ * This deliberately provisions. The previous behaviour returned null for an
+ * empty account and made the UI open the create-project modal, on the reasoning
+ * that repository ownership is a user choice. That reasoning no longer holds:
+ * sign-up already provisions a managed repo server-side, so the modal was a
+ * manual step that only ever appeared when the automatic path had failed. The
+ * BYO-repo choice stays available from the create flow.
+ */
+export async function ensureFirstProject(
+  accountId: string,
+  opts: { preferredProjectId?: string | null; allowCreate?: boolean } = {},
+): Promise<KortixProject | null> {
   const existing = await listProjectsForAccount(accountId);
-  if (existing.length > 0) return existing[0] ?? null;
+  const picked = pickLandingProject(existing, opts.preferredProjectId);
+  if (picked) return picked;
+  if (opts.allowCreate === false) return null;
 
   try {
-    const marketplaceItems = await listDefaultProjectMarketplaceItems();
     return await provisionProject({
       account_id: accountId,
-      name: 'My First Project',
-      starter_template: 'general-knowledge-worker',
-      marketplace_items: marketplaceItems.map((item) => item.id),
+      name: FIRST_PROJECT_NAME,
+      seed_starter: true,
+      starter_template: FIRST_PROJECT_TEMPLATE,
     });
   } catch (err) {
-    if (isManagedGitUnavailableError(err)) return null;
-    if (!isProjectLimitError(err)) throw err;
-    const retry = await listProjectsForAccount(accountId);
-    return retry[0] ?? null;
+    // Losing a race (another tab provisioned first) and hitting the free-tier
+    // cap look identical from here: the account now HAS a project, so re-read
+    // instead of surfacing an error the user cannot act on.
+    if (isProjectLimitError(err)) {
+      const retry = await listProjectsForAccount(accountId);
+      const retryPicked = pickLandingProject(retry, opts.preferredProjectId);
+      if (retryPicked) return retryPicked;
+    }
+    throw err;
   }
 }
 
 export function shouldAutoCreateFirstProject(state: FirstProjectAutoCreateState): boolean {
-  if (!state.bootstrapRequested) return false;
   if (!state.activeAccountId || !state.canCreateProjects) return false;
   if (state.autoCreateAttempted) return false;
+  if (state.suppressedAfterDelete) return false;
   if (state.accountsLoading || state.projectsLoading || state.projectsError) return false;
   if (!state.projectsLoaded) return false;
   if (state.projectCount > 0) return false;

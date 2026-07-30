@@ -4,6 +4,8 @@ import {
   type SseErrorFrame,
   sseErrorFrame,
   sseHasContent,
+  sseMayContainSoftFailure,
+  sseSoftFailureFrame,
 } from '../usage';
 import { gatewayErrorBody } from './error-response';
 
@@ -80,11 +82,20 @@ class StreamInactivityTimeoutError extends Error {
 
 // A candidate that opens a stream, sends nothing usable, and closes cleanly (the
 // empty-completion bug) fails fast — real models produce their first token well
-// within this budget. Bounding the probe by chunk/byte count (not a wall-clock
-// timer racing the in-flight read) means we never abandon a pending read() and
-// risk silently dropping a chunk once real relaying resumes.
+// within this budget. The chunk/byte budget bounds valid but content-free
+// frames. The inactivity budget cancels a pending read before failover, so a
+// late chunk cannot reach the rejected candidate's relay.
 const PROBE_MAX_CHUNKS = 64;
 const PROBE_MAX_BYTES = 64 * 1024;
+const PROBE_INACTIVITY_TIMEOUT_MS = 30_000;
+
+export interface StreamProbeOptions {
+  /**
+   * Maximum time between upstream chunks while no usable output exists.
+   * The reader is cancelled when the timeout expires.
+   */
+  inactivityTimeoutMs?: number;
+}
 
 export interface StreamProbeResult {
   hasContent: boolean;
@@ -105,22 +116,62 @@ export interface StreamProbeResult {
 // budget is exhausted — whichever comes first. Every chunk consumed is captured
 // in `chunks` so the caller can replay them verbatim (via `primed`) without
 // losing a single byte, regardless of which outcome is reached.
-export async function probeStream(body: ReadableStream<Uint8Array>): Promise<StreamProbeResult> {
+export async function probeStream(
+  body: ReadableStream<Uint8Array>,
+  options: StreamProbeOptions = {},
+): Promise<StreamProbeResult> {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   const decoder = new TextDecoder();
+  const inactivityTimeoutMs = options.inactivityTimeoutMs ?? PROBE_INACTIVITY_TIMEOUT_MS;
   let buffer = '';
   let bytes = 0;
 
   for (;;) {
-    if (chunks.length >= PROBE_MAX_CHUNKS || bytes >= PROBE_MAX_BYTES) {
+    const mayContainSoftFailure =
+      sseHasContent(buffer) && sseMayContainSoftFailure(buffer);
+    if (bytes >= PROBE_MAX_BYTES && mayContainSoftFailure) {
+      const message = 'suspected soft-failure stream exceeded the probe byte limit';
+      await reader.cancel(message).catch(() => undefined);
+      return {
+        hasContent: false,
+        readError: { message, code: 'soft_failure_probe_limit' },
+        reader,
+        chunks,
+      };
+    }
+    if (
+      bytes >= PROBE_MAX_BYTES ||
+      (chunks.length >= PROBE_MAX_CHUNKS && !mayContainSoftFailure)
+    ) {
       return { hasContent: true, reader, chunks };
     }
-    let done: boolean;
-    let value: Uint8Array | undefined;
-    try {
-      ({ done, value } = await reader.read());
-    } catch (err) {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      reader.read().then(
+        (result) => ({ kind: 'read' as const, result }),
+        (error: unknown) => ({ kind: 'error' as const, error }),
+      ),
+      new Promise<{ kind: 'timeout' }>((resolve) => {
+        timeout = setTimeout(() => resolve({ kind: 'timeout' }), inactivityTimeoutMs);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+
+    if (outcome.kind === 'timeout') {
+      const message =
+        `upstream stream probe timeout exceeded (${inactivityTimeoutMs}ms with no bytes)`;
+      await reader.cancel(message).catch(() => undefined);
+      return {
+        hasContent: sseHasContent(buffer),
+        errorFrame: sseErrorFrame(buffer),
+        readError: { message, code: 'stream_probe_timeout' },
+        reader,
+        chunks,
+      };
+    }
+    if (outcome.kind === 'error') {
+      const err = outcome.error;
       const message = boundedErrorMessage(err);
       return {
         hasContent: sseHasContent(buffer),
@@ -130,20 +181,30 @@ export async function probeStream(body: ReadableStream<Uint8Array>): Promise<Str
         chunks,
       };
     }
-    if (done)
+    const { done, value } = outcome.result;
+    if (done) {
+      const softFailure = sseSoftFailureFrame(buffer);
       return {
-        hasContent: sseHasContent(buffer),
-        errorFrame: sseErrorFrame(buffer),
+        hasContent: softFailure ? false : sseHasContent(buffer),
+        errorFrame: softFailure ?? sseErrorFrame(buffer),
         reader,
         chunks,
       };
+    }
     if (!value) continue;
     chunks.push(value);
     bytes += value.byteLength;
     buffer += decoder.decode(value, { stream: true });
+    const softFailure = sseSoftFailureFrame(buffer);
+    if (softFailure) {
+      return { hasContent: false, errorFrame: softFailure, reader, chunks };
+    }
     // Content wins over an error frame in the same buffer: real output already
     // streamed, so relay it and let the relay path record any trailing error.
-    if (sseHasContent(buffer)) return { hasContent: true, reader, chunks };
+    // Hold only the exact prefix of the known soft-failure text.
+    if (sseHasContent(buffer) && !sseMayContainSoftFailure(buffer)) {
+      return { hasContent: true, reader, chunks };
+    }
     const errorFrame = sseErrorFrame(buffer);
     if (errorFrame) return { hasContent: false, errorFrame, reader, chunks };
   }

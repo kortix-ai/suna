@@ -1,5 +1,12 @@
 # The final, enterprise-ready authorization model — plan
 
+> **Superseded runtime status on 2026-07-28.** This plan preserves the
+> authorization design record. Its section 6 OpenCode-only status is no longer
+> current. The implemented contract uses `kortix_version: 3`, `runtimes`,
+> `agents.<name>.runtime`, the `acp_runtime` project experiment, and OpenCode,
+> Claude Code, Codex, or Pi. Use
+> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`.
+
 Source: founder notes ("CLEAR ACCESS / AUTHORISATION MODEL IS NEEDED. THAT IS 100% FINAL &
 ENTERPRISE READY."). This doc maps every ask to the **current code state** and lays out a
 **sequenced, decision-baked plan** to close the gaps. It is for team review before code.
@@ -40,7 +47,8 @@ only, ignoring its `_scope` param, so a sandbox can still `git clone`/`pull` the
 are unaffected (runtime-injected, never in the repo); the gap is config/skill/memory file visibility
 only. Planned fix: stamp resource caps into the session token at mint and have `authorizeGitProxy`
 honor them. See `docs/IAM_RBAC_V1_PLAN.md` §10 ("Known limitation (deferred): sandbox git-clone
-boundary") for detail. Marko-acknowledged, deferred out of v1, tracked as follow-up.
+boundary") for detail. The team accepted this v1 deferral and tracks it as a
+follow-up.
 
 The remaining work is the **enforcement/UX loop around** this foundation, plus a few
 architectural decoupling epics.
@@ -83,25 +91,24 @@ approval.
 
 ---
 
-## 2. Per-session AUDIT LOG + per-agent/actor COST  *(safe, additive — do first)*
+## 2. Per-session audit log and cost
 
 **Ask:** "Clear per session AUDIT LOG of everything the agent did" + "Clear per session/agent/user
 COST understanding."
 
-**Current state.** All the data exists but isn't surfaced per session/agent:
-`executor_executions` (every gated tool/connector call, with risk + status + approval),
-`audit_events` (HTTP mutations + IAM), `gateway_request_logs.finalCost`,
-`sandbox_compute_sessions.costUsd`. There is **no single per-session audit endpoint** and **no
-per-agent/per-actor cost rollup** endpoint.
+**Current state.** The API exposes a per-session action audit. It also exposes
+unified account and project-filtered session-cost records.
+
+Session cost combines finalized `gateway_request_logs.final_cost_precise` and
+billed `sandbox_compute_sessions.cost_usd`. The detail response includes model
+usage and discriminated LLM/compute ledger entries.
 
 **Plan:**
-- **2a — `GET /v1/projects/:id/sessions/:sessionId/audit` (M).** Chronological timeline of every
-  executor-gated action the agent took (action, risk, allow/ask/block verdict, who acted, who
-  approved). (Prototyped this pass; reverted to keep the merge PR clean — ship as its own PR with
-  route-manifest regen + a ke2e flow.)
-- **2b — Cost attribution (M).** `GET /v1/projects/:id/sessions/:sessionId/cost` (already partly
-  via gateway/sessions) + per-**agent** and per-**actor** rollups (the columns exist:
-  `usage_events.actorUserId`, `gateway_request_logs.actorUserId`, `executor_executions.actingUserId`).
+- **2a — shipped.** `GET /v1/projects/:id/sessions/:sessionId/audit` returns the
+  chronological executor action timeline.
+- **2b — shipped.** `GET /v1/usage/session-costs` returns a paginated list.
+  `GET /v1/usage/session-costs/:sessionId` returns one detailed ledger. The
+  SDK exposes `billing.sessionCosts` and `session(projectId, sessionId).cost()`.
 - **2c — Audit webhook/export (S, later).** Extend the existing account audit-webhook to include
   executor executions + session-scoped export for SIEM.
 

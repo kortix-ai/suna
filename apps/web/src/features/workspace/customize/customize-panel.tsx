@@ -11,14 +11,14 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
-import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
+import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -28,126 +28,16 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import {
-  AlarmIcon as AlarmClock,
-  ArrowLeftIcon as ArrowLeft,
-  ArrowCircleUpIcon as ArrowUpCircle,
-  WaveformIcon as AudioLines,
-  RobotIcon as Bot,
-  CubeIcon as Boxes,
-  ChatsIcon as ChatMessages,
-  CommandIcon as Command,
-  ShippingContainerIcon as Container,
-  ClockCounterClockwiseIcon as History,
-  TrayIcon as Inbox,
-  KeyIcon as KeyRound,
-  GearSixIcon as LuSettings,
-  UsersThreeIcon as LuUsersRound,
-  MonitorIcon as Monitor,
-  PlugIcon as Plug,
-  SparkleIcon as Sparkles,
-  StorefrontIcon as Store,
-  TerminalIcon as Terminal,
-  WebhooksLogoIcon as Webhook,
-} from '@phosphor-icons/react';
+import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
-import { isRailItemActive } from './rail';
+import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
-import { ChangesView } from './sections/view/changes-view';
-import { DevView } from './sections/view/dev-view';
 import { ReviewView } from './sections/view/review-view';
-import type { RailGroup, RailItem } from './type';
-
-const GROUPS: readonly RailGroup[] = [
-  {
-    label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
-  },
-  {
-    label: 'Connect',
-    items: [
-      { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
-      { section: 'channels', label: 'Channels', icon: ChatMessages },
-    ],
-  },
-  {
-    label: 'Automate',
-    items: [
-      { section: 'schedules', label: 'Schedules', icon: AlarmClock },
-      { section: 'webhooks', label: 'Webhooks', icon: Webhook },
-    ],
-  },
-  {
-    label: 'Workspace',
-    items: [
-      { section: 'changes', label: 'Changes', icon: History },
-      { section: 'sandbox', label: 'Sandbox', icon: Container },
-      { section: 'dev', label: 'Dev', icon: Terminal },
-    ],
-  },
-  {
-    label: 'Manage',
-    items: [
-      { section: 'members', label: 'Members', icon: LuUsersRound },
-      { section: 'settings', label: 'Settings', icon: LuSettings },
-    ],
-  },
-];
-
-const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
-
-const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
-
-const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
-
-const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
-
-const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
-
-// The Upgrades section is always reachable (it hosts the one-off prompt runner)
-// and lives pinned at the very bottom of the rail — out of the scrolling nav (see
-// the desktop footer / mobile tail below). When a registry upgrade is actually
-// applicable (e.g. the project is still on a v1 manifest) it carries a small
-// attention dot instead of claiming a more prominent slot.
-const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
-
-function railGroups(
-  tunnelEnabled: boolean,
-  marketplaceEnabled: boolean,
-  llmGatewayAvailable: boolean,
-  meetEnabled: boolean,
-  reviewEnabled: boolean,
-): readonly RailGroup[] {
-  return GROUPS.map((g) => {
-    if (g.label === 'Build' && marketplaceEnabled) {
-      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
-    }
-    if (g.label === 'Connect') {
-      const items = [...g.items];
-      if (meetEnabled) items.push(MEET_ITEM);
-      if (tunnelEnabled) items.push(COMPUTERS_ITEM);
-      if (llmGatewayAvailable) items.push(LLM_ITEM);
-      return { ...g, items };
-    }
-    if (g.label === 'Workspace' && reviewEnabled) {
-      // Slot Review right after Changes — both are review surfaces.
-      const items = [...g.items];
-      const at = items.findIndex((it) => it.section === 'changes');
-      items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
-      return { ...g, items };
-    }
-    return g;
-  });
-}
+import type { RailItem } from './type';
 
 export function CustomizPanel({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
@@ -159,7 +49,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
-    enabled: !!projectId,
+    enabled: open && !!projectId,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -171,7 +61,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // API re-checks every mutation); this only decides what to show. Feed the
   // accountId we ALREADY hold from the project-detail query so the probe runs on
   // first render rather than being disabled while a separate getProject resolves.
-  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
+  const caps = useProjectCans(open ? projectId : undefined, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: detail.data?.project?.account_id,
   });
   // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
@@ -202,7 +92,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
-  const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
+  const voiceEnabled = detail.data?.project?.experimental?.voice ?? false;
   const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
   // Pin Upgrades to the top only once the manifest read resolved to v1 —
   // while the detail query is in flight (or on v2 projects) the item sits in
@@ -215,7 +105,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // sidebar "Review" pill and the per-session row dots read (one query key, one
   // derivation), so the badge, the pill, and the dots can never drift apart.
   const reviewNeedsYou = useReviewSessionSummary(projectId, {
-    enabled: reviewEnabled,
+    enabled: open && reviewEnabled,
   }).totalNeedsYou;
 
   const groups = useMemo(
@@ -223,14 +113,20 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
+      railGroups({
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        voiceEnabled,
+        reviewEnabled,
+      })
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
       tunnelEnabled,
       marketplaceEnabled,
       llmGatewayAvailable,
-      meetEnabled,
+      voiceEnabled,
       reviewEnabled,
       isSectionAllowed,
     ],
@@ -277,7 +173,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0',
+          'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none md:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0 lg:rounded-none',
         )}
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
@@ -484,8 +380,6 @@ function SectionContent({
       return <AgentsView projectId={projectId} />;
     case 'skills':
       return <SkillsView projectId={projectId} />;
-    case 'commands':
-      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'connectors':
@@ -494,22 +388,20 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'channels':
       return <ChannelsView projectId={projectId} />;
-    case 'meet':
-      return <MeetView projectId={projectId} />;
+    case 'voice':
+      return <VoiceView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'schedules':
       return <ScheduleView projectId={projectId} type="cron" />;
     case 'webhooks':
       return <ScheduleView projectId={projectId} type="webhook" />;
-    case 'changes':
-      return <ChangesView projectId={projectId} />;
+    case 'git':
+      return <GitView projectId={projectId} />;
     case 'review':
       return <ReviewView projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
-    case 'dev':
-      return <DevView projectId={projectId} />;
     case 'members':
       return <MembersView projectId={projectId} />;
     case 'settings':

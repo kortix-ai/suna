@@ -9,6 +9,20 @@
 import { backendApi } from '../../http/api-client';
 import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 
+/**
+ * The unambiguous billing situation for an account — the SAME state the API's
+ * billing gate admits on (apps/api/src/billing/services/billing-state.ts).
+ *
+ * Branch on this, never on `tier_key` (which stays `free` for per-seat Team
+ * accounts) and never on `can_run` alone (`false` means BLOCKED, not "no plan").
+ */
+export type BillingState =
+  | 'active'
+  | 'out_of_credits'
+  | 'no_subscription'
+  | 'payment_failed'
+  | 'no_account';
+
 export interface AccountState {
   credits: {
     total: number;
@@ -16,6 +30,11 @@ export interface AccountState {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived from credit_ledger, server-side. Present once
+     *  the API is updated; absent on older responses. */
+    lifetime_granted?: number;
+    lifetime_purchased?: number;
+    lifetime_used?: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;
@@ -25,6 +44,11 @@ export interface AccountState {
       seconds_until_refresh?: number;
     } | null;
   };
+  /** Present once the API is updated; absent → derive client-side. */
+  billing_state?: BillingState;
+  /** True when a Stripe subscription is currently providing service (distinct
+   *  from `subscription.subscription_id`, which survives cancellation). */
+  has_active_subscription?: boolean;
   subscription: {
     tier_key: string;
     tier_display_name: string;
@@ -393,16 +417,21 @@ export async function getBillingUsageHistory(days?: number): Promise<BillingTran
 }
 
 export interface BillingTierConfiguration {
+  tier_key?: string;
   name: string;
   display_name: string;
   monthly_price: number;
   yearly_price: number;
   monthly_credits: number;
   can_purchase_credits: boolean;
+  project_limit?: number;
+  price_ids?: string[];
 }
 
 export interface BillingTierConfigurationsResponse {
+  success?: boolean;
   tiers: BillingTierConfiguration[];
+  timestamp?: string;
 }
 
 /** Publicly visible pricing tiers (for a plans/pricing page). */
@@ -466,7 +495,10 @@ export interface CreateCheckoutSessionInput {
 
 export interface CheckoutSessionResult {
   url?: string | null;
+  checkout_url?: string;
   session_id?: string;
+  status?: string;
+  message?: string;
   [key: string]: unknown;
 }
 
@@ -529,6 +561,8 @@ export async function createPortalSession(
 
 export interface SubscriptionMutationResult {
   ok?: boolean;
+  success: boolean;
+  message: string;
   [key: string]: unknown;
 }
 
@@ -657,4 +691,141 @@ export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promis
     }),
     'Failed to configure auto-topup',
   );
+}
+
+export interface AutoTopupSetupStatus {
+  /** A chargeable saved payment method exists — of ANY type (card, Link, SEPA…).
+   *  This is the field that gates enabling auto top-up. */
+  has_payment_method: boolean;
+  /** Informational: a method is designated default at the customer or
+   *  subscription level. Never gate the UI on this — a Stripe Link checkout
+   *  leaves the customer-level invoice default null while still having a
+   *  perfectly chargeable method. */
+  has_default_payment_method: boolean;
+  payment_method_source?: 'customer_default' | 'subscription_default' | 'attached' | null;
+}
+
+export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoTopupSetupStatus> {
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return unwrap(
+    await backendApi.get<AutoTopupSetupStatus>(`/billing/auto-topup/setup-status${query}`, {
+      timeout: 8000,
+      showErrors: false,
+    }),
+    'Failed to load auto-topup setup status',
+  );
+}
+
+export interface CreatePerSeatCheckoutInput {
+  accountId?: string;
+  successUrl: string;
+  cancelUrl: string;
+  locale?: string;
+}
+
+export interface CreatePerSeatCheckoutResult {
+  status: 'subscription_created' | 'checkout_created';
+  checkout_url?: string;
+  subscription_id?: string;
+  seat_count: number;
+}
+
+export async function createPerSeatCheckout(
+  input: CreatePerSeatCheckoutInput,
+): Promise<CreatePerSeatCheckoutResult> {
+  return unwrap(
+    await backendApi.post<CreatePerSeatCheckoutResult>('/billing/create-per-seat-checkout', {
+      account_id: input.accountId,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      locale: input.locale,
+    }),
+    'Failed to create per-seat checkout',
+  );
+}
+
+export interface ClaimPerSeatResult {
+  ok: boolean;
+  status: string;
+  credited_usd: number;
+  first_seat_covered_usd: number;
+  cancelled_subscriptions: number;
+  reason?: string | null;
+}
+
+export async function claimPerSeatBilling(accountId?: string): Promise<ClaimPerSeatResult> {
+  return unwrap(
+    await backendApi.post<ClaimPerSeatResult>('/billing/claim-per-seat', {
+      account_id: accountId,
+    }),
+    'Failed to switch to per-seat billing',
+  );
+}
+
+export async function syncSubscription(accountId?: string): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/sync-subscription', {
+      account_id: accountId,
+    }),
+    'Failed to sync subscription',
+  );
+}
+
+// ── Usage rollup (/v1/usage) ──────────────────────────────────────────────────
+
+export interface UsageTotals {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cached_tokens: number;
+  total_cache_write_tokens: number;
+  total_cost: number;
+  count: number;
+}
+
+export interface UsageBreakdownItem {
+  day?: string;
+  provider?: string | null;
+  model?: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  cost: number;
+  count: number;
+}
+
+export interface UsageRollup {
+  data: UsageTotals;
+  breakdown?: UsageBreakdownItem[];
+}
+
+export interface UsageQueryOptions {
+  start?: string;
+  end?: string;
+  groupBy?: 'model' | 'provider' | 'day';
+  /**
+   * Which account to report on. REQUIRED whenever the caller could be looking at
+   * an account other than their default: for a browser session the server reads
+   * this from the query string, so omitting it silently reports the caller's own
+   * account instead of the one on screen. (Account-scoped tokens ignore it and
+   * always report their own account.)
+   */
+  accountId?: string;
+}
+
+/** Usage rollup for the authenticated account, optionally grouped and narrowed. */
+export async function getUsageRollup(options: UsageQueryOptions = {}): Promise<UsageRollup> {
+  const qs = new URLSearchParams();
+  if (options.start) qs.set('start', options.start);
+  if (options.end) qs.set('end', options.end);
+  if (
+    options.groupBy === 'model' ||
+    options.groupBy === 'provider' ||
+    options.groupBy === 'day'
+  ) {
+    qs.set('group_by', options.groupBy);
+  }
+  if (options.accountId) qs.set('account_id', options.accountId);
+  const query = qs.toString();
+  return unwrap(await backendApi.get<UsageRollup>(`/usage${query ? `?${query}` : ''}`));
 }

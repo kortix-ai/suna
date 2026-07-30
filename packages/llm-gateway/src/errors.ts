@@ -94,6 +94,9 @@ export class UpstreamHttpError extends Error {
 export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'
+  // Project admin turned this model OFF (per-project enablement). Distinct from
+  // `model_disabled_on_deployment`, which is a deployment-wide unavailability.
+  | 'model_disabled'
   | 'plan_upgrade_required'
   | 'provider_not_connected'
   | 'provider_reauth_required';

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { CreateApiKeyAction } from './cli-tokens-tab';
+import { ApiKeyUsageExamples, CreateApiKeyAction } from './cli-tokens-tab';
 
 describe('CreateApiKeyAction — create must stay reachable once tokens exist (regression: button only lived in the empty state)', () => {
   test('renders the Create API key action when active tokens already exist', () => {
@@ -83,5 +83,17 @@ describe('CreateApiKeyAction — create must stay reachable once tokens exist (r
     expect(typeof button.props.onClick).toBe('function');
     button.props.onClick();
     expect(calls).toBe(1);
+  });
+});
+
+describe('ApiKeyUsageExamples', () => {
+  test('uses session identity without removed usage-attribution fields', () => {
+    const html = renderToStaticMarkup(
+      <ApiKeyUsageExamples apiBase="https://api.example.test/v1" />,
+    );
+
+    expect(html).toContain('session_id');
+    expect(html).not.toContain('end_user_ref');
+    expect(html).not.toContain('origin_ref');
   });
 });

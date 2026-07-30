@@ -1,15 +1,15 @@
 'use client';
 
+import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
-import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk/projects-client';
+import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircle2,
-  ArrowSquareOutIcon as ExternalLink,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -27,7 +27,7 @@ export function ChatGptSubscriptionConnect({
   onConnected,
 }: {
   projectId: string;
-  onConnected: () => void;
+  onConnected: (providerId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -58,9 +58,6 @@ export function ChatGptSubscriptionConnect({
       const start = await startProjectProviderOAuth(projectId, 'openai', {});
       if (cancelledRef.current) return;
       setChallenge({ url: start.verification_url, code: start.user_code });
-      if (start.verification_url) {
-        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
-      }
 
       const interval = Math.max(2000, start.interval_ms || 3000);
       const deadline = start.expires_at || Date.now() + 10 * 60_000;
@@ -79,7 +76,7 @@ export function ChatGptSubscriptionConnect({
           successToast('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
-          onConnected();
+          onConnected('codex');
           return;
         }
         if (res.status === 'failed') {
@@ -137,32 +134,9 @@ export function ChatGptSubscriptionConnect({
                   'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
                 )}
               </div>
-              {challenge.url && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 h-8 gap-1.5 px-3"
-                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {tHardcodedUi.raw(
-                    'autoComponentsProjectsProjectProviderModalJsxTextOpenAuthPaged0381841',
-                  )}
-                </Button>
-              )}
-              {challenge.code ? (
-                <div className="mt-3">
-                  <div className="text-muted-foreground text-xs">
-                    {tHardcodedUi.raw(
-                      'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
-                    )}
-                  </div>
-                  <div className="border-border bg-muted text-foreground mt-1 w-fit rounded-md border px-3 py-2 font-mono text-lg font-semibold tracking-widest tabular-nums">
-                    {challenge.code}
-                  </div>
-                </div>
-              ) : null}
+              <div className="mt-3">
+                <ChatGptDeviceChallenge url={challenge.url} code={challenge.code} />
+              </div>
             </>
           ) : (
             <div className="text-foreground text-xs font-medium">

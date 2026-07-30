@@ -9,11 +9,10 @@
  *     as a real error (parity with the in-sandbox CLI's throw).
  */
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
-  MEET_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
+  VOICE_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelAuth,
   channelCatalog,
@@ -151,87 +150,107 @@ describe('channelCatalog(email)', () => {
   });
 });
 
-describe('channelCatalog(meet)', () => {
-  const actions = channelCatalog('meet');
+describe('channelCatalog(voice)', () => {
+  const actions = channelCatalog('voice');
   const byPath = new Map(actions.map((a) => [a.path, a]));
   const action = (path: string) => expectDefined(byPath.get(path));
 
-  test('exposes the Recall.ai meeting-bot lifecycle + transcript + chat as http bindings', () => {
+  test('exposes the full both-directions surface, not just spawning', () => {
+    // The Kortix agent drives a call from the INSIDE through this connector, so
+    // spawning alone is useless: it also has to hear the room (read_transcript)
+    // and answer it (send_prompt). Those two living somewhere else is exactly
+    // how an agent ended up able to start a call it could not then talk to.
     expect(actions.map((a) => a.path).sort()).toEqual([
-      'bot_status',
-      'get_transcript',
-      'join_meeting',
-      'leave_meeting',
-      'send_chat_message',
+      'end_call',
+      'join_gmeet',
+      'join_zoom',
+      'read_transcript',
+      'send_prompt',
+      'spawn_room',
     ]);
+  });
+
+  test('read_transcript takes NOTHING by default — that is the whole point', () => {
+    // The default has to be both cheap and correct with zero arguments: the
+    // read position lives on the server (channels/voice/transcript-read.ts), so
+    // an agent that remembers nothing still never re-reads the same turns. The
+    // moment anything here becomes required, the agent is carrying state again.
+    const a = action('read_transcript');
+    expect(objectSchema(a.inputSchema).required ?? []).toEqual([]);
+    expect(Object.keys(objectSchema(a.inputSchema).properties).sort()).toEqual([
+      'cursor',
+      'limit',
+      'mode',
+      'peek',
+    ]);
+  });
+
+  test('the modes are a closed, schema-declared set — not prose the model has to infer', () => {
+    const mode = objectSchema(action('read_transcript').inputSchema).properties.mode as {
+      enum?: string[];
+    };
+    expect(mode.enum).toEqual(['unread', 'last', 'full', 'cursor']);
+  });
+
+  test('read_transcript stays a READ even though the default advances a read position', () => {
+    // It mutates only bookkeeping about the READER — nothing about the call —
+    // and it is the action the agent is told to run at the top of every turn.
+    // Grading it 'write' would put that behind approval in stricter policy
+    // modes. `peek: true` is the non-mutating escape hatch.
+    const a = action('read_transcript');
+    expect(a.risk).toBe('read');
+    expect(Object.keys(objectSchema(a.inputSchema).properties)).toContain('peek');
+  });
+
+  test('the description leads with the bare call and never blocks', () => {
+    // This string is re-read by the model on every turn. The old wording led
+    // with `cursor`, which taught the agent to carry a number between turns —
+    // and an agent that dropped it passed 0 and re-read the entire call.
+    const d = action('read_transcript').description;
+    expect(d).toContain('BARE');
+    expect(d).toMatch(/IMMEDIATELY/);
+    expect(d).toContain('never waits');
+    expect(d.indexOf('BARE')).toBeLessThan(d.indexOf('cursor'));
+  });
+
+  test('send_prompt requires the text to speak', () => {
+    const a = action('send_prompt');
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required ?? []).toEqual(['text']);
+  });
+
+  test('every voice action binds `{ kind: "voice" }`, never http — there is no third-party API', () => {
     for (const a of actions) {
-      expect(a.binding.kind).toBe('http');
-      if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
+      expect(a.binding.kind).toBe('voice');
+      if (a.binding.kind === 'voice') expect(a.binding.op).toBe(a.path);
     }
   });
 
-  test('send_chat_message → POST /bot/{id}/send_chat_message/, write, id+message required', () => {
-    const a = action('send_chat_message');
-    expect(a.binding).toEqual({
-      kind: 'http',
-      method: 'POST',
-      path: '/bot/{id}/send_chat_message/',
-    });
+  test('spawn_room takes an optional voice, no meeting_url', () => {
+    const a = action('spawn_room');
     expect(a.risk).toBe('write');
-    expect(objectSchema(a.inputSchema).required).toEqual(['id', 'message']);
-    expect((objectSchema(a.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
+    const props = objectSchema(a.inputSchema).properties;
+    expect(Object.keys(props)).toEqual(['voice']);
+    expect(objectSchema(a.inputSchema).required ?? []).toEqual([]);
   });
 
-  test('join_meeting → POST /bot/ (trailing slash), write, meeting_url required', () => {
-    const a = action('join_meeting');
-    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/bot/' });
-    expect(a.risk).toBe('write');
-    expect(objectSchema(a.inputSchema).required).toEqual(['meeting_url']);
+  test('join_gmeet / join_zoom are declared with a meeting_url input and read as not-implemented', () => {
+    for (const path of ['join_gmeet', 'join_zoom']) {
+      const a = action(path);
+      expect(objectSchema(a.inputSchema).required).toEqual(['meeting_url']);
+      expect(a.description).toMatch(/not implemented/i);
+      expect(a.description).toMatch(/spawn_room/);
+    }
   });
 
-  test('leave_meeting → POST /bot/{id}/leave_call/ with id as a path param', () => {
-    const a = action('leave_meeting');
-    expect(a.binding).toEqual({
-      kind: 'http',
-      method: 'POST',
-      path: '/bot/{id}/leave_call/',
-    });
-    expect((objectSchema(a.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
+  test('no credential, no external API base — a call is created by this API itself', () => {
+    expect(channelAuth('voice')).toEqual({ type: 'none', in: 'header', name: null, prefix: null });
+    expect(channelApiBase('voice')).toBe('');
   });
 
-  test('get_transcript → GET /transcript/ filtered by bot_id; bot_status → GET /bot/{id}/', () => {
-    const t = action('get_transcript');
-    expect(t.binding).toEqual({ kind: 'http', method: 'GET', path: '/transcript/' });
-    expect(t.risk).toBe('read');
-    // bot_id has no x-in hint → on a GET it becomes a query param (?bot_id=…).
-    expect(
-      (objectSchema(t.inputSchema).properties as Record<string, any>).bot_id['x-in'],
-    ).toBeUndefined();
-    expect(objectSchema(t.inputSchema).required).toEqual(['bot_id']);
-    const s = action('bot_status');
-    expect(s.binding).toEqual({ kind: 'http', method: 'GET', path: '/bot/{id}/' });
-    expect((objectSchema(s.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
-  });
-
-  test('api base = the configured Recall gateway; default slug is platform-owned', () => {
-    expect(channelApiBase('meet')).toBe(config.RECALL_BASE_URL);
-    expect(channelDefaultSlug('meet')).toBe(MEET_CHANNEL_CONNECTOR_SLUG);
-    expect(MEET_CHANNEL_CONNECTOR_SLUG).toBe('kortix_meet');
-  });
-
-  test('meet auth is `Authorization: Token …` (custom header), not Bearer', () => {
-    expect(channelAuth('meet')).toEqual({
-      type: 'custom',
-      in: 'header',
-      name: 'Authorization',
-      prefix: 'Token ',
-    });
-    expect(channelAuth('slack')).toEqual({
-      type: 'bearer',
-      in: 'header',
-      name: null,
-      prefix: null,
-    });
+  test('reserved voice channel slug', () => {
+    expect(channelDefaultSlug('voice')).toBe(VOICE_CHANNEL_CONNECTOR_SLUG);
+    expect(VOICE_CHANNEL_CONNECTOR_SLUG).toBe('kortix_voice');
   });
 });
 
@@ -646,149 +665,149 @@ describe('handleCall — channel (email)', () => {
   });
 });
 
-/* ─── gateway execution — meet (Recall.ai) ────────────────────────────────── */
+/* ─── gateway execution — voice ──────────────────────────────────────────── */
 
-const MEET: GatewayConnector = {
-  connectorId: 'conn-meet',
-  slug: MEET_CHANNEL_CONNECTOR_SLUG,
+const VOICE: GatewayConnector = {
+  connectorId: 'conn-voice',
+  slug: VOICE_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
-  platform: 'meet',
-  baseUrl: 'https://us-west-2.recall.ai/api/v1',
-  auth: { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' },
-  hasAuth: true,
+  platform: 'voice',
+  baseUrl: '',
+  auth: { type: 'none', in: 'header', name: null, prefix: null },
+  hasAuth: false,
   credentialMode: 'shared',
   enabled: true,
 };
 
-const MEET_JOIN: GatewayAction = {
-  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.join_meeting`,
-  relPath: 'join_meeting',
-  inputSchema: {
-    type: 'object',
-    properties: { meeting_url: {}, bot_name: {}, recording_config: {} },
-    required: ['meeting_url'],
-  },
+const SPAWN_ROOM: GatewayAction = {
+  path: 'spawn_room',
+  relPath: 'spawn_room',
+  inputSchema: { type: 'object', properties: { voice: {} } },
   risk: 'write',
-  binding: { kind: 'http', method: 'POST', path: '/bot/' },
+  binding: { kind: 'voice', op: 'spawn_room' },
 };
 
-const MEET_TRANSCRIPT: GatewayAction = {
-  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.get_transcript`,
-  relPath: 'get_transcript',
-  inputSchema: {
-    type: 'object',
-    properties: { bot_id: {} },
-    required: ['bot_id'],
-  },
-  risk: 'read',
-  binding: { kind: 'http', method: 'GET', path: '/transcript/' },
+const JOIN_GMEET: GatewayAction = {
+  path: 'join_gmeet',
+  relPath: 'join_gmeet',
+  inputSchema: { type: 'object', properties: { meeting_url: {} }, required: ['meeting_url'] },
+  risk: 'write',
+  binding: { kind: 'voice', op: 'join_gmeet' },
 };
 
-function meetDeps(action: GatewayAction, body: string, status = 200) {
-  const fetchCalls: Array<{
-    url: string;
-    method: string;
-    headers: Record<string, string>;
-    body?: string;
-  }> = [];
-  const deps: GatewayDeps = {
-    loadConnectorBySlug: async () => MEET,
-    loadAction: async () => action,
-    resolveCredential: async () => 'recall_test_key',
-    loadPolicies: async () => [],
-    loadProjectPolicies: async () => [],
-    loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => null,
-    fetchImpl: async (url, init) => {
-      fetchCalls.push({ url, ...init });
-      return { status, ok: status >= 200 && status < 300, text: async () => body };
-    },
-  };
-  return { deps, fetchCalls };
-}
+const voiceInput: CallInput = {
+  projectId: 'proj-1',
+  accountId: 'acct-1',
+  subject: { userId: 'u1', groupIds: [] },
+  sessionId: 'sess-1',
+  connectorSlug: VOICE_CHANNEL_CONNECTOR_SLUG,
+  actionPath: 'spawn_room',
+  args: {},
+};
 
-describe('handleCall — channel (meet)', () => {
-  test('join_meeting POSTs /bot/ with the Recall key as `Authorization: Token …` (never Bearer)', async () => {
-    const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc","status_changes":[]}', 201);
+describe('handleCall — channel (voice)', () => {
+  test('spawn_room routes through executeVoiceCall (never executeCall/fetch) and returns its data', async () => {
+    const seen: { op: string | null; args: Record<string, unknown> | null } = { op: null, args: null };
+    let fetchCalled = false;
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => VOICE,
+      loadAction: async () => SPAWN_ROOM,
+      resolveCredential: async () => {
+        throw new Error('spawn_room has no credential — resolveCredential must not be called');
+      },
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      fetchImpl: async () => {
+        fetchCalled = true;
+        return { status: 200, ok: true, text: async () => '{}' };
+      },
+      executeVoiceCall: async ({ op, args }) => {
+        seen.op = op;
+        seen.args = args;
+        return { ok: true, data: { call_id: 'sess-1', join_url: 'https://app.example.com/voice/tok' } };
+      },
+    };
+
+    const res = await handleCall(deps, { ...voiceInput, args: { voice: 'rex' } });
+
+    expect(res.status).toBe('ok');
+    if (res.status === 'ok') {
+      expect(res.data).toEqual({ call_id: 'sess-1', join_url: 'https://app.example.com/voice/tok' });
+    }
+    expect(seen.op).toBe('spawn_room');
+    expect(seen.args).toEqual({ voice: 'rex' });
+    expect(fetchCalled).toBe(false); // no third-party HTTP call for voice
+  });
+
+  test('join_gmeet / join_zoom come back as a clear not-implemented error, not a silent no-op', async () => {
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => VOICE,
+      loadAction: async () => JOIN_GMEET,
+      resolveCredential: async () => null,
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),
+      executeVoiceCall: async ({ op }) => ({
+        ok: false,
+        kind: 'not_implemented',
+        message: `joining an existing Google Meet is not supported yet — use spawn_room and share the join link instead (op=${op})`,
+      }),
+    };
+
     const res = await handleCall(deps, {
-      ...input,
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
-      actionPath: 'join_meeting',
+      ...voiceInput,
+      actionPath: 'join_gmeet',
       args: { meeting_url: 'https://meet.google.com/abc-defg-hij' },
     });
-    expect(res.status).toBe('ok');
-    const call = expectDefined(fetchCalls[0]);
-    expect(call.url).toBe('https://us-west-2.recall.ai/api/v1/bot/');
-    expect(call.method).toBe('POST');
-    expect(call.headers.Authorization).toBe('Token recall_test_key');
-    expect(JSON.parse(expectDefined(call.body))).toEqual({
-      meeting_url: 'https://meet.google.com/abc-defg-hij',
-    });
+
+    expect(res.status).toBe('error');
+    if (res.status === 'error') {
+      expect(res.reason).toMatch(/not supported yet/);
+      expect(res.reason).toMatch(/spawn_room/);
+    }
   });
 
-  test('join_meeting injects the realtime webhook + bot metadata server-side (live relay)', async () => {
-    const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc"}', 201);
-    deps.resolveMeetJoinContext = async (projectId, sessionId) => ({
-      metadata: {
-        kortix_project_id: projectId,
-        kortix_session_id: sessionId,
-        kortix_token: 'sig',
-        kortix_wake: 'kortix',
-      },
-      realtimeEndpoints: [
-        {
-          type: 'webhook',
-          url: 'https://pub.example/v1/webhooks/meet/realtime',
-          events: ['transcript.data'],
-        },
-      ],
-      automaticAudioOutput: { in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } },
-      botName: 'Acme Notetaker',
-    });
-    const res = await handleCall(deps, {
-      ...input,
-      sessionId: 'sess-xyz',
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
-      actionPath: 'join_meeting',
-      args: {
-        meeting_url: 'https://meet.google.com/abc-defg-hij',
-        recording_config: { transcript: { provider: { meeting_captions: {} } } },
-      },
-    });
-    expect(res.status).toBe('ok');
-    const body = JSON.parse(expectDefined(expectDefined(fetchCalls[0]).body));
-    // Caller's recording_config (transcript provider) is preserved …
-    expect(body.recording_config.transcript).toEqual({ provider: { meeting_captions: {} } });
-    // … and the realtime webhook + session-tagged metadata are merged in.
-    expect(body.recording_config.realtime_endpoints).toEqual([
-      {
-        type: 'webhook',
-        url: 'https://pub.example/v1/webhooks/meet/realtime',
-        events: ['transcript.data'],
-      },
-    ]);
-    expect(body.metadata).toMatchObject({ kortix_session_id: 'sess-xyz', kortix_token: 'sig' });
-    // … and the bot is enabled to speak (output_audio) via automatic_audio_output.
-    expect(body.automatic_audio_output).toEqual({
-      in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } },
-    });
-    // … and the project's configured bot name is used (caller passed none).
-    expect(body.bot_name).toBe('Acme Notetaker');
+  test('missing executeVoiceCall wiring fails loud instead of silently no-opping', async () => {
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => VOICE,
+      loadAction: async () => SPAWN_ROOM,
+      resolveCredential: async () => null,
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),
+      // executeVoiceCall intentionally omitted
+    };
+
+    const res = await handleCall(deps, voiceInput);
+    expect(res.status).toBe('error');
+    if (res.status === 'error') expect(res.reason).toMatch(/voice runner not wired/);
   });
 
-  test('get_transcript lists by bot_id (query param) and carries the Token header on a GET', async () => {
-    const { deps, fetchCalls } = meetDeps(MEET_TRANSCRIPT, '{"results":[]}');
-    const res = await handleCall(deps, {
-      ...input,
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
-      actionPath: 'get_transcript',
-      args: { bot_id: 'bot_abc' },
-    });
-    expect(res.status).toBe('ok');
-    const call = expectDefined(fetchCalls[0]);
-    expect(call.url).toBe('https://us-west-2.recall.ai/api/v1/transcript/?bot_id=bot_abc');
-    expect(call.method).toBe('GET');
-    expect(call.headers.Authorization).toBe('Token recall_test_key');
-    expect(call.body).toBeUndefined();
+  test('a policy block on the voice connector still applies — the action never even reaches executeVoiceCall', async () => {
+    let called = false;
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => VOICE,
+      loadAction: async () => SPAWN_ROOM,
+      resolveCredential: async () => null,
+      loadPolicies: async () => [{ match: 'spawn_room', action: 'block', position: 0 }],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),
+      executeVoiceCall: async () => {
+        called = true;
+        return { ok: true, data: {} };
+      },
+    };
+
+    const res = await handleCall(deps, voiceInput);
+    expect(res.status).toBe('denied');
+    expect(called).toBe(false);
   });
 });

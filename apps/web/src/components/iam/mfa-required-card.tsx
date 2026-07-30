@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getMfaRequired, previewMfaRequired, setMfaRequired } from '@/lib/iam-client';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAccountMembers } from '@kortix/sdk';
 
 interface MfaRequiredCardProps {
   accountId: string;

@@ -10,7 +10,7 @@
  * "in progress" while the chat streamed "PDF done, PPTX done" — the card froze
  * mid-run and lied about it for the rest of the session. Worse, it duplicated
  * the composer's own task strip, which already renders the server's todos
- * (`session-chat-input.tsx` via `useOpenCodeSessionTodo`) — so the plan lived
+ * (`session-chat-input.tsx` via `useRuntimeSessionTodo`) — so the plan lived
  * in two places, one of which could go stale.
  *
  * The plan now lives in exactly one place: the composer. This card shows

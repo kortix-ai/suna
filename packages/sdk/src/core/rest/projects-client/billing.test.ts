@@ -1,20 +1,26 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { UsageBreakdownItem, UsageQueryOptions } from './billing';
 import {
   cancelScheduledChange,
   cancelSubscription,
   confirmCheckoutSession,
   configureAutoTopup,
+  claimPerSeatBilling,
+  createPerSeatCheckout,
   createCheckoutSession,
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
   getAutoTopupSettings,
+  getAutoTopupSetupStatus,
   getDefaultAccountState,
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
   scheduleDowngrade,
+  syncSubscription,
+  getUsageRollup,
 } from './billing';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
@@ -39,6 +45,12 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
+
+type IsNever<T> = [T] extends [never] ? true : false;
+type UsageAttributionKey<T> = Extract<
+  keyof T,
+  `${'end_user' | 'origin'}_${'ref'}` | `${'endUser' | 'origin'}Ref`
+>;
 
 test('getAccountState hits /billing/account-state and returns the parsed body', async () => {
   const state = { ...getDefaultAccountState(), subscription: { ...getDefaultAccountState().subscription, tier_key: 'pro' } };
@@ -139,6 +151,31 @@ test('cancelSubscription / reactivateSubscription / scheduleDowngrade / cancelSc
   expect(last().url).toContain('/billing/cancel-scheduled-change');
 });
 
+test('per-seat, sync, and auto-topup setup methods own their REST paths', async () => {
+  nextResponse = { status: 200, body: { status: 'checkout_created' } };
+  await createPerSeatCheckout({
+    successUrl: 'https://example.com/success',
+    cancelUrl: 'https://example.com/cancel',
+    accountId: 'acc-1',
+  });
+  expect(last().url).toContain('/billing/create-per-seat-checkout');
+  expect(last().body).toMatchObject({ account_id: 'acc-1' });
+
+  nextResponse = { status: 200, body: { ok: true, status: 'migrated' } };
+  await claimPerSeatBilling('acc-1');
+  expect(last().url).toContain('/billing/claim-per-seat');
+
+  await syncSubscription('acc-1');
+  expect(last().url).toContain('/billing/sync-subscription');
+
+  nextResponse = {
+    status: 200,
+    body: { has_payment_method: true, has_default_payment_method: true },
+  };
+  await getAutoTopupSetupStatus('acc-1');
+  expect(last().url).toContain('/billing/auto-topup/setup-status?account_id=acc-1');
+});
+
 test('getProrationPreview GETs with new_price_id (+ optional account_id) as query params', async () => {
   nextResponse = { status: 200, body: {} };
   await getProrationPreview('price_123', 'acc-1');
@@ -167,4 +204,27 @@ test('getAutoTopupSettings GETs and configureAutoTopup POSTs auto-topup', async 
   expect(last().url).toContain('/billing/auto-topup/configure');
   expect(last().method).toBe('POST');
   expect(result.enabled).toBe(true);
+});
+
+test('getUsageRollup GETs /usage with no query when unfiltered', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup();
+  expect(last().url).toContain('/usage');
+  expect(last().url).not.toContain('?');
+  expect(last().method).toBe('GET');
+});
+
+test('usage contracts omit usage attribution keys and grouping dimensions', () => {
+  type GroupBy = NonNullable<UsageQueryOptions['groupBy']>;
+  const breakdown: IsNever<UsageAttributionKey<UsageBreakdownItem>> = true;
+  const options: IsNever<UsageAttributionKey<UsageQueryOptions>> = true;
+  const groups: IsNever<Extract<GroupBy, `${'end_user' | 'origin'}_${'ref'}`>> = true;
+
+  expect([breakdown, options, groups]).toEqual([true, true, true]);
+});
+
+test('getUsageRollup serializes only supported grouping dimensions', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup({ groupBy: 'customer' } as unknown as UsageQueryOptions);
+  expect(last().url).toBe('http://test.local/usage');
 });

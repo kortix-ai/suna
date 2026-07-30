@@ -2,8 +2,19 @@ import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { getPublicTemplate } from '@kortix/sdk';
 
 export const runtime = 'edge';
+
+interface PublicTemplateOgData {
+  is_kortix_team?: boolean;
+  name: string;
+  description?: string | null;
+  creator_name?: string | null;
+  download_count?: number;
+  mcp_requirements?: unknown[];
+  tags?: string[];
+}
 
 export async function GET(request: NextRequest) {
   const tHardcodedUi = { raw: getHardcodedUiServerText };
@@ -13,19 +24,14 @@ export async function GET(request: NextRequest) {
     const shareId = searchParams.get('shareId');
 
     if (!shareId) {
-      return new Response('Missing shareId parameter', { status: 400 });
+      return new Response('Invalid shareId parameter', { status: 400 });
     }
 
-    const templateResponse = await fetch(
-      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`,
-      { signal: AbortSignal.timeout(5000) }
+    const template = await getPublicTemplate<PublicTemplateOgData>(
+      runtimeEnv.BACKEND_URL,
+      shareId,
+      AbortSignal.timeout(5000),
     );
-
-    if (!templateResponse.ok) {
-      throw new Error('Template not found');
-    }
-
-    const template = await templateResponse.json();
     return new ImageResponse(
       (
         <div

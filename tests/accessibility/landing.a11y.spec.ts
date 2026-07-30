@@ -38,8 +38,12 @@ test.describe('Accessibility — axe-core', () => {
     await page.goto('/', { waitUntil: 'networkidle' });
 
     const decorativeArtwork = page.locator('[data-a11y-decorative]');
-    await expect(decorativeArtwork).toHaveCount(1);
-    await expect(decorativeArtwork).toHaveAttribute('aria-hidden', 'true');
+    const decorativeArtworkCount = await decorativeArtwork.count();
+    expect(decorativeArtworkCount).toBeGreaterThan(0);
+    const ariaHiddenValues = await decorativeArtwork.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('aria-hidden')),
+    );
+    expect(ariaHiddenValues).toEqual(Array(decorativeArtworkCount).fill('true'));
 
     const results = await new AxeBuilder({ page })
       .withTags(WCAG_TAGS)

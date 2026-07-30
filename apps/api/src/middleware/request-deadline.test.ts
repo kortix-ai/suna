@@ -29,6 +29,26 @@ describe('requestDeadline exemptions', () => {
     expect(isExempt(ctx(path))).toBe(false);
   });
 
+  test('exempts only POST requests to the exact ACP JSON-RPC route shape', () => {
+    const path =
+      '/v1/projects/00000000-0000-4000-a000-000000000001/sessions/00000000-0000-4000-a000-000000000002/acp';
+    expect(isExempt(ctx(path, 'POST'))).toBe(true);
+    expect(isExempt(ctx(path, 'GET'))).toBe(false);
+    expect(
+      isExempt(
+        ctx('/v1/projects/00000000-0000-4000-a000-000000000001/acp', 'POST'),
+      ),
+    ).toBe(false);
+    expect(
+      isExempt(
+        ctx(
+          '/v1/projects/00000000-0000-4000-a000-000000000001/sessions/00000000-0000-4000-a000-000000000002/acp/extra',
+          'POST',
+        ),
+      ),
+    ).toBe(false);
+  });
+
   test.each([
     '/v1/projects/00000000-0000-4000-a000-000000000001/commit-push',
     '/v1/projects/00000000-0000-4000-a000-000000000001/provision',

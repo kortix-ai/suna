@@ -262,6 +262,44 @@ export async function revokeAllAccountTokensForUser(
   return result.length;
 }
 
+/**
+ * Revoke every live executor token minted for ONE session.
+ *
+ * Session tokens are minted with no `expiresAt` and are deliberately exempt from
+ * the PAT idle-revoke sweep ("lifetime tied to the sandbox" — see
+ * `validateAccountToken`). Nothing else expired them, so until this existed the
+ * only thing that ever revoked one was offboarding the whole USER: every session
+ * a Kortix-as-a-Backend wrapper ever ran left behind a permanently-valid,
+ * project-scoped bearer carrying that agent's grant.
+ *
+ * Call this only where the sandbox can never legitimately come back — session
+ * delete and provider-removed reconciliation. NOT on an idle stop: `wakeSandbox`
+ * restarts the SAME container, whose env still holds the token it was born with,
+ * so revoking there would brick a box the user is entitled to resume.
+ *
+ * A session may hold several tokens (each re-provision mints another for the
+ * same `session_id`), so this revokes all of them. Scoped by account: a
+ * session id must never reach across tenants.
+ */
+export async function revokeSessionExecutorTokens(
+  sessionId: string,
+  accountId: string,
+): Promise<number> {
+  const result = await db
+    .update(accountTokens)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(
+      and(
+        eq(accountTokens.sessionId, sessionId),
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.status, 'active'),
+      ),
+    )
+    .returning({ tokenId: accountTokens.tokenId });
+
+  return result.length;
+}
+
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 /**

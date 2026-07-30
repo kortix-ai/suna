@@ -21,7 +21,7 @@ import {
   isRevenueCatAnonymous,
   isPerSeatAccount,
   resolvePerSeatPriceId,
-  PER_SEAT_PRICE_USD,
+  INCLUDED_CREDITS_PER_SEAT_USD,
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
@@ -296,6 +296,25 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       (subscription.metadata?.billing_model === 'per_seat' ||
         subscription.items.data.some((item) => perSeatPriceId && item.price?.id === perSeatPriceId));
 
+    // Orphaned-plan-sub recovery: the account's stored subscription pointer
+    // points at a *different* sub (typically a now-deleted machine sub that
+    // hijacked the row via upsertCreditAccount), while the incoming event is
+    // for the customer's still-active plan subscription. When the stored sub
+    // is dead (canceled/unpaid/expired) and the incoming one is live, adopt
+    // the incoming sub instead of dropping it as "stale" — otherwise the
+    // account is stranded on a dead pointer and the paywall blocks a paying
+    // customer forever.
+    const deadStatuses = ['canceled', 'unpaid', 'incomplete_expired'];
+    const currentSubIsDead = deadStatuses.includes(account.stripeSubscriptionStatus ?? '')
+      || account.paymentStatus === 'cancelling';
+    const incomingSubIsLive = subscription.status === 'active' || subscription.status === 'trialing';
+    const isOrphanedPlanRecovery =
+      incomingSubIsLive &&
+      currentSubIsDead &&
+      // Don't adopt a machine sub (server_type) over a dead plan pointer; only
+      // adopt a genuine plan subscription (tier_key present, non-machine).
+      !!incomingTier && incomingTier !== 'free' && !subscription.metadata?.server_type;
+
     if (isFreeUpgrade) {
       console.log(
         `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
@@ -303,6 +322,10 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
     } else if (isPerSeatActivation) {
       console.log(`[Webhook] syncSubscriptionState: adopting per-seat subscription ${subscription.id} superseding ${account.stripeSubscriptionId} for ${accountId}`);
+    } else if (isOrphanedPlanRecovery) {
+      console.log(
+        `[Webhook] syncSubscriptionState: adopting orphaned-plan subscription ${subscription.id} for ${accountId} (stored sub ${account.stripeSubscriptionId} is dead, status=${account.stripeSubscriptionStatus}, paymentStatus=${account.paymentStatus})`,
+      );
     } else {
       console.log(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
       return;
@@ -313,6 +336,11 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   const priceId = subscription.items.data[0]?.price?.id;
   const resolvedTier = tierKey ?? getTierByPriceId(priceId ?? '')?.name ?? null;
   const billingPeriod = getBillingPeriodByPriceId(priceId ?? '') ?? (subscription.metadata?.commitment_type as any) ?? 'monthly';
+  // Grant recovery credits when the account had no sub pointer, was on a dead
+  // machine/free sub, OR is being recovered from an orphaned-plan-sub state
+  // (the stored pointer pointed at a dead sub while a live plan sub was being
+  // adopted above). In all these cases the balance is likely $0 and the
+  // customer was paywalled through no fault of their own.
   const shouldGrantRecoveryCredits =
     !!resolvedTier &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
@@ -348,10 +376,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       subscription.metadata?.billing_model === 'per_seat',
   );
   let perSeatDelta = 0;
+  let perSeatNewSeats = 0;
   if (perSeatItem) {
     const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
     const oldSeats = account?.seatCount ?? 0;
     perSeatDelta = newSeats - oldSeats;
+    perSeatNewSeats = newSeats;
     updates.billingModel = 'per_seat';
     updates.seatCount = newSeats;
     updates.seatSubscriptionItemId = perSeatItem.id;
@@ -371,37 +401,85 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     await updateCreditAccount(accountId, updates);
   }
 
+  // A per-seat recovery must be sized by SEATS. getMonthlyCredits('per_seat')
+  // returns the per-seat allowance for ONE seat ($25) and knows nothing about
+  // seat_count, so a recovering 6-seat team used to be reset to $25 instead of
+  // $150 — visible in production as 41 ledger rows reading exactly
+  // "Recovered Stripe subscription: 25 credits" regardless of team size.
+  const recoveryCredits = resolvedTier
+    ? perSeatItem
+      ? grantForSeats(perSeatNewSeats)
+      : getMonthlyCredits(resolvedTier)
+    : 0;
+
+  // This reset SETS expiring credit to the whole seat allowance, so it already
+  // funds every seat including the ones counted in perSeatDelta. Letting the
+  // delta grant below also run would stack a second full allowance on top
+  // (a brand-new N-seat team would land on 2 x $25N).
+  const recoveryCoveredEverySeat = shouldGrantRecoveryCredits && !!perSeatItem && recoveryCredits > 0;
+
   if (shouldGrantRecoveryCredits && resolvedTier) {
-    const credits = getMonthlyCredits(resolvedTier);
-    if (credits > 0) {
+    if (recoveryCredits > 0) {
       await resetExpiringCredits(
         accountId,
-        credits,
-        `Recovered Stripe subscription: ${credits} credits`,
+        recoveryCredits,
+        `Recovered Stripe subscription: ${recoveryCredits} credits`,
         `subscription_activation:${subscription.id}`,
       );
     }
   }
 
-  if (perSeatItem && perSeatDelta > 0) {
-    const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
+  if (perSeatItem && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
+    // INCLUDED_CREDITS_PER_SEAT_USD ($25 of wallet allowance), never
+    // PER_SEAT_PRICE_USD ($40, the price the customer pays). tiers.ts documents
+    // that the two are decoupled on purpose — the other $15 is platform margin.
+    // Using the price here over-granted every mid-cycle seat addition by 1.6x;
+    // all 7 seat_grant rows in production history are wrong by exactly that
+    // factor ($760 granted where $475 was owed).
+    const seatGrant = INCLUDED_CREDITS_PER_SEAT_USD * perSeatDelta;
     await grantCredits(
       accountId,
       seatGrant,
       'seat_grant',
       `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
       true,
-      `${subscription.id}:seats:${updates.seatCount}`,
+      // Keyed on the seat count REACHED, scoped to the current billing period.
+      //
+      // Both halves matter, and each fixes a different real defect:
+      //
+      // - Period scope fixes an UNDER-grant. The old key
+      //   (`${sub}:seats:${newSeats}`) had no period in it, so a team that grew
+      //   to 3 seats in one month, shrank, then grew back to 3 in a LATER month
+      //   reused the first month's key and was silently deduped — those seats
+      //   went unfunded until the next monthly reset.
+      // - Keying on the seat count reached, rather than on the `old->new`
+      //   transition, bounds an OVER-grant. Seat removals never claw allowance
+      //   back (there is no negative branch here on purpose), so an account that
+      //   shrinks and regrows inside one period is already funded for the larger
+      //   count. `4->5` and `3->5` and `2->5` are distinct transitions but the
+      //   same destination: keyed on the destination, only the first one funds.
+      //
+      // What this still does NOT catch: a team that starts a period at N seats,
+      // shrinks, then returns to N grants one extra delta, because the monthly
+      // reset that funded N is not a `seat_grant` row and so never wrote this
+      // key. Bounding that needs a per-period funded-seat high-water mark, which
+      // is a schema change, not a key change. Tracked as follow-up.
+      `${subscription.id}:seats:${subscription.current_period_start}:${perSeatNewSeats}`,
     ).catch((err) =>
       console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
     );
+  }
 
-    if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
-      const { mintYoloTokensForAllMembers } = await import('./seat-management');
-      void mintYoloTokensForAllMembers(accountId).catch((err) =>
-        console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
-      );
-    }
+  // Minting seat tokens is NOT part of the grant decision and must not be
+  // nested inside it. It lived inside the `perSeatDelta > 0` block, so adding
+  // the `!recoveryCoveredEverySeat` credit guard above would have silently
+  // stopped minting for exactly the case this mint exists for — a brand-new
+  // per-seat team, which is also the case the recovery reset covers.
+  if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
+    const { mintYoloTokensForAllMembers } = await import('./seat-management');
+    void mintYoloTokensForAllMembers(accountId).catch((err) =>
+      console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
+    );
   }
 }
 
@@ -417,8 +495,91 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       );
       return;
     }
+    // Before reverting to free, check whether the customer has *another* active
+    // subscription in Stripe (e.g. a paid plan sub that was orphaned when a
+    // machine sub hijacked the credit_accounts row). If so, re-stitch the row
+    // to that sub instead of stranding the customer on free with no credits.
+    const restored = await tryRestoreOtherActiveSubscription(accountId, subscription);
+    if (restored) return;
     await revertToFree(accountId, subscription.id);
   });
+}
+
+/**
+ * When a subscription is deleted, the customer may still have another active
+ * subscription in Stripe (the classic case: a machine/compute sub hijacked the
+ * credit_accounts.stripeSubscriptionId pointer, then got deleted, while the real
+ * paid-plan sub is still live). This queries Stripe for any other active sub
+ * on the same customer and, if found, re-syncs the row to it so the customer
+ * isn't stranded on free.
+ *
+ * Returns true if a restoration happened (row repointed), false to fall
+ * through to revertToFree.
+ */
+async function tryRestoreOtherActiveSubscription(
+  accountId: string,
+  deletedSubscription: Stripe.Subscription,
+): Promise<boolean> {
+  const customerId = typeof deletedSubscription.customer === 'string'
+    ? deletedSubscription.customer
+    : deletedSubscription.customer?.id;
+  if (!customerId) return false;
+
+  let otherSubs: Stripe.Subscription[];
+  try {
+    const stripe = getStripe();
+    const list = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'all',
+      limit: 10,
+    });
+    otherSubs = list.data.filter(
+      (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
+    );
+  } catch (err) {
+    console.error(`[Webhook] tryRestoreOtherActiveSubscription: failed to list subscriptions for ${accountId}:`, err);
+    return false;
+  }
+
+  if (otherSubs.length === 0) return false;
+
+  // Prefer a non-machine (plan) subscription — one without server_type
+  // metadata and with a real tier_key — over a machine sub.
+  const planSub = otherSubs.find(
+    (s) => s.metadata?.tier_key && s.metadata.tier_key !== 'free' && !s.metadata?.server_type,
+  );
+  const target = planSub ?? otherSubs[0];
+
+  console.log(
+    `[Webhook] handleSubscriptionDeleted: restoring ${accountId} to other active subscription ${target.id} (tier=${target.metadata?.tier_key ?? 'unknown'}) instead of reverting to free`,
+  );
+  // Repoint the account to the surviving subscription directly. We don't call
+  // syncSubscriptionState here because its stale-sub guard would bail (the
+  // stored stripeSubscriptionId is the deleted sub, ≠ the target sub). The
+  // target sub is already active/trialing (we filtered for that), so we
+  // resolve its tier and apply the update inline.
+  const targetTierKey = target.metadata?.tier_key;
+  const targetPriceId = target.items?.data?.[0]?.price?.id;
+  const resolvedTier = targetTierKey ?? getTierByPriceId(targetPriceId ?? '')?.name ?? null;
+  const billingPeriod = getBillingPeriodByPriceId(targetPriceId ?? '') ?? (target.metadata?.commitment_type as any) ?? 'monthly';
+
+  const updates: Record<string, any> = {
+    stripeSubscriptionId: target.id,
+    stripeSubscriptionStatus: target.status,
+    billingCycleAnchor: new Date(target.billing_cycle_anchor * 1000).toISOString(),
+    provider: 'stripe',
+    planType: billingPeriod === 'yearly_commitment' ? 'yearly' : billingPeriod,
+    commitmentType: billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : null,
+    commitmentEndDate: billingPeriod === 'yearly_commitment'
+      ? new Date(target.current_period_end * 1000).toISOString()
+      : null,
+    paymentStatus: target.cancel_at_period_end ? 'cancelling' : 'active',
+  };
+  if (resolvedTier) {
+    updates.tier = resolvedTier;
+  }
+  await updateCreditAccount(accountId, updates);
+  return true;
 }
 
 async function revertToFree(accountId: string, subscriptionId?: string) {

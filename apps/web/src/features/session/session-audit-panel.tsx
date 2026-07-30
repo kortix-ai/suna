@@ -23,7 +23,7 @@ import {
   useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import type { SessionAuditAction } from '@kortix/sdk/projects-client';
+import type { SessionAuditAction } from '@kortix/sdk';
 import {
   CheckIcon as Check,
   ShieldCheckIcon as ShieldCheck,
@@ -79,7 +79,7 @@ export function SessionAuditPanel({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex justify-center py-16">
-            <Loading className="animate-spin" />
+            <Loading />
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
@@ -147,7 +147,7 @@ export function SessionAuditPanel({
                               onClick={() => decide(a.execution_id, 'deny')}
                             >
                               {b === 'deny' ? (
-                                <Loading className="size-3.5 animate-spin" />
+                                <Loading className="size-3.5" />
                               ) : (
                                 <X className="size-3.5" />
                               )}
@@ -160,7 +160,7 @@ export function SessionAuditPanel({
                               onClick={() => decide(a.execution_id, 'approve')}
                             >
                               {b === 'approve' ? (
-                                <Loading className="size-3.5 animate-spin" />
+                                <Loading className="size-3.5" />
                               ) : (
                                 <Check className="size-3.5" />
                               )}

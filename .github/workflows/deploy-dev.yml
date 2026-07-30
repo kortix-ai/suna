@@ -70,6 +70,11 @@ jobs:
               - 'apps/llm-gateway/**'
               - 'packages/llm-gateway/**'
               - 'packages/shared/**'
+              - 'infra/k8s/charts/kortix-gateway/**'
+              - 'infra/k8s/envs/dev/gateway-values.yaml'
+              - 'infra/k8s/argocd/applications/gateway-dev.yaml'
+              - 'infra/scripts/ecs-deploy.sh'
+              - '.github/workflows/deploy-dev.yml'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
             frontend:
@@ -265,7 +270,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -560,6 +565,32 @@ jobs:
             --tag "kortix/kortix-gateway:dev-${SHA8}" \
             "kortix/kortix-gateway:dev-latest"
 
+  deploy-gateway-ecs:
+    name: Deploy gateway to dev (ECS Fargate)
+    needs: [detect-changes, dev-version, tag-gateway]
+    if: needs.detect-changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll the dev ECS gateway service onto the immutable image
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            dev \
+            "kortix/kortix-gateway:dev-${GITHUB_SHA::8}" \
+            --service gateway \
+            --version "${{ needs.dev-version.outputs.version }}"
+
   deploy-gateway:
     name: Deploy gateway to dev (EKS / GitOps)
     needs: [detect-changes, tag-gateway]
@@ -647,8 +678,8 @@ jobs:
           if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::dev-eks cluster not found — bump committed, skipping watch."
+            echo "::error::Required dev EKS cluster '$CLUSTER' was not found."
+            exit 1
           fi
 
       - name: Update kubeconfig
@@ -672,13 +703,8 @@ jobs:
           kubectl -n argocd annotate application kortix-gateway-dev \
             argocd.argoproj.io/refresh=hard --overwrite 2>/dev/null || true
 
-      # Soft wait: the gateway Ingress chart fails to render until gateway-values
-      # carries the ACM cert ARN, so the FIRST deploy (pre-cert) can't roll out.
-      # Tolerate it — the tag bump is committed regardless, and once the cert ARN
-      # is filled in, Argo rolls this image.
       - name: Wait for gateway Deployment rolled out @ ${{ steps.bump.outputs.tag }}
         if: steps.guard.outputs.exists == 'true'
-        continue-on-error: true
         env:
           TAG: ${{ steps.bump.outputs.tag }}
         run: |
@@ -693,19 +719,54 @@ jobs:
             fi
             sleep 15
           done
-          echo "::warning::dev gateway not rolled out to :${TAG} (likely missing ACM cert ARN in gateway-values, or Argo lag)."
+          echo "::error::dev EKS gateway did not roll out to :${TAG}."
+          exit 1
 
-  # ── Move the self-host `:dev` channel tag onto the image that just deployed ─
-  # Same idea as promote-dev-channel-api. NOTE: the gateway rollout wait above
-  # is `continue-on-error: true` (a not-yet-certed Ingress can't roll out on the
-  # very first deploy), so "deploy-gateway succeeded" is weaker than the API's
-  # gate — it means the image was pushed and Argo was asked to reconcile it,
-  # not necessarily that pods are Ready. Accepted trade-off: gating on a hard
-  # rollout here would make :dev gateway stall on the same pre-cert case the
-  # deploy job itself tolerates.
+  verify-gateway-dev-parity:
+    name: Verify gateway dev commit parity
+    needs: [detect-changes, dev-version, deploy-gateway-ecs, deploy-gateway]
+    if: needs.detect-changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+    steps:
+      - name: Require ECS, EKS, and public gateway parity
+        run: |
+          set -euo pipefail
+          endpoints=(
+            "public|https://gateway-dev.kortix.com/health/live"
+            "ecs|https://gateway-dev-ecs-fargate.kortix.com/health/live"
+            "eks|https://gateway-dev-eks.kortix.com/health/live"
+          )
+          for attempt in $(seq 1 40); do
+            all_match=true
+            for item in "${endpoints[@]}"; do
+              name="${item%%|*}"
+              url="${item#*|}"
+              body="$(curl -fsS --max-time 15 "$url" || true)"
+              commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
+              version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
+              echo "(${attempt}/40) ${name}: commit=${commit:-?} version=${version:-?}"
+              if [ "$commit" != "$EXPECTED_COMMIT" ] || [ "$version" != "$EXPECTED_VERSION" ]; then
+                all_match=false
+              fi
+            done
+            if [ "$all_match" = true ]; then
+              echo "ECS, EKS, and public gateway report ${EXPECTED_COMMIT}."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Gateway dev commit parity failed for ${EXPECTED_COMMIT}."
+          exit 1
+
+  # ── Move the self-host `:dev` channel tag onto the verified image ───────────
+  # ECS, EKS, and the public gateway must report the same commit and version
+  # before this mutable channel tag moves.
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
-    needs: [detect-changes, tag-gateway, deploy-gateway]
+    needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -735,7 +796,7 @@ jobs:
       - uses: actions/checkout@v7
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -825,7 +886,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 

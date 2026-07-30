@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { LocalTime } from '@/components/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
@@ -14,11 +15,34 @@ const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export default async function MaintenancePage() {
+// Only allow same-origin relative paths as a redirect target. Blocks
+// protocol-relative (`//evil.com`) and backslash tricks so the `from` param
+// can't be turned into an open redirect.
+function safeInternalPath(from?: string): string {
+  if (!from || !from.startsWith('/') || from.startsWith('//') || from.startsWith('/\\')) {
+    return '/';
+  }
+  return from;
+}
+
+export default async function MaintenancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
   const tHardcodedUi = { raw: getHardcodedUiServerText };
   const config = await getMaintenanceConfig();
 
-  const title = config.title || "We'll be right back";
+  // Maintenance is over (or was never blocking): send the user back to where
+  // they came from — or home. The page auto-reloads every 30s, so an active
+  // "We'll be right back" visitor gets bounced out on the first reload after a
+  // full lockdown is lifted, instead of being stranded here forever.
+  if (config.level !== 'blocking') {
+    const { from } = await searchParams;
+    redirect(safeInternalPath(from));
+  }
+
+  const title = config.title || 'We\'ll be right back';
   const message =
     config.message ||
     "We're performing scheduled maintenance to improve your experience. Please check back soon.";

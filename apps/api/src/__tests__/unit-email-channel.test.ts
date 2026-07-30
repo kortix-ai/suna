@@ -303,7 +303,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls[0].postCreate[1].text).toContain('Need help');
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe('inb-1');
     expect(createCalls[0].body.connector_bindings).toEqual({
-      email: { profile_id: 'profile-email-1' },
+      email: { authorization_id: 'profile-email-1' },
     });
     expect(createCalls[0].body.initial_prompt).toBeUndefined();
   });

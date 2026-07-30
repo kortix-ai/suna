@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 
 import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 /**
  * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
@@ -35,7 +35,7 @@ export default function ProjectNotFound() {
       <NotFoundCard
         actions={[
           {
-            href: projectId ? `/projects/${projectId}` : '/projects',
+            href: projectId ? `/projects/${projectId}` : PROJECT_LANDING_PATH,
             label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
             icon: <ArrowLeft className="h-4 w-4" />,
           },
@@ -60,5 +60,5 @@ export default function ProjectNotFound() {
     );
   }
 
-  return <ProjectShell projectId={projectId}>{card}</ProjectShell>;
+  return card;
 }

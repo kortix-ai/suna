@@ -11,7 +11,7 @@ Use this reference when a web task needs interactive browser QA, screenshots, or
 ## Core Workflow
 
 1. List the user-visible requirements and the claims you expect to make in the final answer.
-2. Start the site locally with `pty_spawn` (for example `npm run dev`, `vite`, or `python3 -m http.server 3000`).
+2. Start the site locally with `pty_spawn` (for example `npm run dev`, `vite`, or `uv run python -m http.server 3000`).
 3. Open the local URL in the browser automation flow and verify desktop first, then mobile.
 4. Run functional checks with real interactions: navigation, forms, toggles, hover states, and key end-to-end flows.
 5. Run a separate visual QA pass for hierarchy, spacing, overflow, contrast, responsiveness, and broken states.

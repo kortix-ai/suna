@@ -24,7 +24,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getProjectDetail,
   setProjectOnboardingComplete,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 export type ProjectOnboardingStatus = 'pending' | 'completed';
 

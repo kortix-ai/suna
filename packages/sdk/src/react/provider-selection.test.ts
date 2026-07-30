@@ -4,7 +4,9 @@ import {
   LLM_PROVIDER_CREDENTIALS,
   type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
+  mergeProviderLists,
   mergeProjectSecretConnectedProviders,
+  projectLlmCatalogToProviderList,
 } from './provider-selection';
 
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
@@ -71,5 +73,40 @@ describe('mergeProjectSecretConnectedProviders (SDK native-mode provider merge)'
       LLM_PROVIDER_CREDENTIALS,
     );
     expect(merged.connected).not.toContain('amazon-bedrock');
+  });
+});
+
+describe('projectLlmCatalogToProviderList', () => {
+  test('removes stale auto entries and selects a concrete default', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        auto: { name: 'Auto' },
+        'claude-opus-4.8': { name: 'Claude Opus 4.8' },
+      },
+    } as never);
+
+    expect(list.default).toEqual({ kortix: 'claude-opus-4.8' });
+    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['claude-opus-4.8']);
+  });
+});
+
+describe('mergeProviderLists', () => {
+  test('merges providers, connections, and defaults by provider id', () => {
+    const primary = {
+      default: { kortix: 'managed' },
+      connected: ['kortix'],
+      all: [{ id: 'kortix', name: 'Kortix', models: {} }],
+    } as unknown as ProviderListResponse;
+    const secondary = {
+      default: { anthropic: 'claude' },
+      connected: ['anthropic'],
+      all: [{ id: 'anthropic', name: 'Anthropic', models: {} }],
+    } as unknown as ProviderListResponse;
+
+    const merged = mergeProviderLists(primary, secondary);
+
+    expect(merged.connected).toEqual(['kortix', 'anthropic']);
+    expect(merged.all?.map((provider) => provider.id)).toEqual(['kortix', 'anthropic']);
+    expect(merged.default).toEqual({ kortix: 'managed', anthropic: 'claude' });
   });
 });

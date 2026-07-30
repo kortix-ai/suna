@@ -30,6 +30,7 @@ type LooseModel =
       description?: string;
       open_weights?: boolean;
       last_updated?: string;
+      enabled?: boolean;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -84,6 +85,14 @@ export interface FlatModel {
   openWeights?: boolean;
   /** When models.dev last refreshed this model's own entry. */
   lastUpdated?: string;
+  /**
+   * Whether the project OFFERS this model. Server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway — the picker
+   * renders the enabled ones and "Manage models" switches on this flag.
+   * Neither re-derives it. Undefined on catalogs that don't carry enablement
+   * (anything but `/model-picker`), which callers read as "not applicable".
+   */
+  enabled?: boolean;
 }
 
 // The gateway-specific fields (`provider`, `reasoning_options`,
@@ -97,6 +106,7 @@ type WithGatewayFields = {
   description?: string;
   open_weights?: boolean;
   last_updated?: string;
+  enabled?: boolean;
 };
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
@@ -110,6 +120,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
     // gateway, but never render a native (bypass) provider even if one slips in.
     if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
+      // Old sandboxes can carry a baked catalog from before the synthetic model
+      // was removed. Never expose or send those stale entries.
+      if (modelID === 'auto' || modelID === 'kortix/auto') continue;
       // Narrow `model` itself (not a copy) so the loose-shape-only fields
       // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
       let capabilities: FlatModel['capabilities'];
@@ -149,6 +162,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         description: (model as WithGatewayFields).description,
         openWeights: (model as WithGatewayFields).open_weights,
         lastUpdated: (model as WithGatewayFields).last_updated,
+        enabled: (model as WithGatewayFields).enabled,
       });
     }
   }

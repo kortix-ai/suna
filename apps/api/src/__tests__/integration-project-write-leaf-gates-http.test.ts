@@ -120,6 +120,51 @@ const CASES: WCase[] = [
     // stop assert) but not stop.
     denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
   },
+  {
+    name: 'session model change (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/model`,
+    body: { opencode_model: 'openai/gpt-5' },
+    tier: 'member',
+    // A live model change restarts opencode, so the scoped token must hold the
+    // same destructive capability as the stop route.
+    denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
+  {
+    name: 'session scope replacement (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/scope`,
+    body: { connector_bindings: {} },
+    tier: 'member',
+    denyGrant: [A.PROJECT_SESSION_START],
+    allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
+  {
+    name: 'ACP session message (leaf session.start)',
+    leaf: A.PROJECT_SESSION_START, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp`,
+    body: {},
+    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SESSION_START],
+  },
+  {
+    name: 'ACP session identity (leaf session.start)',
+    leaf: A.PROJECT_SESSION_START, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp-identity`,
+    body: {
+      acp_server_id: 'test-server',
+      runtime_harness: 'codex',
+      acp_session_id: 'test-session',
+    },
+    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SESSION_START],
+  },
+  {
+    name: 'ACP runtime stop (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'DELETE',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp`,
+    tier: 'member',
+    denyGrant: [A.PROJECT_SESSION_START],
+    allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
   // ── Review ───────────────────────────────────────────────────────────────
   {
     name: 'CR request-changes (review.act, not gitops.push)',
@@ -162,6 +207,24 @@ const CASES: WCase[] = [
     name: 'email installation DELETE (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/channels/email/installation`,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
+    // Teams disconnect — twin of email installation DELETE; no feature-flag
+    // pre-gate, so the connector-write assert is directly exercised. (Teams
+    // CONNECT uses the identical assert but sits behind teamsChannelEnabled(),
+    // untestable here without the flag; DELETE covers the same code pattern.)
+    name: 'teams installation DELETE (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
+    path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
+    // Binding a Slack thread wires inbound channel→session routing — a
+    // connector-write action; empty body reaches the gate before validation.
+    name: 'slack bind-thread (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/channels/slack/bind-thread`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {

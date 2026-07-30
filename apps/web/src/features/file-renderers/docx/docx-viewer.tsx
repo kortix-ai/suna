@@ -566,8 +566,9 @@ function DocxToolbar({
               modal={false}
             >
               <SelectTrigger
-                size="sm"
-                className="w-[84px] min-w-[84px] tabular-nums"
+                size="xs"
+                variant="secondary"
+                className="border-none tabular-nums"
                 aria-label="Zoom level"
               >
                 <SelectValue>{Math.round(zoomScale)}%</SelectValue>

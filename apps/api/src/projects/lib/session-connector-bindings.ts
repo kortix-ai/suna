@@ -1,20 +1,43 @@
 import {
+  type ConnectorAuthorizationRequiredProfile,
   type SessionConnectorBindings,
-  SessionConnectorBindingsSchema,
+  SessionConnectorBindingsInputSchema,
 } from '@kortix/api-contract';
 import {
   executorConnectionProfiles,
   executorConnectors,
   projectSessionConnectorBindings,
   projectSessions,
+  serviceAccounts,
 } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import {
+  canonicalConnectorAlias,
+  publicConnectorAlias,
+} from '../../shared/connector-alias';
+import {
+  loadAgentMailInstall,
+  loadSlackInstall,
+  loadTeamsInstall,
+} from '../../channels/install-store';
+import {
+  credentialExists,
+  profileCredentialExists,
+} from '../../executor/credentials';
 import { db } from '../../shared/db';
+import {
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
+  type ConnectorAuthorizationStrategy,
+} from './connector-authorization-strategy';
 
 export interface ValidatedSessionConnectorBinding {
   alias: string;
   profileId: string;
   connectorId: string;
+  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  ownerId: string | null;
+  authorizationStrategy: ConnectorAuthorizationStrategy;
 }
 
 export interface ResolvedSessionConnectorProfile {
@@ -27,27 +50,104 @@ export interface ResolvedSessionConnectorProfile {
   source: 'request' | 'default';
 }
 
+interface ConnectorAuthorizationRow {
+  connectorId: string;
+  projectId: string;
+  slug: string;
+  name: string;
+  providerType: string;
+  config: Record<string, unknown>;
+  authorizationStrategy: ConnectorAuthorizationStrategy;
+  enabled: boolean;
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+}
+
+interface ConnectorAuthorizationProfileRow {
+  profileId: string;
+  isDefault: boolean;
+  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  ownerId: string | null;
+  status: 'active' | 'revoked' | 'error';
+  metadata: Record<string, unknown>;
+}
+
+function connectorPlatform(config: Record<string, unknown>): string | null {
+  return typeof config.platform === 'string' ? config.platform : null;
+}
+
+function connectorRequiresAuthorization(connector: ConnectorAuthorizationRow): boolean {
+  if (connector.providerType === 'pipedream' || connector.providerType === 'channel') return true;
+  const auth = connector.config.auth;
+  if (!auth || typeof auth !== 'object') return false;
+  return (auth as Record<string, unknown>).type !== 'none';
+}
+
+export async function connectorAuthorizationIsConnected(input: {
+  connector: ConnectorAuthorizationRow;
+  profile: ConnectorAuthorizationProfileRow;
+}): Promise<boolean> {
+  const { connector, profile } = input;
+  if (!connectorRequiresAuthorization(connector)) return true;
+  if (connector.providerType === 'channel') {
+    const platform = connectorPlatform(connector.config);
+    const profileSlug =
+      typeof profile.metadata.connector_slug === 'string'
+        ? profile.metadata.connector_slug
+        : connector.slug;
+    if (platform === 'slack') {
+      return (await loadSlackInstall(connector.projectId).catch(() => null)) !== null;
+    }
+    if (platform === 'teams') {
+      return (await loadTeamsInstall(connector.projectId).catch(() => null)) !== null;
+    }
+    if (platform === 'email') {
+      const install = await loadAgentMailInstall(connector.projectId, profileSlug).catch(
+        () => null,
+      );
+      if (!install) return false;
+      return (
+        typeof profile.metadata.inbox_id !== 'string' ||
+        install.inboxId === profile.metadata.inbox_id
+      );
+    }
+    return false;
+  }
+  if (
+    await profileCredentialExists({
+      connectorId: connector.connectorId,
+      profileId: profile.profileId,
+    })
+  ) {
+    return true;
+  }
+  return (
+    profile.ownerType === 'project' &&
+    profile.isDefault &&
+    (await credentialExists(connector.connectorId, null))
+  );
+}
+
+function trustedManagedAuthorization(
+  connector: ConnectorAuthorizationRow,
+  profile: ConnectorAuthorizationProfileRow,
+): boolean {
+  return isTrustedManagedChannelAuthorization({
+    providerType: connector.providerType,
+    platform: connectorPlatform(connector.config),
+    ownerType: profile.ownerType,
+    ownerId: profile.ownerId,
+    metadata: profile.metadata,
+  });
+}
+
 export function mayUseLegacyDefaultProfile(hasAnyDurableBinding: boolean): boolean {
   return !hasAnyDurableBinding;
 }
 
-const PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS: Readonly<Record<string, string>> = {
-  email: 'kortix_email',
-  slack: 'kortix_slack',
-  meet: 'kortix_meet',
-};
-
-export function canonicalConnectorAlias(alias: string): string {
-  return PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS[alias] ?? alias;
-}
-
-export function publicConnectorAlias(alias: string): string {
-  return (
-    Object.entries(PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS).find(
-      ([, canonical]) => canonical === alias,
-    )?.[0] ?? alias
-  );
-}
+// Canonicalization lives in shared/ so pure IAM code can use it without
+// inheriting this module's database dependency. Imported for local use and
+// re-exported so existing importers are unaffected.
+export { canonicalConnectorAlias, publicConnectorAlias };
 
 export async function loadEmailInstallProfileId(
   projectId: string,
@@ -134,7 +234,7 @@ export function parseSessionConnectorBindings(
   value: unknown,
 ): { ok: true; bindings: SessionConnectorBindings | undefined } | { ok: false; error: string } {
   if (value === undefined) return { ok: true, bindings: undefined };
-  const parsed = SessionConnectorBindingsSchema.safeParse(value);
+  const parsed = SessionConnectorBindingsInputSchema.safeParse(value);
   if (!parsed.success) {
     return {
       ok: false,
@@ -147,6 +247,10 @@ export function parseSessionConnectorBindings(
 export async function validateSessionConnectorBindings(input: {
   accountId: string;
   projectId: string;
+  actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
+  /** @deprecated Authorization strategy is the only owner gate. */
+  mayManageSystemProfiles: boolean;
   bindings: SessionConnectorBindings | undefined;
 }): Promise<
   | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
@@ -161,8 +265,17 @@ export async function validateSessionConnectorBindings(input: {
       .select({
         profileId: executorConnectionProfiles.profileId,
         connectorId: executorConnectionProfiles.connectorId,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
+        isDefault: executorConnectionProfiles.isDefault,
         status: executorConnectionProfiles.status,
+        metadata: executorConnectionProfiles.metadata,
         connectorEnabled: executorConnectors.enabled,
+        connectorStatus: executorConnectors.status,
+        connectorName: executorConnectors.name,
+        providerType: executorConnectors.providerType,
+        connectorConfig: executorConnectors.config,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
       })
       .from(executorConnectionProfiles)
       .innerJoin(
@@ -175,7 +288,7 @@ export async function validateSessionConnectorBindings(input: {
       )
       .where(
         and(
-          eq(executorConnectionProfiles.profileId, binding.profile_id),
+          eq(executorConnectionProfiles.profileId, binding.authorization_id),
           eq(executorConnectionProfiles.accountId, input.accountId),
           eq(executorConnectionProfiles.projectId, input.projectId),
           eq(executorConnectors.slug, alias),
@@ -184,6 +297,41 @@ export async function validateSessionConnectorBindings(input: {
       .limit(1);
 
     if (!row) {
+      return {
+        ok: false,
+        error: `Connector profile is not available for alias "${alias}" in this project`,
+        code: 'CONNECTOR_PROFILE_NOT_FOUND',
+      };
+    }
+    const connector: ConnectorAuthorizationRow = {
+      connectorId: row.connectorId,
+      projectId: input.projectId,
+      slug: alias,
+      name: row.connectorName,
+      providerType: row.providerType,
+      config: row.connectorConfig,
+      authorizationStrategy: row.authorizationStrategy,
+      enabled: row.connectorEnabled,
+      status: row.connectorStatus,
+    };
+    const profile: ConnectorAuthorizationProfileRow = {
+      profileId: row.profileId,
+      isDefault: row.isDefault,
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+      status: row.status,
+      metadata: row.metadata,
+    };
+    if (
+      !connectorAuthorizationMatchesStrategy({
+        strategy: connector.authorizationStrategy,
+        ownerType: profile.ownerType,
+        ownerId: profile.ownerId,
+        actingUserId: input.actingUserId,
+        actingPrincipalIsServiceAccount: input.actingPrincipalIsServiceAccount,
+        trustedManagedSystem: trustedManagedAuthorization(connector, profile),
+      })
+    ) {
       return {
         ok: false,
         error: `Connector profile is not available for alias "${alias}" in this project`,
@@ -204,9 +352,192 @@ export async function validateSessionConnectorBindings(input: {
         code: 'CONNECTOR_PROFILE_INACTIVE',
       };
     }
-    validated.push({ alias, profileId: row.profileId, connectorId: row.connectorId });
+    if (row.connectorStatus !== 'active') {
+      return {
+        ok: false,
+        error: `Connector for alias "${alias}" is not active`,
+        code: 'CONNECTOR_PROFILE_INACTIVE',
+      };
+    }
+    if (!(await connectorAuthorizationIsConnected({ connector, profile }))) {
+      return {
+        ok: false,
+        error: `Connector authorization for alias "${alias}" is not connected`,
+        code: 'CONNECTOR_PROFILE_INACTIVE',
+      };
+    }
+    validated.push({
+      alias,
+      profileId: row.profileId,
+      connectorId: row.connectorId,
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+      authorizationStrategy: row.authorizationStrategy,
+    });
   }
   return { ok: true, bindings: validated };
+}
+
+export type RequiredConnectorResolution =
+  | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
+  | {
+      ok: false;
+      code: 'CONNECTOR_AUTHORIZATION_REQUIRED';
+      connectorProfiles: ConnectorAuthorizationRequiredProfile[];
+    };
+
+export async function resolveRequiredConnectorProfiles(input: {
+  accountId: string;
+  projectId: string;
+  actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
+  aliases: readonly string[];
+  explicitBindings?: readonly ValidatedSessionConnectorBinding[];
+}): Promise<RequiredConnectorResolution> {
+  const bindings: ValidatedSessionConnectorBinding[] = [];
+  const missing: Extract<RequiredConnectorResolution, { ok: false }>['connectorProfiles'] = [];
+  const seen = new Set<string>();
+  const explicitlyBound = new Set(input.explicitBindings?.map((binding) => binding.alias) ?? []);
+  for (const requestedAlias of input.aliases) {
+    const alias = canonicalConnectorAlias(requestedAlias);
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    if (explicitlyBound.has(alias)) continue;
+    const [connectorRow] = await db
+      .select({
+        connectorId: executorConnectors.connectorId,
+        projectId: executorConnectors.projectId,
+        slug: executorConnectors.slug,
+        name: executorConnectors.name,
+        providerType: executorConnectors.providerType,
+        config: executorConnectors.config,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
+        enabled: executorConnectors.enabled,
+        status: executorConnectors.status,
+      })
+      .from(executorConnectors)
+      .where(
+        and(
+          eq(executorConnectors.accountId, input.accountId),
+          eq(executorConnectors.projectId, input.projectId),
+          eq(executorConnectors.slug, alias),
+        ),
+      )
+      .limit(1);
+    if (!connectorRow) continue;
+    const connector: ConnectorAuthorizationRow = connectorRow;
+    const profileRows = connector.enabled && connector.status === 'active'
+      ? await db
+          .select({
+            profileId: executorConnectionProfiles.profileId,
+            isDefault: executorConnectionProfiles.isDefault,
+            ownerType: executorConnectionProfiles.ownerType,
+            ownerId: executorConnectionProfiles.ownerId,
+            status: executorConnectionProfiles.status,
+            metadata: executorConnectionProfiles.metadata,
+          })
+          .from(executorConnectionProfiles)
+          .where(
+            and(
+              eq(executorConnectionProfiles.accountId, input.accountId),
+              eq(executorConnectionProfiles.projectId, input.projectId),
+              eq(executorConnectionProfiles.connectorId, connector.connectorId),
+              eq(executorConnectionProfiles.status, 'active'),
+            ),
+          )
+          .orderBy(desc(executorConnectionProfiles.isDefault), executorConnectionProfiles.profileId)
+      : [];
+    let selected: ConnectorAuthorizationProfileRow | null = null;
+    for (const profile of profileRows) {
+      if (
+        !connectorAuthorizationMatchesStrategy({
+          strategy: connector.authorizationStrategy,
+          ownerType: profile.ownerType,
+          ownerId: profile.ownerId,
+          actingUserId: input.actingUserId,
+          actingPrincipalIsServiceAccount: input.actingPrincipalIsServiceAccount,
+          trustedManagedSystem: trustedManagedAuthorization(connector, profile),
+        })
+      ) {
+        continue;
+      }
+      if (await connectorAuthorizationIsConnected({ connector, profile })) {
+        selected = profile;
+        break;
+      }
+    }
+    if (!selected) {
+      missing.push({
+        id: connector.connectorId,
+        slug: publicConnectorAlias(connector.slug),
+        name: connector.name,
+        authorization_strategy: connector.authorizationStrategy,
+      });
+      continue;
+    }
+    bindings.push({
+      alias,
+      profileId: selected.profileId,
+      connectorId: connector.connectorId,
+      ownerType: selected.ownerType,
+      ownerId: selected.ownerId,
+      authorizationStrategy: connector.authorizationStrategy,
+    });
+  }
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+      connectorProfiles: missing,
+    };
+  }
+  return { ok: true, bindings };
+}
+
+export async function missingRequiredConnectorAuthorizationsForSession(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  aliases: readonly string[];
+}): Promise<ConnectorAuthorizationRequiredProfile[]> {
+  const missing: ConnectorAuthorizationRequiredProfile[] = [];
+  const seen = new Set<string>();
+  for (const requestedAlias of input.aliases) {
+    const alias = canonicalConnectorAlias(requestedAlias);
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    const resolved = await resolveSessionConnectorProfile({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      alias,
+    });
+    if (resolved) continue;
+    const [connector] = await db
+      .select({
+        id: executorConnectors.connectorId,
+        slug: executorConnectors.slug,
+        name: executorConnectors.name,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
+      })
+      .from(executorConnectors)
+      .where(
+        and(
+          eq(executorConnectors.accountId, input.accountId),
+          eq(executorConnectors.projectId, input.projectId),
+          eq(executorConnectors.slug, alias),
+        ),
+      )
+      .limit(1);
+    if (!connector) continue;
+    missing.push({
+      id: connector.id,
+      slug: publicConnectorAlias(connector.slug),
+      name: connector.name,
+      authorization_strategy: connector.authorizationStrategy,
+    });
+  }
+  return missing;
 }
 
 export async function persistSessionConnectorBindings(input: {
@@ -231,6 +562,36 @@ export async function persistSessionConnectorBindings(input: {
   );
 }
 
+export function sessionConnectorBindingsRequirePrivateVisibility(
+  bindings: readonly ValidatedSessionConnectorBinding[],
+): boolean {
+  return bindings.some((binding) => binding.ownerType === 'member');
+}
+
+export async function sessionHasMemberConnectorBinding(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+}): Promise<boolean> {
+  const [row] = await db
+    .select({ profileId: projectSessionConnectorBindings.profileId })
+    .from(projectSessionConnectorBindings)
+    .innerJoin(
+      executorConnectionProfiles,
+      eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
+    )
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.sessionId, input.sessionId),
+        eq(projectSessionConnectorBindings.accountId, input.accountId),
+        eq(projectSessionConnectorBindings.projectId, input.projectId),
+        eq(executorConnectionProfiles.ownerType, 'member'),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 /**
  * Resolve the effective profile on every Executor request. A present but
  * revoked/error binding never falls through to a project default.
@@ -240,11 +601,34 @@ export async function resolveSessionConnectorProfile(input: {
   projectId: string;
   sessionId: string | null;
   alias: string;
+  actingUserId?: string;
+  actingPrincipalIsServiceAccount?: boolean;
 }): Promise<ResolvedSessionConnectorProfile | null> {
+  const alias = canonicalConnectorAlias(input.alias);
+  let actingUserId = input.actingUserId ?? '';
+  let actingPrincipalIsServiceAccount = input.actingPrincipalIsServiceAccount ?? false;
+  let visibility: 'private' | 'project' | 'restricted' = 'private';
+  let connectorBindingsConfigured = false;
+  let inheritUnbound = false;
+
   if (input.sessionId) {
     const [session] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({
+        sessionId: projectSessions.sessionId,
+        createdBy: projectSessions.createdBy,
+        visibility: projectSessions.visibility,
+        bindingsConfigured: projectSessions.connectorBindingsConfigured,
+        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
+        createdByServiceAccountId: serviceAccounts.serviceAccountId,
+      })
       .from(projectSessions)
+      .leftJoin(
+        serviceAccounts,
+        and(
+          eq(serviceAccounts.serviceAccountId, projectSessions.createdBy),
+          eq(serviceAccounts.accountId, projectSessions.accountId),
+        ),
+      )
       .where(
         and(
           eq(projectSessions.sessionId, input.sessionId),
@@ -254,88 +638,242 @@ export async function resolveSessionConnectorProfile(input: {
       )
       .limit(1);
     if (!session) return null;
+    actingUserId = session.createdBy ?? '';
+    actingPrincipalIsServiceAccount = session.createdByServiceAccountId !== null;
+    visibility = session.visibility;
+    connectorBindingsConfigured = session.bindingsConfigured;
+    inheritUnbound = session.inheritUnbound;
 
     const [bound] = await db
       .select({
         profileId: executorConnectionProfiles.profileId,
         connectorId: executorConnectionProfiles.connectorId,
-        status: executorConnectionProfiles.status,
+        profileStatus: executorConnectionProfiles.status,
         isDefault: executorConnectionProfiles.isDefault,
         metadata: executorConnectionProfiles.metadata,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
         source: projectSessionConnectorBindings.source,
+        connectorName: executorConnectors.name,
+        providerType: executorConnectors.providerType,
+        connectorConfig: executorConnectors.config,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
+        connectorEnabled: executorConnectors.enabled,
+        connectorStatus: executorConnectors.status,
       })
       .from(projectSessionConnectorBindings)
       .innerJoin(
         executorConnectionProfiles,
         eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
       )
+      .innerJoin(
+        executorConnectors,
+        and(
+          eq(executorConnectors.connectorId, projectSessionConnectorBindings.connectorId),
+          eq(executorConnectors.accountId, projectSessionConnectorBindings.accountId),
+          eq(executorConnectors.projectId, projectSessionConnectorBindings.projectId),
+        ),
+      )
       .where(
         and(
           eq(projectSessionConnectorBindings.sessionId, input.sessionId),
           eq(projectSessionConnectorBindings.accountId, input.accountId),
           eq(projectSessionConnectorBindings.projectId, input.projectId),
-          eq(projectSessionConnectorBindings.connectorAlias, input.alias),
+          eq(projectSessionConnectorBindings.connectorAlias, alias),
         ),
       )
       .limit(1);
     if (bound) {
+      const connector: ConnectorAuthorizationRow = {
+        connectorId: bound.connectorId,
+        projectId: input.projectId,
+        slug: alias,
+        name: bound.connectorName,
+        providerType: bound.providerType,
+        config: bound.connectorConfig,
+        authorizationStrategy: bound.authorizationStrategy,
+        enabled: bound.connectorEnabled,
+        status: bound.connectorStatus,
+      };
+      const profile: ConnectorAuthorizationProfileRow = {
+        profileId: bound.profileId,
+        isDefault: bound.isDefault,
+        ownerType: bound.ownerType,
+        ownerId: bound.ownerId,
+        status: bound.profileStatus,
+        metadata: bound.metadata,
+      };
+      if (
+        !connector.enabled ||
+        connector.status !== 'active' ||
+        profile.status !== 'active' ||
+        (profile.ownerType === 'member' && visibility !== 'private') ||
+        !connectorAuthorizationMatchesStrategy({
+          strategy: connector.authorizationStrategy,
+          ownerType: profile.ownerType,
+          ownerId: profile.ownerId,
+          actingUserId,
+          actingPrincipalIsServiceAccount,
+          trustedManagedSystem: trustedManagedAuthorization(connector, profile),
+        }) ||
+        !(await connectorAuthorizationIsConnected({ connector, profile }))
+      ) {
+        return null;
+      }
       return {
-        ...bound,
-        alias: input.alias,
+        profileId: bound.profileId,
+        connectorId: bound.connectorId,
+        status: bound.profileStatus,
+        isDefault: bound.isDefault,
+        source: bound.source,
+        alias,
         metadata: bound.metadata ?? {},
       };
     }
+    if (connectorBindingsConfigured && !inheritUnbound) return null;
+  }
 
-    // Once a session opts into durable profile selection, every connector must
-    // be selected explicitly. Falling back for an unbound alias would let a
-    // partially bound session inherit an unrelated project-wide credential.
-    const [anyBinding] = await db
-      .select({ sessionId: projectSessionConnectorBindings.sessionId })
-      .from(projectSessionConnectorBindings)
+  if (
+    !input.sessionId &&
+    input.actingPrincipalIsServiceAccount === undefined &&
+    actingUserId.length > 0
+  ) {
+    const [serviceAccount] = await db
+      .select({ id: serviceAccounts.serviceAccountId })
+      .from(serviceAccounts)
       .where(
         and(
-          eq(projectSessionConnectorBindings.sessionId, input.sessionId),
-          eq(projectSessionConnectorBindings.accountId, input.accountId),
-          eq(projectSessionConnectorBindings.projectId, input.projectId),
+          eq(serviceAccounts.serviceAccountId, actingUserId),
+          eq(serviceAccounts.accountId, input.accountId),
         ),
       )
       .limit(1);
-    if (!mayUseLegacyDefaultProfile(Boolean(anyBinding))) return null;
+    actingPrincipalIsServiceAccount = serviceAccount !== undefined;
   }
 
-  const [fallback] = await db
+  const [connectorRow] = await db
+    .select({
+      connectorId: executorConnectors.connectorId,
+      projectId: executorConnectors.projectId,
+      slug: executorConnectors.slug,
+      name: executorConnectors.name,
+      providerType: executorConnectors.providerType,
+      config: executorConnectors.config,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+      enabled: executorConnectors.enabled,
+      status: executorConnectors.status,
+    })
+    .from(executorConnectors)
+    .where(
+      and(
+        eq(executorConnectors.accountId, input.accountId),
+        eq(executorConnectors.projectId, input.projectId),
+        eq(executorConnectors.slug, alias),
+      ),
+    )
+    .limit(1);
+  if (!connectorRow || !connectorRow.enabled || connectorRow.status !== 'active') return null;
+  const connector: ConnectorAuthorizationRow = connectorRow;
+  const profiles = await db
     .select({
       profileId: executorConnectionProfiles.profileId,
-      connectorId: executorConnectionProfiles.connectorId,
-      status: executorConnectionProfiles.status,
       isDefault: executorConnectionProfiles.isDefault,
+      ownerType: executorConnectionProfiles.ownerType,
+      ownerId: executorConnectionProfiles.ownerId,
+      status: executorConnectionProfiles.status,
       metadata: executorConnectionProfiles.metadata,
     })
     .from(executorConnectionProfiles)
-    .innerJoin(
-      executorConnectors,
-      and(
-        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
-        eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
-        eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
-      ),
-    )
     .where(
       and(
         eq(executorConnectionProfiles.accountId, input.accountId),
         eq(executorConnectionProfiles.projectId, input.projectId),
-        eq(executorConnectionProfiles.isDefault, true),
-        eq(executorConnectors.slug, input.alias),
+        eq(executorConnectionProfiles.connectorId, connector.connectorId),
+        eq(executorConnectionProfiles.status, 'active'),
       ),
     )
-    .limit(1);
+    .orderBy(desc(executorConnectionProfiles.isDefault), executorConnectionProfiles.profileId);
+  let fallback: ConnectorAuthorizationProfileRow | null = null;
+  for (const profile of profiles) {
+    if (
+      !connectorAuthorizationMatchesStrategy({
+        strategy: connector.authorizationStrategy,
+        ownerType: profile.ownerType,
+        ownerId: profile.ownerId,
+        actingUserId,
+        actingPrincipalIsServiceAccount,
+        trustedManagedSystem: trustedManagedAuthorization(connector, profile),
+      })
+    ) {
+      continue;
+    }
+    if (profile.ownerType === 'member' && visibility !== 'private') continue;
+    if (await connectorAuthorizationIsConnected({ connector, profile })) {
+      fallback = profile;
+      break;
+    }
+  }
   if (!fallback) return null;
   return {
-    ...fallback,
-    alias: input.alias,
+    profileId: fallback.profileId,
+    connectorId: connector.connectorId,
+    status: fallback.status,
+    isDefault: fallback.isDefault,
+    alias,
     metadata: fallback.metadata ?? {},
     source: 'default',
   };
+}
+
+/**
+ * Return the authorization map that Executor resolves for the session now.
+ *
+ * A session without caller-configured bindings can use strategy-based defaults
+ * without durable binding rows. Read-back must materialize those defaults.
+ * Explicit-only sessions remain explicit-only because
+ * `resolveSessionConnectorProfile` enforces the persisted inheritance state.
+ */
+export async function resolveEffectiveSessionConnectorBindings(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  grantedConnectors: string[] | 'all' | undefined;
+}): Promise<SessionConnectorBindings> {
+  const requestedAliases = Array.isArray(input.grantedConnectors)
+    ? input.grantedConnectors
+    : (
+        await db
+          .select({ alias: executorConnectors.slug })
+          .from(executorConnectors)
+          .where(
+            and(
+              eq(executorConnectors.accountId, input.accountId),
+              eq(executorConnectors.projectId, input.projectId),
+              eq(executorConnectors.enabled, true),
+              eq(executorConnectors.status, 'active'),
+            ),
+          )
+          .orderBy(executorConnectors.slug)
+      ).map((row) => row.alias);
+
+  const bindings: SessionConnectorBindings = {};
+  const seen = new Set<string>();
+  for (const requestedAlias of requestedAliases) {
+    const alias = canonicalConnectorAlias(requestedAlias);
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    const resolved = await resolveSessionConnectorProfile({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      alias,
+    });
+    if (!resolved) continue;
+    bindings[publicConnectorAlias(resolved.alias)] = {
+      authorization_id: resolved.profileId,
+    };
+  }
+  return bindings;
 }
 
 export function canonicalConnectorBindings(value: unknown): string {
@@ -345,7 +883,10 @@ export function canonicalConnectorBindings(value: unknown): string {
     Object.fromEntries(
       Object.entries(parsed.bindings)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([alias, binding]) => [alias, { profile_id: binding.profile_id }]),
+        .map(([alias, binding]) => [
+          alias,
+          { authorization_id: binding.authorization_id },
+        ]),
     ),
   );
 }

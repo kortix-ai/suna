@@ -5,7 +5,7 @@ import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 
-export function CopyButton({ code }: { code: string }) {
+export function CopyButton({ code, className }: { code: string; className?: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -20,6 +20,7 @@ export function CopyButton({ code }: { code: string }) {
 
   return (
     <button
+      type="button"
       onClick={handleCopy}
       aria-label={copied ? 'Copied' : 'Copy code'}
       className={cn(
@@ -27,6 +28,7 @@ export function CopyButton({ code }: { code: string }) {
         'text-foreground hover:text-foreground hover:bg-muted-foreground/10',
         'cursor-pointer transition-colors active:scale-[0.97]',
         'outline-none focus-visible:outline-none',
+        className,
       )}
     >
       <span className="relative inline-flex size-3.5 items-center justify-center">

@@ -1,11 +1,6 @@
 import { chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
-import { config } from '../config';
-import {
-  decryptProjectSecret,
-  encryptProjectSecret,
-  listProjectSecrets,
-} from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 
 export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
@@ -30,32 +25,6 @@ export const AGENTMAIL_INBOX_DISPLAY_NAME = 'AGENTMAIL_INBOX_DISPLAY_NAME';
 export const AGENTMAIL_WEBHOOK_ID = 'AGENTMAIL_WEBHOOK_ID';
 export const AGENTMAIL_WEBHOOK_SECRET = 'AGENTMAIL_WEBHOOK_SECRET';
 export const AGENTMAIL_SENDER_POLICY = 'AGENTMAIL_SENDER_POLICY';
-
-export const RECALL_API_KEY = 'RECALL_API_KEY';
-
-export interface MeetInstallSummary {
-  /** Where the resolved Recall key came from — operator env or a project override. */
-  source: 'project' | 'env';
-}
-
-/**
- * The Recall.ai API key for a project: a per-project override secret if set, else
- * the operator-wide config.RECALL_API_KEY. Server-side only — this key signs the
- * meet channel connector's `Authorization: Token` header and is never injected
- * into a sandbox.
- */
-export async function loadMeetTokenForProject(projectId: string): Promise<string | null> {
-  const override = await readSecret(projectId, RECALL_API_KEY);
-  return override ?? (config.RECALL_API_KEY || null);
-}
-
-/** Cheap "is meet usable?" — a Recall key resolves (per-project override or env). */
-export async function loadMeetInstall(projectId: string): Promise<MeetInstallSummary | null> {
-  const override = await readSecret(projectId, RECALL_API_KEY).catch(() => null);
-  if (override) return { source: 'project' };
-  if (config.RECALL_API_KEY) return { source: 'env' };
-  return null;
-}
 
 const SLACK_KEYS = [
   SLACK_BOT_TOKEN,
@@ -255,9 +224,20 @@ export async function saveAgentMailInstall(
         ),
       );
   }
+  // Scope the inbox takeover delete to THIS project. An unscoped delete
+  // (platform + workspaceId only) would wipe another project's install row for
+  // the same inbox — a cross-tenant data-integrity bug that enabled the
+  // AgentMail inbox hijack (pentest 2026-07-27). The first delete above already
+  // filters by projectId; this one must too.
   await db
     .delete(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, input.inboxId)));
+    .where(
+      and(
+        eq(chatInstalls.platform, 'email'),
+        eq(chatInstalls.projectId, projectId),
+        eq(chatInstalls.workspaceId, input.inboxId),
+      ),
+    );
   await db
     .insert(chatInstalls)
     .values({ platform: 'email', workspaceId: input.inboxId, projectId })
@@ -540,8 +520,10 @@ export async function listProjectsForWorkspace(
 }
 
 export async function loadSlackInstall(projectId: string): Promise<SlackInstallSummary | null> {
-  const secrets = await listProjectSecrets(projectId);
-  const teamId = secrets[SLACK_TEAM_ID];
+  // Read scope-agnostically: Slack credentials are stored with scope='connector'
+  // (kept out of the sandbox env), which listProjectSecrets deliberately drops —
+  // so status must go through readSecret, matching the Teams install read path.
+  const teamId = await readSecret(projectId, SLACK_TEAM_ID);
   if (!teamId) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
@@ -550,8 +532,8 @@ export async function loadSlackInstall(projectId: string): Promise<SlackInstallS
     .limit(1);
   return {
     workspaceId: teamId,
-    workspaceName: secrets[SLACK_TEAM_NAME] || null,
-    botUserId: secrets[SLACK_BOT_USER_ID] || null,
+    workspaceName: (await readSecret(projectId, SLACK_TEAM_NAME)) || null,
+    botUserId: (await readSecret(projectId, SLACK_BOT_USER_ID)) || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
 }

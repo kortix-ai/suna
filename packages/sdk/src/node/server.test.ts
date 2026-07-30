@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from 'bun:test';
-import { runWithKortix, createScopedKortix } from './server';
+import { runWithKortix, createScopedKortix, forwardKortixRequest } from './server';
 import { backendApi } from '../core/http/api-client';
 
 // Importing `./server` pulls in `./platform/config-node`, which registers the
@@ -100,6 +100,29 @@ test('createScopedKortix never writes to the process-global config — two scope
   expect(requests.some((r) => r.auth === 'Bearer tok-B')).toBe(true);
 });
 
+test('createScopedKortix neutralizes the ambient top-level runtime() — no process-global cross-tenant sandbox bleed', () => {
+  // The top-level runtime() resolves the PROCESS-GLOBAL "active" runtime (whatever
+  // session most recently called ensureReady()). In a multi-tenant server that is
+  // a DIFFERENT request's/end-user's sandbox — a cross-tenant leak. On a scoped
+  // client it must throw and steer to the session-scoped handle, never silently
+  // hand back a foreign sandbox's client.
+  const kortix = createScopedKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+  });
+  expect(() => kortix.runtime()).toThrow(/session\(/);
+});
+
+test('createScopedKortix leaves the rest of the facade intact (only top-level runtime() is neutralized)', () => {
+  const kortix = createScopedKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+  });
+  expect(typeof kortix.session).toBe('function');
+  expect(typeof kortix.project).toBe('function');
+  expect(typeof kortix.projects.list).toBe('function');
+});
+
 test('createScopedKortix scopes calls reached through id-bound handles minted at call time (project(id), session(pid, sid))', async () => {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const req = input as Request;
@@ -116,4 +139,51 @@ test('createScopedKortix scopes calls reached through id-bound handles minted at
 
   expect(requests[0].url).toContain('/projects/PID1/secrets');
   expect(requests[0].auth).toBe('Bearer scoped-tok');
+});
+
+test('forwardKortixRequest owns wrapper authentication, body buffering, and response sanitization', async () => {
+  let forwardedRequest: Request | undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    forwardedRequest = new Request(input, init);
+    return new Response('forwarded', {
+      status: 202,
+      headers: {
+        'content-encoding': 'gzip',
+        'content-length': '999',
+        'content-type': 'text/plain',
+        'set-cookie': 'upstream_session=must-not-leak',
+        'x-upstream': 'yes',
+      },
+    });
+  }) as typeof fetch;
+
+  const request = new Request('https://wrapper.local/api/kortix/p/runtime-1/8000/message', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer wrapper-user-token',
+      cookie: 'lumen_session=private',
+      'content-type': 'application/json',
+    },
+    body: '{"hello":"world"}',
+  });
+
+  const response = await forwardKortixRequest({
+    request,
+    upstreamUrl: 'https://api.kortix.test/v1/p/runtime-1/8000/message',
+    token: 'kortix-operator-token',
+  });
+
+  expect(forwardedRequest).toBeDefined();
+  expect(forwardedRequest!.headers.get('authorization')).toBe('Bearer kortix-operator-token');
+  expect(forwardedRequest!.headers.get('cookie')).toBeNull();
+  expect(forwardedRequest!.headers.get('accept-encoding')).toBe('identity');
+  expect(forwardedRequest!.headers.get('content-length')).toBe('17');
+  expect(await forwardedRequest!.text()).toBe('{"hello":"world"}');
+
+  expect(response.status).toBe(202);
+  expect(response.headers.get('content-encoding')).toBeNull();
+  expect(response.headers.get('content-length')).toBeNull();
+  expect(response.headers.get('set-cookie')).toBeNull();
+  expect(response.headers.get('x-upstream')).toBe('yes');
+  expect(await response.text()).toBe('forwarded');
 });

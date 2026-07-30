@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
@@ -31,15 +32,18 @@ import {
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
+  CodeSimpleIcon as Code2,
   FileArrowDownIcon as FileDown,
+  FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
   HouseIcon as HomeSolid,
   StackIcon as Layers,
   DotsThreeIcon as MoreHorizontal,
+  SidebarSimpleIcon as PanelLeft,
   SidebarSimpleIcon as PanelRight,
-  PencilIcon as Pencil,
+  PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
@@ -77,15 +81,13 @@ export function SessionSiteHeader({
   // window's left edge, where the macOS traffic lights and the shell's
   // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
   // buttons past both and drop them onto the same center line (y≈26).
-  const { state: sidebarState } = useSidebar();
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
   const [desktopShell] = useState<'macos' | 'other' | null>(() =>
     isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
   );
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
-  // Web with the sidebar hidden: the shell drops a sidebar toggle onto this
-  // row's left end (see ProjectSheelLayout), so indent the leading buttons
-  // past it. Below md the shell's opener is always there instead.
-  const webSidebarHidden = desktopShell === null && sidebarState === 'collapsed';
+  const sidebarToggleLabel =
+    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -136,13 +138,7 @@ export function SessionSiteHeader({
 
   return (
     <>
-      {/* No divider line. The row itself stays transparent (the welcome
-          wallpaper reads through it), and the fade lives in the strip below:
-          it overlays the top of the message list, so content scrolling up
-          dissolves into the page instead of hitting a hard rule. Gradient has
-          to sit over the content — painting it inside the row would just fade
-          background into the identical background behind it, i.e. invisible. */}
-      <div className="after:from-background relative z-50 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
+      <div className="relative z-50 w-full">
         {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
             line (children h-[28px] → center y≈26, matching the traffic lights
             and the shell's Open-sidebar toggle), and indent the leading side
@@ -155,12 +151,26 @@ export function SessionSiteHeader({
               'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
               // Below md the shell floats an always-on sheet opener at this
               // row's left end (see ProjectSheelLayout) — indent past it.
-              'max-md:ml-[34px]',
+              // 'max-md:ml-[34px]',
               sidebarHidden && 'h-[28px]',
               sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
-              webSidebarHidden && 'md:ml-[34px]',
             )}
           >
+            {desktopShell === null && (
+              <Button
+                type="button"
+                aria-label={sidebarToggleLabel}
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+                onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+                className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+              >
+                <PanelLeft className="cn-rtl-flip size-4" />
+              </Button>
+            )}
+
             {isProjectSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
                 <Link href={`/projects/${projectId}`}>
@@ -177,6 +187,63 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[28px]',
             )}
           >
+            {/* Resting header, non-technical default: identity (left, not
+                ours) + these two indicators (self-hide via `return null`
+                until there's something to see) + the panel toggle. Every
+                icon-only control below carries a Hint label — nothing here
+                is legible from the icon alone. */}
+            <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {/* Terminal / Browser / Files, grouped behind one "Developer
+                tools" control (product owner's ask: "besides the show tool
+                and specific things, all these terminals here should be
+                perhaps grouped together" — three unlabeled icon buttons that
+                spell out sandbox internals is exactly the thing a
+                non-technical reader bounces off). Each item still fires the
+                same `openSessionQuickView` call as before with the same
+                'header' source, so nothing that worked stops working — it's
+                one extra tap instead of a bare icon. */}
+            <DropdownMenu>
+              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Developer tools"
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                  >
+                    <Code2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </Hint>
+
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('terminal', 'header')}
+                >
+                  <SquareTerminal />
+                  Terminal
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('browser', 'header')}
+                >
+                  <Globe />
+                  Browser
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('files', 'header')}
+                >
+                  <FolderOpen />
+                  Files
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -191,20 +258,32 @@ export function SessionSiteHeader({
                     aria-label={tHardcodedUi.raw(
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
                     <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
 
-              <DropdownMenuContent align="end" className="w-52">
+              {/* Rename/Share (identity) and Restart/Stop (lifecycle) sit at
+                  full weight — those are what a normal user reaches for.
+                  Export/Summarize are transcript-level, rarely-touched, and
+                  jargon-adjacent (a non-technical reader has no idea what
+                  "compacting" a session does), so they're visually
+                  subordinate (muted text/icon) and pushed down next to
+                  Delete. Delete stays the one destructive item and stays
+                  last. The conditionals are arranged so a separator can
+                  never lead, trail, or double up: within `isProjectSession`
+                  the first two groups always have at least Rename and
+                  Restart, and the transcript group is unconditional. */}
+              <DropdownMenuContent align="end" className="w-56">
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       onClick={() => setRenameOpen(true)}
                     >
-                      <Pencil />
+                      <PencilSimpleIcon />
                       {tI18nHardcoded.raw(
                         'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
                       )}
@@ -220,6 +299,9 @@ export function SessionSiteHeader({
                         )}
                       </DropdownMenuItem>
                     )}
+
+                    <DropdownMenuSeparator />
+
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={restartMutation.isPending}
@@ -238,70 +320,43 @@ export function SessionSiteHeader({
                         Stop
                       </DropdownMenuItem>
                     )}
+
+                    <DropdownMenuSeparator />
                   </>
                 )}
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setExportOpen(true)}>
+                <DropdownMenuItem
+                  className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+                  onClick={() => setExportOpen(true)}
+                >
                   <FileDown />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line124JsxTextExportTranscript',
-                  )}
+                  Export conversation
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                <DropdownMenuItem
+                  className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+                  onClick={() => setCompactOpen(true)}
+                >
                   <Layers />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
-                  )}
+                  Summarize conversation
                 </DropdownMenuItem>
 
                 {isProjectSession && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onClick={() => setDeleteOpen(true)}
-                    variant="destructive"
-                  >
-                    <TrashSolid weight="fill" />
-                    Delete
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setDeleteOpen(true)}
+                      variant="destructive"
+                    >
+                      <TrashSolid weight="fill" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <SessionChangesIndicator sessionId={sessionId} />
-
-            <SessionPendingApprovalsIndicator sessionId={sessionId} />
-
-            {/* Terminal, one tap from the header (product owner's placement —
-                it used to be a labeled row under the Easy cards). Icon-only
-                like every trailing-cluster control; the Hint carries the name. */}
-            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Terminal">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Open terminal"
-                onClick={() => openSessionQuickView('terminal', 'header')}
-                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <SquareTerminal className="h-4 w-4" />
-              </Button>
-            </Hint>
-
-            {/* Browser, same one-tap placement as Terminal above — opens the
-                in-panel port browser (AppPreview) on the first running app,
-                or localhost:3000 as a starting point when nothing's running
-                yet. */}
-            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Browser">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Open browser"
-                onClick={() => openSessionQuickView('browser', 'header')}
-                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <Globe className="h-4 w-4" />
-              </Button>
-            </Hint>
 
             <Hint
               side="bottom"

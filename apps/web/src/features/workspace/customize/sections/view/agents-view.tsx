@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { AgentHarnessIcon } from '@/features/session/composer/agent-harness-icon';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import {
@@ -21,8 +22,6 @@ import {
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -35,7 +34,8 @@ import {
   type ProjectConfigSummary,
   setAgentScope,
   updateProjectDefaultAgent,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
+import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import {
   RobotIcon as Bot,
   CheckIcon as Check,
@@ -70,7 +70,12 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderContext={(config) => (
         <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
       )}
-      renderTriggerLabel={(agent) => agent.name}
+      renderTriggerLabel={(agent) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <AgentHarnessIcon harness={agent.harness} />
+          <span className="truncate">{agent.name}</span>
+        </span>
+      )}
       className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
@@ -87,6 +92,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
+          <AgentHarnessIcon harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -182,7 +188,10 @@ function DefaultAgentSelector({
           <SelectContent>
             {availableAgents.map((agent) => (
               <SelectItem key={agent.name} value={agent.name}>
-                {agent.name}
+                <span className="flex min-w-0 items-center gap-2">
+                  <AgentHarnessIcon harness={agent.harness} />
+                  <span className="truncate">{agent.name}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -252,10 +261,9 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
 
 /**
  * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
- * DB-backed, instant — no git commit): a session for this agent that asks for the
- * synthetic `auto` model resolves to this pick. When unset, the agent falls back
- * to the project → account → platform default. Manager-gated (the model-defaults
- * route asserts `manage`); everyone else sees the read-only resolved model.
+ * DB-backed, instant — no git commit). When unset, the agent falls back to the
+ * project → account → platform default. Manager-gated; everyone else sees the
+ * read-only resolved model.
  */
 function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
@@ -264,7 +272,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
     staleTime: 20_000,
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
   const explicit = defaults.agentDefaults[agentName] ?? null;
@@ -319,7 +327,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
         </div>
       ) : (
         <Badge variant="outline" size="sm" className="font-mono">
-          {nameOf(resolved) ?? 'Auto'}
+          {nameOf(resolved) ?? 'No model configured'}
         </Badge>
       )}
 

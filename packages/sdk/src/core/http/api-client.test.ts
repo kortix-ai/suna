@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { backendApi, isAdminBypassEnabled, setAdminBypass } from './api-client';
+import { ApiError } from './api/errors';
 import { configureKortix } from './config';
 
 afterEach(() => {
@@ -239,6 +240,77 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 });
 
+describe('makeRequest retries transient transport failures on idempotent reads', () => {
+  test('a failed preflight on GET is retried before the host error handler runs', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      if (attempts === 1) throw new TypeError('Failed to fetch');
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      expect(response).toEqual({ success: true, data: { ok: true } });
+      expect(attempts).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('persistent GET transport failures report once after three attempts', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toBe('Failed to fetch');
+      expect(attempts).toBe(3);
+      expect(errors).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a POST transport failure is not retried', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/sessions', {});
+      expect(response.success).toBe(false);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('account_mfa_required 403 → kortix:mfa-required browser event', () => {
   function stubFetch403(body: Record<string, unknown>) {
     const originalFetch = globalThis.fetch;
@@ -296,6 +368,91 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     } finally {
       win.restore();
       restoreFetch();
+    }
+  });
+});
+
+// Regression for Better Stack frontend pattern `1f3c4d96…`
+// (`ApiError: not supported`, HTTP 501) on the co-worker session "add
+// connector" path: `POST /v1/executor/projects/:id/connectors/auth-discovery`
+// returned a bare `{ error: 'not supported' }` 501 when an optional executor
+// capability wasn't wired on the deployment, and `makeRequest` forwarded it
+// to `onError` → Sentry as an opaque, unhandled-looking `ApiError`. The API
+// now returns a TYPED 501 envelope with `code: 'feature_not_supported'`
+// (executor router `featureNotSupportedResponse`); `makeRequest` classifies
+// that as an EXPECTED "feature unavailable" state — silent to `onError`
+// (Sentry) but still returned as an `ApiError` so callers/UI can branch on
+// `.code`. Mirrors the billing-gate 402 / no-compaction-model classification.
+// See `apps/api/src/__tests__/unit-executor-feature-not-supported.test.ts`
+// for the API-side half of this contract.
+describe('makeRequest classifies a typed feature_not_supported 501 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 501 with code=feature_not_supported does NOT fire onError (Sentry) but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(501, {
+      error: 'feature_not_supported',
+      code: 'feature_not_supported',
+      message: 'This capability is not enabled on this deployment.',
+      feature: 'connector_auth_discovery',
+    });
+    try {
+      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {
+        provider: 'openapi',
+        spec: 'https://example.com/openapi.json',
+      });
+      expect(res.success).toBe(false);
+      // The ApiError is still returned so the UI (e.g. the connector
+      // discovery InfoBanner) can branch on the typed code.
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(501);
+      expect(res.error?.code).toBe('feature_not_supported');
+      // The human message (not the bare 'not supported' string) is on it.
+      expect(res.error?.message).toBe('This capability is not enabled on this deployment.');
+      // The expected state must NEVER page Sentry.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 501 (no feature_not_supported code) STILL fires onError (Sentry)', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(501, { error: 'something broke', message: 'something broke' });
+    try {
+      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {});
+      expect(res.success).toBe(false);
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(501);
+      // A real server bug (no typed code) still reports — the classification
+      // gate must never swallow a genuine defect.
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
     }
   });
 });

@@ -35,6 +35,10 @@
           "enabled": {
             "type": "boolean"
           },
+          "sandbox": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
           "connectors": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
             "oneOf": [
@@ -53,6 +57,23 @@
                 ]
               }
             ]
+          },
+          "connectors_required": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Connector profile slugs that must resolve before the session starts."
+          },
+          "connectors_personal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "deprecated": true,
+            "description": "Deprecated input alias for connectors_required."
           },
           "secrets": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -357,15 +378,29 @@
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "sessionMode": {
             "type": "string",
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
           },
           "session_id": {
@@ -500,6 +535,10 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -543,11 +582,19 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "voice"
             ]
           },
           "credential": {
             "const": "shared"
+          },
+          "authorization_strategy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "user"
+            ],
+            "default": "project"
           },
           "agent_scope": false,
           "auth": {
@@ -562,13 +609,30 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "api_key",
                   "oauth1",
+                  "hmac",
+                  "aws_sigv4",
+                  "mtls",
                   "none"
                 ]
               },
               "secret": false
             },
             "additionalProperties": true
+          },
+          "headers": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[^\\r\\n]*$"
+            }
           },
           "policies": {
             "type": "array",
@@ -649,7 +713,7 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_meet"
+                  "const": "kortix_voice"
                 }
               }
             },

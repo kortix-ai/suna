@@ -1,0 +1,50 @@
+{
+  "schema_version": 3,
+  "recorded_at": "2026-07-29T14:11:14.287Z",
+  "api_base": "http://localhost:8018/v1",
+  "project_id": "b941768b-eb77-4e71-a2df-a678f4f1dc28",
+  "project_provision": null,
+  "project_runtime_preparation": null,
+  "provider": "platinum",
+  "model": "kortix/deepseek-v4-flash",
+  "model_config_value": "kortix/deepseek-v4-flash",
+  "prompt": "Reply with exactly READY and no other text.",
+  "session_id": null,
+  "runtime_harness": null,
+  "runtime_transport": null,
+  "acp_session_id": null,
+  "acp_session_new_response": null,
+  "cumulative_ms": {
+    "session_created": 747.517
+  },
+  "durations_ms": {
+    "session_create_request": 746.968
+  },
+  "api_requests": [
+    {
+      "label": "session.create",
+      "method": "POST",
+      "path": "/projects/b941768b-eb77-4e71-a2df-a678f4f1dc28/sessions",
+      "status": 500,
+      "started_at_ms": 0.609,
+      "completed_at_ms": 747.486,
+      "duration_ms": 746.879
+    }
+  ],
+  "start_poll_timeline": [],
+  "acp_event_timeline": [],
+  "host_session_create_timeline": null,
+  "host_provision_timeline": null,
+  "host_prompt_env_sync_timeline": null,
+  "guest_boot_timeline": null,
+  "guest_network_probe": null,
+  "gateway_request_timeline": [],
+  "gateway_attribution": null,
+  "sequential_breakdown": null,
+  "first_agent_message_text": null,
+  "first_agent_message_class": null,
+  "first_reasoning_text": null,
+  "first_model_text": null,
+  "model_response_text": "",
+  "error": "session create returned 500: {\"error\":true,\"message\":\"Internal server error\",\"status\":500}"
+}

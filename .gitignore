@@ -127,6 +127,7 @@ core/kortix-master/opencode/.kortix/
 # Terraform — never commit local state, provider binaries, lockfile, or tfvars
 infra/terraform/**/.terraform/
 infra/terraform/**/.terraform.lock.hcl
+infra/terraform/**/*.tfplan
 infra/terraform/**/*.tfstate
 infra/terraform/**/*.tfstate.*
 infra/terraform/**/*.tfvars
@@ -151,3 +152,4 @@ grafana-creds.txt
 botkube-communication.secret.yaml
 botkube-comm-real.yaml
 .env*
+.cutover-state/

@@ -53,22 +53,27 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
+import {
+  proposeConnectorProfileSlug,
+  type EasyConnectApp,
+} from '@/features/workspace/customize/sections/connector-profile-form';
+import { ConnectorProfileModal } from '@/features/workspace/customize/sections/connector-profile-modal';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk/projects-client';
+import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -140,8 +145,8 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     setIndex(0);
     Promise.resolve()
       .then(() => resetFn())
-      .then(() => toast.success('Onboarding reset'))
-      .catch((err) => toast.error(err instanceof Error ? err.message : String(err)));
+      .then(() => successToast('Onboarding reset'))
+      .catch((err) => errorToast(err instanceof Error ? err.message : String(err)));
     url.searchParams.delete('onboarding-reset');
     window.history.replaceState(null, '', url.toString());
   }, [resetHydrated, resetFn]);
@@ -153,9 +158,8 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     enabled: isPending,
     ...Q,
   });
-  const connectedSlugs = useMemo(
-    () =>
-      new Set((connectors.data?.connectors ?? []).filter((c) => c.secretSet).map((c) => c.slug)),
+  const connectorSlugs = useMemo(
+    () => (connectors.data?.connectors ?? []).map((connector) => connector.slug),
     [connectors.data],
   );
   const refreshConnectors = useCallback(() => {
@@ -230,14 +234,14 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                 {stepId === 'tools' && (
                   <ToolsStep
                     projectId={projectId}
-                    connectedSlugs={connectedSlugs}
+                    existingSlugs={connectorSlugs}
                     onConnected={refreshConnectors}
                   />
                 )}
                 {stepId === 'slack' && <SlackStep projectId={projectId} />}
                 {stepId === 'model' && <ModelStep />}
                 {stepId === 'done' && (
-                  <DoneStep connectedCount={connectedSlugs.size} onStart={complete} />
+                  <DoneStep profileCount={connectorSlugs.length} onStart={complete} />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -293,7 +297,7 @@ function StepPrimaryAction({
 }) {
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
-  const modelProviders = useOpenCodeProviders();
+  const modelProviders = useRuntimeProviders();
   const { hasSelectableModels } = useModelConnectionGate(flattenModels(modelProviders.data));
 
   if (stepId === 'slack') {
@@ -413,14 +417,15 @@ function WelcomeStep({
 
 function ToolsStep({
   projectId,
-  connectedSlugs,
+  existingSlugs,
   onConnected,
 }: {
   projectId: string;
-  connectedSlugs: Set<string>;
+  existingSlugs: readonly string[];
   onConnected: () => void;
 }) {
   const [q, setQ] = useState('');
+  const [selectedApp, setSelectedApp] = useState<EasyConnectApp | null>(null);
   const connect = useToolConnect(projectId, onConnected);
 
   const appsQuery = useInfiniteQuery({
@@ -437,7 +442,7 @@ function ToolsStep({
     .filter((a) => !SLACK_SLUGS.has(a.slug));
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
-  const connectedCount = connectedSlugs.size;
+  const profileCount = existingSlugs.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -493,10 +498,9 @@ function ToolsStep({
                       <ToolTile
                         key={app.slug}
                         app={app}
-                        connected={connectedSlugs.has(app.slug)}
-                        pending={connect.isPending && connect.variables === app.slug}
+                        pending={connect.isPending && connect.variables?.appSlug === app.slug}
                         busy={connect.isPending}
-                        onConnect={() => connect.mutate(app.slug)}
+                        onConnect={() => setSelectedApp(app)}
                       />
                     ))}
                   </div>
@@ -509,7 +513,7 @@ function ToolsStep({
                         disabled={appsQuery.isFetchingNextPage}
                       >
                         {appsQuery.isFetchingNextPage ? (
-                          <Loading className="mr-2 size-4" />
+                          <Loading className="size-4 shrink-0" />
                         ) : null}
                         Load more
                       </Button>
@@ -521,8 +525,8 @@ function ToolsStep({
           )}
 
           <p className="text-muted-foreground text-xs">
-            {connectedCount > 0
-              ? `${connectedCount} ${connectedCount === 1 ? 'tool' : 'tools'} connected — add as many as you like, then continue.`
+            {profileCount > 0
+              ? `${profileCount} ${profileCount === 1 ? 'profile' : 'profiles'} added — add as many as you like, then continue.`
               : 'Connect a few now, or skip and add them anytime.'}
           </p>
         </TabsContent>
@@ -544,19 +548,43 @@ function ToolsStep({
           </div>
         </TabsContent>
       </Tabs>
+      <ConnectorProfileModal
+        open={selectedApp !== null}
+        idPrefix="onboarding-tool-profile"
+        title={`Add ${selectedApp?.name ?? 'app'}`}
+        description="Create a connector profile before authorization. You can add more than one profile for the same app."
+        initialName={selectedApp?.name ?? ''}
+        initialSlug={
+          selectedApp ? proposeConnectorProfileSlug(selectedApp.slug, existingSlugs) : ''
+        }
+        existingSlugs={existingSlugs}
+        pending={connect.isPending}
+        onOpenChange={(open) => !open && setSelectedApp(null)}
+        onSubmit={(profile) => {
+          if (!selectedApp) return;
+          connect.mutate(
+            {
+              appSlug: selectedApp.slug,
+              appName: selectedApp.name,
+              profileName: profile.name,
+              profileSlug: profile.slug,
+              authorizationStrategy: profile.authorizationStrategy,
+            },
+            { onSuccess: () => setSelectedApp(null) },
+          );
+        }}
+      />
     </div>
   );
 }
 
 function ToolTile({
   app,
-  connected,
   pending,
   busy,
   onConnect,
 }: {
   app: PipedreamApp;
-  connected: boolean;
   pending: boolean;
   busy: boolean;
   onConnect: () => void;
@@ -565,14 +593,9 @@ function ToolTile({
     <button
       type="button"
       onClick={onConnect}
-      disabled={connected || busy}
-      aria-label={connected ? `${app.name} connected` : `Connect ${app.name}`}
-      className={cn(
-        'group border-border/60 bg-card flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-        connected
-          ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
-          : 'hover:border-primary/40 hover:bg-primary/[0.03] disabled:opacity-60',
-      )}
+      disabled={busy}
+      aria-label={`Add ${app.name} profile`}
+      className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] flex items-center gap-3 rounded-md border p-3 text-left transition-colors disabled:opacity-60"
     >
       {app.imgSrc ? (
         <Image
@@ -595,9 +618,7 @@ function ToolTile({
       </span>
       <span className="shrink-0">
         {pending ? (
-          <Loading className="text-muted-foreground size-4" />
-        ) : connected ? (
-          <Check className="size-4 text-emerald-600" />
+          <Loading className="size-4 shrink-0" />
         ) : (
           <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 transition-colors" />
         )}
@@ -662,7 +683,7 @@ function SlackStep({ projectId }: { projectId: string }) {
           {waiting ? (
             <div className="flex flex-col items-center gap-2">
               <div className="text-foreground flex items-center gap-2 text-sm font-medium">
-                <Loading className="size-4" />
+                <Loading className="size-4 shrink-0" />
                 Waiting for you to approve in Slack…
               </div>
               <p className="text-muted-foreground max-w-sm text-xs leading-5">
@@ -739,7 +760,7 @@ function SlackGlyph() {
 // ─── Step 4: Connect a model ────────────────────────────────────────────────────
 
 function ModelStep() {
-  const { data: providers, isLoading } = useOpenCodeProviders();
+  const { data: providers, isLoading } = useRuntimeProviders();
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
     useModelConnectionGate(flattenModels(providers));
 
@@ -759,7 +780,7 @@ function ModelStep() {
 
       {isLoading ? (
         <div className="border-border/60 bg-card text-muted-foreground flex items-center justify-center gap-2 rounded-2xl border px-6 py-10 text-sm">
-          <Loading className="size-4" />
+          <Loading className="size-4 shrink-0" />
           Checking your connected models…
         </div>
       ) : hasSelectableModels ? (
@@ -799,11 +820,11 @@ function ModelStep() {
 
 // ─── Step 5: Done ──────────────────────────────────────────────────────────────
 
-function DoneStep({ connectedCount, onStart }: { connectedCount: number; onStart: () => void }) {
+function DoneStep({ profileCount, onStart }: { profileCount: number; onStart: () => void }) {
   return (
     <div className="flex flex-col items-start gap-6">
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-        <Check className="size-7 text-emerald-600" />
+      <div className="bg-kortix-green/10 flex size-14 items-center justify-center rounded-2xl">
+        <Check className="text-kortix-green size-7" />
       </div>
       <div className="space-y-2.5">
         <h1 className="text-foreground text-[26px] leading-tight font-semibold tracking-tight">
@@ -811,8 +832,8 @@ function DoneStep({ connectedCount, onStart }: { connectedCount: number; onStart
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
           Your command center is ready
-          {connectedCount > 0
-            ? ` with ${connectedCount} ${connectedCount === 1 ? 'tool' : 'tools'} connected`
+          {profileCount > 0
+            ? ` with ${profileCount} ${profileCount === 1 ? 'tool profile' : 'tool profiles'} configured`
             : ''}
           . Describe a task in the composer and your agent gets to work — it can research, write,
           and act across everything you&apos;ve connected.

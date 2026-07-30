@@ -1,7 +1,8 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
 
 export function BootScreen({
   stage,
@@ -31,7 +32,7 @@ export function BootScreen({
         </div>
       ) : (
         <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {label}
+          <Loading className="size-4" /> {label}
         </div>
       )}
     </div>

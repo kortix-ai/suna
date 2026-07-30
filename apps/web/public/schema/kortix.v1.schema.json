@@ -202,15 +202,29 @@
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "sessionMode": {
             "type": "string",
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
           },
           "session_id": {
@@ -345,6 +359,10 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -388,10 +406,18 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "voice"
             ]
           },
           "credential": {},
+          "authorization_strategy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "user"
+            ],
+            "default": "project"
+          },
           "agent_scope": {},
           "auth": {
             "type": "object",
@@ -405,13 +431,30 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "api_key",
                   "oauth1",
+                  "hmac",
+                  "aws_sigv4",
+                  "mtls",
                   "none"
                 ]
               },
               "secret": false
             },
             "additionalProperties": true
+          },
+          "headers": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[^\\r\\n]*$"
+            }
           },
           "policies": {
             "type": "array",
@@ -492,7 +535,7 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_meet"
+                  "const": "kortix_voice"
                 }
               }
             },

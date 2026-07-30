@@ -51,12 +51,12 @@ export default function Layout({ children }: { children: ReactNode }) {
         }}
         links={[
           {
-            text: 'Home',
-            url: '/',
-          },
-          {
-            text: 'Changelog',
-            url: '/changelog',
+            type: 'icon',
+            text: 'Get started',
+            label: 'Get started',
+            icon: <Icon.Sparkles />,
+            url: '/auth',
+            external: false,
           },
           {
             type: 'icon',

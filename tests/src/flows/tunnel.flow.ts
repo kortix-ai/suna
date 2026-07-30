@@ -104,6 +104,7 @@ flow(
   },
   async (ctx) => {
     let tunnelId = "";
+    let permissionId = "";
 
     await ctx.step("create a tunnel to attach permissions to", async () => {
       const r = await ctx.client
@@ -125,6 +126,7 @@ flow(
         .as(ctx.P.OWNER)
         .post("/v1/tunnel/permissions/:tunnelId", { capability: "shell" }, { params: { tunnelId } });
       r.status(201).body().exists("$.permissionId");
+      permissionId = r.json<any>().permissionId;
       ctx.track("tunnelPermission", r.json<any>().permissionId, { tunnelId });
     });
 
@@ -161,6 +163,13 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/tunnel/permissions/:tunnelId", { capability: "shell" }, { params: { tunnelId } });
       r.status(401);
+    });
+
+    await ctx.step("revoke the granted permission → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/tunnel/permissions/:tunnelId/:permissionId", { params: { tunnelId, permissionId } });
+      r.status(200).body().has("$.success", true);
     });
   },
 );

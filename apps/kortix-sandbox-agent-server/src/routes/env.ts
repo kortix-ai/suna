@@ -14,6 +14,10 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
   // a toggle to GATEWAY restores the strip on the next opencode restart.
   'KORTIX_OPENCODE_DENY_ENV',
+  // The session's model. opencode reads this when it builds its config at spawn
+  // (opencode.ts), so accepting it here + restarting is what makes a mid-session
+  // model change take effect on a box that is already up.
+  'KORTIX_OPENCODE_MODEL',
 ])
 
 function bearerToken(header: string | undefined): string | null {

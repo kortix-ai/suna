@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -18,12 +19,7 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import {
-  getActivePanelSessionId,
-  sessionPreviewTabId,
-  useSessionBrowserStore,
-} from '@/stores/session-browser-store';
+import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
@@ -142,8 +138,15 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
           path: parsed.path,
         }),
       });
-      useSessionBrowserStore.getState().setView(sid, 'browser');
-      useKortixComputerStore.getState().setIsSidePanelOpen(true);
+      // Route through the shared, mode-aware entry point rather than writing
+      // `viewBySession` directly: that key is read only by Advanced mode, so
+      // in Easy — the only mode that ships — this opened the panel on the Easy
+      // home and dropped the page entirely. The target carries WHICH page, so
+      // the browser lands on this preview instead of the first running app.
+      openSessionQuickView('browser', 'preview', {
+        url: proxy.proxyUrl,
+        title: label || 'App preview',
+      });
       return;
     }
 

@@ -1,0 +1,562 @@
+# `kortix.yaml` — in-depth reference
+
+`kortix.yaml` is the single source of truth for everything the
+Kortix platform reads about a project. It lives at the repo root.
+Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
+`kortix.toml`) at the root is a Kortix project.
+
+The platform parser is permissive: it never throws on a bad entry.
+Instead, bad triggers go into an `errors` list returned alongside the
+good ones, so a single typo doesn't break the whole file.
+
+This page documents the current YAML schemas:
+
+- `kortix_version: 2` uses one OpenCode runtime.
+- `kortix_version: 3` uses ACP runtime profiles and supports OpenCode, Claude
+  Code, Codex, and Pi.
+
+Both versions use a governance-only `agents:` name-to-block map. Version 3
+adds the required `runtimes:` map and requires each logical agent to reference
+one runtime profile through `runtime`.
+
+The authoritative structural spec is the public JSON Schema:
+`https://kortix.com/schema/kortix.v3.schema.json`,
+`https://kortix.com/schema/kortix.v2.schema.json`, or
+`https://kortix.com/schema/kortix.schema.json` for all published versions.
+Use `kortix schema --version 3` offline.
+
+> **Legacy note — v1 used TOML.** Projects created before v2 shipped
+> may still have a `kortix.toml` at the root with `kortix_version: 1`
+> (or no `kortix_version` at all). The platform resolves the manifest
+> by trying `kortix.yaml`, then `kortix.yml`, then falling back to
+> `kortix.toml` — so a v1 TOML project keeps working as-is; nothing
+> breaks. To move a project onto v2, rename `kortix.toml` to
+> `kortix.yaml`, convert its contents to YAML, bump `kortix_version` to
+> `2`, add the now-required `default_agent`, and rework any `[[agents]]`
+> array into the `agents:` map described below (or run `kortix migrate`
+> once available). `kortix_version: 2` manifests must be YAML — TOML
+> only supports `kortix_version: 1`.
+
+## Version 2 example
+
+```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+
+default_agent: kortix
+
+project:
+  name: my-project
+  description: What this project is.
+
+# Env vars the runtime needs. `required` is *advisory* — surfaced in
+# the dashboard so the user knows what to set, but not enforced at
+# session start.
+env:
+  required:
+    - DATABASE_URL
+  optional:
+    - STRIPE_API_KEY
+    - WEBHOOK_SLACK_SECRET
+
+# Named sandbox environments. Each template uses one image or Dockerfile.
+sandbox:
+  default: ml
+  templates:
+    - slug: ml
+      name: ML
+      dockerfile: .kortix/Dockerfile
+
+# OpenCode runtime config dir. Defaults to ".kortix/opencode" when
+# omitted. The agent daemon launches opencode with
+# OPENCODE_CONFIG_DIR pointed here. OpenCode-native runtime config
+# remains in this directory; Kortix-side launchability and grants live
+# in the `agents:` map below.
+opencode:
+  config_dir: .kortix/opencode
+
+# ─── Triggers ─────────────────────────────────────────────────────
+# Each `triggers:` entry spawns a fresh session that runs `prompt`
+# as its initial message. Slugs must be lowercase URL-safe and
+# unique among triggers.
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    agent: kortix
+    enabled: true
+    cron: "0 0 9 * * 1-5"            # 09:00 Mon–Fri
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize yesterday's commits across the repo. Save the result to
+      notes/digest-{{ fired_at }}.md and open a CR against main.
+
+  - slug: slack-hook
+    name: Slack handler
+    type: webhook
+    agent: kortix
+    enabled: true
+    secret_env: WEBHOOK_SLACK_SECRET   # add value via Secrets Manager
+    prompt: |
+      Slack event from {{ headers.user_agent }}.
+      User said: {{ body.text }}
+
+# ─── Agents (governance only) ─────────────────────────────────────
+agents:
+  kortix:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  release-bot:
+    sandbox: ml
+    connectors: [github]
+    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
+```
+
+## Version 3 multi-harness example
+
+Enable the project experiment `acp_runtime`, shown as **ACP &
+Multi-Harness**, before starting a v3 session.
+
+```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+kortix_version: 3
+default_agent: opencode
+
+project:
+  name: my-project
+  description: OpenCode, Claude Code, Codex, and Pi.
+
+env:
+  optional:
+    - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
+    - CODEX_API_KEY
+
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+    config_dir: .codex
+  pi:
+    harness: pi
+    config_dir: .pi
+
+agents:
+  opencode:
+    runtime: opencode
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+  claude:
+    runtime: claude
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+  codex:
+    runtime: codex
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+  pi:
+    runtime: pi
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+```
+
+### `runtimes:` in version 3
+
+`runtimes` is required and must contain at least one named runtime profile.
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `harness` | yes | `opencode`, `claude`, `codex`, or `pi`. |
+| `config_dir` | no | Repo-relative native config directory. Defaults by harness. |
+
+The default config directories are `.kortix/opencode`, `.claude`, `.codex`,
+and `.pi`.
+
+### `agents:` in version 3
+
+Every logical agent must select a declared runtime profile.
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `runtime` | yes | Name of one profile under `runtimes`. |
+| `agent` | no | Harness-native agent identifier. Omit for the harness default. |
+| `enabled` | no | Defaults to `true`. |
+| `connectors` | no | Kortix connector grant. Defaults to `none`. |
+| `secrets` | no | Runtime-secret grant. Defaults to `none`. |
+| `skills` | no | Skill grant. Defaults to `none`. |
+| `kortix_cli` | no | Kortix CLI/API grant. Defaults to `none`. |
+| `workspace` | no | `runtime`, `read`, or `branch`. |
+
+Kortix freezes the selected runtime profile when the session starts. A
+manifest edit or in-place restart does not change an existing session's
+harness. Start a new session to use another profile.
+
+Harness behavior stays in `config_dir`. Version 3 rejects OpenCode behavior
+fields such as `model`, `mode`, `temperature`, and `permission` in a logical
+agent block.
+
+## `agents:` in version 2
+
+Per-agent **governance overlay**. OpenCode-native behavior (prompt, mode,
+model, tools, permissions, skills selection logic) stays in
+`.kortix/opencode/` and `opencode.jsonc`; the manifest's `agents:` map
+declares which agents Kortix should treat as platform-launchable and
+what server-side authority each one receives. Keyed by the agent's name
+(matches its `.kortix/opencode/agents/<name>.md`).
+
+`agents:` is **required** in v2 and is **deny-by-default**: an omitted
+`connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent
+resolves to `none`, not `all`. `default_agent` is also required and
+must name a declared, enabled agent.
+
+| Key          | Notes                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
+| `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
+| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).   |
+| `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
+| `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
+| `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
+| `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
+
+```yaml
+agents:
+  release-bot:
+    sandbox: ml
+    connectors: [github]
+    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
+```
+
+**Grantable `kortix_cli` actions** (project-scoped only — account-level admin
+actions can never be granted to an agent; run `kortix validate --scopes`):
+`project.read|write|delete`, `project.cr.open|merge`,
+`project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
+`project.trigger.read|create|update|delete|fire`,
+`project.connector.read|write|profiles.manage`
+(channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
+
+**Resolution at session start:** every agent must be declared under
+`agents:`; an undeclared or disabled agent cannot be launched by the
+platform. `default_agent` must resolve to a declared, enabled agent —
+give it `connectors: all`, `secrets: all`, `kortix_cli: all`,
+`skills: all` explicitly if it should keep full access. The grant is
+always intersected with the launching user's role (agent ≤ user) and
+takes effect only once a CR is merged (read from the default branch).
+
+**Discovery direction:** declaring `agents:` is server-side, declarative
+agent discovery — it is not a rule that every native OpenCode agent file
+must be registered. Unregistered files can exist for local experiments
+or runtime internals. Kortix product UI (chat input, triggers, channels)
+fetches the server-side registered agent list rather than querying
+sandbox OpenCode directly. Model pickers similarly come from the
+server/LLM-gateway catalog rather than a sandbox-local provider list.
+
+## Schema versioning
+
+`kortix_version` is the schema version. Versions 2 and 3 are YAML-only.
+Version 2 requires `default_agent` and `agents`. Version 3 also requires
+`runtimes` and `agents.<name>.runtime`.
+
+A manifest declaring a version higher than
+the platform knows about is rejected outright — the platform won't
+silently misread future fields.
+
+When the platform writes the manifest back (after a dashboard edit),
+it ensures `kortix_version` is the first key, so the file is
+self-describing at a glance.
+
+## What's parsed where
+
+| Surface                | What it reads                                                       |
+| ---------------------- | ------------------------------------------------------------------- |
+| Trigger sweep          | `triggers:`                                                          |
+| Sandbox builder        | `sandbox:`                                                           |
+| Sandbox runtime        | v2 `opencode:` or v3 `runtimes:` and `agents.<name>.runtime`          |
+| Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
+| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
+| Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
+| Dashboard UI           | All of the above + `project:` + the raw manifest                     |
+
+Unknown top-level keys are ignored — safe to add your own metadata,
+but the platform won't react to it.
+
+## `project:`
+
+Project metadata for the dashboard.
+
+| Key           | Required | Notes                                |
+| ------------- | -------- | ------------------------------------ |
+| `name`        | yes      | Display name. Shown in the UI.       |
+| `description` | no       | One-liner shown beside the name.     |
+
+## `env:`
+
+Declares the env vars your sessions need. The values themselves live
+in the **Kortix Secrets Manager** — never inline.
+
+| Key         | Type        | Notes                                                                                    |
+| ----------- | ----------- | ---------------------------------------------------------------------------------------- |
+| `required`  | `string[]`  | Advisory list — surfaced in the dashboard. Not enforced at session-start today.          |
+| `optional`  | `string[]`  | Available to sessions if set; absence is fine.                                           |
+
+**Heads-up on enforcement:** the dashboard uses `required` to nag
+the user about secrets to set, but the session bootstrap doesn't
+currently block on missing values. Treat `required` as a contract
+with the user, not the platform.
+
+**Name validation in the manifest** is permissive: items must match
+`^[A-Z_][A-Z0-9_]*$` (no length cap). The Secrets Manager API
+itself caps secret names at 64 chars (`^[A-Z_][A-Z0-9_]{0,63}$`) —
+so a long name in the manifest will be accepted, but the user can't
+actually create the matching secret. Keep names ≤ 64 chars.
+
+**`KORTIX_*` is only reserved at the Secrets Manager surface**, not
+at manifest parse time. The dashboard rejects creating secrets with
+that prefix, but you can list `KORTIX_FOO` in `env:` without an
+error from the parser. Don't — it'll just never have a value.
+
+## `sandbox:`
+
+Sandbox templates and the project default. The whole section is optional.
+Omission selects the platform `default` template.
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `default` | `default` | Declared template slug or reserved platform `default`. |
+| `templates` | `[]` | Named image or Dockerfile templates. |
+
+### `sandbox.templates`
+
+Optional named alternate sandbox images/Dockerfiles a trigger or
+session can select instead of the project default.
+
+```yaml
+sandbox:
+  templates:
+    - slug: gpu-worker
+      name: GPU worker
+      dockerfile: .kortix/Dockerfile.gpu
+      cpu: 4
+      memory: 16
+    - slug: browser-test
+      name: Browser testing
+      image: mcr.microsoft.com/playwright:v1.45.0
+```
+
+Each entry needs exactly one of `image` or `dockerfile`, never both.
+`slug` may not be `"default"` (that's reserved for the top-level
+`sandbox:` config).
+
+Session template precedence is explicit `sandbox_slug`, agent `sandbox`,
+project `sandbox.default`, then platform `default`. Triggers, schedules, and
+channels use the target agent's template.
+
+## `opencode:` in version 2
+
+Where the OpenCode runtime config lives. **Optional**, with a default.
+
+| Key          | Default              | Notes                                                                            |
+| ------------ | --------------------- | -------------------------------------------------------------------------------- |
+| `config_dir` | `.kortix/opencode`   | Repo-relative dir. Same silent-fallback behavior as `sandbox:` paths.            |
+
+The agent daemon launches `opencode serve` with
+`OPENCODE_CONFIG_DIR=<config_dir>`, so everything under that folder
+becomes the OpenCode runtime: agents, skills, commands, tools, plugins,
+`opencode.jsonc`.
+
+`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
+Kortix-side decision of which agents are launchable/authorized by the platform.
+
+## `triggers:`
+
+A list. Each entry is a trigger that spawns a fresh session
+on fire. Triggers are sorted alphabetically by slug in the parsed
+output — UI ordering is stable, not authoring-order.
+
+### Common fields
+
+| Field        | Required | Type    | Default     | Notes                                                          |
+| ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
+| `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
+| `type`       | yes      | string  | —           | `"cron"` or `"webhook"`.                                       |
+| `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
+| `name`       | no       | string  | `slug`      | Human label.                                                   |
+| `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
+| `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire, no prior history) or `"reuse"` (re-prompts the same long-lived session, resuming its sandbox and accumulated context). See `<scheduling>` in this skill's SKILL.md for when to pick each. |
+
+The parser accepts only the canonical trigger field names shown here.
+
+**Slug uniqueness is per-section.** A trigger and an app may share
+a slug; two triggers may not.
+
+### Cron-only fields
+
+| Field      | Required | Type    | Default | Notes                                                       |
+| ---------- | -------- | ------- | ------- | ----------------------------------------------------------- |
+| `cron`     | yes      | string  | —       | 6-field croner expression: `second minute hour day month weekday`. |
+| `timezone` | no       | string  | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`.                    |
+
+The platform polls every 60 s by default
+(`KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`), so sub-minute precision is
+best-effort.
+
+### Webhook-only fields
+
+| Field        | Required | Type    | Notes                                                                                  |
+| ------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `secret_env` | yes      | string  | Name of a `project_secrets` entry holding the HMAC secret. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
+
+Webhooks fire on signed POSTs to:
+
+```
+POST /v1/webhooks/projects/<project_id>/<slug>
+```
+
+#### Signature
+
+- Primary header: `X-Kortix-Signature: sha256=<hmac>`. The `sha256=`
+  prefix is optional — the receiver strips it if present.
+- GitHub-compatible: `X-Hub-Signature-256` is also accepted, so
+  GitHub webhooks point straight at this URL with no adapter.
+- Algorithm: HMAC-SHA256 over the **raw** request body using the
+  secret named by `secret_env`.
+- Format: exactly 64 hex chars (mixed case accepted).
+- Compared with constant-time `timingSafeEqual`.
+
+#### Response codes
+
+| Status | Meaning                                                  |
+| ------ | -------------------------------------------------------- |
+| 200    | Signature valid, session queued.                          |
+| 401    | Signature missing or mismatched.                          |
+| 404    | Trigger not found, disabled, or not a webhook.           |
+| 409    | `secret_env` value is not configured in Secrets Manager. |
+
+### Prompt template variables
+
+The `prompt` field is rendered with a small mustache-style engine:
+`{{ token.dotted.path }}`. Missing values render as empty strings —
+no error, no `{{ x }}` left in the output. Objects/arrays render as
+JSON.
+
+Variables available on every fire:
+
+| Variable             | Source                                                         |
+| -------------------- | -------------------------------------------------------------- |
+| `{{ fired_at }}`     | ISO-8601 timestamp of this fire.                               |
+| `{{ trigger.slug }}` | The trigger's slug.                                            |
+| `{{ trigger.type }}` | `"cron"` or `"webhook"`.                                       |
+| `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
+
+Cron-only additions:
+
+| Variable                | Source                                  |
+| ----------------------- | ---------------------------------------- |
+| `{{ cron.schedule }}`   | The croner expression that just fired.  |
+| `{{ cron.timezone }}`   | Configured tz (defaults to `"UTC"`).    |
+| `{{ cron.fired_at }}`   | Same as top-level `fired_at`.           |
+| `{{ cron.last_fired_at }}` | Previous fire timestamp (or empty).  |
+| `{{ last_fired_at }}`   | Same as `cron.last_fired_at`.           |
+
+Webhook-only additions:
+
+| Variable          | Source                                                          |
+| ----------------- | ----------------------------------------------------------------- |
+| `{{ body.* }}`    | JSON-parsed request body. Dotted access works.                  |
+| `{{ headers.* }}` | `content_type`, `user_agent`, `forwarded_for`.                  |
+
+### Runtime state
+
+Manifest is the source of truth for **config**. The
+`project_trigger_runtime` table is the source of truth for **state**
+(`last_fired_at`, `event_count`). Writing to the repo on every fire
+would amplify the scheduler tick into a flood of git commits.
+If you need to know when a trigger last fired, check the dashboard,
+not the repo.
+
+### Project-wide kill switch
+
+There is no "paused" state for a single trigger — only `enabled`
+on/off, or removing the entry entirely. Separately, the **project**
+has a server-side kill-switch, `triggers_paused`, toggled from the
+dashboard: when set, the sweep skips *every* trigger on the project
+and inbound webhooks are ignored, regardless of each trigger's own
+`enabled`. Use it when the same repo is deployed to two environments
+and only one should actually fire.
+
+### Common gotchas
+
+- `triggers:` must be a **list** (`- slug: …`), not a map — the parser
+  surfaces a clear error otherwise.
+- Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
+- A webhook trigger without `secret_env` is rejected.
+- A cron trigger without a `cron` expression is rejected.
+- Bad entries surface in `errors` next to the good ones — they don't
+  break the whole file.
+
+## Secrets
+
+Per-project, encrypted at rest. The platform uses **AES-256-GCM** with
+**HKDF-derived per-project keys** rooted in the platform's
+`API_KEY_SECRET`. Stored in the `project_secrets` table; **never
+inline in the repo**.
+
+### Flow
+
+1. Declare the secret name under `env:`:
+   ```yaml
+   env:
+     required:
+       - DATABASE_URL
+     optional:
+       - STRIPE_API_KEY
+       - WEBHOOK_SLACK_SECRET
+   ```
+2. Set the value in the Kortix Secrets Manager (dashboard).
+3. When a session boots, the platform decrypts every secret on the
+   project and injects them as plain env vars into the sandbox.
+4. Your agent code reads them like any other env var.
+
+### Rules
+
+- Names in the Secrets Manager match `^[A-Z_][A-Z0-9_]{0,63}$`.
+- `KORTIX_*` is reserved **at the Secrets Manager surface** — the
+  CRUD endpoint rejects it. The manifest parser does not enforce
+  this; declaring `KORTIX_FOO` in `env:` is accepted but no matching
+  secret can be created.
+- Webhook triggers reference signing secrets by env-var name only
+  (`secret_env: WEBHOOK_FOO_SECRET`). The value is resolved at
+  fire-time — the manifest never sees the plaintext.
+- Mid-session rotation: secrets come in at sandbox-create time.
+  Rotating a key in the dashboard takes effect on the **next**
+  session.
+
+## Editing the manifest
+
+The manifest round-trips through the dashboard. When editing in a
+session, keep entries in the same shape the platform writes them
+back in (slug, name, type, agent, enabled, then type-specific fields,
+then `prompt` last). This avoids needless diffs when the user later
+edits the same trigger from the UI.
+
+If you add a new trigger and don't yet have a value for `secret_env`,
+declare it in `env.optional` so it shows up in the Secrets Manager,
+and leave the trigger `enabled: false` until the user sets the value.

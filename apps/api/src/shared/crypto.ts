@@ -156,7 +156,9 @@ function legacyHashSecretKey(secretKey: string): string {
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  return createHmac('sha256', secret)
+  // This deterministic lookup digest covers generated 190-bit API keys.
+  // Existing rows require the legacy digest during migration.
+  return createHmac('sha256', secret) // lgtm[js/insufficient-password-hash]
     .update(secretKey)
     .digest('hex');
 }

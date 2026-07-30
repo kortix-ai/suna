@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
 
 const SIZE_MAP = {
+  '2xs': { avatar: 'size-4', icon: 'size-2.5' },
   xs: { avatar: 'size-5', icon: 'size-3' },
   sm: { avatar: 'size-6', icon: 'size-3.5' },
   md: { avatar: 'size-8', icon: 'size-4' },

@@ -1,11 +1,46 @@
-// Post-auth landing goes to the projects list.
-const DEFAULT_AUTH_RETURN_URL = '/projects';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+
+// Post-auth landing goes to a project, never to the projects list. The landing
+// door paints immediately and resolves (or provisions) the project behind the
+// UI, so no auth path has to block on the backend to build this redirect.
+const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',
   '/sessions',
   '/subscription',
 ] as const;
+
+/**
+ * Return paths that still mean something to an account created seconds ago.
+ *
+ * Two kinds qualify:
+ *  - *join / authorize* flows — the signup happened FOR this destination (an
+ *    invite, a CLI pairing code, an OAuth consent screen). Dropping these
+ *    strands the very flow that sent the user to sign up.
+ *  - *public* pages — nothing behind them is account-scoped, so a brand-new
+ *    identity renders them exactly like an old one. These are the marketplace
+ *    and use-case CTAs that started the signup in the first place.
+ *
+ * Everything else is account-scoped, and a brand-new account cannot own a
+ * resource that existed before it did. See `resolveNewAccountReturnUrl`.
+ */
+const SIGNUP_SAFE_RETURN_PREFIXES = [
+  '/invites',
+  '/oauth/authorize',
+  '/cli/authorize',
+  '/tunnel/authorize',
+  '/slack/login',
+  '/teams/login',
+  '/github/setup',
+  '/marketplace',
+  '/use-cases',
+] as const;
+
+/** Prefix match on path segment boundaries, so `/marketplace` never matches `/marketplace-evil`. */
+function matchesReturnPrefix(value: string, prefix: string): boolean {
+  return value === prefix || value.startsWith(`${prefix}/`) || value.startsWith(`${prefix}?`);
+}
 
 export function sanitizeAuthReturnUrl(
   value?: string | null,
@@ -32,20 +67,73 @@ export function sanitizeAuthReturnUrl(
     return fallback;
   }
 
+  // Canonicalize BEFORE any prefix check, and return the canonical form.
+  //
+  // Every consumer eventually rebuilds this path through `new URL()` — the
+  // password flow to attach auth_event, the callback to prepend the origin —
+  // and that collapses dot segments. So a prefix test against the raw string
+  // is testing a path the browser will never visit:
+  // `/marketplace/../projects/<id>` passes a `/marketplace` check and then
+  // lands on `/projects/<id>`, which is exactly the foreign-project bug the
+  // signup rule below exists to prevent (and would equally slip a
+  // `/x/../dashboard` past LEGACY_AUTH_RETURN_PREFIXES). Normalizing here
+  // means every downstream rule sees the path that will actually be opened.
+  let normalizedValue: string;
   try {
     const resolved = new URL(trimmedValue, 'https://kortix.local');
     if (resolved.origin !== 'https://kortix.local') return fallback;
+    normalizedValue = `${resolved.pathname}${resolved.search}${resolved.hash}`;
   } catch {
     return fallback;
   }
 
-  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => {
-    return trimmedValue === prefix || trimmedValue.startsWith(`${prefix}/`) || trimmedValue.startsWith(`${prefix}?`);
-  })) {
+  // Middleware preserves an unauthenticated request as the post-auth return
+  // path. A request for the bare list must still enter through the landing
+  // door. Otherwise a new account renders /projects while its first project is
+  // being provisioned.
+  if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
+
+  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
     return fallback;
   }
 
-  return trimmedValue;
+  return normalizedValue;
+}
+
+/**
+ * True when an (already-sanitized) return URL is one a brand-new account can
+ * actually act on.
+ */
+export function isSignupSafeReturnUrl(returnUrl: string | null | undefined): boolean {
+  if (typeof returnUrl !== 'string' || returnUrl.length === 0) return false;
+  if (matchesReturnPrefix(returnUrl, PROJECT_LANDING_PATH)) return true;
+  return SIGNUP_SAFE_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(returnUrl, prefix));
+}
+
+/**
+ * The post-auth destination for an account that has just been created.
+ *
+ * Middleware turns any unauthenticated request into `?redirect=<path>`, so the
+ * return URL is whatever the visitor happened to have open — very often a link
+ * to somebody else's project. Replaying that after a SIGNUP drops a
+ * seconds-old account on "Request access to this project": the one page it can
+ * never act on, because the account did not exist when that project was
+ * created and no amount of waiting changes that. The first thing a new user
+ * sees is a locked door belonging to a stranger.
+ *
+ * So a signup keeps its return URL only when the URL is signup-safe, and
+ * otherwise enters through the landing door into its own first project.
+ *
+ * This is an allowlist on purpose. An account-scoped route added later fails
+ * safe — the new user lands in their own project — instead of silently reviving
+ * this bug, which is exactly what a denylist would do.
+ */
+export function resolveNewAccountReturnUrl(
+  returnUrl: string | null | undefined,
+  fallback = DEFAULT_AUTH_RETURN_URL,
+): string {
+  const sanitized = sanitizeAuthReturnUrl(returnUrl, fallback);
+  return isSignupSafeReturnUrl(sanitized) ? sanitized : fallback;
 }
 
 /**

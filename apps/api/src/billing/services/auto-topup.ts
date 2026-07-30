@@ -9,6 +9,12 @@ import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
+import {
+  type PaymentMethodResolution,
+  paymentMethodIdOf,
+  resolveUsablePaymentMethod,
+} from './auto-topup-payment-method';
+import { isDeadSubscriptionStatus } from './billing-state';
 import { grantCredits } from './credits';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
@@ -27,6 +33,9 @@ const AUTO_TOPUP_MIN_BUFFER = 1;
 
 /** After this many consecutive failures the auto-topup is disabled; user must re-enable. */
 const AUTO_TOPUP_MAX_CONSECUTIVE_FAILURES = 3;
+
+/** `auto_topup_disabled_reason` written when no chargeable payment method exists. */
+export const NO_PAYMENT_METHOD_REASON = 'no_payment_method';
 
 /** Backoff between failed charge attempts. Index = failure count - 1. */
 const FAILURE_BACKOFF_MS = [5 * 60_000, 30 * 60_000];
@@ -93,7 +102,7 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   if (cfg.enabled) {
     const paymentMethodId = await getUsableAutoTopupPaymentMethodId(accountId);
     if (!paymentMethodId) {
-      throw new BillingError('No default payment method found. Please set up a default card in Billing before enabling auto-topup.');
+      throw new BillingError('No saved payment method found. Add one in Billing before enabling auto top-up.');
     }
   }
 
@@ -125,8 +134,11 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   return { success: true };
 }
 
-export async function getAutoTopupSettings(accountId: string) {
-  const account = await getCreditAccount(accountId);
+export async function getAutoTopupSettings(
+  accountId: string,
+  prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
+) {
+  const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
   if (!account) return { enabled: true, threshold: AUTO_TOPUP_DEFAULT_THRESHOLD, amount: AUTO_TOPUP_DEFAULT_AMOUNT };
 
   return {
@@ -139,8 +151,14 @@ export async function getAutoTopupSettings(accountId: string) {
 export async function getAutoTopupSetupStatus(accountId: string) {
   const paymentStatus = await getAutoTopupPaymentStatus(accountId);
   return {
+    // `has_payment_method` is the field that decides whether auto-topup can be
+    // enabled — a method is chargeable whether or not it is anyone's declared
+    // "default". `has_default_payment_method` is informational only; gating the
+    // UI on it told Link customers with a working, already-charged method that
+    // they had none.
     has_payment_method: paymentStatus.hasAnyPaymentMethod,
     has_default_payment_method: paymentStatus.hasDefaultPaymentMethod,
+    payment_method_source: paymentStatus.source,
   };
 }
 
@@ -207,7 +225,15 @@ async function tryAutoTopup(accountId: string): Promise<void> {
 
   const paymentMethodId = await getUsableAutoTopupPaymentMethodId(accountId);
   if (!paymentMethodId) {
-    console.warn(`[AutoTopup] No saved payment method for ${accountId}; auto-topup skipped`);
+    // This used to `return` after a bare console.warn, leaving
+    // auto_topup_last_charged NULL and auto_topup_consecutive_failures at 0 —
+    // indistinguishable from "auto-topup never needed to fire". An account
+    // could sit at $0 for weeks with auto-topup ENABLED and nothing in the data
+    // said it had been trying and failing. Record it as a soft failure so it is
+    // visible, backs off instead of re-hitting Stripe on every deduction, and
+    // eventually disables itself with an explicit reason.
+    console.warn(`[AutoTopup] No usable payment method for ${accountId}; recording skip`);
+    await handleFailedCharge(accountId, previousFailures, NO_PAYMENT_METHOD_REASON, false);
     return;
   }
 
@@ -314,53 +340,53 @@ async function getUsableAutoTopupPaymentMethodId(accountId: string): Promise<str
   return status.usablePaymentMethodId;
 }
 
-async function getAutoTopupPaymentStatus(accountId: string): Promise<{
-  hasAnyPaymentMethod: boolean;
-  hasDefaultPaymentMethod: boolean;
-  usablePaymentMethodId: string | null;
-}> {
+async function getAutoTopupPaymentStatus(accountId: string): Promise<PaymentMethodResolution> {
   const customer = await getCustomerByAccountId(accountId);
   if (!customer) {
-    return {
-      hasAnyPaymentMethod: false,
-      hasDefaultPaymentMethod: false,
-      usablePaymentMethodId: null,
-    };
+    return resolveUsablePaymentMethod({});
   }
 
   const stripe = getStripe();
 
   try {
-    let defaultPaymentMethodId: string | null = null;
-    const stripeCustomer = await stripe.customers.retrieve(customer.id);
+    let customerDefaultPaymentMethodId: string | null = null;
+    let subscriptionDefaultPaymentMethodId: string | null = null;
+
+    const stripeCustomer = await stripe.customers.retrieve(customer.id, {
+      expand: ['subscriptions'],
+    });
     if (!('deleted' in stripeCustomer) || !stripeCustomer.deleted) {
-      const defaultPm = stripeCustomer.invoice_settings?.default_payment_method;
-      if (typeof defaultPm === 'string') {
-        defaultPaymentMethodId = defaultPm;
-      } else if (defaultPm && typeof defaultPm === 'object' && 'id' in defaultPm) {
-        defaultPaymentMethodId = defaultPm.id;
+      customerDefaultPaymentMethodId = paymentMethodIdOf(
+        stripeCustomer.invoice_settings?.default_payment_method,
+      );
+      // Stripe Checkout attaches the method the customer actually paid with to
+      // the SUBSCRIPTION, and leaves the customer-level invoice default null.
+      // For a Link/SEPA checkout that subscription default is the only pointer
+      // to a working, already-charged payment method.
+      const subscriptions = (
+        stripeCustomer as { subscriptions?: { data?: Array<Record<string, unknown>> } }
+      ).subscriptions?.data;
+      for (const subscription of subscriptions ?? []) {
+        if (isDeadSubscriptionStatus(String(subscription.status ?? ''))) continue;
+        const id = paymentMethodIdOf(subscription.default_payment_method);
+        if (id) {
+          subscriptionDefaultPaymentMethodId = id;
+          break;
+        }
       }
     }
 
-    const methods = await stripe.paymentMethods.list({
-      customer: customer.id,
-      type: 'card',
-      limit: 1,
-    });
-    const firstCardId = methods.data[0]?.id ?? null;
-    const hasAnyPaymentMethod = Boolean(firstCardId || defaultPaymentMethodId);
+    // NO `type` filter. Filtering to `card` is exactly what made a Link customer
+    // look like they had no payment method at all.
+    const methods = await stripe.paymentMethods.list({ customer: customer.id, limit: 10 });
 
-    return {
-      hasAnyPaymentMethod,
-      hasDefaultPaymentMethod: Boolean(defaultPaymentMethodId),
-      usablePaymentMethodId: defaultPaymentMethodId ?? firstCardId,
-    };
+    return resolveUsablePaymentMethod({
+      customerDefaultPaymentMethodId,
+      subscriptionDefaultPaymentMethodId,
+      attachedPaymentMethodIds: methods.data.map((method) => method.id),
+    });
   } catch (err) {
     console.warn(`[AutoTopup] Could not resolve payment method for ${accountId}:`, err);
-    return {
-      hasAnyPaymentMethod: false,
-      hasDefaultPaymentMethod: false,
-      usablePaymentMethodId: null,
-    };
+    return resolveUsablePaymentMethod({});
   }
 }

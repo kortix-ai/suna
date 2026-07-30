@@ -1,5 +1,5 @@
 import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
@@ -18,15 +18,18 @@ import {
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
 import { C, help, status } from '../style.ts';
+import { appendGitExcludeEntries } from '../git-exclude.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
       return 'symlink .opencode → .kortix/opencode';
     case 'claude':
-      return 'symlink .claude → .kortix/opencode';
+      return 'link .claude skills, agents, and commands';
     case 'codex':
       return 'symlink .agents → .kortix/opencode + AGENTS.md';
+    case 'pi':
+      return 'link .pi/skills + AGENTS.md';
     case 'cursor':
       return 'AGENTS.md (read natively — no rule file)';
     default:
@@ -39,26 +42,31 @@ const HELP = help`Usage: kortix init [project-name] [options]
 Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
-full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
-Standalone by design: like create-next-app, init always spins up a new
-project in its own directory; it never touches an existing one.
+Kortix project floor, project memory, and a kortix.yaml to make it yours.
+By default this works like create-next-app and creates a new directory. In an
+already-cloned Kortix repository, pass --force to wire local coding agents in
+place without replacing repository files.
 
 Arguments:
   project-name         Your project's name — and the directory it's created
                        in. Prompted if omitted.
 
-Pick the coding agent(s) to wire up. The OpenCode config dir is symlinked into
-each agent's native location (.opencode / .claude; codex wires .agents) so its
-skills and agents are shared; Codex and Cursor also get a root AGENTS.md pointer
-they read natively.
+Pick the local coding tools to wire up. The starter's canonical skill source is
+linked into each native discovery location. Harness-native runtime files remain
+in .claude, .codex, and .pi.
+Codex, Pi, and Cursor also get a root AGENTS.md pointer.
+
+This local tool selection does not select the cloud session harness. Every
+new project includes OpenCode, Claude Code, Codex, and Pi runtime profiles.
+Select the logical agent when you create a cloud session.
 
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: general-knowledge-worker (default, full
-                       skill kit) or minimal (base plumbing only).
+  --force              Configure the current cloned Kortix repository in place.
+                       Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -187,6 +195,15 @@ function gitAvailable(): boolean {
   return spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
 }
 
+/** Keep post-clone agent wiring local so setup never dirties the user's repo. */
+function excludeLocalAgentWiring(repoRoot: string): void {
+  appendGitExcludeEntries(
+    repoRoot,
+    ['/.agents', '/.claude', '/.opencode', '/.pi', '/AGENTS.md'],
+    'Kortix local coding-agent wiring',
+  );
+}
+
 /** Layered: bright headline up top, dim supporting text below for the
  * reader who wants the deeper context, bold options at the bottom. */
 function printAgentPreamble(): void {
@@ -197,12 +214,11 @@ function printAgentPreamble(): void {
   const opts = SUPPORTED_AGENTS.map((a) => `${bold}${a}${reset}`).join(`  ${dim}·${reset}  `);
   const lines = [
     '',
-    `  Pick the coding agent(s) to wire into this Kortix project.`,
+    `  Pick the local coding tools to wire into this Kortix project.`,
     '',
-    `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
-    `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
-    `  ${dim}custom agents, or edit kortix.yaml for you.${reset}`,
-    `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
+    `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or runtime profiles.${reset}`,
+    `  ${dim}Cloud harness selection lives in kortix.yaml version 3.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -235,12 +251,15 @@ export async function runInit(argv: string[]): Promise<number> {
 
   printBanner();
 
+  const configureExisting = flags.force && !flags.name;
+
   // ── Resolve project name ─────────────────────────────────────────────
-  // `kortix init` ALWAYS creates a NEW standalone project in its own fresh
-  // directory (like `create-next-app`) — it never scaffolds into an existing
-  // folder. The project name IS the directory name.
+  // The default is a NEW standalone project. `--force` with no name is the
+  // documented post-clone setup path and operates on cwd in place.
   let projectName: string;
-  if (flags.name) {
+  if (configureExisting) {
+    projectName = normalizeProjectName(basename(process.cwd()));
+  } else if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
     process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
@@ -252,20 +271,40 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
-  const cwd = resolve(process.cwd(), projectName);
-  if (existsSync(cwd) && statSync(cwd).isDirectory() && readdirSync(cwd).length > 0) {
+  const cwd = configureExisting
+    ? resolve(process.cwd())
+    : resolve(process.cwd(), projectName);
+  if (
+    !configureExisting &&
+    existsSync(cwd) &&
+    statSync(cwd).isDirectory() &&
+    readdirSync(cwd).length > 0
+  ) {
     process.stderr.write(
       `kortix init: "${projectName}" already exists and isn't empty.\n` +
         `Pick a different name, or remove the directory first.\n`,
     );
     return 1;
   }
-  mkdirSync(cwd, { recursive: true });
+  if (!configureExisting) mkdirSync(cwd, { recursive: true });
+
+  if (configureExisting) {
+    const hasManifest =
+      existsSync(resolve(cwd, "kortix.yaml")) ||
+      existsSync(resolve(cwd, "kortix.toml"));
+    const hasRuntime = existsSync(resolve(cwd, ".kortix", "opencode"));
+    if (!hasManifest || !hasRuntime) {
+      process.stderr.write(
+        "kortix init --force: this directory is not a cloned Kortix project.\n" +
+          "Expected kortix.yaml (or kortix.toml) and .kortix/opencode.\n",
+      );
+      return 1;
+    }
+  }
 
   // ── Resolve starter template ────────────────────────────────────────
-  // There's one starter kit — every project scaffolds with the full Kortix
-  // skill kit. The `--template` flag stays as an advanced escape hatch (e.g.
-  // the internal base-only `minimal`), but we no longer prompt for a choice.
+  // One public starter exists. Keep parsing historical template values for
+  // scripts and API compatibility. Do not expose them as product choices.
   const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
   // ── Resolve coding agents (multi-select TUI) ─────────────────────────
@@ -274,10 +313,14 @@ export async function runInit(argv: string[]): Promise<number> {
   // TUI is toggle-order, so primary = chosen[0].
   let chosenAgents: CodingAgent[];
 
-  if (flags.primary || flags.agents || flags.yes) {
+  if (flags.primary || flags.agents || flags.yes || configureExisting) {
     // Headless / flag-driven path. Honor --primary + --agents.
     const primary = flags.primary ?? DEFAULT_PRIMARY;
-    const extras = (flags.agents ?? []).filter((a) => a !== primary);
+    const requestedAgents =
+      configureExisting && !flags.primary && !flags.agents
+        ? [...SUPPORTED_AGENTS]
+        : (flags.agents ?? []);
+    const extras = requestedAgents.filter((a) => a !== primary);
     chosenAgents = [primary, ...extras];
   } else {
     printAgentPreamble();
@@ -302,7 +345,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Detect existing .kortix/ ─────────────────────────────────────────
   const kortixExists = existsSync(resolve(cwd, '.kortix'));
-  if (kortixExists && !flags.overwrite && !flags.yes) {
+  if (kortixExists && !configureExisting && !flags.overwrite && !flags.yes) {
     const reuse = await confirm(
       `Detected an existing .kortix/ folder. Keep your files and only add what's missing?`,
       true,
@@ -314,7 +357,9 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Scaffold ─────────────────────────────────────────────────────────
-  const result = applyScaffold({
+  const result = configureExisting
+    ? { written: [] as string[], skipped: [] as string[] }
+    : applyScaffold({
     repoRoot: cwd,
     projectName,
     template,
@@ -322,13 +367,13 @@ export async function runInit(argv: string[]): Promise<number> {
   });
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
-  // Symlink the OpenCode config dir into each agent's native location
-  // (.opencode/.claude; codex wires .agents) + an AGENTS.md pointer for Codex & Cursor.
+  // Link the canonical skill source into each local tool's discovery path.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
-    overwrite: flags.overwrite,
+    overwrite: flags.overwrite || configureExisting,
   });
+  if (configureExisting) excludeLocalAgentWiring(cwd);
 
   // ── Optional `git init` ──────────────────────────────────────────────
   let gitNote = '';
@@ -343,7 +388,11 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Report ───────────────────────────────────────────────────────────
   const lines: string[] = [];
-  lines.push(`Initialized Kortix project "${projectName}" in ${cwd}`);
+  lines.push(
+    configureExisting
+      ? `Configured this Kortix project in ${cwd}`
+      : `Initialized Kortix project "${projectName}" in ${cwd}`,
+  );
   const totalWritten = result.written.length + agentInstall.written.length;
   lines.push(`Wrote ${totalWritten} file${totalWritten === 1 ? '' : 's'}:`);
   for (const f of result.written) lines.push(`  + ${f}`);
@@ -358,9 +407,11 @@ export async function runInit(argv: string[]): Promise<number> {
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }
   if (gitNote) lines.push(gitNote);
-  lines.push('');
-  lines.push('Next:');
-  lines.push(`  cd ${projectName}`);
+  if (!configureExisting) {
+    lines.push('');
+    lines.push('Next:');
+    lines.push(`  cd ${projectName}`);
+  }
   process.stdout.write(`${lines.join('\n')}\n`);
 
   // ── Get started panel ────────────────────────────────────────────────
