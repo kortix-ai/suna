@@ -27,9 +27,9 @@ import {
   IconUsers,
 } from '@/components/ui/kortix-icons';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';
-import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCan } from '@/hooks/platform/use-can';
 import { cn } from '@/lib/utils';
@@ -43,37 +43,6 @@ import {
   type SandboxMemberRole,
   type SandboxPendingInvite,
 } from '@kortix/sdk';
-import { cn } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { UserRow } from '@/components/ui/user-row';
-import { useCan } from '@/hooks/platform/use-can';
-import {
-  IconCheck,
-  IconDelete,
-  IconInvite,
-  IconMore,
-  IconUsers,
-} from '@/components/ui/kortix-icons';
 import { WarningCircleIcon as AlertCircle, UserIcon as User } from '@phosphor-icons/react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -468,11 +437,7 @@ function MemberRowActions({
           )}
           className="text-muted-foreground hover:text-foreground h-7 w-7"
         >
-          {pending ? (
-            <Loading className="h-3.5 w-3.5" />
-          ) : (
-            <IconMore className="h-4 w-4" />
-          )}
+          {pending ? <Loading className="h-3.5 w-3.5" /> : <IconMore className="h-4 w-4" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">

@@ -3,9 +3,9 @@
 import {
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
-  DotsThreeIcon as MoreHorizontal,
   EyeIcon as Eye,
   FolderOpenIcon as FolderOpen,
+  DotsThreeIcon as MoreHorizontal,
   ShieldIcon as Shield,
   ShieldSlashIcon as ShieldOff,
   UsersIcon as Users,

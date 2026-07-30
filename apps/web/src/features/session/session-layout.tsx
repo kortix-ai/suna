@@ -11,6 +11,7 @@ import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
@@ -377,11 +378,26 @@ export const SessionLayout = memo(function SessionLayout({
             if (!open) handleSidePanelClose();
           }}
         >
-          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+          {/* Easy mode's tool surfaces (Terminal, Browser, Files) render as
+              layers INSIDE this one sheet rather than as their own stacked
+              drawers, so it has to be tall enough to hold them, and a grabber
+              would sit above their own headers. Advanced keeps the shorter,
+              grabbed sheet — there the tools are tabs in the panel body. */}
+          <DrawerContent
+            bar={false}
+            className={cn('flex flex-col overflow-hidden p-0', 'h-[95dvh] max-h-[95dvh]')}
+          >
             {effectivePanelHeader}
             <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
           </DrawerContent>
         </Drawer>
+        {/* Dev tools (header / palette) open here — a peer of the panel
+            sheet, never inside it. Closing lands back on chat. */}
+        <MobileToolDrawer
+          sessionId={sessionId}
+          projectId={projectId}
+          projectSessionId={projectSessionId}
+        />
       </div>
     );
   }

@@ -15,7 +15,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import type { RuntimeAgent } from '@kortix/sdk/react';
-import { Check, ChevronDown } from 'lucide-react';
+import { CaretDownIcon, Check } from '@phosphor-icons/react';
 import { AgentHarnessIcon } from './agent-harness-icon';
 
 // ============================================================================
@@ -116,7 +116,7 @@ export function AgentSelector({
             )}
           >
             <span className="max-w-[100px] truncate">{displayName}</span>
-            <ChevronDown
+            <CaretDownIcon
               className={cn(
                 'size-3 opacity-50 transition-transform duration-200',
                 open && 'rotate-180',

@@ -13,7 +13,7 @@ export function MarketplaceSectionButton({ projectId }: { projectId: string }) {
 
   return (
     <Button size="sm" variant="secondary" onClick={() => setSection('marketplace')}>
-      <Store className="size-3 shrink-0" />
+      <Store className="shrink-0" />
       Marketplace
     </Button>
   );

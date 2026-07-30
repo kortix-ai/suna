@@ -710,9 +710,14 @@ export const EasyPanel = memo(function EasyPanel({
         // the shell reconnects on every open — the same tradeoff
         // `session-layout.tsx`'s Advanced-mode terminal accepts for its own
         // mobile drawer; there is no room for a persistent absolutely
-        // positioned layer inside a bottom sheet.
+        // positioned layer inside a bottom sheet. (Header/palette quick views
+        // never reach this on mobile — they open `MobileToolDrawer` instead —
+        // so this only serves in-panel openers.)
         <Drawer open={terminalOpen} onOpenChange={(next) => !next && closeTerminal()}>
-          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+          <DrawerContent
+            bar={false}
+            className="flex h-[95dvh] max-h-[95dvh] flex-col overflow-hidden p-0"
+          >
             <DrawerHeader className="shrink-0 px-4 py-3 text-left">
               <DrawerTitle className="flex items-center justify-between gap-2 text-base">
                 <span className="flex items-center gap-2.5">

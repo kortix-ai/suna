@@ -112,7 +112,7 @@ export function PanelCard({
       // out of room — clipping a row in half instead of ever scrolling. The
       // column's own `overflow-auto` (see `easy-panel.tsx`) is what should
       // handle overflow, not a silent shrink of this card.
-      className="bg-popover shrink-0 overflow-hidden shadow"
+      className="bg-popover shrink-0 overflow-hidden"
       transition={transition}
     >
       <DisclosureTrigger variant="outline">

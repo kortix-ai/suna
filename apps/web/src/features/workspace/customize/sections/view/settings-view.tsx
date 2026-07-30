@@ -35,7 +35,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
@@ -54,12 +53,13 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { TrashIcon as TrashSolid } from '@phosphor-icons/react';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
   applySandboxProviderResult,
   pollSandboxProviderTransition,
 } from './sandbox-provider-result';
-import { TrashIcon as TrashSolid } from '@phosphor-icons/react';
-import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function SettingsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -407,9 +407,7 @@ function ExperimentalFeatureRow({
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {mutation.isPending ? (
-          <Loading className="text-muted-foreground size-3.5" />
-        ) : null}
+        {mutation.isPending ? <Loading className="text-muted-foreground size-3.5" /> : null}
         <Switch
           checked={pendingValue ?? feature.enabled}
           disabled={!canManage || mutation.isPending}
@@ -452,7 +450,9 @@ function SandboxProviderRow({
       // cached project shape.
       const kind = applySandboxProviderResult(queryClient, project.project_id, result);
       if (kind === 'preparation') {
-        successToast(`Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`);
+        successToast(
+          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
+        );
         // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
         // and refresh the project once it settles so the now-active provider shows.
         void pollSandboxProviderTransition(project.project_id, {

@@ -107,7 +107,6 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';

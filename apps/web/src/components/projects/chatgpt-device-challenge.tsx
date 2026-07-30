@@ -3,7 +3,7 @@
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { ExternalLink } from 'lucide-react';
+import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 
 export function ChatGptDeviceChallenge({ url, code }: { url: string; code: string | null }) {
   return (
@@ -29,7 +29,7 @@ export function ChatGptDeviceChallenge({ url, code }: { url: string; code: strin
       {url ? (
         <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 px-3" asChild>
           <a href={url} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="size-3.5 shrink-0" />
+            <ArrowSquareOutIcon className="size-3.5 shrink-0" />
             Open auth page
           </a>
         </Button>

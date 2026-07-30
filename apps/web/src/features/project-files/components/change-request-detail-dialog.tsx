@@ -194,8 +194,10 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   // Gate on `variables === crId` so a stale failure from a previously-viewed CR
   // (the dialog is reused, not remounted) never bleeds onto the current one.
   const mergeError = mergeMutation.error as
-    | (Error & { code?: string; data?: { issues?: ManifestIssue[] } })
-    | null;
+    (Error & {
+        code?: string;
+        data?: { issues?: ManifestIssue[]; conflicts?: string[] };
+      }) | null;
   const manifestIssues =
     mergeError?.code === 'MANIFEST_INVALID' && mergeMutation.variables === crId
       ? (mergeError.data?.issues ?? [])

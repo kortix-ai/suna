@@ -46,7 +46,7 @@ import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadIcon as Download,
-  HouseIcon as HomeSolid,
+  HouseIcon,
   LifebuoyIcon as LifeBuoy,
   SignOutIcon as LogOut,
   StorefrontIcon as Store,
@@ -213,7 +213,7 @@ export function UserMenu({
         )}
 
         <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
-          <HomeSolid weight="fill" />
+          <HouseIcon />
           Home
         </DropdownMenuItem>
 

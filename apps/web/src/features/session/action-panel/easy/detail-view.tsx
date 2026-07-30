@@ -444,6 +444,9 @@ export function DetailLayer({
   }, [detail?.key]);
 
   // Mobile: the panel is already a bottom drawer. Stack a drawer, not a slide.
+  // (Dev-tool quick views never come through here on mobile — they open the
+  // standalone `MobileToolDrawer` instead; this path is for the panel's own
+  // details: outputs, steps, context rows.)
   if (isMobile) {
     return (
       <>

@@ -167,7 +167,7 @@ export function SessionCostExplorerContent({
           description="Session cost records appear after sessions are created."
         />
       ) : (
-        <div className="bg-popover overflow-hidden rounded-md border">
+        <div className="bg-popover overflow-hidden rounded-md">
           <Table>
             <TableHeader>
               <TableRow>

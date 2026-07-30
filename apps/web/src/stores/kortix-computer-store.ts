@@ -106,6 +106,12 @@ interface KortixComputerState {
     target?: QuickViewTarget;
   } | null;
 
+  // Mobile dev tools (header's Developer Tools / command palette): the tool
+  // opens in its own top-level drawer (`MobileToolDrawer`), fully decoupled
+  // from the Easy/Advanced panel — no `isSidePanelOpen`, no pending consume.
+  // Closing the drawer lands back on chat. Desktop never sets this.
+  mobileToolView: QuickView | null;
+
   // === ACTIONS ===
 
   setActiveView: (view: ViewType) => void;
@@ -169,6 +175,10 @@ interface KortixComputerState {
     now?: number,
   ) => { view: QuickView; target?: QuickViewTarget } | null;
 
+  /** Mobile only — open `view` in the standalone tool drawer. */
+  openMobileTool: (view: QuickView) => void;
+  closeMobileTool: () => void;
+
   // Reset all state (full reset)
   reset: () => void;
 }
@@ -193,6 +203,7 @@ const initialState = {
     requestedAt: number;
     target?: QuickViewTarget;
   } | null,
+  mobileToolView: null as QuickView | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -407,6 +418,13 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set({ pendingQuickView: null });
         if (now - pending.requestedAt > QUICK_VIEW_TTL_MS) return null;
         return { view: pending.view, target: pending.target };
+      },
+
+      openMobileTool: (view: QuickView) => {
+        set({ mobileToolView: view });
+      },
+      closeMobileTool: () => {
+        set({ mobileToolView: null });
       },
 
       reset: () => {

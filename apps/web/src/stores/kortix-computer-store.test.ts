@@ -324,3 +324,28 @@ describe('files quick-view destination', () => {
     ).toBeNull();
   });
 });
+
+describe('mobile tool drawer state', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('open → read → close', () => {
+    useKortixComputerStore.getState().openMobileTool('terminal');
+    expect(useKortixComputerStore.getState().mobileToolView).toBe('terminal');
+    useKortixComputerStore.getState().closeMobileTool();
+    expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
+  });
+
+  test('opening a tool never opens the panel — the drawer is a peer, not a passenger', () => {
+    useKortixComputerStore.getState().openMobileTool('browser');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+
+  test('reset clears an open tool', () => {
+    useKortixComputerStore.getState().openMobileTool('files');
+    useKortixComputerStore.getState().reset();
+    expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
+  });
+});
