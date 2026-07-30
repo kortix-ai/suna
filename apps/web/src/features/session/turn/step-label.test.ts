@@ -12,6 +12,16 @@ function tool(name: string, input: Record<string, unknown> = {}): ToolPart {
   } as unknown as ToolPart;
 }
 
+function toolWithInput(name: string, input: unknown): ToolPart {
+  return {
+    id: 't1',
+    type: 'tool',
+    tool: name,
+    callID: 'call_1',
+    state: { status: 'completed', input },
+  } as unknown as ToolPart;
+}
+
 describe('stepLabel', () => {
   test('read is primary, past tense Read, object is the basename', () => {
     expect(stepLabel(tool('read', { filePath: '/workspace/src/jobs-queue.ts' }))).toEqual({
@@ -73,5 +83,21 @@ describe('stepLabel', () => {
 
   test('a missing input yields no object rather than throwing', () => {
     expect(stepLabel(tool('read')).object).toBeUndefined();
+  });
+
+  test('when input is undefined, object is undefined and does not throw', () => {
+    expect(stepLabel(toolWithInput('read', undefined)).object).toBeUndefined();
+  });
+
+  test('when input is null, object is undefined and does not throw', () => {
+    expect(stepLabel(toolWithInput('read', null)).object).toBeUndefined();
+  });
+
+  test('when input is a string, object is undefined and does not throw', () => {
+    expect(stepLabel(toolWithInput('read', 'some raw string')).object).toBeUndefined();
+  });
+
+  test('when input is an array, object is undefined and does not throw', () => {
+    expect(stepLabel(toolWithInput('read', ['a', 'b'])).object).toBeUndefined();
   });
 });
