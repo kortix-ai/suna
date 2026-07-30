@@ -51,6 +51,9 @@ import {
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
+  shouldPollSessionStart,
+  SESSION_START_POLL_OPTIONS,
+  SESSION_START_POLL_MS,
 } from './use-session';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
@@ -353,5 +356,36 @@ describe('shouldRetrySessionStart', () => {
     expect(shouldRetrySessionStart(0, transient, 'x')).toBe(true);
     expect(shouldRetrySessionStart(2, transient, 'x')).toBe(true);
     expect(shouldRetrySessionStart(3, transient, 'x')).toBe(false);
+  });
+});
+
+describe('shouldPollSessionStart', () => {
+  const at = (stage: string) => ({ stage }) as never;
+
+  test('keeps polling while the box is still coming up', () => {
+    expect(shouldPollSessionStart(null, at('provisioning'))).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, at('starting'))).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a null payload (transient transport failure) still polls — the box did not go away', () => {
+    expect(shouldPollSessionStart(null, null)).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, undefined)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('stops on every terminal stage', () => {
+    expect(shouldPollSessionStart(null, at('ready'))).toBe(false);
+    expect(shouldPollSessionStart(null, at('failed'))).toBe(false);
+    expect(shouldPollSessionStart(null, at('stopped'))).toBe(false);
+  });
+
+  test('stops on a terminal client error, which polling cannot fix', () => {
+    const err = new SessionStartError('gone', { status: 403, terminal: true });
+    expect(shouldPollSessionStart(err, at('provisioning'))).toBe(false);
+  });
+});
+
+describe('SESSION_START_POLL_OPTIONS', () => {
+  test('keeps interval fetches active while the document is hidden', () => {
+    expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
   });
 });

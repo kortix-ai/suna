@@ -104,6 +104,44 @@ export function shouldRetrySessionStart(
   return !isSessionStartError(error) && failureCount < 3;
 }
 
+/**
+ * Gap between `/start` polls. The server long-polls each tick, so this is the
+ * pause between holds, not the latency to observe `ready`.
+ */
+export const SESSION_START_POLL_MS = 1_500;
+
+/**
+ * Should the `/start` boot poll fire again, given the last tick's outcome?
+ * `false` = stop: a terminal stage, or a terminal client error that no amount
+ * of polling can fix. Everything else keeps polling — including a `null`
+ * payload from a transient transport failure, since the box is still coming up.
+ */
+export function shouldPollSessionStart(
+  error: unknown,
+  data: SessionStartResult | null | undefined,
+): number | false {
+  if (isSessionStartError(error)) return false;
+  const stage = data?.stage;
+  return stage === 'ready' || stage === 'failed' || stage === 'stopped'
+    ? false
+    : SESSION_START_POLL_MS;
+}
+
+/**
+ * TanStack Query pauses interval fetches while the document is hidden unless
+ * this option is true. Session readiness must continue because it gates the
+ * runtime switch, event stream, and queued-prompt replay.
+ */
+export const SESSION_START_POLL_OPTIONS = {
+  refetchInterval: (query: {
+    state: {
+      error: unknown;
+      data: SessionStartResult | null | undefined;
+    };
+  }) => shouldPollSessionStart(query.state.error, query.state.data),
+  refetchIntervalInBackground: true,
+} as const;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Send-error classification. `send`/the reply actions below never throw for
 // back-compat (`send`) or so a host doesn't need a try/catch for the common
@@ -403,11 +441,7 @@ export function useSession(
       isSessionStartError(error) && error.status === 404
         ? FRESH_START_404_RETRY_DELAY_MS
         : Math.min(1000 * 2 ** failureCount, 5000),
-    refetchInterval: (q) => {
-      if (isSessionStartError(q.state.error)) return false;
-      const stage = (q.state.data as SessionStartResult | null | undefined)?.stage;
-      return stage === 'ready' || stage === 'failed' || stage === 'stopped' ? false : 1500;
-    },
+    ...SESSION_START_POLL_OPTIONS,
   });
   const startData = start.data ?? null;
   const startError = isSessionStartError(start.error) ? start.error : null;
