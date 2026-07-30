@@ -16,6 +16,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import { normalizeProjectIcon } from '../lib/project-icon';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
 import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
@@ -160,6 +161,7 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
+    const icon = normalizeProjectIcon(body.icon);
     const row = await registerPatLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
@@ -168,6 +170,7 @@ projectsApp.openapi(
       name: normalizeString(body.name),
       defaultBranch: patImport.defaultBranch,
       manifestPath,
+      ...(icon ? { projectMetadata: { icon } } : {}),
     });
     kickProjectTemplatePrebuilds(
       { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
@@ -197,6 +200,7 @@ projectsApp.openapi(
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
 
+  const icon = normalizeProjectIcon(body.icon);
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
     userId: scope.userId,
@@ -205,6 +209,7 @@ projectsApp.openapi(
     name: normalizeString(body.name),
     defaultBranch: imported.defaultBranch,
     manifestPath,
+    ...(icon ? { projectMetadata: { icon } } : {}),
   });
 
   kickProjectTemplatePrebuilds(
@@ -372,6 +377,7 @@ projectsApp.openapi(
     }
   }
 
+  const icon = normalizeProjectIcon(body.icon);
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
     userId: scope.userId,
@@ -383,6 +389,7 @@ projectsApp.openapi(
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
     // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',
+    ...(icon ? { projectMetadata: { icon } } : {}),
   });
 
   kickProjectTemplatePrebuilds(

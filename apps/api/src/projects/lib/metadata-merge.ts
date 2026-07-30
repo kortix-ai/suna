@@ -22,8 +22,8 @@
  * update one level down. {@link metadataMergeSubtree} / {@link metadataClearSubtreeKey}
  * re-read + merge the CURRENT nested value in-SQL so nested writes are atomic too.
  * The top-level namespaces of every writer are DISJOINT (audited: default_agent,
- * triggers_paused, onboarding_completed_at, experimental, meet, default_sandbox_slug
- * vs. the pin's default_sandbox_provider / active_sandbox_external_template_id /
+ * triggers_paused, onboarding_completed_at, experimental, meet, default_sandbox_slug,
+ * icon vs. the pin's default_sandbox_provider / active_sandbox_external_template_id /
  * active_sandbox_snapshot_name / sandbox_provider_transition), so a shallow merge
  * already protects the pin; the nested helpers protect each nested key against
  * self-concurrency.
