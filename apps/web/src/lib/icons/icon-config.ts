@@ -20,7 +20,7 @@
  */
 import type { IconWeight } from '@phosphor-icons/react';
 
-export const DEFAULT_ICON_WEIGHT: IconWeight = 'regular';
+export const DEFAULT_ICON_WEIGHT: IconWeight = 'bold';
 
 export const ICON_WEIGHTS: readonly IconWeight[] = [
   'thin',
