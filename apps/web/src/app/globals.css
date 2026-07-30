@@ -8,6 +8,58 @@
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 
+/* ─── Roobert — one variable font, three axes ─────────────────────────────────
+   RoobertCollectionVF.woff2 is the foundry's three-axis master:
+     wght 300–900 · ital 0–11 · MONO 0–100 (0 sans · 60 SemiMono · 100 mono)
+
+   There is ONE family. The sans / SemiMono / mono / italic distinctions are
+   axis positions, not separate families, and they are pinned at ELEMENT level
+   via the custom properties below.
+
+   Why not the `font-variation-settings` @font-face descriptor (the obvious
+   approach)? WebKit ignores it outright — every family renders the default
+   instance, so Safari would show all code in a proportional face. Measured:
+   MONO=100 gives W 475.68 vs m 423.36 there. No `src` format() syntax fixes
+   it. Element-level settings work in Chromium, Firefox AND WebKit.
+
+   Do NOT convert this to next/font/local: it fingerprints per call, and the
+   four calls this replaced would emit the same binary four times (~1.2 MB),
+   worse than the four files it replaced. The explicit <link rel="preload"> in
+   layout.tsx covers what next/font used to do automatically.
+
+   The licence forbids modifying, subsetting, or renaming this binary. */
+@font-face {
+  font-family: 'Roobert';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('/fonts/roobert/RoobertCollectionVF.woff2') format('woff2');
+}
+
+:root {
+  --rb-mono: 0;
+  --rb-ital: 0;
+}
+
+/* Declared on `*` deliberately. `font-variation-settings` is an inherited
+   property, so an element that only changes `--rb-mono` would inherit its
+   parent's ALREADY-SUBSTITUTED value and never re-resolve. Declaring it on
+   every element makes each one compute its own value from the custom
+   properties, which do inherit. This is also what lets `font-mono` and
+   `italic` compose: the two axes are independent variables.
+   `wght` is deliberately absent — `font-weight` still drives it. */
+* {
+  font-variation-settings: 'MONO' var(--rb-mono, 0), 'ital' var(--rb-ital, 0);
+}
+
+/* `ital` is a 0–11 axis, not 0–1. CSS `font-style: italic` alone would land on
+   ital=1 and render roughly 9% of the intended slant, so set the axis. */
+em,
+i,
+.italic {
+  --rb-ital: 11;
+}
+
 /* ─── Fumadocs → Kortix brand overrides ─── */
 /* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
    automatically and color has a single source of truth. `--color-fd-card`
@@ -176,8 +228,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-roobert);
-  --font-mono: var(--font-roobert-mono);
+  --font-sans: 'Roobert', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    'Helvetica Neue', sans-serif;
+  --font-mono: 'Roobert', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-semimono: 'Roobert', ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
