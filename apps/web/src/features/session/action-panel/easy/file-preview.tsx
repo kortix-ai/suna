@@ -20,7 +20,9 @@ import {
   type FileCategory,
   FileContentRenderer,
   FileSourceProvider,
+  PreviewFitProvider,
   getFileCategory,
+  isUsableIntrinsicSize,
 } from '@/features/file-viewer';
 import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
@@ -28,7 +30,11 @@ import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
+import {
+  useIsExpanded,
+  useKortixComputerStore,
+  useToggleExpanded,
+} from '@/stores/kortix-computer-store';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
@@ -304,6 +310,19 @@ export function FilePreview({
 }) {
   const rich = isRich(fileName);
 
+  // Opening at fit-to-page is PDF-only. It is the one renderer here whose zoom
+  // is a real mode rather than a scaled stage, so it can meet the fitted column
+  // at exactly one page wide; every other category ignores the prop. Derived
+  // from the category, not the extension, so `.PDF` and `.pdf` agree.
+  const isPdf = getFileCategory(fileName) === 'pdf';
+
+  // The panel's width for this document. A renderer reports the intrinsic size
+  // it decoded; `session-layout` turns the ratio into a split (see
+  // `resolveSideSize`). Only the branches that actually SHOW a document report:
+  // the loading, error, and text branches keep today's width, because a spinner
+  // and a paragraph have no shape of their own to honor.
+  const setPanelAspect = useKortixComputerStore((s) => s.setPanelAspect);
+
   const sandboxAlive = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
     getSandboxAliveSnapshot,
@@ -326,7 +345,17 @@ export function FilePreview({
         onPresent={onPresent}
       >
         <FileSourceProvider value={workspaceFileSource}>
-          <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
+          {/* Inside the source provider, not around it: a renderer that
+              measures also fetches, and nesting this way means it never has to
+              choose which context it is allowed to have. */}
+          <PreviewFitProvider onMeasure={({ width, height }) => setPanelAspect(width / height)}>
+            <FileContentRenderer
+              filePath={path}
+              showHeader={false}
+              className="h-full"
+              fitOnOpen={isPdf}
+            />
+          </PreviewFitProvider>
         </FileSourceProvider>
       </PreviewShell>
     );
@@ -396,6 +425,15 @@ export function FilePreview({
               src={`data:${data.mimeType};base64,${data.content}`}
               alt={name}
               className="max-w-full rounded-md"
+              onLoad={(e) => {
+                // The same measurement the rich renderers publish through
+                // <PreviewFitProvider>, minus the context — here the <img> IS
+                // the renderer, so there is nothing to provide it to. Guarded
+                // by the very predicate that context uses, so the two paths
+                // cannot disagree about what a usable size is.
+                const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+                if (isUsableIntrinsicSize({ width, height })) setPanelAspect(width / height);
+              }}
             />
           </div>
         ) : (

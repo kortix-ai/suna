@@ -186,13 +186,20 @@ export const EasyPanel = memo(function EasyPanel({
   // (same store, same `animate` opt, same `skipNextExpandAnimation` flag) —
   // see the store's doc comment.
   const setPanelSplit = useKortixComputerStore((s) => s.setPanelSplit);
+  // The measured shape of whatever document is open, which outranks
+  // `panelSplit` once it lands (see `resolveSideSize`). Cleared in lockstep
+  // with every `panelSplit` write below — a ratio that outlives the document
+  // it was measured from would silently win over the split the new layer
+  // asked for, so the two states are never allowed to disagree.
+  const setPanelAspect = useKortixComputerStore((s) => s.setPanelAspect);
   const closeDetail = useCallback(() => {
     setDetail(null);
     // `animate: false` — the detail slides out on its own; snapping the panel
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
     setPanelSplit(null, { animate: false });
-  }, [setIsExpanded, setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setIsExpanded, setPanelSplit, setPanelAspect]);
 
   /**
    * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
@@ -248,12 +255,14 @@ export const EasyPanel = memo(function EasyPanel({
     closeDetail();
     setTerminalOpen(true);
     setPanelSplit(50);
-  }, [detail, closeDetail, setPanelSplit]);
+    setPanelAspect(null);
+  }, [detail, closeDetail, setPanelSplit, setPanelAspect]);
   const closeTerminal = useCallback(() => {
     setTerminalSwap(false);
     setTerminalOpen(false);
     setPanelSplit(null, { animate: false });
-  }, [setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setPanelSplit, setPanelAspect]);
 
   // Every `detail` open funnels through here (instead of raw `setDetail`) so
   // opening a file/app/step/Audit always closes the terminal — the other half
@@ -271,8 +280,13 @@ export const EasyPanel = memo(function EasyPanel({
       setTerminalOpen(false);
       setDetail({ ...next, swapIn: terminalOpen });
       setPanelSplit(null);
+      // The outgoing document's ratio dies with it. `handleOpenOutput` sets a
+      // split of its own right after this, but never an aspect — the incoming
+      // document publishes that itself once it has decoded something to
+      // measure, so there is nothing here to preserve.
+      setPanelAspect(null);
     },
-    [terminalOpen, setPanelSplit],
+    [terminalOpen, setPanelSplit, setPanelAspect],
   );
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/

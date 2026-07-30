@@ -168,6 +168,50 @@ export function fitSplitPercent(input: {
 }
 
 /**
+ * The side panel's share of the split, in percent — the single place the
+ * precedence between fullscreen, panel mode, a measured document and a
+ * layer's requested split is decided.
+ *
+ * Highest wins:
+ * 1. `isExpanded` — fullscreen owns the whole layout; nothing outranks it.
+ * 2. Advanced mode — its even 50/50 predates ratio fit and stays untouched.
+ * 3. The document's own shape, via {@link fitSplitPercent} — a measured
+ *    portrait PDF beats the fixed guess a file extension made about it.
+ * 4. `panelSplit` — the layer's explicit request (70 for a deck, 50 for the
+ *    terminal), still the answer for everything that reports no size.
+ * 5. 35 — the default card column.
+ *
+ * Pure and exported because this precedence IS the user-visible behavior of
+ * ratio fit, and `SessionLayout` cannot be rendered without a DOM.
+ */
+export function resolveSideSize(input: {
+  isExpanded: boolean;
+  isEasy: boolean;
+  /** The open document's width / height, once a renderer has reported it. */
+  panelAspect: number | null;
+  /** The open layer's requested split — see {@link isWideDeliverable}. */
+  panelSplit: number | null;
+  /** The whole `ResizablePanelGroup`'s box, px; `null` before it is measured. */
+  panelBox: { width: number; height: number } | null;
+}): number {
+  if (input.isExpanded) return 100;
+  if (!input.isEasy) return 50;
+
+  const fitted =
+    input.panelAspect != null && input.panelBox
+      ? fitSplitPercent({
+          aspect: input.panelAspect,
+          layoutWidth: input.panelBox.width,
+          panelContentHeight: input.panelBox.height - PREVIEW_TOOLBAR_PX,
+        })
+      : null;
+
+  // 35 as a literal, not FIT_MIN_PERCENT: this is the card column's width,
+  // which happens to equal the fit's floor but does not mean the same thing.
+  return fitted ?? input.panelSplit ?? 35;
+}
+
+/**
  * Whether an output deliverable should grow the Easy-mode panel to its
  * widest split (70/30) instead of the default 35/65 — landscape-shaped
  * content needs real width to read, unlike a text file or a screenshot.

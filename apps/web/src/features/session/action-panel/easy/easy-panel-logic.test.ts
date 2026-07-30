@@ -9,6 +9,7 @@ import {
   outputKey,
   pathOutput,
   quickBrowserOutput,
+  resolveSideSize,
   sandboxRecents,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
@@ -154,6 +155,75 @@ describe('fitSplitPercent (aspect-ratio-fit split for the Easy panel)', () => {
   it('falls back to the default max when the override is non-finite', () => {
     const percent = fitSplitPercent({ aspect: 10, ...box, max: -Infinity });
     expect(percent).toBeCloseTo(70, 0); // FIT_MAX_PERCENT
+  });
+});
+
+describe('resolveSideSize (the panel-width precedence rule)', () => {
+  // 848 = the 800px content height the fitSplitPercent table above uses, plus
+  // PREVIEW_TOOLBAR_PX (48), which resolveSideSize subtracts itself. So an A4
+  // portrait through this box must land on that table's ~44.
+  const panelBox = { width: 1400, height: 848 };
+  const base = { isExpanded: false, isEasy: true, panelAspect: null, panelSplit: null, panelBox };
+
+  it('gives fullscreen the whole layout, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isExpanded: true, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(100);
+  });
+
+  it('keeps Advanced mode at an even 50, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isEasy: false, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(50);
+  });
+
+  it('lets a measured document outrank the split its extension asked for', () => {
+    const fitted = resolveSideSize({ ...base, panelAspect: 595 / 842, panelSplit: 70 });
+    expect(fitted).toBeCloseTo(44, 0);
+  });
+
+  it('falls back to panelSplit when the measurement is unusable', () => {
+    // NaN is what fitSplitPercent refuses; the split must survive that refusal
+    // rather than the panel collapsing to the default.
+    expect(resolveSideSize({ ...base, panelAspect: NaN, panelSplit: 70 })).toBe(70);
+  });
+
+  it('falls back to panelSplit when the panel box has not been measured yet', () => {
+    expect(
+      resolveSideSize({ ...base, panelBox: null, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(70);
+  });
+
+  it('falls back to panelSplit when the box is shorter than its own toolbar', () => {
+    // panelContentHeight goes <= 0, which fitSplitPercent nulls out — the
+    // Global Constraint 6 path, seen from the caller.
+    expect(
+      resolveSideSize({
+        ...base,
+        panelBox: { width: 1400, height: 20 },
+        panelAspect: 595 / 842,
+        panelSplit: 70,
+      }),
+    ).toBe(70);
+  });
+
+  it('falls back all the way to the 35 card column with neither a fit nor a split', () => {
+    expect(resolveSideSize(base)).toBe(35);
+    expect(resolveSideSize({ ...base, panelAspect: NaN })).toBe(35);
+  });
+
+  it('still honors a wide deliverable that reports no shape of its own', () => {
+    expect(resolveSideSize({ ...base, panelSplit: 70 })).toBe(70);
+  });
+
+  it('never returns a non-finite size, whatever it is handed', () => {
+    const sizes = [
+      resolveSideSize({ ...base, panelAspect: Infinity, panelSplit: null }),
+      resolveSideSize({ ...base, panelAspect: 0, panelSplit: null }),
+      resolveSideSize({ ...base, panelBox: { width: 0, height: 0 }, panelAspect: 1 }),
+      resolveSideSize({ ...base, panelAspect: 1 }),
+    ];
+    for (const size of sizes) expect(Number.isFinite(size)).toBe(true);
   });
 });
 
