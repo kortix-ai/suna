@@ -61,6 +61,10 @@ test.describe('Roobert Mono', () => {
     ).toContain('Roobert');
     expect(result.ligatures).toBe('none');
 
+    // 0.5px, not 0: sub-pixel layout rounding leaves a residual even in a
+    // perfectly monospaced face (measured 0.14px across the five lines). A
+    // real ligature collapse is ~60px at 32px type, and was 411px before
+    // --rb-mono landed — so this threshold cannot mask the bug it guards.
     const spread = Math.max(...result.widths) - Math.min(...result.widths);
     expect(
       spread,
@@ -119,5 +123,91 @@ test.describe('Roobert Mono', () => {
     ).toBe(true);
     expect(result.fams.pre).toContain('Roobert');
     expect(result.fams.code).toContain('Roobert');
+  });
+});
+
+// wght is a 300-900 axis. Tailwind's default numeric names imply 100-950 and the
+// browser silently clamps, so font-thin and font-extralight both used to render
+// as Light 300. These ten spread the ten names across the real axis: 400-800 are
+// unchanged, only light (300->368) and black (900->870) shift.
+const LADDER: Array<[string, number]> = [
+  ['font-thin', 300],
+  ['font-extralight', 335],
+  ['font-light', 368],
+  ['font-normal', 400],
+  ['font-medium', 500],
+  ['font-semibold', 600],
+  ['font-bold', 700],
+  ['font-extrabold', 800],
+  ['font-black', 870],
+  ['font-heavy', 900],
+];
+
+test.describe('Roobert weight ladder', () => {
+  // Asserts the UTILITIES, not the --font-weight-* tokens. Two reasons, both
+  // learned the hard way:
+  //   1. Tailwind v4 emits a utility only when its class name appears in scanned
+  //      source. These ten resolve only because /design-system names all ten
+  //      literally. If this test fails with everything reporting 500, that
+  //      specimen has stopped naming them literally (e.g. refactored into a loop
+  //      over a variable) — the mapping has not regressed.
+  //   2. The tokens live in `@theme inline`, which bakes literals into the
+  //      utilities and emits NO :root custom property, so reading
+  //      --font-weight-* from the DOM returns "" and proves nothing.
+  test('all ten weight utilities resolve onto the real axis, distinctly', async ({
+    page,
+  }) => {
+    await page.goto('/design-system', { waitUntil: 'networkidle' });
+    await page.evaluate(() => document.fonts.ready);
+
+    const measured = await page.evaluate((ladder) => ({
+      roobertLoaded: document.fonts.check('64px Roobert'),
+      rows: ladder.map(([cls]) => {
+        const s = document.createElement('span');
+        s.className = cls;
+        s.style.cssText =
+          'position:absolute;left:-9999px;display:inline-block;white-space:pre;font-size:64px';
+        s.textContent = 'Hamburgefonstiv 0123';
+        document.body.appendChild(s);
+        const r = document.createRange();
+        r.selectNodeContents(s);
+        const width = Math.round(r.getBoundingClientRect().width * 100) / 100;
+        const weight = Number(getComputedStyle(s).fontWeight);
+        s.remove();
+        return { cls, weight, width };
+      }),
+    }), LADDER);
+
+    // Without the real font every weight renders identically, making the
+    // distinctness assertion below meaningless.
+    expect(
+      measured.roobertLoaded,
+      'Roobert did not load — weight comparisons would be against a fallback face',
+    ).toBe(true);
+
+    for (const [cls, expected] of LADDER) {
+      const row = measured.rows.find((r) => r.cls === cls)!;
+      expect(
+        row.weight,
+        `${cls} resolved to ${row.weight}, expected ${expected}. A value of 500 means Tailwind never emitted the utility — check /design-system still names it literally.`,
+      ).toBe(expected);
+    }
+
+    // Each must actually RENDER differently. A weight outside the design space
+    // would still report the right font-weight while drawing an identical glyph —
+    // exactly the bug this task fixes.
+    const widths = measured.rows.map((r) => r.width);
+    expect(
+      new Set(widths).size,
+      `expected 10 distinct widths, got ${JSON.stringify(measured.rows)}`,
+    ).toBe(10);
+
+    // Monotonic: a heavier step must never render narrower than a lighter one.
+    for (let i = 1; i < widths.length; i++) {
+      expect(
+        widths[i],
+        `${LADDER[i][0]} (${widths[i]}px) should exceed ${LADDER[i - 1][0]} (${widths[i - 1]}px)`,
+      ).toBeGreaterThan(widths[i - 1]);
+    }
   });
 });

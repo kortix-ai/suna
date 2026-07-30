@@ -1256,6 +1256,7 @@
       "line794JsxTextGlobalsCssRootDark": "globals.css · :root / .dark",
       "line848JsxTextRoobertAGeometricSansSerifFontMedium500": "Roobert - 一款几何无衬线字体。Font-medium (500) 是品牌字重。Roobert Mono 用于代码和数据。",
       "line871JsxTextKortixComputer": "Kortix Computer",
+      "designSystemWeightLadderLabel": "字重阶梯 · wght 300–900",
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",

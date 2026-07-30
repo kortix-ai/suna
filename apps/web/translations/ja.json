@@ -1260,6 +1260,7 @@
       "line794JsxTextGlobalsCssRootDark": "globals.css · :root / .dark",
       "line848JsxTextRoobertAGeometricSansSerifFontMedium500": "Roobert - 幾何学的なサンセリフ体。Font-medium (500) がブランドのウェイトです。コードとデータには Roobert Mono を使用します。",
       "line871JsxTextKortixComputer": "Kortix Computer",
+      "designSystemWeightLadderLabel": "ウェイトスケール · wght 300–900",
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",

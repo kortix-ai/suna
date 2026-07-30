@@ -1263,6 +1263,7 @@
       "line794JsxTextGlobalsCssRootDark": "globals.css · :root / .dark",
       "line848JsxTextRoobertAGeometricSansSerifFontMedium500": "Roobert : une sans-serif géométrique. Font-medium (500) est la graisse de marque. Roobert Mono pour le code et les données.",
       "line871JsxTextKortixComputer": "Kortix Computer",
+      "designSystemWeightLadderLabel": "Échelle de graisses · wght 300–900",
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",

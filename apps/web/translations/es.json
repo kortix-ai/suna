@@ -1260,6 +1260,7 @@
       "line794JsxTextGlobalsCssRootDark": "globals.css · :root / .dark",
       "line848JsxTextRoobertAGeometricSansSerifFontMedium500": "Roobert: una sans serif geométrica. Font-medium (500) es el peso de la marca. Roobert Mono para código y datos.",
       "line871JsxTextKortixComputer": "Kortix Computer",
+      "designSystemWeightLadderLabel": "Escala de pesos · wght 300–900",
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
