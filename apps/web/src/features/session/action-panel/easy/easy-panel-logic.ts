@@ -145,13 +145,22 @@ export function fitSplitPercent(input: {
   max?: number;
 }): number | null {
   const { aspect, layoutWidth, panelContentHeight } = input;
-  const gutter = input.gutter ?? PREVIEW_GUTTER_PX;
-  const min = input.min ?? FIT_MIN_PERCENT;
-  const max = input.max ?? FIT_MAX_PERCENT;
 
   if (!Number.isFinite(aspect) || aspect <= 0) return null;
   if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) return null;
   if (!Number.isFinite(panelContentHeight) || panelContentHeight <= 0) return null;
+
+  // gutter/min/max are tuning knobs, not measurements — unlike aspect/
+  // layoutWidth/panelContentHeight, a caller passing a bad one hasn't failed
+  // to measure anything real, so it doesn't earn the same "no opinion" null.
+  // Falling back to the constant keeps a valid measurement usable instead of
+  // discarding it over an unrelated bad override, while still satisfying
+  // Global Constraint 6: `Number.isFinite` rejects `NaN` and `Infinity`
+  // exactly like the guards above, so a junk override can never reach the
+  // arithmetic below and surface as `NaN`.
+  const gutter = Number.isFinite(input.gutter) ? (input.gutter as number) : PREVIEW_GUTTER_PX;
+  const min = Number.isFinite(input.min) ? (input.min as number) : FIT_MIN_PERCENT;
+  const max = Number.isFinite(input.max) ? (input.max as number) : FIT_MAX_PERCENT;
 
   const idealPx = aspect * panelContentHeight + gutter;
   const percent = (idealPx / layoutWidth) * 100;
