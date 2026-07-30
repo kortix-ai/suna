@@ -157,7 +157,11 @@ export function SessionSiteHeader({
         <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
           <div
             className={cn(
-              'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
+              // No margin transition: this indent only changes when the
+              // sidebar docks/undocks, and gliding it made the row a fourth
+              // competing timeline in that toggle. Docking is one frame now,
+              // so the indent snaps with the panel and the gap.
+              'pointer-events-auto flex items-center gap-0.5',
               // Below md the shell floats an always-on sheet opener at this
               // row's left end (see ProjectSheelLayout) — indent past it.
               // 'max-md:ml-[34px]',
