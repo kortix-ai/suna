@@ -40,6 +40,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -323,6 +324,12 @@ export function FileContentRenderer({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
+
+  // `null` outside a <PreviewFitProvider>. Used for one thing only: telling a
+  // ratio-fitting surface that an `image` produced nothing to render, in which
+  // case no ImageRenderer is ever mounted and no renderer is left to say so
+  // itself. Every other failure is reported by the renderer that hit it.
+  const previewFit = usePreviewFit();
 
   // Data access is supplied by the surface (live workspace vs. project git-ref)
   // via <FileSourceProvider>, so this renderer stays presentation-only.
@@ -648,6 +655,23 @@ export function FileContentRenderer({
     else if (showLoadingState) onStatusChange('loading');
     else onStatusChange('ready');
   }, [onStatusChange, isNotFound, showLoadingState]);
+
+  // An `image` that settled without an image to show: bytes whose mime is not
+  // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
+  // instead), or a HEIC whose fetch or conversion failed. No ImageRenderer is
+  // mounted on any of those paths, so nothing downstream can report the
+  // failure — this is the one case the surface itself has to speak for.
+  const imageProducedNothing =
+    fileCategory === 'image' &&
+    !showLoadingState &&
+    !heicConverting &&
+    !imageDataUrl &&
+    !heicImageUrl;
+
+  useEffect(() => {
+    if (!previewFit || !imageProducedNothing) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imageProducedNothing]);
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY

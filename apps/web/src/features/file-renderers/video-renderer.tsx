@@ -128,6 +128,14 @@ export function VideoRenderer({
     }
   };
 
+  // The browser refused the file, so `handleLoadedMetadata` will never run and
+  // no size is coming. Same "never, not not-yet" contract as the image and PDF
+  // renderers; inert outside a <PreviewFitProvider>.
+  useEffect(() => {
+    if (!previewFit || !hasError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, hasError]);
+
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime);

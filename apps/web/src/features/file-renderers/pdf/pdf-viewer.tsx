@@ -2437,6 +2437,15 @@ function PDFViewerDocumentLoader({
     previewFit.report(getRotatedPageSize(firstPage.size, firstPage.rotation));
   }, [previewFit, activeDocumentId, document]);
 
+  // A PDF that fetched fine and will not parse renders the fallback shell
+  // below and never reaches the report above. Saying so explicitly is what
+  // stops a consumer sizing itself to whatever it measured last — silence
+  // here would read as "still loading", which this is not.
+  React.useEffect(() => {
+    if (!previewFit || !documentFailed) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, documentFailed]);
+
   if (!activeDocumentId || documentFailed || !pdfFile) {
     return (
       <PDFViewerFallbackShell

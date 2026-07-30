@@ -411,7 +411,17 @@ export function FilePreview({
           {/* Inside the source provider, not around it: a renderer that
               measures also fetches, and nesting this way means it never has to
               choose which context it is allowed to have. */}
-          <PreviewFitProvider onMeasure={({ width, height }) => setPanelAspect(width / height)}>
+          {/* `onUnmeasurable` is the other half of holding a ratio across a
+              nav (see `Detail.measures`): a file that fetches fine and cannot
+              be RENDERED — a corrupt PDF, bytes that are not the image they
+              claim — reports 'ready' and no size, so without this the panel
+              would sit at the previous document's width behind a broken
+              preview. Only the renderer can tell those apart from "still
+              decoding". */}
+          <PreviewFitProvider
+            onMeasure={({ width, height }) => setPanelAspect(width / height)}
+            onUnmeasurable={() => setPanelAspect(null)}
+          >
             <FileContentRenderer
               filePath={path}
               showHeader={false}

@@ -185,6 +185,16 @@ export function ImageRenderer({
     }
   }, [displayFileType, previewFit]);
 
+  // Retries exhausted: these bytes are never going to decode, so there will be
+  // no `report` for this image. Say "never" rather than staying silent — a
+  // consumer reads silence as "still loading" and keeps whatever width it last
+  // measured. Guarded on `previewFit`, so this is inert everywhere but the
+  // Easy panel, exactly like `report`.
+  useEffect(() => {
+    if (!previewFit || !imgError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imgError]);
+
   // Force the browser to re-attempt by toggling the src. For blob: URLs a
   // cache-bust param doesn't help, so we briefly clear and re-set the src.
   const reloadImage = useCallback(() => {
