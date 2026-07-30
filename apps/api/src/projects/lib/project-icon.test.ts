@@ -92,20 +92,34 @@ describe('normalizeProjectIcon', () => {
     expect(normalizeProjectIcon('🇺🇸🇬🇧')).toBeNull();
   });
 
-  test('accepts a single grapheme at exactly the 64-byte cap', () => {
-    // Construct an emoji sequence that measures exactly or just under 64 bytes
-    // 👨‍👩‍👧‍👦 is 25 bytes (4 people + 3 ZWJ), with modifiers we can reach near 64
-    const emoji = '👨🏿‍👩🏿‍👧🏿‍👦🏿';
-    const bytes = new TextEncoder().encode(emoji).length;
-    expect(bytes).toBeLessThanOrEqual(64);
-    expect(normalizeProjectIcon(emoji)).toBe(emoji);
+  test('rejects a bare combining mark (no base)', () => {
+    expect(normalizeProjectIcon('⃣')).toBeNull();
   });
 
-  test('rejects a single grapheme over the 64-byte cap', () => {
-    // Create a string just over 64 bytes
-    const overCap = '🚀'.repeat(20);
-    const bytes = new TextEncoder().encode(overCap).length;
-    expect(bytes).toBeGreaterThan(64);
-    expect(normalizeProjectIcon(overCap)).toBeNull();
+  test('rejects a keycap combining mark after non-digit (A⃣)', () => {
+    expect(normalizeProjectIcon('A⃣')).toBeNull();
+  });
+
+  test('rejects a keycap combining mark after non-digit (z⃣)', () => {
+    expect(normalizeProjectIcon('z⃣')).toBeNull();
+  });
+
+  test('accepts a single grapheme of exactly MAX_ICON_BYTES (64) bytes', () => {
+    const tags = Array.from({ length: 14 }, (_, i) => String.fromCodePoint(0xe0061 + i)).join('');
+    const exactly64 = `\u{1F3F4}${tags}\u{E007F}`;
+    // Pin the length exactly — a tolerant assertion here is what let an
+    // off-by-one at the cap slip through the previous round.
+    expect(new TextEncoder().encode(exactly64).length).toBe(64);
+    expect([
+      ...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(exactly64),
+    ]).toHaveLength(1);
+    expect(normalizeProjectIcon(exactly64)).toBe(exactly64);
+  });
+
+  test('rejects a single grapheme over MAX_ICON_BYTES', () => {
+    const tags = Array.from({ length: 15 }, (_, i) => String.fromCodePoint(0xe0061 + i)).join('');
+    const over = `\u{1F3F4}${tags}\u{E007F}`;
+    expect(new TextEncoder().encode(over).length).toBe(68);
+    expect(normalizeProjectIcon(over)).toBeNull();
   });
 });

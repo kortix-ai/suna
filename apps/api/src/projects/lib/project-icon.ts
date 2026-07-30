@@ -20,7 +20,7 @@ const MAX_ICON_BYTES = 64;
  *  flag a user picked. */
 const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
 const REGIONAL_INDICATOR_PAIR = /^\p{Regional_Indicator}{2}$/u;
-const KEYCAP = /⃣/;
+const KEYCAP = /^[0-9#*]️?⃣$/;
 
 const graphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
 const encoder = new TextEncoder();
