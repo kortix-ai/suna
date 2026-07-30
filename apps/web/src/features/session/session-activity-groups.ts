@@ -43,3 +43,25 @@ export function isInvisibleActivityPart(part: { type?: string; text?: string }):
   if (part.type === 'text' && !part.text?.trim()) return true;
   return false;
 }
+
+/**
+ * Tools that always render on their own, never folded into a burst.
+ *
+ *   - show / show_user: a deliverable handed to the user. Folding it behind a
+ *     collapsed row means it can be missed.
+ *   - agent_*: a spawned sub-agent has its own lifecycle and status. Folding it
+ *     in would hide a running agent behind a collapsed row.
+ */
+export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
+  'show',
+  'show_user',
+  'agent_spawn',
+  'agent_status',
+  'agent_message',
+  'agent_task_update',
+  'agent_stop',
+]);
+
+export function isStandaloneActivityTool(toolName: string | undefined): boolean {
+  return STANDALONE_TOOLS.has(normalizeActivityToolName(toolName));
+}
