@@ -21,7 +21,6 @@ import { DotsThreeIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
 import type { TurnCostInfo } from '@/ui';
 import { sessionTurnMetaRows } from './session-turn-meta-rows';
 

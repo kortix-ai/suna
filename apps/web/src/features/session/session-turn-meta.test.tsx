@@ -3,7 +3,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SessionTurnMeta } from './session-turn-meta';
 
-const COST = { cost: 0.45, tokens: { input: 30_000, output: 16_200 } } as const;
+const COST = {
+  cost: 0.45,
+  tokens: { input: 30_000, output: 16_200, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+} as const;
 
 describe('SessionTurnMeta', () => {
   test('renders the ⋯ trigger and its aria-label when there is meta to show', () => {
