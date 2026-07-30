@@ -261,11 +261,11 @@ test.describe('Roobert SemiMono', () => {
       `expected Roobert, got ${result.w.fontFamily}`,
     ).toContain('Roobert');
 
-    // The actual guard. WWWWWWWWWW measured 371.72px vs mmmmmmmmmm 350.80px at
-    // MONO=60 — a real but modest gap, unlike a monospaced face where both
-    // would land within ~0.5px of each other (see the Roobert Mono suite
-    // above). Flipping the `.font-semimono` --rb-mono stop from 60 to 100
-    // collapses this gap to near zero and must fail this assertion.
+    // The actual guard. At 32px this measures WWWWWWWWWW 248.2px vs
+    // mmmmmmmmmm 234.25px — a ~14px gap. Flip --rb-mono to 100 and both
+    // collapse to 201.61px, a 0px gap. The > 5 threshold sits well clear of
+    // both, so it catches the regression without being brittle to sub-pixel
+    // rounding. (Spec F7 quotes 371.72 / 350.80 — same ratio, measured at 48px.)
     const diff = result.w.width - result.m.width;
     expect(
       diff,
