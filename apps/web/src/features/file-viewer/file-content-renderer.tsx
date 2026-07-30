@@ -658,9 +658,19 @@ export function FileContentRenderer({
 
   // An `image` that settled without an image to show: bytes whose mime is not
   // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
-  // instead), or a HEIC whose fetch or conversion failed. No ImageRenderer is
-  // mounted on any of those paths, so nothing downstream can report the
-  // failure — this is the one case the surface itself has to speak for.
+  // instead), or a HEIC whose blob never arrived. No ImageRenderer is mounted
+  // on those paths, so nothing downstream can report the failure — this is the
+  // case the surface itself has to speak for.
+  //
+  // A HEIC whose CONVERSION fails is deliberately not one of them:
+  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
+  // URL over the raw bytes, which a browser with native HEIC support then
+  // renders correctly. So `heicImageUrl` is set, this predicate is false, and
+  // ImageRenderer mounts. Where the browser also cannot decode it, the release
+  // comes from ImageRenderer exhausting its own retries ~5s later — a known,
+  // accepted window during which a ratio-fitting consumer still holds the
+  // previous document's width. Widening this predicate to pre-empt it would
+  // break the browsers the fallback exists for.
   const imageProducedNothing =
     fileCategory === 'image' &&
     !showLoadingState &&
