@@ -2789,15 +2789,13 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  // A settled turn's duration is a pure function of its timestamps — deriving it
-  // during render removes the extra "" -> "2m 15s" pass the old effect forced on
-  // every completed turn. The effect below now only ticks the LIVE case.
+  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
+  // where it called setDuration on mount and forced every completed turn in the
+  // transcript through a second render for a number that never changes. The
+  // early return below is what removes that pass. A settled turn's duration is
+  // now SessionTurnMeta's job, from turnDurationMs.
   const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
   const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
-  const settledDuration = useMemo(
-    () => (turnDurationMs != null ? formatDuration(turnDurationMs) : ''),
-    [turnDurationMs],
-  );
   const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
     if (!working) return;
@@ -2808,7 +2806,7 @@ function SessionTurn({
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [working, turn]);
-  const duration = working ? liveDuration : settledDuration;
+  const duration = working ? liveDuration : '';
 
   // ---- Copy response ----
   const handleCopy = async () => {
@@ -3356,13 +3354,16 @@ function SessionTurn({
 
       {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
               as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
               different kinds on one dot-separated line, which reads as a list of
               comparable things and is not one. They are a labelled list inside
               `SessionTurnMeta` now. `focus-within` because a keyboard user could
-              otherwise tab into — and open — a control at `opacity-0`. */}
+              otherwise tab into — and open — a control at `opacity-0`. The
+              `data-state=open` case is the pointer one: the popover is portalled
+              and takes focus, so without it the ⋯ would fade out from under its
+              own open panel the moment the pointer left the turn. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
