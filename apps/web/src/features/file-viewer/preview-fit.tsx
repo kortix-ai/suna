@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  createContext,
-  useContext,
-  useMemo,
-  useRef,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react';
 
 /** Intrinsic pixel dimensions of a document, as decoded/measured by a renderer. */
 export interface IntrinsicSize {
@@ -17,6 +11,21 @@ export interface IntrinsicSize {
 export interface PreviewFit {
   /** Called by a renderer once it knows the document's real, unscaled size. */
   report: (size: IntrinsicSize) => void;
+  /**
+   * Called by a renderer that tried and cannot produce a size at all — a PDF
+   * that will not parse, bytes that turn out not to be an image, a video the
+   * browser refuses.
+   *
+   * This is a different statement from simply not calling {@link report}, and
+   * the difference is the whole reason it exists. Silence means "not yet", and
+   * a consumer holding a width is right to keep holding it. This means
+   * "never", which is what lets the Easy panel stop sizing itself to a
+   * document the user is no longer looking at and fall back to its default
+   * column. Only the renderer knows which of the two is true: a fetch that
+   * succeeded tells the surface above nothing about whether the bytes could be
+   * rendered.
+   */
+  reportUnmeasurable: () => void;
 }
 
 /**
@@ -28,10 +37,7 @@ export interface PreviewFit {
  */
 export function isUsableIntrinsicSize(size: IntrinsicSize): boolean {
   return (
-    Number.isFinite(size.width) &&
-    Number.isFinite(size.height) &&
-    size.width > 0 &&
-    size.height > 0
+    Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0
   );
 }
 
@@ -39,9 +45,13 @@ const PreviewFitContext = createContext<PreviewFit | null>(null);
 
 export function PreviewFitProvider({
   onMeasure,
+  onUnmeasurable,
   children,
 }: {
   onMeasure: (size: IntrinsicSize) => void;
+  /** Optional: a consumer that has no width to release can ignore the
+   *  "never" signal entirely, and `reportUnmeasurable` stays a safe no-op. */
+  onUnmeasurable?: () => void;
   children: ReactNode;
 }) {
   // Keep the latest callback in a ref rather than the memo's dependency
@@ -52,6 +62,8 @@ export function PreviewFitProvider({
   // which never changes.
   const onMeasureRef = useRef(onMeasure);
   onMeasureRef.current = onMeasure;
+  const onUnmeasurableRef = useRef(onUnmeasurable);
+  onUnmeasurableRef.current = onUnmeasurable;
 
   const value = useMemo<PreviewFit>(
     () => ({
@@ -59,6 +71,7 @@ export function PreviewFitProvider({
         if (!isUsableIntrinsicSize(size)) return;
         onMeasureRef.current(size);
       },
+      reportUnmeasurable: () => onUnmeasurableRef.current?.(),
     }),
     [],
   );

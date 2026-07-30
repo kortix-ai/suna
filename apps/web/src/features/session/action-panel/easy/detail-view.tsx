@@ -159,6 +159,23 @@ export interface Detail {
    * `openDetail`, the one funnel that knows whether the terminal was up.
    */
   swapIn?: boolean;
+  /**
+   * Reads like a capability ("this detail will measure itself") but is
+   * actually a lifecycle instruction to `openDetail`: "do not clear
+   * `panelAspect`". Set when this detail's body will report its own
+   * intrinsic size (see `reportsIntrinsicSize` in `file-preview.tsx`), so
+   * `openDetail` leaves the store's `panelAspect` alone instead of clearing
+   * it, trusting the incoming report to replace it.
+   *
+   * Without this, paging between two A4 PDFs glides the panel down to the
+   * default column and straight back up again — a 123px round trip between
+   * two pages of the same report. Holding the outgoing ratio until the
+   * incoming document replaces it makes same-shape paging perfectly still and
+   * shape-changing paging exactly one glide. Everything that reports nothing
+   * (a deck, an app, a step, Audit, a text file) leaves this unset and clears
+   * as before, because for those the ratio has genuinely stopped being true.
+   */
+  measures?: boolean;
 }
 
 /**

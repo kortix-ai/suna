@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Slider } from '@/components/ui/slider';
+import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
   DownloadIcon as Download,
@@ -57,6 +58,9 @@ export function VideoRenderer({
   onDownload,
 }: VideoRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // `null` outside a <PreviewFitProvider> — see image-renderer.tsx for why
+  // `report` below is then an inert no-op everywhere but the Easy panel.
+  const previewFit = usePreviewFit();
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -119,9 +123,18 @@ export function VideoRenderer({
         height: video.videoHeight,
         duration: video.duration,
       });
+      previewFit?.report({ width: video.videoWidth, height: video.videoHeight });
       setIsLoading(false);
     }
   };
+
+  // The browser refused the file, so `handleLoadedMetadata` will never run and
+  // no size is coming. Same "never, not not-yet" contract as the image and PDF
+  // renderers; inert outside a <PreviewFitProvider>.
+  useEffect(() => {
+    if (!previewFit || !hasError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, hasError]);
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
