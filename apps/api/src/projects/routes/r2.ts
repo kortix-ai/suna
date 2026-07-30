@@ -161,6 +161,8 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
+    // Same "degrade, never fail the create" rationale as r1.ts's provision
+    // handler — see the comment there.
     const icon = normalizeProjectIcon(body.icon);
     const row = await registerPatLinkedProject({
       accountId: scope.accountId,
