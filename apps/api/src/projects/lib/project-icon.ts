@@ -14,8 +14,22 @@
  *  so a 32-byte cap would reject a value the picker can produce. */
 const MAX_ICON_BYTES = 64;
 
+/** Country flags are regional-indicator PAIRS and keycaps are digit + U+20E3;
+ *  neither is Extended_Pictographic, yet the picker offers both as whole
+ *  categories. Testing only the pictographic property silently dropped every
+ *  flag a user picked. */
+const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
+const REGIONAL_INDICATOR_PAIR = /^\p{Regional_Indicator}{2}$/u;
+const KEYCAP = /⃣/;
+
 const graphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
 const encoder = new TextEncoder();
+
+function isEmojiGrapheme(grapheme: string): boolean {
+  return (
+    PICTOGRAPHIC.test(grapheme) || REGIONAL_INDICATOR_PAIR.test(grapheme) || KEYCAP.test(grapheme)
+  );
+}
 
 export function normalizeProjectIcon(input: unknown): string | null {
   if (typeof input !== 'string') return null;
@@ -34,10 +48,14 @@ export function normalizeProjectIcon(input: unknown): string | null {
     count += 1;
     if (count > 1) return null;
   }
+  // Defensive backstop: unreachable, but codifies the invariant that a
+  // non-empty string has at least one grapheme segment.
   if (count !== 1) return null;
 
-  // One grapheme is not enough on its own — `A` is one grapheme too.
-  if (!/\p{Extended_Pictographic}/u.test(trimmed)) return null;
+  // One grapheme is not enough on its own — reject plain text, but accept
+  // country flags (regional-indicator pairs) and keycaps which are emoji but
+  // not Extended_Pictographic.
+  if (!isEmojiGrapheme(trimmed)) return null;
 
   return trimmed;
 }

@@ -67,4 +67,45 @@ describe('normalizeProjectIcon', () => {
     expect(normalizeProjectIcon(42)).toBeNull();
     expect(normalizeProjectIcon({ icon: '🚀' })).toBeNull();
   });
+
+  test('accepts a country flag 🇺🇸', () => {
+    expect(normalizeProjectIcon('🇺🇸')).toBe('🇺🇸');
+  });
+
+  test('accepts another country flag 🇬🇧', () => {
+    expect(normalizeProjectIcon('🇬🇧')).toBe('🇬🇧');
+  });
+
+  test('accepts a keycap 1️⃣', () => {
+    expect(normalizeProjectIcon('1️⃣')).toBe('1️⃣');
+  });
+
+  test('accepts another keycap #️⃣', () => {
+    expect(normalizeProjectIcon('#️⃣')).toBe('#️⃣');
+  });
+
+  test('rejects a lone regional indicator', () => {
+    expect(normalizeProjectIcon('\u{1F1FA}')).toBeNull();
+  });
+
+  test('rejects two flags', () => {
+    expect(normalizeProjectIcon('🇺🇸🇬🇧')).toBeNull();
+  });
+
+  test('accepts a single grapheme at exactly the 64-byte cap', () => {
+    // Construct an emoji sequence that measures exactly or just under 64 bytes
+    // 👨‍👩‍👧‍👦 is 25 bytes (4 people + 3 ZWJ), with modifiers we can reach near 64
+    const emoji = '👨🏿‍👩🏿‍👧🏿‍👦🏿';
+    const bytes = new TextEncoder().encode(emoji).length;
+    expect(bytes).toBeLessThanOrEqual(64);
+    expect(normalizeProjectIcon(emoji)).toBe(emoji);
+  });
+
+  test('rejects a single grapheme over the 64-byte cap', () => {
+    // Create a string just over 64 bytes
+    const overCap = '🚀'.repeat(20);
+    const bytes = new TextEncoder().encode(overCap).length;
+    expect(bytes).toBeGreaterThan(64);
+    expect(normalizeProjectIcon(overCap)).toBeNull();
+  });
 });
