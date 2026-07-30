@@ -33,6 +33,39 @@ import { getTier, grantForSeats, isPerSeatAccount } from './tiers';
  */
 export const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
 
+/**
+ * Legitimate headroom above the allowance, on top of the numeric tolerance.
+ *
+ * The subscription-activation grant is ADDITIVE (`grantCredits(…, isExpiring =
+ * true)` in webhooks.ts), not a reset, so it stacks on whatever remains of the
+ * free tier's $2 expiring welcome grant. Every customer who subscribes before
+ * spending that $2 therefore, correctly, holds `allowance + 2` of expiring
+ * credit for the rest of their first cycle. Without this the check is red for
+ * every new paying customer on day one — and a guard that is red by
+ * construction gets ignored, which is the only way this one can fail.
+ *
+ * This does not blunt it: the smallest REAL grant-sizing error is a whole tier
+ * increment. The $40-instead-of-$25 per-seat bug is $15 on a single seat, still
+ * an order of magnitude clear of this headroom.
+ */
+const FIRST_CYCLE_FREE_GRANT_HEADROOM_USD = 2;
+
+/** Total excess, in dollars, that is reported as a breach on a PAID tier. */
+export const ENTITLEMENT_BREACH_THRESHOLD_USD =
+  ENTITLEMENT_DRIFT_TOLERANCE_USD + FIRST_CYCLE_FREE_GRANT_HEADROOM_USD;
+
+/**
+ * The headroom only exists for an account that carried the free grant INTO a
+ * paid tier. A free account has nothing to carry, so it keeps the tight
+ * tolerance — otherwise a free wallet double-granted to $4 (the exact risk if
+ * either of the two systems that reset the free tier is ever changed to an
+ * additive grant, at 148k-account scale) would fall inside the headroom and go
+ * unreported.
+ */
+function breachThresholdUsd(tierName: string): number {
+  return tierName === 'free' ? ENTITLEMENT_DRIFT_TOLERANCE_USD : ENTITLEMENT_BREACH_THRESHOLD_USD;
+}
+
 export interface EntitlementSubject {
   tier?: string | null;
   billingModel?: string | null;
@@ -79,15 +112,21 @@ export function expiringCreditExceedsEntitlement(
   const actualUsd = Number(subject.expiringCredits ?? 0) || 0;
   const excessUsd = actualUsd - expectedUsd;
 
-  if (excessUsd <= ENTITLEMENT_DRIFT_TOLERANCE_USD) return null;
+  if (excessUsd <= breachThresholdUsd(subject.tier ?? 'none')) return null;
   return { expectedUsd, actualUsd, excessUsd };
 }
 
 /**
- * A negative expiring balance is its own defect: the debit RPCs refuse to
- * overdraw, so it can only come from an unguarded write (the admin debit route
- * grants a negative amount through `atomic_add_credits`, which has no sign
- * check) or from the reset preserving a negative bucket.
+ * A negative expiring balance is its own defect: the debit RPC refuses to
+ * overdraw, so it can only come from an unguarded write. The reachable vector is
+ * the Drizzle fallback in credits.ts, which does an unlocked
+ * `expiringCredits + amount` with no floor whenever the grant RPC errors — a
+ * negative-amount expiring grant (admin tooling) lands straight in the bucket.
+ *
+ * Note what this does NOT cover: `non_expiring_credits` going negative, which is
+ * the condition actually measured in production and is preserved forever by the
+ * monthly reset. Bucket-aware refunds and a negative-non-expiring check belong
+ * to the same follow-up.
  */
 export function expiringCreditIsNegative(subject: { expiringCredits?: unknown }): boolean {
   return (Number(subject.expiringCredits ?? 0) || 0) < 0;

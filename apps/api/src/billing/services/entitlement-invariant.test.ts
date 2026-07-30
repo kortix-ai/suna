@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ENTITLEMENT_BREACH_THRESHOLD_USD,
   ENTITLEMENT_DRIFT_TOLERANCE_USD,
   expectedMonthlyEntitlementUsd,
   expiringCreditExceedsEntitlement,
@@ -88,13 +89,30 @@ describe('expiringCreditExceedsEntitlement — the drift this makes visible', ()
     ).toBeNull();
   });
 
-  test('an excess just past tolerance IS reported', () => {
+  test('an excess just past the reporting threshold IS reported', () => {
     expect(
       expiringCreditExceedsEntitlement({
         tier: 'tier_2_20',
-        expiringCredits: String(20 + ENTITLEMENT_DRIFT_TOLERANCE_USD + 0.01),
+        expiringCredits: String(20 + ENTITLEMENT_BREACH_THRESHOLD_USD + 0.01),
       }),
     ).not.toBeNull();
+  });
+
+  test('a subscriber who upgraded before spending the free $2 is NOT a breach', () => {
+    // The activation grant is additive, not a reset, so allowance + the unspent
+    // free-tier welcome grant is the correct expiring balance for a first cycle.
+    // Reporting it would make the guard red for every new paying customer.
+    expect(
+      expiringCreditExceedsEntitlement({ tier: 'tier_2_20', expiringCredits: '22' }),
+    ).toBeNull();
+    expect(
+      expiringCreditExceedsEntitlement({
+        tier: 'per_seat',
+        billingModel: 'per_seat',
+        seatCount: 1,
+        expiringCredits: '27',
+      }),
+    ).toBeNull();
   });
 
   test('a pro account holding monthly expiring credit is drift — pro grants none', () => {
@@ -107,6 +125,12 @@ describe('expiringCreditExceedsEntitlement — the drift this makes visible', ()
     const breach = expiringCreditExceedsEntitlement({ tier: 'free', expiringCredits: '20' });
     expect(breach?.expectedUsd).toBe(2);
     expect(breach?.excessUsd).toBe(18);
+  });
+
+  test('a free wallet double-granted to $4 is still reported — no paid-tier headroom applies', () => {
+    const breach = expiringCreditExceedsEntitlement({ tier: 'free', expiringCredits: '4' });
+    expect(breach?.expectedUsd).toBe(2);
+    expect(breach?.excessUsd).toBe(2);
   });
 
   test('a null expiring balance is clean, not a crash', () => {

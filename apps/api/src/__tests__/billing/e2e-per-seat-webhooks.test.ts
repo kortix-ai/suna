@@ -113,7 +113,11 @@ describe('per-seat webhook reconciliation', () => {
     expect(amount).toBe(50);
     expect(type).toBe('seat_grant');
     expect(idempotencyKey).toBeDefined();
-    expect(String(idempotencyKey)).toContain('1->3');
+    // Keyed on the seat count REACHED within this billing period, so a team that
+    // shrinks and regrows to 3 inside one cycle reuses the key instead of being
+    // funded twice for the same seat.
+    expect(String(idempotencyKey)).toContain(':seats:');
+    expect(String(idempotencyKey).endsWith(':3')).toBe(true);
   });
 
   test('auto-topup defaults rescale unless user customized', async () => {
@@ -175,7 +179,7 @@ describe('per-seat webhook reconciliation', () => {
     // All grant calls for this seat-count transition use the same key.
     const keys = new Set(grantCreditsCalls.map((c) => c[5]));
     expect(keys.size).toBe(1);
-    expect([...keys][0]).toContain('1->3');
+    expect(String([...keys][0]).endsWith(':3')).toBe(true);
   });
 
   test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
