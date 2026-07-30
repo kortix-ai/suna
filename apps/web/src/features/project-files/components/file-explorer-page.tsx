@@ -89,13 +89,25 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   const { downloadDir, isDownloading: isDirDownloading } = useDirectoryDownload();
 
-  const [showSkeleton, setShowSkeleton] = useState(false);
+  // Seeded from isLoading, not false: the route's loading.tsx has already
+  // painted a skeleton by the time this mounts, so starting at false renders an
+  // empty body for 200ms right where the user is looking. Seeding also avoids a
+  // one-frame skeleton flash when the listing is already cached (isLoading
+  // false on mount). The 200ms anti-flicker delay is for REFETCHES only.
+  const hasLoadedOnce = useRef(false);
+  const [showSkeleton, setShowSkeleton] = useState(isLoading);
   useEffect(() => {
-    if (isLoading) {
-      const timer = setTimeout(() => setShowSkeleton(true), 200);
-      return () => clearTimeout(timer);
+    if (!isLoading) {
+      hasLoadedOnce.current = true;
+      setShowSkeleton(false);
+      return;
     }
-    setShowSkeleton(false);
+    if (!hasLoadedOnce.current) {
+      setShowSkeleton(true);
+      return;
+    }
+    const timer = setTimeout(() => setShowSkeleton(true), 200);
+    return () => clearTimeout(timer);
   }, [isLoading]);
 
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';

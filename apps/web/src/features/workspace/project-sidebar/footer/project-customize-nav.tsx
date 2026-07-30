@@ -1,10 +1,10 @@
 'use client';
 
 import { GearSixIcon as Config, FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
-import { useParams, usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useParams, usePathname } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
-import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useDevice } from '@/hooks/use-device';
@@ -22,23 +22,6 @@ export function useCustomizeActivate() {
     openCustomize();
     if (isMobile) setOpenMobile(false);
   }, [openCustomize, isMobile, setOpenMobile]);
-}
-
-/** Navigate to the standalone Files page. Files live OUTSIDE customization
- *  (accessible to any member), so this is a top-level route, not a section of
- *  the Customize overlay. */
-export function useFilesActivate() {
-  const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id;
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
-
-  return useCallback(() => {
-    if (!projectId) return;
-    router.push(`/projects/${projectId}/files`);
-    if (isMobile) setOpenMobile(false);
-  }, [router, projectId, isMobile, setOpenMobile]);
 }
 
 /** Mod+, — open the customize overlay (same as the sidebar button). */
@@ -88,56 +71,52 @@ export function ProjectCustomizeNavItem() {
   );
 }
 
-export function ProjectCustomizeRailItem() {
-  const onClick = useCustomizeActivate();
-
-  return (
-    <Hint label="Customize">
-      <SidebarMenuButton type="button" aria-label="Customize" onClick={onClick}>
-        <Config className="size-4.5!" />
-      </SidebarMenuButton>
-    </Hint>
-  );
-}
-
-/** Top-level Files entry — sits ABOVE Customize (files aren't part of
- *  customization). Hidden when the caller lacks `project.file.read`: that leaf
- *  is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
- *  `member` role), so showing it to a plain member would just land them on a
- *  page whose every read 403s. Optimistic while the probe loads — the entry
- *  only disappears on an explicit deny. */
+/**
+ * Top-level Files entry — sits ABOVE Customize (files aren't part of
+ * customization). Hidden when the caller lacks `project.file.read`: that leaf
+ * is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
+ * `member` role), so showing it to a plain member would just land them on a
+ * page whose every read 403s. Optimistic while the probe loads — the entry
+ * only disappears on an explicit deny.
+ *
+ * A real `<Link prefetch>`, not `router.push`. The button form could not be
+ * prefetched, so every click paid for the route's RSC payload AND its JS chunk
+ * cold — the bulk of a 5-6s open. `prefetch` needs `files/loading.tsx` to have
+ * something to cache, because the project layout awaits cookies() and the
+ * route is therefore dynamic. Note this is production-only behaviour: Next
+ * disables Link prefetching under `next dev`.
+ */
 export function ProjectFilesNavItem() {
-  const onClick = useFilesActivate();
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
-  const canReadFiles = useProjectCan(params?.id, PROJECT_ACTIONS.PROJECT_FILE_READ);
+  const projectId = params?.id;
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+  const canReadFiles = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
 
+  const handleClick = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+
   if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
+  // No project id means no valid href. The old onClick already no-op'd in this
+  // case, so rendering a dead button was never useful.
+  if (!projectId) return null;
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        onClick={onClick}
+        asChild
         isActive={isActive}
         tooltip="Files"
         className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
-        <FolderOpen />
-        Files
+        <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
+          <FolderOpen />
+          Files
+        </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
-  );
-}
-
-export function ProjectFilesRailItem() {
-  const onClick = useFilesActivate();
-
-  return (
-    <Hint label="Files">
-      <SidebarMenuButton type="button" aria-label="Files" onClick={onClick}>
-        <FolderOpen className="size-4.5!" />
-      </SidebarMenuButton>
-    </Hint>
   );
 }
