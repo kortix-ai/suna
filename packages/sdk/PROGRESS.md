@@ -4238,6 +4238,29 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
 ---
 
+### 2026-07-30 - session `direct-agent-create` direct agent creation claim
+
+Claimed SDK work for `docs/plans/2026-07-30-001-feat-direct-agent-creation-plan.md`.
+
+Scope:
+
+- Add additive project agent config preview, create, and behavior-repair client methods.
+- Add React hooks that call those SDK methods.
+- Keep host code as a thin SDK consumer.
+
+Required sequence:
+
+- RED tests before SDK implementation.
+- `pnpm --filter @kortix/sdk typecheck`
+- `pnpm --filter @kortix/sdk test`
+- `pnpm --filter @kortix/sdk smoke:install`
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-07-30 — session `opencode-rest-title-preview-reliability` claim
 
 Claimed the OpenCode REST session-title reconciliation regression reported on
