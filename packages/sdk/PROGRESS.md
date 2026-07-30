@@ -282,6 +282,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B40 | **`usage_update{size,used}` is projected but still not wired to the meter.** `AcpProjection.contextWindow`/`contextUsed` now carry the harness's own context report (dev `10533f77-…`: `size 200000, used 30470`). Nothing reads them: `TokenProgress` gets `messages`, not the projection, and `getContextLimit` still guesses from the client model catalog or defaults to 200000. 7 of 138 real sessions report a meter of 0 while `contextUsed` knows the answer (`17c78bef-…`: meter 0, `contextUsed` 12502, truth 12516) — usage that arrives before any assistant message exists is lost. Needs `contextWindow`/`contextUsed` plumbed from `useSession` to the composer. | OPEN |
 | B41 | **The two ACP folds disagree on message boundaries for harnesses that emit no `messageId`.** `bun /tmp` harness-agnostic check over 241 sessions: SDK `projection.ts` and API `compact-transcript.ts` agree on role sequence + tool count for 218, disagree for 23, unchanged by B38/B39. All disagreements are ±1 assistant message on Pi-style logs where every chunk is unnamed, so boundaries come from open-message heuristics that differ across an attach. Pre-existing at HEAD (23 there too). | OPEN |
 | B42 | **A prompt that errors renders as an unanswered user bubble with no explanation.** `applyAcpEnvelope`'s response branch clears the pending prompt and drops `envelope.error` unless a `promptDrafts` entry survives. Dev session `ecc2d856-a08d-4cda-98bb-b76a7c892e69`: six `session/prompt` calls all answered `-32603 Internal error: OpenCode service failure`, and the projection is six user messages and zero assistants. `AcpProjection` has no per-turn error surface for a renderer to show. | OPEN |
+| B43 | **Expose the emoji project icon on the SDK's typed project contract.** Tasks 1–3 of the project-emoji-icons plan added `icon` to the API request/response bodies (`packages/api-contract/src/index.ts:120`, `icon: z.string().nullable()`); the SDK declares its own independent types and had no `icon` field anywhere. | `KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carried no `icon` member; plan `docs/superpowers/plans/2026-07-31-project-emoji-icons.md`; spec `docs/superpowers/specs/2026-07-31-project-emoji-icons-design.md`; task brief `.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`. | IN PROGRESS — session `sdk-project-emoji-icon`, claimed 2026-07-31 |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -4799,6 +4800,22 @@ The required `tdd` skill is unavailable in this session. The work will use the
 same RED, GREEN, and REFACTOR sequence directly.
 
 Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-31 — session `sdk-project-emoji-icon` (B43 claim)
+
+Claimed the additive `icon` field on the SDK's typed project contract:
+`KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`) and
+`LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`).
+This mirrors the API-side `icon: z.string().nullable()` contract that Tasks 1–3
+of `docs/superpowers/plans/2026-07-31-project-emoji-icons.md` already shipped
+(`packages/api-contract/src/index.ts:120`). The SDK does not import that
+package — this is an independent, additive type declaration. Task brief:
+`.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`.
 
 **Status:** IN PROGRESS.
 
