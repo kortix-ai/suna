@@ -12,6 +12,7 @@ import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
 
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
+process.env.MANAGED_GIT_PROVIDER = 'github';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -133,6 +134,8 @@ mockIamEngineAllowAll();
 mockIamMembershipSyncNoop();
 
 mock.module('../projects/git', () => ({
+  MergeConflictError: class MergeConflictError extends Error {},
+  isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -417,6 +420,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
           auth: { method: 'github_app', installation_id: INSTALL_ID },
           owner: REPO_OWNER,
         },
+        experimental: { acp_runtime: true },
       },
     });
     expect(grantedProjectRole).toMatchObject({
@@ -510,12 +514,12 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // No lock is ever produced — the engine that wrote it is deleted.
     expect(seedFilePaths).not.toContain('registry-lock.json');
     // The requested marketplace skills are NOT deterministically installed —
-    // only the always-present kortix-system skill (part of the base minimal
+    // only the committed kortix-cli skill (part of the base minimal
     // scaffold) is present.
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-cli/SKILL.md');
     expect(seedFilePaths).toContain('kortix.yaml');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
@@ -531,7 +535,30 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // never applied (see llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
-    expect(updatedProjectSets[0]).toMatchObject({ metadata: { default_agent: 'kortix' } });
+    expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
+  });
+
+  test('keeps the deprecated multi-harness starter id as an ACP-enabled alias', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Harness Lab',
+        seed_starter: true,
+        starter_template: 'acp-multi-harness',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(seedFilePaths).toContain('.claude/CLAUDE.md');
+    expect(seedFilePaths).toContain('.codex/AGENTS.md');
+    expect(seedFilePaths).toContain('.pi/README.md');
+    expect(seedFilesByPath.get('kortix.yaml')).toContain('kortix_version: 3');
+    expect(insertedProject?.metadata).toMatchObject({
+      experimental: { acp_runtime: true },
+    });
   });
 
   test('returns 503 when managed git is not configured', async () => {

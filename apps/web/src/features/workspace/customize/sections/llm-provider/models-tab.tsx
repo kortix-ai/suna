@@ -3,116 +3,42 @@
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
+import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
-import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@kortix/sdk/react';
-import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-// Full gateway catalog, independent of which providers are actually
-// connected — used ONLY to give `useModelStore` a canonical universe for
-// default/heuristic visibility resolution (see `catalogModels` below). Must
-// match what other surfaces (e.g. the session model picker) resolve
-// visibility against, or the same model silently defaults to a different
-// visibility depending on which tab/picker last computed it.
-import { flattenModels as flattenGatewayCatalog, useRuntimeProviders } from '@kortix/sdk/react';
-import { ExternalLink } from 'lucide-react';
+import {
+  useModelDefaults,
+  useModelEnablement,
+  useProjectModels,
+  wireToModelKey,
+} from '@kortix/sdk/react';
+import { Star } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { ModelIdCopyButton } from './model-id-copy-button';
-import {
-  formatPricePerMillion,
-  formatTokenCount,
-  gatewayModelId,
-  helpHostnameFromUrl,
-} from './utils';
+import { buildModelGroups } from './model-rows';
+import { formatPricePerMillion, formatTokenCount } from './utils';
 
-export function ModelsTab({
-  connectedProviders,
-  search,
-  llmGatewayEnabled,
-}: {
-  connectedProviders: LlmProviderEntry[];
-  search: string;
-  llmGatewayEnabled: boolean;
-}) {
+export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const pricingLookup = useModelPricingLookup(undefined);
 
-  const rows = useMemo(
-    () =>
-      connectedProviders.flatMap((p) =>
-        p.models.map((m) => ({
-          provider: p,
-          model: m,
-          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
-        })),
-      ),
-    [connectedProviders, llmGatewayEnabled],
-  );
+  // The SAME server list the session picker renders (`GET /model-picker`), so
+  // the two views can never show different models — and each model's `enabled`
+  // flag is resolved server-side and enforced by the gateway, so a switch here
+  // is the one and only thing deciding whether it appears there.
+  const models = useProjectModels(projectId);
+  const enablement = useModelEnablement(projectId);
+  // Setting the project default from here is what makes the locked row
+  // actionable: the only way to turn the default off is to make something else
+  // the default, so the control for that belongs on the same screen.
+  const defaults = useModelDefaults(projectId);
 
-  const flatModels = useMemo<FlatModel[]>(
-    () =>
-      rows.map(({ provider, model, storeKey }) => ({
-        providerID: storeKey.providerID,
-        providerName: provider.label,
-        modelID: storeKey.modelID,
-        modelName: model.name,
-        releaseDate: model.released ?? undefined,
-      })),
-    [rows],
-  );
+  const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
+  const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
 
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return undefined;
-    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
-  }, [connectedProviders, llmGatewayEnabled]);
-
-  // Same route-scoped snapshot `useConnectedProviders` already reads (see
-  // use-connected-providers.ts) — reused here ONLY to give `useModelStore`
-  // the FULL gateway catalog as its default-resolution universe. `flatModels`
-  // above stays scoped to `connectedProviders` (what this tab actually
-  // renders); `catalogModels` must NOT be narrowed the same way, or a model
-  // present in the full catalog but outside this narrower list resolves a
-  // different (heuristic-default) visibility here than on other surfaces —
-  // the root cause of toggles reading differently between this tab and the
-  // session model picker.
-  const { data: ocProviders } = useRuntimeProviders();
-  const catalogModels = useMemo(() => flattenGatewayCatalog(ocProviders), [ocProviders]);
-
-  const modelStore = useModelStore(flatModels, {
-    connectedProviderIds,
-    catalogModels,
-  });
-
-  const enabledCount = useMemo(
-    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
-    [rows, modelStore],
-  );
-  const hasOverrides = modelStore.userPrefs.length > 0;
-
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
-    for (const row of rows) {
-      if (
-        q &&
-        !row.model.name.toLowerCase().includes(q) &&
-        !row.model.id.toLowerCase().includes(q)
-      ) {
-        continue;
-      }
-      const existing = byProvider.get(row.provider.id);
-      if (existing) existing.rows.push(row);
-      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
-    }
-    return Array.from(byProvider.values());
-  }, [rows, search]);
-
-  if (connectedProviders.length === 0) {
+  if (models.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
         <p className="text-muted-foreground/60 text-xs">
@@ -124,7 +50,7 @@ export function ModelsTab({
     );
   }
 
-  if (grouped.length === 0) {
+  if (groups.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
         <p className="text-muted-foreground/60 text-xs">
@@ -139,17 +65,18 @@ export function ModelsTab({
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {flatModels.length}{' '}
+            {enabledCount} of {models.length}{' '}
             {tHardcodedUi.raw(
               'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
             )}
           </p>
-          {hasOverrides && (
+          {!enablement.usingDefaults && (
             <Button
               variant="ghost"
               size="sm"
+              disabled={enablement.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => modelStore.resetVisibility()}
+              onClick={() => void enablement.resetToDefaults()}
             >
               {tHardcodedUi.raw(
                 'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
@@ -159,82 +86,101 @@ export function ModelsTab({
         </div>
       )}
       <div className="space-y-3">
-        {grouped.map(({ provider, rows: providerRows }) => {
-          const helpHostname = helpHostnameFromUrl(provider.helpUrl);
-          return (
-            <div key={provider.id}>
-              <div className="flex items-center gap-2 px-1 pb-1">
-                <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-                <span className="text-foreground/70 text-xs font-medium">{provider.label}</span>
-                {helpHostname && provider.helpUrl && (
-                  <a
-                    href={provider.helpUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground/50 hover:text-foreground inline-flex items-center gap-0.5 text-[11px] transition-colors"
-                  >
-                    <ExternalLink className="size-2.5 shrink-0" />
-                    {helpHostname}
-                  </a>
-                )}
-                <span className="text-muted-foreground/40 ml-auto text-xs">
-                  {providerRows.length}
-                </span>
-              </div>
-              <div className="bg-popover overflow-hidden rounded-md border">
-                {providerRows.map(({ model, storeKey }, i) => {
-                  const visible = modelStore.isVisible(storeKey);
-                  const wireId = gatewayModelId(provider, model.id);
-                  const rates = pricingLookup(provider.id, model.id);
-                  const ctx = formatTokenCount(model.limit?.context);
-                  const out = formatTokenCount(model.limit?.output);
-                  const priceIn = rates ? formatPricePerMillion(rates.inputPer1M) : '';
-                  const priceOut = rates ? formatPricePerMillion(rates.outputPer1M) : '';
-                  const hasMeta = !!ctx || !!out || (!!priceIn && !!priceOut);
-                  return (
-                    <label
-                      key={model.id}
-                      className={cn(
-                        'hover:bg-muted/40 flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
-                        i > 0 && 'border-border border-t',
-                        !visible && 'opacity-60',
-                      )}
-                    >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-foreground truncate text-sm">{model.name}</span>
-                          <ModelCapabilityIcons model={model} />
-                        </div>
-                        <div className="flex min-w-0 items-center gap-0.5">
-                          <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
-                            {wireId}
-                          </code>
-                          <ModelIdCopyButton value={wireId} />
-                        </div>
-                        {hasMeta && (
-                          <InlineMeta>
-                            {ctx && <span className="tabular-nums">{ctx} ctx</span>}
-                            {out && <span className="tabular-nums">{out} max out</span>}
-                            {priceIn && priceOut && (
-                              <span className="tabular-nums">
-                                {priceIn} / {priceOut} per 1M
-                              </span>
-                            )}
-                          </InlineMeta>
-                        )}
-                      </div>
-                      <Switch
-                        checked={visible}
-                        onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
-                        className="mt-0.5 shrink-0"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
+        {groups.map((group) => (
+          <div key={group.providerID}>
+            <div className="flex items-center gap-2 px-1 pb-1">
+              <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
+              <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{group.rows.length}</span>
             </div>
-          );
-        })}
+            <div className="bg-popover overflow-hidden rounded-md border">
+              {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                const enabled = !!model.enabled;
+                // `auto` resolves to this one, so turning it off would break
+                // every default request — the server refuses it with a 409.
+                // Lock the switch and say why instead of letting the click
+                // become a failed action.
+                const isProjectDefault = wireId === enablement.defaultModel;
+                const ctx = formatTokenCount(model.contextWindow);
+                const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
+                const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
+                return (
+                  // A plain row, NOT a <label>: it holds three controls (copy
+                  // id, set-as-default, the switch) and a label binds to the
+                  // FIRST labelable one — the copy button — so "click the row
+                  // to toggle" never did what it looked like. Each control
+                  // carries its own accessible name instead.
+                  <div
+                    key={wireId}
+                    className={cn(
+                      'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
+                      i > 0 && 'border-border border-t',
+                      !enabled && 'opacity-60',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-foreground truncate text-sm">{model.modelName}</span>
+                        <ModelCapabilityIcons
+                          reasoning={model.capabilities?.reasoning}
+                          toolCall={model.capabilities?.toolcall}
+                          vision={model.capabilities?.vision}
+                        />
+                        {/* Same display name as its pinned snapshots — say which
+                            row is the one that rolls forward. */}
+                        {isRollingAlias && <Tag>latest</Tag>}
+                        {isProjectDefault && <Tag>project default</Tag>}
+                      </div>
+                      <div className="flex min-w-0 items-center gap-0.5">
+                        <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
+                          {wireId}
+                        </code>
+                        <ModelIdCopyButton value={wireId} />
+                      </div>
+                      {(ctx || (priceIn && priceOut)) && (
+                        <InlineMeta>
+                          {ctx && <span className="tabular-nums">{ctx} ctx</span>}
+                          {priceIn && priceOut && (
+                            <span className="tabular-nums">
+                              {priceIn} / {priceOut} per 1M
+                            </span>
+                          )}
+                        </InlineMeta>
+                      )}
+                    </div>
+                    {!isProjectDefault && enabled && (
+                      <button
+                        type="button"
+                        disabled={defaults.isUpdating}
+                        title={`Make ${model.modelName} this project's default model`}
+                        onClick={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
+                        className="text-muted-foreground/50 hover:text-foreground hover:bg-muted mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Star className="size-3.5" />
+                      </button>
+                    )}
+                    <Switch
+                      checked={enabled}
+                      disabled={enablement.isUpdating || isProjectDefault}
+                      aria-label={
+                        isProjectDefault
+                          ? `${model.modelName} is this project's default model and cannot be turned off`
+                          : `Offer ${model.modelName}`
+                      }
+                      title={
+                        isProjectDefault
+                          ? "This project's default model — set a different default to turn it off."
+                          : undefined
+                      }
+                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                      className="mt-0.5 shrink-0"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -187,7 +187,7 @@ describe('deductCredits', () => {
     }
   });
 
-  test('passes only accountId, amount, description to RPC', async () => {
+  test('binds the canonical overload by NAME, always sending p_ledger_type', async () => {
     // Use the rpcCalls-tracking mock from beforeEach
     // Override with a mock that ALSO tracks and returns success
     mockRegistry.supabaseRpc = {
@@ -207,8 +207,30 @@ describe('deductCredits', () => {
     expect(rpcCalls[0].params.p_account_id).toBe('acc_test_123');
     expect(rpcCalls[0].params.p_amount).toBe(1);
     expect(rpcCalls[0].params.p_description).toBe('Test');
+    expect(rpcCalls[0].params.p_ledger_type).toBe('usage');
+    expect(Object.keys(rpcCalls[0].params).sort()).toEqual([
+      'p_account_id',
+      'p_amount',
+      'p_description',
+      'p_ledger_type',
+    ]);
     expect(rpcCalls[0].params.p_thread_id).toBeUndefined();
     expect(rpcCalls[0].params.p_message_id).toBeUndefined();
+  });
+
+  test('a granular ledgerType reaches the RPC so the usage breakdown can classify it', async () => {
+    mockRegistry.supabaseRpc = {
+      rpc: (name: string, params?: any) => {
+        rpcCalls.push({ name, params });
+        return Promise.resolve({
+          data: { success: true, amount_deducted: 2, new_total: 98, transaction_id: 'tx_789' },
+          error: null,
+        });
+      },
+    };
+
+    await deductCredits('acc_test_123', 2, 'Sandbox compute', 'compute_debit');
+    expect(rpcCalls[0].params.p_ledger_type).toBe('compute_debit');
   });
 });
 

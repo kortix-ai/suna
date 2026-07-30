@@ -1,0 +1,304 @@
+{
+  "measured_at": "2026-07-29T20:13:37.518Z",
+  "api_base": "https://dev-api.kortix.com/v1",
+  "project_id": "f191d834-faad-4b69-a23b-aab425ebe90b",
+  "provider": "platinum",
+  "readiness_only": false,
+  "open_code_fork_isolation": true,
+  "sessions": [
+    {
+      "harness": "opencode",
+      "project_session_id": "d3552750-0b3d-4755-8fdf-f92612d8f47c",
+      "sandbox_id": "d3552750-0b3d-4755-8fdf-f92612d8f47c",
+      "sandbox_external_id": "sbx_01KYQR3PSF68T8248QJDSWK30Q",
+      "opencode_session_id": "ses_050fadf1dffeb2XyPZiu0qloal",
+      "sdk_opencode_session_id": "ses_050fadf1dffeb2XyPZiu0qloal",
+      "acp_server_id": "",
+      "acp_session_id": "",
+      "markers": [
+        "OPENCODE_FIRST_b184169d3dd5",
+        "OPENCODE_FOLLOWUP_b184169d3dd5",
+        "OPENCODE_RESTART_b184169d3dd5"
+      ],
+      "create_to_session_ready_ms": 35169,
+      "host_timing": {
+        "image": {
+          "branch": "main",
+          "provider": "platinum",
+          "contentHash": "d51c06b16b521e90fffa293fa7536366251f3f7646cc2643fb309f03959928be",
+          "sandboxSlug": "default",
+          "artifactType": "platinum_template",
+          "isPlatformDefault": true,
+          "providerArtifactRef": "kortix-default-d51c06b16b52"
+        },
+        "provider": "platinum",
+        "provision_timeline": {
+          "id": "d3552750-0b3d-4755-8fdf-f92612d8f47c",
+          "kind": "provision",
+          "marks": [
+            {
+              "atMs": 311,
+              "label": "row+tokens",
+              "deltaMs": 311
+            },
+            {
+              "atMs": 409,
+              "label": "image-cached",
+              "deltaMs": 98
+            },
+            {
+              "atMs": 12396,
+              "label": "provider-create:1x",
+              "deltaMs": 11987
+            }
+          ],
+          "totalMs": 12396
+        },
+        "session_start_timeline": {
+          "id": "d3552750-0b3d-4755-8fdf-f92612d8f47c",
+          "kind": "session-create",
+          "marks": [
+            {
+              "atMs": 243,
+              "label": "git-auth",
+              "deltaMs": 243
+            },
+            {
+              "atMs": 442,
+              "label": "env-vars",
+              "deltaMs": 199
+            },
+            {
+              "atMs": 754,
+              "label": "kicked",
+              "deltaMs": 312
+            }
+          ],
+          "totalMs": 754
+        }
+      },
+      "guest_timing": {
+        "runtimeReady": true,
+        "runtime_harness": "opencode",
+        "boot_timeline": [
+          {
+            "label": "static-web",
+            "atMs": 22
+          },
+          {
+            "label": "git-identity",
+            "atMs": 57
+          },
+          {
+            "label": "proxy-up",
+            "atMs": 69
+          },
+          {
+            "label": "repo-materialized",
+            "atMs": 8661
+          },
+          {
+            "label": "config-deps",
+            "atMs": 9195
+          },
+          {
+            "label": "runtime-binary-resolved",
+            "atMs": 9201
+          },
+          {
+            "label": "runtime-cwd-resolved",
+            "atMs": 9201
+          },
+          {
+            "label": "runtime-config-ready",
+            "atMs": 9301
+          },
+          {
+            "label": "runtime-process-spawned",
+            "atMs": 9304
+          },
+          {
+            "label": "runtime-acp-first-output",
+            "atMs": 15824
+          },
+          {
+            "label": "runtime-acp-initialized",
+            "atMs": 16356
+          },
+          {
+            "label": "opencode-spawned",
+            "atMs": 16356
+          },
+          {
+            "label": "opencode-answering",
+            "atMs": 16885
+          },
+          {
+            "label": "runtime-session-resume-requested",
+            "atMs": 16885
+          },
+          {
+            "label": "opencode-root-ready",
+            "atMs": 18419
+          },
+          {
+            "label": "opencode-session-created",
+            "atMs": 18419
+          },
+          {
+            "label": "opencode-ready",
+            "atMs": 18419
+          }
+        ]
+      },
+      "transcript": "OPENCODE_FIRST_b184169d3dd5\nOPENCODE_FOLLOWUP_b184169d3dd5\nOPENCODE_RESTART_b184169d3dd5"
+    },
+    {
+      "harness": "opencode",
+      "project_session_id": "cf7f9a74-0297-43c5-8e89-475b6b57f2ae",
+      "sandbox_id": "cf7f9a74-0297-43c5-8e89-475b6b57f2ae",
+      "sandbox_external_id": "sbx_01KYQR3PJ1ZG0Q9ARHV7QBMN37",
+      "opencode_session_id": "ses_050fadf1dffeb2XyPZiu0qloal",
+      "sdk_opencode_session_id": "ses_050fadf1dffeb2XyPZiu0qloal",
+      "acp_server_id": "",
+      "acp_session_id": "",
+      "markers": [
+        "OPENCODE_FIRST_dd824103321c",
+        "OPENCODE_FOLLOWUP_dd824103321c",
+        "OPENCODE_RESTART_dd824103321c"
+      ],
+      "create_to_session_ready_ms": 26022,
+      "host_timing": {
+        "image": {
+          "branch": "main",
+          "provider": "platinum",
+          "contentHash": "d51c06b16b521e90fffa293fa7536366251f3f7646cc2643fb309f03959928be",
+          "sandboxSlug": "default",
+          "artifactType": "platinum_template",
+          "isPlatformDefault": true,
+          "providerArtifactRef": "kortix-default-d51c06b16b52"
+        },
+        "provider": "platinum",
+        "provision_timeline": {
+          "id": "cf7f9a74-0297-43c5-8e89-475b6b57f2ae",
+          "kind": "provision",
+          "marks": [
+            {
+              "atMs": 767,
+              "label": "row+tokens",
+              "deltaMs": 767
+            },
+            {
+              "atMs": 863,
+              "label": "image-cached",
+              "deltaMs": 96
+            },
+            {
+              "atMs": 3305,
+              "label": "provider-create:1x",
+              "deltaMs": 2442
+            }
+          ],
+          "totalMs": 3305
+        },
+        "session_start_timeline": {
+          "id": "cf7f9a74-0297-43c5-8e89-475b6b57f2ae",
+          "kind": "session-create",
+          "marks": [
+            {
+              "atMs": 199,
+              "label": "git-auth",
+              "deltaMs": 199
+            },
+            {
+              "atMs": 547,
+              "label": "env-vars",
+              "deltaMs": 347
+            },
+            {
+              "atMs": 1314,
+              "label": "kicked",
+              "deltaMs": 767
+            }
+          ],
+          "totalMs": 1314
+        }
+      },
+      "guest_timing": {
+        "runtimeReady": true,
+        "runtime_harness": "opencode",
+        "boot_timeline": [
+          {
+            "label": "static-web",
+            "atMs": 23
+          },
+          {
+            "label": "git-identity",
+            "atMs": 57
+          },
+          {
+            "label": "proxy-up",
+            "atMs": 69
+          },
+          {
+            "label": "repo-materialized",
+            "atMs": 10319
+          },
+          {
+            "label": "config-deps",
+            "atMs": 10902
+          },
+          {
+            "label": "runtime-binary-resolved",
+            "atMs": 10908
+          },
+          {
+            "label": "runtime-cwd-resolved",
+            "atMs": 10908
+          },
+          {
+            "label": "runtime-config-ready",
+            "atMs": 10982
+          },
+          {
+            "label": "runtime-process-spawned",
+            "atMs": 10985
+          },
+          {
+            "label": "runtime-acp-first-output",
+            "atMs": 15525
+          },
+          {
+            "label": "runtime-acp-initialized",
+            "atMs": 16025
+          },
+          {
+            "label": "opencode-spawned",
+            "atMs": 16025
+          },
+          {
+            "label": "opencode-answering",
+            "atMs": 16586
+          },
+          {
+            "label": "runtime-session-resume-requested",
+            "atMs": 16586
+          },
+          {
+            "label": "opencode-root-ready",
+            "atMs": 18181
+          },
+          {
+            "label": "opencode-session-created",
+            "atMs": 18181
+          },
+          {
+            "label": "opencode-ready",
+            "atMs": 18181
+          }
+        ]
+      },
+      "transcript": "OPENCODE_FIRST_dd824103321c\nOPENCODE_FOLLOWUP_dd824103321c\nOPENCODE_RESTART_dd824103321c"
+    }
+  ]
+}

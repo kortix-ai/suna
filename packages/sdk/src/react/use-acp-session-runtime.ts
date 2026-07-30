@@ -3,11 +3,18 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
 import {
+  type AcpContentBlock,
+  type AcpSessionController,
+  type AcpSessionControllerOptions,
+  type AcpSessionControllerSnapshot,
   createAcpProjection,
   createAcpSessionController,
-  type AcpContentBlock,
-  type AcpSessionControllerSnapshot,
 } from '../core/acp';
+import { platformConfig } from '../core/http/config';
+import { persistProjectSessionAcpIdentity } from '../core/rest/projects-client/session-acp-identity';
+import { buildProjectAcpEndpoint } from '../core/session/runtime-transport';
+
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
 
 const EMPTY_SNAPSHOT: AcpSessionControllerSnapshot = {
   ready: false,
@@ -27,20 +34,83 @@ export async function cancelAcpSession(
   await controller.cancel();
 }
 
-export function useAcpSessionRuntime(input: {
+type AcpSessionRuntimeControllerInput = {
+  projectId: string;
   runtimeUrl: string | null;
-  sessionId: string | null;
+  sessionId: string;
+  acpServerId: string | null;
+  acpSessionId: string | null;
+  runtimeHarness: SessionRuntimeHarness | null;
+  nativeAgent?: string | null;
+  legacySessionId?: string | null;
+};
+
+export function createAcpSessionRuntimeController(
+  input: AcpSessionRuntimeControllerInput,
+  factory: (
+    options: AcpSessionControllerOptions,
+  ) => AcpSessionController = createAcpSessionController,
+): AcpSessionController | null {
+  if (!input.runtimeUrl) return null;
+  const managed = !!input.acpServerId && input.acpServerId === input.sessionId;
+  if (!managed) {
+    const legacySessionId = input.legacySessionId ?? input.acpSessionId;
+    return legacySessionId
+      ? factory({
+          runtimeUrl: input.runtimeUrl,
+          sessionId: legacySessionId,
+        })
+      : null;
+  }
+  if (!input.runtimeHarness || !input.acpServerId) return null;
+  return factory({
+    endpoint: buildProjectAcpEndpoint(
+      platformConfig().backendUrl,
+      input.projectId,
+      input.sessionId,
+    ),
+    durableTranscript: true,
+    sessionId: input.sessionId,
+    acpServerId: input.acpServerId,
+    acpSessionId: input.acpSessionId,
+    runtimeHarness: input.runtimeHarness,
+    nativeAgent: input.nativeAgent,
+    persistAcpSessionId: async (acpSessionId) => {
+      await persistProjectSessionAcpIdentity(input.projectId, input.sessionId, {
+        acp_server_id: input.acpServerId as string,
+        runtime_harness: input.runtimeHarness as SessionRuntimeHarness,
+        acp_session_id: acpSessionId,
+      });
+    },
+  });
+}
+
+export function useAcpSessionRuntime(input: {
+  projectId: string;
+  runtimeUrl: string | null;
+  /** Durable Kortix project session id. */
+  sessionId: string;
+  acpServerId: string | null;
+  acpSessionId: string | null;
+  runtimeHarness: SessionRuntimeHarness | null;
+  /** Immutable harness-native agent or mode selected when the session was created. */
+  nativeAgent?: string | null;
+  /** Existing ACP sessions without immutable multi-harness metadata. */
+  legacySessionId?: string | null;
   enabled: boolean;
 }) {
   const controller = useMemo(
-    () =>
-      input.runtimeUrl && input.sessionId
-        ? createAcpSessionController({
-            runtimeUrl: input.runtimeUrl,
-            sessionId: input.sessionId,
-          })
-        : null,
-    [input.runtimeUrl, input.sessionId],
+    () => createAcpSessionRuntimeController(input),
+    [
+      input.acpServerId,
+      input.acpSessionId,
+      input.legacySessionId,
+      input.nativeAgent,
+      input.projectId,
+      input.runtimeHarness,
+      input.runtimeUrl,
+      input.sessionId,
+    ],
   );
 
   useEffect(() => {

@@ -13,6 +13,7 @@ import {
   projectTriggerRuntime,
   projects,
   sessionSandboxes,
+  projectSessionConnectorBindings,
 } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
@@ -40,7 +41,6 @@ import {
   saveTeamsInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
-import { setProjectBotName } from '../../channels/voice-identity';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
@@ -58,6 +58,9 @@ import {
   relayTurnQuestion,
   relayTurnStep,
 } from '../../channels/turn-relay';
+import { setProjectBotName } from '../../channels/voice-identity';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { config } from '../../config';
 import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
 import { revokeProfileOAuth2 } from '../../executor/oauth2-store';
@@ -66,11 +69,13 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
 } from '../../executor/pipedream';
+import { isValidMatcher } from '../../executor/policy';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
@@ -79,29 +84,28 @@ import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
-import { isValidMatcher } from '../../executor/policy';
-import { db } from '../../shared/db';
 import {
-  acquireExecutionLease,
-  discoverExecutionKeepAliveEndpoint,
-  releaseExecutionLease,
-  renewExecutionLease,
-} from '../execution-lease';
+  getProjectRoutingPolicy,
+  setProjectModelOverrides,
+} from '../../repositories/project-routing-policies';
+import { db } from '../../shared/db';
 import {
   assertProjectCapability,
   loadProjectForUser,
   projectCapabilityAllowed,
 } from '../lib/access';
+import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
@@ -204,11 +208,17 @@ function serializeConnectionProfile(row: {
 }
 
 function mayReadConnectionProfile(
-  profile: { ownerType: string; ownerId: string | null; isDefault: boolean },
+  profile: { profileId: string; ownerType: string; ownerId: string | null; isDefault: boolean },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemProfiles: boolean,
+  /** Profile ids the CALLER'S session is bound to, or null when the caller is
+   *  not session-bound. See connector-profile-visibility.ts: a sandbox's token
+   *  carries the WRAPPER's user id, so without this every end-user's agent could
+   *  enumerate every other end-user's connection and then bind it. */
+  sessionBoundProfileIds: ReadonlySet<string> | null,
 ): boolean {
+  if (!sessionMayEnumerateProfile(profile, sessionBoundProfileIds)) return false;
   if (profile.ownerType === 'member') {
     return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
   }
@@ -302,6 +312,23 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+    // A sandbox executor token is bound to ONE session. Load what that session was
+    // actually GIVEN so the enumeration below can be narrowed to it. null for
+    // every non-session caller, which leaves the operator's view unchanged.
+    const callerSessionId = callerKortixSessionId(c);
+    let sessionBoundProfileIds: ReadonlySet<string> | null = null;
+    if (callerSessionId) {
+      const bound = await db
+        .select({ profileId: projectSessionConnectorBindings.profileId })
+        .from(projectSessionConnectorBindings)
+        .where(
+          and(
+            eq(projectSessionConnectorBindings.sessionId, callerSessionId),
+            eq(projectSessionConnectorBindings.projectId, projectId),
+          ),
+        );
+      sessionBoundProfileIds = new Set(bound.map((row) => row.profileId));
+    }
     const mayManageSystemProfiles = await projectCapabilityAllowed(
       c,
       loaded.userId,
@@ -334,6 +361,7 @@ projectsApp.openapi(
             loaded.userId,
             actingPrincipalIsServiceAccount,
             mayManageSystemProfiles,
+            sessionBoundProfileIds,
           ),
         )
         .map(serializeConnectionProfile),
@@ -542,7 +570,10 @@ projectsApp.openapi(
       body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
         ? (body.metadata as Record<string, unknown>)
         : {};
-    if (!connectorAlias || !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)) {
+    if (
+      !connectorAlias ||
+      !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)
+    ) {
       return c.json({ error: 'connector_alias and a valid owner_type are required' }, 400);
     }
     // A `project` (team-shared) connection belongs to the whole project and takes
@@ -1804,10 +1835,7 @@ projectsApp.openapi(
       const owners = await listProjectsForWorkspace('email', existingInboxId);
       const foreignOwner = owners.find((id) => id !== projectId);
       if (foreignOwner) {
-        return c.json(
-          { error: 'AgentMail inbox is already connected to another project' },
-          409,
-        );
+        return c.json({ error: 'AgentMail inbox is already connected to another project' }, 409);
       }
       inbox = {
         inbox_id: existingInboxId,
@@ -2056,87 +2084,6 @@ function agentMailConnectErrorBody(stage: 'inbox_create' | 'webhook_create', err
   };
 }
 
-// POST /v1/projects/:projectId/execution-lease
-// The sandbox agent reports active OpenCode work through this bounded JSON
-// route. Acquire returns the provider endpoint once. Renew and release each
-// execute one conditional database update.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/execution-lease',
-    tags: ['projects'],
-    summary: 'POST /:projectId/execution-lease',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              action: z.enum(['acquire', 'renew', 'release']),
-              session_id: z.string().min(1),
-              lease_ttl_seconds: z.number().optional(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(
-        z
-          .object({
-            ok: z.boolean(),
-            lease_until: z.string().nullable().optional(),
-            provider_url: z.string().nullable().optional(),
-            provider_headers: z.record(z.string(), z.string()).nullable().optional(),
-          })
-          .passthrough(),
-        'Lease operation result',
-      ),
-      ...errors(400, 403),
-    },
-  }),
-  async (c: any) => {
-    const authType = c.get('authType') as string | undefined;
-    const apiKeyType = c.get('apiKeyType') as string | undefined;
-    const accountId = c.get('accountId') as string | undefined;
-    const sandboxId = c.get('sandboxId') as string | undefined;
-    if (
-      authType !== 'apiKey' ||
-      apiKeyType !== 'sandbox' ||
-      !accountId ||
-      !sandboxId
-    ) {
-      return c.json({ error: 'execution lease requires a sandbox token' }, 403);
-    }
-    const projectId = c.req.param('projectId');
-    const body = c.req.valid('json') as {
-      action: 'acquire' | 'renew' | 'release';
-      session_id: string;
-      lease_ttl_seconds?: number;
-    };
-    const target = {
-      sandboxId,
-      sessionId: body.session_id.trim(),
-      projectId,
-      accountId,
-    };
-    if (body.action === 'release') {
-      return c.json({ ok: await releaseExecutionLease(target) });
-    }
-    const result =
-      body.action === 'acquire'
-        ? await acquireExecutionLease(target, body.lease_ttl_seconds)
-        : await renewExecutionLease(target, body.lease_ttl_seconds);
-    return c.json({
-      ok: result.ok,
-      lease_until: result.leaseUntil,
-      provider_url: result.providerUrl,
-      provider_headers: result.providerHeaders,
-    });
-  },
-);
-
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
 // kind=answer finalizes the turn's streamed message with the agent's reply.
@@ -2179,7 +2126,6 @@ projectsApp.openapi(
       error_status?: number;
       error_retryable?: boolean;
       error_provider?: string;
-      lease_ttl_seconds?: number;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -2197,13 +2143,6 @@ projectsApp.openapi(
     // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get('authType') as string | undefined;
     const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
-    const legacyExecutionLeaseKind =
-      body.kind === 'execution_heartbeat' ||
-      body.kind === 'execution_lease_release' ||
-      body.kind === 'execution_lease_discover';
-    if (legacyExecutionLeaseKind && (authType !== 'apiKey' || apiKeyType !== 'sandbox')) {
-      return c.json({ error: 'execution lease requires a sandbox token' }, 403);
-    }
     let authenticatedSandboxId: string | null = null;
     if (authType === 'apiKey' && apiKeyType === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
@@ -2211,28 +2150,10 @@ projectsApp.openapi(
       if (!accountId || !sandboxId) {
         return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
       }
-      if (legacyExecutionLeaseKind) {
-        const target = { sandboxId, sessionId, projectId, accountId };
-        if (body.kind === 'execution_lease_release') {
-          return c.json({ ok: await releaseExecutionLease(target) });
-        }
-        if (body.kind === 'execution_lease_discover') {
-          const provider = await discoverExecutionKeepAliveEndpoint(target);
-          return c.json({
-            ok: provider !== null,
-            provider_url: provider?.url ?? null,
-            provider_headers: provider?.headers ?? null,
-          });
-        }
-        const result = await renewExecutionLease(target, body.lease_ttl_seconds);
-        return c.json({
-          ok: result.ok,
-          lease_until: result.leaseUntil,
-          provider_url: null,
-          provider_headers: null,
-          provider_touched: false,
-        });
-      }
+      // Sandbox images baked before 2026-07-29 still POST the retired
+      // `execution_heartbeat` / `execution_lease_*` kinds here. They fall
+      // through to the generic relay below and get a harmless `{ ok: false }`;
+      // the in-sandbox reporter treated every non-2xx as best-effort anyway.
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
@@ -2309,6 +2230,25 @@ projectsApp.openapi(
               providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
             }
           : undefined;
+      // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so
+      // it is structurally incapable of EXTENDING the box's life — which is
+      // exactly why it is safe to trust a payload the sandbox authored, and
+      // why it needs no auth gate of its own. This is the "die 15 minutes
+      // after the last turn ended" half of the model.
+      //
+      // But ONLY for a turn that genuinely ended. `session.error` also fires
+      // while opencode is RETRYING (a 429 backoff, a transient upstream 5xx),
+      // and pulling the deadline in to 15 minutes there killed the box mid-turn
+      // on any backoff longer than that — the exact state the deleted execution
+      // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
+      // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
+      // cannot be re-wired here without it.
+      void shortenSandboxDeadlineOnTurnEnd(sessionId, status, errorInfo).catch((err) =>
+        console.warn(
+          `[deadline] shorten failed for session ${sessionId}:`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }
@@ -2712,6 +2652,11 @@ projectsApp.openapi(
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
+    // What `auto` resolves to for this project. Served below so the client can
+    // LOCK its switch instead of offering a toggle that always 409s.
+    const effectiveDefault = toWireModel(
+      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
+    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
@@ -2725,7 +2670,103 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    return c.json({ models });
+    // Server-owned per-project enablement, resolved HERE and stamped onto each
+    // model so every client renders the same answer the gateway enforces. The
+    // session picker shows the enabled ones; "Manage models" shows them all and
+    // switches on this flag. Neither re-derives it.
+    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
+    return c.json({
+      models: Object.fromEntries(
+        Object.entries(models).map(([id, model]) => [
+          id,
+          { ...model, enabled: enabled.get(id) ?? true },
+        ]),
+      ),
+      // The stored EXCEPTIONS, so a client toggling one model can PUT the
+      // merged map back without having to reconstruct it by diffing the
+      // resolved flags against a default it would have to recompute.
+      modelOverrides: routing?.modelOverrides ?? {},
+      // The model `auto` resolves to. It cannot be turned off (that would break
+      // every default request — the PUT refuses it with 409), so the client
+      // renders its switch as locked rather than letting the user click into an
+      // error.
+      defaultModel: effectiveDefault || undefined,
+      // True while the project has made no exceptions at all — the only thing
+      // "reset to defaults" has left to act on, and not derivable from the
+      // `enabled` flags alone (they look identical either way).
+      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
+// Replace the project's EXCEPTIONS to the default model set (the newest model
+// per family). Authoritative: the gateway refuses anything not effectively
+// enabled on every surface. An empty object restores the pure default. Refuses
+// to turn off the project's own default model (that would break every `auto`
+// request).
+const modelEnablementBody = z.object({
+  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
+});
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/model-enablement',
+    tags: ['projects'],
+    summary: 'PUT /:projectId/model-enablement',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: modelEnablementBody } } },
+    },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+    const accountId = loaded.row.accountId as string;
+    const userId = c.get('userId') as string;
+
+    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+    }
+    const modelOverrides: Record<string, boolean> = {};
+    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
+      const wire = toWireModel(model.trim());
+      if (wire) modelOverrides[wire] = enabled;
+    }
+
+    // A project must never turn off the model its own `auto` resolves to. Only
+    // an explicit `false` can do that — omitting it leaves the default in
+    // charge, which always offers the current one.
+    const defaults = await getAccountModelDefaults(accountId, projectId);
+    const effectiveDefault =
+      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
+      return c.json(
+        {
+          error: 'Cannot disable the project default model — change the default first.',
+          code: 'cannot_disable_default',
+        },
+        409,
+      );
+    }
+
+    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
+    return c.json({ ok: true, modelOverrides });
   },
 );
 
@@ -3006,6 +3047,10 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
 
+    // The session this credential is BOUND to, when it is a sandbox token.
+    // Null for a human caller.
+    let callerSandboxSessionId: string | null = null;
+
     const authType = (c as any).get('authType') as string | undefined;
     if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
@@ -3014,7 +3059,10 @@ projectsApp.openapi(
         return c.json({ error: 'turn-question requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionId: sessionSandboxes.sessionId,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -3028,8 +3076,12 @@ projectsApp.openapi(
       if (!sandbox) {
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
+      callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
     } else {
-      const loaded = await loadProjectForUser(c, projectId, 'read');
+      // A question card finalizes and re-posts a LIVE turn, so it is a
+      // mutation of that session — 'read' is too weak. The sibling turn-stream
+      // route already requires more than read for the same reason.
+      const loaded = await loadProjectForUser(c, projectId, 'session');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
@@ -3048,9 +3100,17 @@ projectsApp.openapi(
       return c.json({ error: 'session_id is required' }, 400);
     }
 
-    // session_id is caller-supplied — scope it back to :projectId so a caller
-    // authed for their own project can't relay a question into another
-    // tenant's live session (IDOR).
+    // session_id is caller-supplied. Scoping it to :projectId closes the
+    // cross-TENANT hole, but a sandbox token acts for exactly ONE session, so
+    // project scope still let sandbox A finalize and repost session B's live
+    // turn. sandbox_id == session_id by construction — bind to it.
+    if (
+      callerSandboxSessionId !== null &&
+      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+    ) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+    }
+
     const [turnQuestionSession] = await db
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)

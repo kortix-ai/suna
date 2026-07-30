@@ -10,11 +10,15 @@
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { channelApiBase, channelAuth } from './channels';
+import type { PolicyArgCondition } from './policy';
 
 export interface DesiredPolicy {
   match: string;
   action: 'always_run' | 'require_approval' | 'block';
   position: number;
+  /** Optional ARGUMENT conditions (see ProjectPolicySpec.conditions). Null =
+   *  an unconditional tool-name rule, which is what every rule was before. */
+  conditions?: PolicyArgCondition[] | null;
 }
 
 /** Provider-specific config blob stored on the connector row. */
@@ -78,10 +82,22 @@ export function connectorConfig(
 
 /** Map a connector's policies → ordered policy rows (authoring order = position). */
 export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
-  return spec.policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+  return spec.policies.map((p, i) => ({
+    match: p.match,
+    action: p.action,
+    position: i,
+    ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  }));
 }
 
 /** Map project-level [[policies]] → ordered policy rows (same shape as connector). */
 export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolicy[] {
-  return policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+  // `conditions` is OMITTED (not set to null) for an unconditional rule, so the
+  // row shape for the overwhelmingly common case stays exactly as it was.
+  return policies.map((p, i) => ({
+    match: p.match,
+    action: p.action,
+    position: i,
+    ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  }));
 }

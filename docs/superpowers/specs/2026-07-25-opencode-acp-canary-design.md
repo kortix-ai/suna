@@ -4,8 +4,9 @@
 
 **Status:** Historical design
 
-The implemented current state is documented in
-[`docs/specs/2026-07-26-acp-runtime-status-quo.md`](../../specs/2026-07-26-acp-runtime-status-quo.md).
+This OpenCode-only canary preceded the multi-harness implementation. The active
+contract is documented in
+[`docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`](2026-07-28-acp-multi-harness-design.md).
 
 ## Objective
 

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/core/env';
 import {
@@ -122,5 +124,50 @@ describe('database-only project fixture', () => {
       ),
     ).rejects.toThrow('KE2E_DATABASE_URL is required');
     expect(db.open).not.toHaveBeenCalled();
+  });
+});
+
+describe('managed Git fixture selection', () => {
+  it('runs CONN-5 last against the shared managed repository', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, '../src/flows/connectors.flow.ts'),
+      'utf8',
+    );
+    const start = source.indexOf("'CONN-5'");
+    const end = source.indexOf("\nflow(", start);
+    const conn5 = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(conn5).toContain('global: true');
+    expect(conn5).toContain('ctx.fixtures.sharedProject()');
+    expect(conn5).not.toContain('ctx.fixtures.project()');
+  });
+
+  it('uses staging credentials for manual E2E runs against staging', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/e2e.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('secrets.STAGING_SUPABASE_URL');
+    expect(workflow).toContain('secrets.STAGING_SUPABASE_ANON_KEY');
+    expect(workflow).toContain('secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY');
+    expect(workflow).toContain('secrets.STAGING_DATABASE_URL');
+    expect(workflow).toContain('secrets.STAGING_STRIPE_SECRET_KEY');
+  });
+
+  it('bounds stale-user GC with parallel workers and a workflow timeout', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/e2e.yml'),
+      'utf8',
+    );
+    const gc = readFileSync(resolve(import.meta.dirname, '../src/fixtures/gc.ts'), 'utf8');
+
+    expect(workflow).toContain('timeout-minutes: 5');
+    expect(workflow).toContain('KE2E_GC_WORKERS: 8');
+    expect(gc).toContain('mapWithConcurrency(stale, workers');
+    expect(gc).toContain('if (env.databaseUrl) return listTestUsersViaDb(env)');
+    expect(gc).toContain('ssl: local ? false : true');
   });
 });

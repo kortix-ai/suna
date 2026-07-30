@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import { agentMayUseConnector, canonicalizeGrantConnectors } from './agent-scope';
+import { grantFromLoadedAgents } from '../projects/agents';
 
 /**
  * A grant is compared at THREE gates that historically used three different
@@ -55,5 +56,66 @@ describe('connector alias spelling must not decide the outcome', () => {
     expect(Array.isArray(normalized?.connectors) ? normalized.connectors : []).toEqual([
       'kortix_email',
     ]);
+  });
+});
+
+describe('the v2 default_agent grant must canonicalize too', () => {
+  // The concrete-agent branch canonicalizes with a comment saying it MUST, so
+  // all three gates compare the same spelling. The v2 default_agent branch
+  // returned `declared.connectors` raw — so a v2 project whose default agent
+  // grants `email` had that connector silently denied at the call gate, which
+  // compares the canonical `kortix_email`.
+  test('a public-spelling grant on the default agent still admits the connector', () => {
+    const loaded = {
+      specs: [
+        {
+          name: 'support',
+          enabled: true,
+          kortixCli: 'all' as const,
+          connectors: ['email', 'slack'],
+          env: 'all' as const,
+        },
+      ],
+      errors: [],
+      defaultAgent: 'support',
+    };
+    const grant = grantFromLoadedAgents('default', loaded as never);
+    expect(agentMayUseConnector(grant, canonicalConnectorAlias('email'))).toBe(true);
+    expect(agentMayUseConnector(grant, canonicalConnectorAlias('kortix_email'))).toBe(true);
+    expect(agentMayUseConnector(grant, canonicalConnectorAlias('slack'))).toBe(true);
+  });
+
+  test('an ungranted connector is still refused on the default agent', () => {
+    const loaded = {
+      specs: [
+        { name: 'support', enabled: true, kortixCli: 'all' as const, connectors: ['email'], env: 'all' as const },
+      ],
+      errors: [],
+      defaultAgent: 'support',
+    };
+    const grant = grantFromLoadedAgents('default', loaded as never);
+    expect(agentMayUseConnector(grant, canonicalConnectorAlias('slack'))).toBe(false);
+  });
+});
+
+describe('a manifest that could not be READ must not widen a grant', () => {
+  // The mint resolves the grant with .catch(() => null), and null means NO
+  // RESTRICTION. Combined with a synthesized blank manifest whose agent is
+  // literally connectors:'all', a transient git blip could hand a governed
+  // project's session a fully unrestricted token.
+  test('errors present + default sentinel resolves DENY-ALL, never all-grant', () => {
+    const loaded = {
+      specs: [],
+      errors: [{ message: 'manifest unreadable' }],
+      defaultAgent: null,
+    };
+    const grant = grantFromLoadedAgents('default', loaded as never);
+    expect(grant).not.toBeNull();
+    expect(agentMayUseConnector(grant, 'kortix_email')).toBe(false);
+  });
+
+  test('a clean project with no agents section is still unrestricted (unchanged)', () => {
+    // No [[agents]] and no errors = the project never adopted governance.
+    expect(grantFromLoadedAgents('default', { specs: [], errors: [], defaultAgent: null } as never)).toBeNull();
   });
 });

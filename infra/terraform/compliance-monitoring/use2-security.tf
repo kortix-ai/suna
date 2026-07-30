@@ -496,17 +496,34 @@ resource "aws_network_acl" "use2_restricted" {
     from_port  = 3390
     to_port    = 65535
   }
+  # Permit public UDP except SSH (22) and RDP (3389), mirroring the TCP carve-out.
   ingress {
     protocol   = "udp"
     rule_no    = 130
     action     = "allow"
     cidr_block = "0.0.0.0/0"
     from_port  = 0
+    to_port    = 21
+  }
+  ingress {
+    protocol   = "udp"
+    rule_no    = 140
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 23
+    to_port    = 3388
+  }
+  ingress {
+    protocol   = "udp"
+    rule_no    = 150
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 3390
     to_port    = 65535
   }
   ingress {
     protocol   = "icmp"
-    rule_no    = 140
+    rule_no    = 160
     action     = "allow"
     cidr_block = "0.0.0.0/0"
     from_port  = 0

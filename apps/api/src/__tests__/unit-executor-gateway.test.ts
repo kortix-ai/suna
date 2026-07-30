@@ -352,37 +352,35 @@ describe('handleCall — policy layer', () => {
     expect(records).toHaveLength(0); // did NOT stack a new pending row on retry
   });
 
-  test('session-allowed → require_approval RUNS without holding or re-prompting', async () => {
+  // SESSION-WIDE GRANTS WERE REMOVED. This test previously asserted the
+  // opposite — that a stored "allow for this session" grant let a gated call run
+  // without asking. That is exactly the hole: the grant was keyed on
+  // (session, connector, action) and ignored the ARGUMENTS, so one approval of a
+  // send to a safe recipient silently covered a send to any other. The grant is
+  // no longer consulted, and an existing row must not resurrect the bypass.
+  test('a stored session grant no longer bypasses the gate', async () => {
     const { deps, fetchCalls } = makeDeps({
       policies: [{ match: '*', action: 'require_approval' }],
       enforcePolicies: true,
     });
+    deps.recordExecution = async () => 'exec-p';
     let waited = false;
     deps.waitForApprovalDecision = async () => {
       waited = true;
-      return 'approved';
+      return 'timeout';
     };
-    // Exact (session, connector, action) already allowed for this session.
+    // Exact (session, connector, action) "allowed" by a pre-existing row.
     deps.isSessionToolApproved = async (sid, _cid, action) =>
       sid === 'sess-1' && action === 'charges.create';
+
     const res = await handleCall(deps, baseInput);
-    expect(res.status).toBe('ok');
-    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
-    expect(waited).toBe(false); // never held / re-prompted
+
+    expect(res.status).toBe('pending_approval'); // still gated
+    expect(fetchCalls).toHaveLength(0); // the call did NOT run
+    expect(waited).toBe(true); // it held for a human, as it should
   });
 
-  test('session-allow for a DIFFERENT action does not bypass this one', async () => {
-    const { deps } = makeDeps({
-      policies: [{ match: '*', action: 'require_approval' }],
-      enforcePolicies: true,
-    });
-    deps.recordExecution = async () => 'exec-p';
-    deps.isSessionToolApproved = async (_sid, _cid, action) => action === 'charges.refund';
-    // No waiter → the still-gated call returns pending (not run).
-    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
-  });
-
-  test('policy BLOCK is never session-allowed (the check is not even consulted)', async () => {
+  test('policy BLOCK still short-circuits before any session-grant lookup', async () => {
     const { deps } = makeDeps({
       policies: [{ match: '*', action: 'block' }],
       enforcePolicies: true,
@@ -393,7 +391,7 @@ describe('handleCall — policy layer', () => {
       return true; // even if it would say "allowed"
     };
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
-    expect(consulted).toBe(false); // block short-circuits before any session-allow check
+    expect(consulted).toBe(false);
   });
 
   test('approval carry-over: a recent unconsumed approve lets the fresh call RUN', async () => {

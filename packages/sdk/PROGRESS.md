@@ -261,6 +261,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B30 | **Expose message-based session rewind and restore through both REST and ACP transports.** Editing an earlier user message must rewind the same canonical session instead of creating a fork. The removed path must remain recoverable until the replacement prompt commits.                                                                                                                                                                      | `apps/web/src/features/session/session-chat.tsx` contains `TODO(session-rewind)`. OpenCode exposes `/session/{sessionID}/revert` and `/unrevert`; ACP has no standard rewind method and needs a Kortix bridge extension plus transcript reload.                                                               | **DONE 2026-07-27** — implementation `eab4eef0f`; PR #5619 merged as `9e90e8ed7`. Deploy Dev run `30293660760` deployed source `e548c6a8fc9ee1d5a92db66d6feb912d4442ebeb`, which contains the merge. Dev session `7feb4e84-072f-4b71-987f-dc25dd542890` kept canonical OpenCode session `ses_05b075d25ffe7PBkZ632pcVAlW` across ACP and REST rewind, restore, replacement commit, reconnect, and file rollback. ACP produced `DEPLOYED_ACP_REPLACEMENT`; REST produced `DEPLOYED_REST_REPLACEMENT`; cleanup removed `26/26` probe sessions and restored ACP runtime overrides. SDK tests `1309/0`, daemon tests `306/0`, web source contract `5/0`, local ACP Playwright `1/0`, and local real ACP plus REST smoke pass. Shippable to production: **YES** for protocol behavior. Deployed UI interaction remains unverified because Browser discovery returned `[]`. |
 | B31 | **Allow a page-scoped ACP query override and settle completed ACP prompts that contain stale running tools.**                                                                                                                                                                                                                                                                                                                                     | `?acp` has no SDK transport override. Dev session `5322fa59-7a73-4fea-9f1a-9da59c2a0b5a` rendered the final assistant response while an older tool part remained `running`; `hasProjectionBlockers()` then kept the composer busy and blocked the queued prompt.                                                                 | **IMPLEMENTATION COMPLETE 2026-07-27** — implementation `d3544ae14`; focused SDK `40/0`, full SDK `1312/0`, typecheck, packed-install smoke, web routing `5/0`, and touched web ESLint pass. PR #5636, Deploy Dev, deployed SHA proof, and deployed ACP-only proof remain |
 | B32 | **Synchronize generated Kortix session names from both ACP and OpenCode REST runtimes without navigation or refresh.**                                                                                                                                                                                                                                                                                                                           | ACP emits `session_info_update`; OpenCode `/global/event` emits a wrapped `session.updated`. Neither path reliably persisted `metadata.name`, and the sidebar query could stay stale after a completed prompt.                                                                                              | **IMPLEMENTATION COMPLETE 2026-07-28** — ACP and REST title events persist server-side; the SDK refetches list and detail queries through a bounded post-send loop; focused API `78/0`, full SDK `1318/0`, API and SDK typechecks, packed-install smoke, test-harness typecheck, and local ACP plus REST Chromium `1/0` pass. Full API has `3` pre-existing failures reproduced in the primary checkout. PR, Deploy Dev, deployed SHA proof, and deployed UI proof remain. |
+| B33 | **The ACP transcript has no bounded read — a session replays every envelope on open.** OpenCode REST opens on a bounded newest-first page (`SESSION_SYNC_PAGE_SIZE`) and pages backwards through a cursor; ACP has no equivalent, so the ACP path gets slower without limit as a session grows. As ACP becomes the only transport, the bounded-read property is lost with it. | `GET /:projectId/sessions/:sessionId/acp/transcript` (`apps/api/src/projects/routes/acp.ts:160`) and `loadAcpTranscript` (`apps/api/src/projects/lib/acp-transcript.ts`) accept only `after` (forward tailing for gap recovery) — no `before`/`limit`. `useSession` hardcodes `hasOlder: false` / `loadOlder: async () => {}` for ACP (`src/react/use-session.ts:533-535`). **Not a small change:** the projection is a fold over the whole envelope log (`applyAcpEnvelope`), so replaying a suffix yields a wrong projection — open tool calls, session info, and rewind state all live in earlier envelopes. Needs either envelope-range snapshots or a projection checkpoint, then the existing `hasOlder`/`loadOlder` contract plugs into the transcript's scroll-driven autoload unchanged. | OPEN |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -1034,6 +1035,28 @@ session base-ref resolution honor it before group and project defaults. No
 existing public names or required fields will be changed. SDK work will follow
 RED -> GREEN -> REFACTOR and finish with typecheck, full suite, and packed-install
 smoke evidence.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness` claim
+
+Claimed project-gated ACP multi-harness support.
+
+The existing `acp_runtime` project experiment will become the single rollout
+gate for ACP transport and Claude Code, Codex, OpenCode, and Pi harness
+selection.
+
+The implementation will port the behavioral contract from PR #4510 onto the
+current session-scoped SDK architecture. It will not restore PR #4510's removed
+SDK refactor or host-local runtime logic.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused API, SDK, daemon, manifest, and web tests, API and
+SDK typechecks, the full SDK suite, packed-install smoke, local browser proof,
+real multi-harness sandbox proof, PR merge, Deploy Dev, deployed SHA proof, and
+deployed browser plus protocol verification.
 
 **Status:** IN PROGRESS.
 
@@ -3565,3 +3588,505 @@ the full SDK suite, packed-install smoke, local browser proof, PR merge,
 Deploy Dev, deployed SHA proof, and deployed session-name synchronization.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness` local completion
+
+Implemented project-gated ACP transport and OpenCode, Claude Code, Codex, and Pi
+harness support.
+
+The existing `acp_runtime` experiment is the single rollout gate.
+The visible experiment name is `ACP & Multi-Harness`.
+Project manifests use `kortix_version: 3` runtime profiles and logical agents.
+Project-session ACP identity is immutable.
+ACP envelopes persist in PostgreSQL with database ordinals as SSE cursors.
+Upstream deduplication is scoped by runtime instance.
+Triggers and automations deliver ACP prompts through the durable session
+lifecycle queue.
+
+A cold Daytona snapshot took `379,773 ms`.
+The previous detached initial-prompt delivery stopped after `300,000 ms`.
+The durable queue fix now survives this cold-build window.
+
+Local verification:
+
+- Daemon suite: exit `0`.
+- Daemon typecheck: exit `0`.
+- API ACP tests: **28 pass / 0 fail** with **77** assertions.
+- API typecheck: exit `0`.
+- SDK typecheck: exit `0`.
+- SDK suite: **1347 pass / 0 fail** with **5855** assertions across **113**
+  files.
+- SDK packed-install smoke: pass.
+- Manifest, shared, API-contract, CLI schema, and web helper gates: exit `0`.
+- Route coverage: **507/517** routes, **10** allowlisted, **0** uncovered.
+- `COV-10`: **1/1** passed against `http://localhost:19108/v1`.
+- Real Daytona smoke: **4/4** harnesses passed.
+- Smoke cleanup: OpenCode, Claude Code, Codex, and Pi sessions are `stopped`
+  with `deletedAt`.
+- Touched web ESLint: exit `0`.
+- `git diff --check`: exit `0`.
+
+The connected-provider row no longer renders the model-dependent provider-key
+verification action.
+The backend verification route remains available for existing SDK consumers.
+
+The in-app browser runtime returned no available browsers.
+Rendered agent selection and provider-row verification remain unexecuted.
+
+**SDK shippable to production: YES.**
+
+**Feature delivery status: NOT YET.**
+PR merge, Deploy Dev, deployed SHA proof, and deployed protocol verification
+remain.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness` deployed completion
+
+Completed repository delivery and deployed protocol verification.
+
+PR #5749 merged as `239cda8a2c7b8e3862cae5d968224c1baf1d0a02`.
+Its 25 executed checks passed.
+The superseding Deploy Dev run `30402685106` deployed API and frontend commit
+`8e86e27d045b8349eaf7dc9cfba47086e93cfaf8`.
+Git confirmed that the feature merge is an ancestor of that deployed commit.
+
+The first deployed smoke found two environment and restart conditions:
+
+- The dev platform OpenAI key returned `401 invalid_api_key`.
+- A Daytona stop/start changed its preview ingress credential.
+  Another API replica could retain the old credential for five minutes.
+
+The smoke runner now accepts a disposable project model override and an optional
+temporary OpenAI key.
+The local encrypted OpenAI key returned HTTP `200` from `GET /v1/models`.
+PR #5759 added one ACP ingress refresh-and-retry after `401` or `403`.
+It also retries prompt env synchronization after the same authentication
+rejection.
+PR #5759 merged as `35d4063c954176338e809abc4329e43410786122`.
+Its 15 executed checks passed.
+Deploy Dev run `30406252134` completed successfully for that exact SHA.
+`GET https://dev-api.kortix.com/v1/health` reported:
+
+- `environment`: `dev`
+- `version`: `0.11.1-dev.35d4063c`
+- `commit`: `35d4063c954176338e809abc4329e43410786122`
+
+Deployed Daytona protocol smoke against
+`https://dev-api.kortix.com/v1` reported:
+
+- OpenCode: pass.
+- Claude Code: pass.
+- Codex: pass.
+- Pi: pass.
+- Final result: **4/4 harnesses passed**.
+
+Each harness verified its headless prompt, follow-up prompt, transcript reload,
+immutable harness identity, in-place restart, post-restart prompt, and persisted
+ACP identity.
+
+The disposable fixture project was
+`196ff19b-dfa1-4aae-98eb-9fa5138446b6`.
+Cleanup verification found:
+
+- Project status: `archived`.
+- OpenCode, Claude Code, Codex, and Pi session status: `stopped`.
+- Four session sandbox rows: `archived`.
+- Matching sandbox rows: `0`.
+
+The connected-provider row no longer exposes the model-dependent verification
+action.
+The SDK verification route remains compatible.
+The in-app browser runtime exposed no browser.
+Rendered provider-row verification remains unexecuted.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.** Local suites, CI, merge, deployed SHA,
+deployed four-harness protocol behavior, restart recovery, and fixture cleanup
+all pass.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness-system-docs` claim
+
+Claimed the multi-harness documentation and agent-discovery follow-up.
+
+The SDK change is documentation-only. It will replace the stale statement that
+ACP uses only OpenCode. It will document the server-selected OpenCode, Claude
+Code, Codex, or Pi harness without changing the public SDK surface.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-28 — session `acp-multi-harness-system-docs` local completion
+
+Completed the SDK documentation update for the server-selected OpenCode,
+Claude Code, Codex, or Pi harness.
+
+No SDK export or runtime implementation changed.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1356 pass`, `0 fail`,
+  `5929 expect() calls`, `116 files`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarball imported and
+  constructed successfully.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-29 — session `acp-runtime-adapters` multi-harness starter claim
+
+Claimed the additive `acp-multi-harness` starter input.
+
+The public `CreateProjectRepoInput` and `ProvisionProjectInput` unions must
+accept the new starter identifier. Existing identifiers remain unchanged.
+
+The required `tdd` skill is unavailable in this session. The work still uses
+RED, GREEN, and REFACTOR.
+
+Required SDK gates are typecheck, the full test suite, and packed-install
+smoke.
+
+Local SDK verification:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1355 pass`, `2 skip`, `0 fail`, and
+  `5925` assertions across `116` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarball import and
+  construction passed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** Main integration,
+PR merge, Deploy Dev, deployed SHA proof, and deployed four-harness verification
+remain.
+
+---
+
+### 2026-07-29 — session `acp-multi-harness-system-docs` deployed completion
+
+Completed repository delivery and deployed verification for the multi-harness
+documentation and agent-discovery follow-up.
+
+Delivery evidence:
+
+- PR #5768 merged as
+  `3b3992fbbae6d71ab3097dfac722fdafc54b02ba`.
+- All required PR checks passed.
+- Deploy Dev run `30411098518` completed with `success`.
+- The run built and published the CLI, API image, and frontend image.
+- `GET https://dev-api.kortix.com/v1/health` returned version
+  `0.11.1-dev.3b3992fb` and the exact merge commit.
+- The `dev-latest` Git tag resolved to the exact merge commit.
+- The shipped macOS arm64 CLI reported
+  `Kortix CLI v0.11.1-dev.3b3992fb`.
+
+Deployed agent-discovery verification:
+
+- `kortix system-skills --host kortix-internal-dev --json` returned 10 system
+  skills.
+- `kortix system-skills get kortix-system --full --json` returned 19 reference
+  files.
+- The deployed `references/kortix/runtime-harnesses.md` file contained OpenCode,
+  Claude Code, Codex, Pi, the real-model rule, and the four-harness smoke command.
+
+Deployed protocol verification used one disposable Platinum project:
+
+- OpenCode: pass.
+- Claude Code: pass.
+- Codex: pass with a temporary direct project `OPENAI_API_KEY`.
+- Pi: pass with the same temporary direct project credential.
+
+Each harness verified its headless prompt, follow-up prompt, transcript reload,
+immutable harness identity, in-place restart, post-restart prompt, and persisted
+ACP identity.
+
+The first Codex attempt proved the dev managed OpenAI credential is invalid.
+The Codex harness reached
+`https://dev-api.kortix.com/v1/router/openai/responses`, which returned
+`401 invalid_api_key`. The exact Codex harness passed after the disposable
+project received a direct OpenAI credential. No generic provider preflight was
+used as acceptance evidence.
+
+Cleanup verification:
+
+- Project status: `archived`.
+- Five session rows: `stopped`.
+- Five sandbox rows: `archived`.
+- Five Platinum sandbox IDs returned `404`.
+- The managed GitHub repository returned `404`.
+- The Supabase test user count was `0`.
+- The test PAT and all five executor tokens were revoked.
+- The temporary `OPENAI_API_KEY` project secret was deleted.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.** Local gates, CI, merge, Deploy Dev, deployed
+SHA, shipped CLI discovery, deployed four-harness behavior, and fixture cleanup
+all pass. The dev managed OpenAI credential remains an environment issue.
+
+---
+
+### 2026-07-29 — session `acp-multi-harness-selector` SDK snapshot claim
+
+Claimed the additive `BillingState` public type-surface snapshot repair.
+
+`origin/main` exports `BillingState` from the root and `./projects-client`
+entry points. The committed snapshot omits both names.
+
+The existing public type-surface test is the RED test.
+The required `tdd` skill is unavailable in this session.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-29 — session `acp-multi-harness-selector` SDK snapshot completion
+
+Added the additive `BillingState` name to the root and `./projects-client`
+public type-surface snapshots.
+
+TDD evidence:
+
+- RED: `pnpm --filter @kortix/sdk exec bun test
+  src/public-type-surface.test.ts` reported `0 pass`, `1 fail`, and only two
+  additive `BillingState` entries.
+- GREEN: the same focused command reported `1 pass`, `0 fail`, and `2`
+  assertions.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1356 pass`, `0 fail`, `5929` assertions,
+  `116` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarball imported and
+  constructed successfully.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-29 — session `acp-runtime-adapters` final local verification
+
+The final branch retains the additive `acp-multi-harness` starter input.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1357 pass`, `0 fail`, `5931`
+  assertions, and `116` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball imported
+  and constructed successfully.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** PR merge, Deploy Dev,
+deployed SHA proof, and deployed four-harness verification remain.
+
+---
+
+### 2026-07-29 — session `generic-acp-session-identity` SDK claim
+
+Claimed the preassigned OpenCode session identity compatibility task.
+
+Scope:
+
+- Treat the `/start` response as the authoritative runtime identity.
+- Keep `initialOpenCodeSessionId` as a backward-compatible cache seed.
+- Prevent SDK caches from crossing Kortix `(projectId, sessionId)` boundaries.
+- Prove two sandboxes restored from one snapshot receive distinct OpenCode IDs.
+
+The required `tdd` skill is unavailable in this session.
+The implementation used the same RED, GREEN, and REFACTOR sequence directly.
+
+TDD evidence:
+
+- IndexedDB scope RED: the focused test failed because
+  `idb-sync-cache-key` did not exist.
+- IndexedDB scope GREEN: `3 pass`, `0 fail`.
+- Transcript ownership RED: the focused test failed because
+  `resolveSessionCacheOwnerScope` did not exist.
+- Transcript ownership GREEN: `4 pass`, `0 fail`.
+- Runtime switch gate RED: the focused source contract found no sandbox-switch
+  gates in `useSession`.
+- Runtime switch gate GREEN: the focused source contract passed.
+- Runtime-action gate RED: the focused test failed because
+  `isSessionRuntimeActionReady` did not exist.
+- Runtime-action gate GREEN: the focused test passed.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1381 pass`, `0 fail`, `5970`
+  assertions.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
+- The public export snapshot did not change.
+
+Related repository gates:
+
+- Starter typecheck: exit `0`.
+- Starter tests: `51 pass`, `0 fail`.
+- CLI typecheck: exit `0`.
+- CLI tests: `553 pass`, `0 fail`.
+- API typecheck: exit `0`.
+- API focused tests: gateway base URL `6 pass`; starter create-repo `12 pass`;
+  provision `10 pass`; scaffold identity `1 pass` with `182` assertions;
+  project-session contract `45 pass` with `363` assertions.
+- Web focused tests: `27 pass`, `0 fail`.
+- Web focused ESLint: exit `0`.
+
+Live local acceptance:
+
+- Evidence:
+  `tests/performance/session-start/results/2026-07-29/opencode-fork-isolation-local-platinum.json`.
+- Provider: Platinum.
+- Result: `PASS 2/2`.
+- Create-to-ready: `21.460 s` and `23.736 s`.
+- `/start` returned distinct OpenCode roots:
+  `ses_050ddca47ffe4r8L0yDak7Fiar` and
+  `ses_050ddd663ffe159AjQGlKxefsg`.
+- `createKortix().session().ensureReady()` matched each `/start` root.
+- Restart preserved each root.
+- Each transcript contained only its own three assistant markers.
+- Fixture cleanup left zero projects and zero users.
+
+Rebased local acceptance on `origin/main` `d627167f`:
+
+- Evidence:
+  `tests/performance/session-start/results/2026-07-29/opencode-fork-isolation-local-platinum-rebased.json`.
+- The smoke converted the canonical version 3 starter into a disposable
+  version 2 OpenCode REST fixture through a temporary project-scoped PAT.
+- Result: `PASS 2/2` on Platinum.
+- Create-to-ready: `21.758 s` and `23.266 s`.
+- `/start` returned distinct OpenCode roots:
+  `ses_050be4bb6ffepNq9BLE8kdybL9` and
+  `ses_050be472cffeLbJ7ciXGs8smOL`.
+- The public SDK matched both authoritative `/start` roots.
+- Restart preserved both roots.
+- Each assistant transcript contained only its own three markers.
+- Fixture cleanup left zero projects and zero users.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** PR merge, Deploy Dev,
+deployed SHA proof, and deployed isolation verification remain.
+
+---
+
+### 2026-07-29 — session `sdk-inherited-session-defaults` follow-up claim
+
+Claimed the live inherited OpenCode session default compatibility follow-up.
+
+Live dev evidence on merge `7a7bb4f16`:
+
+- Three distinct Platinum sandboxes inherited
+  `ses_050fadf1dffeb2XyPZiu0qloal`.
+- SDK routing kept each user marker in its own sandbox transcript.
+- The first SDK prompt used the stale snapshot model
+  `opencode/big-pickle` and produced no assistant message.
+- A direct prompt with the persisted project-session model
+  `kortix/glm-5.2` unblocked each session.
+- Both sessions then passed follow-up, restart, and post-restart SDK sends.
+
+Scope:
+
+- Resolve the persisted project-session model and agent before a default SDK
+  `send`.
+- Keep explicit per-call and handle-level SDK overrides authoritative.
+- Accept an equal inherited OpenCode ID when sandbox and transcript ownership
+  remain isolated.
+- Make the disposable live smoke tolerate project manifest convergence without
+  hiding product failures.
+
+The required `tdd` skill is unavailable in this session.
+The implementation will use the same RED, GREEN, and REFACTOR sequence
+directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-07-29 — session `sdk-inherited-session-defaults` follow-up completion
+
+Completed the inherited OpenCode session compatibility fix in `a900fc605`.
+
+The SDK now reads the persisted project-session model and agent before the
+first default OpenCode REST `send()` on a handle. Per-call choices override
+handle choices. Handle choices override persisted defaults. `changeModel()`
+invalidates the cached persisted defaults. A failed defaults read clears the
+cache so the next `send()` retries it.
+
+The live smoke now treats the sandbox as the isolation boundary. It accepts an
+equal snapshot-inherited `opencode_session_id` only when the Kortix sessions,
+sandboxes, and transcripts remain isolated. The session-create helper retries
+only the exact `409 ACP_RUNTIME_REQUIRED` manifest-convergence response.
+
+TDD and focused evidence:
+
+- RED: the inherited-session prompt omitted the persisted model and agent.
+- GREEN: the prompt used `kortix/glm-5.2` and agent `kortix`.
+- RED: `changeModel()` left the old persisted model cached.
+- GREEN: the next prompt used the changed model.
+- Focused SDK client suite: `71 pass`, `0 fail`, `258` assertions.
+- Tests package typecheck: exit `0`.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1385 pass`, `0 fail`, `5978`
+  assertions across `121` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
+
+Live dev Platinum acceptance:
+
+- Evidence:
+  `tests/performance/session-start/results/2026-07-29/opencode-inherited-pin-dev-platinum.json`.
+- Result: `PASS 2/2`.
+- Create-to-ready: `26.022 s` and `35.169 s`.
+- Two distinct Kortix sessions and Platinum sandboxes inherited
+  `ses_050fadf1dffeb2XyPZiu0qloal`.
+- `createKortix().session().ensureReady()` matched the authoritative `/start`
+  pin for both sandboxes.
+- Both sessions passed first response, follow-up response, restart, and
+  post-restart response using only SDK `send()`.
+- Each transcript contained only its own three assistant markers.
+- Fixture cleanup removed the project, sessions, account, and user.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+Repository delivery evidence:
+
+- PR `#5848` merged as
+  `d6979ad99241ebd8baeb00391dc186ce007b63e1`.
+- All PR checks completed successfully.
+- Deploy Dev run `30487926127` completed successfully for the merge SHA.
+- `https://dev-api.kortix.com/v1/health` reported version
+  `0.11.1-dev.d6979ad9` and commit
+  `d6979ad99241ebd8baeb00391dc186ce007b63e1`.
+
+**Repository delivery shippable to production: YES.**

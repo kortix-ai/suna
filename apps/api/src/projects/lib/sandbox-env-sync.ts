@@ -97,7 +97,16 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
-  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnvForSession)).env;
+  return (
+    await listProjectSecretsSnapshotForUser(
+      projectId,
+      row.createdBy,
+      grantEnvForSession,
+      // Same session the boot path built for — boot and hot push must agree on
+      // delivery or a prompt would re-push a value boot deliberately withheld.
+      sessionId,
+    )
+  ).env;
 }
 
 export async function resolveSandboxEnvSnapshot(

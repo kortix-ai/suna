@@ -1,5 +1,9 @@
 # SDK model system redesign — defaults (project / agent / trigger) + free-tier as a pure gateway concern
 
+> **Runtime update on 2026-07-28.** OpenCode provider injection below describes
+> the v2 compatibility path. Version 3 also routes Claude Code, Codex, and Pi.
+> Model support must be verified through the selected harness and exact model.
+
 Status: **draft / for review** · Owner: SDK refactor (branch `whitelabel-demo`)
 
 ## Goal

@@ -14,8 +14,10 @@
  * prototype. See docs/REVIEW_CENTER_DESIGN.md.
  */
 
+import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import { useProjectContext } from '@/features/project-files/context';
+import { useChangeRequestRecovery } from '@/features/project-files/hooks/use-change-request-recovery';
 import {
   useCloseChangeRequest,
   useMergeChangeRequest,
@@ -60,6 +62,7 @@ export function ReviewCenterConnected({
   const merge = useMergeChangeRequest();
   const close = useCloseChangeRequest();
   const requestChanges = useRequestChangesOnChangeRequest();
+  const { startRecovery, startingCrId } = useChangeRequestRecovery();
 
   // Session names for the per-session filter + group headers (sessionId → label).
   // Also names the originating session in each approval's description.
@@ -84,6 +87,28 @@ export function ReviewCenterConnected({
   );
 
   const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
+
+  function recoverChange(
+    item: Extract<(typeof items)[number], { kind: 'change' }>,
+    conflicts: string[],
+  ) {
+    const detail = item.detail;
+    if (!detail.crId || detail.number == null) return;
+    void startRecovery(
+      {
+        crId: detail.crId,
+        number: detail.number,
+        title: item.title,
+        headRef: detail.advanced.headRef,
+        baseRef: detail.advanced.baseRef,
+      },
+      {
+        kind: 'merge_conflict',
+        conflicts,
+      },
+      closeCustomize,
+    );
+  }
 
   function handleAct(id: string, verdict: ReviewVerdict, feedback?: string) {
     // Executor approvals resolve directly — the same call + payload the
@@ -114,7 +139,26 @@ export function ReviewCenterConnected({
             successToast('Change shipped — merged into the base branch');
             refreshInbox();
           },
-          onError: (e) => errorToast(e.message),
+          onError: (e) => {
+            if ((e as { code?: string }).code === 'MERGE_CONFLICT') {
+              const item = items.find((candidate) => candidate.id === id);
+              const conflicts = (e as { data?: { conflicts?: string[] } }).data?.conflicts ?? [];
+              refreshInbox();
+              if (item?.kind === 'change') {
+                errorToast('This change has merge conflicts', {
+                  description: 'Start an agent session to solve them.',
+                  duration: 10_000,
+                  button: (
+                    <Button size="sm" onClick={() => recoverChange(item, conflicts)}>
+                      Solve with agent
+                    </Button>
+                  ),
+                });
+                return;
+              }
+            }
+            errorToast(e.message);
+          },
         });
       } else if (verdict === 'reject') {
         close.mutate(crId, {
@@ -197,6 +241,8 @@ export function ReviewCenterConnected({
       onAct={canAct ? handleAct : undefined}
       onBulkAct={canAct ? handleBulkAct : undefined}
       onRefresh={() => void refetch()}
+      recoveringCrId={startingCrId}
+      onRecoverChange={recoverChange}
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through
         // the backend now. Clear any stale queued prompt so navigating can't

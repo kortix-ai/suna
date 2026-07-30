@@ -55,7 +55,18 @@ compile_with_retry() {
 # `bun build --compile`; see packages/starter/scripts/generate-embedded.ts).
 bun run ../../packages/starter/scripts/generate-embedded.ts
 
+# Record the exact in-sandbox Executor source before compilation. The final
+# attestation binds that source to the output binary and Linux compile target.
+source_digest="$(bun run scripts/sandbox-runtime-attestation.ts print-source)"
+attestation_tmp="dist/.kortix-executor-runtime.attestation.json.tmp"
+attestation_final="dist/kortix-executor-runtime.attestation.json"
 compile_with_retry
+bun run scripts/sandbox-runtime-attestation.ts write \
+  "$attestation_tmp" \
+  "dist/kortix" \
+  "$source_digest" \
+  "$target"
+mv "$attestation_tmp" "$attestation_final"
 chmod +x dist/kortix
 size="$(stat -f%z dist/kortix 2>/dev/null || stat -c%s dist/kortix)"
-echo "Built dist/kortix for ${target} (${size} bytes)"
+echo "Built dist/kortix for ${target} (${size} bytes; attestation ${attestation_final})"

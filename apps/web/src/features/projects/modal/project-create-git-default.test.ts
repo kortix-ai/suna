@@ -23,6 +23,13 @@ describe('new project git provider default', () => {
     expect(source).not.toContain('rounded-2xl');
   });
 
+  test('uses one generic starter without a starter selector', () => {
+    expect(source).not.toContain('StarterTemplateId');
+    expect(source).not.toContain('ACP multi-harness');
+    expect(source).not.toContain('data-testid="project-create-starter"');
+    expect(source).toContain("starter_template: 'general-knowledge-worker'");
+  });
+
   test('does not mistake the managed PAT import fallback for a GitHub App installation', () => {
     expect(source).toContain('isGitHubAppInstallationId');
     expect(source).toContain('githubAppInstallations');

@@ -4,6 +4,8 @@ import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
+
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
@@ -29,6 +31,11 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  runtime_transport?: 'acp' | 'rest';
+  runtime_harness?: SessionRuntimeHarness;
+  native_agent?: string | null;
+  acp_server_id?: string | null;
+  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.
@@ -171,11 +178,21 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/**
+ * @param options.scope - `project` asks for the manager-only full inventory.
+ * @param options.end_user_ref - Kortix-as-a-Backend: return only the sessions
+ *   this wrapper created for ONE of its end-users. Filtered server-side, so a
+ *   wrapper never has to fetch the whole project to answer "show me this
+ *   customer's sessions".
+ */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: { scope?: 'visible' | 'project'; end_user_ref?: string },
 ) {
-  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.end_user_ref) params.set('end_user_ref', options.end_user_ref);
+  const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
@@ -302,10 +319,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
 
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(
-      `/projects/${projectId}/sessions/warm`,
-      {},
-    ),
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
   );
   markSessionFresh(result.session.session_id);
   return result;
@@ -316,11 +330,9 @@ export async function claimWarmProjectSession(
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(
-      `/projects/${projectId}/sessions/warm/claim`,
-      input,
-      { showErrors: false },
-    ),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
+      showErrors: false,
+    }),
   );
   markSessionFresh(session.session_id);
   return session;
@@ -357,9 +369,19 @@ export interface SessionAuditAction {
    *  still awaiting a decision. */
   resolved_by: string | null;
   resolved_by_email: string | null;
+  /**
+   * Redacted detail the gateway recorded. For a gated call this carries
+   * `args_preview` — the (secret-stripped) arguments the call would run with,
+   * which is what makes an approval decidable rather than a guess.
+   */
   result_summary: Record<string, unknown> | null;
   at: string;
   resolved_at: string | null;
+  /**
+   * Standalone page for reviewing and deciding this call. Non-null only while
+   * the row is unresolved; a settled decision carries no live link.
+   */
+  approval_url?: string | null;
 }
 
 export interface SessionAudit {
@@ -526,6 +548,53 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
  * rebuild its config), which ends any in-flight turn. `applied_live: false`
  * means it was stored and will apply when the sandbox next starts.
  */
+/** What a re-scope may change, and what it reports back. */
+export interface SessionScopeInput {
+  /**
+   * FULL new allowlist — this REPLACES the previous one. `null` stops narrowing
+   * (fall back to the agent's own grant); `[]` means "no project secrets at
+   * all". Those two are opposite, so the field is optional: omit it to leave
+   * secrets untouched.
+   */
+  secrets?: string[] | null;
+  /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
+  connector_bindings?: Record<string, { profile_id: string }>;
+}
+
+export interface SessionScopeResult {
+  secrets_allowlist: string[] | null;
+  connector_bindings: Record<string, { profile_id: string }>;
+  dropped_secrets: string[];
+  added_secrets: string[];
+  dropped_bindings: string[];
+  /**
+   * False when a secret was dropped. Connector bindings resolve server-side at
+   * call time so they take effect immediately, but a secret the agent has
+   * already read stays in its context and in shells it already started —
+   * dropping it stops future DELIVERY, it does not un-read the value. Surface
+   * this rather than reporting a plain success.
+   */
+  retroactive: boolean;
+  detail: string;
+}
+
+/**
+ * Re-scope a RUNNING session. Set semantics: what you send replaces what was
+ * there, and takes effect from the next prompt.
+ */
+export async function setProjectSessionScope(
+  projectId: string,
+  sessionId: string,
+  scope: SessionScopeInput,
+): Promise<SessionScopeResult> {
+  return unwrap(
+    await backendApi.put<SessionScopeResult>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      scope,
+    ),
+  );
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,

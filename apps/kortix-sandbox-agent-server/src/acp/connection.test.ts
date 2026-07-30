@@ -18,6 +18,7 @@ function createHarness(options: {
   requestTimeoutMs?: number
   maxReplayEvents?: number
   initialEventId?: number
+  onFirstOutput?: () => void
 } = {}) {
   const input = new PassThrough()
   const output = new PassThrough()
@@ -29,6 +30,7 @@ function createHarness(options: {
     maxReplayEvents: options.maxReplayEvents,
     initialEventId: options.initialEventId,
     onDiagnostic: (line) => diagnostics.push(line),
+    onFirstOutput: options.onFirstOutput,
   })
   const writes: Record<string, unknown>[] = []
   let pending = ''
@@ -84,6 +86,19 @@ describe('OpenCode ACP launch', () => {
 })
 
 describe('ACP NDJSON connection', () => {
+  test('reports the first ACP output line exactly once', async () => {
+    let firstOutputCalls = 0
+    const harness = createHarness({
+      onFirstOutput: () => firstOutputCalls++,
+    })
+
+    respond(harness, { method: 'session/update', params: { index: 1 } })
+    respond(harness, { method: 'session/update', params: { index: 2 } })
+    await nextTick()
+
+    expect(firstOutputCalls).toBe(1)
+  })
+
   test('validates JSON-RPC envelopes', () => {
     expect(parseJsonRpcEnvelope({ jsonrpc: '2.0', method: 'session/new' })).toEqual({
       jsonrpc: '2.0',

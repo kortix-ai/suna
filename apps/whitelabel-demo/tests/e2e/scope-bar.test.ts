@@ -1,0 +1,417 @@
+import type { ProjectSecret } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
+import {
+  MISSING_SECRET_NOTE,
+  NEW_IDENTIFIER_HINT,
+  SECRET_MEMBERSHIP_LABEL,
+  START_NEW_SESSION_ACTION,
+  classifyTypedIdentifier,
+  scopeBarConnectors,
+  scopeBarSecrets,
+  hasScopeDraft,
+  scopeControl,
+  scopeDraftIssues,
+  seedBindingsFromLabels,
+} from '../../src/components/chat/scope-bar-model';
+import { BOUND_CONNECTIONS_KEY, buildSessionCreateInput } from '../../src/lib/session-overrides';
+import { readBoundConnections } from '../../src/lib/session-scope';
+import { selectConnectorBindingChoices } from '../../src/server/bindable-connections';
+
+const secret = (identifier: string, name: string, over: Record<string, unknown> = {}) =>
+  ({
+    identifier,
+    name,
+    project_id: 'P1',
+    secret_id: `s-${identifier}`,
+    created_by: null,
+    created_at: null,
+    updated_at: null,
+    configured: true,
+    mine: null,
+    effective_source: 'shared',
+    can_manage_shared: true,
+    ...over,
+  }) as ProjectSecret;
+
+const profile = (over: Record<string, unknown> = {}) =>
+  ({
+    profile_id: 'p1',
+    connector_alias: 'gmail',
+    owner_type: 'project',
+    owner_id: null,
+    label: 'Support',
+    status: 'active',
+    is_default: false,
+    metadata: {},
+    ...over,
+  }) as never;
+
+// ── The whole point of the bar: which control may touch THIS session ─────────
+
+describe('scopeControl', () => {
+  test('secrets and connections ARE live-editable now', () => {
+    // They were frozen until `PUT .../scope` existed. The bar must offer the
+    // control, because refusing to would now be the UI lying about the platform.
+    expect(scopeControl('secrets').live).toBe(true);
+    expect(scopeControl('connections').live).toBe(true);
+  });
+
+  test('the model and the per-message agent are the two that can move now', () => {
+    expect(scopeControl('model').live).toBe(true);
+    expect(scopeControl('agent').live).toBe(true);
+  });
+
+  test('a changeable row says so, and the badge cannot drift from the rule', () => {
+    // The badge is derived from MID_SESSION_CAPABILITIES, so it moves with the
+    // contract rather than being restated by hand.
+    expect(scopeControl('secrets').badge).toBe('Changeable');
+    expect(scopeControl('connections').badge).toBe('Changeable');
+  });
+
+  test('the model note does not promise the change takes effect immediately', () => {
+    // `applied_live: false` is a real response. A user told "now running X"
+    // whose next answer comes from the old model has been lied to.
+    expect(scopeControl('model').note).toContain('next time this session starts');
+  });
+
+  test('the secrets note states the one thing a re-scope cannot do', () => {
+    // Dropping a secret stops DELIVERY; it cannot un-read what the agent has.
+    // Saying "revoked" here would be false assurance.
+    expect(scopeControl('secrets').note).toContain('cannot un-read');
+    // Bindings resolve at call time, so that change IS complete — and the copy
+    // must not blur the two.
+    expect(scopeControl('connections').note).toContain('retroactive');
+  });
+
+  test('the model is live too — every scope-bar row now moves', () => {
+    expect(scopeControl('model').live).toBe(true);
+  });
+
+  test('the only action a frozen row offers is a new session', () => {
+    // Not "apply", not "save" — nothing on a running session accepts either.
+    expect(START_NEW_SESSION_ACTION.toLowerCase()).toContain('new session');
+  });
+});
+
+// ── Secrets: in, out, and the ones that are neither ──────────────────────────
+
+describe('scopeBarSecrets', () => {
+  const items = [
+    secret('STRIPE', 'STRIPE_API_KEY'),
+    secret('GMAIL', 'GMAIL_TOKEN'),
+    secret('SENTRY', 'SENTRY_DSN'),
+  ];
+
+  test('an allowlist splits the project list into allowed and excluded', () => {
+    const scope = scopeBarSecrets({ secrets: items, allowlist: ['STRIPE'] });
+    expect(scope.rows.map((row) => [row.identifier, row.membership])).toEqual([
+      ['STRIPE', 'allowed'],
+      ['GMAIL', 'excluded'],
+      ['SENTRY', 'excluded'],
+    ]);
+    expect(scope.summary).toBe('1 allowed');
+  });
+
+  test('every row carries the identifier AND the env KEY, because they differ', () => {
+    // The allowlist addresses the IDENTIFIER; the sandbox sees the KEY. Showing
+    // only one of them makes the allowlist unreadable against the sandbox.
+    const scope = scopeBarSecrets({ secrets: items, allowlist: ['STRIPE'] });
+    expect(scope.rows[0]).toMatchObject({ identifier: 'STRIPE', name: 'STRIPE_API_KEY' });
+  });
+
+  test('no allowlist is "agent grant", never "allowed" and never empty', () => {
+    // null (never narrowed) and [] (narrowed to nothing) are opposite states.
+    // And a session that never narrowed reads whatever its AGENT is granted —
+    // a set this app cannot enumerate, so claiming "allowed" here would be a
+    // statement about secret access that nothing verified.
+    const wide = scopeBarSecrets({ secrets: items, allowlist: null });
+    expect(wide.narrowed).toBe(false);
+    expect(wide.rows.every((row) => row.membership === 'agent_grant')).toBe(true);
+    expect(wide.summary).toBe('Agent grant');
+    expect(wide.detail).toContain('can be fewer');
+  });
+
+  test('an empty allowlist reads as a choice, not as an empty state', () => {
+    const none = scopeBarSecrets({ secrets: items, allowlist: [] });
+    expect(none.narrowed).toBe(true);
+    expect(none.summary).toBe('None');
+    expect(none.rows.every((row) => row.membership === 'excluded')).toBe(true);
+  });
+
+  test('a channel-install row is not offered as "excluded" — nobody could allow it', () => {
+    // Create resolves the allowlist against runtime-scoped rows only, so a
+    // Slack install row was never a decision anyone made.
+    const scope = scopeBarSecrets({
+      secrets: [...items, secret('SLACK_BOT_TOKEN', 'SLACK_BOT_TOKEN')],
+      allowlist: ['STRIPE'],
+    });
+    expect(scope.rows.map((row) => row.identifier)).not.toContain('SLACK_BOT_TOKEN');
+  });
+
+  test('an allowlisted identifier that no longer exists is named, not silently dropped', () => {
+    // The allowlist is frozen; the project's secrets are not. A session can
+    // outlive a secret it names, and showing "3 allowed" over a list of two is
+    // how that becomes invisible.
+    const scope = scopeBarSecrets({ secrets: items, allowlist: ['STRIPE', 'DELETED'] });
+    expect(scope.missing).toEqual(['DELETED']);
+    expect(MISSING_SECRET_NOTE).toContain('not a project secret now');
+  });
+
+  test('membership labels never call an un-narrowed session "allowed"', () => {
+    expect(SECRET_MEMBERSHIP_LABEL.agent_grant).not.toBe(SECRET_MEMBERSHIP_LABEL.allowed);
+  });
+
+  test('a project with no secrets is an empty list, not a crash', () => {
+    expect(scopeBarSecrets({ secrets: undefined, allowlist: undefined }).rows).toEqual([]);
+  });
+});
+
+// ── The draft: a session cannot mint a secret ───────────────────────────────
+
+describe('the identifier field says what a session cannot do', () => {
+  const items = [secret('STRIPE', 'STRIPE_API_KEY')];
+
+  test('a typed identifier that does not exist yet is recognised as new', () => {
+    expect(classifyTypedIdentifier('NEW_ONE', { secrets: items, draft: [] })).toEqual({
+      kind: 'unknown',
+      identifier: 'NEW_ONE',
+    });
+    expect(classifyTypedIdentifier('  STRIPE  ', { secrets: items, draft: [] })).toEqual({
+      kind: 'existing',
+      identifier: 'STRIPE',
+    });
+    expect(classifyTypedIdentifier('STRIPE', { secrets: items, draft: ['STRIPE'] })).toEqual({
+      kind: 'already_listed',
+      identifier: 'STRIPE',
+    });
+    expect(classifyTypedIdentifier('   ', { secrets: items, draft: [] })).toEqual({ kind: 'empty' });
+  });
+
+  test('the hint names the actual flow: create it in Settings, then start a session', () => {
+    // This app can list a project's secrets and cannot mint one. Anything less
+    // explicit leaves "type a name here" reading like "create a secret".
+    expect(NEW_IDENTIFIER_HINT).toContain('Settings → Secrets');
+    expect(NEW_IDENTIFIER_HINT).toContain('cannot create one');
+    expect(NEW_IDENTIFIER_HINT).toContain('refused');
+  });
+});
+
+describe('scopeDraftIssues', () => {
+  test('an identifier with no secret behind it is refused before the create is tried', () => {
+    // 404 SECRET_IDENTIFIER_NOT_FOUND, and an allowlist can never be edited
+    // afterwards — so this is not a recoverable mistake to discover later.
+    const issues = scopeDraftIssues(['MISSING'], [secret('STRIPE', 'STRIPE_API_KEY')]);
+    expect(issues.map((issue) => issue.kind)).toEqual(['not_created']);
+    expect(issues[0]!.message).toContain('Settings → Secrets');
+  });
+
+  test('two drafted identifiers sharing one env KEY are caught', () => {
+    // 409 SECRET_IDENTIFIER_KEY_COLLISION: the sandbox cannot be handed two
+    // values for one variable, and the allowlist cannot be edited to fix it.
+    const items = [
+      secret('GMAPS-primary', 'GOOGLE_MAPS_API_KEY'),
+      secret('GMAPS-backup', 'GOOGLE_MAPS_API_KEY'),
+    ];
+    const issues = scopeDraftIssues(['GMAPS-primary', 'GMAPS-backup'], items);
+    expect(issues.map((issue) => issue.kind)).toEqual(['key_collision', 'key_collision']);
+    expect(issues[0]!.conflicts).toEqual(['GMAPS-backup']);
+    expect(issues[0]!.message).toContain('GOOGLE_MAPS_API_KEY');
+  });
+
+  test('picking only ONE of two identifiers on a shared KEY is fine', () => {
+    const items = [
+      secret('GMAPS-primary', 'GOOGLE_MAPS_API_KEY'),
+      secret('GMAPS-backup', 'GOOGLE_MAPS_API_KEY'),
+    ];
+    expect(scopeDraftIssues(['GMAPS-primary'], items)).toEqual([]);
+  });
+
+  test('an ordinary draft has nothing to say', () => {
+    expect(scopeDraftIssues(['STRIPE'], [secret('STRIPE', 'STRIPE_API_KEY')])).toEqual([]);
+    expect(scopeDraftIssues([], [])).toEqual([]);
+  });
+});
+
+// ── Connections ─────────────────────────────────────────────────────────────
+
+describe('scopeBarConnectors', () => {
+  test('an alias with nothing bindable carries the reason and a teammate-shaped remedy', () => {
+    const choices = selectConnectorBindingChoices([profile({ owner_type: 'member', owner_id: 'u1' })]);
+    const [row] = scopeBarConnectors({ choices, boundConnections: {} }).rows;
+    expect(row!.unavailable).toBe('private_only');
+    expect(row!.notice!.detail).toContain('teammate');
+    // A wrapper has no personal upstream identity, so "connect it yourself"
+    // could only ever lead to 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY.
+    expect(row!.notice!.selfServiceAction).toBeNull();
+  });
+
+  test('a revoked TEAM connection asks for a reconnect, not a first-time share', () => {
+    const choices = selectConnectorBindingChoices([profile({ status: 'revoked' })]);
+    expect(scopeBarConnectors({ choices, boundConnections: {} }).rows[0]!.notice!.detail).toContain(
+      'reconnect',
+    );
+  });
+
+  test('a bindable alias gets no notice — the picker speaks for itself', () => {
+    const choices = selectConnectorBindingChoices([profile()]);
+    const [row] = scopeBarConnectors({ choices, boundConnections: {} }).rows;
+    expect(row!.notice).toBeNull();
+    expect(row!.choices.map((connection) => connection.label)).toEqual(['Support']);
+  });
+
+  test("this session's binding is shown per alias, with the unbound ones on the default", () => {
+    const choices = selectConnectorBindingChoices([
+      profile(),
+      profile({ connector_alias: 'slack', profile_id: 'p2', label: 'Team slack' }),
+    ]);
+    const { rows, summary } = scopeBarConnectors({
+      choices,
+      boundConnections: { gmail: 'Support' },
+    });
+    expect(rows.map((row) => [row.alias, row.bound])).toEqual([
+      ['gmail', 'Support'],
+      ['slack', null],
+    ]);
+    expect(summary).toBe('1 bound');
+  });
+
+  test('an alias bound to a connection that has since vanished still gets a row', () => {
+    // Dropping it would claim the session runs on the project default, which is
+    // exactly what it does not do — the binding is frozen into the sandbox.
+    const { rows } = scopeBarConnectors({ choices: [], boundConnections: { gmail: 'Support' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.bound).toBe('Support');
+    // ...and no cause is invented for it: nothing reported a reason.
+    expect(rows[0]!.unavailable).toBeNull();
+    expect(rows[0]!.notice).toBeNull();
+  });
+
+  test('nothing bound reads as project defaults, and no connectors reads as none', () => {
+    const choices = selectConnectorBindingChoices([profile()]);
+    expect(scopeBarConnectors({ choices, boundConnections: {} }).summary).toBe('Project defaults');
+    expect(scopeBarConnectors({ choices: undefined, boundConnections: {} }).summary).toBe('None');
+  });
+});
+
+describe('seedBindingsFromLabels', () => {
+  test("the running session's bindings become the next session's defaults", () => {
+    // The platform never serializes `connector_bindings` back, so the label this
+    // wrapper recorded at create is the only bridge from a running session to
+    // the create body of the next one.
+    const created = buildSessionCreateInput(
+      { agent: null, secrets: null, bindings: { gmail: 'p1' }, runtimeContext: null },
+      { sessionId: 's', connectionLabels: { gmail: 'Support' } },
+    );
+    const { rows } = scopeBarConnectors({
+      choices: selectConnectorBindingChoices([profile()]),
+      boundConnections: readBoundConnections(created.metadata),
+    });
+    expect(seedBindingsFromLabels(rows)).toEqual({ gmail: 'p1' });
+    expect(created.metadata?.[BOUND_CONNECTIONS_KEY]).toEqual({ gmail: 'Support' });
+  });
+
+  test('a label with no label recorded falls back to the profile id it stored', () => {
+    const created = buildSessionCreateInput(
+      { agent: null, secrets: null, bindings: { gmail: 'p1' }, runtimeContext: null },
+      { sessionId: 's' },
+    );
+    const { rows } = scopeBarConnectors({
+      choices: selectConnectorBindingChoices([profile()]),
+      boundConnections: readBoundConnections(created.metadata),
+    });
+    expect(seedBindingsFromLabels(rows)).toEqual({ gmail: 'p1' });
+  });
+
+  test('a binding that no longer resolves is left out rather than sent as a guess', () => {
+    // An unresolvable alias lands on the project default — where an unbindable
+    // one would end up anyway. Sending a stale profile id would fail the create.
+    const { rows } = scopeBarConnectors({ choices: [], boundConnections: { gmail: 'Support' } });
+    expect(seedBindingsFromLabels(rows)).toEqual({});
+  });
+});
+
+// ── What the draft actually sends ───────────────────────────────────────────
+
+describe('the draft carried into the next session', () => {
+  test('an untouched draft reproduces this session, allowlist and all', () => {
+    const body = buildSessionCreateInput(
+      { agent: 'support', secrets: ['STRIPE'], bindings: { gmail: 'p1' }, runtimeContext: null },
+      { sessionId: 'next', connectionLabels: { gmail: 'Support' } },
+    );
+    expect(body).toMatchObject({
+      agent_name: 'support',
+      secrets: ['STRIPE'],
+      connector_bindings: { gmail: { profile_id: 'p1' } },
+      // Binding one alias must not unplug every other connector.
+      inherit_unbound: true,
+    });
+  });
+
+  test('an un-narrowed session stays un-narrowed — no guessed empty allowlist', () => {
+    // `secrets: []` would boot the next session with NO project secrets, which
+    // is the opposite of what "same scope as this one" means here.
+    const body = buildSessionCreateInput(
+      { agent: null, secrets: null, bindings: {}, runtimeContext: null },
+      { sessionId: 'next' },
+    );
+    expect(body).not.toHaveProperty('secrets');
+    expect(body).not.toHaveProperty('agent_name');
+    expect(body).not.toHaveProperty('connector_bindings');
+  });
+});
+
+describe('the re-scope payload sends only the axis being changed', () => {
+  // The bar builds `{ secrets }` or `{ bindings }`, never both, and never a key
+  // the user did not touch. The distinction is load-bearing upstream: an ABSENT
+  // `secrets` key means "leave secrets alone", while `secrets: null` means the
+  // very different "stop narrowing — fall back to the agent's full grant".
+  // Collapsing them would silently widen a session at the moment someone only
+  // meant to rebind a connector.
+  const payloadFor = (patch: { secrets?: string[] | null; bindings?: Record<string, string> }) =>
+    JSON.parse(JSON.stringify(patch)) as Record<string, unknown>;
+
+  test('changing secrets does not mention bindings', () => {
+    expect('bindings' in payloadFor({ secrets: ['A'] })).toBe(false);
+  });
+
+  test('changing bindings does not mention secrets', () => {
+    expect('secrets' in payloadFor({ bindings: { gmail: 'p1' } })).toBe(false);
+  });
+
+  test('an explicit null survives serialisation — it is not the same as absent', () => {
+    const payload = payloadFor({ secrets: null });
+    expect('secrets' in payload).toBe(true);
+    expect(payload.secrets).toBeNull();
+  });
+
+  test('an EMPTY allowlist survives too — "no secrets" is a real choice', () => {
+    const payload = payloadFor({ secrets: [] });
+    expect(payload.secrets).toEqual([]);
+  });
+});
+
+describe('hasScopeDraft — when the Apply button may appear', () => {
+  test('untouched means nothing to apply', () => {
+    // The bug: the first version tested `draft !== null`, and the untouched
+    // value is `undefined`. `undefined !== null` is true, so Apply rendered from
+    // first paint — above a list the user had no way to edit yet.
+    expect(hasScopeDraft(undefined)).toBe(false);
+  });
+
+  test('an explicit null IS a change — "stop narrowing"', () => {
+    // Opposite of untouched: it hands the session the agent's full grant.
+    expect(hasScopeDraft(null)).toBe(true);
+  });
+
+  test('an EMPTY list is a change — "no project secrets at all"', () => {
+    expect(hasScopeDraft([])).toBe(true);
+  });
+
+  test('a populated list is a change', () => {
+    expect(hasScopeDraft(['TEST_KEY_2'])).toBe(true);
+  });
+
+  test('an empty bindings map is a change — it unbinds everything', () => {
+    expect(hasScopeDraft({})).toBe(true);
+  });
+});

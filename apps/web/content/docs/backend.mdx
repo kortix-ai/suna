@@ -51,7 +51,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -d '{
     "end_user_ref": "your-app-user-123",
     "agent_name": "support",
-    "opencode_model": "anthropic/claude-opus-4-8",
+    "opencode_model": "kortix/claude-opus-4.8",
     "connector_bindings": { "gmail": { "profile_id": "<profile-id>" } },
     "secrets": ["STRIPE_KEY"]
   }'
@@ -71,7 +71,7 @@ const kortix = createScopedKortix({
 const session = await kortix.project(projectId).sessions.create({
   end_user_ref: 'your-app-user-123',
   agent_name: 'support',
-  opencode_model: 'anthropic/claude-opus-4-8',
+  opencode_model: 'kortix/claude-opus-4.8',
   connector_bindings: { gmail: { profile_id } },
   secrets: ['STRIPE_KEY'],
 });
@@ -92,9 +92,16 @@ never races another request's config.
 | `inherit_unbound` | With `connector_bindings` set, keep the project-default fallback for connectors you did *not* bind (instead of all-or-nothing). Only ever inherits the project default. |
 | `secrets` | An allow-list of project secret names to expose to this session. Narrowing only — a session can never see a secret you did not list. |
 | `opencode_model` | The model this session runs, in `provider/model` form. Validated at create; an unservable model fails fast with `400 INVALID_SESSION_MODEL`. |
-| `agent_name` | Which declared agent handles the session. |
+| `agent_name` | Which declared logical agent handles the session. In v3, this also selects the immutable runtime profile, harness, and native agent. |
 | `runtime_context` | Arbitrary non-secret key/values passed to the run as context. |
 
+The public field remains `opencode_model` for API and SDK compatibility. It can
+set the initial model for any supported harness. Do not rename this wire field.
+
+A v3 project must enable **ACP & Multi-Harness**. Its logical agents can select
+OpenCode, Claude Code, Codex, or Pi. The session returns `runtime_transport`,
+`runtime_harness`, `native_agent`, `acp_server_id`, and `acp_session_id`. These
+values do not change during restart or resume.
 
 ## Per-end-user cost
 
@@ -120,6 +127,35 @@ Two things to know:
   different end-users, so send a canonical id.
 
 The dashboard shows the same data under **Credits → Spend by end-user**.
+
+### Capping one end-user's spend
+
+Metering tells you what an end-user cost. To *stop* one, the operator sets
+`KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` (with
+`KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS`, default 30). Session create then
+returns `429 per_end_user_spend_limit` for an end-user over the ceiling, while
+every other end-user keeps working. Off by default.
+
+It is a runaway guardrail, not a hard quota: the check is check-then-act, so
+concurrent creates can overshoot slightly, and it is evaluated at create — a
+running session is not killed mid-turn.
+
+### List one end-user's sessions
+
+The same handle filters the session list, server-side:
+
+```bash
+curl -sS "$KORTIX_API_URL/projects/$PROJECT_ID/sessions?end_user_ref=your-app-user-123" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+```
+
+```ts
+await kortix.project(projectId).sessions.list({ end_user_ref: 'your-app-user-123' });
+```
+
+Every status is included, so completed sessions come back too. The deprecated
+`origin_ref` spelling also works; sending both with different values is refused
+— see `END_USER_REF_CONFLICT` in the error table below.
 
 ## 3. Bring each user's own connector
 
@@ -186,6 +222,10 @@ await kortix.project(projectId).connectors.profiles.pipedreamFinalize(profile.pr
 
 ## 4. Stream the answer
 
+The example below uses the v2 OpenCode REST compatibility stream.
+`session.stream()` and `session.send()` are OpenCode REST escape hatches. They
+do not route through ACP.
+
 A session's runtime lives in a per-session sandbox that boots on first use. Await
 readiness, open the stream, then send the prompt:
 
@@ -205,6 +245,11 @@ await s.send("Summarize this user's new signups.");
 A complete, runnable example — create connector → mint the per-user profile → start a
 backend session → stream — ships with the SDK at
 [`examples/09-kaab-backend-wrapper.ts`](/docs/sdk/example).
+
+For an ACP session, use `useSession()` in React. A framework-free host can use
+the exported `createAcpSessionController()` with the authenticated project
+endpoint from `buildProjectAcpEndpoint()`. Both paths support OpenCode, Claude
+Code, Codex, and Pi without host-side harness branches.
 
 ## Idempotent retries
 
@@ -233,6 +278,87 @@ starting a second one. Replaying a key with a **different** body — different
 | --- | --- | --- |
 | `400` | `INVALID_SESSION_MODEL` | `opencode_model` isn't servable for this account. |
 | `400` | `INVALID_SESSION_CONNECTOR_BINDINGS` / `INVALID_SESSION_SECRETS` | Malformed overrides, or a secret/binding cap exceeded. |
+| `404` | `SECRET_IDENTIFIER_NOT_FOUND` | A backend session referenced a secret name that doesn't exist in the project. |
 | `404` | `CONNECTOR_PROFILE_NOT_FOUND` | The bound `profile_id` doesn't exist for this project (or isn't yours). |
 | `409` | `CONNECTOR_PROFILE_INACTIVE` | The bound profile is revoked or the connector is disabled. |
 | `409` | `IDEMPOTENCY_*_CONFLICT` | An `Idempotency-Key` was replayed with a different body. Keep the body identical across retries. |
+| `403` | `CONNECTOR_NOT_ASSIGNED` | The session's agent isn't granted a connector you named. **The first error most wrappers hit** — list the alias under that agent's `connectors:` in your manifest. |
+| `403` | `REQUIRE_CONNECTORS_INTERACTIVE_ONLY` | `require_connectors` is interactive-only. A backend key acts for no single person — bind an explicit `profile_id` with `connector_bindings`. |
+| `403` | `origin_override_forbidden` | A non-backend caller tried to set `end_user_ref` or `secrets`. |
+| `503` | `AGENT_SWITCH_GRANT_UNAPPLIED` | A mid-session agent switch was legal but its token re-mint could not be written. Retryable. |
+| `409` | `CONNECTOR_CONNECTION_REQUIRED` | Interactive only: the user hasn't connected their own account. The body names which connector. |
+| `400` | `END_USER_REF_CONFLICT` | You sent `end_user_ref` and the deprecated `origin_ref` with different values. Send only `end_user_ref`. Same `400` on session **create** and on the session **list** filter. |
+| `409` | `IDEMPOTENCY_KEY_CONFLICT` | The key collided with a different operation. Unlike the other idempotency errors, the fix is a **higher-entropy key** — the uniqueness index is global. |
+| `429` | `concurrent_session_limit` / `per_origin_session_limit` | Account-wide, or per-end-user when the operator enables it. Retry with backoff. |
+| `429` | `per_end_user_spend_limit` | This end-user has spent their ceiling inside the rolling window. Body carries `spent_usd`, `limit_usd`, `window_days`. Not retryable until the window rolls or the operator raises the limit. |
+| `402` | `subscription_required` / `insufficient_credits` | Billing — not retryable without operator action. |
+
+## What you can change once a session is running
+
+| Override | Mid-session |
+| --- | --- |
+| `opencode_model` | **OpenCode only** — `PUT /projects/{id}/sessions/{sessionId}/model`. Start a new Claude Code, Codex, or Pi session to change its model. |
+| `agent_name` | **OpenCode REST only** — a v3 session keeps its original logical agent and runtime identity. |
+| `secrets`, `connector_bindings` | **Yes** — `PUT /projects/{id}/sessions/{sid}/scope`. SET semantics: what you send replaces the current list, from the next prompt. Dropping a secret stops **delivery** — it cannot un-read what the agent already has, so rotate if you need real revocation. Bindings resolve at call time and so ARE fully retroactive. |
+| `runtime_context`, `end_user_ref` | **No** — set once at create |
+
+### Changing the model
+
+This route preserves the published `opencode_model` contract. A live update
+restarts the OpenCode compatibility process. It does not replace the active
+Claude Code, Codex, or Pi process. Start a new non-OpenCode session with the
+new model.
+
+```bash
+curl -sS -X PUT "$KORTIX_API_URL/projects/$PROJECT_ID/sessions/$SESSION_ID/model" \
+  -H "Authorization: Bearer $KORTIX_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"opencode_model":"kortix/claude-opus-4.8"}'
+```
+
+The response carries `applied_live`. `true` means a running sandbox took it now;
+`false` means it applies at next start. **Tell your user which** — someone told
+"model changed" whose next answer comes from the old model has been misled.
+Applying it live restarts the runtime and ends the in-flight turn, so a no-op
+PUT deliberately does not restart.
+
+### Why secrets can't change
+
+`secrets_allowlist` is written once. A mutable allowlist could be narrowed below
+what the sandbox already needs and leave the session unbootable. Start a new
+session to change what it may read.
+
+### Switching agents
+
+Each message names the agent that runs it. A switch to an agent with a
+*different secrets grant* is refused `409 AGENT_SWITCH_REQUIRES_NEW_SESSION` —
+and **retrying cannot succeed**, because re-scoping cannot un-read what the
+session already loaded. Offer a new session, not a retry.
+
+A switch that changes only **connectors** or **Kortix CLI actions** is allowed
+and *re-mints* the session token: the new agent runs with exactly the grant its
+own manifest entry declares. Those gates check the token at call time, so
+re-pointing it works — unlike secrets, which are already in the box. If the
+re-mint cannot be written the prompt is refused (`503
+AGENT_SWITCH_GRANT_UNAPPLIED`) rather than run under the previous agent's
+authority.
+
+## Isolation between your end-users
+
+Every session your backend creates shares one `created_by` — your wrapper
+credential — so ownership alone cannot tell your users apart. The platform
+narrows on the *caller's* session instead: a token bound to end-user A's sandbox
+cannot read, share, or approve on end-user B's session.
+
+Your backend credential is unaffected. It is the operator and still sees
+everything it created.
+
+<Callout type="warn">
+  **Inject `end_user_ref` server-side, from your authenticated session — never
+  accept it from a browser.** A client that can set it can bill another user, or
+  replay their session through a shared `Idempotency-Key`.
+</Callout>
+
+Listing with `?scope=project` includes rows the caller cannot open, marked
+`can_access: false`. Those are redacted — no `metadata` (which holds
+`initial_prompt`), no `end_user_ref`, no `secrets_allowlist`.

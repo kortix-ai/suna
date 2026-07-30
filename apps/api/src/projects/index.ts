@@ -29,6 +29,8 @@ import './routes/r6';
 import './routes/r7';
 import './routes/public-shares';
 import './routes/r8';
+import './routes/acp-identity';
+import './routes/acp';
 import './routes/r9';
 import './routes/r10';
 import './routes/r11';

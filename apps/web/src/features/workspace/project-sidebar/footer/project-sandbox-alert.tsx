@@ -16,13 +16,18 @@ import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type SandboxAlertSeverity,
+  formatSandboxProviders,
   resolveSandboxAlertSeverity,
+  sandboxHealthIsActive,
   selectCurrentSandboxFailure,
+  selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSandboxHealth,
+  type SandboxRuntimeStatus,
   fixSandboxWithAgent,
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
@@ -37,6 +42,11 @@ const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; 
     icon: 'text-destructive',
     dot: 'bg-destructive',
   },
+  warning: {
+    text: 'text-kortix-orange',
+    icon: 'text-kortix-orange',
+    dot: 'bg-kortix-orange',
+  },
   building: {
     text: 'text-muted-foreground',
     icon: 'text-muted-foreground',
@@ -45,7 +55,8 @@ const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; 
 };
 
 const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
-  critical: 'Fix sandbox build',
+  critical: 'Sandbox build failing',
+  warning: 'Sandbox partly unavailable',
   building: 'Sandbox build running…',
 };
 
@@ -60,6 +71,28 @@ const CATEGORY_LABEL: Record<string, string> = {
   unknown: 'Build failed',
 };
 
+/**
+ * One honest sentence about what the user can do right now. Never present-tense
+ * a failure that no longer applies, and never imply sessions are down when only
+ * one of several routable providers is.
+ */
+function describeSandboxSeverity(
+  severity: SandboxAlertSeverity,
+  status: SandboxRuntimeStatus | null,
+): string {
+  if (severity === 'building') {
+    return 'A new sandbox image is building. Sessions can start once it’s ready.';
+  }
+  if (severity === 'warning') {
+    const ready = formatSandboxProviders(status?.ready_providers ?? []);
+    const failed = formatSandboxProviders(status?.failed_providers ?? []);
+    return failed && ready
+      ? `The image is ready on ${ready} but failing on ${failed}, so some new sessions won’t start.`
+      : 'The sandbox image is unavailable on some providers, so some new sessions won’t start.';
+  }
+  return 'New sessions can’t start until this image builds.';
+}
+
 export function useSandboxHealth(projectId: string) {
   return useQuery<ProjectSandboxHealth>({
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
@@ -68,7 +101,7 @@ export function useSandboxHealth(projectId: string) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 30_000;
-      if (data.building || selectCurrentSandboxFailure(data)) return 8_000;
+      if (sandboxHealthIsActive(data)) return 8_000;
       return 120_000;
     },
     refetchOnWindowFocus: true,
@@ -118,25 +151,20 @@ function SandboxAlertContent({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
+  const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
-  // Only offer the agent for failures it can actually act on. Infra categories
-  // (quota, provider, timeout, runtime, tunnel) aren't repo-editable, and the fix
-  // session itself needs a bootable sandbox — the very thing the failure denied —
-  // so the button would fail to start the session meant to diagnose the failure.
-  // `fixable_by_agent` is server-derived; the API rejects the rest with 409.
-  const canFixWithAgent =
-    !!failure &&
-    failure.fixable_by_agent &&
-    !!health.latest_build &&
-    health.latest_build.status === 'ready';
+  const failedAt = failure ? relativeTime(failure.finished_at ?? failure.started_at) : '';
+  // Server-derived, and deliberately not re-derived here: the agent only helps
+  // with repo-editable failures, and its fix session itself needs a bootable
+  // sandbox — the very thing the failure may have denied. The API gates on
+  // exactly this and answers 409 otherwise.
+  const canFixWithAgent = status?.fix_with_agent_available ?? false;
 
   return (
     <div className="w-full overflow-hidden">
       <div className="px-2 pb-3">
         <p className="text-muted-foreground text-xs text-balance">
-          {severity === 'critical'
-            ? 'New sessions will rebuild on the next start, but the most recent build is failing.'
-            : 'A new sandbox image is building. Sessions can start once it’s ready.'}
+          {describeSandboxSeverity(severity, status)}
         </p>
         {!failure && (
           <Button
@@ -153,9 +181,15 @@ function SandboxAlertContent({
       {failure && (
         <div className="border-border/60 border-t px-2 py-3">
           <div className="mb-1.5 flex min-w-0 items-center gap-2">
-            <Badge variant="destructive" size="sm">
+            <Badge variant={severity === 'critical' ? 'destructive' : 'warning'} size="sm">
               {CATEGORY_LABEL[failure.error_category ?? 'unknown'] ?? failure.error_category}
             </Badge>
+            {/* When it failed, always — an undated error reads as a live one. */}
+            {failedAt ? (
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {failedAt}
+              </span>
+            ) : null}
             <Button
               variant="link"
               size="sm"

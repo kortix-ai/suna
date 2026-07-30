@@ -105,10 +105,57 @@ export interface ProjectSnapshotBuild {
   finished_at: string | null;
 }
 
+/**
+ * Whether a session can boot from this project's sandbox right now, and if not
+ * why. Server-derived from LIVE per-provider observation of the current image —
+ * never from the build log alone, which cannot tell a failure that still applies
+ * from one whose image the provider has since brought up.
+ *
+ * Render alerts from this, never from `latest_failure`.
+ */
+export type SandboxRuntimeState =
+  /** Every provider this project can route to holds the current image. */
+  | 'ready'
+  /** The current image is building somewhere. Sessions may wait, not fail. */
+  | 'building'
+  /** No image yet and nothing failed — the next session start builds one. */
+  | 'not_built'
+  /** Usable on some routable providers, failed on others. */
+  | 'degraded'
+  /** No usable image anywhere this project routes, and the last attempt failed. */
+  | 'blocked'
+  /** Providers could not be observed. Show nothing. */
+  | 'unknown';
+
+/** Why a failed build no longer applies. History only — never an alert. */
+export type SandboxStaleFailureReason = 'superseded' | 'recovered' | 'retrying';
+
+export interface SandboxRuntimeStatus {
+  state: SandboxRuntimeState;
+  /** Content-addressed image the current template definition resolves to. */
+  snapshot_name: string | null;
+  /** The failure that still describes that image. Only set when it still bites. */
+  current_failure: ProjectSnapshotBuild | null;
+  /** Newest failed attempt that no longer applies. */
+  stale_failure: ProjectSnapshotBuild | null;
+  stale_reason: SandboxStaleFailureReason | null;
+  ready_providers: string[];
+  building_providers: string[];
+  failed_providers: string[];
+  /**
+   * Whether `fixSandboxWithAgent` would be accepted right now — the failure is
+   * repo-fixable AND a working image exists to host the fix session. Gate the
+   * button on this; re-deriving it client-side drifts from what the API accepts.
+   */
+  fix_with_agent_available: boolean;
+}
+
 export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
+  /** Absent on a degraded/older API response — treat as "no alert". */
+  status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
   selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
   /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
@@ -121,7 +168,13 @@ export interface ProjectSandboxHealth {
   ready: boolean;
   building: boolean;
   latest_build: ProjectSnapshotBuild | null;
+  /**
+   * The newest failed row in the build log, whether or not it still describes
+   * anything bootable. Diagnostic only — drive alerts from `status`.
+   */
   latest_failure: ProjectSnapshotBuild | null;
+  /** Absent on a degraded/older API response — treat as "no alert". */
+  status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
   selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
 }

@@ -9,6 +9,7 @@ import {
   noteSessionSyncEvent,
   prefetchSessionSyncOnce,
   readSessionMessagePage,
+  resetSessionSyncControllersForSession,
   resetSessionSyncControllers,
   retainSessionSyncController,
 } from './session-sync-registry';
@@ -62,6 +63,27 @@ describe('readSessionMessagePage', () => {
 });
 
 describe('prefetchSessionSyncOnce', () => {
+  test('keeps controllers distinct when two sandboxes contain the same OpenCode id', () => {
+    const sharedId = 'session-from-snapshot';
+    const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+
+    expect(runtimeA).not.toBe(runtimeB);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-a')).toBe(runtimeA);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-b')).toBe(runtimeB);
+  });
+
+  test('retires old-sandbox controllers without deleting the current sandbox controller', () => {
+    const sharedId = 'session-from-snapshot';
+    const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+
+    resetSessionSyncControllersForSession(sharedId, 'runtime-b');
+
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-a')).not.toBe(runtimeA);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-b')).toBe(runtimeB);
+  });
+
   test('deduplicates one runtime source and revalidates after the runtime changes', async () => {
     const requests: string[] = [];
     const client = (runtime: string) => ({

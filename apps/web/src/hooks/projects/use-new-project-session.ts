@@ -132,6 +132,11 @@ export function useNewProjectSession(
             projectId,
             buildWarmSessionClaimInput(selectedWarmSession, opts?.create),
           );
+          // A claimed warm session is every bit as new to the user as a minted
+          // one — mark it, so the session page opens the instant typeable shell
+          // on the strength of THIS signal rather than inferring newness from a
+          // stashed prompt (which outlives the hand-off it describes).
+          markSessionFresh(claimed.session_id);
           return claimed.session_id;
         } catch (error) {
           if (shouldFallbackFromWarmClaim(error)) {

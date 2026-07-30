@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 /**
  * Project-wide approval rules for tool calls. Source of truth = `kortix.yaml`;
  * this panel CRUDs the same file via the admin endpoint, then the gateway
@@ -18,11 +17,11 @@ import { useTranslations } from 'next-intl';
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
@@ -35,20 +34,38 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  listProjectPolicies,
-  setProjectPolicies,
-  type PolicyAction,
-  type PolicyDefaultMode,
-  type ProjectPolicy,
-} from '@kortix/sdk';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import {
+  type PolicyAction,
+  type PolicyArgCondition,
+  type PolicyDefaultMode,
+  type ProjectPolicy,
+  listProjectPolicies,
+  setProjectPolicies,
+} from '@kortix/sdk';
 
 interface DraftRule {
   id: string;
   match: string;
   action: PolicyAction;
+  /**
+   * Argument conditions. Carried through the draft even when the rule isn't
+   * being edited: this panel replaces the WHOLE policy list on save, so a field
+   * the draft forgets is a field the save DELETES.
+   */
+  conditions: DraftCondition[];
+}
+
+/**
+ * A condition plus a stable client id. The id is draft-only (stripped by
+ * `toPayloadRule`) and exists so React keys survive reordering — keying on the
+ * array index makes deleting a middle row re-use the removed row's DOM node,
+ * which strands whatever the user had typed in the row below it.
+ */
+interface DraftCondition extends PolicyArgCondition {
+  id: string;
 }
 
 const ACTION_META: Record<PolicyAction, { label: string; description: string; tint: string }> = {
@@ -105,7 +122,12 @@ export function seedDraft(data: {
   const policies = data.policies ?? [];
   const defaultMode = data.defaultMode ?? 'allow_all';
   return {
-    draft: policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action })),
+    draft: policies.map((p) => ({
+      id: newRuleId(),
+      match: p.match,
+      action: p.action,
+      conditions: (p.conditions ?? []).map((c) => ({ ...c, id: newRuleId() })),
+    })),
     defaultMode,
     // `JSON.stringify` drops `undefined` values to `null`, so coercing here
     // keeps the signature `[]`-stable (a subsequent save would otherwise write
@@ -137,7 +159,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
   }, [query.data]);
 
   const currentSig = JSON.stringify({
-    policies: draft.map((d) => ({ match: d.match.trim(), action: d.action })),
+    policies: draft.map((d) => toPayloadRule(d)),
     defaultMode,
   });
   const dirty = currentSig !== serverSig;
@@ -145,7 +167,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
   const save = useMutation({
     mutationFn: async () => {
       const payload: ProjectPolicy[] = draft
-        .map((d) => ({ match: d.match.trim(), action: d.action }))
+        .map((d) => toPayloadRule(d))
         .filter((p) => p.match.length > 0);
       return setProjectPolicies(projectId, payload, defaultMode);
     },
@@ -158,14 +180,45 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
 
-  function updateRule(id: string, patch: Partial<Pick<DraftRule, 'match' | 'action'>>) {
+  function updateRule(
+    id: string,
+    patch: Partial<Pick<DraftRule, 'match' | 'action' | 'conditions'>>,
+  ) {
     setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+  function updateCondition(ruleId: string, index: number, patch: Partial<PolicyArgCondition>) {
+    setDraft((rows) =>
+      rows.map((r) =>
+        r.id === ruleId
+          ? { ...r, conditions: r.conditions.map((c, i) => (i === index ? { ...c, ...patch } : c)) }
+          : r,
+      ),
+    );
+  }
+  function addCondition(ruleId: string) {
+    setDraft((rows) =>
+      rows.map((r) =>
+        r.id === ruleId
+          ? { ...r, conditions: [...r.conditions, { id: newRuleId(), arg: '', match: '' }] }
+          : r,
+      ),
+    );
+  }
+  function removeCondition(ruleId: string, index: number) {
+    setDraft((rows) =>
+      rows.map((r) =>
+        r.id === ruleId ? { ...r, conditions: r.conditions.filter((_, i) => i !== index) } : r,
+      ),
+    );
   }
   function removeRule(id: string) {
     setDraft((rows) => rows.filter((r) => r.id !== id));
   }
   function addRule() {
-    setDraft((rows) => [...rows, { id: newRuleId(), match: '', action: 'require_approval' }]);
+    setDraft((rows) => [
+      ...rows,
+      { id: newRuleId(), match: '', action: 'require_approval', conditions: [] },
+    ]);
   }
   function revert() {
     if (!query.data) return;
@@ -357,7 +410,81 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                   </div>
                 }
                 subtitle={
-                  <span className="text-muted-foreground text-xs">{matchHint(rule.match)}</span>
+                  <div className="space-y-1.5">
+                    <span className="text-muted-foreground text-xs">{matchHint(rule.match)}</span>
+                    {/* Argument conditions. A tool-name pattern can only gate
+                        WHICH tool runs; these gate WHAT it may be called with —
+                        e.g. send_email restricted to an address allow-list. */}
+                    {rule.conditions.length > 0 && (
+                      <div className="border-border/60 space-y-1.5 border-l-2 pl-2.5">
+                        {rule.conditions.map((cond, cIdx) => (
+                          <div
+                            key={cond.id}
+                            className="flex flex-wrap items-center gap-1.5"
+                          >
+                            <span className="text-muted-foreground text-[11px]">only when</span>
+                            <Input
+                              value={cond.arg}
+                              onChange={(e) =>
+                                updateCondition(rule.id, cIdx, { arg: e.target.value })
+                              }
+                              placeholder="to"
+                              spellCheck={false}
+                              className="h-7 w-28 font-mono text-xs"
+                              aria-label={`Rule ${idx + 1} condition ${cIdx + 1} argument`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateCondition(rule.id, cIdx, { negate: !cond.negate })
+                              }
+                              className={cn(
+                                'rounded border px-1.5 py-0.5 text-[11px]',
+                                cond.negate
+                                  ? 'border-amber-500/40 text-amber-600 dark:text-amber-400'
+                                  : 'border-border text-muted-foreground',
+                              )}
+                              aria-label={`Rule ${idx + 1} condition ${cIdx + 1} ${
+                                cond.negate ? 'does not match' : 'matches'
+                              }`}
+                            >
+                              {cond.negate ? 'does NOT match' : 'matches'}
+                            </button>
+                            <Input
+                              value={cond.match}
+                              onChange={(e) =>
+                                updateCondition(rule.id, cIdx, { match: e.target.value })
+                              }
+                              placeholder="/^(owner|admin)@example\\.com$/"
+                              spellCheck={false}
+                              className="h-7 min-w-[12rem] flex-1 font-mono text-xs"
+                              aria-label={`Rule ${idx + 1} condition ${cIdx + 1} pattern`}
+                            />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={`Remove rule ${idx + 1} condition ${cIdx + 1}`}
+                              onClick={() => removeCondition(rule.id, cIdx)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                        <p className="text-muted-foreground text-[11px]">
+                          A list argument must have EVERY value match. A missing argument never
+                          matches, so an allow-list fails closed.
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => addCondition(rule.id)}
+                      className="text-muted-foreground hover:text-foreground text-[11px] underline-offset-2 hover:underline"
+                    >
+                      + Restrict by argument
+                    </button>
+                  </div>
                 }
                 trailing={
                   <Button
@@ -415,4 +542,27 @@ function matchHint(raw: string): string | null {
   }
   if (m.includes('*')) return 'Matches any tool id where * stands in for any text.';
   return `Matches exactly "${m}".`;
+}
+
+/**
+ * Draft rule → the wire shape. Trims, and omits `conditions` entirely when the
+ * rule has none so an unconditional rule serializes exactly as it always did
+ * (no `conditions: []` churn in every project's kortix.yaml).
+ *
+ * Blank condition rows are dropped: a half-typed row must never reach the API,
+ * where it would be rejected as invalid and block the whole save.
+ */
+export function toPayloadRule(d: DraftRule): ProjectPolicy {
+  const conditions = d.conditions
+    .map((c) => ({
+      arg: c.arg.trim(),
+      match: c.match.trim(),
+      ...(c.negate ? { negate: true } : {}),
+    }))
+    .filter((c) => c.arg.length > 0 && c.match.length > 0);
+  return {
+    match: d.match.trim(),
+    action: d.action,
+    ...(conditions.length > 0 ? { conditions } : {}),
+  };
 }

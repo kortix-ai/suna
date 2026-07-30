@@ -30,13 +30,28 @@ mock.module('../../platform/ui', () => ({
     toasts.push({ level: 'info', message });
   },
   notifyPermissionRequest: (sessionId: string, toolName: string, sessionTitle?: string) => {
-    notifications.push({ kind: 'permission', sessionId, toolName, sessionTitle });
+    notifications.push({
+      kind: 'permission',
+      sessionId,
+      toolName,
+      sessionTitle,
+    });
   },
   notifyQuestion: (sessionId: string, questionText: string, sessionTitle?: string) => {
-    notifications.push({ kind: 'question', sessionId, questionText, sessionTitle });
+    notifications.push({
+      kind: 'question',
+      sessionId,
+      questionText,
+      sessionTitle,
+    });
   },
   notifySessionError: (sessionId: string, errorTitle: string, sessionTitle?: string) => {
-    notifications.push({ kind: 'session-error', sessionId, errorTitle, sessionTitle });
+    notifications.push({
+      kind: 'session-error',
+      sessionId,
+      errorTitle,
+      sessionTitle,
+    });
   },
   notifyTaskComplete: (sessionId: string, sessionTitle?: string) => {
     notifications.push({ kind: 'task-complete', sessionId, sessionTitle });
@@ -64,7 +79,12 @@ function makeCalls<Args extends unknown[]>() {
   return { fn, calls };
 }
 
-function buildHandler(overrides: { messagesImpl?: () => Promise<{ data?: unknown }>; getImpl?: () => Promise<{ data?: unknown }> } = {}) {
+function buildHandler(
+  overrides: {
+    messagesImpl?: () => Promise<{ data?: unknown }>;
+    getImpl?: () => Promise<{ data?: unknown }>;
+  } = {},
+) {
   const queryClient = new QueryClient();
   const stopCompaction = makeCalls<[string]>();
   const addPermission = makeCalls<[PermissionRequest]>();
@@ -203,7 +223,13 @@ describe('message.part.updated', () => {
       properties: {
         sessionID: 'ses_1',
         time: Date.now(),
-        part: { id: 'prt_1', sessionID: 'ses_1', messageID: 'msg_1', type: 'text' as const, text: 'Hello' },
+        part: {
+          id: 'prt_1',
+          sessionID: 'ses_1',
+          messageID: 'msg_1',
+          type: 'text' as const,
+          text: 'Hello',
+        },
       },
     };
     handleEvent(event);
@@ -279,17 +305,24 @@ describe('message.part.updated', () => {
 describe('session lifecycle cache mutations', () => {
   test('session.created inserts into an existing session list, newest first', () => {
     const { handleEvent, queryClient } = buildHandler();
-    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_old', { time: { created: 1, updated: 1 } })]);
+    queryClient.setQueryData(opencodeKeys.sessions(), [
+      session('ses_old', { time: { created: 1, updated: 1 } }),
+    ]);
 
     handleEvent({
       id: 'evt_1',
       type: 'session.created',
-      properties: { sessionID: 'ses_new', info: session('ses_new', { time: { created: 5, updated: 5 } }) },
+      properties: {
+        sessionID: 'ses_new',
+        info: session('ses_new', { time: { created: 5, updated: 5 } }),
+      },
     });
 
     const list = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
     expect(list?.map((s) => s.id)).toEqual(['ses_new', 'ses_old']);
-    expect(queryClient.getQueryData(opencodeKeys.session('ses_new'))).toMatchObject({ id: 'ses_new' });
+    expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_new'))).toMatchObject({
+      id: 'ses_new',
+    });
   });
 
   test('session.created on an empty/uninitialized list still seeds it', () => {
@@ -299,30 +332,48 @@ describe('session lifecycle cache mutations', () => {
       type: 'session.created',
       properties: { sessionID: 'ses_new', info: session('ses_new') },
     });
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())).toEqual([session('ses_new')]);
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())).toEqual([
+      session('ses_new'),
+    ]);
   });
 
   test('session.updated patches the individual session cache and re-sorts the list', () => {
     const { handleEvent, queryClient } = buildHandler();
     queryClient.setQueryData(opencodeKeys.sessions(), [
-      session('ses_a', { time: { created: 1, updated: 1 }, title: 'Old title' }),
+      session('ses_a', {
+        time: { created: 1, updated: 1 },
+        title: 'Old title',
+      }),
     ]);
-    queryClient.setQueryData(opencodeKeys.session('ses_a'), session('ses_a', { title: 'Old title' }));
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { title: 'Old title' }),
+    );
 
     handleEvent({
       id: 'evt_1',
       type: 'session.updated',
-      properties: { sessionID: 'ses_a', info: session('ses_a', { time: { created: 1, updated: 9 }, title: 'New title' }) },
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', {
+          time: { created: 1, updated: 9 },
+          title: 'New title',
+        }),
+      },
     });
 
-    expect(queryClient.getQueryData<Session>(opencodeKeys.session('ses_a'))?.title).toBe('New title');
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].title).toBe('New title');
+    expect(queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.title).toBe(
+      'New title',
+    );
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].title).toBe(
+      'New title',
+    );
   });
 
   test('session.deleted removes the session from the list and clears its query cache', () => {
     const { handleEvent, queryClient } = buildHandler();
     queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a'), session('ses_b')]);
-    queryClient.setQueryData(opencodeKeys.session('ses_a'), session('ses_a'));
+    queryClient.setQueryData(opencodeKeys.runtimeSession('ses_a'), session('ses_a'));
 
     handleEvent({
       id: 'evt_1',
@@ -330,8 +381,10 @@ describe('session lifecycle cache mutations', () => {
       properties: { sessionID: 'ses_a', info: session('ses_a') },
     });
 
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.map((s) => s.id)).toEqual(['ses_b']);
-    expect(queryClient.getQueryData(opencodeKeys.session('ses_a'))).toBeUndefined();
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.map((s) => s.id)).toEqual([
+      'ses_b',
+    ]);
+    expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_a'))).toBeUndefined();
   });
 });
 
@@ -361,8 +414,12 @@ describe('session.status', () => {
 
     // handle-event.ts reads `sessionStatus` itself to detect the transition —
     // seeded above via `setStatus`, untouched by the (spied) `applySyncEvent`.
-    expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: 'busy' });
-    expect(notifications).toEqual([{ kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined }]);
+    expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({
+      type: 'busy',
+    });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined },
+    ]);
     expect(gitCalls).toBe(1);
     expect(filesCalls).toBe(1);
   });
@@ -397,7 +454,12 @@ describe('session.status', () => {
 describe('session.idle', () => {
   test('busy → idle fires notifyTaskComplete', () => {
     const { handleEvent } = buildHandler();
-    useSyncStore.getState().setStatus('ses_1', { type: 'retry', attempt: 1, message: 'retrying', next: 1 });
+    useSyncStore.getState().setStatus('ses_1', {
+      type: 'retry',
+      attempt: 1,
+      message: 'retrying',
+      next: 1,
+    });
 
     handleEvent({
       id: 'evt_1',
@@ -405,7 +467,9 @@ describe('session.idle', () => {
       properties: { sessionID: 'ses_1' },
     });
 
-    expect(notifications).toEqual([{ kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined }]);
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined },
+    ]);
   });
 });
 
@@ -418,7 +482,7 @@ describe('session.idle', () => {
 describe('session.error', () => {
   test('patches .error onto the last assistant message in the messages cache', () => {
     const { handleEvent, queryClient } = buildHandler();
-    const key = opencodeKeys.messages('ses_1');
+    const key = opencodeKeys.runtimeMessages('ses_1');
     queryClient.setQueryData(key, [
       { info: userMessage('msg_u'), parts: [] },
       { info: assistantMessage('msg_a'), parts: [] },
@@ -427,7 +491,10 @@ describe('session.error', () => {
     handleEvent({
       id: 'evt_1',
       type: 'session.error',
-      properties: { sessionID: 'ses_1', error: { name: 'UnknownError', data: { message: 'boom' } } },
+      properties: {
+        sessionID: 'ses_1',
+        error: { name: 'UnknownError', data: { message: 'boom' } },
+      },
     });
 
     const cached = queryClient.getQueryData<Array<{ info: Message }>>(key);
@@ -436,21 +503,31 @@ describe('session.error', () => {
       data: { message: 'boom' },
     });
     expect(notifications).toEqual([
-      { kind: 'session-error', sessionId: 'ses_1', errorTitle: 'UnknownError', sessionTitle: undefined },
+      {
+        kind: 'session-error',
+        sessionId: 'ses_1',
+        errorTitle: 'UnknownError',
+        sessionTitle: undefined,
+      },
     ]);
   });
 
   test('non-abort errors rehydrate real messages from the injected client', async () => {
     const rehydrated: Message[] = [assistantMessage('msg_real')];
     const { handleEvent, queryClient } = buildHandler({
-      messagesImpl: async () => ({ data: rehydrated.map((info) => ({ info, parts: [] })) }),
+      messagesImpl: async () => ({
+        data: rehydrated.map((info) => ({ info, parts: [] })),
+      }),
     });
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
     handleEvent({
       id: 'evt_1',
       type: 'session.error',
-      properties: { sessionID: 'ses_1', error: { name: 'UnknownError', data: { message: 'boom' } } },
+      properties: {
+        sessionID: 'ses_1',
+        error: { name: 'UnknownError', data: { message: 'boom' } },
+      },
     });
 
     // The rehydrate fetch is fire-and-forget (`.then()`), so wait a tick.
@@ -479,7 +556,10 @@ describe('session.error', () => {
     handleEvent({
       id: 'evt_1',
       type: 'session.error',
-      properties: { sessionID: 'ses_1', error: { name: 'AbortError', data: { message: 'aborted' } } },
+      properties: {
+        sessionID: 'ses_1',
+        error: { name: 'AbortError', data: { message: 'aborted' } },
+      },
     } as never);
 
     await Promise.resolve();
@@ -512,7 +592,12 @@ describe('permission.asked / permission.replied', () => {
 
     expect(addPermission.calls).toEqual([[req]]);
     expect(notifications).toEqual([
-      { kind: 'permission', sessionId: 'ses_1', toolName: 'a tool', sessionTitle: undefined },
+      {
+        kind: 'permission',
+        sessionId: 'ses_1',
+        toolName: 'a tool',
+        sessionTitle: undefined,
+      },
     ]);
   });
 
@@ -544,7 +629,12 @@ describe('question.asked / question.replied / question.rejected', () => {
 
     expect(addQuestion.calls).toEqual([[req]]);
     expect(notifications).toEqual([
-      { kind: 'question', sessionId: 'ses_1', questionText: 'Should I proceed?', sessionTitle: undefined },
+      {
+        kind: 'question',
+        sessionId: 'ses_1',
+        questionText: 'Should I proceed?',
+        sessionTitle: undefined,
+      },
     ]);
   });
 
@@ -583,7 +673,9 @@ describe('misc targeted cache writes', () => {
       type: 'session.diff',
       properties: { sessionID: 'ses_1', diff },
     });
-    expect(queryClient.getQueryData<typeof diff>(['opencode', 'session-diff', 'ses_1'])).toEqual(diff);
+    expect(queryClient.getQueryData<typeof diff>(['opencode', 'session-diff', 'ses_1'])).toEqual(
+      diff,
+    );
   });
 
   test('todo.updated writes the todos array under the session-todo key', () => {
@@ -594,7 +686,9 @@ describe('misc targeted cache writes', () => {
       type: 'todo.updated',
       properties: { sessionID: 'ses_1', todos },
     });
-    expect(queryClient.getQueryData<typeof todos>(['opencode', 'session-todo', 'ses_1'])).toEqual(todos);
+    expect(queryClient.getQueryData<typeof todos>(['opencode', 'session-todo', 'ses_1'])).toEqual(
+      todos,
+    );
   });
 
   test('vcs.branch.updated writes the branch under the vcs key', () => {
@@ -604,7 +698,9 @@ describe('misc targeted cache writes', () => {
       type: 'vcs.branch.updated',
       properties: { branch: 'feat/foo' },
     });
-    expect(queryClient.getQueryData<{ branch: string }>(['opencode', 'vcs'])).toEqual({ branch: 'feat/foo' });
+    expect(queryClient.getQueryData<{ branch: string }>(['opencode', 'vcs'])).toEqual({
+      branch: 'feat/foo',
+    });
   });
 });
 
@@ -617,7 +713,11 @@ describe('remaining event kinds — smoke coverage', () => {
   test('mcp.tools.changed refetches MCP status + tool ids (active only)', () => {
     const { handleEvent, queryClient } = buildHandler();
     expect(() =>
-      handleEvent({ id: 'evt_1', type: 'mcp.tools.changed', properties: { server: 'github' } }),
+      handleEvent({
+        id: 'evt_1',
+        type: 'mcp.tools.changed',
+        properties: { server: 'github' },
+      }),
     ).not.toThrow();
     expect(queryClient).toBeInstanceOf(QueryClient);
   });
@@ -625,7 +725,11 @@ describe('remaining event kinds — smoke coverage', () => {
   test('worktree.ready invalidates worktrees + projects', () => {
     const { handleEvent } = buildHandler();
     expect(() =>
-      handleEvent({ id: 'evt_1', type: 'worktree.ready', properties: { name: 'wt-1' } }),
+      handleEvent({
+        id: 'evt_1',
+        type: 'worktree.ready',
+        properties: { name: 'wt-1' },
+      }),
     ).not.toThrow();
   });
 
@@ -634,24 +738,47 @@ describe('remaining event kinds — smoke coverage', () => {
     let contentInvalidated = 0;
     const orig = queryClient.invalidateQueries.bind(queryClient);
     queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
-      if (JSON.stringify(opts.queryKey) === JSON.stringify(fileContentKeys.all)) contentInvalidated++;
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(fileContentKeys.all))
+        contentInvalidated++;
       return orig(opts);
     }) as typeof queryClient.invalidateQueries;
 
-    handleEvent({ id: 'evt_1', type: 'file.edited', properties: { file: 'src/app.ts' } });
+    handleEvent({
+      id: 'evt_1',
+      type: 'file.edited',
+      properties: { file: 'src/app.ts' },
+    });
     expect(contentInvalidated).toBe(1);
   });
 
   test('installation.updated shows a toast', () => {
     const { handleEvent } = buildHandler();
-    handleEvent({ id: 'evt_1', type: 'installation.updated', properties: { version: '1.2.3' } });
-    expect(toasts).toEqual([{ level: 'info', message: 'Installation updated (v1.2.3). Restart to apply changes.' }]);
+    handleEvent({
+      id: 'evt_1',
+      type: 'installation.updated',
+      properties: { version: '1.2.3' },
+    });
+    expect(toasts).toEqual([
+      {
+        level: 'info',
+        message: 'Installation updated (v1.2.3). Restart to apply changes.',
+      },
+    ]);
   });
 
   test('installation.update-available shows a toast', () => {
     const { handleEvent } = buildHandler();
-    handleEvent({ id: 'evt_1', type: 'installation.update-available', properties: { version: '2.0.0' } });
-    expect(toasts).toEqual([{ level: 'info', message: 'v2.0.0 is available. Update when you\'re ready.' }]);
+    handleEvent({
+      id: 'evt_1',
+      type: 'installation.update-available',
+      properties: { version: '2.0.0' },
+    });
+    expect(toasts).toEqual([
+      {
+        level: 'info',
+        message: "v2.0.0 is available. Update when you're ready.",
+      },
+    ]);
   });
 
   test('pty.* events invalidate the pty list', () => {
@@ -663,7 +790,11 @@ describe('remaining event kinds — smoke coverage', () => {
       return orig(opts);
     }) as typeof queryClient.invalidateQueries;
 
-    handleEvent({ id: 'evt_1', type: 'pty.created', properties: { info: { id: 'pty_1' } } as never });
+    handleEvent({
+      id: 'evt_1',
+      type: 'pty.created',
+      properties: { info: { id: 'pty_1' } } as never,
+    });
     expect(ptyInvalidated).toBe(1);
   });
 

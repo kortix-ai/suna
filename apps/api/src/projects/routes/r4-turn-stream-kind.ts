@@ -1,6 +1,6 @@
-// turn-stream multiplexes 7+ operations (progress step, final answer, turn
-// end, opencode session pin, execution lease discover/heartbeat/release)
-// behind one path — normalize the caller-supplied `kind` into the value
+// turn-stream multiplexes several operations (progress step, final answer,
+// turn end, opencode session pin, plus the retired execution-lease kinds that
+// pre-2026-07-29 sandbox images still send) behind one path — normalize the caller-supplied `kind` into the value
 // attached to the request context so it lands on the `Request completed:`
 // log and `stats count() by kind` in CloudWatch Insights can finally read
 // the traffic mix off a dashboard instead of it being reverse-engineered

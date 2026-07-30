@@ -11,16 +11,21 @@ const REQUIRED_BASE_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
   '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/skills/kortix-system/SKILL.md',
+  // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
+  // the `kortix-*` family lives in templates/managed/ and is injected at boot.
+  '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
   'kortix.yaml',
 ];
 
+// A sample of the artifact floor the general-knowledge-worker layer adds on top
+// of base — a document, a deck, and a site. Not the full list; `@kortix/starter`
+// owns that assertion.
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/account-research/SKILL.md',
-  '.kortix/opencode/skills/deep-research/SKILL.md',
   '.kortix/opencode/skills/pdf/SKILL.md',
+  '.kortix/opencode/skills/presentations/SKILL.md',
+  '.kortix/opencode/skills/website-building/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {
@@ -93,6 +98,24 @@ describe('applyScaffold', () => {
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
     for (const path of GKW_SKILL_PATHS) expect(result.written).not.toContain(path);
     expect(walk(dir)).toEqual(base);
+  });
+
+  test('ACP multi-harness template writes every native harness configuration', () => {
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Harness Lab',
+      template: 'acp-multi-harness',
+    });
+
+    for (const path of ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md']) {
+      expect(result.written).toContain(path);
+    }
+    const manifest = readFileSync(join(dir, 'kortix.yaml'), 'utf8');
+    expect(manifest).toContain('kortix_version: 3');
+    expect(manifest).toContain('harness: opencode');
+    expect(manifest).toContain('harness: claude');
+    expect(manifest).toContain('harness: codex');
+    expect(manifest).toContain('harness: pi');
   });
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {

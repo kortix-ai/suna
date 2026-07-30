@@ -8,6 +8,12 @@ import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
+import {
+  billingSnapshotFromAccount,
+  billingStateAllowsRun,
+  hasLiveSubscription,
+  resolveBillingState,
+} from './billing-state';
 import { getCreditSummary } from './credits';
 import { initializeFreeTierAccount } from './free-tier';
 import { countActiveMembers } from './seat-management';
@@ -188,15 +194,36 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     null) as AccountStateResponse['subscription']['billing_period'];
   const provider = (sub?.provider ?? 'stripe') as AccountStateResponse['subscription']['provider'];
 
+  // The SAME state machine the billing gate admits on (billing-state.ts).
+  // `credits.canRun` is a bare wallet-floor check and disagrees with the gate
+  // for an active per-seat subscription (which is not wallet-gated) — that
+  // divergence is what made the session page tell a paying Team account with a
+  // $0.0099 wallet "Your team isn't on a plan yet". can_run must answer the
+  // same question the gate answers, and `billing_state` says WHY.
+  const billingSnapshot = billingSnapshotFromAccount(sub);
+  const billingState = resolveBillingState(billingSnapshot);
+
   const state = {
     credits: {
       total: credits.total,
       daily: credits.daily,
       monthly: credits.monthly,
       extra: credits.extra,
-      can_run: isAdmin ? true : credits.canRun,
+      can_run: isAdmin ? true : billingStateAllowsRun(billingState),
+      // Lifetime rollups, maintained from credit_ledger by the
+      // apply_credit_ledger_lifetime_rollup trigger (migration
+      // 20260729013905335). They read 0 on every account before that migration
+      // because nothing had incremented them since the Python -> TS rewrite —
+      // web and mobile both hardcoded 0 into their `credits` shape rather than
+      // reading a column that was always 0 anyway. Surfaced here so those
+      // surfaces show the real figures instead of a placeholder.
+      lifetime_granted: Number(sub?.lifetimeGranted ?? 0) || 0,
+      lifetime_purchased: Number(sub?.lifetimePurchased ?? 0) || 0,
+      lifetime_used: Number(sub?.lifetimeUsed ?? 0) || 0,
       daily_refresh: dailyRefresh,
     },
+    billing_state: isAdmin ? ('active' as const) : billingState,
+    has_active_subscription: hasLiveSubscription(billingSnapshot),
     subscription: {
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
@@ -275,8 +302,13 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly: 0,
       extra: 0,
       can_run: true,
+      lifetime_granted: 0,
+      lifetime_purchased: 0,
+      lifetime_used: 0,
       daily_refresh: null,
     },
+    billing_state: 'active',
+    has_active_subscription: false,
     subscription: {
       tier_key: 'free',
       tier_display_name: 'Free',

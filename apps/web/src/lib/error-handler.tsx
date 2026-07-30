@@ -3,10 +3,10 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { isBillingEnabled } from '@/lib/config';
 import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
+import type { BillingState } from '@kortix/sdk';
 
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
@@ -268,6 +268,13 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       billingModel: typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
       hasSubscription:
         typeof v2Detail?.has_subscription === 'boolean' ? v2Detail.has_subscription : undefined,
+      // The unambiguous state (billing-state.ts). Preferred over `code`, which
+      // is deliberately lossy — a drained Free wallet and a drained Team wallet
+      // both arrive as `insufficient_credits`.
+      billingState:
+        typeof v2Detail?.billing_state === 'string'
+          ? (v2Detail.billing_state as BillingState)
+          : undefined,
     });
     return;
   }
@@ -328,9 +335,12 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         duration: 6000,
       });
     } else {
-      usePricingModalStore.getState().openPricingModal({
-        isAlert: true,
-        alertTitle: errorUI.alertTitle,
+      // Was openPricingModal() on the pricing-modal store, whose modal
+      // (NewInstanceModal) is not mounted anywhere — every non-credits 402
+      // therefore surfaced NOTHING. GlobalUpgradeModal is the live surface.
+      useUpgradeDialogStore.getState().openUpgradeDialog({
+        reason: 'subscription_required',
+        message: errorUI.alertTitle,
       });
     }
     return;

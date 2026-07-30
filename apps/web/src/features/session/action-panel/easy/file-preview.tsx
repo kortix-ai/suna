@@ -17,10 +17,10 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import {
+  type FileCategory,
   FileContentRenderer,
   FileSourceProvider,
   getFileCategory,
-  type FileCategory,
 } from '@/features/file-viewer';
 import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
@@ -41,8 +41,8 @@ import {
 } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { DownloadButton, FileViewer, isSvg, OpenInNewTabButton } from './file-viewer';
-import { ShareFileButton, type ShareContext } from './viewer-actions';
+import { DownloadButton, FileViewer, OpenInNewTabButton, isSvg } from './file-viewer';
+import { type ShareContext, ShareFileButton } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -413,6 +413,7 @@ export function FilePreview({
       content={data.content}
       fileName={fileName}
       path={path}
+      shareContext={shareContext}
       onClose={onClose}
       onAskForChanges={onAskForChanges}
     />

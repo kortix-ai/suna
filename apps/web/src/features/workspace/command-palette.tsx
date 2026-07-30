@@ -99,7 +99,7 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
@@ -368,7 +368,7 @@ export function CommandPalette() {
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reopenPaletteRef = useRef(false);
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const rawPathname = usePathname();
@@ -1050,8 +1050,10 @@ export function CommandPalette() {
 
   const handleOpenPlan = useCallback(() => {
     close();
-    openNewInstanceModal();
-  }, [close, openNewInstanceModal]);
+    // Previously opened NewInstanceModal, which no surface mounts — this
+    // command was a no-op. GlobalUpgradeModal is the live plan surface.
+    openUpgradeDialog({ reason: 'subscription_required' });
+  }, [close, openUpgradeDialog]);
 
   const handleLogout = useCallback(() => {
     reopenPaletteRef.current = true;

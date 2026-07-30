@@ -421,7 +421,9 @@ connectors:
 `);
     expect(valid).toBe(false);
     expect(errorPaths).toContain('connectors[0].credential');
-    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain('kortix_version 2');
+    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain(
+      'kortix_version 2',
+    );
   });
 
   test('v2 accepts "shared" (the only mode) cleanly', () => {
@@ -869,9 +871,9 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 3 is rejected as unsupported', () => {
+  test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 3
+kortix_version: 4
 default_agent: w
 agents:
   w: {}
@@ -936,7 +938,6 @@ connectors:
 `);
     expect(errorPaths).toContain('connectors[0].provider');
   });
-
 });
 
 // ─── validateAgentMdFrontmatter ─────────────────────────────────────────────

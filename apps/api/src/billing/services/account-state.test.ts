@@ -149,6 +149,9 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       monthly: 5,
       extra: 4,
       can_run: true,
+      lifetime_granted: 0,
+      lifetime_purchased: 0,
+      lifetime_used: 0,
       daily_refresh: null,
     });
     expect(state.subscription.tier_key).toBe('free');
@@ -162,6 +165,54 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.limits?.concurrent_sessions.active).toBe(0);
     expect(state.billing_model).toBe('legacy');
     expect(state.member_count).toBe(3);
+    expect(state.billing_state).toBe('active');
+    expect(state.has_active_subscription).toBe(false);
+  });
+
+  test('a per-seat account on an ACTIVE subscription with a drained wallet can still run', async () => {
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0.0099614711',
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.billing_state).toBe('active');
+    expect(state.credits.can_run).toBe(true);
+    expect(state.has_active_subscription).toBe(true);
+  });
+
+  test('a per-seat account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_gone',
+      stripeSubscriptionStatus: 'canceled',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.billing_state).toBe('out_of_credits');
+    expect(state.credits.can_run).toBe(false);
+    expect(state.has_active_subscription).toBe(false);
+  });
+
+  test('lifetime rollups are surfaced from the credit row rather than hardcoded to zero', async () => {
+    account = creditAccount({
+      lifetimeGranted: '27.0000000000',
+      lifetimePurchased: '20.0000000000',
+      lifetimeUsed: '14.5000000000',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.credits.lifetime_granted).toBe(27);
+    expect(state.credits.lifetime_purchased).toBe(20);
+    expect(state.credits.lifetime_used).toBe(14.5);
   });
 
   test('when no credit row exists, the account is initialized and the fresh row is still read only once more (not re-fetched by downstream helpers)', async () => {

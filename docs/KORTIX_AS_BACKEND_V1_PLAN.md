@@ -2,6 +2,11 @@
 
 Status: Draft for review · rev 2 (verified against current `main`)
 
+> **Historical runtime scope.** This plan uses the published
+> `opencode_model` compatibility name and the v2 OpenCode REST path. The current
+> v3 runtime contract selects OpenCode, Claude Code, Codex, or Pi through
+> `agents.<name>.runtime`.
+
 ## 0. TL;DR
 
 **The ask:** let a third party wrap Kortix as a backend — many end-users on **one shared agent + repo**, each bringing **their own** connectors, model, and context, passed **at session start**, overriding the agent's defaults.

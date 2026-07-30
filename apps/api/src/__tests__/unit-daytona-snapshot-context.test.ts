@@ -3,7 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import {
+  buildCliExecutorSourceDigest,
+  buildFileSha256,
+} from '@kortix/shared/sandbox-runtime-artifact';
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -26,6 +30,7 @@ setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-daytona-context-test-'));
 const agentPath = join(fixtureRoot, 'kortix-agent');
 const cliPath = join(fixtureRoot, 'kortix');
+const cliAttestationPath = join(fixtureRoot, 'kortix-executor-runtime.attestation.json');
 const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
 const executorSdkPath = join(fixtureRoot, 'executor-sdk');
@@ -34,6 +39,17 @@ const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
 writeFileSync(agentPath, '#!/bin/sh\n');
 writeFileSync(cliPath, '#!/bin/sh\n');
 writeFileSync(entrypointPath, '#!/bin/sh\n');
+writeFileSync(
+  cliAttestationPath,
+  `${JSON.stringify({
+    schema_version: 1,
+    source_sha256: await buildCliExecutorSourceDigest(
+      resolve(import.meta.dir, '../../../cli'),
+    ),
+    binary_sha256: await buildFileSha256(cliPath),
+    target: 'bun-linux-x64',
+  })}\n`,
+);
 await chmod(agentPath, 0o755);
 await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
@@ -52,6 +68,7 @@ await mkdir(opencodeConfigPath, { recursive: true });
 beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
   process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
+  process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = cliAttestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
   process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;

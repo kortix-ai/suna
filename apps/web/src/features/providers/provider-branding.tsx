@@ -37,6 +37,7 @@ export const PROVIDER_NOTES: Record<string, string> = {
 
 const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
+  claude: { src: '/provider-icons/anthropic.svg', fallback: 'CL' },
   openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
   codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
   opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },

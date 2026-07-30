@@ -5,13 +5,15 @@ import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
+import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import {
+  EMPTY_REAP_RESULT,
   countBillingInvariantViolations,
+  countStaleLivenessWindows,
   reapAndReconcileSandboxes,
   reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
-  reconcileUndeliveredPrompts,
 } from './sandbox-reaper';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -240,14 +242,7 @@ export async function runProjectMaintenance(): Promise<void> {
           '[project-maintenance] reaper failed:',
           err instanceof Error ? err.message : err,
         );
-        return {
-          candidates: 0,
-          stopped: 0,
-          reconciled: 0,
-          billingClosed: 0,
-          skipped: 0,
-          errors: 0,
-        };
+        return { ...EMPTY_REAP_RESULT };
       }),
       // Billing safety net: close metering for any active compute row whose box
       // is not actually running (catches orphans / missed webhooks).
@@ -256,7 +251,7 @@ export async function runProjectMaintenance(): Promise<void> {
           '[project-maintenance] orphan-compute reconcile failed:',
           err instanceof Error ? err.message : err,
         );
-        return { checked: 0, closed: 0, errors: 0 };
+        return { checked: 0, closed: 0, errors: 0, byReason: undefined };
       }),
       // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
       // status with no running box behind them — invisible to the provider reaper
@@ -370,18 +365,42 @@ export async function runProjectMaintenance(): Promise<void> {
     // the 2026-07-02 incident went undetected for hours. This line is cheap
     // (one per cycle, ~every 5min) and makes "the loop is alive" observable —
     // wire an alert on its absence for N cycles instead of trusting silence.
+    // Every counter that a silent regression would hide. `deferred` is the one
+    // that mattered most: an unordered LIMIT left ~179 of 279 prod rows
+    // permanently outside the sweep and NOTHING said so for weeks. `idle_stopped`
+    // is now the number that matters: it counts boxes stopped because their
+    // deadline passed, and a flat zero over a busy hour means the deadline is
+    // not being enforced.
     console.log(
-      `[project-maintenance] heartbeat idle_candidates=${idle.candidates} action=${hadAction}`,
+      '[project-maintenance] heartbeat',
+      `idle_candidates=${idle.candidates}`,
+      `idle_matching=${idle.matching}`,
+      `idle_deferred=${idle.deferred}`,
+      `idle_stopped=${idle.stopped}`,
+      `idle_skipped=${idle.skipped}`,
+      `compute_rows_closed=${orphanCompute.closed}`,
+      `action=${hadAction}`,
     );
 
     // Invariant monitor: in steady state, every `active` compute session has a
     // running box. A non-zero count means billing is leaking — make it loud so a
     // silent regression pages instead of accruing $ for days (the original bug).
     try {
-      const billingLeak = await countBillingInvariantViolations();
+      const [billingLeak, staleLiveness] = await Promise.all([
+        countBillingInvariantViolations(),
+        countStaleLivenessWindows(),
+      ]);
       if (billingLeak > 0) {
         console.warn(
           `[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`,
+        );
+      }
+      // The mirror monitor. Billing is gated on control-plane liveness now, so
+      // a starved/dead reaper stops earning revenue SILENTLY where the old
+      // wall-clock model would have over-billed loudly. Alert on both.
+      if (staleLiveness > 0) {
+        console.warn(
+          `[project-maintenance] BILLING LIVENESS STALE: ${staleLiveness} active compute session(s) not observed alive within the grace — revenue is draining silently, check the reaper`,
         );
       }
     } catch (err) {

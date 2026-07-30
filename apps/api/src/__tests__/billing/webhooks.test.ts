@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -35,6 +35,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   stripeCancelSubCalls = [];
+  mintYoloTokensCalls = [];
   resetMockRegistry();
 
   // Stripe client
@@ -89,6 +90,19 @@ beforeEach(() => {
     return {};
   };
 });
+
+// Seat-token minting is a non-money side effect that used to live INSIDE the
+// per-seat credit-grant block, so a guard added to the grant silently disabled
+// it. Track it so that can never happen again unnoticed.
+let mintYoloTokensCalls: string[] = [];
+const actualSeatManagement = await import('../../billing/services/seat-management');
+mock.module('../../billing/services/seat-management', () => ({
+  ...actualSeatManagement,
+  mintYoloTokensForAllMembers: async (accountId: string) => {
+    mintYoloTokensCalls.push(accountId);
+    return { minted: 0 };
+  },
+}));
 
 // Import AFTER mocking
 const { processStripeWebhook, processRevenueCatWebhook } = await import('../../billing/services/webhooks');
@@ -1090,5 +1104,171 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
     // Should fall through to revertToFree
     const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
     expect(freeRevert).toBeDefined();
+  });
+});
+
+describe('per-seat entitlement is the allowance, never the price', () => {
+  function perSeatSub(seats: number, overrides: Record<string, any> = {}) {
+    return createMockStripeSubscription({
+      id: 'sub_seats_1',
+      metadata: {
+        account_id: 'acc_test_123',
+        tier_key: 'per_seat',
+        billing_model: 'per_seat',
+      },
+      items: {
+        data: [
+          {
+            id: 'si_seat_1',
+            quantity: seats,
+            price: { id: 'price_seat', unit_amount: 4000, currency: 'usd' },
+          },
+        ],
+      },
+      ...overrides,
+    });
+  }
+
+  async function syncSeats(sub: any) {
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+  }
+
+  test('adding 4 seats grants 4 x $25 of allowance, not 4 x the $40 price', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
+
+    await syncSeats(perSeatSub(5));
+
+    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
+    expect(seatGrant).toBeDefined();
+    expect(seatGrant[1]).toBe(100);
+    expect(seatGrant[1]).not.toBe(160);
+  });
+
+  test('adding 1 seat grants $25, the included allowance for one seat', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 2 });
+
+    await syncSeats(perSeatSub(3));
+
+    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
+    expect(seatGrant[1]).toBe(25);
+    expect(seatGrant[1]).not.toBe(40);
+  });
+
+  test('removing seats grants nothing', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 6 });
+
+    await syncSeats(perSeatSub(2));
+
+    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+  });
+
+  test('the seat-grant idempotency key names the seat count reached AND the billing period', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
+
+    const sub = perSeatSub(3, { current_period_start: 1_700_000_000 });
+    await syncSeats(sub);
+
+    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
+    expect(seatGrant[5]).toBe('sub_seats_1:seats:1700000000:3');
+  });
+
+  test('shrinking and regrowing to the same seat count inside one period reuses the key', async () => {
+    // Seat removals never claw allowance back, so a team that goes 1→3, 3→2 and
+    // then 2→3 within one billing period is already funded for 3 seats. Keying
+    // on the destination count (not the `old->new` transition) makes the second
+    // arrival dedupe instead of funding the same seat twice.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
+    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
+    const grown = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
+
+    grantCreditsCalls.length = 0;
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 2 });
+    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
+    const regrown = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
+
+    expect(regrown).toBe(grown);
+  });
+
+  test('the same seat count in a LATER period is a different key, so re-added seats get funded', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
+
+    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
+    const first = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
+
+    grantCreditsCalls.length = 0;
+    await syncSeats(perSeatSub(3, { current_period_start: 1_702_600_000 }));
+    const second = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
+
+    expect(second).not.toBe(first);
+  });
+
+  test('a recovering per-seat team is reset to its FULL seat allowance, not a flat $25', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        billingModel: 'per_seat',
+        seatCount: 0,
+        stripeSubscriptionId: null,
+      });
+
+    await syncSeats(perSeatSub(6));
+
+    expect(resetExpiringCreditsCalls.length).toBe(1);
+    expect(resetExpiringCreditsCalls[0][1]).toBe(150);
+    expect(resetExpiringCreditsCalls[0][1]).not.toBe(25);
+  });
+
+  test('a recovery reset that already funded every seat does NOT also take the delta grant', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        billingModel: 'per_seat',
+        seatCount: 0,
+        stripeSubscriptionId: null,
+      });
+
+    await syncSeats(perSeatSub(6));
+
+    expect(resetExpiringCreditsCalls[0][1]).toBe(150);
+    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+  });
+
+  test('a brand-new per-seat team still gets seat tokens minted even though the delta grant is skipped', async () => {
+    // Minting is not a money decision. It used to sit inside the credit-grant
+    // block, so suppressing the redundant delta grant above would also have
+    // stopped minting for every newly activated team — the exact case the mint
+    // exists for.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        billingModel: null,
+        seatCount: 0,
+        stripeSubscriptionId: null,
+      });
+
+    await syncSeats(perSeatSub(6));
+
+    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(mintYoloTokensCalls).toEqual(['acc_test_123']);
+  });
+
+  test('a legacy tier recovery is still sized by the tier, not by seats', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null, seatCount: 0 });
+
+    const sub = createMockStripeSubscription({ id: 'sub_legacy_recover' });
+    await syncSeats(sub);
+
+    expect(resetExpiringCreditsCalls.length).toBe(1);
+    expect(resetExpiringCreditsCalls[0][1]).toBe(50);
   });
 });

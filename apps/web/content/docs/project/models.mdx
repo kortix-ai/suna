@@ -58,6 +58,21 @@ If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.
 </Callout>
 
+## Per-project model enablement
+
+The gateway enforces which models a project may use. By default, the newest
+model of each family is offered automatically. Model families you connect
+through a provider key or that Kortix manages are offered by default — a guard
+never prunes a managed model or one your project's routing policy references.
+
+You can override the default for individual models on the **Manage models**
+page (Customize → Models). An exception is stored per project and takes effect
+immediately. The model picker, chat, Slack, triggers, and the raw API all
+respect the same enabled set.
+
+A model that is not enabled is refused everywhere and hidden from the picker.
+The gateway never falls back to a disabled model.
+
 ## Shared, not private, keys
 
 A connected provider key applies to the whole project. There is no private,

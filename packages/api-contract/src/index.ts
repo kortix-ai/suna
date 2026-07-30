@@ -599,6 +599,11 @@ export const ProjectSessionSchema = z.object({
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
   opencode_session_id: z.string().nullable(),
+  runtime_transport: z.enum(['acp', 'rest']).optional(),
+  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
+  native_agent: z.string().nullable().optional(),
+  acp_server_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -729,6 +734,10 @@ export const SessionStartResultSchema = z.object({
    * Clients must treat omission as the legacy REST transport.
    */
   runtime_transport: z.enum(['acp', 'rest']).optional(),
+  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
+  native_agent: z.string().nullable().optional(),
+  acp_server_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns

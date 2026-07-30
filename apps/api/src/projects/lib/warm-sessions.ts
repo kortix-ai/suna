@@ -28,6 +28,7 @@ interface WarmProjectSessionMarker {
 }
 
 interface WarmProjectSessionDependencies<T extends WarmProjectSessionRecord> {
+  exclusive?: <R>(operation: () => Promise<R>) => Promise<R>;
   findAvailable: () => Promise<T | null>;
   create: (metadata: Record<string, unknown>) => Promise<T>;
   discard: (sessionId: string, metadata: Record<string, unknown>) => Promise<void>;
@@ -109,41 +110,48 @@ export function createWarmProjectSessionCoordinator<T extends WarmProjectSession
 ) {
   const now = dependencies.now ?? (() => new Date());
 
+  const ensureUnlocked = async (configuration: WarmProjectSessionConfiguration) => {
+    const available = await dependencies.findAvailable();
+    if (available && compatible(available, configuration)) {
+      return { session: available, reused: true };
+    }
+
+    if (available) {
+      const marker = markerOf(available.metadata);
+      await dependencies.discard(
+        available.sessionId,
+        withMarker(available, {
+          state: 'discarded',
+          sandbox_slug: marker?.sandbox_slug ?? configuration.sandboxSlug,
+          created_at: marker?.created_at ?? now().toISOString(),
+          discarded_at: now().toISOString(),
+          discard_reason: REUSABLE_STATUSES.has(available.status)
+            ? 'configuration_changed'
+            : 'terminal_status',
+        }),
+      );
+    }
+
+    try {
+      const session = await dependencies.create(
+        availableMetadata(configuration.sandboxSlug, now()),
+      );
+      return { session, reused: false };
+    } catch (error) {
+      const winner = await dependencies.findAvailable();
+      if (winner && compatible(winner, configuration)) {
+        return { session: winner, reused: true };
+      }
+      throw error;
+    }
+  };
+
   return {
     async ensure(configuration: WarmProjectSessionConfiguration) {
-      const available = await dependencies.findAvailable();
-      if (available && compatible(available, configuration)) {
-        return { session: available, reused: true };
+      if (dependencies.exclusive) {
+        return dependencies.exclusive(() => ensureUnlocked(configuration));
       }
-
-      if (available) {
-        const marker = markerOf(available.metadata);
-        await dependencies.discard(
-          available.sessionId,
-          withMarker(available, {
-            state: 'discarded',
-            sandbox_slug: marker?.sandbox_slug ?? configuration.sandboxSlug,
-            created_at: marker?.created_at ?? now().toISOString(),
-            discarded_at: now().toISOString(),
-            discard_reason: REUSABLE_STATUSES.has(available.status)
-              ? 'configuration_changed'
-              : 'terminal_status',
-          }),
-        );
-      }
-
-      try {
-        const session = await dependencies.create(
-          availableMetadata(configuration.sandboxSlug, now()),
-        );
-        return { session, reused: false };
-      } catch (error) {
-        const winner = await dependencies.findAvailable();
-        if (winner && compatible(winner, configuration)) {
-          return { session: winner, reused: true };
-        }
-        throw error;
-      }
+      return ensureUnlocked(configuration);
     },
 
     async claim(configuration: ClaimWarmProjectSessionConfiguration) {

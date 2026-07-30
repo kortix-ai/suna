@@ -828,6 +828,57 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
   });
 
+  test("streaming model fallback bypasses a primary that opens but produces no bytes", async () => {
+    const calls: string[] = [];
+    const { hooks, traces } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-stalled-stream",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["fallback"],
+        fallbackOn: "transient",
+      }),
+      resolveUpstream: async (_principal, model) => [{
+        ...managed,
+        provider: model,
+        baseUrl: `https://${model}.test/v1`,
+        resolvedModel: model,
+      }],
+    });
+    const fetchImpl: FetchImpl = async (url) => {
+      calls.push(String(url));
+      if (String(url).includes("primary.test")) {
+        return new Response(new ReadableStream<Uint8Array>(), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"fallback ok"}}]}\n\n' +
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+        "data: [DONE]\n\n",
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    };
+
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      streamProbeTimeoutMs: 20,
+    }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"primary","stream":true,"messages":[{"role":"user","content":"ping"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("fallback ok");
+    expect(calls).toHaveLength(2);
+    await flush();
+    expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
+      policy: "test-stalled-stream",
+      models: ["primary", "fallback"],
+      selected: "fallback",
+    });
+  });
+
   test("any-error model policy falls back on a deterministic primary 400", async () => {
     const calls: string[] = [];
     const { hooks } = makeHooks({
@@ -1056,6 +1107,8 @@ describe("gateway.chatCompletions — generation-defaults injection", () => {
 // be treated as a failed candidate — failed over to the next one, and only
 // surfaced to the caller once every candidate has come back empty.
 describe("gateway.chatCompletions — empty-completion failover", () => {
+  const rampRateMessage =
+    "Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.";
   const emptyJson = JSON.stringify({
     model: "m",
     choices: [],
@@ -1065,6 +1118,11 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     model: "m",
     choices: [{ message: { content: "real answer" } }],
     usage: { prompt_tokens: 5, completion_tokens: 3 },
+  });
+  const softRateLimitJson = JSON.stringify({
+    model: "m",
+    choices: [{ message: { content: rampRateMessage }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 0, completion_tokens: 0 },
   });
 
   function sseResponse(body: string): Response {
@@ -1083,6 +1141,8 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n' +
     'data: [DONE]\n\n';
+  const softRateLimitSse = `data: {"choices":[{"delta":{"content":"${rampRateMessage}"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n`;
+  const validQuotedRateLimitSse = `data: {"choices":[{"delta":{"content":"${rampRateMessage}"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}\n\ndata: [DONE]\n\n`;
 
   // The ai-sdk engine PARSES an upstream SSE stream (via the real
   // @ai-sdk/openai-compatible provider) and RE-SERIALIZES it through this
@@ -1237,6 +1297,86 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     await flush();
     expect(traces[0].ok).toBe(false);
     expect(traces[0].errorCode).toBe("empty_completion");
+  });
+
+  test("non-streaming: a 200 assistant-text rate limit retries in place, then fails over without leaking the text", async () => {
+    const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
+    const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [a, b] });
+    const calls = { a: 0, b: 0 };
+    const fetchImpl: FetchImpl = async (url) => {
+      const provider = new URL(url).hostname === "a.test" ? "a" : "b";
+      calls[provider] += 1;
+      return new Response(provider === "a" ? softRateLimitJson : goodJson, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.content).toBe("real answer");
+    expect(calls).toEqual({ a: 3, b: 1 });
+    await flush();
+    expect(traces[0].candidatesTried).toEqual(["a", "a", "a", "b"]);
+  });
+
+  test("streaming: a 200 assistant-text rate limit retries in place and returns a real 429 after exhaustion", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(softRateLimitSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = await res.json();
+    expect(body.message).toBe(rampRateMessage);
+    expect(body.upstream_code).toBe(429);
+    expect(calls).toBe(3);
+    await flush();
+    expect(traces[0]).toMatchObject({
+      ok: false,
+      status: 429,
+      errorCode: "upstream_error",
+      errorMessage: rampRateMessage,
+    });
+  });
+
+  test("streaming: the exact rate-limit sentence with non-zero usage is relayed without retry", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(validQuotedRateLimitSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"quote the rate-limit message"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    const text = await new Response(res.body).text();
+    expect(sseText(text)).toEqual({ content: rampRateMessage, finishReason: "stop" });
+    expect(calls).toBe(1);
+    await flush();
+    expect(traces[0]).toMatchObject({
+      ok: true,
+      status: 200,
+      provider: "openrouter",
+    });
+    expect(traces[0].candidatesTried).toEqual(["openrouter"]);
   });
 
   // An otherwise-200 stream that carries a structured `{error:{...}}` frame and no

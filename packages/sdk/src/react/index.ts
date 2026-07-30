@@ -102,7 +102,6 @@ export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-mo
 export * from './use-admin-accounts';
 export * from './use-admin-analytics';
 export * from './use-admin-feedback';
-export * from './use-admin-users';
 export * from './use-system-status';
 export * from './use-ops-overview';
 export * from './use-admin-billing';

@@ -1,5 +1,9 @@
 # Agent-scoped secret injection
 
+> **Runtime update on 2026-07-28.** The immutable logical-agent secret grant
+> applies to OpenCode, Claude Code, Codex, and Pi. OpenCode process and subagent
+> details below remain specific to the v2 compatibility path.
+
 **Date:** 2026-07-26
 **Status:** Implemented
 **Area:** `apps/api` — project secrets → sandbox env

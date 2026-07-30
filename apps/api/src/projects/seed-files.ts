@@ -75,8 +75,8 @@ export interface ProjectSeedFilesFromItemInput {
 
 /**
  * Seed a brand-new project by cloning a `registry:project` marketplace item.
- * The minimal starter gives the new repo its opencode runtime (tools,
- * plugins, opencode.jsonc, base skills) exactly like any other new project;
+ * The internal minimal layer gives the new repo its four runtime profiles,
+ * canonical skills, and OpenCode compatibility files;
  * the project item's own files (its kortix.yaml, agent personas, …) are
  * already inline on the catalog entry (`entry.item.files`, see
  * `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts) — no

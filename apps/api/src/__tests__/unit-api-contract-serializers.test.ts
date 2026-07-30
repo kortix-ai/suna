@@ -25,6 +25,7 @@ function projectRow(
     accountId: ACCOUNT_ID,
     name: 'Demo Project',
     sandboxProviderGeneration: 0,
+    secretDefaultStrategy: 'runtime' as const,
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
@@ -75,6 +76,8 @@ function sandboxRow(
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     provider: 'platinum',
+    activeSince: NOW,
+    deadlineAt: NOW,
     externalId: 'sbx-123',
     baseUrl: 'https://sbx-123.proxy.kortix.com',
     status: 'active',
@@ -98,6 +101,12 @@ function secretRow(
     valueEnc: 'enc:v1:abc',
     scope: 'runtime',
     ownerUserId: null,
+    description: null,
+    strategy: 'runtime' as const,
+    egressPolicy: null,
+    handlePrefix: null,
+    rotatedAt: null,
+    strategyLocked: false,
     active: true,
     createdBy: USER_ID,
     createdAt: NOW,
@@ -157,11 +166,22 @@ describe('serializeProject ⇄ ProjectSchema', () => {
 
 describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('owner view parses strictly and round-trips unchanged', () => {
-    const out = serializeSession(sessionRow(), {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Fix the login bug',
+          runtime_transport: 'acp',
+          runtime_harness: 'codex',
+          native_agent: 'reviewer',
+        },
+      }),
+      {
       viewerId: USER_ID,
       canManageProject: false,
-    });
+      },
+    );
     expect(ProjectSessionSchema.strict().parse(out)).toEqual(out);
+    expect(out.native_agent).toBe('reviewer');
   });
 
   test('restricted shared view with grants parses', () => {
@@ -195,6 +215,18 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
+
+  test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
+    const placeholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),
+    );
+    expect(placeholder.name).toBeNull();
+
+    const real = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
+    );
+    expect(real.name).toBe('Set Up MS Graph');
+  });
 });
 
 describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
@@ -213,6 +245,8 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       sandbox: serializeSandboxRow(sandboxRow()),
       opencode_session_id: 'ses_abc',
       runtime_transport: 'acp' as const,
+      runtime_harness: 'codex' as const,
+      native_agent: 'reviewer',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };

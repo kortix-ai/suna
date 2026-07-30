@@ -47,38 +47,100 @@ interface BasePayload {
 
 export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope })
-  | (BasePayload & { kind: 'connector'; slug: string; app: string | null });
+  | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
+  /**
+   * A human-in-the-loop APPROVAL for one gated executor call.
+   *
+   * Unlike the other two kinds, this token is NOT a bearer capability: the
+   * endpoints behind it require a signed-in Kortix account that is authorised to
+   * approve in the project (manager, or the session's launcher). The token only
+   * says WHICH decision is being asked for; it never confers the right to make
+   * it. That distinction matters because a leaked approval link would otherwise
+   * let an outsider authorise the exact action the gate exists to stop.
+   */
+  | (BasePayload & { kind: 'approval'; eid: string; sid: string | null });
 
 export function clampTtlMinutes(minutes?: number | null): number {
   if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return DEFAULT_TTL_MINUTES;
   return Math.min(MAX_TTL_MINUTES, Math.max(MIN_TTL_MINUTES, Math.floor(minutes)));
 }
 
-type SecretSpec = { kind: 'secret'; fields: SecretFieldSpec[]; scope?: SecretScope; uid?: string | null };
+type SecretSpec = {
+  kind: 'secret';
+  fields: SecretFieldSpec[];
+  scope?: SecretScope;
+  uid?: string | null;
+};
 type ConnectorSpec = {
   kind: 'connector';
   slug: string;
   app?: string | null;
   uid?: string | null;
 };
+type ApprovalSpec = {
+  kind: 'approval';
+  /** The `executor_executions.execution_id` awaiting a decision. */
+  executionId: string;
+  sessionId?: string | null;
+  uid?: string | null;
+};
+
+/**
+ * Approvals default to a LONGER window than a setup link: the link is often
+ * relayed out-of-band (chat, email) and a human may only see it hours later.
+ * Safe to be generous because the token is not a capability — the decision is
+ * still gated on a signed-in, authorised account — and because the pending row
+ * itself remains the authority: once resolved, a live link can do nothing.
+ */
+const APPROVAL_TTL_MINUTES = 24 * 60;
 
 export function mintSetupLink(
   projectId: string,
-  spec: SecretSpec | ConnectorSpec,
+  spec: SecretSpec | ConnectorSpec | ApprovalSpec,
   opts?: { expiresInMinutes?: number | null },
 ): { token: string; expiresAt: number } {
-  const exp = Date.now() + clampTtlMinutes(opts?.expiresInMinutes) * 60_000;
+  const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
+  const exp = Date.now() + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
   const base: BasePayload = { exp, nonce, pid: projectId, uid: spec.uid ?? null };
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
       ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime' }
-      : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
+      : spec.kind === 'approval'
+        ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
+        : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
 
   const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));
-  const token = TOKEN_PREFIX + Buffer.from(`${projectId}.${envelope}`, 'utf8').toString('base64url');
+  const token =
+    TOKEN_PREFIX + Buffer.from(`${projectId}.${envelope}`, 'utf8').toString('base64url');
   return { token, expiresAt: exp };
+}
+
+/**
+ * The standalone page a human opens to decide one gated call.
+ *
+ * Single source of truth for the URL shape — the gateway (relaying the link to
+ * wherever the human is) and the session-audit read (linking from the in-session
+ * notice) must produce identical links. Returns null if minting fails, so a
+ * caller can degrade instead of throwing on a display path.
+ */
+export function approvalPageUrl(
+  projectId: string,
+  executionId: string,
+  sessionId: string | null,
+  frontendUrl?: string | null,
+): string | null {
+  try {
+    const { token } = mintSetupLink(projectId, { kind: 'approval', executionId, sessionId });
+    const base = (frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
+    return `${base}/approve/${token}`;
+  } catch {
+    return null;
+  }
 }
 
 export type ResolvedSetupLink =
@@ -116,9 +178,14 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
   }
 
-  if (payload.pid !== projectId) return { ok: false, status: 404, error: 'Invalid or unknown link' };
+  if (payload.pid !== projectId)
+    return { ok: false, status: 404, error: 'Invalid or unknown link' };
   if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
-    return { ok: false, status: 410, error: 'This link has expired — ask the agent for a fresh one' };
+    return {
+      ok: false,
+      status: 410,
+      error: 'This link has expired — ask the agent for a fresh one',
+    };
   }
   return { ok: true, projectId, payload };
 }

@@ -20,7 +20,13 @@
  */
 
 import { getRequestSession } from '@/server/auth';
-import { injectEndUserRef, isSessionCreate } from '@/server/end-user';
+import { buildUpstreamPath } from '@/server/upstream-path';
+import {
+  injectEndUserRef,
+  isSessionCreate,
+  isSessionList,
+  scopeSessionListToEndUser,
+} from '@/server/end-user';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
@@ -56,7 +62,12 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   }
 
   const { path = [] } = await ctx.params;
-  const upstreamPath = path.join('/');
+  // Next hands back DECODED segments, so `%2F..%2F` arrives as a real `..` and a
+  // naive join lets the POLICY and the UPSTREAM disagree about which project is
+  // being addressed. Refuse before anything reads the path.
+  const built = buildUpstreamPath(path);
+  if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
+  const upstreamPath = built.path;
 
   const policy = evaluatePolicy(req.method, upstreamPath, (projectId) =>
     isOwner(session.userId, projectId),
@@ -65,7 +76,15 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   if (!policy.allow) return jsonError(policy.status, policy.reason);
 
   const url = new URL(req.url);
-  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${url.search}`;
+  // The session list is scoped to the signed-in end-user server-side; without
+  // this the browser sees (and can ask for) every OTHER Lumen user's sessions.
+  let upstreamSearch = url.search;
+  if (isSessionList(req.method, upstreamPath)) {
+    const scoped = scopeSessionListToEndUser(url.search, session.userId);
+    if (scoped.action === 'reject') return jsonError(403, scoped.reason);
+    upstreamSearch = scoped.search;
+  }
+  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${upstreamSearch}`;
 
   // Kortix-as-a-Backend: every upstream call carries ONE credential (the
   // wrapper's API key), so upstream cannot tell Lumen's users apart by itself.

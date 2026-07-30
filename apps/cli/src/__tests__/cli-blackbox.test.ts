@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -645,14 +653,28 @@ console.log(JSON.stringify({ cmd, args, body }));
   }, 15_000);
 
   test('init --yes writes the full starter kit by default', async () => {
-    const result = await runCli(['init', 'default-project', '--yes', '--no-git']);
+    const result = await runCli([
+      'init',
+      'default-project',
+      '--yes',
+      '--no-git',
+      '--agents',
+      'claude,pi',
+    ]);
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'default-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(readFileSync(join(root, '.claude', 'CLAUDE.md'), 'utf8')).toContain(
+      'Claude Code runtime',
+    );
+    expect(readFileSync(join(root, '.pi', 'README.md'), 'utf8')).toContain('Pi runtime');
+    expect(lstatSync(join(root, '.claude', 'skills')).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(root, '.pi', 'skills')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
@@ -662,7 +684,19 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
-  test('init can explicitly opt into the general knowledge worker skill pack', async () => {
+  test('init help exposes one starter and hides compatibility template choices', async () => {
+    const result = await runCli(['init', '--help']);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(
+      /Every\s+new project includes OpenCode, Claude Code, Codex, and Pi runtime profiles\./,
+    );
+    expect(result.stdout).not.toContain('--template');
+    expect(result.stdout).not.toContain('acp-multi-harness');
+    expect(result.stdout).not.toContain('minimal');
+  });
+
+  test('init accepts the historical general-knowledge-worker template value', async () => {
     const result = await runCli([
       'init',
       'gkw-project',
@@ -674,7 +708,7 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
@@ -687,8 +721,8 @@ console.log(JSON.stringify({ cmd, args, body }));
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
 

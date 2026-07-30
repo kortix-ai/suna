@@ -1,5 +1,11 @@
 # Drive Kortix as a Backend
 
+> **Runtime scope.** The public `opencode_model` name remains unchanged for
+> compatibility. In a v3 project, `agent_name` selects an immutable OpenCode,
+> Claude Code, Codex, or Pi runtime profile. The framework-free
+> `session.stream()` and `session.send()` examples below use OpenCode REST.
+> Use `useSession()` or `createAcpSessionController()` for ACP.
+
 Wrap **one** Kortix agent + repo as the backend for **many** of your end-users.
 Your product holds a single Kortix credential; each session you start on behalf
 of a user brings *that user's* connectors, model, context, and secrets **by
@@ -38,7 +44,7 @@ curl -X POST https://api.kortix.com/v1/projects/<project-id>/sessions \
     "initial_prompt": "Summarize my new signups",
     "end_user_ref": "your-app-user-123",
     "agent_name": "support",
-    "opencode_model": "anthropic/claude-opus-4-8",
+    "opencode_model": "kortix/claude-opus-4.8",
     "connector_bindings": { "gmail": { "profile_id": "<profile-id>" } },
     "secrets": ["STRIPE_KEY"]
   }'
@@ -65,7 +71,7 @@ const session = await kortix.project(projectId).sessions.create({
   initial_prompt: 'Summarize my new signups',
   end_user_ref: 'your-app-user-123',
   agent_name: 'support',
-  opencode_model: 'anthropic/claude-opus-4-8',
+  opencode_model: 'kortix/claude-opus-4.8',
   connector_bindings: { gmail: { profile_id } },
   secrets: ['STRIPE_KEY'],
 });
@@ -189,8 +195,17 @@ both mintable with your API key:
    await kortix.project(projectId).connectors.profiles.activate(profile.profile_id);
    // → bind at session start: connector_bindings: { 'user-mcp': { profile_id: profile.profile_id } }
    ```
-   All of these are gated by `project.connector.write` (editor-tier and up) — a
-   dashboard API key rides that automatically.
+   All of these are gated by `project.connector_profiles.manage`, which is
+   **manager-only** (`iam/role-perms.ts` `MANAGER_ONLY`) — the built-in
+   **Manager** role, or owner/admin. An *editor* is NOT enough: `reconcile`
+   returns 403 and `updateCredential` / `activate` return **404**, deliberately
+   indistinguishable from "no such profile" so the endpoint never confirms a
+   profile exists to someone who may not touch it. If you hunt a nonexistent id
+   bug here, check the role first.
+
+   Binding an `external` profile at session create additionally needs
+   `project.session.bindings.write` — also manager-only. That is why the
+   override table below says "project manager" for `connector_bindings`.
 
    **OAuth apps (Gmail, Slack, Notion — `provider: 'pipedream'`).** There's no
    static token to paste; the end-user authorizes in their browser **once**, and
@@ -304,10 +319,28 @@ an opaque string you choose; Kortix never resolves it to a login.
   about its value.
 - **It resolves nothing.** It does not pull that user's connectors or secrets —
   pass those explicitly (`connector_bindings`, `secrets`).
-- **It does not list sessions.** No endpoint filters sessions by `end_user_ref`, so
-  "show me this end-user's sessions" still needs your own mapping.
 
-**What it DOES drive — metering and caps:**
+**What it DOES drive — listing, metering and caps:**
+
+```
+GET /v1/projects/{projectId}/sessions?end_user_ref=user-123
+```
+
+Returns only the sessions started for that end-user, filtered server-side — you
+do not have to pull the whole project and filter yourself, and the response never
+contains another end-user's rows. It spans every status, so finished sessions
+come back too. In the SDK:
+
+```ts
+await kortix.project(projectId).sessions.list({ end_user_ref: 'user-123' });
+```
+
+The deprecated `?origin_ref=` spelling works too. Sending both with *different*
+values is refused (`400 END_USER_REF_CONFLICT`) rather than one silently winning;
+sending both with the same value is fine. A blank handle is a `400`, not
+"list everything".
+
+**Metering and caps:**
 
 ```
 GET /v1/usage?end_user_ref=user-123     # that end-user's spend (totals + breakdown)
@@ -325,6 +358,21 @@ is a real query. Two caveats worth knowing:
 - **The value lands in the billing ledger and comes back out of the API**, so use
   an opaque id — not an email.
 
+For **spend**, `KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` refuses a session
+create for an end-user who has already spent that much inside
+`KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS` (default 30). Unset/0 = off.
+Exceeding it returns `429 per_end_user_spend_limit`, whose body carries
+`spent_usd`, `limit_usd` and `window_days` so you can tell your user *why*.
+Without it, the only backstop is the account balance — which fires once the
+WHOLE wrapper is out of money, i.e. after one runaway end-user has already spent
+everyone else's budget.
+
+Two honest limits, the same ones the concurrency cap has: it is **check-then-act**
+(N parallel creates for one end-user can each see the same under-limit total, so
+it is a runaway guardrail, not a hard quota), and it is measured at session
+**create** — a session already running is not killed mid-turn when it crosses the
+line; the next create is what gets refused.
+
 For concurrency, `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` caps how many LIVE
 sessions one end-user may hold (0/unset = off; the account-wide cap always
 applies). Exceeding it returns `429 per_origin_session_limit`. It's a check-then-
@@ -339,6 +387,9 @@ If you need structured per-user context inside the run as well, put it in
 
 ## 4. Stream the answer
 
+This example uses the OpenCode REST compatibility path. It does not select the
+server-owned ACP transport.
+
 ```ts
 const s = kortix.session(projectId, session.session_id);
 await s.ensureReady();               // blocks through the sandbox cold start
@@ -352,7 +403,7 @@ await s.send(prompt);
 ```
 
 - **`ensureReady()` polls the cold start.** A fresh sandbox can take tens of
-  seconds to boot OpenCode; `ensureReady()` long-polls until the runtime is ready
+  seconds to boot; `ensureReady()` long-polls until the runtime is ready
   (default ~3 min) and only then resolves, so `stream()` connects before the
   prompt goes out. Pass `{ readyTimeoutMs }` to wait longer.
 - **Streaming needs the sandbox to reach *your* API.** The sandbox finishes
@@ -392,6 +443,16 @@ await s.send(prompt);
 | `409` | `IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT` | An `Idempotency-Key` was replayed with a different `secrets` / `connector_bindings` body. Keep the body identical across retries. |
 | `400` | `INVALID_SESSION_MODEL` | `opencode_model` isn't servable for this account (retired, not entitled, or a typo), or isn't a valid model id. |
 | `400` | `INVALID_SESSION_SECRETS` / `INVALID_SESSION_CONNECTOR_BINDINGS` / `INVALID_SESSION_RUNTIME_CONTEXT` | Malformed `secrets` / `connector_bindings` / `runtime_context` (the last also rejects credential-like keys and enforces the 64-entry / 16 KiB caps). |
+| `403` | `CONNECTOR_NOT_ASSIGNED` | The session's agent isn't granted a connector you named in `connector_bindings` (or `require_connectors`). **The first error most wrappers hit** — any project with an `agents:` block must list the alias under that agent's `connectors:`. |
+| `403` | `REQUIRE_CONNECTORS_INTERACTIVE_ONLY` | A backend caller used `require_connectors`. A wrapper key acts for no single person, so "the current user's own connection" has no meaning — bind an explicit `profile_id` with `connector_bindings` instead. |
+| `409` | `CONNECTOR_CONNECTION_REQUIRED` | Interactive only: this user hasn't connected their own account for a required connector. The body names `connector` so you can prompt for exactly that one. |
+| `409` | `CONNECTOR_PROFILE_INACTIVE` | The bound connection is revoked or errored. Reconnect it; a revoked profile fails closed and never silently falls back. |
+| `409` | `IDEMPOTENCY_ORIGIN_CONFLICT` | An `Idempotency-Key` was replayed under a **different** `end_user_ref`. This is the guard that stops one end-user receiving another's session — do not work around it by reusing keys. |
+| `409` | `IDEMPOTENCY_KEY_CONFLICT` | The key collided with a different operation. Remediation is the **opposite** of the other idempotency errors: use a higher-entropy key. The uniqueness index is global. |
+| `400` | `END_USER_REF_CONFLICT` | You sent both `end_user_ref` and the deprecated `origin_ref` with **different** values. Send only `end_user_ref`. |
+| `409` | `SESSION_NOT_RUNNING` | You tried to change the model of a terminal session. Nothing would consume it. |
+| `429` | `concurrent_session_limit` / `per_origin_session_limit` | Account-wide, or per-end-user when `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` is set (defaults to 0 = off). Retry with backoff. |
+| `402` | `subscription_required` / `insufficient_credits` | Billing. Not retryable without operator action. |
 
 ---
 
@@ -407,6 +468,11 @@ await s.send(prompt);
 - **Nothing widens.** `secrets` only narrows within the agent's grant;
   `connector_bindings` credentials are broker-resolved server-side and never
   enter the sandbox.
+- **A session's token dies with its sandbox.** The executor token injected into a
+  sandbox is revoked when the session is deleted or the provider reports the box
+  removed — so an exfiltrated token stops working instead of outliving the
+  session that justified it. An *idle stop* deliberately does not revoke: the box
+  can be woken and is still the same container, holding the same token.
 
 See also the runnable, end-to-end version of this flow —
 [`packages/sdk/examples/09-kaab-backend-wrapper.ts`](../packages/sdk/examples/09-kaab-backend-wrapper.ts)
@@ -427,3 +493,133 @@ wire field. Sending both is fine when they agree; disagreeing values are
 rejected `400 END_USER_REF_CONFLICT` rather than one silently winning. Sandboxes
 receive both `KORTIX_END_USER_REF` and `KORTIX_ORIGIN_REF`. The database column
 keeps its original name — that is internal and renaming it would buy nothing.
+
+## Changing a running session's model
+
+`opencode_model` is set at create, but a live session can be re-pointed:
+
+```bash
+curl -sS -X PUT "$KORTIX_API_URL/projects/$PROJECT_ID/sessions/$SESSION_ID/model" \
+  -H "Authorization: Bearer $KORTIX_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"opencode_model":"kortix/claude-opus-4.8"}'
+```
+
+```jsonc
+{ "opencode_model": "kortix/claude-opus-4.8", "applied_live": true }
+```
+
+Three things worth knowing:
+
+- This live route applies to the OpenCode compatibility process. Start a new
+  Claude Code, Codex, or Pi session to change its model.
+- **`applied_live` is not decoration.** `true` means a running sandbox took it
+  now; `false` means it was stored and applies when the session next starts.
+  Report the difference to your user — someone told "model changed" whose next
+  answer comes from the old model has been misled.
+- **Applying it live restarts the runtime**, which ends the in-flight turn. A
+  no-op PUT (same model) deliberately does *not* restart, so re-sending is free.
+- Only the session owner or a project manager may change it. Being able to *see*
+  a shared session is not permission to re-point it.
+
+The model is validated against the same servability check as create, so an
+unentitled or retired id fails fast with `400 INVALID_SESSION_MODEL` rather than
+becoming a dead turn later.
+
+## Per-connection permissions
+
+One connector can hold several connections — `support@`, `sales@`, a member's
+own mailbox — and they often warrant different permissions. Policy resolves in
+this order:
+
+```
+project rules   → un-overridable (the admin guardrail)
+connection      → beats the connector default
+connector       → the fallback
+risk default    → read runs, write/destructive asks
+```
+
+So `support@` can be read-only while `sales@` may send, under one `gmail`
+connector. Set it in the dashboard: **Connections → ⋯ → Permissions for this
+connection**. A connector with no connection-level rule behaves exactly as
+before.
+
+## What a wrapper CANNOT change mid-session
+
+| Override | Mid-session | Why |
+| --- | --- | --- |
+| `opencode_model` | **OpenCode only** — see above | Start a new Claude Code, Codex, or Pi session for a different model. |
+| `agent_name` | **OpenCode REST only** | A v3 session keeps its logical agent, runtime profile, harness, and native agent. |
+| `secrets` | **yes** — `PUT /projects/{id}/sessions/{sid}/scope` | SET semantics: the list you send REPLACES the current one, from the next prompt. Dropping one stops it being **delivered**; it cannot un-read a value the agent already has (see below). |
+| `connector_bindings` | **yes** — same route | SET semantics, and fully retroactive: a binding is resolved server-side on each tool call, so the next call already uses the new one. |
+| `runtime_context` | **no** | Create-only. |
+| `end_user_ref` | **no** | Create-only, and it is what usage attribution keys on. |
+
+### Re-scoping a running session
+
+```
+PUT /v1/projects/{projectId}/sessions/{sessionId}/scope
+{ "secrets": ["TEST_KEY_2"], "connector_bindings": { "gmail": { "profile_id": "..." } } }
+```
+
+Start a session with `["TEST_KEY_1","TEST_KEY_2"]`, send `["TEST_KEY_2"]`, and from
+the next prompt the session gets only `TEST_KEY_2`.
+
+`[]` and `null` are opposite and both meaningful: `[]` is "no project secrets at
+all", `null` is "stop narrowing — fall back to the agent's own grant". Omit the
+key entirely to leave that axis untouched.
+
+**What it promises, precisely.** Forward it is exact: the next prompt's env push
+carries only the new set, and the daemon clears the names it previously knew, so
+a shell started after the re-scope cannot see a dropped secret. Retroactively it
+promises nothing — a value the agent already read is in its context and in any
+shell it started earlier. The response says which case you are in with
+`retroactive` and a `detail` string. **Rotate a secret you actually need to
+revoke; re-scoping stops delivery, it does not unsay the value.**
+
+Connector bindings are the exception: they are resolved server-side at call time,
+so a change there IS complete immediately.
+
+The agent's manifest grant stays the ceiling. A session may narrow within it and
+restore anything inside it, but never exceed it — otherwise a session-level field
+would make the manifest advisory. `403 NOT_IN_AGENT_GRANT` /
+`403 NOT_GRANTED_CONNECTOR` when it tries.
+
+**A mid-session agent switch is governed, and the two halves are governed
+differently — on purpose.**
+
+- **Connectors and Kortix CLI actions are re-minted.** The switched-to agent's
+  own grant is written onto the session token before the prompt runs, so it
+  reaches exactly the connectors its manifest entry declares. These gates read
+  the token at *call* time, so re-pointing it re-scopes every subsequent call.
+- **Secrets refuse the switch** (`409 AGENT_SWITCH_REQUIRES_NEW_SESSION`) when
+  the two agents declare different `secrets`. There is nothing to re-scope: by
+  the time the switch is visible, the first agent's secrets are already in the
+  sandbox's env file, in every shell it spawned, and in its own context.
+  Narrowing later cannot un-read them. Agents with the *same* secrets grant
+  switch freely.
+
+If the re-mint cannot be applied, the prompt is refused with
+`503 AGENT_SWITCH_GRANT_UNAPPLIED` rather than run under the previous agent's
+authority. Operators who want *any* agent change refused, regardless of grants,
+can still set `KORTIX_ENFORCE_SESSION_AGENT_LOCK=1`.
+
+## Session isolation between your end-users
+
+Sessions your backend creates all share one `created_by` — your wrapper
+credential — so ownership alone cannot separate them. The platform narrows on
+the *caller's* session instead: a token bound to end-user A's sandbox cannot
+read, share, or resolve approvals on end-user B's session, even though both were
+created by you.
+
+Your backend credential is unaffected: it is the operator and still sees every
+session it created. That asymmetry is deliberate.
+
+Two consequences for wrapper authors:
+
+- **`end_user_ref` must be injected server-side**, from your authenticated
+  session — never accepted from a browser. A client that can set it can bill
+  another user, or replay their session through a shared `Idempotency-Key`.
+- Listing with `?scope=project` shows rows the caller cannot open, marked
+  `can_access: false`. Those rows are **redacted**: no `metadata` (which holds
+  `initial_prompt`), no `end_user_ref`, no `secrets_allowlist`.

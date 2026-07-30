@@ -71,6 +71,7 @@ import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { triggerBadgeState } from './trigger-status';
 import {
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
@@ -106,6 +107,12 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+
+const TRIGGER_BADGE_ICONS = {
+  clock: AlarmClockSolid,
+  webhook: Webhook,
+  pause: PauseSolid,
+} as const;
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -698,6 +705,8 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                     const name = getTriggerName(trigger);
                     const subtitle = getTriggerSubtitle(trigger);
                     const lastFired = trigger.last_fired_at;
+                    const badge = triggerBadgeState(trigger.enabled, type);
+                    const BadgeIcon = TRIGGER_BADGE_ICONS[badge.icon];
 
                     return (
                       <TableRow
@@ -709,16 +718,16 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                           <div
                             className={cn(
                               'inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold',
-                              !trigger.enabled
-                                ? 'bg-kortix-green/10 text-kortix-green'
-                                : 'bg-kortix-red/10 text-kortix-red',
+                              badge.className,
                             )}
+                            title={badge.label}
                           >
-                            {!trigger.enabled ? (
-                              <AlarmClockSolid className="size-5 shrink-0" />
-                            ) : (
-                              <PauseSolid className="size-6 shrink-0" />
-                            )}
+                            <BadgeIcon
+                              className={cn(
+                                'shrink-0',
+                                badge.icon === 'pause' ? 'size-6' : 'size-5',
+                              )}
+                            />
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[200px]">

@@ -204,16 +204,16 @@ describe('release gate transient failure resilience', () => {
     }
 
     expect(isKe2eRetryableError(error)).toBe(true);
-    expect(ke2eRetryDelayMs(error)).toBe(30_000);
+    expect(ke2eRetryDelayMs(error)).toBe(15_000);
   });
 
-  it('caps a host-requested retry delay at 60 seconds', () => {
+  it('caps a host-requested retry delay at 15 seconds', () => {
     const error = Object.assign(new Error('transient gateway status 503'), {
       ke2eRetryable: true,
       ke2eRetryAfterMs: 180_000,
     });
 
-    expect(ke2eRetryDelayMs(error)).toBe(60_000);
+    expect(ke2eRetryDelayMs(error)).toBe(15_000);
   });
 
   it('does not mark an API contract 503 for retry', () => {

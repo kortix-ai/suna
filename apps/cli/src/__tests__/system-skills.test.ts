@@ -21,7 +21,8 @@ const ENV_KEYS = [
   'KORTIX_AUTH_FILE',
 ] as const;
 
-const SYSTEM_BODY = '---\nname: kortix-system\n---\n\n<skill name="kortix-system">live body</skill>\n';
+const SYSTEM_BODY =
+  '---\nname: kortix-system\n---\n\n<skill name="kortix-system">live body</skill>\n';
 const SLACK_BODY = '---\nname: kortix-slack\n---\n\nHow to connect Slack.\n';
 const REF_CONTENT = '# reference doc\n';
 
@@ -89,7 +90,10 @@ function captureOutput() {
 }
 
 function json(data: unknown): Response {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function mockApi() {
@@ -97,6 +101,22 @@ function mockApi() {
     const url = String(input);
     requests.push(url);
     const path = url.split('/v1/')[1] ?? '';
+
+    // One reference file: /skills/{name}/file?path=… — MUST be matched before
+    // the detail branch below, whose `^skills/([^/?]+)` also matches this URL.
+    const fileMatch = path.match(/^skills\/([^/?]+)\/file/);
+    if (fileMatch) {
+      const detail = DETAILS[decodeURIComponent(fileMatch[1])] as any;
+      const wanted = new URL(url).searchParams.get('path');
+      const ref = detail?.references?.find((f: any) => f.path === wanted);
+      if (!ref) {
+        return new Response(
+          JSON.stringify({ error: true, message: `No file "${wanted}"`, status: 404 }),
+          { status: 404 },
+        );
+      }
+      return json({ name: detail.name, path: ref.path, content: REF_CONTENT });
+    }
 
     // Detail: /skills/{name}[?full=1]
     const detailMatch = path.match(/^skills\/([^/?]+)/);
@@ -287,5 +307,61 @@ describe('kortix system-skills — path', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.path.endsWith('.kortix/opencode/skills/kortix-memory')).toBe(true);
     expect(parsed.exists).toBe(false);
+  });
+});
+
+describe('kortix system-skills — file', () => {
+  test('prints ONE reference file without pulling the whole tree', async () => {
+    const code = await runSystemSkills(['file', 'kortix-system', 'references/manifest.md']);
+    expect(code).toBe(0);
+    expect(stdout).toContain(REF_CONTENT.trim());
+    // The body is NOT fetched — that is the entire point of this subcommand.
+    expect(stdout).not.toContain('live body');
+    expect(requests.length).toBe(1);
+    expect(requests[0]).toContain('/v1/skills/kortix-system/file?path=');
+    expect(requests[0]).toContain(encodeURIComponent('references/manifest.md'));
+  });
+
+  test('--json wraps the file for scripting', async () => {
+    const code = await runSystemSkills([
+      'file',
+      'kortix-system',
+      'references/manifest.md',
+      '--json',
+    ]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.name).toBe('kortix-system');
+    expect(parsed.path).toBe('references/manifest.md');
+    expect(parsed.content).toContain(REF_CONTENT.trim());
+  });
+
+  test('`ref` is an alias for `file`', async () => {
+    const code = await runSystemSkills(['ref', 'kortix-system', 'references/manifest.md']);
+    expect(code).toBe(0);
+    expect(stdout).toContain(REF_CONTENT.trim());
+  });
+
+  test('a missing file points at `get` to list the real paths, and exits non-zero', async () => {
+    const code = await runSystemSkills(['file', 'kortix-system', 'references/nope.md']);
+    expect(code).toBe(1);
+    expect(stderr).toContain('No file "references/nope.md"');
+    expect(stderr).toContain('get kortix-system');
+  });
+
+  test('missing arguments are a usage error, not a request', async () => {
+    const code = await runSystemSkills(['file', 'kortix-system']);
+    expect(code).toBe(2);
+    expect(requests.length).toBe(0);
+    expect(stderr).toContain('pass a skill and a file path');
+  });
+
+  test('a bare `get` lists the reference PATHS so `file` is discoverable', async () => {
+    const code = await runSystemSkills(['get', 'kortix-system']);
+    expect(code).toBe(0);
+    // The path is what `file` takes as its argument — a bare count would leave
+    // the caller with no way to name it.
+    expect(stderr).toContain('references/manifest.md');
+    expect(stderr).toContain('file kortix-system');
   });
 });

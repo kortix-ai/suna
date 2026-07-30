@@ -13,6 +13,7 @@ import {
   hasKortixLlmGateway,
   scheduleCatalogWarmToPathForTests,
 } from '../opencode'
+import { usesManagedAcpRuntime } from '../main'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 
@@ -38,6 +39,18 @@ async function makeOriginRepo(): Promise<string> {
 const tempDirs: string[] = []
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
+})
+
+describe('selected runtime boot', () => {
+  test('uses one managed ACP harness when the harness and server are bound', () => {
+    expect(usesManagedAcpRuntime('pi', 'session-1')).toBe(true)
+    expect(usesManagedAcpRuntime('opencode', 'session-1')).toBe(true)
+  })
+
+  test('keeps the legacy OpenCode path when no managed server is bound', () => {
+    expect(usesManagedAcpRuntime(null, 'session-1')).toBe(false)
+    expect(usesManagedAcpRuntime('pi', '')).toBe(false)
+  })
 })
 
 describe('clone depth configuration', () => {

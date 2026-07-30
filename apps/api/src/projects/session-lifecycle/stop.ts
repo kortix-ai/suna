@@ -1,11 +1,10 @@
-import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { isAlreadyNotRunning } from '../sandbox-reaper';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { isAlreadyNotRunning } from '../reaping/policy';
+import { applyStoppedState } from '../reaping/sandbox-state-sync';
 
 /**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
@@ -65,32 +64,23 @@ export async function stopSession(input: {
     // Already stopped/gone on the provider side — proceed to reconcile our row.
   }
 
-  // Close billing FIRST (computes the wall-clock delta against the still-active
-  // metering row), then flip status — same ordering as the idle reaper.
-  await pauseComputeSession(sandbox.sandboxId).catch((err) =>
-    console.warn(`[projects] pauseComputeSession failed for ${sandbox.sandboxId}:`, err),
-  );
-
+  // One stop writer for the whole platform (see applyStoppedState): it settles
+  // the meter against the still-active row before flipping either status, and
+  // it flips both in one transaction. This path used to inline that procedure
+  // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
+  // whole-object write built from the SELECT above, so anything a concurrent
+  // writer put in that column in between was silently dropped. Two live writers
+  // do exactly that (projects/routes/shared.ts clears and sets the
+  // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
+  // lives one table over for the same reason. Merged, never assigned.
   const now = new Date();
-  await db
-    .update(sessionSandboxes)
-    .set({
-      status: 'stopped',
-      updatedAt: now,
-      metadata: {
-        ...(sandbox.metadata ?? {}),
-        stoppedAt: now.toISOString(),
-        stoppedBy: userId,
-        stopReason: 'manual',
-      },
-    })
-    .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-  await db
-    .update(projectSessions)
-    .set({ status: 'stopped', updatedAt: now })
-    .where(eq(projectSessions.sessionId, sessionId));
-
-  invalidateProviderCache(sandbox.externalId);
+  await applyStoppedState({
+    sandboxId: sandbox.sandboxId,
+    sessionId,
+    externalId: sandbox.externalId,
+    metadata: { stoppedAt: now.toISOString(), stoppedBy: userId, stopReason: 'manual' },
+    now,
+  });
 
   return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
 }

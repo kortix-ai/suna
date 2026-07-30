@@ -7,10 +7,11 @@
  */
 
 import { platformConfig } from '../../core/http/config';
+import { buildSessionCacheKey } from './idb-sync-cache-key';
 
-const DB_NAME = "kortix-session-cache";
+const DB_NAME = 'kortix-session-cache';
 const DB_VERSION = 2;
-const STORE_NAME = "sessions";
+const STORE_NAME = 'sessions';
 const MAX_CACHED_SESSIONS = 50;
 const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -18,6 +19,7 @@ interface CachedSession {
   cacheKey: string;
   userId: string;
   sessionId: string;
+  kortixSessionScope?: string;
   messages: any[];
   parts: Record<string, any[]>;
   updatedAt: number;
@@ -32,17 +34,13 @@ async function getCurrentCacheScope(): Promise<string | null> {
   }
 }
 
-function buildCacheKey(scope: string, sessionId: string): string {
-  return `${scope}:session:${sessionId}`;
-}
-
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      reject(new Error("IndexedDB not available"));
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB not available'));
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -52,7 +50,7 @@ function openDB(): Promise<IDBDatabase> {
         db.deleteObjectStore(STORE_NAME);
       }
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "cacheKey" });
+        db.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -64,25 +62,38 @@ function openDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-const pendingWrites = new Map<string, {
-  scope: string;
-  sessionId: string;
-  messages: any[];
-  parts: Record<string, any[]>;
-}>();
+const pendingWrites = new Map<
+  string,
+  {
+    scope: string;
+    sessionId: string;
+    kortixSessionScope?: string;
+    messages: any[];
+    parts: Record<string, any[]>;
+  }
+>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_INTERVAL_MS = 500;
+
+// The caps below are only real if something enforces them. Prune once per page
+// load, off the back of the first flush, so the cache cannot grow forever
+// without any host having to remember to call it.
+let prunedThisLoad = false;
 
 async function flushPendingWrites(): Promise<void> {
   flushTimer = null;
   if (pendingWrites.size === 0) return;
+  if (!prunedThisLoad) {
+    prunedThisLoad = true;
+    void pruneIDBCache();
+  }
   const batch = new Map(pendingWrites);
   pendingWrites.clear();
   try {
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
+    const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    for (const [cacheKey, { scope, sessionId, messages, parts }] of batch) {
+    for (const [cacheKey, { scope, sessionId, kortixSessionScope, messages, parts }] of batch) {
       const partsForSession: Record<string, any[]> = {};
       for (const msg of messages) {
         if (parts[msg.id]) {
@@ -93,6 +104,7 @@ async function flushPendingWrites(): Promise<void> {
         cacheKey,
         userId: scope,
         sessionId,
+        kortixSessionScope,
         messages,
         parts: partsForSession,
         updatedAt: Date.now(),
@@ -111,12 +123,19 @@ export async function saveSessionToIDB(
   sessionId: string,
   messages: any[],
   parts: Record<string, any[]>,
+  kortixSessionScope?: string,
 ): Promise<void> {
   const scope = await getCurrentCacheScope();
   if (!scope) return;
 
-  const cacheKey = buildCacheKey(scope, sessionId);
-  pendingWrites.set(cacheKey, { scope, sessionId, messages, parts });
+  const cacheKey = buildSessionCacheKey(scope, sessionId, kortixSessionScope);
+  pendingWrites.set(cacheKey, {
+    scope,
+    sessionId,
+    kortixSessionScope,
+    messages,
+    parts,
+  });
   if (!flushTimer) {
     flushTimer = setTimeout(flushPendingWrites, FLUSH_INTERVAL_MS);
   }
@@ -131,23 +150,29 @@ export function flushIDBWrites(): Promise<void> {
 
 export async function loadSessionFromIDB(
   sessionId: string,
+  kortixSessionScope?: string,
 ): Promise<{ messages: any[]; parts: Record<string, any[]> } | null> {
   try {
     const scope = await getCurrentCacheScope();
     if (!scope) return null;
 
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readonly");
+    const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
-    const req = store.get(buildCacheKey(scope, sessionId));
+    const req = store.get(buildSessionCacheKey(scope, sessionId, kortixSessionScope));
     const result = await new Promise<CachedSession | undefined>((resolve, reject) => {
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
     if (!result) return null;
-    if (result.userId !== scope || result.sessionId !== sessionId) return null;
+    if (result.userId !== scope) return null;
+    if (kortixSessionScope) {
+      if (result.kortixSessionScope !== kortixSessionScope) return null;
+    } else if (result.sessionId !== sessionId) {
+      return null;
+    }
     if (Date.now() - result.updatedAt > MAX_SESSION_AGE_MS) {
-      deleteSessionFromIDB(sessionId);
+      deleteSessionFromIDB(sessionId, kortixSessionScope);
       return null;
     }
     return { messages: result.messages, parts: result.parts };
@@ -162,7 +187,7 @@ export async function loadAllSessionIdsFromIDB(): Promise<string[]> {
     if (!scope) return [];
 
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readonly");
+    const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
     const req = store.getAll();
     const entries = await new Promise<CachedSession[]>((resolve, reject) => {
@@ -175,14 +200,17 @@ export async function loadAllSessionIdsFromIDB(): Promise<string[]> {
   }
 }
 
-export async function deleteSessionFromIDB(sessionId: string): Promise<void> {
+export async function deleteSessionFromIDB(
+  sessionId: string,
+  kortixSessionScope?: string,
+): Promise<void> {
   try {
     const scope = await getCurrentCacheScope();
     if (!scope) return;
 
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).delete(buildCacheKey(scope, sessionId));
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(buildSessionCacheKey(scope, sessionId, kortixSessionScope));
   } catch {
     // ignore
   }
@@ -196,7 +224,7 @@ export async function clearSessionIDBCache(): Promise<void> {
       flushTimer = null;
     }
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
+    const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).clear();
   } catch {
     // ignore
@@ -206,7 +234,7 @@ export async function clearSessionIDBCache(): Promise<void> {
 export async function pruneIDBCache(): Promise<void> {
   try {
     const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
+    const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.getAll();
     const entries = await new Promise<CachedSession[]>((resolve, reject) => {
@@ -214,16 +242,19 @@ export async function pruneIDBCache(): Promise<void> {
       req.onerror = () => reject(req.error);
     });
     const now = Date.now();
+    // Delete by `cacheKey` — it is the store's keyPath. Deleting by `sessionId`
+    // matched no record, so prune silently kept every entry forever and the
+    // 50-session / 7-day caps were never enforced.
     const stale = entries.filter((e) => now - e.updatedAt > MAX_SESSION_AGE_MS);
     for (const e of stale) {
-      store.delete(e.sessionId);
+      store.delete(e.cacheKey);
     }
     const fresh = entries
       .filter((e) => now - e.updatedAt <= MAX_SESSION_AGE_MS)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     if (fresh.length > MAX_CACHED_SESSIONS) {
       for (const e of fresh.slice(MAX_CACHED_SESSIONS)) {
-        store.delete(e.sessionId);
+        store.delete(e.cacheKey);
       }
     }
   } catch {

@@ -1,5 +1,12 @@
 # The final, enterprise-ready authorization model — plan
 
+> **Superseded runtime status on 2026-07-28.** This plan preserves the
+> authorization design record. Its section 6 OpenCode-only status is no longer
+> current. The implemented contract uses `kortix_version: 3`, `runtimes`,
+> `agents.<name>.runtime`, the `acp_runtime` project experiment, and OpenCode,
+> Claude Code, Codex, or Pi. Use
+> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`.
+
 Source: founder notes ("CLEAR ACCESS / AUTHORISATION MODEL IS NEEDED. THAT IS 100% FINAL &
 ENTERPRISE READY."). This doc maps every ask to the **current code state** and lays out a
 **sequenced, decision-baked plan** to close the gaps. It is for team review before code.

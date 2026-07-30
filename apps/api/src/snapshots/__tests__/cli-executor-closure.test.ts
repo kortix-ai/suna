@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLI_EXECUTOR_RUNTIME_FILES } from '@kortix/shared/sandbox-runtime-artifact';
 
 // Scope guard for the in-sandbox `kortix executor` fingerprint (templates.ts
 // CLI_EXECUTOR_CLOSURE).
@@ -23,16 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const CLI_SRC = resolve(REPO_ROOT, 'apps/cli/src');
 
-// Must mirror CLI_EXECUTOR_CLOSURE in apps/api/src/snapshots/templates.ts.
-const HASHED_CLOSURE = [
-  'executor',
-  'commands/executor.ts',
-  'api/auth.ts',
-  'api/client.ts',
-  'api/config.ts',
-  'api/sandbox-env.ts',
-  'project-link.ts',
-] as const;
+const HASHED_CLOSURE = CLI_EXECUTOR_RUNTIME_FILES.map((entry) => entry.replace(/^src\//, ''));
 
 // Entrypoints the sandbox actually invokes (`kortix executor …`). The `index.ts`
 // dispatcher is deliberately NOT an entrypoint here: it imports EVERY subcommand
@@ -61,7 +53,8 @@ function importClosure(entrypoints: string[]): Set<string> {
   const stack = entrypoints.map((e) => resolve(CLI_SRC, e));
   const importRe = /from\s+['"](\.[^'"]+)['"]/g;
   while (stack.length) {
-    const file = stack.pop()!;
+    const file = stack.pop();
+    if (!file) continue;
     if (seen.has(file) || !existsSync(file)) continue;
     seen.add(file);
     const src = readFileSync(file, 'utf8');

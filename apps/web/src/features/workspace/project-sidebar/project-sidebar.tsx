@@ -267,14 +267,20 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
               <ProjectManifestUpgradeAlert projectId={projectId} />
+              {/* Billing sits ABOVE the permanent nav on purpose. This group is
+                  bottom-anchored (mt-auto), so it grows upward as items appear:
+                  anything below a late-arriving item gets shoved up the moment
+                  billing state lands. Keeping the async items on top means
+                  Files/Customize/Connect never move — only the session list
+                  above them gives up the space. */}
+              <SidebarBalanceWarning accountId={accountId} />
+              <SidebarUpgradeButton accountId={accountId} />
               {/* Files used to live on the collapsed icon rail; with the rail
                   gone (offcanvas + hover flyout) it needs a docked entry. Above
                   Customize — files aren't gated behind customize access. */}
               <ProjectFilesNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
-              <SidebarBalanceWarning accountId={accountId} />
-              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>

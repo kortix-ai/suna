@@ -5,6 +5,7 @@ import {
   provisionProject,
   provisionProjectWithToken,
   type CreateProjectRepoInput,
+  type ProvisionProjectInput,
 } from './projects';
 import { configureKortix } from '../../http/config';
 
@@ -25,6 +26,20 @@ test('GitHub project creation accepts a marketplace project template', () => {
   };
 
   expect(createInput.source_item_id).toBe('kortix-projects:support-agent-kit');
+});
+
+test('project creation accepts the ACP multi-harness starter', () => {
+  const createInput: CreateProjectRepoInput = {
+    name: 'harness-lab',
+    starter_template: 'acp-multi-harness',
+  };
+  const provisionInput: ProvisionProjectInput = {
+    name: 'Harness Lab',
+    starter_template: 'acp-multi-harness',
+  };
+
+  expect(createInput.starter_template).toBe('acp-multi-harness');
+  expect(provisionInput.starter_template).toBe('acp-multi-harness');
 });
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {

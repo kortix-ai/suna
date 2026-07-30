@@ -32,9 +32,9 @@ import {
   Refresh,
   XCircleSolid,
 } from '@mynaui/icons-react';
-import { FileDiff, History } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { FileDiff, History } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -150,7 +150,13 @@ function ChangeRequestRow({
   const onMerge = () =>
     merge.mutate(cr.cr_id, {
       onSuccess: () => successToast('Changes applied'),
-      onError: (err) => errorToast(err.message),
+      onError: (err) => {
+        if ((err as { code?: string }).code === 'MERGE_CONFLICT') {
+          onOpen(cr.cr_id);
+          return;
+        }
+        errorToast(err.message);
+      },
     });
   const onClose = () =>
     close.mutate(cr.cr_id, {

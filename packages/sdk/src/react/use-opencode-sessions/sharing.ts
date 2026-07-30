@@ -21,7 +21,7 @@ export function useShareSession() {
     },
     onSuccess: (updatedSession) => {
       // Surgically update cache with share info
-      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
+      queryClient.setQueryData(opencodeKeys.runtimeSession(updatedSession.id), updatedSession);
       queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
         if (!old) return old;
         const idx = old.findIndex((s) => s.id === updatedSession.id);
@@ -45,7 +45,7 @@ export function useUnshareSession() {
     },
     onSuccess: (updatedSession) => {
       // Surgically update cache with unshare info
-      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
+      queryClient.setQueryData(opencodeKeys.runtimeSession(updatedSession.id), updatedSession);
       queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
         if (!old) return old;
         const idx = old.findIndex((s) => s.id === updatedSession.id);
