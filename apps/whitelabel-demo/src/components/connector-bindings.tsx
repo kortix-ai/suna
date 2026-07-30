@@ -5,7 +5,7 @@
  * has connections for, not one hardcoded alias.
  *
  * Two states, and the difference between them is the thing people get wrong:
- *  - team connections exist → pick one (or leave it on the project default)
+ *  - project connections exist → pick one (or leave it on the project default)
  *  - none do → say so, and say that a TEAMMATE is the one who can change it.
  *    There is deliberately no "connect it yourself" button; a wrapper has no
  *    personal upstream identity, and the interactive flow that would connect

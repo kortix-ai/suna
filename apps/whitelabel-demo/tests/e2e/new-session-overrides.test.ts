@@ -140,14 +140,14 @@ describe('starting a session with overrides', () => {
     expect(body.session_id).toBe('00000000-0000-4000-8000-00000000a003');
   });
 
-  test('the picker offers the team connection and only the team connection', async () => {
+  test('the picker offers the project connection and only the project connection', async () => {
     const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
     expect(slack.connections.map((c) => c.authorizationId)).toEqual([
       'slack_team',
     ]);
   });
 
-  test('an alias with no team connection is offered as "ask a teammate"', async () => {
+  test('an alias with no project connection is offered as "ask a teammate"', async () => {
     // The private connection exists upstream; it must never appear as an
     // option, and the alias must not silently vanish either.
     const gmail = (await connectorChoices()).find((c) => c.alias === 'gmail')!;

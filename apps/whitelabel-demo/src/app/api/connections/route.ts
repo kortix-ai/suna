@@ -2,7 +2,7 @@
  * Connections this wrapper may bind to a new session, grouped by connector
  * alias.
  *
- * Provider-neutral and pre-filtered: a wrapper can only bind TEAM connections
+ * Provider-neutral and pre-filtered: a wrapper can only bind project connections
  * (see `selectBindableConnections`), so the client is never shown an option that
  * would fail at session create. Aliases with NOTHING bindable are still
  * returned, carrying the reason — the client has to be able to say "a teammate

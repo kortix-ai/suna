@@ -79,6 +79,10 @@ describe('sessionScopeRows', () => {
     expect(row('connections').value).toBe(
       'The project default for every connector',
     );
+    expect(row('connections').detail).toContain('project connection');
+    expect(row('connections').detail.toLowerCase()).not.toContain(
+      'team authorization',
+    );
   });
 
   test('a bound session is told unbound connectors still fall back to the default', () => {
