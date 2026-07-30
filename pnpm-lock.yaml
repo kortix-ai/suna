@@ -202,6 +202,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -644,10 +647,10 @@ importers:
     dependencies:
       '@livekit/agents':
         specifier: 1.5.5
-        version: 1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76)
+        version: 1.5.5(@livekit/rtc-node@0.13.32)(typescript@5.9.3)(zod@3.25.76)
       '@livekit/rtc-node':
         specifier: ^0.13.31
-        version: 0.13.31
+        version: 0.13.32
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -739,15 +742,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.1
         version: 5.4.0(react-hook-form@7.81.0)
-      '@hugeicons/core-free-icons':
-        specifier: ^4.2.0
-        version: 4.2.2
-      '@hugeicons/react':
-        specifier: ^1.1.6
-        version: 1.1.9(react@19.1.0)
-      '@icons-pack/react-simple-icons':
-        specifier: 13.11.1
-        version: 13.11.1(react@19.1.0)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../../packages/llm-catalog
@@ -763,15 +757,15 @@ importers:
       '@logtail/next':
         specifier: ^0.3.1
         version: 0.3.1(next@15.5.21)(react@19.1.0)
-      '@mynaui/icons-react':
-        specifier: ^0.4.2
-        version: 0.4.8(react@19.1.0)
       '@next/third-parties':
         specifier: ^15.3.1
         version: 15.5.20(next@15.5.21)(react@19.1.0)
       '@paper-design/shaders-react':
         specifier: ^0.0.76
         version: 0.0.76(@types/react@19.1.17)(react@19.1.0)
+      '@phosphor-icons/react':
+        specifier: 2.1.10
+        version: 2.1.10(react-dom@19.1.0)(react@19.1.0)
       '@pierre/diffs':
         specifier: 1.1.22
         version: 1.1.22(react-dom@19.1.0)(react@19.1.0)
@@ -975,7 +969,7 @@ importers:
         version: 1.6.1(next@15.5.21)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
       '@vercel/edge-config':
         specifier: ^1.4.0
-        version: 1.4.3(@opentelemetry/api@1.9.0)(next@15.5.21)
+        version: 1.5.0(@opentelemetry/api@1.9.0)(next@15.5.21)
       '@vercel/speed-insights':
         specifier: ^1.2.0
         version: 1.3.1(next@15.5.21)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
@@ -1032,13 +1026,13 @@ importers:
         version: 2.0.5
       fumadocs-core:
         specifier: 15.8.5
-        version: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
+        version: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
       fumadocs-mdx:
         specifier: 11.10.1
         version: 11.10.1(fumadocs-core@15.8.5)(next@15.5.21)(react@19.1.0)
       fumadocs-ui:
         specifier: 15.8.5
-        version: 15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2)
+        version: 15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2)
       heic2any:
         specifier: 0.0.4
         version: 0.0.4
@@ -1060,9 +1054,6 @@ importers:
       lodash:
         specifier: ^4.18.1
         version: 4.18.1
-      lucide-react:
-        specifier: ^0.479.0
-        version: 0.479.0(react@19.1.0)
       marked:
         specifier: ^15.0.7
         version: 15.0.12
@@ -1101,7 +1092,7 @@ importers:
         version: 1.396.6
       pptx-react-viewer:
         specifier: ^1.15.0
-        version: 1.15.0(fast-xml-parser@5.10.1)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@0.479.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0)
+        version: 1.15.0(fast-xml-parser@5.10.1)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@1.25.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0)
       pptx-viewer-core:
         specifier: ^1.2.8
         version: 1.2.8(node-forge@1.4.0)(xml-crypto@6.1.2)
@@ -1123,9 +1114,6 @@ importers:
       react-i18next:
         specifier: ^17.0.9
         version: 17.0.9(i18next@26.3.6)(react-dom@19.1.0)(react@19.1.0)(typescript@5.9.3)
-      react-icons:
-        specifier: ^5.5.0
-        version: 5.7.0(react@19.1.0)
       react-is:
         specifier: ^19.2.3
         version: 19.2.7
@@ -1521,6 +1509,12 @@ importers:
 
   packages/starter:
     devDependencies:
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../manifest-schema
       '@types/bun':
         specifier: ^1.1.0
         version: 1.3.14
@@ -4920,18 +4914,6 @@ packages:
       react-hook-form: 7.81.0(react@19.1.0)
     dev: false
 
-  /@hugeicons/core-free-icons@4.2.2:
-    resolution: {integrity: sha512-fjQW3p6cwoJmwK3oCnV8Z3PC5sHihDvr2jkAHax8cxqp62GaV/D7B/Rnao+JwicW8fmLZUQ6QrzWfoyMFOEQlQ==}
-    dev: false
-
-  /@hugeicons/react@1.1.9(react@19.1.0):
-    resolution: {integrity: sha512-O+lWSWjbijoAvMCxn4K2bQWCGN5+mP1y5j+X99j23mXMj+s0X25fs71T6t9YJLaBodwmZdaewD27dzS/PiboQw==}
-    peerDependencies:
-      react: '>=16.0.0'
-    dependencies:
-      react: 19.1.0
-    dev: false
-
   /@humanfs/core@0.19.2:
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
     engines: {node: '>=18.18.0'}
@@ -4977,14 +4959,6 @@ packages:
       '@antfu/install-pkg': 1.1.0
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
-    dev: false
-
-  /@icons-pack/react-simple-icons@13.11.1(react@19.1.0):
-    resolution: {integrity: sha512-WbwN/o7dUHEjDCJh2p3RvDZ4kZ8nhfUSkUSm0bWuPTXIsoKgDJpwD5UkMCG22R/5kZH6lHAZXwuHWsKNtX7fYA==}
-    peerDependencies:
-      react: ^16.13 || ^17 || ^18 || ^19
-    dependencies:
-      react: 19.1.0
     dev: false
 
   /@ide/backoff@1.0.0:
@@ -5537,7 +5511,7 @@ packages:
       - supports-color
     dev: false
 
-  /@livekit/agents@1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76):
+  /@livekit/agents@1.5.5(@livekit/rtc-node@0.13.32)(typescript@5.9.3)(zod@3.25.76):
     resolution: {integrity: sha512-7J+jLgWNepTzXHu6RSPZzl50V4+2Ia6izbPSfzSrZqZx75BuDPzLHlKFnfhzl5KS7v7XJRUmPV+ztQVFdxePnw==}
     hasBin: true
     peerDependencies:
@@ -5549,7 +5523,7 @@ packages:
       '@livekit/local-inference': 0.2.6
       '@livekit/mutex': 1.1.1
       '@livekit/protocol': 1.50.4
-      '@livekit/rtc-node': 0.13.31
+      '@livekit/rtc-node': 0.13.32
       '@livekit/throws-transformer': 0.1.8(typescript@5.9.3)
       '@livekit/typed-emitter': 3.0.0
       '@opentelemetry/api': 1.9.0
@@ -5706,8 +5680,8 @@ packages:
       '@bufbuild/protobuf': 1.10.1
     dev: false
 
-  /@livekit/rtc-ffi-bindings-darwin-arm64@0.12.60:
-    resolution: {integrity: sha512-YHXqybkYfaTc3txJXXWoVogiSP3yKJdkaZlIlZ6IDMGnN9elUoHDYU+ZSn/rbdGu0pp4HUOzffXkbkItN735Bw==}
+  /@livekit/rtc-ffi-bindings-darwin-arm64@0.12.68:
+    resolution: {integrity: sha512-xyBakR8fo3RC8CdrfV6/9U14JlmxXUYqB4eLITEsB+iCKW0CE7JfMqDFqV/JIlq43+xzf7wLJsNktgQRrlcdJg==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [darwin]
@@ -5715,8 +5689,8 @@ packages:
     dev: false
     optional: true
 
-  /@livekit/rtc-ffi-bindings-darwin-x64@0.12.60:
-    resolution: {integrity: sha512-SkPPWE2/nb2BAXrCWP6+vaR2I4EeyG3Vv+csUaa1EvDVMbFqBHWqNVTQcx/ChgecbYB9dIFZHVYpfjbFkVd84g==}
+  /@livekit/rtc-ffi-bindings-darwin-x64@0.12.68:
+    resolution: {integrity: sha512-nJFgFEbDePvPF9v9nqTBlKZ1otGSBgB3DJO+qjw+KowaE2AVubb6/qCF3gjJK/xxfyMcTgVnPr2SgcXWtNZ5Kg==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [darwin]
@@ -5724,8 +5698,8 @@ packages:
     dev: false
     optional: true
 
-  /@livekit/rtc-ffi-bindings-linux-arm64-gnu@0.12.60:
-    resolution: {integrity: sha512-8umeMn9p/VZ41EGty1qX9zPV5mfGxCioYKeUnALpf8AKqT/yXDjnog1VkS5f8gFX/zY7HDaeE+s60nZXaOZJbw==}
+  /@livekit/rtc-ffi-bindings-linux-arm64-gnu@0.12.68:
+    resolution: {integrity: sha512-Hl9R9ZXqvq7lCbPqXnSNnojfxv8tmLISoxuv7zd0iA4Q7V99v/XCiali1jKpggXn5IqlyF3PHeW11a41glFjTw==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
@@ -5733,8 +5707,8 @@ packages:
     dev: false
     optional: true
 
-  /@livekit/rtc-ffi-bindings-linux-x64-gnu@0.12.60:
-    resolution: {integrity: sha512-ttWrR/e8Ghaa9I+LaStxK8lh+aA9QBz6Dge6eXyKwTrAMHwHEtL2Rnf1rHQTiwadeH7AoytpfWf5FZl/OelLaQ==}
+  /@livekit/rtc-ffi-bindings-linux-x64-gnu@0.12.68:
+    resolution: {integrity: sha512-2r99lXSkrmiHjhizCquQwPEbP7mCV/zESVXq1pdEliNvbBJXibMEYbRmuSr1lf4/VZhPpRGcF+Laqg5DgFoe+A==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
@@ -5742,8 +5716,8 @@ packages:
     dev: false
     optional: true
 
-  /@livekit/rtc-ffi-bindings-win32-x64-msvc@0.12.60:
-    resolution: {integrity: sha512-HfOBEf3rmpsG7hU3/BM9x2jnkVwKFve2v3cyjxlk41d6OkCthYb+g/ULEPFBKPafYyepDwcd2c8MDo5fMM+4Zw==}
+  /@livekit/rtc-ffi-bindings-win32-x64-msvc@0.12.68:
+    resolution: {integrity: sha512-ec7MJBWx4mz40GvfXQ2Bn9uqvp2HueldTouPi5jzYUG2DECmhYhwai0cBcRFJOya3hBm/nRXP0A+pUBdWnY7Fg==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [win32]
@@ -5751,26 +5725,26 @@ packages:
     dev: false
     optional: true
 
-  /@livekit/rtc-ffi-bindings@0.12.60:
-    resolution: {integrity: sha512-ZJD2DNoHfR8PzKeyDMH6i1zKpk7S4LlrQDIZvisxj6HPaJnKofzSssNMF8fpGFvVCZ844kbcOFogRPgHFno82w==}
+  /@livekit/rtc-ffi-bindings@0.12.68:
+    resolution: {integrity: sha512-PNr+EOwsT/ZUHALjTdSh+y1Dcj5Msnh0p5C8DaGBF9dCrFVZOxwp1rZovZo3cM+hiYo8TAvrjMEK3V5qD3++8g==}
     engines: {node: '>= 18'}
     dependencies:
       '@bufbuild/protobuf': 1.10.1
     optionalDependencies:
-      '@livekit/rtc-ffi-bindings-darwin-arm64': 0.12.60
-      '@livekit/rtc-ffi-bindings-darwin-x64': 0.12.60
-      '@livekit/rtc-ffi-bindings-linux-arm64-gnu': 0.12.60
-      '@livekit/rtc-ffi-bindings-linux-x64-gnu': 0.12.60
-      '@livekit/rtc-ffi-bindings-win32-x64-msvc': 0.12.60
+      '@livekit/rtc-ffi-bindings-darwin-arm64': 0.12.68
+      '@livekit/rtc-ffi-bindings-darwin-x64': 0.12.68
+      '@livekit/rtc-ffi-bindings-linux-arm64-gnu': 0.12.68
+      '@livekit/rtc-ffi-bindings-linux-x64-gnu': 0.12.68
+      '@livekit/rtc-ffi-bindings-win32-x64-msvc': 0.12.68
     dev: false
 
-  /@livekit/rtc-node@0.13.31:
-    resolution: {integrity: sha512-uCpyUUOoph+sDsjW6mSmDe6ox1vSfgaWR5VFgP7u4KGf1clyJooX7d6Fe94ZruDjLTsGxxV97IOmVU5+cBiBgg==}
+  /@livekit/rtc-node@0.13.32:
+    resolution: {integrity: sha512-vub0piQa5RB0bMMTegudc97C88kgONgMWCLr3PWBts7wrXwMXNm7nHDX5lR0FwxfmfHU7g+Av0D3+L/6HGu7Hg==}
     engines: {node: '>= 18'}
     dependencies:
       '@datastructures-js/deque': 1.0.8
       '@livekit/mutex': 1.1.1
-      '@livekit/rtc-ffi-bindings': 0.12.60
+      '@livekit/rtc-ffi-bindings': 0.12.68
       '@livekit/typed-emitter': 3.0.0
       pino: 9.14.0
       pino-pretty: 13.1.3
@@ -5913,15 +5887,6 @@ packages:
   /@msgpack/msgpack@2.8.0:
     resolution: {integrity: sha512-h9u4u/jiIRKbq25PM+zymTyW6bhTzELvOoUd+AvYriWOAKpLGnIamaET3pnHYoI5iYphAHBI4ayx0MehR+VVPQ==}
     engines: {node: '>= 10'}
-    dev: false
-
-  /@mynaui/icons-react@0.4.8(react@19.1.0):
-    resolution: {integrity: sha512-hTqiULZ9+Z7Ws+ozrfdPQ6smGvtLZ5AdurxDkrAVTazvVoEH2FXd9O5PSWws1NlrnQgNY7+TvWoP1aehRHAu8Q==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-    dependencies:
-      prop-types: 15.8.1
-      react: 19.1.0
     dev: false
 
   /@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
@@ -7022,6 +6987,17 @@ packages:
     resolution: {integrity: sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ==}
     dependencies:
       pako: 1.0.11
+    dev: false
+
+  /@phosphor-icons/react@2.1.10(react-dom@19.1.0)(react@19.1.0):
+    resolution: {integrity: sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>= 16.8'
+      react-dom: '>= 16.8'
+    dependencies:
+      react: 19.1.0
+      react-dom: 19.1.0(react@19.1.0)
     dev: false
 
   /@pierre/diffs@1.1.22(react-dom@19.1.0)(react@19.1.0):
@@ -12427,8 +12403,8 @@ packages:
     resolution: {integrity: sha512-NRIBwfcS0bUoUbRWlNGetqjvLSwgYH/BqKqDN7vK1g32p7dN96k0712COgaz6VFizAm9b0g6IG6hR6+hc0KCPg==}
     dev: false
 
-  /@vercel/edge-config@1.4.3(@opentelemetry/api@1.9.0)(next@15.5.21):
-    resolution: {integrity: sha512-8vTDATodRrH49wMzKEjZ8/5H2qs1aPkD0uRK585f/Fx4YN2wfHfY/3td9OFrh+gdnCq07z8A5f0hoY6xhBcPkg==}
+  /@vercel/edge-config@1.5.0(@opentelemetry/api@1.9.0)(next@15.5.21):
+    resolution: {integrity: sha512-d3DohCm+DwWNuigOGCxE7+4NfuL3DT+yuOvW0jGe2wqA5vJ6q7OwB7G2UHbDPrk5ePmY1Qxc5urXHHWLCNzY7w==}
     engines: {node: '>=14.6'}
     peerDependencies:
       '@opentelemetry/api': 1.9.0
@@ -17256,7 +17232,7 @@ packages:
     requiresBuild: true
     optional: true
 
-  /fumadocs-core@15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0):
+  /fumadocs-core@15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0):
     resolution: {integrity: sha512-hyJtKGuB2J/5y7tDfI1EnGMKlNbSXM5N5cpwvgCY0DcBJwFMDG/GpSpaVRzh3aWy67pAYDZFIwdtbKXBa/q5bg==}
     peerDependencies:
       '@mixedbread/sdk': ^0.19.0
@@ -17303,7 +17279,7 @@ packages:
       hast-util-to-estree: 3.1.3
       hast-util-to-jsx-runtime: 2.3.6
       image-size: 2.0.2
-      lucide-react: 0.479.0(react@19.1.0)
+      lucide-react: 1.25.0(react@19.1.0)
       negotiator: 1.0.0
       next: 15.5.21(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
       npm-to-yarn: 3.0.1
@@ -17345,7 +17321,7 @@ packages:
       chokidar: 4.0.3
       esbuild: 0.28.1
       estree-util-value-to-estree: 3.5.0
-      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
+      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
       js-yaml: 4.3.0
       lru-cache: 11.5.1
       next: 15.5.21(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
@@ -17362,7 +17338,7 @@ packages:
       - supports-color
     dev: false
 
-  /fumadocs-ui@15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2):
+  /fumadocs-ui@15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2):
     resolution: {integrity: sha512-9pyB+9rOOsrFnmmZ9xREp/OgVhyaSq2ocEpqTNbeQ7tlJ6JWbdFWfW0C9lRXprQEB6DJWUDtDxqKS5QXLH0EGA==}
     peerDependencies:
       '@types/react': '*'
@@ -17390,7 +17366,7 @@ packages:
       '@radix-ui/react-tabs': 1.1.16(@types/react-dom@19.2.3)(@types/react@19.1.17)(react-dom@19.1.0)(react@19.1.0)
       '@types/react': 19.1.17
       class-variance-authority: 0.7.1
-      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
+      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.21)(react-dom@19.1.0)(react@19.1.0)
       lodash.merge: 4.6.2
       next: 15.5.21(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
       next-themes: 0.4.6(react-dom@19.1.0)(react@19.1.0)
@@ -18827,8 +18803,8 @@ packages:
     resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
     dev: false
 
-  /jose@6.2.4:
-    resolution: {integrity: sha512-N8acGzVsQy6M/fjFcxtysNc4Q379TcM5dM/qKkNtsHFji88yANnXTr7BLeP75iPnFwBfQzM/jg2BZ9+HZrHCZA==}
+  /jose@6.2.5:
+    resolution: {integrity: sha512-2E5L2yRp03FnwreJLJX8/r7mHiZICCf8kG7fAsTWkSQTDAcc46NIZoQLKy+EJ8sPoJlxyS4OQR5H70LjIZZlIQ==}
     dev: false
 
   /joycon@3.1.1:
@@ -19334,7 +19310,7 @@ packages:
       '@livekit/protocol': 1.50.4
       '@types/dom-mediacapture-record': 1.0.22
       events: 3.3.0
-      jose: 6.2.4
+      jose: 6.2.5
       loglevel: 1.9.2
       sdp-transform: 2.15.0
       tslib: 2.8.1
@@ -19558,6 +19534,14 @@ packages:
 
   /lucide-react@0.542.0(react@19.1.0):
     resolution: {integrity: sha512-w3hD8/SQB7+lzU2r4VdFyzzOzKnUjTZIF/MQJGSSvni7Llewni4vuViRppfRAa2guOsY5k4jZyxw/i9DQHv+dw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    dependencies:
+      react: 19.1.0
+    dev: false
+
+  /lucide-react@1.25.0(react@19.1.0):
+    resolution: {integrity: sha512-/mdJTRbiwcLOQ1NZZK1amZF9rIZyvO18D6r9TngE6TG1NmqHgFuT4eE7Xrkm9UsXMbBJD1NlfwHVltCDWHrOTw==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
     dependencies:
@@ -22154,7 +22138,7 @@ packages:
       web-vitals: 5.3.0
     dev: false
 
-  /pptx-react-viewer@1.15.0(fast-xml-parser@5.10.1)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@0.479.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0):
+  /pptx-react-viewer@1.15.0(fast-xml-parser@5.10.1)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@1.25.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0):
     resolution: {integrity: sha512-eolwYnEYdqWAUpFKC0I5XqrnNyyu/qpCTGqyIdQDdAQlJLk8MeTtXIU5bUlKzrpaPERZW/boxD59SoZqIMZkFw==}
     peerDependencies:
       fast-xml-parser: ^5.8.0
@@ -22176,7 +22160,7 @@ packages:
       i18next: 26.3.6(typescript@5.9.3)
       jspdf: 4.2.1
       jszip: 3.10.1
-      lucide-react: 0.479.0(react@19.1.0)
+      lucide-react: 1.25.0(react@19.1.0)
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
       react-i18next: 17.0.9(i18next@26.3.6)(react-dom@19.1.0)(react@19.1.0)(typescript@5.9.3)
@@ -24311,7 +24295,6 @@ packages:
   /sharp@0.35.0:
     resolution: {integrity: sha512-BqvG5XbwPZ4NV0DK90d86leEECMsoa8bO0nqnKWlBDYxri4GJ7c4EDInaF6q20lTh/mATmnDIKWJFfXnoVfH5g==}
     engines: {node: '>=20.9.0'}
-    requiresBuild: true
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2

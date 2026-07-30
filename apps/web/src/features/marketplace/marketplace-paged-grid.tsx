@@ -1,9 +1,9 @@
 'use client';
 
+import { PackageIcon as PackageSearch } from '@phosphor-icons/react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { PackageSearch } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -66,7 +66,10 @@ export function MarketplacePagedGrid({
   emptyAction?: ReactNode;
   header?: (info: { total: number; count: number }) => ReactNode;
 }) {
-  const itemsQuery = useInfiniteMarketplaceItems({ query, type, source, publicOnly }, { initialData });
+  const itemsQuery = useInfiniteMarketplaceItems(
+    { query, type, source, publicOnly },
+    { initialData },
+  );
   const items = useMemo(
     () => flattenMarketplaceItems(itemsQuery.data?.pages ?? []),
     [itemsQuery.data],
@@ -104,7 +107,12 @@ export function MarketplacePagedGrid({
 
   if (items.length === 0) {
     return (
-      <EmptyState icon={PackageSearch} title={emptyTitle} description={emptyDescription} action={emptyAction} />
+      <EmptyState
+        icon={PackageSearch}
+        title={emptyTitle}
+        description={emptyDescription}
+        action={emptyAction}
+      />
     );
   }
 
@@ -169,7 +177,12 @@ function useInfiniteScrollSentinel({
     if (!node || !hasNextPage) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (shouldFetchNextMarketplacePage(!!entry?.isIntersecting, { hasNextPage, isFetchingNextPage })) {
+        if (
+          shouldFetchNextMarketplacePage(!!entry?.isIntersecting, {
+            hasNextPage,
+            isFetchingNextPage,
+          })
+        ) {
           fetchNextPage();
         }
       },

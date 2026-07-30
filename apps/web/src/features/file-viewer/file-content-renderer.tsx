@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast, successToast } from '@/components/ui/toast';
+import Loading from '@/components/ui/loading';
 import {
   appendPreviewToken,
   isSubdomainPreviewUrl,
@@ -16,31 +17,27 @@ import {
 } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getAuthToken } from '@/lib/auth-token';
-import {
-  getActiveStaticFileHealthUrl,
-  getActiveStaticFilePreviewUrl,
-} from '@kortix/sdk/react';
+import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { toSandboxAbsolutePath } from '@kortix/sdk';
 import {
-  AlertTriangle,
-  Braces,
-  Check,
-  CircleAlert,
-  Code,
-  Download,
-  Eye,
-  FileDiff,
-  FileWarning,
-  FileX,
-  Globe,
-  Loader2,
-  RotateCcw,
-  Save,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  BracketsCurlyIcon as Braces,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  GitDiffIcon as FileDiff,
+  FileXIcon as FileWarning,
+  FileXIcon as FileX,
+  GlobeIcon as Globe,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  FloppyDiskIcon as Save,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
 
@@ -228,7 +225,7 @@ function isBlobCategory(cat: FileCategory): cat is BlobCategory {
 function RendererFallback() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }
@@ -736,7 +733,7 @@ export function FileContentRenderer({
                   )}
                 >
                   {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loading className="h-3.5 w-3.5" />
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
@@ -840,7 +837,7 @@ export function FileContentRenderer({
           {/* Loading */}
           {showLoadingState && (
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
             </div>
           )}
 
@@ -886,7 +883,11 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
+              <PdfRenderer
+                fileContent={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+              />
             </Suspense>
           )}
 
@@ -972,7 +973,7 @@ export function FileContentRenderer({
               {serverHealth !== 'unavailable' &&
                 (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
                   <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin opacity-40" />
+                    <Loading className="h-5 w-5 opacity-40" />
                     <p className="text-xs opacity-50">
                       {tHardcodedUi.raw(
                         'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',

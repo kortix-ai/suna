@@ -6,7 +6,6 @@ description: >-
   files every finding, and proposes remediation as a reviewed change posted to
   {{alert_channel}}. Read-only against AWS; never applies a fix itself.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

@@ -4,7 +4,11 @@ import { PageHead } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { ArrowDown, Check, FileText } from 'lucide-react';
+import {
+  ArrowDownIcon as ArrowDown,
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';

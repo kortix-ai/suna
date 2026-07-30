@@ -17,18 +17,18 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { cn } from '@/lib/utils';
 import {
-  Boxes,
-  Briefcase,
-  Cpu,
-  Database,
-  Plug,
-  Rocket,
-  SlidersHorizontal,
-  Star,
-  UserRound,
-  Users,
-  Wallet,
-} from 'lucide-react';
+  CubeIcon as Boxes,
+  BriefcaseIcon as Briefcase,
+  CpuIcon as Cpu,
+  DatabaseIcon as Database,
+  PlugIcon as Plug,
+  RocketIcon as Rocket,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  StarIcon as Star,
+  UserCircleIcon as UserRound,
+  UsersIcon as Users,
+  WalletIcon as Wallet,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import {
   Bullets,

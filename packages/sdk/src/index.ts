@@ -283,7 +283,6 @@ export type {
   CreatedProjectCliToken,
   // Billing
   AccountState,
-  BillingState,
   BillingTransaction,
   BillingTransactionsPage,
   BillingTransactionsSummary,
@@ -374,7 +373,6 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
-export * from './core/acp';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';

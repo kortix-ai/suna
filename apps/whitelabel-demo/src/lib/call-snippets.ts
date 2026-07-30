@@ -203,7 +203,7 @@ function connectionsList(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'Runs SERVER-side (`src/app/api/connections/route.ts`), and the browser never gets the raw reply: `selectBindableConnections` narrows it first, so the picker cannot offer an option that would fail at create.',
-      'Only TEAM connections (`owner_type: "project"`, `status: "active"`) survive that filter. A wrapper acts under one credential for many end users and has no personal upstream identity, so a connection a member authorized for themselves is not its to spend — and a revoked one binds fine and then fails at the first tool call.',
+      'Only project connections (`owner_type: "project"`, `status: "active"`) survive that filter. A wrapper acts under one credential for many end users and has no personal upstream identity, so a connection a member authorized for themselves is not its to spend — and a revoked one binds fine and then fails at the first tool call.',
       'An alias with nothing bindable is still returned, carrying its reason, so the picker can say "a teammate has to share this one" instead of pretending the connector does not exist. There is deliberately no "connect it yourself" button: the interactive flow that would is refused 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY for a wrapper credential.',
       'The chosen `authorization_id` is sent in `connector_bindings`. The scope endpoint can replace it later.',
     ],

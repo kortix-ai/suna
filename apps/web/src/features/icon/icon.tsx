@@ -1,7 +1,8 @@
+'use client';
+
 import { cn } from '@/lib/utils';
+import { SmileyMeltingIcon, XIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { CgClose } from 'react-icons/cg';
-import { PiSmileyMeltingFill } from 'react-icons/pi';
 
 export const Icon = {
   Kortix: ({ className }: { className?: string }) => {
@@ -1745,8 +1746,8 @@ export const Icon = {
   //   );
   // },
 
-  Close: ({ className, ...props }: React.ComponentProps<typeof CgClose>) => {
-    return <CgClose className={cn('size-4 stroke-1', className)} {...props} />;
+  Close: ({ className, ...props }: React.ComponentProps<typeof XIcon>) => {
+    return <XIcon className={cn('size-4 stroke-1', className)} {...props} />;
   },
 
   Facebook: ({ className }: { className?: string }) => {
@@ -1848,7 +1849,7 @@ export const Icon = {
   },
 
   Personalisation: ({ className }: { className?: string }) => {
-    return <PiSmileyMeltingFill className={cn('size-4', className)} />;
+    return <SmileyMeltingIcon weight="fill" className={cn('size-4', className)} />;
   },
 
   N8N: ({ className }: { className?: string }) => {

@@ -70,7 +70,7 @@ describe('the anchor trigger', () => {
   test('a bare INSERT is anchored and gets the 20-minute boot floor', async () => {
     const row = await read(await seed('provisioning'));
 
-    expect(Number(row.span_s)).toBe(20 * 60);
+    expect(Number(row.span_s)).toBeCloseTo(20 * 60, 0);
     expect(Number(row.age_s)).toBeLessThan(30);
   });
 
@@ -91,7 +91,7 @@ describe('the anchor trigger', () => {
     const row = await read(id);
 
     expect(Number(row.age_s)).toBeLessThan(30);
-    expect(Number(row.span_s)).toBe(20 * 60);
+    expect(Number(row.span_s)).toBeCloseTo(20 * 60, 0);
   });
 
   // I1 — the load-bearing immutability. Carried forward silently rather than

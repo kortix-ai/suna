@@ -9,7 +9,7 @@ import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { CheckCircleSolid } from '@mynaui/icons-react';
+import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
@@ -62,7 +62,7 @@ function WallpaperCard({
 
         {isActive && (
           <div className="absolute top-2.5 right-2.5">
-            <CheckCircleSolid className="size-4" />
+            <CheckCircleSolid weight="fill" className="size-4" />
           </div>
         )}
       </div>

@@ -8,7 +8,6 @@ description: >-
   CSM in {{alert_channel}} with the specific context. Never changes account
   settings and never sends anything itself.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

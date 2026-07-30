@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -245,7 +245,7 @@ export function GatewayApiReference({
         </TabsContent>
       </Tabs>
 
-      <p className="text-muted-foreground text-pretty text-xs">
+      <p className="text-muted-foreground text-xs text-pretty">
         Model ids are{' '}
         <code className="bg-muted rounded-sm px-1 py-0.5 font-mono">provider/model</code> from the
         live models.dev catalog (e.g. <code className="font-mono">{SAMPLE_MODEL}</code>,{' '}

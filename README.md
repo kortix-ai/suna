@@ -59,7 +59,7 @@ Most AI tools give you a chat box. Kortix gives you a **command center** — one
 ```
 project  (git repo + kortix.yaml)
    └─ session ──> isolated cloud sandbox on a branch named after the session
-                     └─ agent (OpenCode, Claude Code, Codex, or Pi) works
+                     └─ OpenCode agent works
                            └─ change request ──> you review & merge ──> main
 ```
 

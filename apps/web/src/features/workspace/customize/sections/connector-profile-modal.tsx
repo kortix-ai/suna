@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 
 import {
+  connectorProfileSlugAfterNameChange,
   type EasyConnectProfileInput,
   isConnectorProfileSlugAvailable,
   normalizeConnectorProfileSlug,
@@ -100,6 +101,7 @@ export function ConnectorProfileModal({
 }) {
   const [name, setName] = useState(initialName);
   const [slug, setSlug] = useState(initialSlug);
+  const [slugEdited, setSlugEdited] = useState(false);
   const [authorizationStrategy, setAuthorizationStrategy] =
     useState<ConnectorAuthorizationStrategy>('project');
 
@@ -107,6 +109,7 @@ export function ConnectorProfileModal({
     if (!open) return;
     setName(initialName);
     setSlug(initialSlug);
+    setSlugEdited(false);
     setAuthorizationStrategy('project');
   }, [initialName, initialSlug, open]);
 
@@ -134,7 +137,18 @@ export function ConnectorProfileModal({
                 <Input
                   id={`${idPrefix}-name`}
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    const displayName = event.target.value;
+                    setName(displayName);
+                    setSlug((currentSlug) =>
+                      connectorProfileSlugAfterNameChange({
+                        displayName,
+                        currentSlug,
+                        existingSlugs,
+                        slugEdited,
+                      }),
+                    );
+                  }}
                   placeholder={initialName}
                   variant="popover"
                   autoFocus
@@ -148,7 +162,10 @@ export function ConnectorProfileModal({
                 <Input
                   id={`${idPrefix}-slug`}
                   value={slug}
-                  onChange={(event) => setSlug(normalizeConnectorProfileSlug(event.target.value))}
+                  onChange={(event) => {
+                    setSlugEdited(true);
+                    setSlug(normalizeConnectorProfileSlug(event.target.value));
+                  }}
                   placeholder={initialSlug}
                   variant="popover"
                   className="font-mono text-xs"

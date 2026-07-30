@@ -11,13 +11,18 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { upsertProjectSecret } from '@kortix/sdk';
+import {
+  CaretLeftIcon as ChevronLeft,
+  ArrowSquareOutIcon as ExternalLink,
+  InfoIcon as Info,
+  ShieldCheckIcon as ShieldCheck,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ExternalLink, Info, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
-import { ClaudeSubscriptionConnect } from './claude-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
 
 // LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
@@ -110,9 +115,6 @@ export function ApiKeyConnectForm({
 
       {provider.id === 'openai' && (
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
-      )}
-      {provider.id === 'anthropic' && (
-        <ClaudeSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">

@@ -4,29 +4,28 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  Bold,
-  Check,
-  ChevronsUpDown,
-  Copy,
-  Download,
-  FolderGit2,
-  HelpCircle,
-  Info,
-  Loader2,
-  Mail,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Settings,
-  Star,
-  Trash2,
-  TriangleAlert,
-  Users,
-  X,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  WarningIcon as AlertTriangle,
+  ArrowRightIcon as ArrowRight,
+  TextBIcon as Bold,
+  CheckIcon as Check,
+  CaretUpDownIcon as ChevronsUpDown,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+  GitBranchIcon as FolderGit2,
+  QuestionIcon as HelpCircle,
+  InfoIcon as Info,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  GearSixIcon as Settings,
+  StarIcon as Star,
+  TrashIcon as Trash2,
+  WarningIcon as TriangleAlert,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -167,8 +166,16 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { Cable, Plug, Radio, Zap } from 'lucide-react';
+import {
+  PlugsConnectedIcon as Cable,
+  PlugIcon as Plug,
+  RadioIcon as Radio,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
+
+import { IconsSection } from './icons-section';
 
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
@@ -622,6 +629,7 @@ const TOC_SECTIONS = [
   },
   { id: 'anti-patterns', label: 'Anti-Patterns' },
   { id: 'usage', label: 'Usage' },
+  { id: 'icons', label: 'Icons' },
 ] as const;
 
 /* All section IDs flattened for intersection observer */
@@ -1231,6 +1239,36 @@ export default function BrandPage() {
                 ))}
               </div>
 
+              <div className="mt-8 space-y-1">
+                <span className="text-muted-foreground mb-3 block font-mono text-xs tracking-widest">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.designSystemWeightLadderLabel')}
+                </span>
+                {[
+                  { cls: 'font-thin', label: 'thin', wght: 300 },
+                  { cls: 'font-extralight', label: 'extralight', wght: 335 },
+                  { cls: 'font-light', label: 'light', wght: 368 },
+                  { cls: 'font-normal', label: 'normal', wght: 400 },
+                  { cls: 'font-medium', label: 'medium', wght: 500 },
+                  { cls: 'font-semibold', label: 'semibold', wght: 600 },
+                  { cls: 'font-bold', label: 'bold', wght: 700 },
+                  { cls: 'font-extrabold', label: 'extrabold', wght: 800 },
+                  { cls: 'font-black', label: 'black', wght: 870 },
+                  { cls: 'font-heavy', label: 'heavy', wght: 900 },
+                ].map((s) => (
+                  <div key={s.cls} className="flex items-baseline gap-4">
+                    <span className="text-muted-foreground w-28 shrink-0 font-mono text-xs">
+                      {s.label}
+                    </span>
+                    <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs tabular-nums">
+                      {s.wght}
+                    </span>
+                    <span className={cn('text-foreground text-2xl tracking-tight', s.cls)}>
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line871JsxTextKortixComputer')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
               <div className="mt-6 rounded-lg bg-neutral-950 p-5 text-neutral-100 md:p-6">
                 <span className="mb-3 block font-mono text-xs tracking-widest text-neutral-500">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}
@@ -1241,6 +1279,22 @@ export default function BrandPage() {
                 <p className="mt-4 font-mono text-xs text-neutral-600">
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789',
+                  )}
+                </p>
+              </div>
+
+              <div className="bg-popover mt-6 rounded-md border px-4 py-5">
+                <span className="text-muted-foreground mb-3 block font-mono text-xs tracking-widest">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoLabel',
+                  )}
+                </span>
+                <p className="font-semimono text-lg tracking-tight tabular-nums md:text-2xl">
+                  ses_8f3ab291 · 2026-07-30 14:22:07 · a1b2c3d
+                </p>
+                <p className="text-muted-foreground mt-4 text-xs">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoNote',
                   )}
                 </p>
               </div>
@@ -1533,7 +1587,7 @@ export default function BrandPage() {
                           )}
                         </Button>
                         <Button>
-                          <Loader2 className="size-4 animate-spin" /> Loading
+                          <Loading className="size-4" /> Loading
                         </Button>
                       </div>
                     </div>
@@ -3768,6 +3822,8 @@ export default function BrandPage() {
                 </div>
               </div>
             </section>
+
+            <IconsSection />
           </div>
         </div>
       </div>

@@ -12,9 +12,7 @@ apps/sandbox/
 The image bundles **only what the sandbox needs to run a session**:
 
 - `git`, `ca-certificates`, `curl` — for cloning the project repo at boot.
-- `opencode-ai` — OpenCode REST compatibility and native OpenCode ACP.
-- `claude-agent-acp`, `codex-acp`, and `pi-acp` — pinned ACP adapters.
-- `pi` — the pinned Pi coding harness used by `pi-acp`.
+- `opencode-ai` — the OpenCode REST runtime.
 - `kortix-agent` — the compiled daemon from
   [`apps/kortix-sandbox-agent-server`](../kortix-sandbox-agent-server). Its
   source is built in a Docker pre-stage so the final image carries only
@@ -36,8 +34,8 @@ docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
 
 Production sessions do **not** use a shared snapshot. The snapshot builder
 (`apps/api/src/snapshots/builder.ts`) reads each project's
-`.kortix/Dockerfile`, layers the Kortix runtime (all four ACP harness paths,
-OpenCode REST compatibility, the `kortix-agent` binary, and the entrypoint) on
+`.kortix/Dockerfile`, layers the Kortix runtime (OpenCode REST, the
+`kortix-agent` binary, and the entrypoint) on
 top, and creates a per-project
 Daytona snapshot named `kortix-snap-{project[:8]}-{contentHash[:12]}`.
 Each session boots from that project's latest `ready` snapshot.

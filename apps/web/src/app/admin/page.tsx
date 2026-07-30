@@ -2,20 +2,21 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect } from 'react';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import {
+  ActivityIcon as Activity,
+  ArrowRightIcon as ArrowRight,
+  SquaresFourIcon as LayoutDashboard,
+  WrenchIcon as Wrench,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, ArrowRight, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { useEffect } from 'react';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
 
-import {
-  SectionContainer,
-  SectionHeader,
-  StatPill,
-  StatRow,
-} from './_components/section-header';
+import { SectionContainer, SectionHeader, StatPill, StatRow } from './_components/section-header';
 
 const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
   instances: '/admin/ops',
@@ -41,7 +42,9 @@ export default function AdminOverviewPage() {
       <SectionHeader
         icon={LayoutDashboard}
         title={tHardcodedUi.raw('appAdminPage.line40JsxAttrTitleAdminOverview')}
-        description={tHardcodedUi.raw('appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf')}
+        description={tHardcodedUi.raw(
+          'appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf',
+        )}
       />
 
       <StatRow>
@@ -69,13 +72,17 @@ export default function AdminOverviewPage() {
           href="/admin/ops"
           icon={Activity}
           title="Operations"
-          description={tHardcodedUi.raw('appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd')}
+          description={tHardcodedUi.raw(
+            'appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd',
+          )}
         />
         <QuickLink
           href="/admin/utils"
           icon={Wrench}
           title="Maintenance"
-          description={tHardcodedUi.raw('appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd')}
+          description={tHardcodedUi.raw(
+            'appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd',
+          )}
         />
       </div>
     </SectionContainer>
@@ -96,15 +103,15 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group relative flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/30"
+      className="group border-border/60 bg-card hover:border-border hover:bg-muted/30 relative flex flex-col gap-3 rounded-2xl border p-4 transition-colors"
     >
       <div className="flex items-center justify-between">
         <EntityAvatar icon={Icon} size="md" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
+        <ArrowRight className="text-muted-foreground h-4 w-4 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
       </div>
       <div className="space-y-1">
         <div className="text-sm font-medium">{title}</div>
-        <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+        <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>
       </div>
     </Link>
   );

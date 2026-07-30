@@ -36,20 +36,20 @@ describe('selectConnectorBindingChoices', () => {
     expect(choice!.unavailable).toBe('private_only');
   });
 
-  test('a revoked TEAM connection is a different ask than a private one', () => {
+  test('a revoked project connection is a different ask than a private one', () => {
     const [choice] = selectConnectorBindingChoices([
       profile({ status: 'revoked' }),
     ]);
-    expect(choice!.unavailable).toBe('team_connection_inactive');
+    expect(choice!.unavailable).toBe('project_connection_inactive');
   });
 
   test('a bindable connection wins over any unbindable sibling on the same alias', () => {
     const [choice] = selectConnectorBindingChoices([
       profile({ profile_id: 'mine', owner_type: 'member', owner_id: 'u1' }),
-      profile({ profile_id: 'team', label: 'Team inbox' }),
+      profile({ profile_id: 'project', label: 'Project inbox' }),
     ]);
     expect(choice!.unavailable).toBeNull();
-    expect(choice!.connections.map((c) => c.authorizationId)).toEqual(['team']);
+    expect(choice!.connections.map((c) => c.authorizationId)).toEqual(['project']);
   });
 
   test('no profiles is no connectors, not a crash', () => {
@@ -90,11 +90,13 @@ describe('connectorBindingNotice', () => {
     expect(notice.detail).toContain('own accounts');
   });
 
-  test('a revoked team connection asks for a reconnect, not a first-time share', () => {
+  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
     const notice = connectorBindingNotice(
-      choiceFor({ unavailable: 'team_connection_inactive' }),
+      choiceFor({ unavailable: 'project_connection_inactive' }),
     )!;
     expect(notice.detail).toContain('reconnect');
+    expect(notice.detail).toContain('project');
+    expect(notice.detail.toLowerCase()).not.toContain('team connection');
   });
 
   test('neither case offers a self-connect action', () => {
@@ -102,7 +104,7 @@ describe('connectorBindingNotice', () => {
     // interactive flow that would connect one is refused for it outright
     // (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY) — so a "connect it yourself"
     // button could only ever lead to that refusal.
-    for (const unavailable of ['private_only', 'team_connection_inactive']) {
+    for (const unavailable of ['private_only', 'project_connection_inactive']) {
       expect(
         connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction,
       ).toBeNull();
@@ -110,7 +112,7 @@ describe('connectorBindingNotice', () => {
   });
 
   test('no notice ever tells the reader to connect the account themselves', () => {
-    for (const unavailable of ['private_only', 'team_connection_inactive']) {
+    for (const unavailable of ['private_only', 'project_connection_inactive']) {
       const notice = connectorBindingNotice(choiceFor({ unavailable }))!;
       expect(`${notice.title} ${notice.detail}`.toLowerCase()).not.toContain(
         'connect your',
@@ -139,7 +141,7 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
     const choices = selectConnectorBindingChoices([
       profile('external', 'revoked'),
     ]);
-    expect(choices[0]?.unavailable).toBe('team_connection_inactive');
+    expect(choices[0]?.unavailable).toBe('project_connection_inactive');
   });
 
   test('only a MEMBER-owned connection is genuinely private to one person', () => {
@@ -149,7 +151,7 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
     expect(choices[0]?.unavailable).toBe('private_only');
   });
 
-  test('an active team connection is offered, not reported unavailable', () => {
+  test('an active project connection is offered, not reported unavailable', () => {
     const choices = selectConnectorBindingChoices([profile('project')]);
     expect(choices[0]?.unavailable).toBeNull();
     expect(choices[0]?.connections).toHaveLength(1);

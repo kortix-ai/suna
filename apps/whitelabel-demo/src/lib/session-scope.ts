@@ -143,8 +143,8 @@ export function sessionScopeRows(
           : bound.map(([alias, label]) => `${alias}: ${label}`).join(', '),
       detail:
         bound.length === 0
-          ? 'Every connector this agent uses resolves to the project’s default connection. Bind a specific team authorization from the scope bar.'
-          : 'Change these from the scope bar under the composer. Unlike secrets a binding change is fully retroactive — connections resolve server-side on each tool call, so the next call already uses the new one. Only TEAM connections can be bound, never a teammate’s private one.',
+          ? 'Every connector this agent uses resolves to the project’s default connection. Bind a specific project connection from the scope bar.'
+          : 'Change these from the scope bar under the composer. Unlike secrets a binding change is fully retroactive — connections resolve server-side on each tool call, so the next call already uses the new one. Only project connections can be bound, never a teammate’s private one.',
       control: null,
     },
   ];

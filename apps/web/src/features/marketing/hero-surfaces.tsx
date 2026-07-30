@@ -6,7 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/features/icon/icon';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, Code2, Monitor, Smartphone, Terminal } from 'lucide-react';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CodeSimpleIcon as Code2,
+  MonitorIcon as Monitor,
+  DeviceMobileIcon as Smartphone,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ComponentType, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
@@ -240,7 +246,7 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
           <CodeWindow title="kortix — terminal" lines={CLI_LINES} />
           <Link
             href="/#cli"
-            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors duration-fast"
+            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] duration-fast absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors"
           >
             Get started with the CLI
             <ArrowUpRight className="size-3.5" />
@@ -253,7 +259,7 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
           <CodeWindow title="renewal.ts" lines={SDK_LINES} />
           <Link
             href="/docs/sdk"
-            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors duration-fast"
+            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] duration-fast absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors"
           >
             View the SDK docs
             <ArrowUpRight className="size-3.5" />
@@ -281,7 +287,7 @@ export function HeroSurfaces() {
 
   return (
     <div className="w-full">
-      <div className="flex w-full gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex w-full [scrollbar-width:none] gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {SURFACES.map((s) => {
           const isActive = s.id === active;
           return (
@@ -291,7 +297,7 @@ export function HeroSurfaces() {
               onClick={() => setActive(s.id)}
               aria-current={isActive ? 'true' : undefined}
               className={cn(
-                'flex shrink-0 items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-fast',
+                'duration-fast flex shrink-0 items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-primary/10 text-primary'
                   : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]',

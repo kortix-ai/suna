@@ -27,9 +27,16 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
-import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
+import {
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  WarningIcon as DangerTriangleSolid,
+  type Icon as LucideIcon,
+  PencilSimpleIcon,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { configEntitySourcePath } from './config-entity-source-path';
@@ -286,7 +293,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       ))}
     </div>
   ) : isForbidden ? (
-    <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+    <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />} title="Access required">
       You don&apos;t have permission to read this repository.
     </InfoBanner>
   ) : detailQuery.isError ? (
@@ -529,7 +536,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground -ml-2 mb-6 gap-1.5"
+            className="text-muted-foreground mb-6 -ml-2 gap-1.5"
             onClick={() => setSelectedPath(null)}
           >
             <ChevronRight className="size-3.5 rotate-180" />
@@ -843,19 +850,19 @@ function DetailToolbarActions({
   return (
     <ButtonGroup className="shrink-0">
       {canWrite ? (
-        <Hint label="Edit">
+        <Hint label="Edit" side="bottom">
           <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
             {editing ? (
               <Loading className="size-3.5 shrink-0" />
             ) : (
-              <Pencil className="size-3.5 shrink-0" />
+              <PencilSimpleIcon className="size-3.5 shrink-0" />
             )}
             Edit
           </Button>
         </Hint>
       ) : null}
       <Hint label="Copy source">
-        <Button variant="outline" size="icon" onClick={onCopy} disabled={copyDisabled}>
+        <Button variant="outline" size="icon" className='size-8' onClick={onCopy} disabled={copyDisabled}>
           <Copy className="size-3.5 shrink-0" />
         </Button>
       </Hint>

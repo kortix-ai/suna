@@ -75,6 +75,7 @@ import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import {
@@ -1549,9 +1550,10 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
+    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl, enabled }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -1574,7 +1576,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    const mode = teamsMode(baseUrl, {
+      enabled: teamsChannelEnabled(loaded.row.metadata),
+      projectId,
+      byoAppId,
+    });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -1603,13 +1609,14 @@ projectsApp.openapi(
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
   }),
   async (c: any) => {
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
     // Slack (r4 slack/connect) and email connect twins.
+    // Authz before the feature-flag check so an unauthorized caller never gets a
+    // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -1617,6 +1624,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1752,7 +1760,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -2752,12 +2760,12 @@ projectsApp.openapi(
     // What `auto` resolves to for this project. Served below so the client can
     // LOCK its switch instead of offering a toggle that always 409s.
     const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
     );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
-      config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefaultModelId(),
       routing?.visionModel,
       ...(routing?.defaultFallback?.models ?? []),
       ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
@@ -2851,7 +2859,7 @@ projectsApp.openapi(
     // charge, which always offers the current one.
     const defaults = await getAccountModelDefaults(accountId, projectId);
     const effectiveDefault =
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId();
     if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
       return c.json(
         {
@@ -2951,11 +2959,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefault: platformDefaultModelId(),
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
+      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
       resolvedSource: resolved.source,
       freeTier,
     });

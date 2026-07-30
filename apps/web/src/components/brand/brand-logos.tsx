@@ -1,8 +1,7 @@
 /**
  * Official brand logos.
- *  - Apple / macOS / Linux → @icons-pack/react-simple-icons (official Simple
- *    Icons), rendered in `currentColor` so they adapt to light/dark.
- *  - Windows → react-icons Font Awesome (Simple Icons dropped the Windows mark).
+ *  - Apple / macOS / Linux / Windows → @phosphor-icons/react, rendered in
+ *    `currentColor` so they adapt to light/dark.
  *  - Chrome → the official multicolor logo from /public/brand/chrome.svg
  *    (Simple Icons only ships a flat single-color Chrome mark).
  *
@@ -10,21 +9,20 @@
  * directly (they include the wordmark), so they're not wrapped here.
  */
 
-import { SiApple, SiLinux } from '@icons-pack/react-simple-icons';
-import { FaWindows } from 'react-icons/fa6';
+import { AppleLogoIcon, LinuxLogoIcon, WindowsLogoIcon } from '@phosphor-icons/react';
 
 type MarkProps = { className?: string };
 
 export function AppleMark({ className }: MarkProps) {
-  return <SiApple className={className} />;
+  return <AppleLogoIcon weight="fill" className={className} />;
 }
 
 export function WindowsMark({ className }: MarkProps) {
-  return <FaWindows className={className} />;
+  return <WindowsLogoIcon weight="fill" className={className} />;
 }
 
 export function LinuxMark({ className }: MarkProps) {
-  return <SiLinux className={className} />;
+  return <LinuxLogoIcon weight="fill" className={className} />;
 }
 
 export function ChromeMark({ className }: MarkProps) {

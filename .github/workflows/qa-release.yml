@@ -144,6 +144,9 @@ jobs:
       - name: Install Playwright Chromium
         if: vars.RELEASE_FAST_TRACK != 'true'
         run: cd tests && npx playwright install --with-deps chromium
+      - name: Install Playwright Firefox + WebKit (typography suite is cross-engine)
+        if: vars.RELEASE_FAST_TRACK != 'true'
+        run: cd tests && npx playwright install --with-deps firefox webkit
 
       - name: Static + local functional checks
         run: make lint typecheck unit integration contract api-coverage
@@ -167,7 +170,7 @@ jobs:
         if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 30
         run: |
-          make e2e a11y
+          make e2e a11y typography
           # Visual is advisory: it snapshots the live target with no deterministic
           # per-platform baselines, so a pixel diff shouldn't red-gate the release.
           # It still runs and its results land in the report.

@@ -8,28 +8,27 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Pencil,
-  Reply,
-  RotateCcw,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowDownIcon as ArrowDown,
+  BrainIcon as Brain,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  StackIcon as Layers,
+  PencilSimpleIcon,
+  ArrowBendUpLeftIcon as Reply,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ScissorsIcon as Scissors,
+  MagnifyingGlassIcon as Search,
+  TerminalIcon as Terminal,
+  TimerIcon as Timer,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1952,7 +1951,7 @@ function GroupedReasoningCard({
 
           <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
           {reasoningStreaming && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -2138,7 +2137,7 @@ function SameToolGroup({
             </span>
           )}
           {anyRunning && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -2181,7 +2180,7 @@ function SameToolGroup({
                       </span>
                     )}
                     {running && (
-                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
+                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
                     )}
                   </div>
                 );
@@ -2939,7 +2938,7 @@ function SessionTurn({
                   disabled={rewindDisabled}
                   onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
                 >
-                  <Pencil className="size-3.5" />
+                  <PencilSimpleIcon className="size-3.5" />
                 </Button>
               </Hint>
               <Tooltip>

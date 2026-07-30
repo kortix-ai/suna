@@ -36,11 +36,8 @@ Learn this once and most questions answer themselves.
    billing, triggers, marketplace, audit. Lives in `platform/projects-client/` and
    `platform/platform-client/`, over `platform/api-client.ts` (`backendApi`).
 
-2. **The session runtime** — a selected harness running *inside a per-session
-   cloud sandbox*. Version 2 uses OpenCode REST. Version 3 uses ACP with
-   OpenCode, Claude Code, Codex, or Pi. The session stores an immutable runtime
-   profile, harness, and native agent. OpenCode REST remains a compatibility
-   client (`@opencode-ai/sdk/v2/client`), reached through the Kortix API proxy:
+2. **The session runtime** — OpenCode running *inside a per-session cloud
+   sandbox*. The SDK reaches its REST API through the Kortix API proxy:
 
    ```
    ${backendUrl}/p/{externalId}/{port}      →  the sandbox's opencode server
@@ -48,9 +45,8 @@ Learn this once and most questions answer themselves.
 
 **The bridge between them is session readiness.** A session runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
-(and `start()`, and implicitly `send()`) does: boots/resumes the sandbox, resolves
-*this* session's runtime identity and transport. ACP keeps separate process and
-harness-native conversation identifiers.
+(and `start()`, and implicitly `send()`) does: boots or resumes the sandbox and
+resolves this session's OpenCode identity.
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -80,7 +76,6 @@ one.
 platform/auth + platform/api-client   ← transport: token, fetch, ApiError
 platform/*-client                     ← typed REST surfaces (one file per domain)
 opencode/client                       ← OpenCode REST compatibility client
-acp/                                  ← ACP client, projection, and session controller
 state/event-stream                    ← SSE reconnect/backoff/heartbeat/coalesce
 kortix.ts (createKortix)              ← the facade: binds ids, hides the seam
 turns/                                ← normalizes ~50 wire part types → ClassifiedPart
@@ -111,8 +106,9 @@ Follow the grain. Almost every feature is this shape:
 
 - **Session-scoped, never global.** See above. Never resolve a runtime from
   ambient state.
-- **Harness/provider-agnostic.** Sandbox provider and runtime harness are
-  server-side concerns. Host code must not branch on either.
+- **Session-scoped and provider-agnostic.** The sandbox provider is a server-side
+  concern. Every session uses OpenCode REST. Host code must not add a second
+  transport.
 - **Hosts never import `@opencode-ai/sdk`.** Not `apps/web`, not the demo. If a
   host needs runtime access, it goes through `session.runtime`.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it

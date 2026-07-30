@@ -1,5 +1,8 @@
+import { backendApi } from '@kortix/sdk';
+
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
+import { withKortixScope } from './sdk.ts';
 
 // Re-exported for callers/tests that reach it via the client module.
 export { secureRemoteBase };
@@ -33,79 +36,88 @@ export interface ClientOptions {
   accountId?: string;
 }
 
-function joinUrl(base: string, path: string): string {
-  let b = secureRemoteBase(base);
-  b = b.endsWith('/') ? b.slice(0, -1) : b;
-  // The base may or may not already carry the `/v1` mount. Host login stores a
-  // bare origin (`https://api.kortix.com`); a session sandbox injects
-  // `KORTIX_API_URL` *with* the suffix (`https://<tunnel>/v1`). Strip a trailing
-  // `/v1` here so we add exactly one below — otherwise in-sandbox calls hit
-  // `/v1/v1/projects/…` and 404 even with a valid token.
-  if (b.endsWith('/v1')) b = b.slice(0, -3);
+/** Normalize an incoming CLI path to the SDK-relative endpoint. The SDK's
+ *  `backendUrl` already carries the `/v1` mount (see `sdkBackendUrl`), so a
+ *  caller that passed `/v1/...` must have it stripped or the request would hit
+ *  `/v1/v1/...` and 404 with a valid token. */
+function toEndpoint(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
-  // Hono mounts v1 routes. Normalize incoming `/accounts/me` -> `/v1/accounts/me`.
-  const versioned = p.startsWith('/v1/') ? p : `/v1${p}`;
-  return `${b}${versioned}`;
+  return p.startsWith('/v1/') ? p.slice(3) : p;
 }
 
-/** Append `account_id=<id>` to a URL, merging with any existing query, but
- *  never duplicating a param the caller already set explicitly. */
-function withAccountId(url: string, accountId?: string): string {
-  if (!accountId) return url;
-  if (/[?&]account_id=/.test(url)) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}account_id=${encodeURIComponent(accountId)}`;
+/** Append `account_id=<id>` to an endpoint, merging with any existing query,
+ *  but never duplicating a param the caller already set explicitly. */
+function withAccountId(endpoint: string, accountId?: string): string {
+  if (!accountId) return endpoint;
+  if (/[?&]account_id=/.test(endpoint)) return endpoint;
+  const sep = endpoint.includes('?') ? '&' : '?';
+  return `${endpoint}${sep}account_id=${encodeURIComponent(accountId)}`;
+}
+
+/** The CLI's calls are interactive and some are genuinely long (provision, a
+ *  session create that waits on a snapshot). The SDK's own default is 30s,
+ *  which the CLI never had — keep the generous ceiling so nothing that worked
+ *  before starts aborting mid-flight. */
+const CLI_REQUEST_TIMEOUT_MS = 600_000;
+
+/** Translate the SDK's `ApiResponse` envelope into the CLI's throw-on-error
+ *  `ApiError`, preserving `.status` — commands branch on 402/404/409/5xx.
+ *
+ *  `status` is read structurally, not via `instanceof SdkApiError`: the SDK
+ *  reclassifies some responses into sibling types that extend `Error` directly
+ *  (`BillingError` for a 402, `RequestTooLargeError` for a 431). Duck-typing
+ *  `.status` keeps every one of them mapped to the right exit path instead of
+ *  collapsing a 402 into a generic status-0 failure. */
+function unwrap<T>(res: { data?: T; error?: unknown; success: boolean }): T {
+  if (res.success) return res.data as T;
+  const err = res.error;
+  if (err instanceof Error) {
+    const carrier = err as Error & { status?: unknown; details?: unknown; data?: unknown };
+    const status = typeof carrier.status === 'number' ? carrier.status : 0;
+    const body = carrier.details ?? carrier.data ?? null;
+    throw new ApiError(status, err.message, body);
+  }
+  throw new ApiError(0, String(err ?? 'request failed'));
 }
 
 async function request<T>(
-  method: string,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { apiBase: string; token?: string; accountId?: string },
+  opts: { auth: Auth; accountId?: string },
 ): Promise<T> {
-  const url = withAccountId(joinUrl(opts.apiBase, path), opts.accountId);
-  const headers: Record<string, string> = {};
-  if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch (err) {
-    throw new ApiError(0, `network error: ${(err as Error).message}`);
-  }
-
-  let payload: unknown = null;
-  const text = await res.text();
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = text;
+  const endpoint = withAccountId(toEndpoint(path), opts.accountId);
+  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS };
+  return withKortixScope(opts.auth, async () => {
+    switch (method) {
+      case 'GET':
+        return unwrap<T>(await backendApi.get<T>(endpoint, options));
+      case 'POST':
+        return unwrap<T>(await backendApi.post<T>(endpoint, body, options));
+      case 'PUT':
+        return unwrap<T>(await backendApi.put<T>(endpoint, body, options));
+      case 'PATCH':
+        return unwrap<T>(await backendApi.patch<T>(endpoint, body, options));
+      case 'DELETE':
+        return unwrap<T>(await backendApi.delete<T>(endpoint, options));
     }
-  }
-
-  if (!res.ok) {
-    const message =
-      typeof payload === 'object' && payload && 'error' in payload && typeof (payload as { error: unknown }).error === 'string'
-        ? (payload as { error: string }).error
-        : typeof payload === 'object' && payload && 'message' in payload && typeof (payload as { message: unknown }).message === 'string'
-          ? (payload as { message: string }).message
-          : `HTTP ${res.status}`;
-    throw new ApiError(res.status, message, payload);
-  }
-
-  return payload as T;
+  });
 }
 
 export function createApiClient(opts: ClientOptions): ApiClient {
   const apiBase = opts.apiBase ?? 'https://api.kortix.com';
   const accountId = opts.accountId || undefined;
-  const base = { apiBase, token: opts.token, accountId };
+  // The SDK config seam is keyed on an `Auth`; a bare `createApiClient` caller
+  // only supplies a base + token, so synthesize the identity-free rest.
+  const auth: Auth = {
+    api_base: apiBase,
+    token: opts.token ?? '',
+    user_id: '',
+    user_email: '',
+    account_id: accountId ?? '',
+    logged_in_at: '',
+  };
+  const base = { auth, accountId };
   return {
     apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, base),

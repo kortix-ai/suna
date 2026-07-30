@@ -11,12 +11,15 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Blocks, KeyRound } from 'lucide-react';
+import {
+  SquaresFourIcon as Blocks,
+  SparkleIcon as HiMiniSparkles,
+  KeyIcon as KeyRound,
+  CpuIcon as RiCpuLine,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { RiCpuLine } from 'react-icons/ri';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
 import { useStep2Director, type Step2View } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';
@@ -94,7 +97,7 @@ function ModelsView({
               </div>
               {p.state === 'managed' ? (
                 <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
-                  <HiMiniSparkles className="size-3" /> Managed
+                  <HiMiniSparkles weight="fill" className="size-3" /> Managed
                 </Badge>
               ) : connected ? (
                 <ConnectBadge connected />

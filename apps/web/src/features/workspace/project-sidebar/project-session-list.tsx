@@ -44,22 +44,22 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import {
+  CalendarDotsIcon as CalendarClock,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  PencilSimpleIcon,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  SquareIcon as Square,
+  TrashIcon as TrashSolid,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import {
-  CalendarClock,
-  Mail,
-  MoreHorizontal,
-  RotateCcw,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import { useState, type ComponentType } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -71,7 +71,7 @@ const SESSION_RELATIVE_TIME_CLASS =
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
-  LucideIcon | IconMynauiType | IconType
+  ComponentType<{ className?: string }>
 > = {
   slack: Icon.Slack,
   telegram: Icon.Telegram,
@@ -456,7 +456,7 @@ function ProjectSessionRow({
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
                 >
-                  <Pencil />
+                  <PencilSimpleIcon />
                   Rename
                 </DropdownMenuItem>
                 {session.can_manage_sharing !== false && (
@@ -493,7 +493,7 @@ function ProjectSessionRow({
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
                   variant="destructive"
                 >
-                  <TrashSolid />
+                  <TrashSolid weight="fill" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>

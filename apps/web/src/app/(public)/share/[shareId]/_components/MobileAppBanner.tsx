@@ -2,17 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 
-import { cn } from '@/lib/utils';
-import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { XIcon as X } from '@phosphor-icons/react';
+import { useEffect, useState } from 'react';
 
 function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
   const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
   const ua = userAgent.toLowerCase();
-  const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
+  const mobileRegex =
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
   const isIOSSimulator = ua.includes('macintosh') && navigator.maxTouchPoints > 0;
   return mobileRegex.test(ua) || isIOSSimulator;
 }
@@ -78,41 +79,40 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
   return (
     <div
-      className={cn('fixed top-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out', 
-        isVisible ? 'translate-y-0' : '-translate-y-full'
+      className={cn(
+        'fixed top-0 right-0 left-0 z-50 transform transition-transform duration-300 ease-out',
+        isVisible ? 'translate-y-0' : '-translate-y-full',
       )}
     >
-      <div className="bg-background/95 backdrop-blur-md border-b border-border/50 px-3 py-2.5 safe-area-top">
+      <div className="bg-background/95 border-border/50 safe-area-top border-b px-3 py-2.5 backdrop-blur-md">
         <div className="flex items-center gap-3">
           {/* App icon */}
-          <div className="shrink-0 w-10 h-10 rounded-2xl bg-foreground flex items-center justify-center">
+          <div className="bg-foreground flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
             <KortixLogo size={20} className="invert dark:invert-0" />
           </div>
 
           {/* Content */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground text-sm leading-tight">
-              Kortix
-            </h3>
-            <p className="text-xs text-muted-foreground leading-tight">{tHardcodedUi.raw('appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp')}</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-foreground text-sm leading-tight font-semibold">Kortix</h3>
+            <p className="text-muted-foreground text-xs leading-tight">
+              {tHardcodedUi.raw(
+                'appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp',
+              )}
+            </p>
           </div>
 
           {/* Open button */}
-          <Button
-            onClick={handleOpenInApp}
-            size="sm"
-            className="px-4 text-xs"
-          >
+          <Button onClick={handleOpenInApp} size="sm" className="px-4 text-xs">
             Open
           </Button>
 
           {/* Close button */}
           <button
             onClick={handleDismiss}
-            className="shrink-0 p-1.5 -mr-1 rounded-full hover:bg-muted/80 transition-colors"
+            className="hover:bg-muted/80 -mr-1 shrink-0 rounded-full p-1.5 transition-colors"
             aria-label="Dismiss"
           >
-            <X className="w-4 h-4 text-muted-foreground" />
+            <X className="text-muted-foreground h-4 w-4" />
           </button>
         </div>
       </div>

@@ -6,18 +6,19 @@ import { Switch } from '@/components/ui/switch';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import {
-  BellSolid,
-  CheckCircleSolid,
-  DangerTriangleSolid,
-  EyeOffSolid,
-  Icon as MynaIcon,
-  QuestionCircleSolid,
-  ShieldCheckSolid,
-} from '@mynaui/icons-react';
-import { Volume2, type LucideIcon } from 'lucide-react';
+  BellIcon as BellSolid,
+  CheckCircleIcon as CheckCircleSolid,
+  WarningIcon as DangerTriangleSolid,
+  EyeSlashIcon as EyeOffSolid,
+  QuestionIcon as QuestionCircleSolid,
+  ShieldCheckIcon as ShieldCheckSolid,
+  SpeakerHighIcon as Volume2,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+  type Icon as MynaIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
-import { IconType } from 'react-icons/lib';
 
 interface NotificationToggleProps {
   icon: LucideIcon | MynaIcon | IconType;

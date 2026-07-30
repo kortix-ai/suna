@@ -1,27 +1,19 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Plug,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { PlugIcon as Plug } from '@phosphor-icons/react';
+import { useMemo } from 'react';
 
-
-import {
-  type ConnectorEntry,
-  parseConnectorListOutput,
-} from '@/lib/utils/kortix-tool-output';
+import { type ConnectorEntry, parseConnectorListOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -77,4 +69,3 @@ ToolRegistry.register('connector_list', ConnectorListTool);
 ToolRegistry.register('connector-list', ConnectorListTool);
 ToolRegistry.register('oc-connector_list', ConnectorListTool);
 ToolRegistry.register('oc-connector-list', ConnectorListTool);
-

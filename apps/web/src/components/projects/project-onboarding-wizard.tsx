@@ -32,18 +32,18 @@
  * to be generated for these strings before this ships beyond local testing.
  */
 
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronDown,
-  CreditCard,
-  KeyRound,
-  Plus,
-  Search,
-  SlidersHorizontal,
-} from 'lucide-react';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CreditCardIcon as CreditCard,
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  SlidersHorizontalIcon as SlidersHorizontal,
+} from '@phosphor-icons/react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import Image from 'next/image';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';

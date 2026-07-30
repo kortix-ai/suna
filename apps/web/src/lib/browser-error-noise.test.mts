@@ -16,6 +16,7 @@ import {
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
+  isInpageJsNoErrorMessageNoise,
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
@@ -3897,6 +3898,214 @@ test('does NOT suppress a real first-party TypeError on a DIFFERENT method name 
       `expected non-wallet-stream message "${value}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Wallet-extension injected `inpage.js` "No error message" noise
+// (Better Stack pattern
+//  61949432528f8a88c74799f2dc1a8dd128479ae49e6e75865f501e5eb40fc94e,
+//  Kortix Frontend prod, application_id 2346967). A wallet extension's
+//  `onGlobalMessage` → `runIfPresent` → `run` handlers in `app:///inpage.js`
+//  throw a value with no `.message` property, so Sentry SDK 10.x writes the
+//  `"No error message"` placeholder. The error propagates through the React
+//  reconciler (frames `iX`/`iu`/`ib`/`ik`/`oq`/`o_`/`l9`/`l`) and into the
+//  `global-error` boundary (chunk `app/global-error-*.js`), which Sentry's
+//  `onerror` handler captures. 1 occurrence, 0 identified users, last
+//  2026-07-30 09:14:21 UTC, route `/auth?expired=true&returnUrl=…`, mechanism
+//  `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never
+//  reached a React error boundary directly). The `isEmptyMessageUnresolved-
+//  BrowserChunkNoise` matcher does NOT catch this because the `app:///inpage.js`
+//  frames are not browser-bundle sources (the "every frame must be browser
+//  bundle" guard bails). The `isInpageWalletStreamNoise` matcher does NOT catch
+//  it because the message is `"No error message"`, not an `addListener`/`emit`
+//  TypeError. The new matcher anchors on the EXACT `"No error message"` string
+//  AND an `app:///inpage.js` frame, with a first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact production stack: wallet-extension `app:///inpage.js` frames
+// (onGlobalMessage → runIfPresent → run) → React reconciler → global-error →
+// chunk frames. NO first-party `apps/web/src/…` frame.
+const INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES = [
+  { filename: 'app:///inpage.js', function: 'onGlobalMessage' },
+  { filename: 'app:///inpage.js', function: 'runIfPresent' },
+  { filename: 'app:///inpage.js', function: 'run' },
+  { filename: 'app:///_next/static/chunks/86784-d4b6544b8ad14b3b.js', function: 'x' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'iX' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'iu' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'ib' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'ik' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'oq' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'o_' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'l9' },
+  { filename: 'app:///_next/static/chunks/app/global-error-dadddeab95eb9a36.js', function: 'l' },
+  { filename: 'app:///_next/static/chunks/31848-3448c16876d4ded2.js', function: '?' },
+]
+
+test('classifies the inpage.js "No error message" prod event as noise (exact message + inpage.js frames)', () => {
+  // Exact production shape: the `"No error message"` placeholder + the wallet-
+  // extension `app:///inpage.js` frames (onGlobalMessage → runIfPresent → run)
+  // + React reconciler + global-error boundary frames. No first-party
+  // `apps/web/src/…` frame, so the negative guard does not fire.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the inpage.js "No error message" Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: mechanism
+  // `auto.browser.global_handlers.onerror` (UNCAUGHT global error), request URL
+  // `https://kortix.com/auth?expired=true&returnUrl=…`, Chrome 150 / Windows 10.
+  // The wallet-extension inpage.js frames + React reconciler + global-error
+  // boundary — NO first-party `apps/web/src/…` frame.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
+      },
+      exception: {
+        values: [
+          {
+            value: 'No error message',
+            stacktrace: { frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the inpage.js "No error message" noise from a filename alone (window.onerror)', () => {
+  // The runtime gate (window.onerror) sees the `filename` directly — the throw
+  // originates from the injected script source.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      filename: 'app:///inpage.js',
+    }),
+    true,
+  )
+})
+
+test('classifies the inpage.js "No error message" noise from a chrome-extension:// frame', () => {
+  // Some wallet extensions inject under a chrome-extension:// origin instead of
+  // app:///inpage.js — the extension-source fallback anchor must also match.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: [{ filename: 'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the "No error message" event when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw an error with
+  // no message that happens to have an inpage.js frame in the stack (e.g. a
+  // first-party handler that wraps the extension provider) → still actionable;
+  // the negative guard MUST preserve it so the call site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/wallet/wallet-provider.ts', function: 'handleProvider' }],
+    [
+      { filename: 'app:///inpage.js', function: 'onGlobalMessage' },
+      { filename: 'app:///apps/web/src/features/auth/use-auth.ts', function: 'login' },
+    ],
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message: 'No error message',
+        frames,
+      }),
+      false,
+      `expected first-party "No error message" event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: 'No error message', stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party "No error message" event from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the "No error message" event with NO inpage.js frame (conservative — keep reporting)', () => {
+  // No `app:///inpage.js` frame → can't confirm extension origin; a real
+  // first-party error with no message (e.g. `Promise.reject()`) would produce
+  // the same `"No error message"` placeholder, so keep reporting.
+  // NOTE: `shouldIgnoreSentryBrowserNoise` may still suppress the event via
+  // the sibling `isEmptyMessageUnresolvedBrowserChunkNoise` matcher if the
+  // frames are all browser-bundle sources (that's a separate noise class). The
+  // new inpage.js matcher itself must return false when no inpage.js frame is
+  // present.
+  for (const frames of [
+    [],
+    [{ filename: 'app:///_next/static/chunks/app.js', function: '?' }],
+    [{ filename: 'apps/web/src/lib/foo.ts', function: 'bar' }],
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message: 'No error message',
+        frames,
+      }),
+      false,
+      `expected "No error message" event from ${JSON.stringify(frames)} (no inpage.js frame) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-No-error-message value even with inpage.js frames', () => {
+  // Only the EXACT `"No error message"` placeholder is noise — a real error
+  // message (e.g. a real TypeError) from the same inpage.js source is a
+  // different class and must keep reporting (or be handled by
+  // `isInpageWalletStreamNoise` if it matches the stream patterns).
+  for (const message of [
+    'Something went wrong',
+    "Cannot read properties of undefined (reading 'foo')",
+    'No error message: extra context',
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message,
+        frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" with inpage.js frames to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES } }],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" with inpage.js frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the "No error message" event that is already handled by isEmptyMessageUnresolvedBrowserChunkNoise (no inpage.js frame)', () => {
+  // The sibling `isEmptyMessageUnresolvedBrowserChunkNoise` matcher handles
+  // the "No error message" + ALL-browser-bundle-frame class (patterns
+  // 141dcca3… / 19ee7c2f…). The new inpage.js matcher must NOT overlap with it:
+  // an event with ONLY browser-bundle frames (no inpage.js frame) is not
+  // matched by the new matcher and stays in the original classifier.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-30a0e6805d268c02.js', function: 'iX' },
+        { filename: 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js', function: '?' },
+      ],
+    }),
+    false,
+  )
 })
 
 test('does NOT suppress a same-worded message from a near-miss injected filename', () => {

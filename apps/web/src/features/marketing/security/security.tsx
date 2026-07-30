@@ -7,9 +7,15 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
-import { Heatmap } from '@paper-design/shaders-react';
 import { ShaderSafe } from '@/components/ui/shader-safe';
-import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
+import { Heatmap } from '@paper-design/shaders-react';
+import {
+  EyeIcon as Eye,
+  KeyIcon as Key,
+  StackSimpleIcon as Layers2,
+  HardDrivesIcon as Server,
+  ShieldIcon as Shield,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';

@@ -7,7 +7,6 @@ description: >-
   Slides and Google Docs. Never writes to Postgres or HubSpot, and never
   shares or presents anything.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

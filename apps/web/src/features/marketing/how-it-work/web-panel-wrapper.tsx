@@ -2,27 +2,34 @@
 
 import type { PageId } from '@/components/home/interactive-demo/types';
 import { cn } from '@/lib/utils';
-import { Blocks, Brain, GitPullRequest, MessageSquare } from 'lucide-react';
+import {
+  SquaresFourIcon as Blocks,
+  BrainIcon as Brain,
+  GitPullRequestIcon as GitPullRequest,
+  SparkleIcon as HiMiniSparkles,
+  ShieldIcon as MdShield,
+  ChatIcon as MessageSquare,
+  ChatCircleDotsIcon as PiChatCircleDotsFill,
+  CpuIcon as RiCpuLine,
+  FolderIcon as RiFolder3Fill,
+  RobotIcon as RiRobot3Fill,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 
 type MarketingPanelTab = PageId | 'review' | 'memory';
 
 const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNode }> = {
   home: { label: 'Home', icon: null },
-  projects: { label: 'Projects', icon: <RiFolder3Fill className="size-4" /> },
-  chat: { label: 'Chat', icon: <PiChatCircleDotsFill className="size-4" /> },
-  agents: { label: 'Agents', icon: <RiRobot3Fill className="size-4" /> },
-  skills: { label: 'Skills', icon: <HiMiniSparkles className="size-4" /> },
+  projects: { label: 'Projects', icon: <RiFolder3Fill weight="fill" className="size-4" /> },
+  chat: { label: 'Chat', icon: <PiChatCircleDotsFill weight="fill" className="size-4" /> },
+  agents: { label: 'Agents', icon: <RiRobot3Fill weight="fill" className="size-4" /> },
+  skills: { label: 'Skills', icon: <HiMiniSparkles weight="fill" className="size-4" /> },
   integrations: { label: 'Integrations', icon: <Blocks className="size-4" /> },
   models: { label: 'Models', icon: <RiCpuLine className="size-4" /> },
   scheduling: { label: 'Scheduling', icon: null },
   channels: { label: 'Channels', icon: <MessageSquare className="size-4" /> },
-  security: { label: 'Security', icon: <MdShield className="size-4" /> },
+  security: { label: 'Security', icon: <MdShield weight="fill" className="size-4" /> },
   review: { label: 'Review', icon: <GitPullRequest className="size-4" /> },
   memory: { label: 'Memory', icon: <Brain className="size-4" /> },
 };

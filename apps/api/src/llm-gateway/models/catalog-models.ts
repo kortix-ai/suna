@@ -9,7 +9,7 @@ import {
 import { resolveCatalogUpstream } from './provider-registry';
 import { codexModelIds } from './codex-models';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { RUNTIME_MANAGED_MODELS } from './managed-models';
+import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The real upstream provider id for the ChatGPT-subscription lineup served
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
@@ -180,12 +180,14 @@ export const catalogModelForWireModel = (
 
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  // RUNTIME_MANAGED_MODELS is empty when KORTIX_MANAGED_PROVIDER_ENABLED is off.
-  if (RUNTIME_MANAGED_MODELS.length === 0) return out;
+  // SERVED_MANAGED_MODELS is empty when KORTIX_MANAGED_PROVIDER_ENABLED is off,
+  // and drops any configured model whose transport credential is absent — the
+  // catalog must never advertise a model that request-time resolution refuses.
+  if (SERVED_MANAGED_MODELS.length === 0) return out;
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
   // on each model. All current managed models support reasoning/tools/temperature.
-  for (const m of RUNTIME_MANAGED_MODELS) {
+  for (const m of SERVED_MANAGED_MODELS) {
     const cost = m.pricing
       ? {
           input: m.pricing.inputPerMillion,

@@ -6,7 +6,6 @@ description: >-
   escalates anything it can't match within tolerance to a human instead of
   force-fitting it.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

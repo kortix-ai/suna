@@ -3,6 +3,7 @@ import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
+import { IconProvider } from '@/components/ui/icon-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -14,15 +15,12 @@ import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { siteMetadata } from '@/lib/site-metadata';
-import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Suspense, lazy } from 'react';
 import { Toaster } from 'sonner';
-import { roobert } from './(system)/fonts/roobert';
-import { roobertMono } from './(system)/fonts/roobert-mono';
 import './globals.css';
 import { ReactQueryProvider } from './react-query-provider';
 
@@ -172,7 +170,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       lang="en"
       translate="no"
       suppressHydrationWarning
-      className={cn('notranslate', roobert.variable, roobertMono.variable)}
+      className="notranslate"
     >
       <head>
         {/* Runtime config — evaluated at request time via connection() above.
@@ -186,7 +184,18 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
 
-        {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
+        {/* Roobert is one variable font covering every weight, the mono and
+            SemiMono axis stops, and italics (see the @font-face block in
+            globals.css). next/font/local no longer manages it, so preload
+            explicitly — without this the browser only discovers the font after
+            CSS parses and text flashes in the fallback. */}
+        <link
+          rel="preload"
+          href="/fonts/roobert/RoobertCollectionVF.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
 
         {/* Prevent browser auto-translate (Google Translate, Chrome, etc.) from
             mutating the DOM. When translators modify text nodes, React's reconciler
@@ -327,7 +336,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delayDuration={300}>
+          <IconProvider>
+            <TooltipProvider delayDuration={300}>
             <AuthProvider>
               <I18nProvider>
                 <BrowserNoiseGuard />
@@ -385,7 +395,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 </Suspense>
               </I18nProvider>
             </AuthProvider>
-          </TooltipProvider>
+            </TooltipProvider>
+          </IconProvider>
         </ThemeProvider>
         <div id="portal" className="fixed left-0 top-0 z-40" />
       </body>

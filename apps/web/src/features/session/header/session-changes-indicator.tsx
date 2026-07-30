@@ -12,7 +12,7 @@ import {
   useSessionBaseRef,
 } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import { FileDiff } from 'lucide-react';
+import { GitDiffIcon as FileDiff } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';

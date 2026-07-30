@@ -7,7 +7,6 @@ description: >-
   tracking issue, and posts a summary to {{alert_channel}}. Never merges its
   own PR.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

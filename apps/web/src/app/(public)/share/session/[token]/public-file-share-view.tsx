@@ -1,7 +1,11 @@
 'use client';
 
+import {
+  DownloadIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, ExternalLink, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo } from 'react';
 

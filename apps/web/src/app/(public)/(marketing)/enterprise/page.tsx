@@ -8,12 +8,18 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { cn } from '@/lib/utils';
-import { Box, Building2, GitBranch, KeyRound, Server } from 'lucide-react';
+import {
+  PackageIcon as Box,
+  BuildingsIcon as Building2,
+  UsersIcon as FaUsers,
+  GitBranchIcon as GitBranch,
+  KeyIcon as KeyRound,
+  ShieldIcon as MdShield,
+  HardDrivesIcon as Server,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { MdShield } from 'react-icons/md';
 
 const DIFFERENTIATORS = [
   {
@@ -161,7 +167,7 @@ const EnterprisePage = () => {
             <div className="border-border bg-card grid overflow-hidden rounded-sm border lg:grid-cols-12">
               <article className="border-border group border-b p-8 transition-colors duration-200 lg:col-span-7 lg:border-r">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <MdShield className="size-4" />
+                  <MdShield weight="fill" className="size-4" />
                   {t('moatEyebrow')}
                 </div>
                 <p className="text-foreground mt-5 max-w-2xl text-2xl leading-tight font-medium tracking-tight text-balance">
@@ -251,7 +257,7 @@ const EnterprisePage = () => {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <FaUsers className="size-4" />
+                  <FaUsers weight="fill" className="size-4" />
                   {t('identityAccessEyebrow')}
                 </div>
                 <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">

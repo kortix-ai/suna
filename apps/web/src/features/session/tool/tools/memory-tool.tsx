@@ -19,9 +19,13 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { Brain, ChevronRight, Trash2 } from 'lucide-react';
+import {
+  BrainIcon as Brain,
+  CaretRightIcon as ChevronRight,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { type ReactNode, useContext, useMemo, } from 'react';
+import { type ReactNode, useContext, useMemo } from 'react';
 
 import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
 

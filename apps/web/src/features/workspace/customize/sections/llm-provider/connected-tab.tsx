@@ -11,8 +11,12 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deleteProjectSecret } from '@kortix/sdk';
+import {
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  PlugsIcon as Unplug,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
@@ -183,7 +187,9 @@ export function ConnectedTab({
           confirmProvider ? (
             <span className="text-xs">
               Remove <span className="text-foreground font-medium">{confirmProvider.label}</span>
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line366JsxTextThisDeletes',
+              )}{' '}
               {confirmProvider.envVars.length === 1 ? (
                 <>
                   the{' '}

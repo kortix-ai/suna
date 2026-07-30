@@ -6,6 +6,8 @@
 // sections they can't read. Pure + exported so the gating is unit-tested
 // independent of git/DB (the handler just supplies the resolved booleans).
 
+import { restrictedManifestVerdict } from './manifest-verdict';
+
 export interface DetailCaps {
   /** project.file.read — the repo file list. */
   canFiles: boolean;
@@ -40,7 +42,18 @@ export function applyDetailCapabilityFilter<C extends object, F>(
     ...(caps.canCommands ? {} : { commands: [] }),
     ...(caps.canCustomize
       ? {}
-      : { manifest_raw: null, manifest: {}, env: [], open_code_raw: null, open_code_default_agent: null }),
+      : {
+          manifest_raw: null,
+          manifest: {},
+          env: [],
+          open_code_raw: null,
+          open_code_default_agent: null,
+          // The verdict is derived FROM the raw manifest, so it has to be
+          // blanked with it — otherwise a caller who cannot read the config
+          // still learns its version, and worse, is shown an upgrade prompt
+          // for a manifest they have no permission to change.
+          manifest_version: restrictedManifestVerdict(),
+        }),
   } as C;
   return {
     config: gatedConfig,

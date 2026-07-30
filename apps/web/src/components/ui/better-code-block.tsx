@@ -5,7 +5,7 @@ import { useCopy } from '@/hooks/use-copy';
 import { cleanCode } from '@/lib/codeCleaner';
 import { getLanguageFromFilename, useHighlightedCode } from '@/lib/shiki';
 import { cn } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import React from 'react';
 import { MessageMarkdown } from '../better-markdown/message-markdown';
 import { Button } from './button';

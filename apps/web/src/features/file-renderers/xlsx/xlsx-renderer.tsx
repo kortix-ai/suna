@@ -3,7 +3,10 @@
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
-import { FileSpreadsheet, RefreshCw } from 'lucide-react';
+import {
+  FileXlsIcon as FileSpreadsheet,
+  ArrowsClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useState } from 'react';
 import { XlsxViewerPreview } from './xlsx-viewer';

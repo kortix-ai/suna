@@ -41,27 +41,33 @@ import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import {
+  CalendarDotsIcon as CalendarClock,
+  DotsThreeIcon as HiDotsHorizontal,
+  ListIcon as List,
+  EnvelopeIcon as Mail,
+  ChatsIcon as MessagesSquare,
+  UsersIcon as UsersSolid,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarClock, List, Mail, MessagesSquare, Webhook, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { HiDotsHorizontal } from 'react-icons/hi';
-import { IconType } from 'react-icons/lib';
+import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
-const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiType | IconType> = {
+const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className?: string }>> = {
   all: List,
   mine: MessagesSquare,
   shared: UsersSolid,
@@ -122,6 +128,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   // Optimistic + shared with every other entry point (see useNewProjectSession).
   // The timing marks + mobile-drawer close fire on the synchronous navigation.
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
   const handleNewSession = useCallback(() => {
     markSessionClick();
     newSession({
@@ -180,6 +187,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={handleNewSession}
+                  // The guard already makes a second activation a no-op; the
+                  // disabled state is what makes that visible instead of
+                  // looking like a dead button worth hammering.
+                  disabled={creatingSession}
+                  aria-busy={creatingSession}
                   size="md"
                   className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
                 >

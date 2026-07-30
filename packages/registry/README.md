@@ -64,10 +64,8 @@ drives categorization, icons, and validation.
 ### Target aliases
 
 A file's `target` says where it lands. Aliases expand against the consuming
-project's canonical OpenCode layout. Version 3 projects Kortix-managed system
-skills into the selected harness-native discovery directory. Optional
-marketplace skills still land at their declared target. A harness-specific
-optional skill must target that harness's native config directory:
+project's canonical OpenCode layout. Kortix-managed system skills and optional
+marketplace skills land in the OpenCode config directory:
 
 | alias | expands to |
 | --- | --- |

@@ -5,11 +5,19 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
-import { AlertCircle, ChevronDown, History, Layers, RefreshCw, X } from 'lucide-react';
+import type { ProjectCommit } from '@kortix/sdk';
+import {
+  WarningCircleIcon as AlertCircle,
+  CaretDownIcon as ChevronDown,
+  ClockCounterClockwiseIcon as History,
+  StackIcon as Layers,
+  ArrowsClockwiseIcon as RefreshCw,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useCommits } from '../hooks/use-commits';
@@ -185,7 +193,11 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             onClick={() => refetch()}
             title="Refresh"
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+            {isFetching ? (
+              <Loading className="h-3.5 w-3.5" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
           </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close">
             <X className="h-3.5 w-3.5" />

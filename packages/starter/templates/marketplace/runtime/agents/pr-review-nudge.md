@@ -6,7 +6,6 @@ description: >-
   nudges the author or reviewer in {{alert_channel}} with what's blocking.
   Never merges, closes, or approves a PR.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

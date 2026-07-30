@@ -14,7 +14,11 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { extractReadableHtml } from '@/features/session/tool/tool-renderers-sanitization';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
-import { ChevronRight, ExternalLink, Globe } from 'lucide-react';
+import {
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 

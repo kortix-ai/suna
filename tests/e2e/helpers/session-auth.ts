@@ -27,6 +27,25 @@ function envFiles(options: AuthOptions): string[] {
   return options.envFiles ?? ['apps/web/.env', 'apps/api/.env'];
 }
 
+function authCookieName(options: AuthOptions): string {
+  const files = envFiles(options);
+  const appUrl =
+    optionalEnvValue('KORTIX_PUBLIC_APP_URL', ...files)
+    || optionalEnvValue('NEXT_PUBLIC_APP_URL', ...files)
+    || optionalEnvValue('NEXT_PUBLIC_URL', ...files)
+    || optionalEnvValue('PUBLIC_URL', ...files);
+  if (!appUrl) return 'sb-kortix-auth-token';
+  try {
+    const url = new URL(appUrl);
+    if (['localhost', '127.0.0.1'].includes(url.hostname) && url.port) {
+      return `sb-kortix-auth-token-${url.port}`;
+    }
+  } catch {
+    // Match the application fallback for invalid or missing app URLs.
+  }
+  return 'sb-kortix-auth-token';
+}
+
 function trustedAuthHeader(value: string, name: string): string {
   if (!/^[A-Za-z0-9._~+/=-]+$/.test(value)) {
     throw new Error(`${name} contains characters that are not valid in an auth header`);
@@ -39,21 +58,29 @@ export async function createAuthUser(email: string, options: AuthOptions): Promi
     requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', ...envFiles(options)),
     'SUPABASE_SERVICE_ROLE_KEY',
   );
-  const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password: options.password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        password: options.password,
+        email_confirm: true,
+      }),
+    });
+    if (response.status === 504 && attempt < 6) {
+      await response.text();
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      continue;
+    }
+    const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
+    return body.user ?? body;
+  }
+  throw new Error('unreachable');
 }
 
 export async function deleteAuthUser(
@@ -155,12 +182,23 @@ export async function installBrowserSession(
   }
   await page.locator('input[name="email"]').fill(session.user.email || '');
   const continueButton = page.getByRole('button', { name: /^Continue$/i });
-  if (await continueButton.isVisible().catch(() => false)) {
-    await continueButton.click();
-  }
   const usePassword = page.getByRole('button', { name: /Use password instead/i });
   const passwordInput = page.locator('input[name="password"]');
-  await expect(usePassword.or(passwordInput)).toBeVisible({ timeout: 15_000 });
+  if (await continueButton.isVisible().catch(() => false)) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await expect(continueButton).toBeEnabled({ timeout: 60_000 });
+      await continueButton.click({ timeout: 60_000 });
+      if (
+        await usePassword
+          .or(passwordInput)
+          .isVisible({ timeout: 20_000 })
+          .catch(() => false)
+      ) {
+        break;
+      }
+    }
+  }
+  await expect(usePassword.or(passwordInput)).toBeVisible({ timeout: 45_000 });
   if (await usePassword.isVisible().catch(() => false)) {
     await usePassword.click();
   }
@@ -171,5 +209,49 @@ export async function installBrowserSession(
     .getByRole('button', { name: /^(Sign in|Continue)$/i })
     .click();
   await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(returnUrl, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+}
+
+/**
+ * Install an already-minted Supabase password-grant session into the browser.
+ *
+ * Use this when the test target is an authenticated product flow rather than
+ * the magic-link/password auth UI. The cookie format matches @supabase/ssr.
+ */
+export async function installBrowserSessionDirect(
+  page: Page,
+  session: AuthSession,
+  returnUrl: string,
+  options: AuthOptions,
+): Promise<void> {
+  await page.context().clearCookies();
+  const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (vercelBypass) {
+    await page.context().setExtraHTTPHeaders({
+      'x-vercel-protection-bypass': vercelBypass,
+      'x-vercel-set-bypass-cookie': 'true',
+    });
+  }
+  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  if (vercelBypass) {
+    await page.context().setExtraHTTPHeaders({});
+  }
+
+  const origin = new URL(page.url()).origin;
+  const encoded = `base64-${Buffer.from(JSON.stringify(session), 'utf8').toString('base64url')}`;
+  const originUrl = new URL(origin);
+  const key =
+    ['localhost', '127.0.0.1'].includes(originUrl.hostname) && originUrl.port
+      ? `sb-kortix-auth-token-${originUrl.port}`
+      : authCookieName(options);
+  const chunks = encoded.match(/.{1,3180}/g) ?? [];
+  await page.context().addCookies(
+    chunks.map((value, index) => ({
+      name: chunks.length === 1 ? key : `${key}.${index}`,
+      value,
+      url: origin,
+      sameSite: 'Lax' as const,
+    })),
+  );
+  await page.goto(returnUrl, { waitUntil: 'domcontentloaded', timeout: 180_000 });
 }

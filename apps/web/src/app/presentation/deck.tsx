@@ -17,7 +17,13 @@ import { useTranslations } from 'next-intl';
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Grid2x2, Maximize, X } from 'lucide-react';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  GridFourIcon as Grid2x2,
+  CornersOutIcon as Maximize,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';

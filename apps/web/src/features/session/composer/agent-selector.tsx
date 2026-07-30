@@ -14,21 +14,21 @@ import {
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
-import type { RuntimeAgent } from '@kortix/sdk/react';
-import { Check, ChevronDown } from 'lucide-react';
-import { AgentHarnessIcon } from './agent-harness-icon';
+import type { Agent } from '@kortix/sdk/react';
+import { CaretDownIcon, Check } from '@phosphor-icons/react';
 
 // ============================================================================
 // Agent Selector
 // ============================================================================
 
 export function AgentSelector({
+  projectId,
   agents,
   selectedAgent,
   onSelect,
   disabled = false,
 }: {
-  agents: RuntimeAgent[];
+  agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
@@ -116,7 +116,7 @@ export function AgentSelector({
             )}
           >
             <span className="max-w-[100px] truncate">{displayName}</span>
-            <ChevronDown
+            <CaretDownIcon
               className={cn(
                 'size-3 opacity-50 transition-transform duration-200',
                 open && 'rotate-180',
@@ -154,7 +154,6 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <AgentHarnessIcon harness={agent.harness} />
                     <div className="min-w-0 flex-1 py-0.5">
                       <div
                         className={cn(

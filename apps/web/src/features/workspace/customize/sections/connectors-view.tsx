@@ -1,34 +1,34 @@
 'use client';
 
 import { useCustomizeStore } from '@/stores/customize-store';
+import {
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  KeyIcon as KeyRound,
+  LockIcon as Lock,
+  type Icon as LucideIcon,
+  EnvelopeIcon as Mail,
+  ChatIcon as MessageSquare,
+  MonitorIcon as Monitor,
+  PencilSimpleIcon,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  ArrowsClockwiseIcon as RefreshCw,
+  MagnifyingGlassIcon as Search,
+  ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+  XIcon as X,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Boxes,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  Globe,
-  KeyRound,
-  Lock,
-  type LucideIcon,
-  Mail,
-  MessageSquare,
-  Monitor,
-  Pencil,
-  Plug,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
-  Users,
-  X,
-  Zap,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -1488,7 +1488,7 @@ function ConnectorDetail({
                     aria-label="Rename"
                     className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <PencilSimpleIcon className="h-3.5 w-3.5" />
                   </button>
                 </Hint>
               )}
@@ -4096,7 +4096,7 @@ function AppCatalogue({
         description="Create a connector profile for this app. The profile name and slug identify it in sessions and project configuration."
         initialName={selectedApp?.name ?? ''}
         initialSlug={
-          selectedApp ? proposeConnectorProfileSlug(selectedApp.slug, existingSlugs) : ''
+          selectedApp ? proposeConnectorProfileSlug(selectedApp.name, existingSlugs) : ''
         }
         existingSlugs={existingSlugs}
         pending={addApp.isPending}

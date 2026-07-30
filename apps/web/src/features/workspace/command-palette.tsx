@@ -24,7 +24,6 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -32,9 +31,6 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { systemReload } from '@kortix/sdk';
 import {
   type ExperimentalFeatureKey,
   type KortixAccount,
@@ -44,25 +40,29 @@ import {
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  systemReload,
 } from '@kortix/sdk';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import {
-  ArrowDown,
-  ArrowUp,
-  Bot,
-  Check,
-  ChevronRight,
-  CornerDownLeft,
-  Cpu,
-  FileText,
-  FolderGit2,
-  Globe,
-  Hash,
-  MessageCircle,
-  PanelLeftClose,
-  PanelLeftIcon,
-  Search,
-} from 'lucide-react';
+  ArrowDownIcon as ArrowDown,
+  ArrowUpIcon as ArrowUp,
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  ArrowElbowDownLeftIcon as CornerDownLeft,
+  CpuIcon as Cpu,
+  FileTextIcon as FileText,
+  GitBranchIcon as FolderGit2,
+  GlobeIcon as Globe,
+  HashIcon as Hash,
+  ChatCircleIcon as MessageCircle,
+  SidebarSimpleIcon as PanelLeftClose,
+  SidebarSimpleIcon as PanelLeftIcon,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -76,12 +76,6 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@kortix/sdk/react';
-import { useCreatePty } from '@kortix/sdk/react';
-import {
-  useCreateRuntimeSession,
-  useRuntimeMessages,
-} from '@kortix/sdk/react';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -99,24 +93,23 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
+import {
+  useCreatePty,
+  useCreateRuntimeSession,
+  useModelStore,
+  useRuntimeMessages,
+} from '@kortix/sdk/react';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
-import { UsersSolid } from '@mynaui/icons-react';
+import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
 type PalettePage =
-  | 'root'
-  | 'agents'
-  | 'models'
-  | 'messages'
-  | 'projects'
-  | 'accounts'
-  | 'sessions'
-  | 'files';
+  'root' | 'agents' | 'models' | 'messages' | 'projects' | 'accounts' | 'sessions' | 'files';
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -617,7 +610,11 @@ export function CommandPalette() {
       .filter((m) => {
         if (
           !q &&
-          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
+          !modelStore.isVisible({
+            providerID: m.providerID,
+            modelID: m.modelID,
+            provider: m.provider,
+          })
         )
           return false;
         return (
@@ -1922,7 +1919,10 @@ export function CommandPalette() {
                         value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
                         onSelect={() => handleSelectAccount(account)}
                       >
-                        <UsersSolid className="text-muted-foreground size-4 shrink-0" />
+                        <UsersSolid
+                          weight="fill"
+                          className="text-muted-foreground size-4 shrink-0"
+                        />
                         <span className="flex-1 truncate">{label}</span>
                         {account.account_id === activeAccountId && (
                           <Check className="text-primary h-3.5 w-3.5 shrink-0" />
@@ -1933,7 +1933,7 @@ export function CommandPalette() {
                 </CommandGroup>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <UsersSolid className="text-muted-foreground size-5" />
+                  <UsersSolid weight="fill" className="text-muted-foreground size-5" />
                   <span className="text-muted-foreground/60 text-sm">
                     {query ? `No accounts matching "${query}"` : 'No accounts'}
                   </span>

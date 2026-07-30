@@ -18,7 +18,7 @@
 import { Badge } from '@/components/ui/badge';
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import { cn } from '@/lib/utils';
-import { FileText, Globe } from 'lucide-react';
+import { FileTextIcon as FileText, GlobeIcon as Globe } from '@phosphor-icons/react';
 import type { ContextItem } from '../shared/derive-panels';
 import type { StepFamily } from '../shared/narration';
 import { familyForTool } from '../shared/narration';
@@ -77,7 +77,8 @@ export function ContextCard({
   // family glyph it wears in the Progress stepper — one tool, one icon, both
   // places. A tool badge's detail shows what it actually did.
   for (const tool of tools) {
-    const family: StepFamily = (familyForTool(tool.parts?.[0]?.tool ?? '') as StepFamily) ?? 'other';
+    const family: StepFamily =
+      (familyForTool(tool.parts?.[0]?.tool ?? '') as StepFamily) ?? 'other';
     // `deriveContext` skips *fully* errored calls, but this chip aggregates ALL
     // calls to that tool — one failed call among several is exactly what a
     // status="done" badge would hide (W7).
@@ -109,9 +110,7 @@ export function ContextCard({
           <button
             key={g.id}
             type="button"
-            onClick={() =>
-              onOpenDetail({ key: g.id, title: g.label, icon: g.icon, body: g.body })
-            }
+            onClick={() => onOpenDetail({ key: g.id, title: g.label, icon: g.icon, body: g.body })}
             className="border-border bg-popover hover:bg-muted flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border py-1 pr-2 pl-2.5 transition-[background-color,transform] active:scale-[0.98]"
           >
             {g.icon}

@@ -4,9 +4,6 @@ import { randomUUID } from 'node:crypto';
 
 import { createScopedKortix } from '@kortix/sdk/server';
 
-import { createAcpClient } from '../../../packages/sdk/src/core/acp/client';
-import { createAcpSessionController } from '../../../packages/sdk/src/core/acp/session-controller';
-import { buildAcpBridgeEndpoint } from '../../../packages/sdk/src/core/session/runtime-transport';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -27,7 +24,6 @@ let user: AuthUser | null = null;
 let auth: AuthSession | null = null;
 let projectId = '';
 let sessionId = '';
-let acpController: ReturnType<typeof createAcpSessionController> | null = null;
 
 function log(label: string, detail: string): void {
   console.log(`[session-rewind] ${label}: ${detail}`);
@@ -53,11 +49,8 @@ async function waitFor<T>(
   return value;
 }
 
-async function waitForReady(
-  token: string,
-  expectedTransport: 'acp' | 'rest',
-): Promise<{
-  runtime_transport: 'acp' | 'rest';
+async function waitForReady(token: string): Promise<{
+  runtime_transport: 'rest';
   opencode_session_id: string;
   sandbox: { external_id: string; sandbox_id: string; status: string };
 }> {
@@ -71,11 +64,11 @@ async function waitForReady(
       ),
     (value) =>
       value.stage === 'ready' &&
-      value.runtime_transport === expectedTransport &&
+      value.runtime_transport === 'rest' &&
       value.sandbox?.status === 'active' &&
       Boolean(value.sandbox?.external_id) &&
       Boolean(value.opencode_session_id),
-    `${expectedTransport} session readiness`,
+    'REST session readiness',
     12 * 60_000,
   );
 }
@@ -154,10 +147,6 @@ async function main(): Promise<void> {
       },
     },
   });
-  await api(token, 'PATCH', `/projects/${projectId}/experimental`, {
-    feature: 'acp_runtime',
-    enabled: true,
-  });
   const session = await api<{ session_id: string }>(
     token,
     'POST',
@@ -170,18 +159,9 @@ async function main(): Promise<void> {
   );
   sessionId = session.session_id;
 
-  const acpReady = await waitForReady(token, 'acp');
-  const canonicalSessionId = acpReady.opencode_session_id;
-  const runtimeUrl = `${apiBase}/p/${acpReady.sandbox.external_id}/8000`;
-  const acpClient = createAcpClient({
-    endpoint: buildAcpBridgeEndpoint(runtimeUrl, canonicalSessionId),
-    fetch: authorizedFetch(token),
-  });
-  acpController = createAcpSessionController({
-    sessionId: canonicalSessionId,
-    client: acpClient,
-  });
-  await acpController.connect();
+  const restReady = await waitForReady(token);
+  const canonicalSessionId = restReady.opencode_session_id;
+  const runtimeUrl = `${apiBase}/p/${restReady.sandbox.external_id}/8000`;
 
   const kortix = createScopedKortix({
     backendUrl: apiBase,
@@ -196,117 +176,6 @@ async function main(): Promise<void> {
       `${path}=${expected}`,
     );
 
-  const acpOne = 'ACP_REWIND_ONE';
-  const acpTwo = 'ACP_REWIND_TWO';
-  const acpThree = 'ACP_REWIND_REPLACEMENT';
-  const acpPath = '/workspace/acp-rewind-proof.txt';
-  await acpController.send(
-    [
-      {
-        type: 'text',
-        text: `Use bash to write exactly ${acpOne} to ${acpPath}. Then reply exactly ACP_ONE_DONE.`,
-      },
-    ],
-    { model },
-  );
-  await waitForFile(acpPath, acpOne);
-  await acpController.send(
-    [
-      {
-        type: 'text',
-        text: `Use bash to overwrite ${acpPath} with exactly ${acpTwo}. Then reply exactly ACP_TWO_DONE.`,
-      },
-    ],
-    { model },
-  );
-  await waitForFile(acpPath, acpTwo);
-  await waitFor(
-    async () => acpController!.getSnapshot(),
-    (snapshot) => !snapshot.sending && snapshot.projection.status.type === 'idle',
-    'ACP prompt settlement',
-  );
-  const acpSecond = [...acpController.getSnapshot().projection.messages]
-    .reverse()
-    .find(
-      (message) =>
-        message.info.role === 'user' && messageText(message).includes('ACP_TWO_DONE'),
-    );
-  assert(acpSecond, 'ACP second user message was not projected');
-
-  await acpController.rewind(acpSecond.info.id);
-  const canonicalAcpBoundary = acpController.getSnapshot().rewind?.messageId;
-  assert(canonicalAcpBoundary?.startsWith('msg_'), 'ACP rewind did not resolve a canonical id');
-  assert(
-    acpController.getSnapshot().projection.sessionId === canonicalSessionId,
-    'ACP rewind changed the canonical session',
-  );
-  assert(
-    !acpController
-      .getSnapshot()
-      .projection.messages.some((message) => messageText(message).includes('ACP_TWO_DONE')),
-    'ACP rewind did not truncate the projected transcript',
-  );
-  await waitForFile(acpPath, acpOne);
-
-  await acpController.restoreRewind();
-  assert(
-    acpController
-      .getSnapshot()
-      .projection.messages.some((message) => messageText(message).includes('ACP_TWO_DONE')),
-    'ACP restore did not restore the removed transcript',
-  );
-  await waitForFile(acpPath, acpTwo);
-
-  await acpController.rewind(canonicalAcpBoundary);
-  await acpController.send(
-    [
-      {
-        type: 'text',
-        text: `Use bash to overwrite ${acpPath} with exactly ${acpThree}. Then reply exactly ACP_REPLACEMENT_DONE.`,
-      },
-    ],
-    { model },
-  );
-  await waitForFile(acpPath, acpThree);
-  await waitFor(
-    async () => acpController!.getSnapshot(),
-    (snapshot) => !snapshot.sending && snapshot.projection.status.type === 'idle',
-    'ACP replacement settlement',
-  );
-  acpController.close();
-  acpController = createAcpSessionController({
-    sessionId: canonicalSessionId,
-    client: createAcpClient({
-      endpoint: buildAcpBridgeEndpoint(runtimeUrl, canonicalSessionId),
-      fetch: authorizedFetch(token),
-    }),
-  });
-  await acpController.connect();
-  const committedAcpText = acpController
-    .getSnapshot()
-    .projection.messages.map(messageText)
-    .join('\n');
-  assert(!committedAcpText.includes('ACP_TWO_DONE'), 'ACP replacement kept the removed path');
-  assert(
-    committedAcpText.includes('ACP_REPLACEMENT_DONE'),
-    'ACP replacement was not persisted',
-  );
-  log(
-    'ACP',
-    `same_session=${canonicalSessionId} rewind=${canonicalAcpBoundary} restore=true replacement=true file=${acpThree}`,
-  );
-
-  acpController.close();
-  acpController = null;
-  await api(token, 'PATCH', `/projects/${projectId}/experimental`, {
-    feature: 'acp_runtime',
-    enabled: false,
-  });
-  const restReady = await waitForReady(token, 'rest');
-  assert(
-    restReady.opencode_session_id === canonicalSessionId,
-    'REST switch changed the canonical OpenCode session',
-  );
   handle.setModel({ providerID: 'kortix', modelID: 'claude-sonnet-4.6' });
 
   const restOne = 'REST_REWIND_ONE';
@@ -371,7 +240,6 @@ async function main(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
-  acpController?.close();
   if (keepFixture) {
     log('fixture', `kept project=${projectId} session=${sessionId}`);
     return;

@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeftIcon as ArrowLeft } from '@/lib/icons/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -26,9 +26,9 @@ import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card'
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { resolveAuthor } from '@/lib/blog';
+import { siteMetadata } from '@/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
-import { siteMetadata } from '@/lib/site-metadata';
 
 // Render plain HTML elements so BlogProse owns all typography — no docs chrome.
 // Internal links route client-side; external links open safely in a new tab.
@@ -187,40 +187,40 @@ export default async function UseCasePage(props: PageProps) {
             </Link>
 
             <header className="mt-8">
-            {archetype && (
-              <div className="text-muted-foreground mb-4 flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                <KortixAsterisk index={0} parentClass="size-4" />
-                {archetype}
-              </div>
-            )}
-            <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
-              {data.title}
-            </h1>
-            {data.description && (
-              <p className="text-muted-foreground mt-5 text-lg leading-relaxed">
-                {data.description}
-              </p>
-            )}
-            {data.tags?.length > 1 && (
-              <div className="mt-6 flex flex-wrap gap-1.5">
-                {data.tags.slice(1).map((tag: string) => (
-                  <Badge key={tag} size="sm" variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <PostByline
-              author={author}
-              date={data.date}
-              readingTime={readingTime}
-              className="mt-8"
-            />
-            {templatesEnabled && data.template && (
-              <div className="mt-8">
-                <UseTemplateButton templateId={data.template} />
-              </div>
-            )}
+              {archetype && (
+                <div className="text-muted-foreground mb-4 flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
+                  <KortixAsterisk index={0} parentClass="size-4" />
+                  {archetype}
+                </div>
+              )}
+              <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+                {data.title}
+              </h1>
+              {data.description && (
+                <p className="text-muted-foreground mt-5 text-lg leading-relaxed">
+                  {data.description}
+                </p>
+              )}
+              {data.tags?.length > 1 && (
+                <div className="mt-6 flex flex-wrap gap-1.5">
+                  {data.tags.slice(1).map((tag: string) => (
+                    <Badge key={tag} size="sm" variant="secondary">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <PostByline
+                author={author}
+                date={data.date}
+                readingTime={readingTime}
+                className="mt-8"
+              />
+              {templatesEnabled && data.template && (
+                <div className="mt-8">
+                  <UseTemplateButton templateId={data.template} />
+                </div>
+              )}
             </header>
           </div>
         </div>
@@ -230,64 +230,64 @@ export default async function UseCasePage(props: PageProps) {
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="min-w-0">
             {post && (
-            <UseCaseCover
-              post={post}
-              className="border-border aspect-[16/9] w-full rounded-2xl border"
-            />
-          )}
-          <BlogProse className="mt-10">
-            <MDX components={mdxComponents} />
-          </BlogProse>
-        </div>
-
-        <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-8">
-            <div className="flex items-center gap-3">
-              <UserAvatar
-                email={author.email}
-                name={author.name}
-                avatarUrl={author.avatarUrl}
-                size="lg"
+              <UseCaseCover
+                post={post}
+                className="border-border aspect-[16/9] w-full rounded-2xl border"
               />
-              <div className="min-w-0">
-                <p className="text-foreground truncate text-sm font-medium">{author.name}</p>
-                {author.role && (
-                  <p className="text-muted-foreground truncate text-xs">{author.role}</p>
+            )}
+            <BlogProse className="mt-10">
+              <MDX components={mdxComponents} />
+            </BlogProse>
+          </div>
+
+          <aside className="hidden lg:block">
+            <div className="sticky top-24 space-y-8">
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  email={author.email}
+                  name={author.name}
+                  avatarUrl={author.avatarUrl}
+                  size="lg"
+                />
+                <div className="min-w-0">
+                  <p className="text-foreground truncate text-sm font-medium">{author.name}</p>
+                  {author.role && (
+                    <p className="text-muted-foreground truncate text-xs">{author.role}</p>
+                  )}
+                </div>
+              </div>
+
+              <UseCaseToc items={toc} />
+
+              <div className="border-border rounded-2xl border p-5">
+                {templatesEnabled && data.template ? (
+                  <>
+                    <p className="text-foreground text-sm font-medium">Run this yourself</p>
+                    <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                      Install this exact setup — agent, connectors, schedule, and guardrails — in a
+                      guided flow.
+                    </p>
+                    <UseTemplateButton
+                      templateId={data.template}
+                      className="mt-4 w-full"
+                      size="sm"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-foreground text-sm font-medium">Build your own</p>
+                    <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                      Put a workforce of AI agents to work on your own systems — connected, guarded,
+                      and reviewed.
+                    </p>
+                    <Button asChild size="sm" className="mt-4 w-full">
+                      <Link href="/">Get started</Link>
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
-
-            <UseCaseToc items={toc} />
-
-            <div className="border-border rounded-2xl border p-5">
-              {templatesEnabled && data.template ? (
-                <>
-                  <p className="text-foreground text-sm font-medium">Run this yourself</p>
-                  <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                    Install this exact setup — agent, connectors, schedule, and guardrails — in a
-                    guided flow.
-                  </p>
-                  <UseTemplateButton
-                    templateId={data.template}
-                    className="mt-4 w-full"
-                    size="sm"
-                  />
-                </>
-              ) : (
-                <>
-                  <p className="text-foreground text-sm font-medium">Build your own</p>
-                  <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                    Put a workforce of AI agents to work on your own systems — connected, guarded,
-                    and reviewed.
-                  </p>
-                  <Button asChild size="sm" className="mt-4 w-full">
-                    <Link href="/">Get started</Link>
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </aside>
+          </aside>
         </div>
       </div>
 

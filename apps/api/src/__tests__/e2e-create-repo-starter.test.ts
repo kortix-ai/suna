@@ -9,6 +9,7 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -28,8 +29,6 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // tools/plugins. Optional skills (agent-browser and knowledge-work skills) are
 // marketplace installable instead.
 const BASE_STARTER_PATHS = [
-  '.claude/CLAUDE.md',
-  '.codex/AGENTS.md',
   '.gitignore',
   '.kortix/memory/MEMORY.md',
   '.kortix/opencode/agents/kortix.md',
@@ -55,7 +54,6 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
   '.kortix/opencode/tools/web_search.ts',
-  '.pi/README.md',
   'kortix.yaml',
   'README.md',
 ];
@@ -162,6 +160,7 @@ mock.module('../projects/git', () => ({
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -972,9 +971,10 @@ describe('create-repo starter scaffold contract', () => {
           private: true,
           auth_source: 'app_installation',
         },
-        experimental: { acp_runtime: true },
       },
     });
+    // The default starter uses only the version 2 OpenCode REST contract.
+    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
     expect(gitConnectionRows).toContainEqual(
       expect.objectContaining({
         projectId: PROJECT_ID,
@@ -996,33 +996,6 @@ describe('create-repo starter scaffold contract', () => {
       userId: USER_ID,
       projectRole: 'manager',
       grantedBy: USER_ID,
-    });
-  });
-
-  test('keeps the deprecated multi-harness starter id as an ACP-enabled alias', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/create-repo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'harness-lab',
-        project_name: 'Harness Lab',
-        private: true,
-        starter_template: 'acp-multi-harness',
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    const committedPaths = commitCalls.map((call) => call.path);
-    expect(committedPaths).toContain('.claude/CLAUDE.md');
-    expect(committedPaths).toContain('.codex/AGENTS.md');
-    expect(committedPaths).toContain('.pi/README.md');
-    expect(commitCalls.find((call) => call.path === 'kortix.yaml')?.content).toContain(
-      'kortix_version: 3',
-    );
-    expect(insertedProject?.metadata).toMatchObject({
-      experimental: { acp_runtime: true },
     });
   });
 

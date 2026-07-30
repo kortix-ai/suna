@@ -7,20 +7,20 @@
 
 import type { StatusTone } from '@/components/ui/status';
 import {
-  ChatMessages,
-  CheckCircleSolid,
-  Command,
-  CreditCardSolid,
-  Database,
-  GitPullRequest,
-  Monitor,
-  QuestionCircleSolid,
-  Send,
-  ShieldCheckSolid,
-  SparklesSolid,
-  Terminal,
-} from '@mynaui/icons-react';
-import type { ComponentType } from 'react';
+  ChatsIcon as ChatMessages,
+  CheckCircleIcon as CheckCircleSolid,
+  CommandIcon as Command,
+  CreditCardIcon as CreditCardSolid,
+  DatabaseIcon as Database,
+  GitPullRequestIcon as GitPullRequest,
+  MonitorIcon as Monitor,
+  QuestionIcon as QuestionCircleSolid,
+  PaperPlaneTiltIcon as Send,
+  ShieldCheckIcon as ShieldCheckSolid,
+  SparkleIcon as SparklesSolid,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
+import { createElement, type ComponentType } from 'react';
 import type {
   ApprovalActionIcon,
   ReviewKind,
@@ -30,14 +30,19 @@ import type {
 } from './types';
 
 type IconCmp = ComponentType<{ className?: string }>;
+
+/** Wraps a fill-intent icon so the tinted-icon-tile pattern (see file header)
+ *  always renders it solid, without forcing `weight="fill"` on every icon
+ *  this module re-exports (`GitPullRequest`, `Monitor`, `Send`, … stay
+ *  outline). */
+function filled(IconComponent: IconCmp): IconCmp {
+  const Fillable = IconComponent as ComponentType<{ className?: string; weight?: 'fill' }>;
+  return function FilledIcon({ className }: { className?: string }) {
+    return createElement(Fillable, { className, weight: 'fill' });
+  };
+}
 type BadgeVariant =
-  | 'success'
-  | 'warning'
-  | 'destructive'
-  | 'secondary'
-  | 'muted'
-  | 'kortix'
-  | 'outline';
+  'success' | 'warning' | 'destructive' | 'secondary' | 'muted' | 'kortix' | 'outline';
 
 export const KIND_META: Record<
   ReviewKind,
@@ -52,21 +57,21 @@ export const KIND_META: Record<
   },
   approval: {
     label: 'Approval',
-    icon: ShieldCheckSolid,
+    icon: filled(ShieldCheckSolid),
     tile: 'bg-kortix-orange/15',
     iconColor: 'text-kortix-orange',
     bar: 'before:bg-kortix-orange',
   },
   output: {
     label: 'Output',
-    icon: SparklesSolid,
+    icon: filled(SparklesSolid),
     tile: 'bg-kortix-purple/15',
     iconColor: 'text-kortix-purple',
     bar: 'before:bg-kortix-purple',
   },
   decision: {
     label: 'Question',
-    icon: QuestionCircleSolid,
+    icon: filled(QuestionCircleSolid),
     tile: 'bg-kortix-yellow/15',
     // Darker than the tile hue — kortix-yellow (oklch L≈0.73) is the palette's
     // lowest-contrast token for a glyph on a light tint. See a11y note.
@@ -75,7 +80,7 @@ export const KIND_META: Record<
   },
   batch: {
     label: 'Finished',
-    icon: CheckCircleSolid,
+    icon: filled(CheckCircleSolid),
     tile: 'bg-kortix-green/15',
     iconColor: 'text-kortix-green',
     bar: 'before:bg-kortix-green',
@@ -113,12 +118,12 @@ export const STATUS_META: Record<ReviewStatus, { label: string; badge: BadgeVari
 export const SOURCE_META: Record<ReviewSource, { label: string; icon: IconCmp }> = {
   web: { label: 'Web', icon: Monitor },
   slack: { label: 'Slack', icon: ChatMessages },
-  agent: { label: 'Agent', icon: SparklesSolid },
+  agent: { label: 'Agent', icon: filled(SparklesSolid) },
 };
 
 export const APPROVAL_ACTION_ICON: Record<ApprovalActionIcon, IconCmp> = {
   email: Send,
-  charge: CreditCardSolid,
+  charge: filled(CreditCardSolid),
   command: Terminal,
   data: Database,
   generic: Command,

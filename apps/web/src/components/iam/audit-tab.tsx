@@ -17,8 +17,12 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import {
+  DownloadIcon as Download,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Download, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

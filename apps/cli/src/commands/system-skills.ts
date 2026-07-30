@@ -1,9 +1,9 @@
 /**
  * `kortix system-skills <subcommand>` — the Kortix SYSTEM skills, served live.
  *
- * This command makes the CLI self-sufficient in every supported harness:
- * OpenCode, Claude Code, Codex, and Pi. The binary plus a token can retrieve the
- * platform: no repo checkout, no baked image, no local clone. `list` names every
+ * This command makes an OpenCode session self-sufficient. The binary plus a
+ * token can retrieve the platform instructions with no repo checkout, baked
+ * image, or local clone. `list` names every
  * system skill, `get` prints one in full, and both read `/v1/skills` on the host
  * you are actually signed into, so the instructions always match the deployment.
  *

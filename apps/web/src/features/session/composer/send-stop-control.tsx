@@ -1,8 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowUp, Loader2 } from 'lucide-react';
+import { ArrowUpIcon as ArrowUp } from '@phosphor-icons/react';
 
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 
@@ -53,7 +54,7 @@ export function SendStopControl({
   if (isSending && !lockForQuestion) {
     return (
       <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-        <Loader2 className="size-4 animate-spin" />
+        <Loading className="size-4" />
       </Button>
     );
   }

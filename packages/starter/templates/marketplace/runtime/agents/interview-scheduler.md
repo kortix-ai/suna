@@ -7,7 +7,6 @@ description: >-
   {{coordinator_review_inbox}}. Never sends a proposal or invite and never
   makes a hiring decision; a coordinator confirms and sends everything.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

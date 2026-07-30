@@ -9,9 +9,7 @@ Status: Historical and superseded
 > session, connector authorization, scope, and cost contracts.
 
 > **Historical runtime scope.** This plan uses the published
-> `opencode_model` compatibility name and the v2 OpenCode REST path. The current
-> v3 runtime contract selects OpenCode, Claude Code, Codex, or Pi through
-> `agents.<name>.runtime`.
+> `opencode_model` compatibility name and the OpenCode REST path.
 
 ## 0. TL;DR
 

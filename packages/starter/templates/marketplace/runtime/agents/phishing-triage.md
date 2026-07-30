@@ -6,7 +6,6 @@ description: >-
   verdict with a recommended action to {{security_channel}}. It never blocks a
   sender, deletes mail, or takes any remediation action itself.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

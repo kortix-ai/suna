@@ -4,8 +4,9 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 
 import { getFileIcon } from '@/features/project-files';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { Folder, Loader2, MessageSquare } from 'lucide-react';
+import { FolderIcon as Folder, ChatIcon as MessageSquare } from '@phosphor-icons/react';
 
 import type { MentionItem } from './types';
 
@@ -169,7 +170,7 @@ export function MentionPopover({
         {/* Loading indicator while searching for files */}
         {loading && files.length === 0 && (
           <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loading className="size-3.5" />
             <span className="text-xs">
               {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
             </span>

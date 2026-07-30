@@ -1,33 +1,23 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { InlineGrepResults, parseGrepOutput } from '@/features/session/tool/shared/file-list';
 import {
   BasicTool,
   isErrorOutput,
-  ToolEmptyState,
-  ToolOutputFallback,
   partInput,
-  partStreamingInput,
   partOutput,
   partStatus,
+  partStreamingInput,
+  ToolEmptyState,
+  ToolOutputFallback,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  InlineGrepResults,
-  parseGrepOutput,
-} from '@/features/session/tool/shared/file-list';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import {
-  Search,
-} from 'lucide-react';
+import { getDirectory } from '@/ui';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  getDirectory,
-} from '@/ui';
-
+import { useMemo } from 'react';
 
 export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -91,4 +81,3 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('grep', GrepTool);
-

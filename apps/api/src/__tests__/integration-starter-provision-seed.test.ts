@@ -15,13 +15,13 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { validateManifest } from '@kortix/manifest-schema';
+import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
 import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
-import { compileRuntimeConfig } from '../projects/lib/compile-runtime-config';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
-  test('seeds a v3 kortix.yaml, not a v1 kortix.toml', async () => {
+  test('seeds a v2 kortix.yaml, not a v1 kortix.toml', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -32,7 +32,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
 
     const manifest = seed.files.find((f) => f.path === 'kortix.yaml');
     expect(manifest).toBeDefined();
-    expect(manifest?.content).toContain('kortix_version: 3');
+    expect(manifest?.content).toContain('kortix_version: 2');
     expect(seed.files.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
@@ -75,38 +75,11 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       throw new Error(`expected ok:true, got AGENT_NOT_DECLARED: ${governed.error}`);
     }
     expect(governed.grant).toEqual({
-      agent: 'opencode',
+      agent: 'kortix',
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
     });
   });
 
-  test('the seeded manifest compiles all four runtime launch plans', async () => {
-    const seed = await buildProjectSeedFiles({
-      projectName: 'Acme Co',
-      repoFullName: 'kortix/acme-co',
-      template: 'minimal',
-      marketplaceItems: [],
-      now: new Date('2026-07-05T00:00:00Z').toISOString(),
-    });
-    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
-    const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
-
-    const compiled = compileRuntimeConfig(manifest.raw);
-    expect(compiled).not.toBeNull();
-    expect(compiled?.version).toBe(3);
-    expect(compiled?.defaultAgent).toBe('opencode');
-    expect(Object.values(compiled?.runtimes ?? {}).map((runtime) => runtime.harness).sort()).toEqual([
-      'claude',
-      'codex',
-      'opencode',
-      'pi',
-    ]);
-    expect(compiled?.agents.opencode).toMatchObject({
-      runtime: 'opencode',
-      harness: 'opencode',
-      nativeAgent: 'kortix',
-    });
-  });
 });

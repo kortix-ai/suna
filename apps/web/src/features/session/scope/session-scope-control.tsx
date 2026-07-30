@@ -13,7 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { KeyRound, PlugZap, SlidersHorizontal, TriangleAlert } from 'lucide-react';
+import {
+  KeyIcon as KeyRound,
+  PlugIcon as PlugZap,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 
 import type { SessionScopeDraft, SessionScopeSelectionCatalog } from './session-scope-model';
 

@@ -404,6 +404,44 @@ describe('ai-sdk request conversion', () => {
     expect(openai.maxOutputTokens).toBe(2000);
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
   });
+
+  // `UpstreamDescriptor.bodyExtras` ("upstream-specific fields merged into the
+  // outgoing request body, overriding any same-named client fields (e.g.
+  // OpenRouter's `provider` routing preferences pinning managed models to
+  // reliable hosts)") lost its only reader when the native openai-compat
+  // transport was deleted on 2026-07-18 — apps/api still BUILDS it from the
+  // catalog's `openrouterProvider`, but nothing in this package read it, so the
+  // whole OpenRouter provider-routing mechanism was silently inert and every
+  // managed OpenRouter request load-balanced across all 21 endpoints serving
+  // the slug. For the openai-compatible family, any key under
+  // providerOptions[<providerName>] that the package's own schema does not
+  // claim rides onto the wire verbatim — which is how `provider` reaches
+  // OpenRouter.
+  it('forwards descriptor bodyExtras onto the wire for openai-compatible upstreams', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'openai-compatible', {
+      providerName: 'openrouter',
+      bodyExtras: { provider: { order: ['deepseek'], allow_fallbacks: true } },
+    });
+    expect(args.providerOptions).toEqual({
+      openrouter: { provider: { order: ['deepseek'], allow_fallbacks: true } },
+    });
+  });
+
+  it('bodyExtras overrides a same-named client field and never leaks to other families', () => {
+    const compat = buildAiSdkArgs(
+      { messages: [], provider: { order: ['someone-else'] } },
+      'openai-compatible',
+      { providerName: 'openrouter', bodyExtras: { provider: { order: ['deepseek'] } } },
+    );
+    expect((compat.providerOptions as Record<string, Record<string, unknown>>).openrouter.provider)
+      .toEqual({ order: ['deepseek'] });
+
+    const anthropic = buildAiSdkArgs({ messages: [] }, 'anthropic', {
+      providerName: 'anthropic',
+      bodyExtras: { provider: { order: ['deepseek'] } },
+    });
+    expect(anthropic.providerOptions).toBeUndefined();
+  });
 });
 
 // buildAiSdkArgs is now models.dev-capability-driven: when the caller passes

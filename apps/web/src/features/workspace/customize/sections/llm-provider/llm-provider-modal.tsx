@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { warningToast } from '@/components/ui/toast';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { Search } from '@mynaui/icons-react';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 import { CatalogTab } from './catalog-tab';
@@ -109,11 +109,9 @@ export function ProjectProviderModal({
   const pendingProviderLabel =
     pendingProviderId === 'codex'
       ? 'ChatGPT'
-      : pendingProviderId === 'claude'
-        ? 'Claude Code'
-        : pendingProviderId
-          ? (LLM_PROVIDER_BY_ID.get(pendingProviderId)?.label ?? pendingProviderId)
-          : null;
+      : pendingProviderId
+        ? (LLM_PROVIDER_BY_ID.get(pendingProviderId)?.label ?? pendingProviderId)
+        : null;
 
   const searchPlaceholder =
     activeTab === 'connected'

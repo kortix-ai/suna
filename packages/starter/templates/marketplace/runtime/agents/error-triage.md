@@ -7,7 +7,6 @@ description: >-
   {{max_issues_per_run}} that aren't already tracked. Posts a sweep summary to
   {{alert_channel}}. Never resolves, ignores, mutes, or assigns an error.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

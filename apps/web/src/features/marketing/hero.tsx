@@ -6,9 +6,9 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const Hero = () => {

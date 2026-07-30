@@ -1063,44 +1063,6 @@ export const projectSessionPublicShares = kortixSchema.table(
 );
 
 /**
- * Durable, lossless ACP JSON-RPC envelope log.
- *
- * `ordinal` is the client-facing stream cursor. `upstreamEventId` is scoped by
- * `runtimeInstanceId` because every harness process starts its own event
- * sequence. This keeps retries idempotent without treating a restarted harness
- * as the previous process.
- */
-export const acpSessionEnvelopes = kortixSchema.table(
-  'acp_session_envelopes',
-  {
-    ordinal: bigint('ordinal', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
-    eventId: uuid('event_id').defaultRandom().notNull(),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    runtimeInstanceId: text('runtime_instance_id').notNull(),
-    direction: varchar('direction', { length: 32 }).notNull(),
-    upstreamEventId: bigint('upstream_event_id', { mode: 'number' }),
-    envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_acp_session_envelopes_event_id').on(table.eventId),
-    uniqueIndex('idx_acp_session_envelopes_upstream_event')
-      .on(table.sessionId, table.direction, table.runtimeInstanceId, table.upstreamEventId)
-      .where(sql`${table.upstreamEventId} IS NOT NULL`),
-    index('idx_acp_session_envelopes_session_ordinal').on(table.sessionId, table.ordinal),
-    check(
-      'acp_session_envelopes_direction_check',
-      sql`${table.direction} IN ('client_to_agent', 'agent_to_client')`,
-    ),
-  ],
-);
-
-/**
  * Runtime state for triggers defined in the project repo
  * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
  * row holds the cron scheduler's "last fired" state so we don't need to
@@ -4113,8 +4075,8 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.profileId,
     ),
     // A connector may hold MANY connections (e.g. support@ and sales@ for the
-    // team, plus each member's own). The default marker is therefore scoped PER
-    // OWNER, not per connector: exactly one team default, and at most one default
+    // project, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one project default, and at most one default
     // per member/agent/external owner. Split into two partial indexes so the
     // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
     // is still capped at one.
@@ -4132,7 +4094,7 @@ export const executorConnectionProfiles = kortixSchema.table(
       .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
     // Project-owned rows carry owner_id NULL, so the index above (partial on
-    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // owner_id IS NOT NULL) can't dedupe them. Several project connections per
     // connector are allowed, distinguished by label — this keeps that set unique.
     uniqueIndex('idx_executor_connection_profiles_project_label')
       .on(table.connectorId, table.label)

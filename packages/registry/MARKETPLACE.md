@@ -79,8 +79,7 @@ layers, and the core belongs to the inner two.
   function. **Baked into the starter, installed offline by `kortix init`.** It
   must never require a live registry — otherwise project creation depends on a
   service being up. The sandbox image also carries the deployed managed copy.
-  At boot, the daemon injects that copy into the selected OpenCode, Claude Code,
-  Codex, or Pi skill discovery path.
+  At boot, the daemon injects that copy into the OpenCode skill discovery path.
 - **Layer 2 (Standard library):** the official `@kortix/*` registry. The core
   *is also published here* so an existing project can **update** it
   through the managed update workflow and so the same files have a single
@@ -125,7 +124,7 @@ The deployed system-skill overlay and project-owned files use separate update
 paths.
 
 1. The daemon overlays host-managed system skills at sandbox boot. This gives
-   every selected harness instructions that match the deployed API and CLI.
+   every OpenCode session instructions that match the deployed API and CLI.
 2. `kortix system-skills get <name> --full` retrieves the same deployed source
    through the authenticated API.
 3. Project-owned or optional marketplace files remain git state. Updates to

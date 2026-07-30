@@ -7,7 +7,6 @@ description: >-
   {{cadence}} heartbeat checks connected-platform health and posts to
   {{ops_channel}} if a credential needs reconnecting.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

@@ -30,8 +30,8 @@ A Kortix **project** is a git repo, and that repo *is* the company. Configuratio
 
 The whole thing is defined by two files:
 
-- **`kortix.yaml`** — the Kortix layer. The sandbox image, triggers, connectors, secret grants, logical agents, and runtime profiles.
-- **Harness-native config** — the runtime behavior. OpenCode, Claude Code, Codex, and Pi keep their own prompts, skills, tools, permissions, models, and providers.
+- **`kortix.yaml`** — the Kortix layer. The sandbox image, triggers, connectors, secret grants, logical agents, and OpenCode config directory.
+- **OpenCode config** — the runtime behavior. OpenCode owns prompts, skills, tools, permissions, models, and providers.
 
 Everything past that is files in the repo. You can `grep` your entire company. You can read any agent's instructions in plain markdown. You can open a memory file and see exactly what it believes about you. Nothing is hidden because there is nowhere to hide it.
 
@@ -41,7 +41,7 @@ Drop into any directory, run `kortix init`, and it's a Kortix. Run `kortix ship`
 
 ## How a session actually works
 
-Start a session and a sandbox boots from one generic snapshot already running our daemon — **kortix-sandbox-agent-server**. The daemon clones the repo, pulls latest, cuts a fresh branch, and reads `kortix.yaml`. It then starts the session's immutable runtime profile. That profile selects OpenCode, Claude Code, Codex, or Pi. The agent does its work completely walled off from everything else. When it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether that lands.
+Start a session and a sandbox boots from one generic snapshot already running our daemon — **kortix-sandbox-agent-server**. The daemon clones the repo, pulls latest, cuts a fresh branch, and reads `kortix.yaml`. It then starts OpenCode and exposes its REST API through the Kortix compatibility proxy. The agent does its work completely walled off from everything else. When it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether that lands.
 
 The daemon is one executable that supervises runtime processes and exposes one session surface. A client gets prompting, streaming, files, and a terminal through that surface.
 
@@ -94,7 +94,7 @@ Under that surface is as much depth as you can stand. The interface and the code
 
 ## Who it's for
 
-**Developers** get a managed cloud for OpenCode, Claude Code, Codex, and Pi agents. One `kortix.yaml` selects native runtime profiles. One repo stores the state that persists. Every change request gets a preview you can open. Bring supported direct credentials or use managed model access. `kortix init` and `kortix ship` are the local loop.
+**Developers** get a managed cloud for OpenCode agents. One `kortix.yaml` configures the version 2 OpenCode REST runtime. One repo stores the state that persists. Every change request gets a preview you can open. Bring supported direct credentials or use managed model access. `kortix init` and `kortix ship` are the local loop.
 
 **Companies** get a workforce they can actually manage. People talk to it through the web, Slack, or Teams. It picks up the business as it goes — its skills, its context, the specific way the work gets done — and it does so on infrastructure where the data, the config, and the model belong to the company instead of a vendor.
 

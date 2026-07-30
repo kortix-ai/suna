@@ -281,19 +281,16 @@ describe('isTurnStartRequest', () => {
     expect(isTurnStartRequest(4096, 'POST', '/session/abc/message')).toBe(true);
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/command')).toBe(true);
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/summarize')).toBe(true);
-    expect(isTurnStartRequest(8000, 'POST', '/kortix/acp/xyz')).toBe(true);
   });
 
   // Passive polling must never extend a box — that is the deleted lease, rebuilt.
   test('a GET never starts a turn, on any port or path', () => {
     expect(isTurnStartRequest(8000, 'GET', '/session/abc/prompt_async')).toBe(false);
     expect(isTurnStartRequest(4096, 'GET', '/session/abc/message')).toBe(false);
-    expect(isTurnStartRequest(8000, 'HEAD', '/kortix/acp/xyz')).toBe(false);
   });
 
   test('a dev-server port is never a turn start, whatever the path looks like', () => {
     expect(isTurnStartRequest(3000, 'POST', '/session/abc/prompt_async')).toBe(false);
-    expect(isTurnStartRequest(8080, 'POST', '/kortix/acp/xyz')).toBe(false);
   });
 
   test('the in-box dynamic-port nesting prefix is stripped before matching', () => {

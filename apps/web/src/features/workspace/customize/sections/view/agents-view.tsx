@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { AgentHarnessIcon } from '@/features/session/composer/agent-harness-icon';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import {
@@ -36,9 +35,16 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
-import { StarSolid } from '@mynaui/icons-react';
+import {
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  ShieldCheckIcon as ShieldCheck,
+  SparkleIcon as Sparkles,
+  StarIcon as StarSolid,
+  UserIcon as User,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -63,12 +69,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderContext={(config) => (
         <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
       )}
-      renderTriggerLabel={(agent) => (
-        <span className="flex min-w-0 items-center gap-2">
-          <AgentHarnessIcon harness={agent.harness} />
-          <span className="truncate">{agent.name}</span>
-        </span>
-      )}
+      renderTriggerLabel={(agent) => agent.name}
       className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
@@ -78,14 +79,13 @@ export function AgentsView({ projectId }: { projectId: string }) {
             </Badge>
           ) : null}
           {config.open_code_default_agent === agent.name ? (
-            <StarSolid className="text-kortix-orange size-4 shrink-0 fill-current" />
+            <StarSolid weight="fill" className="text-kortix-orange size-4 shrink-0 fill-current" />
           ) : null}
         </>
       )}
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
-          <AgentHarnessIcon harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -102,7 +102,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
           {config.open_code_default_agent === agent.name ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
-              <StarSolid className="text-kortix-orange size-3.5 shrink-0" />
+              <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
               Default
             </Badge>
           ) : null}
@@ -181,10 +181,7 @@ function DefaultAgentSelector({
           <SelectContent>
             {availableAgents.map((agent) => (
               <SelectItem key={agent.name} value={agent.name}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <AgentHarnessIcon harness={agent.harness} />
-                  <span className="truncate">{agent.name}</span>
-                </span>
+                {agent.name}
               </SelectItem>
             ))}
           </SelectContent>

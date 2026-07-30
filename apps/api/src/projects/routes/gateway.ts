@@ -13,6 +13,7 @@ import {
 import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
@@ -1042,7 +1043,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
-  const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+  const effectiveDefault = projectDefault ?? defaults.account ?? platformDefaultModelId();
   const defaultModelSource = projectDefault
     ? ('project' as const)
     : defaults.account
@@ -1088,9 +1089,9 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       },
     },
     platform: {
-      defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
+      defaultModel: platformDefaultModelId(),
       visionModel: config.LLM_GATEWAY_VISION_MODEL,
-      defaultFallback: operatorFallbackFor(config.LLM_GATEWAY_DEFAULT_MODEL),
+      defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },
   };
@@ -1172,7 +1173,7 @@ projectsApp.openapi(
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
-      policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json(
         {

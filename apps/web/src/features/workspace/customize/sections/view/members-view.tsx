@@ -3,9 +3,25 @@
 import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, CornerDownRight, KeyRound, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  ClockIcon as Clock,
+  ArrowElbowDownRightIcon as CornerDownRight,
+  KeyIcon as KeyRound,
+  EnvelopeIcon as Mail,
+  ChatIcon as MessageSquare,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  ArrowsClockwiseIcon as RefreshCw,
+  ShieldIcon as Shield,
+  SparkleIcon as Sparkles,
+  UserIcon as User,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -52,20 +68,23 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
 import {
-  listGroups,
-  removeGroupMember,
-  listPolicies,
   createPolicy,
   deletePolicy,
-  listRoles,
   listAgentIdentities,
+  listGroups,
+  listPolicies,
+  listRoles,
+  removeGroupMember,
   type AccountGroup,
   type IamPolicy,
   type PrincipalType,
 } from '@/lib/iam-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
+  createProjectResourceGrant,
+  deleteProjectResourceGrant,
   detachGroupFromProject,
   getProject,
   inviteProjectMember,
@@ -75,8 +94,6 @@ import {
   listProjectAccessRequests,
   listProjectGroupGrants,
   listProjectResourceGrants,
-  createProjectResourceGrant,
-  deleteProjectResourceGrant,
   rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
@@ -90,8 +107,7 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
-import { useCustomizeStore } from '@/stores/customize-store';
-import { UsersSolid } from '@mynaui/icons-react';
+import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
 
@@ -1370,7 +1386,9 @@ function ProjectGroupGrantsCard({
         (policiesQuery.data ?? [])
           .filter(
             (p) =>
-              p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId,
+              p.principal_type === 'group' &&
+              p.scope_type === 'project' &&
+              p.scope_id === projectId,
           )
           .map((p) => p.principal_id),
       ),
@@ -1777,7 +1795,8 @@ function BlastRadiusPreview({
             {conns.length > 0 && <ScopeLine icon={Plug} label="Connectors" items={conns} />}
           </div>
           <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
-            The member inherits these as their own — usable in Secrets, sessions, and connector calls.
+            The member inherits these as their own — usable in Secrets, sessions, and connector
+            calls.
           </p>
         </>
       )}
@@ -1835,7 +1854,9 @@ function ResourceAccessCard({
   }, [resources]);
 
   const hasResources =
-    resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
+    resources.agents.length > 0 ||
+    resources.skills.length > 0 ||
+    (resources.secrets?.length ?? 0) > 0;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pickerType] = useState<ResourceGrantType>('agent'); // agent-only grant flow
@@ -1932,15 +1953,18 @@ function ResourceAccessCard({
     ];
     if (grantCounts.agent) opts.push({ value: 'agent', label: 'Agents', count: grantCounts.agent });
     if (grantCounts.skill) opts.push({ value: 'skill', label: 'Skills', count: grantCounts.skill });
-    if (grantCounts.secret) opts.push({ value: 'secret', label: 'Secrets', count: grantCounts.secret });
+    if (grantCounts.secret)
+      opts.push({ value: 'secret', label: 'Secrets', count: grantCounts.secret });
     return opts;
   }, [grants.length, grantCounts]);
   const visibleGrants = useMemo(
-    () => (resourceFilter === 'all' ? grants : grants.filter((g) => g.resource_type === resourceFilter)),
+    () =>
+      resourceFilter === 'all' ? grants : grants.filter((g) => g.resource_type === resourceFilter),
     [grants, resourceFilter],
   );
 
-  const canSubmit = !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
+  const canSubmit =
+    !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
 
   return (
     <>
@@ -1955,11 +1979,10 @@ function ResourceAccessCard({
             </h3>
             <p className="text-muted-foreground mt-1 text-xs">
               Assign agents to a member or group to control who can USE them. An agent with no
-              assignment is open to everyone with project access; assigning one restricts it to
-              the people or groups you choose — they inherit that agent's declared skills,
-              connectors, and secrets to use in its sessions. This only ever grants USE, never
-              edit: changing the agent, a skill, a connector, or a secret still requires the
-              editor role.
+              assignment is open to everyone with project access; assigning one restricts it to the
+              people or groups you choose — they inherit that agent's declared skills, connectors,
+              and secrets to use in its sessions. This only ever grants USE, never edit: changing
+              the agent, a skill, a connector, or a secret still requires the editor role.
             </p>
           </div>
 
@@ -1994,13 +2017,23 @@ function ResourceAccessCard({
         {!grantsQuery.isLoading && grants.length > 0 && (
           <div className="space-y-3">
             {grantFilterOptions.length > 2 && (
-              <FilterChips value={resourceFilter} onChange={setResourceFilter} options={grantFilterOptions} />
+              <FilterChips
+                value={resourceFilter}
+                onChange={setResourceFilter}
+                options={grantFilterOptions}
+              />
             )}
             <ul className="space-y-2">
               {visibleGrants.map((g: ProjectResourceGrant) => {
                 const busy = pendingIds.has(g.grant_id);
-                const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
-                const ResourceIcon = g.resource_type === 'agent' ? Bot : g.resource_type === 'secret' ? KeyRound : Sparkles;
+                const displayName =
+                  resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+                const ResourceIcon =
+                  g.resource_type === 'agent'
+                    ? Bot
+                    : g.resource_type === 'secret'
+                      ? KeyRound
+                      : Sparkles;
                 return (
                   <li key={g.grant_id} className={MEMBER_ROW}>
                     <span className="bg-muted/60 flex size-8 shrink-0 items-center justify-center rounded-full">
@@ -2063,11 +2096,11 @@ function ResourceAccessCard({
           <ModalHeader>
             <ModalTitle>Assign an agent</ModalTitle>
             <ModalDescription>
-              Assign an agent to a member or group — they inherit everything that agent
-              uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
-              people through agents, not by a direct grant; agents you don't assign stay open
-              to everyone with project access. Editing the agent or any resource it uses still
-              requires the editor role.
+              Assign an agent to a member or group — they inherit everything that agent uses (its
+              secrets, connectors, and skills) to USE, not edit. Resources reach people through
+              agents, not by a direct grant; agents you don't assign stay open to everyone with
+              project access. Editing the agent or any resource it uses still requires the editor
+              role.
             </ModalDescription>
           </ModalHeader>
 
@@ -2199,10 +2232,16 @@ function ProjectRoleAssignmentsCard({
   // Only project-scoped bindings for THIS project (account-wide custom roles
   // apply too, but they're managed on the account page, not per-project).
   const policies = useMemo(
-    () => (policiesQuery.data ?? []).filter((p) => p.scope_type === 'project' && p.scope_id === projectId),
+    () =>
+      (policiesQuery.data ?? []).filter(
+        (p) => p.scope_type === 'project' && p.scope_id === projectId,
+      ),
     [policiesQuery.data, projectId],
   );
-  const customRoles = useMemo(() => (rolesQuery.data ?? []).filter((r) => !r.is_system), [rolesQuery.data]);
+  const customRoles = useMemo(
+    () => (rolesQuery.data ?? []).filter((r) => !r.is_system),
+    [rolesQuery.data],
+  );
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const projectAgents = useMemo(
     () => (agentsQuery.data ?? []).filter((a) => a.project_id === projectId),
@@ -2213,16 +2252,24 @@ function ProjectRoleAssignmentsCard({
     () => new Map((rolesQuery.data ?? []).map((r) => [r.role_id, r.name])),
     [rolesQuery.data],
   );
-  const memberLabelById = useMemo(() => new Map(members.map((m) => [m.user_id, userLabel(m)])), [members]);
+  const memberLabelById = useMemo(
+    () => new Map(members.map((m) => [m.user_id, userLabel(m)])),
+    [members],
+  );
   const groupNameById = useMemo(() => new Map(groups.map((g) => [g.group_id, g.name])), [groups]);
   const agentLabelById = useMemo(
-    () => new Map((agentsQuery.data ?? []).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
+    () =>
+      new Map((agentsQuery.data ?? []).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
     [agentsQuery.data],
   );
 
   function principalLabel(p: IamPolicy): { kind: string; label: string; missing: boolean } {
     if (p.principal_type === 'group') {
-      return { kind: 'Group', label: groupNameById.get(p.principal_id) ?? p.principal_id, missing: false };
+      return {
+        kind: 'Group',
+        label: groupNameById.get(p.principal_id) ?? p.principal_id,
+        missing: false,
+      };
     }
     if (p.principal_type === 'token') {
       // Agent SAs resolve from the account-wide identity list; a miss means the
@@ -2231,7 +2278,11 @@ function ProjectRoleAssignmentsCard({
       const name = agentLabelById.get(p.principal_id);
       return { kind: 'Agent', label: name ?? `${p.principal_id.slice(0, 8)}…`, missing: !name };
     }
-    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id, missing: false };
+    return {
+      kind: 'Member',
+      label: memberLabelById.get(p.principal_id) ?? p.principal_id,
+      missing: false,
+    };
   }
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -2258,13 +2309,26 @@ function ProjectRoleAssignmentsCard({
     () =>
       (
         [
-          { type: 'member', label: 'Member', Icon: User, items: members.map((m) => ({ id: m.user_id, name: userLabel(m) })) },
-          { type: 'group', label: 'Group', Icon: Users, items: groups.map((g) => ({ id: g.group_id, name: g.name })) },
+          {
+            type: 'member',
+            label: 'Member',
+            Icon: User,
+            items: members.map((m) => ({ id: m.user_id, name: userLabel(m) })),
+          },
+          {
+            type: 'group',
+            label: 'Group',
+            Icon: Users,
+            items: groups.map((g) => ({ id: g.group_id, name: g.name })),
+          },
           {
             type: 'token',
             label: 'Agent',
             Icon: Bot,
-            items: projectAgents.map((a) => ({ id: a.service_account_id, name: a.agent_name ?? a.name })),
+            items: projectAgents.map((a) => ({
+              id: a.service_account_id,
+              name: a.agent_name ?? a.name,
+            })),
           },
         ] as const
       ).filter((o) => o.items.length > 0),
@@ -2331,13 +2395,17 @@ function ProjectRoleAssignmentsCard({
     const opts: { value: 'all' | PrincipalType; label: string; count: number }[] = [
       { value: 'all', label: 'All', count: policies.length },
     ];
-    if (policyCounts.member) opts.push({ value: 'member', label: 'Members', count: policyCounts.member });
-    if (policyCounts.group) opts.push({ value: 'group', label: 'Groups', count: policyCounts.group });
-    if (policyCounts.token) opts.push({ value: 'token', label: 'Agents', count: policyCounts.token });
+    if (policyCounts.member)
+      opts.push({ value: 'member', label: 'Members', count: policyCounts.member });
+    if (policyCounts.group)
+      opts.push({ value: 'group', label: 'Groups', count: policyCounts.group });
+    if (policyCounts.token)
+      opts.push({ value: 'token', label: 'Agents', count: policyCounts.token });
     return opts;
   }, [policies.length, policyCounts]);
   const visiblePolicies = useMemo(
-    () => (policyFilter === 'all' ? policies : policies.filter((p) => p.principal_type === policyFilter)),
+    () =>
+      policyFilter === 'all' ? policies : policies.filter((p) => p.principal_type === policyFilter),
     [policies, policyFilter],
   );
 
@@ -2351,7 +2419,9 @@ function ProjectRoleAssignmentsCard({
             <h3 className="text-sm font-medium">
               Custom roles
               {policies.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal">({policies.length})</span>
+                <span className="text-muted-foreground ml-1.5 font-normal">
+                  ({policies.length})
+                </span>
               ) : null}
             </h3>
             <p className="text-muted-foreground mt-1 text-xs">
@@ -2399,7 +2469,11 @@ function ProjectRoleAssignmentsCard({
         {!policiesQuery.isLoading && policies.length > 0 && (
           <div className="space-y-3">
             {policyFilterOptions.length > 2 && (
-              <FilterChips value={policyFilter} onChange={setPolicyFilter} options={policyFilterOptions} />
+              <FilterChips
+                value={policyFilter}
+                onChange={setPolicyFilter}
+                options={policyFilterOptions}
+              />
             )}
             <ul className="space-y-2">
               {visiblePolicies.map((p) => {
@@ -2441,7 +2515,12 @@ function ProjectRoleAssignmentsCard({
                     {busy ? (
                       <Loading className="text-muted-foreground shrink-0" />
                     ) : canManage ? (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => removeMutation.mutate(p.policy_id)}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeMutation.mutate(p.policy_id)}
+                      >
                         Remove
                       </Button>
                     ) : (
@@ -2495,7 +2574,8 @@ function ProjectRoleAssignmentsCard({
 
               <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs font-medium">
-                  2. {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
+                  2.{' '}
+                  {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
                 </span>
                 <Select
                   value={subjectId}
@@ -2517,7 +2597,11 @@ function ProjectRoleAssignmentsCard({
 
               <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs font-medium">3. Custom role</span>
-                <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
+                <Select
+                  value={roleId}
+                  onValueChange={setRoleId}
+                  disabled={createMutation.isPending}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>

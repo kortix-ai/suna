@@ -176,7 +176,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     await tx.insert(projects).values({
       projectId, accountId: ctx.accountId, name: 'Legacy (Suna) projects',
       // pushBundleAsRepo (suna-push.ts) seeds the new repo with
-      // @kortix/starter, which ships the current v3 kortix.yaml.
+      // @kortix/starter, which ships the current v2 kortix.yaml.
       repoUrl, defaultBranch, manifestPath: 'kortix.yaml', status: 'active',
       metadata: {
         git: { url: repoUrl, upstream_url: repoUrl, default_branch: defaultBranch, provider, managed: true,

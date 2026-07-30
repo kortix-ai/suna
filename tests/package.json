@@ -41,6 +41,7 @@
     "test:smoke": "bun smoke/smoke.ts",
     "test:e2e": "playwright test --config e2e/examples/playwright.config.ts",
     "test:visual": "playwright test --config visual/playwright.config.ts",
+    "test:typography": "playwright test --config typography/playwright.config.ts",
     "test:a11y": "playwright test --config accessibility/playwright.config.ts",
     "test:perf": "bash performance/run.sh load",
     "test:security": "bash security/run.sh --static",

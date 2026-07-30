@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
+import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
@@ -338,38 +339,6 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
-// ACP prompt delivery shares the runtime URL with its GET event stream.
-// Inspect the JSON-RPC envelope before applying prompt deduplication.
-function acpPromptSessionId(
-  method: string,
-  upstreamPort: number,
-  path: string,
-  incomingHeaders: Headers,
-  body: ArrayBuffer | undefined,
-): string | null {
-  if (method.toUpperCase() !== 'POST' || upstreamPort !== SANDBOX_AGENT_PORT || !body) {
-    return null;
-  }
-  if (!incomingHeaders.get('content-type')?.toLowerCase().includes('application/json')) {
-    return null;
-  }
-  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
-  if (!match) return null;
-  try {
-    const routeSessionId = decodeURIComponent(match[1]);
-    const envelope = JSON.parse(new TextDecoder().decode(body)) as { method?: unknown };
-    // Keyed on the ROUTE id — the ACP server binding, which for a managed ACP
-    // session is the project session itself. The envelope's `params.sessionId`
-    // is the HARNESS-issued session, which persistAcpSessionIdentity forbids
-    // from equalling the server id: requiring the two to match made this return
-    // null for every managed ACP prompt, silently disabling prompt dedupe, the
-    // retry budget, the snapshot sync and titling on that path.
-    return envelope.method === 'session/prompt' ? routeSessionId : null;
-  } catch {
-    return null;
-  }
-}
-
 // True only when a fetch failure PROVES nothing reached the box: the upstream
 // actively refused the connection (nothing was ever accepted). Any other thrown
 // error — timeout, abort, connection reset mid-flight — is ambiguous: the
@@ -501,7 +470,7 @@ function bodyWithoutPromptAgent(
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
     if (!('agent' in parsed)) return body;
-    delete parsed.agent;
+    parsed.agent = undefined;
     return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
   } catch {
     return body;
@@ -604,6 +573,8 @@ export async function forwardToSandbox(
   // a TLS-terminating LB). Falls back to reconstructing from the Host header.
   publicOrigin?: string,
 ): Promise<Response> {
+  let requestBody = body;
+
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
@@ -637,20 +608,7 @@ export async function forwardToSandbox(
   // observation, the preview-use extend, the auto-resume — must exclude them or
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
-  const acpPromptSession = acpPromptSessionId(
-    method,
-    upstreamPort,
-    remainingPath,
-    incomingHeaders,
-    body,
-  );
-  const retryBudgetRequest = {
-    method,
-    path: remainingPath,
-    acpPrompt: acpPromptSession !== null,
-  };
-  const promptDelivery =
-    shouldSyncProjectEnvBeforeProxy(port, method, remainingPath) || acpPromptSession !== null;
+  const promptDelivery = shouldSyncProjectEnvBeforeProxy(port, method, remainingPath);
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -767,8 +725,7 @@ export async function forwardToSandbox(
     }
   }
 
-  // Dedupe prompt delivery up-front. REST and ACP prompt POSTs are the only
-  // mutating, non-idempotent calls here. Claim a stable key before the retry
+  // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
   // The key is held in an OUTER binding so the give-up path below can release it
@@ -781,7 +738,7 @@ export async function forwardToSandbox(
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
       sessionId: record.sessionId,
-      body,
+      body: requestBody,
     });
     if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
@@ -834,31 +791,61 @@ export async function forwardToSandbox(
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
-        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
+        const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
         const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
         // Agent-lock enforcement is OFF by default — in-session agent switching is
         // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
         // explicitly enabled (a future per-agent executor-token auth model; see the
         // config flag's TODO). Until then a prompt may freely run a different agent.
         if (
+          requestedAgent &&
           config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
           isProhibitedAgentSwitch(requestedAgent, sessionAgent)
         ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent!, origin);
+          return agentSwitchConflictResponse(sessionAgent, requestedAgent, origin);
+        }
+        const switchedToAgent = isProhibitedAgentSwitch(requestedAgent, sessionAgent)
+          ? requestedAgent
+          : null;
+        if (switchedToAgent) {
+          const verdict = await authorize(
+            userId,
+            record.accountId,
+            PROJECT_ACTIONS.PROJECT_AGENT_READ,
+            {
+              type: 'project',
+              id: record.projectId,
+              resource: { type: 'agent', id: switchedToAgent },
+            },
+          );
+          if (!verdict.allowed) {
+            console.warn(
+              `[PREVIEW] Refused prompt on ${sandboxId}: caller may not run agent '${switchedToAgent}' (${verdict.reason})`,
+            );
+            return jsonProxyError(
+              {
+                error: `You don't have permission to run the agent '${switchedToAgent}'.`,
+                code: 'AGENT_NOT_AUTHORIZED',
+                requested_agent: switchedToAgent,
+              },
+              403,
+              origin,
+            );
+          }
         }
         // Drop only the legacy 'default' sentinel so OpenCode resolves its own
         // `default_agent` (the real default the session booted with). A *concrete*
         // requested agent is forwarded untouched so the user can switch agents
         // within a session.
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
-          body = bodyWithoutPromptAgent(body, incomingHeaders);
+          requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
         // A prompt is the one moment this sandbox is guaranteed awake, so off
         // it we (1) generate the Kortix-owned session title from this first
         // prompt, using the model the user picked, and (2) refresh the
         // opencode_sessions snapshot the conversation list reads. Both are
         // fire-and-forget and never block the prompt.
-        const prompt = extractPromptInfo(body, incomingHeaders);
+        const prompt = extractPromptInfo(requestBody, incomingHeaders);
         if (userId && prompt.text) {
           void generateSessionTitleFromFirstPrompt({
             sessionId: record.sessionId,
@@ -1008,7 +995,7 @@ export async function forwardToSandbox(
           attemptController.abort(
             new DOMException('proxy attempt connect timeout', 'TimeoutError'),
           ),
-        proxyAttemptTimeoutMs(budgetRemainingMs, retryBudgetRequest),
+        proxyAttemptTimeoutMs(budgetRemainingMs, { method, path: remainingPath }),
       );
       let upstream: Response;
       try {
@@ -1016,7 +1003,7 @@ export async function forwardToSandbox(
         upstream = await fetch(targetUrl, {
           method,
           headers,
-          body,
+          body: requestBody,
           redirect: 'manual',
           signal: attemptController.signal,
           // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
@@ -1175,25 +1162,6 @@ export async function forwardToSandbox(
           ),
         );
       }
-      if (acpPromptSession && upstream.ok) {
-        const prompt = extractPromptInfo(body, incomingHeaders);
-        if (userId && prompt.text) {
-          void generateSessionTitleFromFirstPrompt({
-            sessionId: record.sessionId,
-            projectId: record.projectId,
-            accountId: record.accountId,
-            userId,
-            firstPromptText: prompt.text,
-            modelHint: prompt.model ?? undefined,
-          });
-        }
-        scheduleOpencodeSnapshotSync({
-          sessionId: record.sessionId,
-          projectId: record.projectId,
-          externalId: record.externalId,
-          userId: userId || undefined,
-        });
-      }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
       return new Response(upstream.body, {
         status: upstream.status,
@@ -1217,7 +1185,7 @@ export async function forwardToSandbox(
       if (
         err instanceof DOMException &&
         err.name === 'TimeoutError' &&
-        isLongTurnCompletionRequest(retryBudgetRequest)
+        isLongTurnCompletionRequest({ method, path: remainingPath })
       ) {
         sawLongTurnTimeout = true;
         break;
@@ -1376,7 +1344,7 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const portStr = c.req.param('port');
   const port = Number.parseInt(portStr, 10);
 
-  if (isNaN(port) || port < 1 || port > 65535) {
+  if (Number.isNaN(port) || port < 1 || port > 65535) {
     throw new HTTPException(400, { message: `Invalid port: ${portStr}` });
   }
 

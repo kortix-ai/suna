@@ -1,7 +1,7 @@
 'use client';
 
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 
@@ -343,7 +343,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
           />
         </div>
         <Button type="submit" className="shrink-0" disabled={!username.trim() || invite.isPending}>
-          {invite.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
+          {invite.isPending ? <Loading className="size-3.5" /> : null}
           {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
         </Button>
       </div>

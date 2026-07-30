@@ -7,10 +7,15 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, Check, Copy, Terminal } from 'lucide-react';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowRightIcon as HiArrowRight,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const terminalLines = [
@@ -109,7 +114,7 @@ export function CliInstallSection() {
                   <div
                     key={line.id}
                     className={cn(
-                      'whitespace-pre-wrap break-all',
+                      'break-all whitespace-pre-wrap',
                       line.type === 'muted' ? 'text-muted-foreground/70' : 'text-foreground/90',
                     )}
                   >

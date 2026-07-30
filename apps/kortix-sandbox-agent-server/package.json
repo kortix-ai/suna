@@ -1,7 +1,7 @@
 {
   "name": "@kortix/sandbox-agent-server",
   "version": "0.1.0",
-  "description": "Sandbox-side OpenCode supervisor, ACP harness runtime, and Kortix API surface.",
+  "description": "Sandbox-side OpenCode REST supervisor and Kortix API surface.",
   "type": "module",
   "main": "src/main.ts",
   "engines": {

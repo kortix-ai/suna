@@ -809,7 +809,7 @@ const beyondTheChatBox: BlogPostEntry = {
     { domain: 'claude.ai', name: 'Claude' },
     { domain: 'x.ai', name: 'Grok' },
   ],
-  readingTime: 3,
+  readingTime: 4,
   blocks: [
     {
       type: 'lead',
@@ -871,10 +871,24 @@ const beyondTheChatBox: BlogPostEntry = {
         },
       ],
     },
+    { type: 'h2', text: 'What chat assistants are genuinely great at' },
+    {
+      type: 'p',
+      text: 'The point isn’t that chat assistants are bad. They’re excellent at what they’re built for, and they belong in the stack. A Kortix agent that manages a vendor risk review might start by asking a chat assistant to digest a SOC 2 report — then take that output and run the full workflow. The key is knowing which tool fits which job:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Quick answers and drafting.** Need a one-paragraph summary of a policy doc, or a first draft of a customer email? A chat assistant is faster than opening a ticket for an agent.',
+        '**Thinking out loud.** Exploring a problem, iterating on a prompt, or testing a hypothesis — the chat interface is the fastest way to refine an idea before handing it to an agent to execute.',
+        '**Code completion in-IDE.** Tools like Claude Code and Cursor are brilliant at diffing, refactoring, and writing code in your editor. Kortix agents orchestrate those same tools at scale.',
+        '**Single-shot research.** "What’s the latest pricing for these three providers?" or "Summarize the Q2 trends." A chat assistant handles that in seconds — and an agent can then take the result and file it, notify stakeholders, and trigger the next step.',
+      ],
+    },
     { type: 'h2', text: 'They’re complementary, not interchangeable' },
     {
       type: 'p',
-      text: 'This isn’t "stop using ChatGPT." Use a chat assistant for quick answers, drafting, and thinking out loud. Use Kortix for the work that has to actually get done — repeatedly, across your tools, owned by you, running while you sleep. One is a brilliant place to ask. The other is where your company’s work runs.',
+      text: 'This isn’t "stop using ChatGPT." Use a chat assistant for quick answers, drafting, and thinking out loud. Use Kortix for the work that has to actually get done — repeatedly, across your tools, owned by you, running while you sleep. One is a brilliant place to ask. The other is where your company’s work runs. For a side-by-side comparison of open-source platforms that run the work, [the best self-hosted AI agent platforms](/blog/best-self-hosted-ai-agent-platforms) puts Kortix alongside CrewAI, AutoGen, Dify, LangGraph, and n8n.',
     },
     {
       type: 'cta',

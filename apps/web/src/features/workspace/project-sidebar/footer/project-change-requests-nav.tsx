@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, FileDiff } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight, GitDiffIcon as FileDiff } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 

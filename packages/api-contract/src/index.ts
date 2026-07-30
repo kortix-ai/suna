@@ -49,9 +49,9 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
+  teams: z.boolean(),
   voice: z.boolean(),
   llm_gateway: z.boolean(),
-  acp_runtime: z.boolean(),
   review_center: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
@@ -401,9 +401,9 @@ export type ConnectorAuthorization = z.infer<typeof ConnectorAuthorizationSchema
 export const ReconcileConnectorAuthorizationInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-    // `project` = a TEAM-shared connection (several are allowed per connector,
+    // `project` = a project-shared connection (several are allowed per connector,
     // distinguished by label); it takes no owner_id. Every other owner type
-    // requires one. Creating a team connection needs the profiles-manage
+    // requires one. Creating a project connection needs the profiles-manage
     // capability — enforced at the route.
     owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
     owner_id: z.string().trim().min(1).max(512).optional(),
@@ -708,11 +708,6 @@ export const ProjectSessionSchema = z.object({
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
   opencode_session_id: z.string().nullable(),
-  runtime_transport: z.enum(['acp', 'rest']).optional(),
-  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
-  native_agent: z.string().nullable().optional(),
-  acp_server_id: z.string().nullable().optional(),
-  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -834,15 +829,8 @@ export const SessionStartResultSchema = z.object({
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical OpenCode root pin, resolved server-side once the box is up. */
   opencode_session_id: z.string().nullable(),
-  /**
-   * Server-selected OpenCode transport. Omitted only by pre-ACP servers.
-   * Clients must treat omission as the legacy REST transport.
-   */
-  runtime_transport: z.enum(['acp', 'rest']).optional(),
-  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
-  native_agent: z.string().nullable().optional(),
-  acp_server_id: z.string().nullable().optional(),
-  acp_session_id: z.string().nullable().optional(),
+  /** Server-selected OpenCode REST transport. */
+  runtime_transport: z.literal('rest').optional(),
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns

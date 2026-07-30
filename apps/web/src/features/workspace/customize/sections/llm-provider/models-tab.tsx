@@ -12,7 +12,7 @@ import {
   useProjectModels,
   wireToModelKey,
 } from '@kortix/sdk/react';
-import { Star } from 'lucide-react';
+import { StarIcon as Star } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 

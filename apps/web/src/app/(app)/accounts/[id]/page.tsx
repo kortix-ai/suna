@@ -1,25 +1,25 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronDown,
-  Clock,
-  Coins,
-  CreditCard,
-  ExternalLink,
-  Fingerprint,
-  GitBranch,
-  Github,
-  Info,
-  KeyRound,
-  Link as LinkIcon,
-  Mail,
-  MoreHorizontal,
-  Network,
-  RefreshCw,
-  ScrollText,
-  Unplug,
-} from 'lucide-react';
+  CaretDownIcon as ChevronDown,
+  ClockIcon as Clock,
+  CoinsIcon as Coins,
+  CreditCardIcon as CreditCard,
+  ArrowSquareOutIcon as ExternalLink,
+  FingerprintIcon as Fingerprint,
+  GitBranchIcon as GitBranch,
+  GithubLogoIcon as Github,
+  InfoIcon as Info,
+  KeyIcon as KeyRound,
+  LinkIcon,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  NetworkIcon as Network,
+  ArrowsClockwiseIcon as RefreshCw,
+  ScrollIcon as ScrollText,
+  PlugsIcon as Unplug,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -117,17 +117,16 @@ import {
   updateAccountMemberRole,
   updateAccountName,
 } from '@kortix/sdk';
+import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import {
-  CogOne,
+  GearSixIcon as CogOne,
   type Icon as IconMynauiType,
-  Search,
-  Shield,
-  TrashSolid,
-  UserPlus,
-  Users,
-} from '@mynaui/icons-react';
-import type { LucideIcon } from 'lucide-react';
-import type { IconType } from 'react-icons/lib';
+  MagnifyingGlassIcon as Search,
+  ShieldIcon as Shield,
+  TrashIcon as TrashSolid,
+  UserPlusIcon as UserPlus,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
@@ -1555,7 +1554,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid className="size-3.5" />
+                                      <TrashSolid weight="fill" className="size-3.5" />
                                       Remove from team
                                     </DropdownMenuItem>
                                   </>
@@ -1568,7 +1567,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid className="size-3.5" />
+                                      <TrashSolid weight="fill" className="size-3.5" />
                                       Leave team
                                     </DropdownMenuItem>
                                   </>

@@ -29,6 +29,22 @@ describe('model management entry-point routing', () => {
     expect(selectorSource).toContain('Connect provider');
   });
 
+  // A picked model only STAYS picked if `isSelectableModel` agrees the project
+  // offers it — `resolveAvailableSelectedModel` nulls it otherwise, and the
+  // picker then renders `unsetLabel` with no check mark, so every click looks
+  // like a no-op. That answer must come from the server's `enabled` flag, never
+  // from a second client-side entitlement derivation: the gate's old billing
+  // `tier_key` free-tier rule contradicted the server's
+  // `KORTIX_BILLING_INTERNAL_ENABLED ? … : false` and killed every selection.
+  test('reads server-resolved enablement instead of re-deriving entitlement', () => {
+    expect(gateSource).toContain('model.enabled !== false');
+    expect(gateSource).toContain('return isModelOffered(model)');
+    const imports = gateSource.slice(0, gateSource.indexOf('export function'));
+    expect(imports).not.toContain('hasUsableModel');
+    expect(imports).not.toContain('connectedGatewayProviderIdsFromSecretNames');
+    expect(imports).not.toContain('accountStateSelectors');
+  });
+
   test('keeps the model picker in a loading state until all model inputs resolve', () => {
     expect(selectorSource).toContain('modelsLoading || entitlementsPending');
     expect(selectorSource).toContain('aria-label="Loading models"');

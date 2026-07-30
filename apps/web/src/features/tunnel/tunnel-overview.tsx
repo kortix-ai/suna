@@ -1,7 +1,13 @@
 'use client';
 
 import { formatRelative } from '@kortix/shared';
-import { Cable, Check, Copy, Monitor, Search } from 'lucide-react';
+import {
+  PlugsConnectedIcon as Cable,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  MonitorIcon as Monitor,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 

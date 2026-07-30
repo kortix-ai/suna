@@ -7,7 +7,6 @@ description: >-
   {{legal_channel}} — holding every redline for a lawyer to sign off before it
   reaches the counterparty.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

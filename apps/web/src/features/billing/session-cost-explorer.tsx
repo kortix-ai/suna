@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionCostSummary, SessionCostsPage } from '@kortix/sdk';
-import { Eye, ReceiptText } from 'lucide-react';
+import { EyeIcon as Eye, ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -167,7 +167,7 @@ export function SessionCostExplorerContent({
           description="Session cost records appear after sessions are created."
         />
       ) : (
-        <div className="bg-popover overflow-hidden rounded-md border">
+        <div className="bg-popover overflow-hidden rounded-md">
           <Table>
             <TableHeader>
               <TableRow>

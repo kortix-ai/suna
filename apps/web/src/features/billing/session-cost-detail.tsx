@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionCostDetail, SessionCostLedgerEntry } from '@kortix/sdk';
-import { ExternalLink, ReceiptText } from 'lucide-react';
+import { ArrowSquareOutIcon as ExternalLink, ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';

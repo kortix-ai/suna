@@ -7,7 +7,6 @@ description: >-
   Sends dunning email via {{dunning_channel}}. Never cancels a subscription,
   issues a credit, or refunds without human approval.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

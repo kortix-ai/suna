@@ -2,7 +2,7 @@
 
 Single source of truth for the e2e suite. Every flow the platform supports, start→finish, enumerated. Each step is `METHOD /path → expected`. CLI steps are `kortix …`. Negatives (`→ 4xx`) are part of the flow, not optional. Each flow has a stable ID (`PROJ-3`, `IAM-7`) so a test maps 1:1 to a line here.
 
-Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions use OpenCode REST or ACP with OpenCode, Claude Code, Codex, or Pi inside an ephemeral per-session sandbox.
+Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions use OpenCode REST inside an ephemeral per-session sandbox.
 
 > **Audited** against source on branch `newer-kortix` (every route/gate/status below confirmed at `file:line`). Coverage/dead-code tooling for running this suite is §22.
 
@@ -225,7 +225,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-14` Public-share access gate (`loadSessionForSharing().canManageSharing = isOwner || canManageProject` — projects/lib/access.ts; **not** `loadVisibleSession()`, which gates on session-content visibility and made a manager's `canManageProject` half unreachable on the default-`private` session, 404ing before the sharing check ever ran) — the session **creator** may manage its shares regardless of project role; a project **manager** (or owner/admin) may manage ANY session's shares even if they didn't create it; a project **editor/viewer who is not the creator** → 403 (`"Only the session owner or a project manager can …"`, a real permission denial — they're a legitimate project member, so there's nothing to 404-hide); NONMEMBER → 403 (account-membership gate, before the sharing check); ANON → 401.
 `SESS-15` `GET /projects/:id/sessions/:sid/audit` → `read` + session-visible → 200 `{session_id,agent,audit_access,count,actions:[{execution_id,action,connector_id,status,risk,acted_by,acted_by_email,resolved_by,resolved_by_email,result_summary,at,resolved_at}]}` (most-recent-first, `?limit=` 1–1000, default 200; invalid `limit` → 400). This is the always-on approval control plane the launcher polls from every open session — non-Enterprise accounts (`auditAccess` entitlement off) degrade to **unresolved pending approvals only**, never a 402. Non-uuid `sid` → 400; NONMEMBER → 403; ANON → 401.
 `SESS-16` Anonymous session-share VIEWING — `GET /public/session-shares/:shareId` and `GET /public/session-shares/:shareId/messages` (mounted public, `apps/api/src/public-session-shares/`; rate-limited by share id via `createPublicSessionShareRateLimitMiddleware`). `:shareId` is the SESS-13 share's raw `share_id` (uuid), NOT the `kps_` token — the route derives the token server-side (`publicShareToken(shareId)`) and resolves through the same `resolvePublicShare()` (identical 404/410/503 semantics; ANY existing share resourceType, `preview` or `file`, unlocks the view). `GET /:shareId` → 200 `{share:{share_id,session_id,project_id,resource_type,label,sandbox_status,expires_at},session:{session_id,title,status,created_at,updated_at}}`; DB-only, no sandbox round-trip. `GET /:shareId/messages` → 200 `{available,reason,opencode_session_id,message_count,messages:[{role,created,completed,text,tools:[{tool,status}],files:[{filename,mime}],reasoning_omitted}]}` — a sanitized, text-only digest fetched server-to-sandbox (no client-side sandbox access); 503 `"Sandbox is not running"` when the session's sandbox row isn't `active`, otherwise degrades to `available:false` (still 200) for a transient not-ready OpenCode daemon rather than erroring. Non-uuid `shareId` → 400.
-`COV-10` Newly surfaced project-scoped mutations and reads return 404 for an authenticated caller when the project does not exist. This covers managed ACP routes, authoritative session-scope read and replacement, session model changes, and connector-authorization roster/default routes with valid request bodies.
+`COV-10` Newly surfaced project-scoped mutations and reads return 404 for an authenticated caller when the project does not exist. This covers authoritative session-scope read and replacement, session model changes, and connector-authorization roster/default routes with valid request bodies.
 
 ---
 
@@ -638,6 +638,8 @@ authorizations. Connector-profile policies apply to every authorization under
 that profile. `connectors_required` is a subset of `connectors`; missing active
 strategy-compatible authorizations return `409
 CONNECTOR_AUTHORIZATION_REQUIRED` before sandbox startup. Session
+creation returns `409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` when a required
+slug has no configured connector profile. Session
 `connector_bindings` use connector-profile slug keys and `authorization_id`
 values. `GET /projects/:id/sessions/:sessionId/scope` reads the effective
 secret allowlist and authorization map. `PUT` on the same path replaces each

@@ -123,41 +123,6 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(loaded.defaultAgent).toBe('support');
     expect(loaded.specs.map((s) => s.name)).toEqual(['support']);
   });
-
-  test('loads v3 logical agents for the mandatory session-create grant gate', async () => {
-    manifestFile = {
-      path: 'kortix.yaml',
-      content: [
-        'kortix_version: 3',
-        'default_agent: opencode',
-        'runtimes:',
-        '  opencode:',
-        '    harness: opencode',
-        '  codex:',
-        '    harness: codex',
-        'agents:',
-        '  opencode:',
-        '    runtime: opencode',
-        '    connectors: all',
-        '    secrets: all',
-        '    kortix_cli: all',
-        '  codex:',
-        '    runtime: codex',
-        '',
-      ].join('\n'),
-    };
-
-    const loaded = await loadProjectAgents(fakeProject());
-    const governed = resolveGovernedAgentGrant('codex', loaded, {
-      subject: true,
-      projectDefaultAgent: null,
-    });
-
-    expect(loaded.errors).toEqual([]);
-    expect(loaded.defaultAgent).toBe('opencode');
-    expect(loaded.specs.map((spec) => spec.name)).toEqual(['codex', 'opencode']);
-    expect(governed.ok).toBe(true);
-  });
 });
 
 describe('connectors_required — v2 agent required-connector declaration', () => {

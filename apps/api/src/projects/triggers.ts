@@ -72,14 +72,10 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer).
- *
- * Version 3 keeps the same governance grant fields. It adds runtime profiles
- * that `compileRuntimeConfig` consumes. This reader must accept v3 so the
- * mandatory declared-agent gate and runtime compiler read one manifest.
- * A version above this ceiling is unknown and remains refused.
+ * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
+ * this ceiling is genuinely unknown to the platform and remains refused.
  */
-export const MAX_SCHEMA_VERSION = 3;
+export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -231,7 +227,7 @@ export interface LoadedTriggers {
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
@@ -242,7 +238,9 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
+      forceRefresh: opts?.forceRefresh,
+    });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,

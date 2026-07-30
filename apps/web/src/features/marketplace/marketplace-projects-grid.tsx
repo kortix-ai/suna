@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 
-import { Boxes } from 'lucide-react';
+import { CubeIcon as Boxes } from '@phosphor-icons/react';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
@@ -54,7 +54,12 @@ export function MarketplaceProjectsGrid({
   }
 
   return (
-    <div className={cn('grid gap-4', size === 'featured' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+    <div
+      className={cn(
+        'grid gap-4',
+        size === 'featured' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3',
+      )}
+    >
       {visible.map((item) => (
         <MarketplaceProjectCard key={item.id} item={item} size={size} />
       ))}

@@ -11,7 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, Lock, ShieldCheck } from 'lucide-react';
+import {
+  RobotIcon as Bot,
+  LockIcon as Lock,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
@@ -117,8 +121,8 @@ export function KortixLayerFields({
       <section className="space-y-4">
         <SectionHeader icon={ShieldCheck} title="Governance" />
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed text-pretty">
-          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing
-          until you grant it.
+          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing until
+          you grant it.
         </p>
         <FieldRow label="Skills">
           <GrantSetField
@@ -175,7 +179,10 @@ export function KortixLayerFields({
           />
         </FieldRow>
         <FieldRow label="Kortix CLI">
-          <KortixCliField value={draft.kortix_cli} onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)} />
+          <KortixCliField
+            value={draft.kortix_cli}
+            onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
+          />
         </FieldRow>
         <FieldRow label="Workspace" hint="git boundary (enforced in a later phase)">
           <div className="space-y-1.5">
@@ -186,7 +193,9 @@ export function KortixLayerFields({
               allowUnset
             />
             <p className="text-muted-foreground/60 text-[11px]">
-              {draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Inherits the project default.'}
+              {draft.workspace
+                ? WORKSPACE_MODE_HELP[draft.workspace]
+                : 'Inherits the project default.'}
             </p>
           </div>
         </FieldRow>

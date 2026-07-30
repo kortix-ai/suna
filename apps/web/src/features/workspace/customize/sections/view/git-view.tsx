@@ -10,7 +10,15 @@ import { getEnv } from '@/lib/env-config';
 import { getDeploymentCliInstallCommand } from '@/lib/kortix-cli';
 import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, GitBranch, GitFork, Github, RefreshCw } from 'lucide-react';
+import {
+  ArrowsClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  GitBranchIcon as GitBranch,
+  GithubLogoIcon as Github,
+  GitForkIcon as GitFork,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 

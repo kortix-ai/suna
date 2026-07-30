@@ -39,24 +39,24 @@ describe('sessionMayEnumerateProfile', () => {
     );
   });
 
-  test('team-shared connections stay visible — the project already publishes them', () => {
-    // A connector may hold several TEAM connections (support@, sales@) and they
+  test('project connections stay visible — the project already publishes them', () => {
+    // A connector may hold several project connections (support@, sales@) and they
     // are visible to every project member by design. Hiding them from a sandbox
     // would break connector use without protecting anything.
-    expect(sessionMayEnumerateProfile(profile('p-team', 'project'), BOUND)).toBe(true);
+    expect(sessionMayEnumerateProfile(profile('p-project', 'project'), BOUND)).toBe(true);
   });
 
   test('someone’s PRIVATE member connection is hidden unless bound', () => {
     expect(sessionMayEnumerateProfile(profile('p-private', 'member', 'human-1'), BOUND)).toBe(false);
   });
 
-  test('an EMPTY bound set hides everything except team connections', () => {
+  test('an EMPTY bound set hides everything except project connections', () => {
     // A session with no bindings at all is the common KaaB case. Empty must mean
     // "bound to nothing", not "unbound, so show everything" — treating an empty
     // set as absent is exactly how this kind of guard fails open.
     const none: ReadonlySet<string> = new Set();
     expect(sessionMayEnumerateProfile(profile('p-x', 'external', 'b'), none)).toBe(false);
-    expect(sessionMayEnumerateProfile(profile('p-team', 'project'), none)).toBe(true);
+    expect(sessionMayEnumerateProfile(profile('p-project', 'project'), none)).toBe(true);
   });
 
   test('an unknown owner_type is hidden, not shown', () => {

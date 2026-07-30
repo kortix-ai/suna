@@ -3,8 +3,13 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  KeyIcon as KeyRound,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
@@ -87,7 +92,7 @@ export function SecretIntakeForm({
   if (phase === 'loading') {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />{' '}
+        <Loading className="h-4 w-4" />{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067')}
       </div>
     );
@@ -150,7 +155,7 @@ export function SecretIntakeForm({
 
       <Button className="w-full" onClick={submit} disabled={submitting}>
         {submitting ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loading className="mr-2 h-4 w-4" />
         ) : (
           <KeyRound className="mr-2 h-4 w-4" />
         )}

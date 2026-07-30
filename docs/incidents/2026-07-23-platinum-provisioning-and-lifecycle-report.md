@@ -25,8 +25,8 @@ Platinum returned this error `35,112` times during the seven-day provider-log wi
 - A successful template build reached `3,497.7 s`.
 - A failed template build remained unresolved for up to `75,365.0 s`.
 
-These failures block session startup, restart, terminal access, and runtime
-access for every harness.
+These failures block session startup, restart, terminal access, and OpenCode
+runtime access.
 
 ## Sandbox create latency
 

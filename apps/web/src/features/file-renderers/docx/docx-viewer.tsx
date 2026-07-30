@@ -12,17 +12,17 @@ import {
   type DocxEditorController,
   type DocxPageThumbnailItem,
 } from '@extend-ai/react-docx';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  CircleMinus,
-  CirclePlus,
-  Download,
-  Ellipsis,
-  FileDiff,
-  MessageSquare,
-  PanelLeft,
-  Upload,
-} from 'lucide-react';
+  MinusCircleIcon as CircleMinus,
+  PlusCircleIcon as CirclePlus,
+  DownloadIcon as Download,
+  DotsThreeIcon as Ellipsis,
+  GitDiffIcon as FileDiff,
+  ChatIcon as MessageSquare,
+  SidebarSimpleIcon as PanelLeft,
+  UploadIcon as Upload,
+} from '@phosphor-icons/react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';

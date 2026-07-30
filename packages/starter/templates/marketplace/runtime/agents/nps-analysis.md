@@ -4,7 +4,6 @@ description: >-
   {{survey_sheet}}, clusters them into themes, isolates detractor drivers, and
   posts the score trend and representative quotes to {{report_channel}}.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

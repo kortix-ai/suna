@@ -2,6 +2,9 @@
 
 This guide verifies the current backend session contract.
 
+> **Runtime scope.** The OpenCode message and model steps below test the
+> `kortix_version: 2` REST compatibility path, which is the only runtime.
+
 It covers:
 
 - backend session creation
@@ -291,6 +294,17 @@ Expected:
 Reactivate the authorization. Retry the create request.
 
 Expected: HTTP `201`.
+
+### E5. Verify the unavailable required-profile gate
+
+Set `connectors_required` to a slug that does not identify a configured
+connector profile. Then create a session for that agent.
+
+Expected:
+
+- HTTP `409`
+- `code` equals `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`
+- no session row or sandbox starts
 
 ## F. Verify authoritative session scope
 

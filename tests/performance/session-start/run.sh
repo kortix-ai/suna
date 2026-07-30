@@ -7,8 +7,6 @@
 #   ./run.sh                 # full benchmark (session-bench.mjs)
 #   ./run.sh boot-probe      # one session + daemon boot_timeline
 #   ./run.sh oclog-probe     # one session + opencode.log + baked vs runtime dep versions
-#   ./run.sh session-ready   # create -> runtime ready -> ACP model selection
-#   ./run.sh first-token     # create -> first model-generated ACP token
 #
 # Target user/project default to a throwaway local e2e account. Override with
 # BENCH_EMAIL / BENCH_UID / PROJECT_ID. This RESETS the target user's password
@@ -31,21 +29,5 @@ case "${1:-bench}" in
   bench)       node "$HERE/session-bench.mjs" ;;
   boot-probe)  node "$HERE/boot-probe.mjs" ;;
   oclog-probe) node "$HERE/oclog-probe.mjs" ;;
-  session-ready)
-    export BENCH_API="${BENCH_API:-$API_BASE}"
-    export BENCH_PROJECT_ID="${BENCH_PROJECT_ID:-$PROJECT_ID}"
-    export BENCH_DB_URL="${BENCH_DB_URL:-$DATABASE_URL}"
-    export BENCH_STARTUP_ONLY=1
-    bun "$HERE/create-to-first-token.mjs"
-    ;;
-  first-token)
-    export BENCH_API="${BENCH_API:-$API_BASE}"
-    export BENCH_PROJECT_ID="${BENCH_PROJECT_ID:-$PROJECT_ID}"
-    export BENCH_DB_URL="${BENCH_DB_URL:-$DATABASE_URL}"
-    bun "$HERE/create-to-first-token.mjs"
-    ;;
-  *)
-    echo "unknown command: $1 (use: bench | boot-probe | oclog-probe | session-ready | first-token)"
-    exit 1
-    ;;
+  *) echo "unknown command: $1 (use: bench | boot-probe | oclog-probe)"; exit 1 ;;
 esac

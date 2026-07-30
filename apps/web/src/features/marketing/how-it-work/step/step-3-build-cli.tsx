@@ -3,9 +3,9 @@
 import { PageHead, Panel } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { SparkleIcon as HiMiniSparkles } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import { HiMiniSparkles } from 'react-icons/hi2';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
 type Skill = {
@@ -81,7 +81,7 @@ export function Step3BuildCli() {
                         : 'border-border bg-background text-muted-foreground',
                     )}
                   >
-                    <HiMiniSparkles className="size-4" />
+                    <HiMiniSparkles weight="fill" className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">

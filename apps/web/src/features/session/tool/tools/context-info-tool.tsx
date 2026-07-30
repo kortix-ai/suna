@@ -1,18 +1,15 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Scissors,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-
 
 export function ContextInfoTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -45,4 +42,3 @@ export function ContextInfoTool({ part }: ToolProps) {
   );
 }
 ToolRegistry.register('context_info', ContextInfoTool);
-
