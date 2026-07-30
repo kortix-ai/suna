@@ -107,6 +107,17 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
     if (!triggerAndCheck.includes('session_sandboxes_deadline_within_cap')) {
       throw new Error('migration text no longer contains the trigger + CHECK section');
     }
+    const repairMigration = await Bun.file(
+      resolve(
+        import.meta.dir,
+        '..',
+        'migrations',
+        '20260730064010447_repair_sandbox_deadline_guard.sql',
+      ),
+    ).text();
+    if (!repairMigration.includes('CREATE OR REPLACE FUNCTION')) {
+      throw new Error('repair migration no longer replaces the deadline guard');
+    }
 
     psql(`
       CREATE SCHEMA kortix;
@@ -127,6 +138,15 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
         updated_at timestamptz NOT NULL DEFAULT now()
       );
       ${triggerAndCheck}
+
+      CREATE OR REPLACE FUNCTION kortix.session_sandboxes_anchor_guard()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RETURN NEW;
+      END;
+      $$;
+
+      ${repairMigration}
     `);
   }, 60_000);
 

@@ -164,13 +164,14 @@ export async function readManifestFromRepo(
   project: GitBackedProject,
   candidatePaths: string[],
   ref?: string,
+  opts?: { forceRefresh?: boolean },
 ): Promise<{ path: string; content: string; sha: string; candidatePaths: string[] } | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => !!p);
   if (normalized.length === 0) return null;
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, opts?.forceRefresh);
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
   const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);

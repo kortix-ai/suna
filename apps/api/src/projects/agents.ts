@@ -260,7 +260,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  */
 export async function loadProjectAgents(
   project: GitBackedProject,
-  opts?: { rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
 ): Promise<LoadedAgents> {
   const { readManifest, synthesizeBlankManifest } = await import('./triggers');
   let manifest: ParsedManifest | null;

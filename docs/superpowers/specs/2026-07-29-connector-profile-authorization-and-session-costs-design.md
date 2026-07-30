@@ -185,6 +185,16 @@ The main web UI renders a connection action from this response.
 
 The action opens the authorization flow for the missing connector profile.
 
+If the required slug has no configured connector profile, the API returns
+`409` with:
+
+```json
+{
+  "error": "Required connector profile \"gmail-read\" is unavailable",
+  "code": "REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE"
+}
+```
+
 The session does not start until all mandatory connector profiles resolve.
 
 ## Session scope contract

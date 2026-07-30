@@ -231,7 +231,7 @@ export interface LoadedTriggers {
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
@@ -242,7 +242,9 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
+      forceRefresh: opts?.forceRefresh,
+    });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,

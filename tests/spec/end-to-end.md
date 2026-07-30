@@ -638,6 +638,8 @@ authorizations. Connector-profile policies apply to every authorization under
 that profile. `connectors_required` is a subset of `connectors`; missing active
 strategy-compatible authorizations return `409
 CONNECTOR_AUTHORIZATION_REQUIRED` before sandbox startup. Session
+creation returns `409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` when a required
+slug has no configured connector profile. Session
 `connector_bindings` use connector-profile slug keys and `authorization_id`
 values. `GET /projects/:id/sessions/:sessionId/scope` reads the effective
 secret allowlist and authorization map. `PUT` on the same path replaces each

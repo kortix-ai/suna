@@ -429,10 +429,10 @@ describe('session connector profile isolation', () => {
     expect(await depsA.resolveCredential(connectorA, null)).toBe('workspace-a-capability');
     expect(await depsB.resolveCredential(connectorB, null)).toBe('workspace-b-capability');
     expect(await depsA.loadPolicies(connectorA.connectorId)).toEqual([
-      { match: '*', action: 'block', position: 0 },
+      { match: '*', action: 'block', conditions: null, position: 0 },
     ]);
     expect(await depsB.loadPolicies(connectorB.connectorId)).toEqual([
-      { match: '*', action: 'block', position: 0 },
+      { match: '*', action: 'block', conditions: null, position: 0 },
     ]);
   });
 
@@ -858,6 +858,17 @@ describe('session connector profile isolation', () => {
         .set({ authorizationStrategy: 'user' })
         .where(eq(executorConnectors.connectorId, CONNECTOR_A));
     }
+  });
+
+  test('required connector checks reject an unavailable connector profile', async () => {
+    await expect(
+      missingRequiredConnectorAuthorizationsForSession({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        sessionId: SESSION_A,
+        aliases: ['unavailable_connector'],
+      }),
+    ).rejects.toThrow('Required connector profile "unavailable_connector" is unavailable');
   });
 
   test('Pipedream finalize reads and stores the account under the profile-specific identity', async () => {

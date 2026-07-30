@@ -724,7 +724,10 @@ export async function createProjectSession(input: {
     };
   }
   if (runtimeAgent) agentName = runtimeAgent.name;
-  const loadedAgents = await loadProjectAgents(project);
+  const loadedAgents = await loadProjectAgents(project, {
+    forceRefresh: true,
+    rethrowReadErrors: true,
+  });
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
@@ -864,6 +867,17 @@ export async function createProjectSession(input: {
       explicitBindings: validatedConnectorBindings.bindings,
     });
     if (!required.ok) {
+      if (required.code === 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE') {
+        return {
+          error: {
+            status: 409,
+            body: {
+              error: `Required connector profile "${required.alias}" is unavailable`,
+              code: required.code,
+            },
+          },
+        };
+      }
       return {
         error: {
           status: 409,
