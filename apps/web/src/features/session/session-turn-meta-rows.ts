@@ -94,10 +94,17 @@ export function sessionTurnMetaRows({
     if (value) rows.push({ label: 'Duration', value });
   }
 
+  // `formatCost(0)` renders as "$0.00" — a real-looking number for a turn
+  // that spent nothing — so the row is gated on the raw value, not the string.
   if (cost && cost.cost > 0) {
     rows.push({ label: 'Cost', value: formatCost(cost.cost) });
   }
 
+  // Deliberately `input + output` only, NOT every token field: `reasoning` /
+  // `cacheRead` / `cacheWrite` are real counts, but a cache-read number far
+  // bigger than the visible conversation would raise a question this single
+  // row can't answer. A turn can be reasoning- or cache-heavy and legitimately
+  // carry no Tokens row.
   const tokenTotal = cost ? cost.tokens.input + cost.tokens.output : 0;
   if (cost && tokenTotal > 0) {
     rows.push({ label: 'Tokens', value: formatTokens(tokenTotal) });

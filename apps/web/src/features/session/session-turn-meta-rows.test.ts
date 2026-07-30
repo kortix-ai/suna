@@ -43,8 +43,10 @@ describe('sessionTurnSpan', () => {
 
 describe('sessionTurnEndedAt / sessionTurnDurationMs', () => {
   test('a turn with only one timestamp has an endedAt but no duration', () => {
-    const t = turn(userMessage(1_000), [assistantMessage({ created: 1_000 })]);
-    expect(sessionTurnEndedAt(t)).toBe(1_000);
+    // startedAt is absent (no user `created`) — distinct from the next test's
+    // `endedAt <= startedAt` guard, which needs BOTH timestamps present.
+    const t = turn(userMessage(), [assistantMessage({ created: 1_700 })]);
+    expect(sessionTurnEndedAt(t)).toBe(1_700);
     expect(sessionTurnDurationMs(t)).toBeNull();
   });
 
@@ -94,6 +96,19 @@ describe('sessionTurnMetaRows', () => {
     const labels = rows.map((r) => r.label);
     expect(labels).not.toContain('Cost');
     expect(labels).not.toContain('Tokens');
+  });
+
+  test('omits Tokens when only reasoning/cache fields are nonzero — the row sums input + output only', () => {
+    const rows = sessionTurnMetaRows({
+      endedAt: NOW - 5_000,
+      now: NOW,
+      durationMs: 3_000,
+      cost: {
+        cost: 0.1,
+        tokens: { input: 0, output: 0, reasoning: 5_000, cacheRead: 5_000, cacheWrite: 0 },
+      },
+    });
+    expect(rows.map((r) => r.label)).not.toContain('Tokens');
   });
 
   test('omits Duration for a sub-second durationMs, because formatDuration returns an empty string', () => {
