@@ -102,6 +102,13 @@ interface WCase {
 
 const A = PROJECT_ACTIONS;
 const sid = () => crypto.randomUUID();
+const DIRECT_AGENT_BODY = {
+  agentName: 'new-agent',
+  block: {
+    enabled: true,
+    opencode: { prompt: 'You are a test agent.' },
+  },
+};
 
 const CASES: WCase[] = [
   // ── Session lifecycle ────────────────────────────────────────────────────
@@ -272,6 +279,30 @@ const CASES: WCase[] = [
     leaf: A.PROJECT_AGENT_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/agents/scoped-bot/scope`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
+  },
+  {
+    name: 'agent create preview POST (agent.write)',
+    leaf: A.PROJECT_AGENT_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/agents/preview`, body: DIRECT_AGENT_BODY,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
+  },
+  {
+    name: 'agent create POST (agent.write + gitops.push + cr.open)',
+    leaf: A.PROJECT_AGENT_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/agents`,
+    body: { ...DIRECT_AGENT_BODY, preview_revision: '0'.repeat(64) },
+    tier: 'editor',
+    denyGrant: [A.PROJECT_GITOPS_PUSH, A.PROJECT_CR_OPEN],
+    allowGrant: [A.PROJECT_AGENT_WRITE, A.PROJECT_GITOPS_PUSH, A.PROJECT_CR_OPEN],
+  },
+  {
+    name: 'agent behavior repair POST (agent.write + gitops.push + cr.open)',
+    leaf: A.PROJECT_AGENT_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/agents/scoped-bot/behavior-repair`,
+    body: { behavior_markdown: 'You are a repaired agent.' },
+    tier: 'editor',
+    denyGrant: [A.PROJECT_GITOPS_PUSH, A.PROJECT_CR_OPEN],
+    allowGrant: [A.PROJECT_AGENT_WRITE, A.PROJECT_GITOPS_PUSH, A.PROJECT_CR_OPEN],
   },
   // ── Secrets (write) ──────────────────────────────────────────────────────
   {

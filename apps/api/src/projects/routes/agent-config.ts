@@ -27,6 +27,7 @@
 // and every other customize mutation use), threaded through
 // assertProjectCapability so the agent-grant fold fires.
 
+import { randomBytes } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import {
@@ -37,16 +38,29 @@ import {
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
+import {
+  createChangeRequestForBranch,
+  findOpenAgentConfigChangeRequest,
+  serializeChangeRequest,
+} from '../change-requests';
 import { extractAgents } from '../agents';
-import { readRepoFile } from '../git';
-import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
+import { isRepoFileNotFoundError, readRepoFile } from '../git';
+import {
+  createRemoteSessionBranch,
+  GitFileRevisionConflictError,
+  commitMultipleFilesToBranch,
+} from '../git/branches';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
+  composeAgentConfigFiles,
+  composeAgentRepairBehaviorFile,
+  type BehaviorFileState,
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
 } from '../lib/agent-config-v2';
@@ -98,20 +112,111 @@ const DefaultAgentResponseSchema = z.object({
   default_agent: z.string(),
 });
 
-/** Read + parse an agent's `.md` (governance-declared or not — behavior and
- *  governance are independently addressable). Never throws: a missing file
- *  (brand-new agent) reads as body-only/empty, same as a fresh start. */
+const PreviewAgentConfigBodySchema = z.object({
+  agentName: z.string().min(1).max(200),
+  block: AgentBlockSchema,
+});
+
+const CreateAgentConfigBodySchema = PreviewAgentConfigBodySchema.extend({
+  preview_revision: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+const RepairAgentBehaviorBodySchema = z.object({
+  behavior_markdown: z.string(),
+});
+
+type AgentMarkdownRead =
+  | { state: 'exists'; frontmatter: Record<string, unknown>; body: string }
+  | { state: 'missing'; frontmatter: Record<string, unknown>; body: string }
+  | { state: 'read_error'; frontmatter: Record<string, unknown>; body: string; error: string };
+
 async function readAgentMarkdown(
   loadedRow: Parameters<typeof withProjectGitAuth>[0],
   branch: string,
   mdPath: string,
-): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
+): Promise<AgentMarkdownRead> {
   try {
     const gitProject = await withProjectGitAuth(loadedRow);
     const content = await readRepoFile(gitProject, mdPath, branch);
-    return parseAgentMarkdown(content);
+    return { state: 'exists', ...parseAgentMarkdown(content) };
+  } catch (error) {
+    if (isRepoFileNotFoundError(error)) {
+      return { state: 'missing', frontmatter: {}, body: '' };
+    }
+    return {
+      state: 'read_error',
+      frontmatter: {},
+      body: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function jsonConfigError(c: any, result: { status: number; code: string; error: string; issues?: unknown[] }) {
+  return c.json(
+    {
+      error: result.error,
+      code: result.code,
+      ...(result.issues ? { issues: result.issues } : {}),
+    },
+    result.status as any,
+  );
+}
+
+function behaviorState(read: AgentMarkdownRead): BehaviorFileState {
+  return read.state;
+}
+
+function agentBranchName(kind: 'create' | 'repair', agentName: string): string {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  return `kortix/agents/${kind}/${agentName}-${stamp}-${randomBytes(4).toString('hex')}`;
+}
+
+async function createAgentChangeBranch(
+  project: Awaited<ReturnType<typeof withProjectGitAuth>>,
+  kind: 'create' | 'repair',
+  agentName: string,
+  baseRef: string,
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const branch = agentBranchName(kind, agentName);
+    try {
+      await createRemoteSessionBranch(project, branch, baseRef);
+      return branch;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/already exists|reference already exists/i.test(message)) break;
+    }
+  }
+  throw lastError;
+}
+
+async function assertSandboxTemplate(
+  loadedRow: Parameters<typeof withProjectGitAuth>[0],
+  agentName: string,
+  block: { sandbox?: string },
+): Promise<{ ok: true } | { ok: false; body: Record<string, unknown> }> {
+  if (!block.sandbox) return { ok: true };
+  try {
+    await resolveTemplateBySlug(await withProjectGitAuth(loadedRow), block.sandbox);
+    return { ok: true };
   } catch {
-    return { frontmatter: {}, body: '' };
+    return {
+      ok: false,
+      body: {
+        error: `Unknown sandbox template "${block.sandbox}"`,
+        code: 'invalid_config',
+        issues: [
+          {
+            path: `agents.${agentName}.sandbox`,
+            message: 'must name an available project template or "default".',
+            severity: 'error',
+          },
+        ],
+      },
+    };
   }
 }
 
@@ -178,16 +283,28 @@ projectsApp.openapi(
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
     let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
+    let behaviorPath: string | null = null;
+    let behaviorFileState: BehaviorFileState | null = null;
+    let behaviorFileError: string | null = null;
     if (read.schemaVersion === 2) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
-      const { frontmatter, body } = await readAgentMarkdown(
+      behaviorPath = mdPath;
+      const behavior = await readAgentMarkdown(
         loaded.row,
         loaded.row.defaultBranch,
         mdPath,
       );
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+      behaviorFileState = behavior.state;
+      behaviorFileError = behavior.state === 'read_error' ? behavior.error : null;
+      if (behavior.state === 'exists') {
+        const opencode = pickBehaviorFields(behavior.frontmatter);
+        if (behavior.body.trim()) opencode.prompt = behavior.body;
+        block = { ...(read.block ?? {}), opencode };
+      } else if (read.block !== null) {
+        block = { ...read.block, opencode: {} };
+      } else {
+        block = null;
+      }
     }
 
     return c.json({
@@ -195,8 +312,439 @@ projectsApp.openapi(
       schema_version: read.schemaVersion,
       editable: read.schemaVersion === 2,
       default_agent: read.defaultAgent,
+      behavior_path: behaviorPath,
+      behavior_file_state: behaviorFileState,
+      ...(behaviorFileError ? { behavior_file_error: behaviorFileError } : {}),
       block,
     });
+  },
+);
+
+// POST /v1/projects/:projectId/agents/preview
+// Returns the exact manifest + behavior-file writes for a new agent without
+// mutating git. The create route requires the preview_revision produced here.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/agents/preview',
+    tags: ['projects'],
+    summary: 'Preview direct agent creation',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: PreviewAgentConfigBodySchema } } },
+    },
+    responses: {
+      200: json(z.any(), 'Previewed agent files'),
+      ...errors(400, 403, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+    );
+
+    const parsed = PreviewAgentConfigBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        400,
+      );
+    }
+    const { agentName, block } = parsed.data;
+
+    const sandbox = await assertSandboxTemplate(loaded.row, agentName, block);
+    if (!sandbox.ok) return c.json(sandbox.body, 400);
+
+    let manifest: Awaited<ReturnType<typeof loadManifestForEdit>>;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (error) {
+      return c.json(
+        { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
+        400,
+      );
+    }
+
+    const behaviorPath = agentMarkdownPath(manifest.raw, agentName);
+    const behavior = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, behaviorPath);
+    const composed = composeAgentConfigFiles({
+      manifest,
+      agentName,
+      block,
+      existingBehaviorFile: behaviorState(behavior),
+    });
+    if (!composed.ok) return jsonConfigError(c, composed);
+
+    return c.json({
+      agent_name: agentName,
+      manifest_path: composed.manifestPath,
+      behavior_path: composed.behaviorPath,
+      manifest_content: composed.manifestContent,
+      behavior_markdown: composed.behaviorMarkdown,
+      preview_revision: composed.previewRevision,
+      files: composed.files,
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/agents
+// Creates a new manifest-declared agent through a branch-backed CR. The default
+// branch remains unchanged until the CR is merged.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/agents',
+    tags: ['projects'],
+    summary: 'Create an agent via change request',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: CreateAgentConfigBodySchema } } },
+    },
+    responses: {
+      201: json(z.any(), 'Created agent change request'),
+      ...errors(400, 403, 404, 409, 422, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+    );
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CR_OPEN);
+
+    const parsed = CreateAgentConfigBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        400,
+      );
+    }
+    const { agentName, block, preview_revision: previewRevision } = parsed.data;
+
+    const sandbox = await assertSandboxTemplate(loaded.row, agentName, block);
+    if (!sandbox.ok) return c.json(sandbox.body, 400);
+
+    let manifest: Awaited<ReturnType<typeof loadManifestForEdit>>;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (error) {
+      return c.json(
+        { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
+        400,
+      );
+    }
+
+    const behaviorPath = agentMarkdownPath(manifest.raw, agentName);
+    const behavior = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, behaviorPath);
+    const composed = composeAgentConfigFiles({
+      manifest,
+      agentName,
+      block,
+      existingBehaviorFile: behaviorState(behavior),
+    });
+    if (!composed.ok) return jsonConfigError(c, composed);
+    if (previewRevision !== composed.previewRevision) {
+      return c.json(
+        {
+          error: 'Preview is stale. Re-preview the agent before creating it.',
+          code: 'stale_preview_revision',
+          preview_revision: composed.previewRevision,
+        },
+        409,
+      );
+    }
+
+    const gitProject = await withProjectGitAuth(loaded.row);
+    let pending;
+    try {
+      pending = await findOpenAgentConfigChangeRequest(
+        gitProject,
+        projectId,
+        agentName,
+        composed.files.map((file) => file.path),
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error: `Failed to inspect open change requests: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          code: 'pending_cr_check_failed',
+        },
+        502,
+      );
+    }
+    if (pending) {
+      return c.json(
+        {
+          error: `Agent "${agentName}" already has an open change request.`,
+          code: 'pending_duplicate_agent_create',
+          change_request: serializeChangeRequest(pending),
+        },
+        409,
+      );
+    }
+
+    let branch: string;
+    try {
+      branch = await createAgentChangeBranch(
+        gitProject,
+        'create',
+        agentName,
+        loaded.row.defaultBranch,
+      );
+    } catch (error) {
+      return c.json(
+        { error: `Failed to create agent branch: ${(error as Error).message || String(error)}` },
+        502,
+      );
+    }
+
+    let commitSha: string;
+    try {
+      const committed = await commitMultipleFilesToBranch(gitProject, {
+        files: composed.files,
+        message: `chore: create agent ${agentName}`,
+        branch,
+        expectedFileRevision:
+          manifest.revision === undefined
+            ? undefined
+            : {
+                path: composed.manifestPath,
+                sha: manifest.revision,
+                candidatePaths: manifest.candidatePaths,
+              },
+      });
+      commitSha = committed.commitSha;
+    } catch (error) {
+      if (error instanceof GitFileRevisionConflictError) {
+        return c.json(
+          { error: error.message, code: 'manifest_revision_conflict' },
+          409,
+        );
+      }
+      return c.json(
+        { error: `Failed to commit agent files: ${(error as Error).message || String(error)}` },
+        502,
+      );
+    }
+
+    const cr = await createChangeRequestForBranch({
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+      projectForGit: gitProject,
+      title: `Create agent ${agentName}`,
+      description: `Adds ${agentName} to ${composed.manifestPath} and ${composed.behaviorPath}.`,
+      baseRef: loaded.row.defaultBranch,
+      headRef: branch,
+      metadata: {
+        agent_config: {
+          action: 'create',
+          agent_name: agentName,
+          manifest_path: composed.manifestPath,
+          behavior_path: composed.behaviorPath,
+        },
+      },
+    });
+    if (!cr.ok) return c.json(cr.body, cr.status as any);
+
+    return c.json(
+      {
+        agent_name: agentName,
+        manifest_path: composed.manifestPath,
+        behavior_path: composed.behaviorPath,
+        preview_revision: composed.previewRevision,
+        branch,
+        commit_sha: commitSha,
+        change_request: serializeChangeRequest(cr.row),
+      },
+      201,
+    );
+  },
+);
+
+// POST /v1/projects/:projectId/agents/:agentName/behavior-repair
+// Creates a missing behavior `.md` from user-reviewed markdown, then opens a CR.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/agents/{agentName}/behavior-repair',
+    tags: ['projects'],
+    summary: 'Repair a missing agent behavior file via change request',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), agentName: z.string() }),
+      body: { content: { 'application/json': { schema: RepairAgentBehaviorBodySchema } } },
+    },
+    responses: {
+      201: json(z.any(), 'Created repair change request'),
+      ...errors(400, 403, 404, 409, 422, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const agentName = c.req.param('agentName');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+    );
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CR_OPEN);
+
+    const parsed = RepairAgentBehaviorBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        400,
+      );
+    }
+
+    let manifest: Awaited<ReturnType<typeof loadManifestForEdit>>;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (error) {
+      return c.json(
+        { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
+        400,
+      );
+    }
+
+    const path = agentMarkdownPath(manifest.raw, agentName);
+    const behavior = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, path);
+    const repair = composeAgentRepairBehaviorFile({
+      manifest,
+      agentName,
+      behaviorFileState: behaviorState(behavior),
+      behaviorMarkdown: parsed.data.behavior_markdown,
+    });
+    if (!repair.ok) return jsonConfigError(c, repair);
+
+    const gitProject = await withProjectGitAuth(loaded.row);
+    let pending;
+    try {
+      pending = await findOpenAgentConfigChangeRequest(
+        gitProject,
+        projectId,
+        agentName,
+        repair.files.map((file) => file.path),
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error: `Failed to inspect open change requests: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          code: 'pending_cr_check_failed',
+        },
+        502,
+      );
+    }
+    if (pending) {
+      return c.json(
+        {
+          error: `Agent "${agentName}" already has an open change request.`,
+          code: 'pending_agent_config_change',
+          change_request: serializeChangeRequest(pending),
+        },
+        409,
+      );
+    }
+
+    let branch: string;
+    try {
+      branch = await createAgentChangeBranch(
+        gitProject,
+        'repair',
+        agentName,
+        loaded.row.defaultBranch,
+      );
+    } catch (error) {
+      return c.json(
+        { error: `Failed to create agent branch: ${(error as Error).message || String(error)}` },
+        502,
+      );
+    }
+
+    let commitSha: string;
+    try {
+      const committed = await commitMultipleFilesToBranch(gitProject, {
+        files: repair.files,
+        message: `chore: repair agent ${agentName} behavior`,
+        branch,
+      });
+      commitSha = committed.commitSha;
+    } catch (error) {
+      return c.json(
+        { error: `Failed to commit agent behavior: ${(error as Error).message || String(error)}` },
+        502,
+      );
+    }
+
+    const cr = await createChangeRequestForBranch({
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+      projectForGit: gitProject,
+      title: `Repair agent ${agentName} behavior`,
+      description: `Adds missing behavior file ${repair.behaviorPath}.`,
+      baseRef: loaded.row.defaultBranch,
+      headRef: branch,
+      metadata: {
+        agent_config: {
+          action: 'repair',
+          agent_name: agentName,
+          manifest_path: repair.manifestPath,
+          behavior_path: repair.behaviorPath,
+        },
+      },
+    });
+    if (!cr.ok) return c.json(cr.body, cr.status as any);
+
+    return c.json(
+      {
+        agent_name: agentName,
+        manifest_path: repair.manifestPath,
+        behavior_path: repair.behaviorPath,
+        branch,
+        commit_sha: commitSha,
+        change_request: serializeChangeRequest(cr.row),
+      },
+      201,
+    );
   },
 );
 
@@ -406,6 +954,12 @@ projectsApp.openapi(
     if (opencodeDraft !== undefined) {
       mdPath = agentMarkdownPath(applied.raw, agentName);
       const existing = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
+      if (existing.state === 'read_error') {
+        return c.json(
+          { error: existing.error, code: 'behavior_file_read' },
+          502,
+        );
+      }
       const draftRecord: Record<string, unknown> = { ...opencodeDraft };
       delete draftRecord.prompt;
       nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);

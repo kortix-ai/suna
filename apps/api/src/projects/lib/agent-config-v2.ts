@@ -25,9 +25,14 @@ import {
   resolveGrantSet,
   SLUG_RE,
   validateManifest,
+  validateAgentMdFrontmatter,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
-import type { ParsedManifest } from '../triggers';
+import { createHash } from 'node:crypto';
+import { extractAgents } from '../agents';
+import { parseAgentMarkdown, serializeAgentMarkdown } from './agent-markdown';
+import { agentMarkdownPath, KNOWN_BEHAVIOR_KEYS } from './compile-agent-config';
+import { serializeManifest, type ParsedManifest } from '../triggers';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
  *  `@kortix/manifest-schema`'s exported `SLUG_RE` directly (it used to be
@@ -40,6 +45,98 @@ export function isValidAgentName(name: string): boolean {
 export type NormalizeRequiredConnectorsResult =
   | { ok: true; block: Record<string, unknown> }
   | { ok: false; error: string };
+
+export type BehaviorFileState = 'exists' | 'missing' | 'read_error';
+
+export type AgentBehaviorDraft = Record<string, unknown> & {
+  prompt?: string;
+};
+
+export type AgentConfigWireBlock = AgentBlockV2 & {
+  connectors_personal?: string[];
+  opencode?: AgentBehaviorDraft;
+};
+
+export type ComposeAgentConfigFilesResult =
+  | {
+      ok: true;
+      agentName: string;
+      manifestPath: string;
+      manifestContent: string;
+      behaviorPath: string;
+      behaviorMarkdown: string;
+      previewRevision: string;
+      files: Array<{ path: string; content: string }>;
+      raw: Record<string, unknown>;
+    }
+  | {
+      ok: false;
+      status: 400 | 404 | 409 | 502;
+      code: string;
+      error: string;
+      issues?: ManifestIssue[];
+    };
+
+export type ComposeAgentRepairBehaviorFileResult =
+  | {
+      ok: true;
+      agentName: string;
+      manifestPath: string;
+      behaviorPath: string;
+      behaviorMarkdown: string;
+      files: Array<{ path: string; content: string }>;
+    }
+  | {
+      ok: false;
+      status: 400 | 404 | 409 | 502;
+      code: string;
+      error: string;
+      issues?: ManifestIssue[];
+    };
+
+function composeError(
+  status: 400 | 404 | 409 | 502,
+  code: string,
+  error: string,
+  issues?: ManifestIssue[],
+): Extract<ComposeAgentConfigFilesResult, { ok: false }> {
+  return issues ? { ok: false, status, code, error, issues } : { ok: false, status, code, error };
+}
+
+function splitAgentConfigWireBlock(
+  block: AgentConfigWireBlock,
+): { ok: true; governanceBlock: AgentBlockV2; behavior: AgentBehaviorDraft | null } | { ok: false; error: string } {
+  const { opencode, ...governanceRaw } = block;
+  const normalized = normalizeRequiredConnectorAliases(governanceRaw as Record<string, unknown>);
+  if (!normalized.ok) return { ok: false, error: normalized.error };
+
+  const governanceBlock: AgentBlockV2 = {};
+  for (const [key, value] of Object.entries(normalized.block)) {
+    if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
+  }
+  return { ok: true, governanceBlock, behavior: opencode ?? null };
+}
+
+function behaviorFrontmatterFromDraft(behavior: AgentBehaviorDraft): Record<string, unknown> {
+  const frontmatter: Record<string, unknown> = {};
+  for (const key of KNOWN_BEHAVIOR_KEYS) {
+    if (behavior[key] !== undefined) frontmatter[key] = behavior[key];
+  }
+  return frontmatter;
+}
+
+function validateBehaviorFrontmatter(
+  frontmatter: Record<string, unknown>,
+  agentName: string,
+): ManifestIssue[] {
+  const issues: ManifestIssue[] = [];
+  validateAgentMdFrontmatter(frontmatter, `agents.${agentName}`, issues);
+  return issues.filter((issue) => issue.severity === 'error');
+}
+
+function previewRevision(files: Array<{ path: string; content: string }>): string {
+  return createHash('sha256').update(JSON.stringify(files)).digest('hex');
+}
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
   if (!Array.isArray(value)) return `${field} must be a list of connector profile slugs`;
@@ -252,6 +349,148 @@ export function applyAgentBlockV2(
     };
   }
   return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
+}
+
+export function composeAgentConfigFiles(input: {
+  manifest: ParsedManifest;
+  agentName: string;
+  block: AgentConfigWireBlock;
+  existingBehaviorFile: BehaviorFileState;
+}): ComposeAgentConfigFilesResult {
+  const read = readAgentBlockV2(input.manifest, input.agentName);
+  if (!read.ok) return composeError(400, 'manifest_malformed', read.error);
+  if (read.schemaVersion !== 2) {
+    return composeError(
+      400,
+      'v2_required',
+      'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to create agents.',
+    );
+  }
+  if (read.block !== null) {
+    return composeError(409, 'duplicate_agent', `Agent "${input.agentName}" already exists.`);
+  }
+  if (input.existingBehaviorFile === 'exists') {
+    return composeError(
+      409,
+      'behavior_file_exists',
+      `Behavior file for "${input.agentName}" already exists without a matching manifest block.`,
+    );
+  }
+  if (input.existingBehaviorFile === 'read_error') {
+    return composeError(
+      502,
+      'behavior_file_read',
+      `Could not inspect the behavior file for "${input.agentName}".`,
+    );
+  }
+
+  const split = splitAgentConfigWireBlock(input.block);
+  if (!split.ok) return composeError(400, 'invalid_body', split.error);
+
+  const behavior = split.behavior ?? {};
+  const prompt = typeof behavior.prompt === 'string' ? behavior.prompt : '';
+  if (!prompt.trim()) {
+    return composeError(400, 'missing_prompt', 'Agent prompt is required.');
+  }
+
+  const frontmatter = behaviorFrontmatterFromDraft(behavior);
+  const behaviorIssues = validateBehaviorFrontmatter(frontmatter, input.agentName);
+  if (behaviorIssues.length > 0) {
+    return composeError(
+      400,
+      'invalid_config',
+      behaviorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      behaviorIssues,
+    );
+  }
+
+  const applied = applyAgentBlockV2(input.manifest, input.agentName, split.governanceBlock);
+  if (!applied.ok) {
+    return composeError(400, 'invalid_config', applied.error, applied.issues);
+  }
+
+  const parsedCheck = extractAgents({ ...input.manifest, raw: applied.raw });
+  const parseProblem = parsedCheck.errors.find((error) => error.name === input.agentName);
+  if (parseProblem) {
+    return composeError(400, 'invalid_config', parseProblem.error);
+  }
+
+  const nextManifest = { ...input.manifest, raw: applied.raw };
+  const manifestPath = input.manifest.path;
+  const manifestContent = serializeManifest(nextManifest);
+  const behaviorPath = agentMarkdownPath(applied.raw, input.agentName);
+  const behaviorMarkdown = serializeAgentMarkdown(frontmatter, prompt);
+  const files = [
+    { path: manifestPath, content: manifestContent },
+    { path: behaviorPath, content: behaviorMarkdown },
+  ];
+
+  return {
+    ok: true,
+    agentName: input.agentName,
+    manifestPath,
+    manifestContent,
+    behaviorPath,
+    behaviorMarkdown,
+    previewRevision: previewRevision(files),
+    files,
+    raw: applied.raw,
+  };
+}
+
+export function composeAgentRepairBehaviorFile(input: {
+  manifest: ParsedManifest;
+  agentName: string;
+  behaviorFileState: BehaviorFileState;
+  behaviorMarkdown: string;
+}): ComposeAgentRepairBehaviorFileResult {
+  const read = readAgentBlockV2(input.manifest, input.agentName);
+  if (!read.ok) return composeError(400, 'manifest_malformed', read.error);
+  if (read.schemaVersion !== 2) {
+    return composeError(
+      400,
+      'v2_required',
+      'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to repair agent behavior files.',
+    );
+  }
+  if (read.block === null) {
+    return composeError(404, 'agent_not_declared', `Agent "${input.agentName}" is not declared.`);
+  }
+  if (input.behaviorFileState === 'exists') {
+    return composeError(409, 'behavior_file_exists', `Behavior file for "${input.agentName}" already exists.`);
+  }
+  if (input.behaviorFileState === 'read_error') {
+    return composeError(
+      502,
+      'behavior_file_read',
+      `Could not inspect the behavior file for "${input.agentName}".`,
+    );
+  }
+  if (!input.behaviorMarkdown.trim()) {
+    return composeError(400, 'missing_behavior_markdown', 'Behavior markdown is required.');
+  }
+
+  const parsed = parseAgentMarkdown(input.behaviorMarkdown);
+  const behaviorIssues = validateBehaviorFrontmatter(parsed.frontmatter, input.agentName);
+  if (behaviorIssues.length > 0) {
+    return composeError(
+      400,
+      'invalid_behavior_markdown',
+      behaviorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      behaviorIssues,
+    );
+  }
+
+  const behaviorPath = agentMarkdownPath(input.manifest.raw, input.agentName);
+  const behaviorMarkdown = serializeAgentMarkdown(parsed.frontmatter, parsed.body);
+  return {
+    ok: true,
+    agentName: input.agentName,
+    manifestPath: input.manifest.path,
+    behaviorPath,
+    behaviorMarkdown,
+    files: [{ path: behaviorPath, content: behaviorMarkdown }],
+  };
 }
 
 /**

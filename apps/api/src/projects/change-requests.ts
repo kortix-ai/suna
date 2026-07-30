@@ -13,13 +13,14 @@
  * what.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { getBranchDiff, resolveBranchAheadState, type GitBackedProject } from './git';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
-type ChangeRequestRow = typeof changeRequests.$inferSelect;
+export type ChangeRequestRow = typeof changeRequests.$inferSelect;
 
 export function serializeChangeRequest(row: ChangeRequestRow) {
   return {
@@ -67,6 +68,119 @@ export async function getCrById(crId: string, projectId: string) {
     .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
     .limit(1);
   return row ?? null;
+}
+
+export type CreateChangeRequestForBranchResult =
+  | { ok: true; row: ChangeRequestRow }
+  | { ok: false; status: 400 | 422 | 500; body: Record<string, unknown> };
+
+export async function createChangeRequestForBranch(input: {
+  accountId: string;
+  projectId: string;
+  userId: string;
+  projectForGit: GitBackedProject;
+  title: string;
+  description?: string;
+  baseRef: string;
+  headRef: string;
+  originSessionId?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<CreateChangeRequestForBranchResult> {
+  if (input.baseRef === input.headRef) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: 'head_ref and base_ref must differ' },
+    };
+  }
+
+  let baseSha: string | null = null;
+  let headSha: string | null = null;
+  let headAhead = true;
+  try {
+    const aheadState = await resolveBranchAheadState(
+      input.projectForGit,
+      input.baseRef,
+      input.headRef,
+    );
+    baseSha = aheadState.baseSha;
+    headSha = aheadState.headSha;
+    headAhead = aheadState.ahead;
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: error instanceof Error ? error.message : 'Failed to resolve branches',
+      },
+    };
+  }
+  if (!headAhead) {
+    return {
+      ok: false,
+      status: 422,
+      body: {
+        error: `head_ref "${input.headRef}" has no commits ahead of "${input.baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
+        code: 'CR_HEAD_NOT_AHEAD',
+      },
+    };
+  }
+
+  let inserted: ChangeRequestRow | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const number = await getNextCrNumber(input.projectId);
+    try {
+      const [row] = await db
+        .insert(changeRequests)
+        .values({
+          accountId: input.accountId,
+          projectId: input.projectId,
+          number,
+          title: input.title,
+          description: input.description ?? '',
+          baseRef: input.baseRef,
+          headRef: input.headRef,
+          headCommitSha: headSha,
+          baseCommitSha: baseSha,
+          originSessionId: input.originSessionId ?? null,
+          createdBy: input.userId,
+          metadata: input.metadata ?? {},
+        })
+        .returning();
+      inserted = row;
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate key/.test(message)) throw error;
+    }
+  }
+  if (!inserted) {
+    return { ok: false, status: 500, body: { error: 'Failed to allocate CR number' } };
+  }
+  return { ok: true, row: inserted };
+}
+
+export async function findOpenAgentConfigChangeRequest(
+  projectForGit: GitBackedProject,
+  projectId: string,
+  agentName: string,
+  paths: readonly string[],
+): Promise<ChangeRequestRow | null> {
+  const candidates = await db
+    .select()
+    .from(changeRequests)
+    .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.status, 'open')))
+    .orderBy(desc(changeRequests.updatedAt));
+  const pathSet = new Set(paths);
+  for (const row of candidates) {
+    const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+    const agentConfig = metadata.agent_config as Record<string, unknown> | undefined;
+    if (agentConfig?.agent_name === agentName) return row;
+
+    const diff = await getBranchDiff(projectForGit, row.baseRef, row.headRef);
+    if (diff.files.some((file) => pathSet.has(file.path))) return row;
+  }
+  return null;
 }
 
 /** One human "please change this" note recorded against a CR. */

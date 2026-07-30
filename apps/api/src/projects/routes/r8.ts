@@ -4,8 +4,8 @@ import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
+  createChangeRequestForBranch,
   getCrById,
-  getNextCrNumber,
   recordRequestedChange,
   serializeChangeRequest,
 } from '../change-requests';
@@ -14,7 +14,6 @@ import {
   getDiffBetweenShas,
   invalidateProjectMirror,
   previewMerge,
-  resolveBranchAheadState,
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
@@ -345,74 +344,20 @@ projectsApp.openapi(
       if (!sessionRow) originSessionId = null;
     }
 
-    // Resolve current tips so the CR has anchored SHAs from the start, and
-    // refuse an EMPTY change request outright: a head with no commits ahead
-    // of base renders "No changes detected" in the dashboard and can never
-    // be applied (previewMerge reports it un-mergeable). The two shapes are
-    // a committed-but-never-pushed session branch (head tip == base tip) and
-    // a stale branch behind an advanced base (merge-base == head tip); both
-    // came up in the wild via agent flows on 2026-07-06. The resolver forces
-    // a mirror re-fetch before concluding "not ahead", so a push that landed
-    // moments ago never bounces.
-    let baseSha: string | null = null;
-    let headSha: string | null = null;
-    let headAhead = true;
-    try {
-      const projectForGit = await withProjectGitAuth(loaded.row);
-      const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);
-      baseSha = aheadState.baseSha;
-      headSha = aheadState.headSha;
-      headAhead = aheadState.ahead;
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Failed to resolve branches',
-        },
-        400,
-      );
-    }
-    if (!headAhead) {
-      return c.json(
-        {
-          error: `head_ref "${headRef}" has no commits ahead of "${baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
-          code: 'CR_HEAD_NOT_AHEAD',
-        },
-        422,
-      );
-    }
+    const result = await createChangeRequestForBranch({
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+      projectForGit: await withProjectGitAuth(loaded.row),
+      title,
+      description,
+      baseRef,
+      headRef,
+      originSessionId,
+    });
+    if (!result.ok) return c.json(result.body, result.status as any);
 
-    // Atomically allocate the next per-project number and insert. Retry once on
-    // unique-constraint collision (only happens under racing opens).
-    let inserted: typeof changeRequests.$inferSelect | null = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const number = await getNextCrNumber(projectId);
-      try {
-        const [row] = await db
-          .insert(changeRequests)
-          .values({
-            accountId: loaded.row.accountId,
-            projectId,
-            number,
-            title,
-            description,
-            baseRef,
-            headRef,
-            headCommitSha: headSha,
-            baseCommitSha: baseSha,
-            originSessionId,
-            createdBy: loaded.userId,
-          })
-          .returning();
-        inserted = row;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!/duplicate key/.test(message)) throw error;
-      }
-    }
-    if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
-
-    return c.json(serializeChangeRequest(inserted), 201);
+    return c.json(serializeChangeRequest(result.row), 201);
   },
 );
 

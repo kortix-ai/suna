@@ -19,6 +19,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
+  composeAgentConfigFiles,
+  composeAgentRepairBehaviorFile,
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
@@ -310,6 +312,146 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     const applied = applyDefaultAgentV2(manifest, manifest.raw.default_agent as string);
     expect(applied.ok).toBe(true);
+  });
+});
+
+describe('composeAgentConfigFiles', () => {
+  test('creates canonical manifest and behavior-file writes for a new v2 agent', () => {
+    const result = composeAgentConfigFiles({
+      manifest: v2Manifest(),
+      agentName: 'reliance-cto',
+      block: {
+        enabled: true,
+        connectors: ['github'],
+        connectors_required: ['github'],
+        kortix_cli: ['project.cr.open'],
+        workspace: 'branch',
+        opencode: {
+          description: 'Reliance CTO',
+          mode: 'primary',
+          model: 'openai/gpt-4o',
+          prompt: 'You are the Reliance CTO. Review technical work.',
+        },
+      },
+      existingBehaviorFile: 'missing',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.agentName).toBe('reliance-cto');
+    expect(result.manifestPath).toBe('kortix.yaml');
+    expect(result.behaviorPath).toBe('.kortix/opencode/agents/reliance-cto.md');
+    expect(result.files.map((file) => file.path)).toEqual([
+      'kortix.yaml',
+      '.kortix/opencode/agents/reliance-cto.md',
+    ]);
+    expect(result.manifestContent).toContain('reliance-cto');
+    expect(result.behaviorMarkdown).toContain('description: Reliance CTO');
+    expect(result.behaviorMarkdown).toContain('mode: primary');
+    expect(result.behaviorMarkdown).toContain('You are the Reliance CTO.');
+    expect(result.previewRevision).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test('rejects an existing manifest agent', () => {
+    const result = composeAgentConfigFiles({
+      manifest: v2Manifest(),
+      agentName: 'support',
+      block: {
+        opencode: { prompt: 'Support prompt.' },
+      },
+      existingBehaviorFile: 'missing',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('duplicate_agent');
+    expect(result.status).toBe(409);
+  });
+
+  test('rejects an existing behavior file that has no matching manifest block', () => {
+    const result = composeAgentConfigFiles({
+      manifest: v2Manifest(),
+      agentName: 'ghost',
+      block: {
+        opencode: { prompt: 'Ghost prompt.' },
+      },
+      existingBehaviorFile: 'exists',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('behavior_file_exists');
+    expect(result.status).toBe(409);
+  });
+
+  test('rejects a create request with no prompt body', () => {
+    const result = composeAgentConfigFiles({
+      manifest: v2Manifest(),
+      agentName: 'ghost',
+      block: {
+        opencode: { description: 'No prompt' },
+      },
+      existingBehaviorFile: 'missing',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('missing_prompt');
+    expect(result.status).toBe(400);
+  });
+});
+
+describe('composeAgentRepairBehaviorFile', () => {
+  test('creates only a reviewed behavior-file write for a declared agent', () => {
+    const result = composeAgentRepairBehaviorFile({
+      manifest: v2Manifest(),
+      agentName: 'support',
+      behaviorFileState: 'missing',
+      behaviorMarkdown:
+        '---\ndescription: Support specialist\nmode: subagent\n---\n\nYou repair support tickets.',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.agentName).toBe('support');
+    expect(result.behaviorPath).toBe('.kortix/opencode/agents/support.md');
+    expect(result.files).toEqual([
+      {
+        path: '.kortix/opencode/agents/support.md',
+        content: result.behaviorMarkdown,
+      },
+    ]);
+    expect(result.manifestPath).toBe('kortix.yaml');
+    expect(result.behaviorMarkdown).toContain('description: Support specialist');
+    expect(result.behaviorMarkdown).toContain('You repair support tickets.');
+  });
+
+  test('rejects repair when behavior markdown is empty', () => {
+    const result = composeAgentRepairBehaviorFile({
+      manifest: v2Manifest(),
+      agentName: 'support',
+      behaviorFileState: 'missing',
+      behaviorMarkdown: '   ',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('missing_behavior_markdown');
+    expect(result.status).toBe(400);
+  });
+
+  test('rejects repair when the behavior file already exists', () => {
+    const result = composeAgentRepairBehaviorFile({
+      manifest: v2Manifest(),
+      agentName: 'support',
+      behaviorFileState: 'exists',
+      behaviorMarkdown: 'You repair support tickets.',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('behavior_file_exists');
+    expect(result.status).toBe(409);
   });
 });
 
