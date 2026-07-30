@@ -1267,6 +1267,8 @@
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+      "designSystemSemiMonoLabel": "Roobert SemiMono",
+      "designSystemSemiMonoNote": "MONO 60 — for IDs, hashes and timestamps. Not monospaced, so never use it for code or column-aligned tables.",
       "line894JsxTextTypeScale": "Type Scale",
       "line917JsxTextTheQuickBrownFox": "The quick brown fox",
       "line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition": "Standardized duration and easing tokens ensure every transition feels consistent. Click the labels to trigger the animation.",

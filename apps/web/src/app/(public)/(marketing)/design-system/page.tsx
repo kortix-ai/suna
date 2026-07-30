@@ -1283,6 +1283,22 @@ export default function BrandPage() {
                 </p>
               </div>
 
+              <div className="bg-popover mt-6 rounded-md border px-4 py-5">
+                <span className="text-muted-foreground mb-3 block font-mono text-xs tracking-widest">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoLabel',
+                  )}
+                </span>
+                <p className="font-semimono text-lg tracking-tight tabular-nums md:text-2xl">
+                  ses_8f3ab291 · 2026-07-30 14:22:07 · a1b2c3d
+                </p>
+                <p className="text-muted-foreground mt-4 text-xs">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoNote',
+                  )}
+                </p>
+              </div>
+
               <div className="mt-8">
                 <p className="text-muted-foreground mb-4 text-xs">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line894JsxTextTypeScale')}

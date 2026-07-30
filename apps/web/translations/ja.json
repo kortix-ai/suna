@@ -1264,6 +1264,8 @@
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+      "designSystemSemiMonoLabel": "Roobert SemiMono",
+      "designSystemSemiMonoNote": "MONO 60 — ID、ハッシュ、タイムスタンプ用。等幅ではないため、コードや桁揃えが必要な表には使用しないこと。",
       "line894JsxTextTypeScale": "タイプスケール",
       "line917JsxTextTheQuickBrownFox": "素早い茶色の狐",
       "line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition": "標準化された duration と easing のトークンにより、すべてのトランジションに一貫した感触が生まれます。ラベルをクリックするとアニメーションが開始します。",

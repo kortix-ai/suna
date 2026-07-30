@@ -811,6 +811,12 @@ i,
        distinguishable from O. */
     font-feature-settings: 'zero';
   }
+
+  /* Roobert is one family; SemiMono is the MONO=60 position on its axis.
+     Without this the `font-semimono` utility would render plain sans. */
+  .font-semimono {
+    --rb-mono: 60;
+  }
 }
 
 .kortix-markdown pre .line,

@@ -1267,6 +1267,8 @@
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+      "designSystemSemiMonoLabel": "Roobert SemiMono",
+      "designSystemSemiMonoNote": "MONO 60 — pour les identifiants, hachages et horodatages. Non monospace, à ne jamais utiliser pour du code ou des tableaux alignés en colonnes.",
       "line894JsxTextTypeScale": "Échelle typographique",
       "line917JsxTextTheQuickBrownFox": "Portez ce vieux whisky au juge blond qui fume",
       "line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition": "Des tokens standardisés de durée et d'easing garantissent une sensation cohérente pour chaque transition. Cliquez sur les libellés pour déclencher l'animation.",

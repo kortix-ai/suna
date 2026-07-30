@@ -1264,6 +1264,8 @@
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+      "designSystemSemiMonoLabel": "Roobert SemiMono",
+      "designSystemSemiMonoNote": "MONO 60 — para IDs, hashes y marcas de tiempo. No es monoespaciada, así que nunca debe usarse para código ni tablas alineadas en columnas.",
       "line894JsxTextTypeScale": "Escala tipográfica",
       "line917JsxTextTheQuickBrownFox": "El veloz murciélago hindú comía feliz cardillo y kiwi",
       "line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition": "Los tokens estandarizados de duración y easing garantizan que cada transición se sienta coherente. Haz clic en las etiquetas para activar la animación.",

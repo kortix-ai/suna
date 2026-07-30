@@ -1264,6 +1264,8 @@
       "line880JsxTextRoobertMono": "Roobert Mono",
       "line883JsxTextConstAgentNewKortix": "const agent = new Kortix();",
       "line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789": "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+      "designSystemSemiMonoLabel": "Roobert SemiMono",
+      "designSystemSemiMonoNote": "MONO 60 — para IDs, hashes e timestamps. Não é monoespaçada, por isso nunca deve ser usada em código ou em tabelas alinhadas em colunas.",
       "line894JsxTextTypeScale": "Escala tipográfica",
       "line917JsxTextTheQuickBrownFox": "A rápida raposa marrom",
       "line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition": "Tokens padronizados de duração e easing garantem que cada transição pareça consistente. Clique nos rótulos para acionar a animação.",

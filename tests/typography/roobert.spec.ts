@@ -211,3 +211,65 @@ test.describe('Roobert weight ladder', () => {
     }
   });
 });
+
+test.describe('Roobert SemiMono', () => {
+  // font-semimono sits at MONO=60 — between the sans (0) and the mono (100).
+  // It must NOT be monospaced: it exists for IDs, hashes and timestamps, where
+  // full mono is too wide and the sans is too loose. If MONO ever drifts to
+  // 100 (e.g. someone "fixing" it to look more monospaced), every
+  // column-aligned use of font-semimono would start lying about alignment.
+  test('is proportional, not monospaced (guards MONO=60, not 100)', async ({ page }) => {
+    await page.goto('/design-system', { waitUntil: 'networkidle' });
+    await page.evaluate(() => document.fonts.ready);
+
+    const result = await page.evaluate(() => {
+      const measure = (text: string) => {
+        const s = document.createElement('span');
+        // Use the real utility class so the app's cascade is what gets tested.
+        s.className = 'font-semimono';
+        s.style.cssText =
+          'position:absolute;left:-9999px;display:inline-block;white-space:pre;font-size:32px';
+        s.textContent = text;
+        document.body.appendChild(s);
+        const cs = getComputedStyle(s);
+        const fontFamily = cs.fontFamily;
+        // Range, not the element box: a block would report container width.
+        const r = document.createRange();
+        r.selectNodeContents(s);
+        const width = Math.round(r.getBoundingClientRect().width * 100) / 100;
+        s.remove();
+        return { width, fontFamily };
+      };
+      const w = measure('WWWWWWWWWW');
+      const m = measure('mmmmmmmmmm');
+      // `getComputedStyle().fontFamily` returns the DECLARED list, so it says
+      // "Roobert, ui-sans-serif, …" whether or not Roobert actually loaded.
+      // Only document.fonts.check tells us the face is really available.
+      const roobertLoaded = document.fonts.check('32px Roobert');
+      return { w, m, roobertLoaded };
+    });
+
+    // Guard: the system sans fallback would ALSO be proportional, which would
+    // make this test pass while proving nothing about font-semimono. Assert
+    // the real font actually loaded first.
+    expect(
+      result.roobertLoaded,
+      'Roobert did not load — the proportional assertion below would pass on the system fallback and prove nothing',
+    ).toBe(true);
+    expect(
+      result.w.fontFamily,
+      `expected Roobert, got ${result.w.fontFamily}`,
+    ).toContain('Roobert');
+
+    // The actual guard. WWWWWWWWWW measured 371.72px vs mmmmmmmmmm 350.80px at
+    // MONO=60 — a real but modest gap, unlike a monospaced face where both
+    // would land within ~0.5px of each other (see the Roobert Mono suite
+    // above). Flipping the `.font-semimono` --rb-mono stop from 60 to 100
+    // collapses this gap to near zero and must fail this assertion.
+    const diff = result.w.width - result.m.width;
+    expect(
+      diff,
+      `W vs m must differ meaningfully (SemiMono is proportional, not monospaced) — got W=${result.w.width}px m=${result.m.width}px`,
+    ).toBeGreaterThan(5);
+  });
+});
