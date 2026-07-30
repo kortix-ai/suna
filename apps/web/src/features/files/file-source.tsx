@@ -4,7 +4,10 @@ import type { FileSource } from '@/features/file-viewer';
 import { useFileContent } from './hooks';
 import { useBinaryBlob } from './hooks/use-binary-blob';
 import { downloadFile, uploadFile } from './api/runtime-files';
-import { FilePathBreadcrumbs } from '@/features/project-files';
+// Do not import this component through the project-files barrel. The barrel
+// reaches useGitStatus through useChangeRequests and re-enters features/files.
+// Webpack cannot evaluate that async cycle while building this module constant.
+import { FilePathBreadcrumbs } from '@/features/project-files/components/file-breadcrumbs';
 
 /**
  * Live-workspace data source for the shared file viewer/modal. The hooks are
