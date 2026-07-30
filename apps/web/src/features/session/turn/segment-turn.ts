@@ -7,8 +7,8 @@
  *
  * No React import. Every rule here is unit-tested in segment-turn.test.ts.
  */
-import { isInvisibleActivityPart, isStandaloneActivityTool } from '../session-activity-groups';
 import { isTextPart, isToolPart, type Part, type TextPart, type ToolPart } from '@/ui';
+import { isInvisibleActivityPart, isStandaloneActivityTool } from '../session-activity-groups';
 
 export type Segment =
   | { kind: 'burst'; parts: Part[] }
@@ -20,10 +20,7 @@ export interface SegmentTurnOptions {
   standaloneCallIds?: ReadonlySet<string>;
 }
 
-export function segmentTurn(
-  parts: ReadonlyArray<Part>,
-  opts: SegmentTurnOptions = {},
-): Segment[] {
+export function segmentTurn(parts: ReadonlyArray<Part>, opts: SegmentTurnOptions = {}): Segment[] {
   const segments: Segment[] = [];
   let pending: Part[] = [];
 

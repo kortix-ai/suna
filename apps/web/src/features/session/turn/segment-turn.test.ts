@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { Part, ToolPart } from '@/ui';
+import { describe, expect, test } from 'bun:test';
 import { segmentTurn } from './segment-turn';
 
 function tool(id: string, name: string): ToolPart {
@@ -22,11 +22,7 @@ function reasoning(id: string, body: string): Part {
 
 describe('segmentTurn', () => {
   test('folds interleaved tools into ONE burst', () => {
-    const segments = segmentTurn([
-      tool('1', 'read'),
-      tool('2', 'web_search'),
-      tool('3', 'read'),
-    ]);
+    const segments = segmentTurn([tool('1', 'read'), tool('2', 'web_search'), tool('3', 'read')]);
 
     expect(segments).toHaveLength(1);
     expect(segments[0].kind).toBe('burst');
@@ -63,10 +59,17 @@ describe('segmentTurn', () => {
 
   test('snapshot and patch parts are dropped without splitting', () => {
     const snapshot = { id: '2', type: 'snapshot' } as unknown as Part;
-    const segments = segmentTurn([tool('1', 'bash'), snapshot, tool('3', 'bash')]);
+    const patch = { id: '4', type: 'patch' } as unknown as Part;
+    const segments = segmentTurn([
+      tool('1', 'bash'),
+      snapshot,
+      tool('3', 'bash'),
+      patch,
+      tool('5', 'bash'),
+    ]);
 
     expect(segments).toHaveLength(1);
-    expect((segments[0] as { parts: Part[] }).parts).toHaveLength(2);
+    expect((segments[0] as { parts: Part[] }).parts).toHaveLength(3);
   });
 
   test('show breaks out as standalone and splits the burst', () => {
