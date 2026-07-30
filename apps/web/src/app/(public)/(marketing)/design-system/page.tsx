@@ -111,7 +111,6 @@ import {
   ModalTitle,
   ModalTrigger,
 } from '@/components/ui/modal';
-import { PageHeader } from '@/components/ui/page-header';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
@@ -127,7 +126,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE } from '@/components/ui/trigger-variants';
 import {
   Sheet,
   SheetContent,
@@ -138,7 +136,6 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { DiffStat, StatusBadge, StatusDot } from '@/components/ui/status';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -167,14 +164,9 @@ import {
 } from '@/components/ui/toast';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE } from '@/components/ui/trigger-variants';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import {
-  PlugsConnectedIcon as Cable,
-  PlugIcon as Plug,
-  RadioIcon as Radio,
-  LightningIcon as Zap,
-} from '@phosphor-icons/react';
 
 import { IconsSection } from './icons-section';
 
@@ -605,12 +597,7 @@ const TOC_SECTIONS = [
   {
     id: 'page-patterns',
     label: 'Page Patterns',
-    children: [
-      { id: 'pat-page-header', label: 'PageHeader' },
-      { id: 'pat-spotlight-card', label: 'SpotlightCard' },
-      { id: 'pat-search-bar', label: 'PageSearchBar' },
-      { id: 'pat-stagger', label: 'Stagger Mount' },
-    ],
+    children: [{ id: 'pat-search-bar', label: 'PageSearchBar' }],
   },
   {
     id: 'patterns',
@@ -2278,7 +2265,9 @@ export default function BrandPage() {
                           <DropdownMenu key={variant}>
                             <DropdownMenuTrigger variant={variant} className="w-36">
                               {variant}
-                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
+                              <CaretDown
+                                className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)}
+                              />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               {TRIGGER_DEMO_OPTIONS.map((option) => (
@@ -2299,7 +2288,9 @@ export default function BrandPage() {
                           <DropdownMenu key={size}>
                             <DropdownMenuTrigger size={size} className="w-36">
                               {size}
-                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])} />
+                              <CaretDown
+                                className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])}
+                              />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               {TRIGGER_DEMO_OPTIONS.map((option) => (
@@ -2320,7 +2311,9 @@ export default function BrandPage() {
                           <DropdownMenu key={size}>
                             <DropdownMenuTrigger variant="outline" size={size} className="w-36">
                               {size}
-                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])} />
+                              <CaretDown
+                                className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])}
+                              />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               <DropdownMenuItem size={size}>Edit</DropdownMenuItem>
@@ -3074,91 +3067,6 @@ export default function BrandPage() {
                 )}
               </p>
 
-              {/* ── PageHeader ── */}
-              <div id="pat-page-header" className="mb-12">
-                <ComponentLabel>PageHeader</ComponentLabel>
-                <ComponentDesc>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2084JsxTextTheCanonicalHeroForListManagementPagesRounded',
-                  )}
-                  <code className="font-mono text-xs">max-w-7xl</code>
-                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2087JsxTextHorizontalPadding')}
-                </ComponentDesc>
-                <DemoContainer className="overflow-hidden p-0">
-                  <div className="p-6">
-                    <PageHeader icon={Zap}>
-                      <div className="space-y-2 sm:space-y-4">
-                        <div className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">
-                          <span className="text-primary">
-                            {tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line2094JsxTextScheduledTasks',
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </PageHeader>
-                  </div>
-                </DemoContainer>
-                <pre className="text-muted-foreground bg-muted/20 mt-3 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
-  <PageHeader icon={Zap}>
-    <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
-      <span className="text-primary">Scheduled Tasks</span>
-    </div>
-  </PageHeader>
-</div>`}</pre>
-              </div>
-
-              {/* ── SpotlightCard ── */}
-              <div id="pat-spotlight-card" className="mb-12">
-                <ComponentLabel>SpotlightCard</ComponentLabel>
-                <ComponentDesc>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2113JsxTextItemCardUsedAcrossEveryListPageMouse',
-                  )}
-                  <code className="font-mono text-xs">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2115JsxTextBgCardBorderBorderBorder50',
-                    )}
-                  </code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2115JsxTextAndApplyYourOwnInnerPadding',
-                  )}
-                </ComponentDesc>
-                <DemoContainer>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {[
-                      { icon: Cable, label: 'tunnel-42', sub: 'exposes :3000' },
-                      { icon: Radio, label: '#releases', sub: 'Slack channel' },
-                      {
-                        icon: Zap,
-                        label: 'nightly-cron',
-                        sub: 'every day at 03:00',
-                      },
-                      { icon: Plug, label: 'GitHub', sub: 'Connected' },
-                    ].map((item, i) => {
-                      const I = item.icon;
-                      return (
-                        <SpotlightCard key={i} className="bg-card border-border/50 border">
-                          <div className="flex cursor-pointer items-center gap-3 p-4">
-                            <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border">
-                              <I className="text-foreground h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-foreground truncate text-sm font-semibold">
-                                {item.label}
-                              </div>
-                              <div className="text-muted-foreground truncate text-xs">
-                                {item.sub}
-                              </div>
-                            </div>
-                          </div>
-                        </SpotlightCard>
-                      );
-                    })}
-                  </div>
-                </DemoContainer>
-              </div>
-
               {/* ── PageSearchBar ── */}
               <div id="pat-search-bar" className="mb-12">
                 <ComponentLabel>PageSearchBar</ComponentLabel>
@@ -3186,31 +3094,6 @@ export default function BrandPage() {
                       New
                     </Button>
                   </div>
-                </DemoContainer>
-              </div>
-
-              {/* ── Stagger Mount ── */}
-              <div id="pat-stagger" className="mb-12">
-                <ComponentLabel>
-                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2179JsxTextStaggerMount')}
-                </ComponentLabel>
-                <ComponentDesc>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2181JsxTextEveryManagementPageMountsItsThreeZonesWith',
-                  )}
-                  <code className="font-mono text-xs">delay-75</code>
-                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2183JsxTextContentAt')}
-                  <code className="font-mono text-xs">delay-150</code>.
-                </ComponentDesc>
-                <DemoContainer>
-                  <pre className="text-muted-foreground bg-muted/20 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">{`// Page header
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
-
-// Search + action bar
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-75">
-
-// Content area
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-150">`}</pre>
                 </DemoContainer>
               </div>
             </section>
