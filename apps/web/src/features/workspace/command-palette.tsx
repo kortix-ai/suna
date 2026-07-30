@@ -24,6 +24,10 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import {
+  consumePendingCommandPalette,
+  OPEN_COMMAND_PALETTE_EVENT,
+} from '@/features/workspace/open-command-palette';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -525,6 +529,24 @@ export function CommandPalette() {
     };
     window.addEventListener('kortix:open-file-search', openFileSearch);
     return () => window.removeEventListener('kortix:open-file-search', openFileSearch);
+  }, []);
+
+  // Same door as ⌘K, for surfaces that have a button instead of a keystroke
+  // (the sidebar's search control). Opens rather than toggles: a click on a
+  // control you can only see while the palette is closed always means "open".
+  useEffect(() => {
+    const openPalette = () => {
+      consumePendingCommandPalette();
+      setQuery('');
+      setPage('root');
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette);
+    // This component is lazily mounted, so a click can land before the
+    // listener above exists. Anything requested in that window is replayed
+    // here instead of being silently dropped.
+    if (consumePendingCommandPalette()) openPalette();
+    return () => window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette);
   }, []);
 
   useEffect(() => {

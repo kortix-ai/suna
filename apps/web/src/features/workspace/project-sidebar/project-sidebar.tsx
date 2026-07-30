@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  matchesSessionFilter,
+  availableSessionFilterOptions,
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
 } from '@/components/projects/session-label';
@@ -30,6 +30,7 @@ import {
 import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
+import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
@@ -52,6 +53,7 @@ import {
   CalendarDotsIcon as CalendarClock,
   DotsThreeIcon as HiDotsHorizontal,
   ListIcon as List,
+  MagnifyingGlassIcon,
   EnvelopeIcon as Mail,
   ChatsIcon as MessagesSquare,
   SidebarSimpleIcon as PanelLeft,
@@ -96,18 +98,21 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
-  const sessionFilterCounts = useMemo(() => {
-    const counts = new Map<SessionFilterValue, number>();
-    for (const option of SESSION_FILTER_OPTIONS) {
-      counts.set(
-        option.value,
-        (filterSessions ?? []).filter((s) => matchesSessionFilter(s, option.value)).length,
-      );
-    }
-    return counts;
-  }, [filterSessions]);
+  // Empty = this project has one kind of session, so every filter would render
+  // the same list. The dropdown is dropped entirely rather than shown inert.
+  const filterOptions = useMemo(
+    () => availableSessionFilterOptions(filterSessions ?? []),
+    [filterSessions],
+  );
+  // A persisted filter outlives the sessions that justified it — delete the
+  // last Slack session while filtered to Slack and the menu disappears with no
+  // way back. Fall back to "all" once the loaded set says the filter is gone.
+  const activeFilter: SessionFilterValue =
+    filterSessions && !filterOptions.some((option) => option.value === sessionFilter)
+      ? 'all'
+      : sessionFilter;
   const activeFilterOption =
-    SESSION_FILTER_OPTIONS.find((option) => option.value === sessionFilter) ??
+    SESSION_FILTER_OPTIONS.find((option) => option.value === activeFilter) ??
     SESSION_FILTER_OPTIONS[0];
 
   const { data: adminRoleData } = useAdminRole();
@@ -140,6 +145,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       },
     });
   }, [newSession, isMobile, setOpenMobile]);
+
+  // Mobile: the sidebar is a Sheet, so leaving it open would stack the palette
+  // dialog on top of it. Dismiss it first — same order as opening a new
+  // session from here.
+  const handleOpenSearch = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+    openCommandPalette();
+  }, [isMobile, setOpenMobile]);
 
   useCustomizeKeyboardShortcut();
 
@@ -177,35 +190,64 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <Icon.Kortix className="text-foreground size-4.5" />
             </Link>
           </Button>
-          {/* Desktop only. On mobile the panel is a Sheet — it has no docked
-              state to collapse (`state` there still reads the desktop cookie),
-              and it already dismisses by backdrop/swipe. Clicking while the
-              panel is a hover flyout docks it open, hence the "Pin" label. */}
-          {!isMobile && (
+          <div className="flex items-center gap-0.5">
+            {/* Search is the palette's only pointer-reachable entry point —
+                ⌘K is otherwise the whole discovery story. Renders on mobile
+                too: there is no keystroke to fall back on there. */}
             <Hint
               side="bottom"
               label={
                 <span className="flex items-center gap-1.5">
-                  {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  Search
                   <KbdGroup>
                     <Kbd className="font-mono">{modSymbol}</Kbd>
-                    <Kbd className="font-mono">B</Kbd>
+                    <Kbd className="font-mono">K</Kbd>
                   </KbdGroup>
                 </span>
               }
             >
               <Button
                 type="button"
-                aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                aria-label="Search"
                 variant="ghost"
                 size="icon"
-                onClick={toggleSidebar}
+                onClick={handleOpenSearch}
                 className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
-                <PanelLeft className="cn-rtl-flip size-4" />
+                <MagnifyingGlassIcon className="size-4" />
               </Button>
             </Hint>
-          )}
+            {/* Desktop only. On mobile the panel is a Sheet — it has no docked
+                state to collapse (`state` there still reads the desktop cookie),
+                and it already dismisses by backdrop/swipe. Clicking while the
+                panel is a hover flyout docks it open, hence the "Pin" label. */}
+            {!isMobile && (
+              <Hint
+                side="bottom"
+
+                label={
+                  <span className="flex items-center gap-1.5">
+                    {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                    <KbdGroup>
+                      <Kbd className="font-mono">{modSymbol}</Kbd>
+                      <Kbd className="font-mono">B</Kbd>
+                    </KbdGroup>
+                  </span>
+                }
+              >
+                <Button
+                  type="button"
+                  aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleSidebar}
+                  className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                >
+                  <PanelLeft className="cn-rtl-flip size-4" />
+                </Button>
+              </Hint>
+            )}
+          </div>
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
@@ -229,8 +271,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     )}
                   </span>
                   <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
-                    <Kbd>{modSymbol}</Kbd>
-                    <Kbd>J</Kbd>
+                    <Kbd className="text-base">{modSymbol}</Kbd>
+                    <Kbd className="text-xs">J</Kbd>
                   </KbdGroup>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -240,7 +282,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {/* Sessions are always expanded — no collapse toggle. The header
                 label opens the full sessions page and carries the active
-                filter; the ⋯ button opens the filter menu. */}
+                filter; the ⋯ button opens the filter menu, and only appears
+                once the project has two or more session sources to choose
+                between. */}
             <div className="flex min-h-0 flex-1 flex-col space-y-2">
               <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
@@ -249,7 +293,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
                   >
                     <span>Sessions</span>
-                    {sessionFilter !== 'all' && (
+                    {activeFilter !== 'all' && (
                       <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
                         {tI18nHardcoded.raw(
                           'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
@@ -258,42 +302,44 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                       </span>
                     )}
                   </Link>
-                  <DropdownMenu onOpenChange={holdPeek}>
-                    <DropdownMenuContent align="start" className="w-44 p-1">
-                      {SESSION_FILTER_OPTIONS.map((option) => {
-                        const OptionIcon = SESSION_FILTER_ICONS[option.value];
-                        return (
-                          <DropdownMenuItem
-                            key={option.value}
-                            className="cursor-pointer"
-                            onClick={() => setSessionFilter(projectId, option.value)}
-                          >
-                            <OptionIcon className="h-4 w-4" />
-                            {option.label}
-                            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                              {sessionFilterCounts.get(option.value) ?? 0}
-                            </span>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton
-                        type="button"
-                        aria-label={tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
-                        )}
-                        className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
-                      >
-                        <HiDotsHorizontal className="size-3" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                  </DropdownMenu>
+                  {filterOptions.length > 0 && (
+                    <DropdownMenu onOpenChange={holdPeek}>
+                      <DropdownMenuContent align="start" className="w-44 p-1">
+                        {filterOptions.map((option) => {
+                          const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                          return (
+                            <DropdownMenuItem
+                              key={option.value}
+                              className="cursor-pointer"
+                              onClick={() => setSessionFilter(projectId, option.value)}
+                            >
+                              <OptionIcon className="h-4 w-4" />
+                              {option.label}
+                              <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                                {option.count}
+                              </span>
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                      <DropdownMenuTrigger asChild>
+                        <SidebarMenuButton
+                          type="button"
+                          aria-label={tI18nHardcoded.raw(
+                            'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                          )}
+                          className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                        >
+                          <HiDotsHorizontal className="size-3" />
+                        </SidebarMenuButton>
+                      </DropdownMenuTrigger>
+                    </DropdownMenu>
+                  )}
                 </div>
               </SidebarGroupLabel>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex h-full min-h-0 flex-col">
-                  <ProjectSessionList projectId={projectId} filter={sessionFilter} />
+                  <ProjectSessionList projectId={projectId} filter={activeFilter} />
                 </div>
               </div>
             </div>
