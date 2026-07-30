@@ -1,25 +1,3 @@
-/**
- * Kortix brand icon layer.
- *
- * All icon imports in feature code should flow through this file instead of
- * importing from `@phosphor-icons/react` directly. Benefits:
- *
- *   1. Single-line icon library swap (phosphor → geist / tabler / iconoir / …)
- *   2. Stable Kortix-semantic names (`IconInProgress` not `RadioButtonIcon`)
- *   3. Enforces a small curated set — pages can't drift into 40 random icons
- *
- * The app-wide icon weight lives in `src/lib/icons/icon-config.ts` and is
- * applied by IconProvider; individual usages may still pass an explicit
- * weight (status/solid icons use weight="fill").
- *
- * Rule for new pages: if the icon you want isn't exported here, add it here
- * and give it a purposeful name.
- *
- * This file re-exports the client entry; server components (RSC) must
- * import from `@/lib/icons/ssr` instead, which carries the same app-wide
- * weight. Never pass a weight prop in either case.
- */
-
 export {
   // ── CRUD & actions ──────────────────────────────────────────
   PlusIcon as IconAdd,

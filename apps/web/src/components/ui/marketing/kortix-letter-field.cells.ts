@@ -1,7 +1,3 @@
-// Pure helpers for `kortix-letter-field.tsx`, split out so they can be unit
-// tested without pulling in React / motion / the DOM. The React component
-// imports from here; tests import directly.
-
 export const SOURCE = '01kortixcomputer';
 export const PROPER = SOURCE.split('').join(' ');
 export const KORTIX = 'kortix'.split('').join(' ');
