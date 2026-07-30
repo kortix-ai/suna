@@ -97,6 +97,67 @@ export function sandboxRecents(recents: BrowserRecent[]): BrowserRecent[] {
   return recents.filter((r) => !!parseLocalhostUrl(r.url));
 }
 
+/** Viewer padding + scrollbar allowance around a fitted preview, px — the
+ *  default `gutter` for {@link fitSplitPercent}. */
+export const PREVIEW_GUTTER_PX = 48;
+
+/** `PreviewShell`'s toolbar bar height, px (`px-3 py-2.5` around a `size-7`
+ *  control) — subtracted from the panel box to get `panelContentHeight`
+ *  before calling {@link fitSplitPercent}. */
+export const PREVIEW_TOOLBAR_PX = 48;
+
+/** Floor for a fitted split, percent — matches the `ResizablePanel`'s own
+ *  `minSize` (`session-layout.tsx`) so a fit can never ask for a column the
+ *  layout would refuse to give it. */
+export const FIT_MIN_PERCENT = 35;
+
+/** Ceiling for a fitted split, percent — matches the `ResizablePanel`'s own
+ *  `maxSize`, same reasoning as {@link FIT_MIN_PERCENT}. */
+export const FIT_MAX_PERCENT = 70;
+
+/**
+ * The split percentage that shows a document at its own aspect ratio,
+ * instead of the fixed 35/70 splits `isWideDeliverable` picks from — a
+ * portrait PDF wants a narrower column than a landscape one, and neither is
+ * well served by a single constant.
+ *
+ * Derived from the box the preview actually has to fill: the ideal pixel
+ * width is the content height scaled by the document's aspect plus a fixed
+ * gutter for padding/scrollbar, then expressed as a percentage of the whole
+ * panel group and clamped to the same 35/70 bounds the layout already
+ * enforces elsewhere.
+ *
+ * Returns `null` — never `NaN` — for any input that can't produce a sane
+ * percentage (Global Constraint 6: a `NaN` handed to `panel.resize` collapses
+ * the layout). `null` means "no opinion"; the caller falls back to
+ * `panelSplit`.
+ */
+export function fitSplitPercent(input: {
+  /** Intrinsic width / height of the document. */
+  aspect: number;
+  /** Width of the whole ResizablePanelGroup, px. */
+  layoutWidth: number;
+  /** Panel box height minus its toolbar, px. */
+  panelContentHeight: number;
+  /** Viewer padding + scrollbar allowance, px. */
+  gutter?: number;
+  min?: number;
+  max?: number;
+}): number | null {
+  const { aspect, layoutWidth, panelContentHeight } = input;
+  const gutter = input.gutter ?? PREVIEW_GUTTER_PX;
+  const min = input.min ?? FIT_MIN_PERCENT;
+  const max = input.max ?? FIT_MAX_PERCENT;
+
+  if (!Number.isFinite(aspect) || aspect <= 0) return null;
+  if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) return null;
+  if (!Number.isFinite(panelContentHeight) || panelContentHeight <= 0) return null;
+
+  const idealPx = aspect * panelContentHeight + gutter;
+  const percent = (idealPx / layoutWidth) * 100;
+  return Math.min(max, Math.max(min, percent));
+}
+
 /**
  * Whether an output deliverable should grow the Easy-mode panel to its
  * widest split (70/30) instead of the default 35/65 — landscape-shaped

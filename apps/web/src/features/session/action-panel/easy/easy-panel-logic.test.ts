@@ -3,6 +3,7 @@ import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
   deriveIsRunning,
+  fitSplitPercent,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
@@ -86,6 +87,52 @@ describe('isWideDeliverable (wide split for landscape-shaped details)', () => {
     expect(isWideDeliverable({ kind: 'file', name: 'report.md' })).toBe(false);
     expect(isWideDeliverable({ kind: 'file', name: 'report.pdf' })).toBe(false);
     expect(isWideDeliverable({ kind: 'image', name: 'chart.png' })).toBe(false);
+  });
+});
+
+describe('fitSplitPercent (aspect-ratio-fit split for the Easy panel)', () => {
+  const box = { layoutWidth: 1400, panelContentHeight: 800 };
+
+  // ─── the shape table — same box, varying aspect. Values are approximate:
+  // idealPx = aspect * panelContentHeight + gutter(48), percent = idealPx /
+  // layoutWidth * 100, clamped to [35, 70]. ──
+  test.each([
+    ['A4 portrait (595/842) fits narrower than default', 595 / 842, 44],
+    ['A4 landscape (842/595) clamps to the 70 ceiling', 842 / 595, 70],
+    ['a square document sits mid-range', 1, 61],
+    ['an extreme-wide document clamps to 70', 10, 70],
+    ['an extreme-tall document clamps to the 35 floor', 0.05, 35],
+  ])('%s', (_label, aspect, expected) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeCloseTo(expected, 0);
+  });
+
+  test.each([
+    ['NaN aspect', NaN],
+    ['zero aspect', 0],
+    ['negative aspect', -1],
+    ['infinite aspect', Infinity],
+  ])('returns null, never NaN, for %s', (_label, aspect) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeNull();
+  });
+
+  it('returns null for a zero layoutWidth', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 0, panelContentHeight: 800 })).toBeNull();
+  });
+
+  it('returns null for a zero panelContentHeight', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 1400, panelContentHeight: 0 })).toBeNull();
+  });
+
+  it('honors a custom gutter, min, and max', () => {
+    // No gutter, tight bounds around the unclamped 60.57% from the square case.
+    const percent = fitSplitPercent({
+      aspect: 1,
+      ...box,
+      gutter: 0,
+      min: 40,
+      max: 55,
+    });
+    expect(percent).toBeCloseTo(55, 0);
   });
 });
 
