@@ -1231,6 +1231,36 @@ export default function BrandPage() {
                 ))}
               </div>
 
+              <div className="mt-8 space-y-1">
+                <span className="text-muted-foreground mb-3 block font-mono text-xs tracking-widest">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.designSystemWeightLadderLabel')}
+                </span>
+                {[
+                  { cls: 'font-thin', label: 'thin', wght: 300 },
+                  { cls: 'font-extralight', label: 'extralight', wght: 335 },
+                  { cls: 'font-light', label: 'light', wght: 368 },
+                  { cls: 'font-normal', label: 'normal', wght: 400 },
+                  { cls: 'font-medium', label: 'medium', wght: 500 },
+                  { cls: 'font-semibold', label: 'semibold', wght: 600 },
+                  { cls: 'font-bold', label: 'bold', wght: 700 },
+                  { cls: 'font-extrabold', label: 'extrabold', wght: 800 },
+                  { cls: 'font-black', label: 'black', wght: 870 },
+                  { cls: 'font-heavy', label: 'heavy', wght: 900 },
+                ].map((s) => (
+                  <div key={s.cls} className="flex items-baseline gap-4">
+                    <span className="text-muted-foreground w-28 shrink-0 font-mono text-xs">
+                      {s.label}
+                    </span>
+                    <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs tabular-nums">
+                      {s.wght}
+                    </span>
+                    <span className={cn('text-foreground text-2xl tracking-tight', s.cls)}>
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line871JsxTextKortixComputer')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
               <div className="mt-6 rounded-lg bg-neutral-950 p-5 text-neutral-100 md:p-6">
                 <span className="mb-3 block font-mono text-xs tracking-widest text-neutral-500">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}
@@ -1241,6 +1271,22 @@ export default function BrandPage() {
                 <p className="mt-4 font-mono text-xs text-neutral-600">
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789',
+                  )}
+                </p>
+              </div>
+
+              <div className="bg-popover mt-6 rounded-md border px-4 py-5">
+                <span className="text-muted-foreground mb-3 block font-mono text-xs tracking-widest">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoLabel',
+                  )}
+                </span>
+                <p className="font-semimono text-lg tracking-tight tabular-nums md:text-2xl">
+                  ses_8f3ab291 · 2026-07-30 14:22:07 · a1b2c3d
+                </p>
+                <p className="text-muted-foreground mt-4 text-xs">
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.designSystemSemiMonoNote',
                   )}
                 </p>
               </div>
