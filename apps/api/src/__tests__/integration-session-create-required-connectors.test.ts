@@ -4,22 +4,34 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Project, accounts, executorConnectors, projectSessions, projects } from '@kortix/db';
+import {
+  type Project,
+  accountMembers,
+  accounts,
+  executorConnectors,
+  projectMembers,
+  projectSessions,
+  projects,
+} from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { app } from '../index';
 import { loadProjectAgents } from '../projects/agents';
 import { createProjectSession } from '../projects/lib/sessions';
+import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
 const USER_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
+const UNAVAILABLE_SESSION_ID = crypto.randomUUID();
 const PROJECT_CONNECTOR_ID = crypto.randomUUID();
 const USER_CONNECTOR_ID = crypto.randomUUID();
 
 let fixtureRoot = '';
 let previousGitCacheDir: string | undefined;
 let project: Project;
+let authToken = '';
 
 function git(args: string[], cwd: string): void {
   execFileSync('git', args, {
@@ -48,6 +60,9 @@ beforeAll(async () => {
       'agents:',
       '  support:',
       '    connectors: [project_records, user_records]',
+      '  unavailable:',
+      '    connectors: [unavailable_records]',
+      '    connectors_required: [unavailable_records]',
       '',
     ].join('\n'),
     'utf8',
@@ -70,6 +85,25 @@ beforeAll(async () => {
     .returning();
   if (!insertedProject) throw new Error('Project fixture insert returned no row');
   project = insertedProject;
+  await db.insert(accountMembers).values({
+    accountId: ACCOUNT_ID,
+    userId: USER_ID,
+    accountRole: 'owner',
+  });
+  await db.insert(projectMembers).values({
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    userId: USER_ID,
+    projectRole: 'manager',
+  });
+  authToken = (
+    await createAccountToken({
+      accountId: ACCOUNT_ID,
+      userId: USER_ID,
+      projectId: PROJECT_ID,
+      name: 'required-connector-route-test',
+    })
+  ).secretKey;
 
   await db.insert(executorConnectors).values([
     {
@@ -110,6 +144,9 @@ beforeAll(async () => {
       '  support:',
       '    connectors: [project_records, user_records]',
       '    connectors_required: [project_records, user_records]',
+      '  unavailable:',
+      '    connectors: [unavailable_records]',
+      '    connectors_required: [unavailable_records]',
       '',
     ].join('\n'),
     'utf8',
@@ -168,6 +205,69 @@ describe('createProjectSession required connector authorization gate', () => {
       .from(projectSessions)
       .where(
         and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, SESSION_ID)),
+      );
+    expect(rows).toEqual([]);
+  });
+
+  test('returns a configuration conflict when a required connector profile is unavailable', async () => {
+    const result = await createProjectSession({
+      project,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: {
+        session_id: UNAVAILABLE_SESSION_ID,
+        agent_name: 'unavailable',
+      },
+      enforceAccountCap: false,
+      authType: 'supabase',
+    });
+
+    expect(result).toEqual({
+      error: {
+        status: 409,
+        body: {
+          error: 'Required connector profile "unavailable_records" is unavailable',
+          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+        },
+      },
+    });
+
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, PROJECT_ID),
+          eq(projectSessions.sessionId, UNAVAILABLE_SESSION_ID),
+        ),
+      );
+    expect(rows).toEqual([]);
+  });
+
+  test('returns the unavailable profile conflict through the session HTTP route', async () => {
+    const sessionId = crypto.randomUUID();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        agent_name: 'unavailable',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Required connector profile "unavailable_records" is unavailable',
+      code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+    });
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, sessionId)),
       );
     expect(rows).toEqual([]);
   });

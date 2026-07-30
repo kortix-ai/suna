@@ -228,6 +228,16 @@ Missing authorizations return:
 }
 ```
 
+If a required slug has no configured connector profile, session creation
+returns:
+
+```json
+{
+  "error": "Required connector profile \"gmail-read\" is unavailable",
+  "code": "REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE"
+}
+```
+
 Create or reconnect the required authorization. Then retry session creation.
 
 ## 4. Secret scope
@@ -407,6 +417,7 @@ An idempotency key longer than 255 characters returns
 | `404` create / `403` rescope | `CONNECTOR_PROFILE_NOT_FOUND`                    | The authorization is absent or violates the connector profile strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist names an unknown identifier.                       |
 | `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no active valid authorization.        |
+| `409`                        | `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`         | A required slug has no configured connector profile.                    |
 | `409` create / `403` rescope | `CONNECTOR_PROFILE_INACTIVE`                     | The connector profile or authorization is inactive.                     |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a changed request body.           |
 | `402`                        | `subscription_required` / `insufficient_credits` | The account cannot start a billed session.                              |

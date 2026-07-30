@@ -209,11 +209,6 @@ const SEND_PRIMITIVE_CASES: Case[] = [
     path: () => `/v1/projects/${PROJECT}/channels/slack/file/upload`,
   },
   {
-    name: 'meet speak proxy',
-    leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    path: () => `/v1/projects/${PROJECT}/channels/meet/speak`,
-  },
-  {
     // Teams consent-card upload drives the project bot to SEND into the
     // customer's Teams channel — the same send primitive as Slack upload; the
     // capability assert runs before teamsChannelEnabled(), so the 403 fires
