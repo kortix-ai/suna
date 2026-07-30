@@ -149,20 +149,60 @@ export type ApplyAgentBlockResult =
   | { ok: true; raw: Record<string, unknown> }
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
+function applyAgentMapBlock(
+  manifest: ParsedManifest,
+  agentName: string,
+  block: Record<string, unknown>,
+): ApplyAgentBlockResult {
+  if (!isValidAgentName(agentName)) {
+    return {
+      ok: false,
+      error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
+    };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (
+    rawAgents !== undefined &&
+    rawAgents !== null &&
+    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
+  ) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const normalized = normalizeRequiredConnectorAliases(block);
+  if (!normalized.ok) return normalized;
+  pruneRequiredConnectors(normalized.block);
+  const nextAgents: Record<string, unknown> = {
+    ...(rawAgents as Record<string, unknown> | undefined),
+  };
+  nextAgents[agentName] = normalized.block;
+  const nextRaw = { ...manifest.raw, agents: nextAgents };
+
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  if (errorIssues.length > 0) {
+    return {
+      ok: false,
+      error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      issues: errorIssues,
+    };
+  }
+  return { ok: true, raw: nextRaw };
+}
+
 /**
  * Change the project-wide default agent without touching any agent block.
  * The manifest validator is the authority: the target must be a declared,
- * enabled v2 agent before the caller is allowed to commit the file.
+ * enabled map-based agent before the caller is allowed to commit the file.
  */
 export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion < 2) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -211,37 +251,11 @@ export function applyAgentBlockV2(
         'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to edit the full agent configuration.',
     };
   }
-  if (!isValidAgentName(agentName)) {
-    return {
-      ok: false,
-      error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
-    };
-  }
-  const rawAgents = manifest.raw.agents;
-  if (rawAgents !== undefined && rawAgents !== null && (Array.isArray(rawAgents) || typeof rawAgents !== 'object')) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const normalized = normalizeRequiredConnectorAliases(block as Record<string, unknown>);
-  if (!normalized.ok) return normalized;
-  pruneRequiredConnectors(normalized.block);
-  const nextAgents: Record<string, unknown> = { ...(rawAgents as Record<string, unknown> | undefined) };
-  nextAgents[agentName] = normalized.block;
-  const nextRaw = { ...manifest.raw, agents: nextAgents };
-
-  const result = validateManifest(nextRaw, manifest.format);
-  const errorIssues = result.issues.filter((i) => i.severity === 'error');
-  if (errorIssues.length > 0) {
-    return {
-      ok: false,
-      error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '),
-      issues: errorIssues,
-    };
-  }
-  return { ok: true, raw: nextRaw };
+  return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
 }
 
 /**
- * Apply a secrets/connectors SCOPE edit to a v2 `agents:` MAP manifest — the v2
+ * Apply a secrets/connectors SCOPE edit to an `agents:` map manifest — the
  * counterpart of `applyAgentScope` in `../agents.ts` (which only handles the v1
  * `[[agents]]` array and would treat a v2 map as an empty array → "agent not
  * found"). Reads the agent's existing governance block, merges in JUST the two
@@ -264,6 +278,13 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
+  if (manifest.schemaVersion < 2) {
+    return {
+      ok: false,
+      error:
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to edit agent scope.',
+    };
+  }
   const rawAgents = manifest.raw.agents;
   const existing =
     rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
@@ -309,5 +330,5 @@ export function applyAgentScopeV2(
       else merged.connectors_required = kept;
     }
   }
-  return applyAgentBlockV2(manifest, agentName, merged as AgentBlockV2);
+  return applyAgentMapBlock(manifest, agentName, merged);
 }
