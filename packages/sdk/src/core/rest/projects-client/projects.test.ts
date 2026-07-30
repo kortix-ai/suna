@@ -1,13 +1,14 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
+import { configureKortix } from '../../http/config';
+import type { LinkRepositoryInput } from './github';
 import {
+  type CreateProjectRepoInput,
+  type ProvisionProjectInput,
   getProjectDetail,
   provisionProject,
   provisionProjectWithToken,
-  type CreateProjectRepoInput,
-  type ProvisionProjectInput,
 } from './projects';
-import { configureKortix } from '../../http/config';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 
@@ -26,6 +27,26 @@ test('GitHub project creation accepts a marketplace project template', () => {
   };
 
   expect(createInput.source_item_id).toBe('kortix-projects:support-agent-kit');
+});
+
+test('CreateProjectRepoInput accepts an optional icon', () => {
+  const createInput: CreateProjectRepoInput = {
+    account_id: 'acc-1',
+    name: 'support-agent',
+    icon: '🚀',
+  };
+
+  expect(createInput.icon).toBe('🚀');
+});
+
+test('LinkRepositoryInput accepts an optional icon', () => {
+  const linkInput: LinkRepositoryInput = {
+    account_id: 'acc-1',
+    repo_url: 'https://github.com/acme/repo',
+    icon: '🚀',
+  };
+
+  expect(linkInput.icon).toBe('🚀');
 });
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {
@@ -155,4 +176,34 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   expect(detail.config.default_agent).toBe('kortix');
   expect(detail.config.open_code_default_agent).toBe('kortix');
+});
+
+test('provisionProject sends the icon in the request body', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await provisionProject({ account_id: 'acc-1', name: 'Iconic', icon: '🚀' });
+
+  expect(sentBody).toMatchObject({ icon: '🚀' });
+});
+
+test('a project response carries the icon through to KortixProject', async () => {
+  nextResponse = () =>
+    new Response(JSON.stringify({ project_id: 'proj-1', name: 'Iconic', icon: '🚀' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  const result = await provisionProjectWithToken(opts, { ...input, icon: '🚀' });
+
+  expect(result.ok).toBe(true);
+  expect(result.ok && result.project.icon).toBe('🚀');
 });

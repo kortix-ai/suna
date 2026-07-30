@@ -45,6 +45,9 @@ export interface LinkRepositoryInput {
   name?: string;
   default_branch?: string;
   manifest_path?: string;
+  /** Optional emoji icon for the new project. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
 }
 
 export interface LinkRepositoryResponse {

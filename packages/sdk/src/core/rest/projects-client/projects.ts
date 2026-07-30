@@ -64,6 +64,10 @@ export interface KortixProject {
   default_sandbox_provider?: SandboxProviderName | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
   available_sandbox_providers?: SandboxProviderName[];
+  /** Per-project emoji shown on the project card. Server-validated: exactly one
+   *  emoji grapheme, or null. Stored in `metadata.icon`; surfaced top-level so
+   *  clients never cast the metadata bag. */
+  icon?: string | null;
 }
 
 export interface ProjectConfigSummary {
@@ -191,6 +195,9 @@ export interface CreateProjectRepoInput {
   starter_template?: 'general-knowledge-worker' | 'minimal';
   /** Clone a `registry:project` item into the new GitHub repository. */
   source_item_id?: string;
+  /** Optional emoji icon for the new project. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
 }
 
 export interface ProvisionProjectInput {
@@ -204,6 +211,9 @@ export interface ProvisionProjectInput {
    *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
    *  seed_starter and takes precedence over starter_template. */
   source_item_id?: string;
+  /** Optional emoji icon for the new project. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
 }
 
 export interface RepoCollaboratorInvite {
