@@ -441,10 +441,9 @@ flow(
     });
 
     await ctx.step('unknown project blocks session scope reads and mutations', async () => {
-      const scopeRead = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/scope',
-        { params: sessionParams },
-      );
+      const scopeRead = await owner.get('/v1/projects/:projectId/sessions/:sessionId/scope', {
+        params: sessionParams,
+      });
       scopeRead.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
@@ -461,3 +460,31 @@ flow(
     });
   },
 );
+
+// COV-12 — GET /v1/approval-links/:token
+// (apps/api/src/setup-links/approval-app.ts:41-173). Authenticated read of a
+// pending approval decision. The token is a pointer (not a bearer capability),
+// so ANON 401s, an unknown token 404s, and a wrong-link-type token 400s.
+// Boundary-only (the positive path needs a real pending execution).
+flow('COV-12', { domain: 'coverage', routes: ['GET /v1/approval-links/:token'] }, async (ctx) => {
+  const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
+
+  await ctx.step('ANON → 401', async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get('/v1/approval-links/:token', {
+      params: { token: ZERO_UUID },
+    });
+    r.status(401);
+  });
+  await ctx.step('unknown token → 404 (setup link resolution fails)', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/approval-links/:token', {
+      params: { token: 'no-such-token' },
+    });
+    r.status(404);
+  });
+  await ctx.step('NONMEMBER → 404 (no project access — 404 not 403 per handler)', async () => {
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/approval-links/:token', {
+      params: { token: ZERO_UUID },
+    });
+    r.status(404);
+  });
+});

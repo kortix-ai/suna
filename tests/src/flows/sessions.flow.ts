@@ -837,3 +837,71 @@ flow(
     });
   },
 );
+
+// SESS-SCOPE — PUT /v1/projects/:projectId/sessions/:sessionId/scope
+// (apps/api/src/projects/routes/r7.ts:1994-). Re-scope a running session's
+// secrets + connector bindings. The positive path needs a funded live session;
+// the BOUNDARIES are assertable without one: ANON 401s, invalid session id
+// 400s, unknown project/session 404s, NONMEMBER is denied.
+flow(
+  'SESS-SCOPE',
+  {
+    domain: 'sessions',
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/scope'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/scope',
+          {},
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status(401);
+    });
+    await ctx.step('invalid (non-uuid) session id → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/scope',
+          {},
+          { params: { projectId: p.id, sessionId: 'not-a-uuid' } },
+        );
+      r.status(400);
+    });
+    await ctx.step('unknown projectId → 404 (project not loadable)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/scope',
+          {},
+          { params: { projectId: ZERO_UUID, sessionId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('unknown session (valid uuid) → 404 (session not found)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/scope',
+          { secrets: null },
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER → 403/404 (no project access)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/scope',
+          {},
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
