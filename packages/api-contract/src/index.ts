@@ -116,6 +116,8 @@ export const ProjectSchema = z.object({
   manifest_path: z.string(),
   status: z.enum(['active', 'archived']),
   metadata: JsonObjectSchema,
+  /** Per-project emoji shown on the project card, or null when unset/invalid. */
+  icon: z.string().nullable().optional(),
   last_opened_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

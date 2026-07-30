@@ -24,6 +24,7 @@ import type { ProjectRole } from '../access';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle } from './opencode-title';
+import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
@@ -178,6 +179,11 @@ export function serializeProject(
     manifest_path: row.manifestPath,
     status: row.status,
     metadata: row.metadata ?? {},
+    // Per-project emoji, stored in metadata (no migration — same mechanism as
+    // default_sandbox_provider below and metadata.onboarding_completed_at).
+    // Re-validated on read so a value written before the validator existed, or
+    // written directly to the DB, can never reach the UI unchecked.
+    icon: normalizeProjectIcon((row.metadata as Record<string, unknown> | null | undefined)?.icon),
     last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
