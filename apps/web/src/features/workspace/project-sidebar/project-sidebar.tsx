@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -39,7 +40,6 @@ import {
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
-import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
@@ -54,6 +54,7 @@ import {
   ListIcon as List,
   EnvelopeIcon as Mail,
   ChatsIcon as MessagesSquare,
+  SidebarSimpleIcon as PanelLeft,
   UsersIcon as UsersSolid,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
@@ -79,7 +80,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, holdPeek } = useSidebar();
+  const { state, setOpenMobile, holdPeek, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -166,18 +167,45 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     >
       <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
-            single layout. The collapse toggle exists only while docked — in
-            the flyout the shell's top-left toggle (right above the panel) is
-            the pin control, and the project switcher takes the full width. */}
+            single layout. The project switcher used to own this row; the
+            sidebar toggle took its place, so the collapse control sits inside
+            the thing it collapses and the session header no longer has to
+            carry a toggle while the panel is docked open. */}
         <div className="flex w-full items-center justify-between gap-1">
           <Button type="button" variant="ghost" size="icon" asChild>
             <Link href={`/projects/${projectId}`}>
               <Icon.Kortix className="text-foreground size-4.5" />
             </Link>
           </Button>
-          <div className="w-full min-w-0">
-            <ProjectSwitcher variant="sidebar" />
-          </div>
+          {/* Desktop only. On mobile the panel is a Sheet — it has no docked
+              state to collapse (`state` there still reads the desktop cookie),
+              and it already dismisses by backdrop/swipe. Clicking while the
+              panel is a hover flyout docks it open, hence the "Pin" label. */}
+          {!isMobile && (
+            <Hint
+              side="bottom"
+              label={
+                <span className="flex items-center gap-1.5">
+                  {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  <KbdGroup>
+                    <Kbd className="font-mono">{modSymbol}</Kbd>
+                    <Kbd className="font-mono">B</Kbd>
+                  </KbdGroup>
+                </span>
+              }
+            >
+              <Button
+                type="button"
+                aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+              >
+                <PanelLeft className="cn-rtl-flip size-4" />
+              </Button>
+            </Hint>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">

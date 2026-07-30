@@ -66,9 +66,23 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const {
+    state: sidebarState,
+    toggleSidebar,
+    peek,
+    peekEnter,
+    peekLeave,
+    isMobile: isMobileViewport,
+  } = useSidebar();
   const sidebarToggleLabel =
     sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
+  // Same rule as the session header: on desktop this toggle only brings a
+  // hidden panel back, because the collapse control lives in the panel's own
+  // header (ProjectSidebar) — so it self-hides while the panel is docked.
+  // Mobile keeps it unconditionally: `sidebarState` there tracks the desktop
+  // cookie, not the Sheet, so gating on it would strand the only way to open
+  // the sheet on this page.
+  const showSidebarToggle = isMobileViewport || sidebarState !== 'expanded';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -129,18 +143,20 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
-      <Button
-        type="button"
-        aria-label={sidebarToggleLabel}
-        variant="ghost"
-        size="icon"
-        onClick={toggleSidebar}
-        onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
-        onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
+      {showSidebarToggle && (
+        <Button
+          type="button"
+          aria-label={sidebarToggleLabel}
+          variant="ghost"
+          size="icon"
+          onClick={toggleSidebar}
+          onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+          onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+          className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+        >
+          <PanelLeft className="cn-rtl-flip size-4" />
+        </Button>
+      )}
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
