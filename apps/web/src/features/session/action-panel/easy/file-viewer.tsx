@@ -255,19 +255,12 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  variant="a_accent-i_transparent"
                   aria-label="Preview"
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger
-                  size="xs"
-                  value="source"
-                  variant="a_accent-i_transparent"
-                  aria-label="Source"
-                  className="h-7 w-7 px-0"
-                >
+                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>

@@ -8,7 +8,7 @@ import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
    never re-renders its subtree and the identity stays stable across renders.
    size 24 replicates lucide's old default so class-less icons keep their size;
    Tailwind size classes and explicit size props both still win. */
-const ICON_DEFAULTS = { weight: DEFAULT_ICON_WEIGHT, size: 24 } as const;
+const ICON_DEFAULTS = { weight: DEFAULT_ICON_WEIGHT, size: 32 } as const;
 
 /**
  * Applies the app-wide icon weight (src/lib/icons/icon-config.ts) to every

@@ -190,6 +190,7 @@ export function UserMenu({
               onClick={() =>
                 deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
               }
+              size="sm"
             >
               <UserAvatar
                 email={user.email}
@@ -212,12 +213,15 @@ export function UserMenu({
           </>
         )}
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))} size="sm">
           <HouseIcon />
           Home
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/marketplace'))}>
+        <DropdownMenuItem
+          onClick={() => deferAfterClose(() => router.push('/marketplace'))}
+          size="sm"
+        >
           <Store />
           Marketplace
         </DropdownMenuItem>
@@ -228,22 +232,23 @@ export function UserMenu({
               if (!openExternalRoute('/docs')) router.push('/docs');
             })
           }
+          size="sm"
         >
           <BookOpen />
           Docs
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))} size="sm">
           <Download />
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))} size="sm">
           <LifeBuoy />
           Support
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => openUserSettings('general')}>
+        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
           <CogOne />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
@@ -256,13 +261,14 @@ export function UserMenu({
                 useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
               )
             }
+            size="sm"
           >
             <CreditCard />
             Billing
           </DropdownMenuItem>
         )}
 
-        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm}>
+        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm} size="sm">
           <LogOut />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
