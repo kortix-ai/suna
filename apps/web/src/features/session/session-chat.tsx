@@ -2806,7 +2806,6 @@ function SessionTurn({
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [working, turn]);
-  const duration = working ? liveDuration : '';
 
   // ---- Copy response ----
   const handleCopy = async () => {
@@ -3342,7 +3341,7 @@ function SessionTurn({
                   )
                 : undefined
             }
-            elapsed={duration}
+            elapsed={liveDuration}
           />
         </div>
       )}

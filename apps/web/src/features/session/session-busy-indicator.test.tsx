@@ -12,6 +12,7 @@ describe('SessionBusyIndicator', () => {
   test('renders the supplied status text', () => {
     const markup = renderToStaticMarkup(<SessionBusyIndicator statusText="Running tests" />);
     expect(markup).toContain('Running tests');
+    expect(markup).not.toContain('Thinking');
   });
 
   test('falls back to Thinking for whitespace-only status text', () => {

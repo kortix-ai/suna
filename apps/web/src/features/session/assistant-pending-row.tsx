@@ -8,10 +8,18 @@ import { cn } from '@/lib/utils';
 
 /**
  * The assistant turn's "pending" shell — the Kortix logomark on top, and beneath
- * it the EXACT regular assistant-waiting indicator (pulsing dot + thinking text +
- * elapsed time, identical to SessionChat's in-turn working row). Rendered the
+ * it a waiting row (pulsing dot + thinking text + elapsed time). Rendered the
  * INSTANT a user message is sent so the assistant response area is already
  * present and never "pops in" / spawns late.
+ *
+ * This is the PRE-turn counterpart to SessionBusyIndicator, which takes over the
+ * same screen position once the first turn materialises. Only the label's
+ * x-offset is shared: both land the text 20px from the row's left edge, so the
+ * handover does not shift it. Dot size, elapsed placement, and idle-text
+ * treatment still differ on purpose — this row keeps a size-3 dot, an inline
+ * `· Ns` elapsed, and AnimatedThinkingText's rotating phrases, because before a
+ * turn exists there is no real status to report and the rotation is what tells
+ * the user the request landed. Unifying the two is a separate change.
  *
  * Shared by SessionChat's optimistic + awaiting states and the instant session
  * shell so all of them render identically (and seamlessly across the shell →
@@ -48,9 +56,13 @@ export function AssistantPendingRow({
         alt="Kortix"
         className="dark:invert-0 h-[14px] w-auto flex-shrink-0 invert"
       />
-      {/* Regular assistant-waiting row: pulsing dot + thinking text + elapsed —
-          identical to SessionChat's in-turn working indicator. A `body` override
-          swaps this whole row out (e.g. the inline boot checklist). */}
+      {/* Pre-turn waiting row: pulsing dot + thinking text + elapsed. The size-3
+          dot plus gap-2 puts the label 20px from the left edge — the same offset
+          SessionBusyIndicator and every tool row use, so nothing jumps sideways
+          when the real turn takes this slot. The dot size, the inline `· Ns`
+          elapsed, and the rotating idle text are deliberately NOT the busy
+          indicator's. A `body` override swaps this whole row out (e.g. the
+          inline boot checklist). */}
       {body ?? (
         <div className="text-muted-foreground flex items-center gap-2 py-1 text-xs">
           <span className="relative flex size-3" aria-hidden>

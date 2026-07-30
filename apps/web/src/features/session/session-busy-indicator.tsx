@@ -36,8 +36,9 @@ export function SessionBusyIndicator({
   className?: string;
 }): React.ReactElement {
   const reduceMotion = useReducedMotion() ?? false;
-  const isRetrying = Boolean(retryLabel);
-  const label = isRetrying ? retryLabel! : statusText?.trim() || DEFAULT_STATUS;
+  const retryText = retryLabel?.trim();
+  const isRetrying = Boolean(retryText);
+  const label = retryText || statusText?.trim() || DEFAULT_STATUS;
 
   return (
     <motion.div
@@ -61,12 +62,17 @@ export function SessionBusyIndicator({
         className="relative inline-flex size-3.5 shrink-0 items-center justify-center"
         aria-hidden
       >
-        {reduceMotion ? null : (
-          <span className="bg-muted-foreground/30 absolute inline-flex size-2 animate-ping rounded-full" />
-        )}
+        {/* motion-reduce, not the JS `reduceMotion` flag: useReducedMotion() reads
+            false on the server and true on a reduced-motion client, so gating the
+            node on it would mismatch hydration. */}
+        <span className="bg-muted-foreground/30 absolute inline-flex size-2 animate-ping rounded-full motion-reduce:animate-none" />
         <span className="bg-muted-foreground/50 relative inline-flex size-2 rounded-full" />
       </span>
-      <span className="relative min-w-0 flex-1">
+      {/* The visual label is hidden from assistive tech and mirrored by the sr-only
+          span below: `popLayout` keeps the exiting node mounted for the full 300ms
+          exit, so for that window the live region would hold both the old and the
+          new label and announce the pair. */}
+      <span className="relative min-w-0 flex-1" aria-hidden>
         <AnimatePresence initial={false} mode="popLayout">
           <motion.span
             key={label}
@@ -84,6 +90,7 @@ export function SessionBusyIndicator({
           </motion.span>
         </AnimatePresence>
       </span>
+      <span className="sr-only">{label}</span>
       {elapsed && (
         // aria-hidden: role="status" would otherwise make a screen reader announce a
         // new number every second for the whole turn.
