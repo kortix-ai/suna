@@ -124,39 +124,6 @@ describe('fitSplitPercent (aspect-ratio-fit split for the Easy panel)', () => {
   it('returns null for a zero panelContentHeight', () => {
     expect(fitSplitPercent({ aspect: 1, layoutWidth: 1400, panelContentHeight: 0 })).toBeNull();
   });
-
-  it('honors a custom gutter, min, and max', () => {
-    // gutter: 0 drops the unclamped square-case result to 800/1400*100 =
-    // 57.14% (vs. 60.57% with the default 48px gutter); the tight [40, 55]
-    // bounds then clamp that down further, to 55.
-    const percent = fitSplitPercent({
-      aspect: 1,
-      ...box,
-      gutter: 0,
-      min: 40,
-      max: 55,
-    });
-    expect(percent).toBeCloseTo(55, 0);
-  });
-
-  // ─── Finding 1 — gutter/min/max are optional tuning knobs, not required
-  // measurements, so a non-finite override falls back to its default
-  // constant rather than nulling out an otherwise-valid measurement. Either
-  // way, Global Constraint 6 holds: never NaN out of this function. ──
-  it('falls back to the default gutter when the override is non-finite', () => {
-    const percent = fitSplitPercent({ aspect: 1, ...box, gutter: NaN });
-    expect(percent).toBeCloseTo(61, 0); // same as the square case's default-gutter result
-  });
-
-  it('falls back to the default min when the override is non-finite', () => {
-    const percent = fitSplitPercent({ aspect: 0.05, ...box, min: Infinity });
-    expect(percent).toBeCloseTo(35, 0); // FIT_MIN_PERCENT
-  });
-
-  it('falls back to the default max when the override is non-finite', () => {
-    const percent = fitSplitPercent({ aspect: 10, ...box, max: -Infinity });
-    expect(percent).toBeCloseTo(70, 0); // FIT_MAX_PERCENT
-  });
 });
 
 describe('resolveSideSize (the panel-width precedence rule)', () => {

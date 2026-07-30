@@ -160,9 +160,12 @@ export interface Detail {
    */
   swapIn?: boolean;
   /**
-   * This detail's body will report its own intrinsic size (see
-   * `reportsIntrinsicSize` in `file-preview.tsx`), so `openDetail` leaves the
-   * store's `panelAspect` alone instead of clearing it.
+   * Reads like a capability ("this detail will measure itself") but is
+   * actually a lifecycle instruction to `openDetail`: "do not clear
+   * `panelAspect`". Set when this detail's body will report its own
+   * intrinsic size (see `reportsIntrinsicSize` in `file-preview.tsx`), so
+   * `openDetail` leaves the store's `panelAspect` alone instead of clearing
+   * it, trusting the incoming report to replace it.
    *
    * Without this, paging between two A4 PDFs glides the panel down to the
    * default column and straight back up again — a 123px round trip between

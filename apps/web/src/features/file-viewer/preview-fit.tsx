@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  createContext,
-  useContext,
-  useMemo,
-  useRef,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react';
 
 /** Intrinsic pixel dimensions of a document, as decoded/measured by a renderer. */
 export interface IntrinsicSize {
@@ -43,10 +37,7 @@ export interface PreviewFit {
  */
 export function isUsableIntrinsicSize(size: IntrinsicSize): boolean {
   return (
-    Number.isFinite(size.width) &&
-    Number.isFinite(size.height) &&
-    size.width > 0 &&
-    size.height > 0
+    Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0
   );
 }
 

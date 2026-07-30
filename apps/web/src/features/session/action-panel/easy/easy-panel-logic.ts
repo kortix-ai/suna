@@ -97,23 +97,23 @@ export function sandboxRecents(recents: BrowserRecent[]): BrowserRecent[] {
   return recents.filter((r) => !!parseLocalhostUrl(r.url));
 }
 
-/** Viewer padding + scrollbar allowance around a fitted preview, px — the
- *  default `gutter` for {@link fitSplitPercent}. */
-export const PREVIEW_GUTTER_PX = 48;
+/** Viewer padding + scrollbar allowance around a fitted preview, px — added
+ *  to the ideal pixel width inside {@link fitSplitPercent}. */
+const PREVIEW_GUTTER_PX = 48;
 
 /** `PreviewShell`'s toolbar bar height, px (`px-3 py-2.5` around a `size-7`
  *  control) — subtracted from the panel box to get `panelContentHeight`
  *  before calling {@link fitSplitPercent}. */
-export const PREVIEW_TOOLBAR_PX = 48;
+const PREVIEW_TOOLBAR_PX = 48;
 
 /** Floor for a fitted split, percent — matches the `ResizablePanel`'s own
  *  `minSize` (`session-layout.tsx`) so a fit can never ask for a column the
  *  layout would refuse to give it. */
-export const FIT_MIN_PERCENT = 35;
+const FIT_MIN_PERCENT = 35;
 
 /** Ceiling for a fitted split, percent — matches the `ResizablePanel`'s own
  *  `maxSize`, same reasoning as {@link FIT_MIN_PERCENT}. */
-export const FIT_MAX_PERCENT = 70;
+const FIT_MAX_PERCENT = 70;
 
 /**
  * The split percentage that shows a document at its own aspect ratio,
@@ -139,10 +139,6 @@ export function fitSplitPercent(input: {
   layoutWidth: number;
   /** Panel box height minus its toolbar, px. */
   panelContentHeight: number;
-  /** Viewer padding + scrollbar allowance, px. */
-  gutter?: number;
-  min?: number;
-  max?: number;
 }): number | null {
   const { aspect, layoutWidth, panelContentHeight } = input;
 
@@ -150,21 +146,9 @@ export function fitSplitPercent(input: {
   if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) return null;
   if (!Number.isFinite(panelContentHeight) || panelContentHeight <= 0) return null;
 
-  // gutter/min/max are tuning knobs, not measurements — unlike aspect/
-  // layoutWidth/panelContentHeight, a caller passing a bad one hasn't failed
-  // to measure anything real, so it doesn't earn the same "no opinion" null.
-  // Falling back to the constant keeps a valid measurement usable instead of
-  // discarding it over an unrelated bad override, while still satisfying
-  // Global Constraint 6: `Number.isFinite` rejects `NaN` and `Infinity`
-  // exactly like the guards above, so a junk override can never reach the
-  // arithmetic below and surface as `NaN`.
-  const gutter = Number.isFinite(input.gutter) ? (input.gutter as number) : PREVIEW_GUTTER_PX;
-  const min = Number.isFinite(input.min) ? (input.min as number) : FIT_MIN_PERCENT;
-  const max = Number.isFinite(input.max) ? (input.max as number) : FIT_MAX_PERCENT;
-
-  const idealPx = aspect * panelContentHeight + gutter;
+  const idealPx = aspect * panelContentHeight + PREVIEW_GUTTER_PX;
   const percent = (idealPx / layoutWidth) * 100;
-  return Math.min(max, Math.max(min, percent));
+  return Math.min(FIT_MAX_PERCENT, Math.max(FIT_MIN_PERCENT, percent));
 }
 
 /**
@@ -215,7 +199,7 @@ export function resolveSideSize(input: {
  *  as different widths — the tolerance for {@link aspectChangedWidth}. Half a
  *  percent of a 1400px layout is 7px: below that there is nothing to see, and
  *  a drag lands on fractional percentages that must not read as a change. */
-export const PANEL_SIZE_EPSILON_PERCENT = 0.5;
+const PANEL_SIZE_EPSILON_PERCENT = 0.5;
 
 /**
  * Whether a new `panelAspect` actually asks the panel to move.

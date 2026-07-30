@@ -671,12 +671,22 @@ export function FileContentRenderer({
   // accepted window during which a ratio-fitting consumer still holds the
   // previous document's width. Widening this predicate to pre-empt it would
   // break the browsers the fallback exists for.
+  //
+  // A HEIC whose blob just resolved is ALSO not one of them, for one render:
+  // `useHeicBlob` flips `isConverting` to true inside its effect
+  // (`use-heic-url.ts:29`), which runs after this render commits. On the
+  // render where `blobLoading` first goes false, `heicConverting` is still
+  // `false` and `heicImageUrl` is still `null` even though conversion is
+  // about to start — not because it failed. Only a HEIC whose blob never
+  // arrived (`rawBlob` still null/absent) counts as producing nothing.
+  const heicAboutToConvert = isHeicImage && !!rawBlob;
   const imageProducedNothing =
     fileCategory === 'image' &&
     !showLoadingState &&
     !heicConverting &&
     !imageDataUrl &&
-    !heicImageUrl;
+    !heicImageUrl &&
+    !heicAboutToConvert;
 
   useEffect(() => {
     if (!previewFit || !imageProducedNothing) return;

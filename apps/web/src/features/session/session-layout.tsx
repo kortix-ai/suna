@@ -261,6 +261,15 @@ export const SessionLayout = memo(function SessionLayout({
   // Memoized on exactly the states that may re-decide the width, so the box
   // read below is sampled at those moments and only those: this is what makes
   // the fit survive a window resize instead of chasing it.
+  //
+  // `panelBoxRef.current` is read here ON PURPOSE, outside the dep array —
+  // this is a deliberate stale-ref read, not a missed dependency. Adding
+  // `panelBox` to the deps (or promoting the ref to state so it re-renders)
+  // would make every `ResizeObserver` tick re-decide `sideSize`, turning the
+  // one-shot fit into a live window-resize follower: it would fight a
+  // hand-dragged divider on every resize instead of leaving it alone, and a
+  // window resize would re-run the 300ms glide `aspectChangedWidth` below is
+  // built to fire only once per real change. Do not "fix" this lint.
   const sideSize = useMemo(
     () =>
       resolveSideSize({

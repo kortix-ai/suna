@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  isUsableIntrinsicSize,
   PreviewFitProvider,
   usePreviewFit,
-  isUsableIntrinsicSize,
   type IntrinsicSize,
 } from './preview-fit';
 
