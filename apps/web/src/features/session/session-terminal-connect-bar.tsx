@@ -1,6 +1,6 @@
 'use client';
 
-import { getDeploymentCliInstallCommand } from '@/lib/kortix-cli';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { cn } from '@/lib/utils';
 import {
   CheckIcon as Check,
@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
   const [expanded, setExpanded] = useState(false);
   const connectCmd = `kortix sessions connect ${projectSessionId}`;
-  const installCmd = getDeploymentCliInstallCommand(undefined);
+  const installCmd = useDeploymentCliInstallCommand(undefined);
 
   return (
     <div className="shrink-0 border-b border-white/10 bg-[#15151d] text-[13px]">

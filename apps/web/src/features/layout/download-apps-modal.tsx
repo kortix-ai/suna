@@ -15,7 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { errorToast } from '@/components/ui/toast';
 import { desktopDownloadUrl, startDownload } from '@/lib/desktop';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
+import { getEnv } from '@/lib/env-config';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { cn } from '@/lib/utils';
 import {
   CheckIcon as Check,
@@ -136,7 +137,7 @@ function DesktopMockup() {
   );
 }
 
-function TerminalMockup() {
+function TerminalMockup({ installCommand }: { installCommand: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border/60 absolute inset-x-6 top-2 bottom-0 translate-y-1 overflow-hidden rounded-t-xl border border-b-0 bg-[#0c0c0d] shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.4)]">
@@ -145,7 +146,7 @@ function TerminalMockup() {
       </div>
       <div className="space-y-1 p-3 font-mono text-[9px] leading-relaxed text-zinc-300">
         <div>
-          <span className="text-emerald-400">$</span> {KORTIX_CLI_INSTALL_COMMAND}
+          <span className="text-emerald-400">$</span> {installCommand}
         </div>
         <div className="text-zinc-500">
           {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextInstalledKortix44ca8439')}
@@ -224,6 +225,7 @@ export function DownloadAppsModal({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [platformId, setPlatformId] = useState<PlatformId>('macos');
   const [copied, setCopied] = useState(false);
+  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
 
   useEffect(() => {
     if (open) setPlatformId(detectPlatform());
@@ -234,7 +236,7 @@ export function DownloadAppsModal({
 
   const copyCli = async () => {
     try {
-      await navigator.clipboard.writeText(KORTIX_CLI_INSTALL_COMMAND);
+      await navigator.clipboard.writeText(installCommand);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -330,7 +332,7 @@ export function DownloadAppsModal({
                       'autoFeaturesLayoutDownloadAppsModalJsxAttrTitleClickTob497d6e9',
                     )}
                   >
-                    <span className="truncate">{KORTIX_CLI_INSTALL_COMMAND}</span>
+                    <span className="truncate">{installCommand}</span>
                     {copied ? (
                       <Check className="size-3.5 shrink-0 text-emerald-500" />
                     ) : (
@@ -338,7 +340,7 @@ export function DownloadAppsModal({
                     )}
                   </button>
                 }
-                mockup={<TerminalMockup />}
+                mockup={<TerminalMockup installCommand={installCommand} />}
               />
 
               {/* Chrome — coming soon */}

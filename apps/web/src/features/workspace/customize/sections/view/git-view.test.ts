@@ -25,7 +25,7 @@ test('copy control keeps both icons in an animated fixed-size box', () => {
 
 test('develop locally includes the environment-aware CLI installer before clone', () => {
   const source = readFileSync(join(import.meta.dir, 'git-view.tsx'), 'utf8');
-  expect(source).toContain('getDeploymentCliInstallCommand(getEnv().VERSION)');
+  expect(source).toContain('useDeploymentCliInstallCommand(getEnv().VERSION)');
   expect(source).toContain('label="Install command"');
   expect(source.indexOf('label="Install command"')).toBeLessThan(
     source.indexOf('label="Clone command"'),

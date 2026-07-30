@@ -20,15 +20,18 @@ describe('getKortixCliInstallCommand', () => {
 });
 
 describe('getDeploymentCliInstallCommand', () => {
-  // The whole point: an operator reading this inside their own install must be
-  // told to curl THEIR host — which may be all their network can reach, and is
-  // the only domain they actually chose to trust.
   test('targets the deployment origin', () => {
     expect(getDeploymentCliInstallCommand(undefined, 'http://10.0.0.5:3000')).toBe(
       'curl -fsSL http://10.0.0.5:3000/install | bash',
     );
     expect(getDeploymentCliInstallCommand('1.2.3-dev.4', 'http://10.0.0.5:3000')).toBe(
       'curl -fsSL http://10.0.0.5:3000/install | KORTIX_CHANNEL=dev bash',
+    );
+  });
+
+  test('uses only the origin from an absolute deployment URL', () => {
+    expect(getDeploymentCliInstallCommand(undefined, 'https://self-host.example/base/')).toBe(
+      'curl -fsSL https://self-host.example/install | bash',
     );
   });
 
@@ -43,5 +46,8 @@ describe('getDeploymentCliInstallCommand', () => {
 
   test('falls back to the canonical URL when there is no origin (SSR)', () => {
     expect(getDeploymentCliInstallCommand(undefined, '')).toBe(KORTIX_CLI_INSTALL_COMMAND);
+    expect(getDeploymentCliInstallCommand(undefined, 'not a URL')).toBe(
+      KORTIX_CLI_INSTALL_COMMAND,
+    );
   });
 });

@@ -10,28 +10,29 @@ export function getKortixCliInstallCommand(version: string | undefined): string 
 }
 
 /**
- * Install command for surfaces INSIDE a deployment — the project's Git tab, the
- * session terminal bar — as opposed to kortix.com's own marketing pages.
+ * Builds an install command for an in-product surface.
  *
- * Those in-product surfaces are read by whoever is running THIS instance, and
- * on a self-host `https://kortix.com/install` is the wrong answer twice over:
- * the host may not be reachable from that network at all, and even when it is,
- * we would be telling the operator of a private deployment to pipe a shell
- * script from a vendor domain they never chose. Every deployment already serves
- * the same installer at its own `/install` route
- * (`app/(utility)/install/route.ts`), so point at that.
- *
- * On kortix.com the origin IS kortix.com, so the rendered command is unchanged.
- * Falls back to the canonical URL when no origin is available (SSR).
+ * Every deployment exposes `/install`. That route currently proxies the
+ * canonical script from GitHub. The deployment URL removes a direct dependency
+ * on kortix.com, but it does not make the installer available offline.
  */
 export function getDeploymentCliInstallCommand(
   version: string | undefined,
   origin?: string,
 ): string {
-  const base = origin ?? (typeof window === 'undefined' ? '' : window.location.origin);
-  if (!base) return getKortixCliInstallCommand(version);
+  let deploymentOrigin: string;
+  try {
+    const url = new URL(origin || '');
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return getKortixCliInstallCommand(version);
+    }
+    deploymentOrigin = url.origin;
+  } catch {
+    return getKortixCliInstallCommand(version);
+  }
+
   const isDev = version?.includes('-dev.') || version === 'dev';
   return isDev
-    ? `curl -fsSL ${base}/install | KORTIX_CHANNEL=dev bash`
-    : `curl -fsSL ${base}/install | bash`;
+    ? `curl -fsSL ${deploymentOrigin}/install | KORTIX_CHANNEL=dev bash`
+    : `curl -fsSL ${deploymentOrigin}/install | bash`;
 }
