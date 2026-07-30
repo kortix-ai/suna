@@ -58,7 +58,7 @@ function EndpointHeader({ method, path }: { method: 'POST' | 'GET'; path: string
 function LangSwitch({ lang, onChange }: { lang: Lang; onChange: (l: Lang) => void }) {
   return (
     <Tabs value={lang} onValueChange={(v) => onChange(v as Lang)}>
-      <TabsListCompact type="secondary">
+      <TabsListCompact>
         <TabsTriggerCompact value="curl">curl</TabsTriggerCompact>
         <TabsTriggerCompact value="python">Python</TabsTriggerCompact>
       </TabsListCompact>

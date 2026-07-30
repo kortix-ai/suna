@@ -4334,7 +4334,7 @@ function ConnectorConfigFields({
               });
             }}
           >
-            <SelectTrigger id="connector-provider" className="w-full" variant="popover">
+            <SelectTrigger id="connector-provider" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -4450,7 +4450,7 @@ function ConnectorConfigFields({
               disabled={readOnly}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
-              <SelectTrigger id="connector-transport" className="w-full" variant="popover">
+              <SelectTrigger id="connector-transport" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4514,7 +4514,7 @@ function ConnectorConfigFields({
                 else setAuth({ type: v as ConnectorRequestAuthType });
               }}
             >
-              <SelectTrigger id="connector-auth" className="w-full" variant="popover">
+              <SelectTrigger id="connector-auth" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4600,7 +4600,7 @@ function ConnectorConfigFields({
                     setAuth({ in: placement as 'header' | 'query' | 'cookie' })
                   }
                 >
-                  <SelectTrigger id="connector-auth-placement" variant="popover">
+                  <SelectTrigger id="connector-auth-placement">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -5107,7 +5107,7 @@ function SetCredentialModal({
                       });
                     }}
                   >
-                    <SelectTrigger id="connector-oauth2-grant" variant="popover">
+                    <SelectTrigger id="connector-oauth2-grant">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

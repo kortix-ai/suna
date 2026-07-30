@@ -535,39 +535,59 @@
   }
 }
  
+/*
+ * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
+ * Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never
+ * from opacity on type. Blue is a signal only: hyperlinks, focus, selection —
+ * never a fill or a background.
+ *
+ * Dark is the doc's palette verbatim. The doc ships no light mode, so light
+ * mirrors each surface's lift distance from canvas, anchored on the doc's own
+ * inverse-canvas (#ffffff) and inverse-ink (#000000).
+ *
+ *   role           dark        light
+ *   canvas         #090909     #ffffff
+ *   surface-1      #141414     #f4f4f4
+ *   surface-2      #1c1c1c     #ececec
+ *   ink            #ffffff     #000000
+ *   ink-muted      #999999     #666666
+ *   hairline       #262626     #e2e2e2
+ *   hairline-soft  #1a1a1a     #eeeeee
+ *   accent-blue    #0099ff     #0099ff
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.1448 0 0);
-  --card: oklch(0.9651 0 0);
-  --card-foreground: oklch(0.1448 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.1448 0 0);
-  --primary: oklch(0.2046 0 0);
-  --primary-foreground: oklch(0.9851 0 0);
-  --secondary: oklch(0.9502 0 0);
-  --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9502 0 0);
-  --muted-foreground: oklch(0.5555 0 0);
-  --accent: oklch(0.9702 0 0);
-  --accent-foreground: oklch(0.2046 0 0);
+  --background: oklch(1 0 0); /* canvas */
+  --foreground: oklch(0 0 0); /* ink */
+  --card: oklch(0.9672 0 0); /* surface-1 */
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0 0 0); /* ink — black pill CTA */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9431 0 0); /* surface-2 */
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.9431 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.5103 0 0); /* ink-muted */
+  --accent: oklch(0.9672 0 0); /* surface-1 */
+  --accent-foreground: oklch(0 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.8819 0 0);
-  --input: oklch(0.9612 0 0);
-  --ring: oklch(0.709 0 0);
+  --border: oklch(0.9128 0 0); /* hairline */
+  --input: oklch(0.9431 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue — focus only */
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.9851 0 0);
-  --sidebar-foreground: oklch(0.1448 0 0);
-  --sidebar-primary: oklch(0.2046 0 0);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.9702 0 0);
-  --sidebar-accent-foreground: oklch(0.2046 0 0);
-  --sidebar-border: oklch(0.9219 0 0);
-  --sidebar-ring: oklch(0.709 0 0);
+  --sidebar: oklch(0.9672 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9431 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.9128 0 0); /* hairline */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 
@@ -595,38 +615,38 @@
 }
 
 .dark {
-  --background: oklch(0.1448 0 0);
-  --foreground: oklch(0.9851 0 0);
-  --card: oklch(0.2046 0 0);
-  --card-foreground: oklch(0.9851 0 0);
-  --popover: oklch(0.2046 0 0);
-  --popover-foreground: oklch(0.9851 0 0);
-  --primary: oklch(0.9219 0 0);
-  --primary-foreground: oklch(0.2046 0 0);
-  --secondary: oklch(0.2686 0 0);
-  --secondary-foreground: oklch(0.9851 0 0);
-  --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.709 0 0);
-  --accent: oklch(0.2686 0 0);
-  --accent-foreground: oklch(0.9851 0 0);
+  --background: oklch(0.1398 0 0); /* canvas #090909 */
+  --foreground: oklch(1 0 0); /* ink #ffffff */
+  --card: oklch(0.1913 0 0); /* surface-1 #141414 */
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.1913 0 0); /* surface-1 */
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0); /* white pill CTA */
+  --primary-foreground: oklch(0.1398 0 0);
+  --secondary: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2264 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.683 0 0); /* ink-muted #999999 */
+  --accent: oklch(0.1913 0 0); /* surface-1 */
+  --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.2629 0 0);
-  --input: oklch(0.2686 0 0);
-  --ring: oklch(0.5555 0 0);
+  --border: oklch(0.2686 0 0); /* hairline #262626 */
+  --input: oklch(0.2264 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff — focus only */
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.17 0 0);
-  --sidebar-foreground: oklch(0.9851 0 0);
-  --sidebar-primary: oklch(0.4878 0.2432 264.4045);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.2686 0 0);
-  --sidebar-accent-foreground: oklch(0.9851 0 0);
-  --sidebar-border: oklch(1 0 0);
-  --sidebar-ring: oklch(0.5555 0 0);
+  --sidebar: oklch(0.1913 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2264 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.2178 0 0); /* hairline-soft #1a1a1a */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 

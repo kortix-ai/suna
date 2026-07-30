@@ -10,14 +10,22 @@ import {
 } from '@phosphor-icons/react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Trigger ref={ref} className={className} {...props} />
+  Omit<React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>, 'size'> &
+    TriggerVariantProps
+>(({ className, variant, size, asChild, ...props }, ref) => (
+  <DropdownMenuPrimitive.Trigger
+    ref={ref}
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
 ));
 DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 
@@ -100,7 +108,7 @@ const DropdownMenuContent = React.forwardRef<
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'bg-sidebar text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-md border p-1 shadow-xs ease-out',
+          'bg-background text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-[calc(var(--radius)+0.2rem)] border p-1 shadow-lg ease-out',
           className,
         )}
         style={{ zIndex: floatingZ(depth), ...style }}
@@ -116,12 +124,16 @@ const DropdownMenuItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
     variant?: 'default' | 'destructive';
+    size?: 'sm' | 'md' | 'lg';
   }
->(({ className, inset, variant = 'default', ...props }, ref) => (
+>(({ className, inset, variant = 'default', size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      'focus:bg-border/50 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-md text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      size === 'sm' && 'px-2.5 py-1.5 text-xs',
+      size === 'md' && 'px-3 py-1.5 text-sm',
+      size === 'lg' && 'px-3.5 py-2 text-base',
       variant === 'default' &&
         'text-foreground/80 hover:bg-primary/10 hover:text-foreground w-full items-center justify-start gap-2 text-sm font-normal transition-all duration-500',
       variant === 'destructive' &&

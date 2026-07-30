@@ -555,7 +555,6 @@ function PanelHeaderSwitcher({
         className="gap-0 p-0"
       >
         <TabsList
-          type="secondary"
           animate="none"
           size="sm"
           className="h-7 border-b-0 p-0"
@@ -563,19 +562,19 @@ function PanelHeaderSwitcher({
             'componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView',
           )}
         >
-          <TabsTrigger size="xs" value="actions" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="actions" className="h-7 w-fit">
             Actions
           </TabsTrigger>
-          <TabsTrigger size="xs" value="browser" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
             Browser
           </TabsTrigger>
-          <TabsTrigger size="xs" value="explorer" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="explorer" className="h-7 w-fit">
             Files
           </TabsTrigger>
-          <TabsTrigger size="xs" value="terminal" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="terminal" className="h-7 w-fit">
             Terminal
           </TabsTrigger>
-          <TabsTrigger size="xs" value="audit" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="audit" className="h-7 w-fit">
             Audit
           </TabsTrigger>
         </TabsList>

@@ -108,7 +108,7 @@ export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTo
           {tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line79JsxTextNewGrantsExpireIn')}
         </span>
         <Select value={expiryValue} onValueChange={setExpiryValue} disabled={!canWrite}>
-          <SelectTrigger variant="popover">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

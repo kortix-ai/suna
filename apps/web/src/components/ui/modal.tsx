@@ -51,6 +51,7 @@ import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } f
 import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
 import Loading from './loading';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
   const parentDepth = useDialogDepth();
@@ -63,7 +64,20 @@ const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
   );
 };
 
-const ModalTrigger = DialogPrimitive.Trigger;
+const ModalTrigger = ({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Trigger>, 'size'> & TriggerVariantProps) => (
+  <DialogPrimitive.Trigger
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
+);
 
 const ModalClose = DialogPrimitive.Close;
 

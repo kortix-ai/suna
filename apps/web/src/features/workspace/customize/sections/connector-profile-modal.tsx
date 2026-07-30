@@ -56,7 +56,7 @@ export function AuthorizationStrategyField({
         disabled={disabled || pending}
         onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
       >
-        <SelectTrigger id={id} variant="popover">
+        <SelectTrigger id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -274,7 +274,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
               onValueChange={setDefaultBranch}
               disabled={!canManage || isPending}
             >
-              <SelectTrigger id="default-branch" className="font-mono text-xs" variant="popover">
+              <SelectTrigger id="default-branch" className="font-mono text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -498,7 +498,7 @@ function SandboxProviderRow({
         }
         disabled={!canManage || mutation.isPending}
       >
-        <SelectTrigger className="w-40 shrink-0" variant="popover">
+        <SelectTrigger className="w-40 shrink-0">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -636,7 +636,6 @@ function RepoCollaboratorInvite({
                   <SelectTrigger
                     id="repo-collaborator-permission"
                     className="w-full"
-                    variant="popover"
                   >
                     <SelectValue />
                   </SelectTrigger>

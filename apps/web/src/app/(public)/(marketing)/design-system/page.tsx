@@ -8,6 +8,7 @@ import {
   WarningIcon as AlertTriangle,
   ArrowRightIcon as ArrowRight,
   TextBIcon as Bold,
+  CaretDownIcon as CaretDown,
   CheckIcon as Check,
   CaretUpDownIcon as ChevronsUpDown,
   CopyIcon as Copy,
@@ -87,7 +88,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -100,6 +100,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -126,6 +127,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE } from '@/components/ui/trigger-variants';
 import {
   Sheet,
   SheetContent,
@@ -166,7 +168,6 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   PlugsConnectedIcon as Cable,
@@ -631,6 +632,10 @@ const TOC_SECTIONS = [
   { id: 'usage', label: 'Usage' },
   { id: 'icons', label: 'Icons' },
 ] as const;
+
+const TRIGGER_DEMO_OPTIONS = ['Next.js', 'Remix', 'Astro', 'Nuxt'] as const;
+const TRIGGER_DEMO_VARIANTS = ['secondary', 'outline', 'transparent'] as const;
+const TRIGGER_DEMO_SIZES = ['sm', 'md', 'lg'] as const;
 
 /* All section IDs flattened for intersection observer */
 const ALL_SECTION_IDS = TOC_SECTIONS.flatMap((s) =>
@@ -1781,22 +1786,69 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="max-w-xs">
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1259JsxAttrPlaceholderSelectAFramework',
-                          )}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="next">Next.js</SelectItem>
-                        <SelectItem value="remix">Remix</SelectItem>
-                        <SelectItem value="astro">Astro</SelectItem>
-                        <SelectItem value="nuxt">Nuxt</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-6">
+                    <div className="max-w-xs">
+                      <Select>
+                        <SelectTrigger className="w-full">
+                          <SelectValue
+                            placeholder={tHardcodedUi.raw(
+                              'appHomeDesignSystemPage.line1259JsxAttrPlaceholderSelectAFramework',
+                            )}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TRIGGER_DEMO_OPTIONS.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {TRIGGER_DEMO_VARIANTS.map((variant) => (
+                          <Select key={variant}>
+                            <SelectTrigger variant={variant} className="w-36">
+                              <SelectValue placeholder={variant} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TRIGGER_DEMO_OPTIONS.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                  {option}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {TRIGGER_DEMO_SIZES.map((size) => (
+                          <Select key={size}>
+                            <SelectTrigger size={size} className="w-36">
+                              <SelectValue placeholder={size} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TRIGGER_DEMO_OPTIONS.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                  {option}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </DemoContainer>
               </div>
@@ -2198,23 +2250,91 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline">
-                        <MoreHorizontal className="size-4" />
-                        Options
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                      <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                      <DropdownMenuItem>Archive</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive">Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="space-y-6">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline">
+                          <MoreHorizontal className="size-4" />
+                          Options
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem size="md">Edit</DropdownMenuItem>
+                        <DropdownMenuItem size="md">Duplicate</DropdownMenuItem>
+                        <DropdownMenuItem size="md">Archive</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem size="md" variant="destructive">
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {TRIGGER_DEMO_VARIANTS.map((variant) => (
+                          <DropdownMenu key={variant}>
+                            <DropdownMenuTrigger variant={variant} className="w-36">
+                              {variant}
+                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              {TRIGGER_DEMO_OPTIONS.map((option) => (
+                                <DropdownMenuItem key={option}>{option}</DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {TRIGGER_DEMO_SIZES.map((size) => (
+                          <DropdownMenu key={size}>
+                            <DropdownMenuTrigger size={size} className="w-36">
+                              {size}
+                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])} />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              {TRIGGER_DEMO_OPTIONS.map((option) => (
+                                <DropdownMenuItem key={option}>{option}</DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Item sizes
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {TRIGGER_DEMO_SIZES.map((size) => (
+                          <DropdownMenu key={size}>
+                            <DropdownMenuTrigger variant="outline" size={size} className="w-36">
+                              {size}
+                              <CaretDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size])} />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem size={size}>Edit</DropdownMenuItem>
+                              <DropdownMenuItem size={size}>Duplicate</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem size={size} variant="destructive">
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </DemoContainer>
               </div>
 

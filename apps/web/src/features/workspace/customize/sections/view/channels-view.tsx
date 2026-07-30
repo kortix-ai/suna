@@ -467,7 +467,7 @@ function ChannelBindingTableRow({
           }
           disabled={!canManage || update.isPending}
         >
-          <SelectTrigger className="w-44" variant="popover">
+          <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

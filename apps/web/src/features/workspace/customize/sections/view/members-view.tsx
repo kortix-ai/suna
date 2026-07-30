@@ -527,7 +527,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                 onValueChange={(next) => setRole(next as ProjectRole)}
                 disabled={inviteMutation.isPending}
               >
-                <SelectTrigger id="invite-role" variant="popover">
+                <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

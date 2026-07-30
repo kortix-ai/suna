@@ -1198,7 +1198,7 @@ function RepositoryOptions({
         <div className="space-y-1.5 pb-0.5">
           {collapsible ? <Label>Repository source</Label> : null}
           <Tabs value={repositoryMode} onValueChange={onModeChange}>
-            <TabsList type="secondary" className="w-full" aria-label="Repository source">
+            <TabsList className="w-full" aria-label="Repository source">
               <TabsTrigger value="managed" size="sm">
                 Kortix managed
               </TabsTrigger>

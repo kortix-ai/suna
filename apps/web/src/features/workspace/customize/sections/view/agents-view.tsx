@@ -182,7 +182,7 @@ function DefaultAgentSelector({
           onValueChange={(agentName) => mutation.mutate(agentName)}
           disabled={!canWrite || mutation.isPending}
         >
-          <SelectTrigger aria-label="Default agent" className="w-48 shrink-0" variant="popover">
+          <SelectTrigger aria-label="Default agent" className="w-48 shrink-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

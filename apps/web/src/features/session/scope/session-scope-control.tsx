@@ -260,7 +260,6 @@ export function SessionScopeControlContent({
                       }
                     >
                       <SelectTrigger
-                        variant="popover"
                         size="sm"
                         className="w-40 shrink-0"
                         aria-label={`Authorization for ${connector.name}`}
