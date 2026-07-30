@@ -808,6 +808,15 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Approval links — AUTHENTICATED, unlike the setup links above. The token names
+// which pending decision is being asked for; it never confers the right to make
+// it (see setup-links/approval-app.ts for why an approval must not be a bearer
+// capability). supabaseAuth 401s an anonymous hit so the page can bounce the
+// human through login and return them here.
+import { approvalLinksApp } from './setup-links/approval-app';
+app.use('/v1/approval-links/*', supabaseAuth);
+app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
+
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
 // (any resource type SESS-13's CRUD creates); backs the logged-out

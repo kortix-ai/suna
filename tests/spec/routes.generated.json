@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 507,
+  "count": 526,
   "routes": [
     {
       "method": "GET",
@@ -1275,6 +1275,10 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/default"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
     },
@@ -1303,8 +1307,20 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/all"
     },
     {
       "method": "POST",
@@ -1321,10 +1337,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/execution-lease"
     },
     {
       "method": "PATCH",
@@ -1487,6 +1499,10 @@
       "path": "/v1/projects/:projectId/model-defaults"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-enablement"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/model-picker"
     },
@@ -1623,6 +1639,26 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp-identity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp/transcript"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
@@ -1633,6 +1669,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",
@@ -1849,6 +1889,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

@@ -16,6 +16,20 @@ export interface WarmProjectSessionScope {
   userId: string;
 }
 
+export async function withWarmProjectSessionLock<T>(
+  scope: WarmProjectSessionScope,
+  operation: () => Promise<T>,
+): Promise<T> {
+  // The partial unique index rejects a second available row, but it cannot
+  // return the winner after that row is claimed. Serialize find-or-create
+  // across API replicas so each request observes the preceding request's state.
+  const lockIdentity = `warm_session:${scope.projectId}:${scope.userId}`;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockIdentity}::text, 0))`);
+    return operation();
+  });
+}
+
 export async function findAvailableWarmProjectSession(
   scope: WarmProjectSessionScope,
 ): Promise<ProjectSessionRow | null> {

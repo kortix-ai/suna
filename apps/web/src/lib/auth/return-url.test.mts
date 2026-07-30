@@ -3,7 +3,11 @@ import test from 'node:test'
 
 import { DEFAULT_AUTH_RETURN_URL, sanitizeAuthReturnUrl } from './return-url.ts'
 
-test('keeps safe relative auth return paths', () => {
+test('does not return from auth to the projects list', () => {
+  assert.equal(sanitizeAuthReturnUrl('/projects'), DEFAULT_AUTH_RETURN_URL)
+})
+
+test('keeps explicit projects-list actions', () => {
   assert.equal(sanitizeAuthReturnUrl('/projects?tab=recent'), '/projects?tab=recent')
 })
 

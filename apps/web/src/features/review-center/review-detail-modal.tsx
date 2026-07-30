@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/modal';
 import { StatusBadge } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
+import { useChangeRequestMergePreview } from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRight,
@@ -63,6 +64,9 @@ export interface ReviewActions {
   /** Which verdict `pendingId`'s in-flight mutation is — so Approve and Deny
    *  don't both show `Loading` at once. */
   pendingDecision?: 'approve' | 'deny' | null;
+  /** Start a real session from the blocked Change Request head branch. */
+  recoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
+  recoveringCrId?: string | null;
 }
 
 /** A muted bordered panel — the friendly content surface. */
@@ -171,10 +175,12 @@ function ChangeBody({
   item,
   actions,
   onClose,
+  conflicts,
 }: {
   item: Extract<ReviewItem, { kind: 'change' }>;
   actions: ReviewActions;
   onClose: () => void;
+  conflicts: string[];
 }) {
   const d = item.detail;
   const whatChanged = d.whatChanged ?? [];
@@ -277,24 +283,35 @@ function ChangeBody({
         </div>
       )}
 
-      {d.conflicts && d.conflicts.length > 0 && (
+      {conflicts.length > 0 && (
         <InfoBanner
           tone="warning"
-          title={`This overlaps with recent work in ${d.conflicts.length} files`}
+          title={`Merge conflicts in ${conflicts.length} ${conflicts.length === 1 ? 'file' : 'files'}`}
           action={
             <Button
               size="sm"
               variant="secondary"
+              disabled={actions.recoveringCrId === d.crId}
               onClick={() => {
-                actions.resolve(item.id, 'waiting', 'Resolving the overlap with the agent…');
-                onClose();
+                if (actions.recoverChange) {
+                  actions.recoverChange(item, conflicts);
+                } else {
+                  actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+                  onClose();
+                }
               }}
             >
-              Resolve with agent
+              {actions.recoveringCrId === d.crId ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <SparklesSolid className="size-3.5 shrink-0" />
+              )}
+              Solve with agent
             </Button>
           }
         >
-          The agent can rebase and fix the overlap for you — no merge markers to touch.
+          Start an agent session from this change. The agent will merge the latest base branch,
+          resolve the conflicts, run checks, and open a replacement change.
         </InfoBanner>
       )}
 
@@ -742,10 +759,14 @@ function Footer({
   item,
   actions,
   onClose,
+  conflicts,
+  checkingConflicts,
 }: {
   item: ReviewItem;
   actions: ReviewActions;
   onClose: () => void;
+  conflicts: string[];
+  checkingConflicts: boolean;
 }) {
   const [composing, setComposing] = useState(false);
 
@@ -793,7 +814,7 @@ function Footer({
 
   // change · output · batch
   const secondaryLabel = item.secondaryAction;
-  const hasConflicts = item.kind === 'change' && (item.detail.conflicts?.length ?? 0) > 0;
+  const hasConflicts = item.kind === 'change' && conflicts.length > 0;
 
   if (composing && secondaryLabel) {
     return (
@@ -817,24 +838,49 @@ function Footer({
   return (
     <ModalFooter className="border-border/60 border-t pt-4">
       {hasConflicts && (
-        <span className="text-muted-foreground mr-auto text-xs">Resolve the overlap first</span>
+        <span className="text-muted-foreground mr-auto text-xs">The change cannot merge yet</span>
       )}
       {secondaryLabel && (
         <Button variant="ghost" onClick={() => setComposing(true)}>
           {secondaryLabel}
         </Button>
       )}
-      <Button
-        variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
-        disabled={hasConflicts}
-        onClick={() => {
-          actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
-          onClose();
-        }}
-      >
-        <Check className="size-4" />
-        {item.primaryAction}
-      </Button>
+      {hasConflicts && item.kind === 'change' ? (
+        <Button
+          disabled={actions.recoveringCrId === item.detail.crId}
+          onClick={() => {
+            if (actions.recoverChange) {
+              actions.recoverChange(item, conflicts);
+            } else {
+              actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+              onClose();
+            }
+          }}
+        >
+          {actions.recoveringCrId === item.detail.crId ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <SparklesSolid className="size-4 shrink-0" />
+          )}
+          Solve with agent
+        </Button>
+      ) : (
+        <Button
+          variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
+          disabled={checkingConflicts}
+          onClick={() => {
+            actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
+            onClose();
+          }}
+        >
+          {checkingConflicts ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <Check className="size-4" />
+          )}
+          {checkingConflicts ? 'Checking...' : item.primaryAction}
+        </Button>
+      )}
     </ModalFooter>
   );
 }
@@ -848,8 +894,21 @@ export function ReviewDetailModal({
   actions: ReviewActions;
   onClose: () => void;
 }) {
+  const crId = item?.kind === 'change' ? (item.detail.crId ?? null) : null;
+  const mergePreview = useChangeRequestMergePreview(crId, Boolean(crId));
   if (!item) return null;
 
+  const previewHasConflicts = Boolean(
+    mergePreview.data && !mergePreview.data.is_up_to_date && !mergePreview.data.can_merge,
+  );
+  const conflicts =
+    item.kind === 'change'
+      ? crId
+        ? previewHasConflicts
+          ? (mergePreview.data?.conflicts ?? [])
+          : []
+        : (item.detail.conflicts ?? [])
+      : [];
   const kind = KIND_META[item.kind];
   const Source = SOURCE_META[item.source];
 
@@ -893,7 +952,9 @@ export function ReviewDetailModal({
             {item.agent} · {formatItemAgeLong(item.createdAt)}
           </div>
 
-          {item.kind === 'change' && <ChangeBody item={item} actions={actions} onClose={onClose} />}
+          {item.kind === 'change' && (
+            <ChangeBody item={item} actions={actions} onClose={onClose} conflicts={conflicts} />
+          )}
           {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
           {item.kind === 'output' && <OutputBody item={item} />}
           {item.kind === 'decision' && (
@@ -902,7 +963,13 @@ export function ReviewDetailModal({
           {item.kind === 'batch' && <BatchBody item={item} />}
         </ModalBody>
 
-        <Footer item={item} actions={actions} onClose={onClose} />
+        <Footer
+          item={item}
+          actions={actions}
+          onClose={onClose}
+          conflicts={conflicts}
+          checkingConflicts={Boolean(crId) && mergePreview.isLoading}
+        />
       </ModalContent>
     </Modal>
   );

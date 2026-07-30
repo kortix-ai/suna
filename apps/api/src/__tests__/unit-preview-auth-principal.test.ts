@@ -16,7 +16,9 @@ let allowedAccounts = new Set<string>(['acct-owner']);
 let allowedUsers = new Set<string>(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
 let mockSupabaseUser: { id: string } | null = null;
 
+const actualCrypto = await import('../shared/crypto');
 mock.module('../shared/crypto', () => ({
+  ...actualCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),

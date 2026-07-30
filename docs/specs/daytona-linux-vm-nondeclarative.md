@@ -1,5 +1,9 @@
 # Daytona linux-vm (microVM) ⇒ non-declarative build: implications
 
+> **Historical build-context scope.** The runtime layer now includes OpenCode,
+> Claude Code, Codex, and Pi harness paths. References below to the OpenCode
+> config identify the v2 compatibility floor and canonical starter skill source.
+
 **Question:** to switch Daytona sandboxes from `container` to `linux-vm` (microVM,
 ~35% faster create + no 21s create-spikes), we'd have to stop using Daytona's
 declarative Dockerfile builder ("not available for linux-vm or us-west-2" — per

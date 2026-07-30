@@ -283,6 +283,7 @@ export type {
   CreatedProjectCliToken,
   // Billing
   AccountState,
+  BillingState,
   BillingTransaction,
   BillingTransactionsPage,
   BillingTransactionsSummary,

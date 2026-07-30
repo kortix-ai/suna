@@ -15,6 +15,11 @@
  * ones. Defaults are permissive (no policies + allow_all) so existing projects
  * without a `policy:` block keep current behavior.
  */
+import {
+  type PolicyArgCondition,
+  areValidConditions,
+  normalizeConditions,
+} from '../executor/policy';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
 type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
@@ -27,6 +32,26 @@ export interface ProjectPolicySpec {
   /** Glob over fully-qualified tool paths: `*`, `stripe.*`, `*.delete*`, `stripe.charges.create`. */
   match: string;
   action: ProjectPolicyAction;
+  /**
+   * Optional ARGUMENT conditions — ALL must hold for the rule to apply.
+   *
+   * A `match` alone can only gate a tool NAME ("may the agent send email"); it
+   * cannot gate the target ("…but only to these addresses"), which is what a
+   * real guardrail needs. Written in kortix.yaml as:
+   *
+   *   policies:
+   *     - match: gmail.send_email
+   *       action: require_approval
+   *       conditions:
+   *         - arg: to
+   *           match: /^(owner|admin)@example\.com$/
+   *     - match: gmail.send_email      # anything else is refused outright
+   *       action: block
+   *
+   * Semantics (incl. how an unevaluable condition fails closed) live in
+   * executor/policy.ts.
+   */
+  conditions?: PolicyArgCondition[] | null;
 }
 
 export interface ProjectPolicySettings {
@@ -65,7 +90,8 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
     } else {
       const row = policyBlock as Record<string, unknown>;
       if (row.default_mode !== undefined) {
-        const mode = typeof row.default_mode === 'string' ? row.default_mode.trim().toLowerCase() : '';
+        const mode =
+          typeof row.default_mode === 'string' ? row.default_mode.trim().toLowerCase() : '';
         if (!DEFAULT_MODES.includes(mode as DefaultMode)) {
           errors.push({
             path: `${filename}#policy.default_mode`,
@@ -85,7 +111,8 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
     if (!Array.isArray(raw)) {
       errors.push({
         path: filename,
-        error: '`policies` must be an array of tables — a YAML list (or a legacy TOML [[policies]]), not a single mapping',
+        error:
+          '`policies` must be an array of tables — a YAML list (or a legacy TOML [[policies]]), not a single mapping',
       });
     } else {
       raw.forEach((entry, i) => {
@@ -108,6 +135,24 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
           });
           return;
         }
+        // A malformed `conditions` is a HARD error, never a silently-dropped
+        // field: quietly ignoring it would turn "allow only these recipients"
+        // into "allow", which is the exact failure this feature exists to stop.
+        if (row.conditions !== undefined && row.conditions !== null) {
+          if (!areValidConditions(row.conditions)) {
+            errors.push({
+              path,
+              error: `policies entry #${i + 1} has invalid \`conditions\` — each needs an \`arg\` (a dot path, not __proto__/constructor/prototype), a \`match\` glob or /regex/, and an optional boolean \`negate\``,
+            });
+            return;
+          }
+          policies.push({
+            match,
+            action: action as ProjectPolicyAction,
+            conditions: normalizeConditions(row.conditions),
+          });
+          return;
+        }
         policies.push({ match, action: action as ProjectPolicyAction });
       });
     }
@@ -123,12 +168,28 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
  * Inverse of `extractProjectPolicies`. Used by the admin CRUD path to
  * round-trip a dashboard edit before committing.
  */
-export function projectPoliciesToTomlEntries(policies: ProjectPolicySpec[]): Array<Record<string, unknown>> {
-  return policies.map((p) => ({ match: p.match, action: p.action }));
+export function projectPoliciesToTomlEntries(
+  policies: ProjectPolicySpec[],
+): Array<Record<string, unknown>> {
+  return policies.map((p) => {
+    const entry: Record<string, unknown> = { match: p.match, action: p.action };
+    // Omitted when absent so a rule without conditions serializes byte-identically
+    // to before (no spurious `conditions: []` churn in every project's manifest).
+    if (p.conditions && p.conditions.length > 0) {
+      entry.conditions = p.conditions.map((c) => ({
+        arg: c.arg,
+        match: c.match,
+        ...(c.negate ? { negate: true } : {}),
+      }));
+    }
+    return entry;
+  });
 }
 
 /** Serialize `policy` settings — null when default (so we don't write empty blocks). */
-export function projectPolicySettingsToToml(settings: ProjectPolicySettings): Record<string, unknown> | null {
+export function projectPolicySettingsToToml(
+  settings: ProjectPolicySettings,
+): Record<string, unknown> | null {
   if (settings.defaultMode === DEFAULT_SETTINGS.defaultMode) return null;
   return { default_mode: settings.defaultMode };
 }

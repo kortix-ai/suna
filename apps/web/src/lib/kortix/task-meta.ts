@@ -107,18 +107,7 @@ export function shortTaskId(id: string): string {
   return `KTX-${tail || '0000'}`;
 }
 
-export function relativeTime(t?: string | number | null): string {
-  if (!t) return '';
-  const ms = Date.now() - (typeof t === 'string' ? +new Date(t) : t);
-  const m = (ms / 60000) | 0;
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = (m / 60) | 0;
-  if (h < 24) return `${h}h ago`;
-  const d = (h / 24) | 0;
-  if (d < 30) return `${d}d ago`;
-  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+export { relativeTime } from '@/lib/relative-time';
 
 export function fullDate(t?: string | null): string {
   if (!t) return '';

@@ -2,7 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import { isBillingEnabled } from '@/lib/config';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { useCallback } from 'react';
 
@@ -53,7 +53,7 @@ export function useDownloadRestriction(
   options?: UseDownloadRestrictionOptions,
 ): UseDownloadRestrictionReturn {
   const accountState = useSubscriptionStore((state) => state.accountState);
-  const { openPricingModal } = usePricingModalStore();
+  const { openUpgradeDialog } = useUpgradeDialogStore();
 
   const isFreeTier =
     accountState?.subscription &&
@@ -74,12 +74,13 @@ export function useDownloadRestriction(
       duration: 5000,
     });
 
-    // Also open the pricing modal
-    openPricingModal({
-      isAlert: true,
-      alertTitle: `Upgrade to download your ${featureName} and more`,
+    // Also open the upgrade modal. This used to target the pricing-modal
+    // store, whose modal is never mounted, so only the toast ever appeared.
+    openUpgradeDialog({
+      reason: 'subscription_required',
+      message: `Upgrade to download your ${featureName} and more`,
     });
-  }, [openPricingModal, options?.featureName]);
+  }, [openUpgradeDialog, options?.featureName]);
 
   const withRestrictionCheck = useCallback(
     <T extends (...args: any[]) => any>(callback: T) => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyAcpEnvelope, createAcpProjection, type AcpProjection } from './projection';
+import { type AcpProjection, applyAcpEnvelope, createAcpProjection } from './projection';
 
 function update(
   projection: AcpProjection,
@@ -18,6 +18,25 @@ function update(
 }
 
 describe('ACP to Kortix session projection', () => {
+  test('projects persisted client session/prompt envelopes as user messages', () => {
+    const state = applyAcpEnvelope(createAcpProjection('native-1'), {
+      jsonrpc: '2.0',
+      id: 'prompt-1',
+      method: 'session/prompt',
+      params: {
+        sessionId: 'native-1',
+        prompt: [
+          { type: 'text', text: 'first ' },
+          { type: 'text', text: 'question' },
+        ],
+      },
+    });
+
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]?.info.role).toBe('user');
+    expect(state.messages[0]?.parts).toMatchObject([{ type: 'text', text: 'first question' }]);
+  });
+
   test('preserves OpenCode message ids from ACP transcript replay', () => {
     let state = createAcpProjection('ses_1');
     state = update(state, 'user_message_chunk', {
@@ -88,6 +107,34 @@ describe('ACP to Kortix session projection', () => {
         },
       },
     ]);
+    expect(state.status).toEqual({ type: 'idle' });
+  });
+
+  test('appends an unscoped text chunk that arrives after the prompt result', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'user_message_chunk', {
+      content: { type: 'text', text: 'reply exactly' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      content: { type: 'text', text: 'PI_FIRST_' },
+    });
+    state = applyAcpEnvelope(state, {
+      jsonrpc: '2.0',
+      id: 'prompt-1',
+      result: { stopReason: 'end_turn' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      content: { type: 'text', text: '123' },
+    });
+
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]?.parts).toMatchObject([
+      { type: 'text', text: 'PI_FIRST_123' },
+      { type: 'step-finish', reason: 'end_turn' },
+    ]);
+    expect(state.messages[1]?.info.time).toMatchObject({
+      completed: expect.any(Number),
+    });
     expect(state.status).toEqual({ type: 'idle' });
   });
 
@@ -162,9 +209,7 @@ describe('ACP to Kortix session projection', () => {
         ? state.messages[3].info.time.completed
         : undefined,
     ).toBeUndefined();
-    expect(state.messages[3]?.parts).toMatchObject([
-      { type: 'text', text: 'Third update.' },
-    ]);
+    expect(state.messages[3]?.parts).toMatchObject([{ type: 'text', text: 'Third update.' }]);
   });
 
   test('routes late tool updates to the assistant message that owns the call', () => {
@@ -199,9 +244,7 @@ describe('ACP to Kortix session projection', () => {
         state: { status: 'completed', output: 'Found' },
       },
     ]);
-    expect(state.messages[1]?.parts).toMatchObject([
-      { type: 'text', text: 'Still working.' },
-    ]);
+    expect(state.messages[1]?.parts).toMatchObject([{ type: 'text', text: 'Still working.' }]);
   });
 
   test('projects tool calls, tool updates, and plans', () => {

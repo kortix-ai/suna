@@ -16,6 +16,93 @@ function sseResponse(chunks: string[]): Response {
 }
 
 describe('ACP HTTP/SSE client', () => {
+  test('loads the durable project-session transcript after an ordinal', async () => {
+    const requests: string[] = [];
+    const client = createAcpClient({
+      endpoint: 'https://api.test/v1/projects/project-1/sessions/session-1/acp',
+      fetch: (async (input) => {
+        requests.push(String(input));
+        return Response.json({
+          runtime_id: 'session-1',
+          envelopes: [
+            {
+              ordinal: 8,
+              direction: 'agent_to_client',
+              streamEventId: 17,
+              envelope: {
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: 'native-1',
+                  update: {
+                    sessionUpdate: 'agent_message_chunk',
+                    content: { type: 'text', text: 'persisted' },
+                  },
+                },
+              },
+              createdAt: '2026-07-28T00:00:00.000Z',
+            },
+          ],
+        });
+      }) as typeof fetch,
+    });
+
+    const transcript = await client.transcript(7);
+
+    expect(requests).toEqual([
+      'https://api.test/v1/projects/project-1/sessions/session-1/acp/transcript?after=7',
+    ]);
+    expect(transcript).toEqual({
+      runtime_id: 'session-1',
+      envelopes: [
+        expect.objectContaining({
+          ordinal: 8,
+          direction: 'agent_to_client',
+          streamEventId: 17,
+        }),
+      ],
+    });
+  });
+
+  test('initializes ACP v1 and creates a harness-native session', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = createAcpClient({
+      endpoint: 'https://runtime.test/kortix/acp/project-session?agent=codex',
+      fetch: (async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result:
+            body.method === 'initialize' ? { protocolVersion: 1 } : { sessionId: 'codex-native-1' },
+        });
+      }) as typeof fetch,
+    });
+
+    await client.initialize();
+    const created = await client.newSession({ cwd: '/workspace' });
+
+    expect(bodies.map(({ method, params }) => ({ method, params }))).toEqual([
+      {
+        method: 'initialize',
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: true },
+            terminal: true,
+          },
+          clientInfo: { name: '@kortix/sdk', version: '0.3.0' },
+        },
+      },
+      {
+        method: 'session/new',
+        params: { cwd: '/workspace', mcpServers: [] },
+      },
+    ]);
+    expect(created).toEqual({ sessionId: 'codex-native-1' });
+  });
+
   test('sends the Kortix session revert and unrevert ACP extensions', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const client = createAcpClient({
@@ -234,7 +321,8 @@ describe('ACP HTTP/SSE client', () => {
   test('waits for the bridge cursor before reporting ready', async () => {
     const encoder = new TextEncoder();
     let resolveController:
-      ((controller: ReadableStreamDefaultController<Uint8Array>) => void) | null = null;
+      | ((controller: ReadableStreamDefaultController<Uint8Array>) => void)
+      | null = null;
     const controllerReady = new Promise<ReadableStreamDefaultController<Uint8Array>>((resolve) => {
       resolveController = resolve;
     });

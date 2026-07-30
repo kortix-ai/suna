@@ -14,5 +14,5 @@ export interface SessionTerminalState {
  */
 export function isUnmaterializedSessionFailure(state: SessionTerminalState): boolean {
   if (state.phase !== 'error' || state.hasStartError) return false;
-  return state.sandboxStatus !== 'error' && state.sandboxStatus !== 'stopped';
+  return state.sandboxStatus == null;
 }

@@ -11,10 +11,10 @@
  * - Daytona SDK is mocked to return preview links
  * - Global fetch is mocked to simulate upstream responses
  */
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 
@@ -48,11 +48,15 @@ let mockFetchResponses: Array<{
   error?: Error;
 }> = [];
 let mockFetchCallCount = 0;
-let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
+let mockFetchCalls: Array<{
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string | null;
+}> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let mockResolvedPreviewPorts: number[] = [];
-let mockAcpTitleCaptureCalls: Array<Record<string, unknown>> = [];
-let mockDeferredTitleCaptureCalls: Array<Record<string, unknown>> = [];
+let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -89,8 +93,12 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@kortix.dev');
     await next();
   },
-  supabaseAuth: async (c: any, next: any) => { await next(); },
-  apiKeyAuth: async (c: any, next: any) => { await next(); },
+  supabaseAuth: async (c: any, next: any) => {
+    await next();
+  },
+  apiKeyAuth: async (c: any, next: any) => {
+    await next();
+  },
 }));
 
 // DB mock — simulate sandbox + membership queries
@@ -112,13 +120,36 @@ mock.module('../shared/db', () => {
         // (a field the sandbox-row query shape shares), which would otherwise
         // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
-        const isSandboxQuery = !isProjectSessionQuery && fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
-        );
+        // `wakeSandbox`'s deadline probe: a one-column projection of
+        // session_sandboxes. It must be classified BEFORE the loose sandbox
+        // check and served a LIVE deadline, otherwise every wake in this file is
+        // refused as expired and the auto-wake/retry assertions all fail. The
+        // refusal path itself is covered in sandbox-proxy/wake-deadline-guard.test.ts.
+        const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
+        const isSandboxQuery =
+          !isDeadlineProbe &&
+          !isProjectSessionQuery &&
+          fieldKeys.some((key) =>
+            [
+              'accountId',
+              'sandboxId',
+              'projectId',
+              'agentName',
+              'status',
+              'config',
+              'provider',
+              'baseUrl',
+            ].includes(key),
+          );
         const isMembershipQuery = fieldKeys.includes('accountRole');
 
         const rowsFor = (ordered = false): any[] => {
           if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
+          if (isDeadlineProbe) {
+            return mockSandboxRows().length === 0
+              ? []
+              : [{ deadlineAt: new Date(Date.now() + 60 * 60_000) }];
+          }
           if (isSandboxQuery) {
             const rows = mockSandboxRows();
             return ordered ? sortPreferredSandboxRows(rows) : rows;
@@ -160,13 +191,29 @@ mock.module('../shared/db', () => {
 });
 
 mock.module('../shared/preview-ownership', () => ({
-  canAccessSandboxSession: async ({ userId }: { userId?: string }) =>
-    Boolean(userId && mockDbSandbox && mockDbMembership),
+  // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
+  // sandbox token — may reach only its OWN session. Without this the mock
+  // ignored callerSessionId entirely, so a test could pass one and prove
+  // nothing; the WebSocket leg's isolation had no coverage at all.
+  canAccessSandboxSession: async ({
+    userId,
+    sessionId,
+    callerSessionId,
+  }: { userId?: string; sessionId?: string; callerSessionId?: string | null }) => {
+    if (!(userId && mockDbSandbox && mockDbMembership)) return false;
+    if (callerSessionId != null && callerSessionId !== sessionId) return false;
+    return true;
+  },
   canAccessPreviewSandbox: async ({ userId }: { userId?: string }) =>
     Boolean(userId && mockDbSandbox && mockDbMembership),
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
     userId && mockDbSandbox && mockDbMembership
-      ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
+      ? {
+          userId,
+          sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId,
+          sandboxRole: 'member',
+          scopes: ['*'],
+        }
       : null,
   // combinedAuth is bypassed in this suite (see above), so no project-scoped
   // PAT ever reaches this — stub so the real module's shape stays satisfied
@@ -214,9 +261,8 @@ mock.module('../platform/providers', () => ({
         request.transport === 'websocket' &&
         classifyPtyWebSocketPath(request.path) !== null;
       return {
-        effectivePort: name === 'platinum' && (request.port === 4096 || ptyWebsocket)
-          ? 8000
-          : request.port,
+        effectivePort:
+          name === 'platinum' && (request.port === 4096 || ptyWebsocket) ? 8000 : request.port,
         websocket: ptyWebsocket
           ? {
               userContextQueryParam: '__kortix_user_context',
@@ -226,29 +272,34 @@ mock.module('../platform/providers', () => ({
       };
     };
     return {
-    routeIngress,
-    resolveIngress: async (_externalId: string, request: { port: number; path?: string; transport?: string }) => {
-      const route = routeIngress(request);
-      mockResolvedPreviewPorts.push(route.effectivePort);
-      return {
-        url: mockPreviewUrl,
-        headers: name === 'daytona'
-          ? {
-              'X-Daytona-Skip-Preview-Warning': 'true',
-              'X-Daytona-Disable-CORS': 'true',
-              ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
-            }
-          : name === 'e2b' && mockPreviewToken
-            ? { 'e2b-traffic-access-token': mockPreviewToken }
-            : {},
-        effectivePort: route.effectivePort,
-        websocket: route.websocket,
-      };
-    },
-    ensureRunning: async (sandboxId: string) => {
-      mockWakeCalls.push(sandboxId);
-    },
-  }},
+      routeIngress,
+      resolveIngress: async (
+        _externalId: string,
+        request: { port: number; path?: string; transport?: string },
+      ) => {
+        const route = routeIngress(request);
+        mockResolvedPreviewPorts.push(route.effectivePort);
+        return {
+          url: mockPreviewUrl,
+          headers:
+            name === 'daytona'
+              ? {
+                  'X-Daytona-Skip-Preview-Warning': 'true',
+                  'X-Daytona-Disable-CORS': 'true',
+                  ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
+                }
+              : name === 'e2b' && mockPreviewToken
+                ? { 'e2b-traffic-access-token': mockPreviewToken }
+                : {},
+          effectivePort: route.effectivePort,
+          websocket: route.websocket,
+        };
+      },
+      ensureRunning: async (sandboxId: string) => {
+        mockWakeCalls.push(sandboxId);
+      },
+    };
+  },
 }));
 
 mock.module('../config', () => ({
@@ -291,17 +342,27 @@ mock.module('../projects/secrets', () => {
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
-    projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
+    projectSecretsRevision: (env: Record<string, string>) =>
+      `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
   };
 });
 
-mock.module('../projects/opencode-title-capture', () => ({
-  scheduleTitleCaptureAfterPrompt: (input: Record<string, unknown>) => {
-    mockDeferredTitleCaptureCalls.push(input);
+mock.module('../projects/opencode-session-snapshot', () => ({
+  scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
+    mockSnapshotSyncCalls.push(input);
   },
-  captureTitleAfterRuntimeEvent: async (input: Record<string, unknown>) => {
-    mockAcpTitleCaptureCalls.push(input);
+}));
+
+// The proxy owns two of the four title hooks. Keep the REAL prompt extraction
+// (that is the part the proxy actually decides) and capture only the generator
+// call, whose own idempotency/CAS is covered by unit + integration tests.
+let mockTitleCalls: Array<Record<string, unknown>> = [];
+const realTitleGenerate = await import('../projects/session-title-generate');
+mock.module('../projects/session-title-generate', () => ({
+  ...realTitleGenerate,
+  generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
+    mockTitleCalls.push(input);
   },
 }));
 
@@ -319,18 +380,20 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     return originalFetch(url, init);
   }
 
-  const responseConfig = mockFetchResponses[mockFetchCallCount] || mockFetchResponses[mockFetchResponses.length - 1];
+  const responseConfig =
+    mockFetchResponses[mockFetchCallCount] || mockFetchResponses[mockFetchResponses.length - 1];
   mockFetchCallCount++;
 
   mockFetchCalls.push({
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
-    body: typeof init?.body === 'string'
-      ? init.body
-      : init?.body instanceof ArrayBuffer
-        ? new TextDecoder().decode(init.body)
-        : null,
+    body:
+      typeof init?.body === 'string'
+        ? init.body
+        : init?.body instanceof ArrayBuffer
+          ? new TextDecoder().decode(init.body)
+          : null,
   });
 
   if (!responseConfig) {
@@ -345,14 +408,16 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     new Response(responseConfig.body, {
       status: responseConfig.status,
       headers: responseConfig.headers || {},
-    })
+    }),
   );
 }
 
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
-const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
+const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import(
+  '../shared/kortix-user-context'
+);
 const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 const { invalidateSandbox } = await import('../sandbox-proxy/backend');
 const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
@@ -363,9 +428,14 @@ function createProxyTestApp() {
   const app = new Hono();
 
   app.use('*', async (c, next) => {
-    await runWithContext(c.req.method, c.req.path, async () => {
-      await next();
-    }, c.req.header('traceparent'));
+    await runWithContext(
+      c.req.method,
+      c.req.path,
+      async () => {
+        await next();
+      },
+      c.req.header('traceparent'),
+    );
   });
 
   app.route('/v1/p', sandboxProxyApp);
@@ -416,8 +486,8 @@ beforeEach(() => {
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
-  mockAcpTitleCaptureCalls = [];
-  mockDeferredTitleCaptureCalls = [];
+  mockSnapshotSyncCalls = [];
+  mockTitleCalls = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -445,6 +515,38 @@ describe('Preview proxy: websocket upstream resolution', () => {
     }
   });
 
+  test('a sandbox token may open the PTY of its OWN session', async () => {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+      // The sandbox's own session id — the legitimate case, which must keep
+      // working or the narrowing has broken the product.
+      callerSessionId: mockDbSandbox?.sessionId ?? null,
+    });
+    expect(upstream.ok).toBe(true);
+  });
+
+  test('a sandbox token may NOT open ANOTHER end-user’s PTY', async () => {
+    // The KaaB isolation property, on the WebSocket leg. Every session a wrapper
+    // creates shares one `created_by`, so ownership alone cannot separate
+    // end-users — the per-session gate is what does, and until now all three
+    // tests here passed `callerSessionId: null`, exercising only the unbound
+    // path. The leg was wired and unproven.
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+      callerSessionId: '99999999-9999-4999-8999-999999999999',
+    });
+    expect(upstream.ok).toBe(false);
+    if (!upstream.ok) expect(upstream.status).toBe(403);
+  });
+
   test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
     mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
     mockPreviewUrl = 'https://8000-platinum.sbx.example';
@@ -463,7 +565,9 @@ describe('Preview proxy: websocket upstream resolution', () => {
     expect(mockResolvedPreviewPorts).toEqual([8000]);
     if (upstream.ok) {
       const url = new URL(upstream.url);
-      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      expect(`${url.origin}${url.pathname}`).toBe(
+        'wss://8000-platinum.sbx.example/pty/pty_test/connect',
+      );
       const queryContext = url.searchParams.get('__kortix_user_context');
       expect(queryContext).toBeTruthy();
       expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
@@ -649,7 +753,9 @@ describe('Preview proxy: ownership', () => {
 
 describe('Preview proxy: forwarding', () => {
   test('proxies GET request and returns upstream response', async () => {
-    mockFetchResponses = [{ status: 200, body: '<html>Hello</html>', headers: { 'content-type': 'text/html' } }];
+    mockFetchResponses = [
+      { status: 200, body: '<html>Hello</html>', headers: { 'content-type': 'text/html' } },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/page`, {
       headers: { Authorization: 'Bearer test' },
@@ -710,14 +816,17 @@ describe('Preview proxy: forwarding', () => {
       { status: 204, body: '' },
     ];
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
+    const res = await app.request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
       },
-      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
-    });
+    );
 
     expect(res.status).toBe(204);
     expect(mockFetchCalls).toHaveLength(2);
@@ -742,95 +851,139 @@ describe('Preview proxy: forwarding', () => {
     );
   });
 
-  test('captures ACP session_info_update titles before forwarding the SSE event', async () => {
-    const event =
-      'id: 7\n' +
-      'data: {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_123","update":{"sessionUpdate":"session_info_update","title":"Research Marko Kraemer"}}}\n\n';
+  test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
     mockFetchResponses = [
-      {
-        status: 200,
-        body: event,
-        headers: { 'Content-Type': 'text/event-stream' },
-      },
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
     ];
     const app = createProxyTestApp();
-
-    const res = await app.request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
-      {
-        headers: {
-          Authorization: 'Bearer test',
-          Accept: 'text/event-stream',
-        },
-      },
-    );
-
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe(event);
-    expect(mockAcpTitleCaptureCalls).toEqual([
-      {
-        sessionId: mockDbSandbox.sessionId,
-        projectId: TEST_PROJECT_ID,
-        opencodeSessionId: 'ses_123',
-        title: 'Research Marko Kraemer',
-      },
-    ]);
-  });
-
-  test('captures an OpenCode REST session.updated title before forwarding the SSE event', async () => {
-    const event =
-      'data: {"directory":"/workspace","payload":{"type":"session.updated","properties":{"id":"ses_123","title":"REST title"}}}\n\n';
-    mockFetchResponses = [
-      {
-        status: 200,
-        body: event,
-        headers: { 'Content-Type': 'text/event-stream' },
-      },
-    ];
-    const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/global/event`, {
-      headers: {
-        Authorization: 'Bearer test',
-        Accept: 'text/event-stream',
-      },
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parts: [{ type: 'text', text: 'set up the MS Graph connector' }],
+        model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
+      }),
     });
 
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe(event);
-    expect(mockAcpTitleCaptureCalls).toEqual([
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([
       {
         sessionId: mockDbSandbox.sessionId,
         projectId: TEST_PROJECT_ID,
-        opencodeSessionId: 'ses_123',
-        title: 'REST title',
+        accountId: mockDbSandbox.accountId,
+        userId: TEST_USER_ID,
+        firstPromptText: 'set up the MS Graph connector',
+        modelHint: 'codex/gpt-5.6-sol',
       },
     ]);
   });
 
-  test('schedules deferred title capture after an accepted ACP session prompt', async () => {
+  test('does not title a prompt body that carries no text', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'image', url: 'x' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([]);
+  });
+
+  test('titles from an accepted ACP session prompt', async () => {
+    mockFetchResponses = [{ status: 202, body: '' }];
+    const app = createProxyTestApp();
+
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'prompt-3',
+        method: 'session/prompt',
+        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(mockTitleCalls).toHaveLength(1);
+    expect(mockTitleCalls[0]!.firstPromptText).toBe('Research Marko');
+  });
+
+  test('titles a MANAGED ACP prompt, whose harness sessionId differs from the route id', async () => {
+    // The route id is the ACP SERVER binding (the project session); the
+    // envelope's params.sessionId is the harness-issued session, which
+    // persistAcpSessionIdentity forbids from equalling it. Requiring the two to
+    // match made every managed ACP prompt invisible to this hook.
     mockFetchResponses = [{ status: 202, body: '' }];
     const app = createProxyTestApp();
 
     const res = await app.request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/${mockDbSandbox.sessionId}`,
       {
         method: 'POST',
-        headers: {
-          Authorization: 'Bearer test',
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: 'prompt-1',
+          id: 'prompt-5',
           method: 'session/prompt',
-          params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+          params: {
+            sessionId: 'acp_harness_session_9',
+            prompt: [{ type: 'text', text: 'Research Marko' }],
+          },
         }),
       },
     );
 
     expect(res.status).toBe(202);
-    expect(mockDeferredTitleCaptureCalls).toEqual([
+    expect(mockTitleCalls).toHaveLength(1);
+    expect(mockTitleCalls[0]!.firstPromptText).toBe('Research Marko');
+  });
+
+  test('a rejected ACP session prompt is not titled', async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
+    const app = createProxyTestApp();
+
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'prompt-4',
+        method: 'session/prompt',
+        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(mockTitleCalls).toEqual([]);
+  });
+
+  test('schedules a deferred opencode_sessions snapshot sync after an accepted ACP session prompt', async () => {
+    mockFetchResponses = [{ status: 202, body: '' }];
+    const app = createProxyTestApp();
+
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'prompt-1',
+        method: 'session/prompt',
+        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(mockSnapshotSyncCalls).toEqual([
       {
         sessionId: mockDbSandbox.sessionId,
         projectId: TEST_PROJECT_ID,
@@ -847,26 +1000,23 @@ describe('Preview proxy: forwarding', () => {
     ];
     const app = createProxyTestApp();
 
-    const res = await app.request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer test',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'prompt-2',
-          method: 'session/prompt',
-          params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-        }),
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'prompt-2',
+        method: 'session/prompt',
+        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+      }),
+    });
 
     expect(res.status).toBe(502);
     expect(mockFetchCalls).toHaveLength(1);
-    expect(mockDeferredTitleCaptureCalls).toEqual([]);
+    expect(mockSnapshotSyncCalls).toEqual([]);
   });
 
   test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
@@ -989,7 +1139,9 @@ describe('Preview proxy: forwarding', () => {
   });
 
   test('does not retry non-transient project env sync HTTP errors that mention network failures', async () => {
-    mockFetchResponses = [{ status: 500, body: '{"error":"connection refused to metadata store"}' }];
+    mockFetchResponses = [
+      { status: 500, body: '{"error":"connection refused to metadata store"}' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -1080,8 +1232,12 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     expect(mockFetchCalls[0].headers['accept-encoding']).toBe('identity');
     expect(mockFetchCalls[0].headers['x-custom']).toBe('keep-me');
-    expect(mockFetchCalls[0].headers['traceparent']).toMatch(/^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/);
-    expect(mockFetchCalls[0].headers['traceparent']).not.toBe('00-11111111111111111111111111111111-2222222222222222-01');
+    expect(mockFetchCalls[0].headers['traceparent']).toMatch(
+      /^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/,
+    );
+    expect(mockFetchCalls[0].headers['traceparent']).not.toBe(
+      '00-11111111111111111111111111111111-2222222222222222-01',
+    );
     expect(mockFetchCalls[0].headers['x-request-id']).not.toBe('caller-controlled');
   });
 
@@ -1143,12 +1299,16 @@ describe('Preview proxy: forwarding', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(res.status).toBe(200);
-    expect(mockDbUpdateCalls.some((call) =>
-      call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
-    )).toBe(true);
-    expect(mockDbUpdateCalls.some((call) =>
-      call.table === projectSessions && call.updates.status === 'running',
-    )).toBe(true);
+    expect(
+      mockDbUpdateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
+      ),
+    ).toBe(true);
+    expect(
+      mockDbUpdateCalls.some(
+        (call) => call.table === projectSessions && call.updates.status === 'running',
+      ),
+    ).toBe(true);
   });
 
   test('surfaces daemon signed-context rejection as 502', async () => {
@@ -1331,9 +1491,7 @@ describe('Preview proxy: auto-wake ("failed to get runner info")', () => {
 
 describe('Preview proxy: non-sandbox-down 400', () => {
   test('passes through 400 that is NOT sandbox-down', async () => {
-    mockFetchResponses = [
-      { status: 400, body: 'Bad request: invalid input' },
-    ];
+    mockFetchResponses = [{ status: 400, body: 'Bad request: invalid input' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api`, {
       method: 'POST',
@@ -1462,11 +1620,14 @@ describe('Preview proxy: long-turn completion timeout', () => {
     }) as any;
 
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/sandbox-long-turn-001/${TEST_PORT}/session/sess-1/message`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parts: [{ type: 'text', text: 'do a long thing' }] }),
-    });
+    const res = await app.request(
+      `/v1/p/sandbox-long-turn-001/${TEST_PORT}/session/sess-1/message`,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'do a long thing' }] }),
+      },
+    );
 
     globalThis.setTimeout = origSetTimeout;
     globalThis.fetch = savedFetch;

@@ -5,12 +5,15 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { revokeSessionExecutorTokens } from '../../repositories/account-tokens';
 import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
+import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -19,6 +22,7 @@ import {
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 import { prepareInPlaceRestartMetadata } from './readiness-clocks';
 
 export async function deleteSession(input: {
@@ -100,9 +104,29 @@ export async function deleteSession(input: {
     }
   }
 
-  void pauseComputeSession(sessionId).catch((err) =>
-    console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
-  );
+  // Keyed by SANDBOX id — `getOpenComputeSession` matches on
+  // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
+  // matched nothing and the delete silently left the meter open, accruing
+  // wall-clock on a box we had just asked the provider to remove. The
+  // billing-invariant sweep (sandbox-reaper.ts reconcileOrphanComputeSessions)
+  // is the backstop for this whole class; this is the fast path.
+  if (sandbox) {
+    void pauseComputeSession(sandbox.sandboxId).catch((err) =>
+      console.warn(`[projects] compute pause failed for sandbox ${sandbox.sandboxId}:`, err),
+    );
+  }
+
+  // The provider sandbox is being removed above, so this session's executor
+  // token can never be used legitimately again — but nothing expired it, so it
+  // stayed a valid bearer forever. Awaited (not fire-and-forget) so the
+  // credential is dead before we report the session gone; a failure is logged at
+  // error level rather than failing the delete, since the box is already going.
+  await revokeSessionExecutorTokens(sessionId, accountId).catch((err) => {
+    console.error(
+      `[projects] FAILED to revoke executor tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
+      err,
+    );
+  });
 
   return { ok: true };
 }
@@ -200,6 +224,9 @@ export async function restartSession(input: {
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+          acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
+          compiledRuntimeConfig:
+            (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });
@@ -287,12 +314,21 @@ export async function restartSession(input: {
     void (async () => {
       try {
         await provider.stop(externalId).catch(() => {});
+        invalidateProviderCache(externalId);
         await provider.start(externalId);
+        // Provider ingress credentials can change on every stop/start cycle.
+        // Remove any link resolved while the sandbox was stopped.
+        invalidateProviderCache(externalId);
         // A provider may acknowledge start before discovering that the backing
-        // runtime is gone (observed live with Platinum: POST start succeeded,
-        // the next GET returned removed). Never mark the DB running from command
-        // acceptance alone; verify provider truth first.
+        // runtime is gone. A confirmed `removed` status starts recovery.
+        // `unknown` remains non-terminal because it does not prove runtime loss.
         let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (
+          verifiedStatus === 'unknown' &&
+          (await inspectSandboxRuntime(externalId, loaded.userId))
+        ) {
+          verifiedStatus = 'running';
+        }
         for (
           let attempt = 1;
           verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15;
@@ -300,6 +336,12 @@ export async function restartSession(input: {
         ) {
           await Bun.sleep(1_000);
           verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+          if (
+            verifiedStatus === 'unknown' &&
+            (await inspectSandboxRuntime(externalId, loaded.userId))
+          ) {
+            verifiedStatus = 'running';
+          }
         }
         if (verifiedStatus === 'removed') {
           const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
@@ -316,10 +358,17 @@ export async function restartSession(input: {
           }
           return;
         }
-        if (verifiedStatus !== 'running') {
+        if (verifiedStatus !== 'running' && verifiedStatus !== 'unknown') {
           throw new Error(
             `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
           );
+        }
+        if (verifiedStatus === 'unknown') {
+          logger.warn('[projects] restart provider status stayed unknown; runtime polling continues', {
+            session_id: sessionId,
+            project_id: projectId,
+            external_id: externalId,
+          });
         }
         await db
           .update(sessionSandboxes)

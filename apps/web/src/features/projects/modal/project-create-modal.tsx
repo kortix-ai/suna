@@ -68,11 +68,11 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk';
-import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
+import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -499,8 +499,6 @@ export const ProjectCreateModal = ({
     createMutation.mutate({
       account_id: effectiveAccountId,
       name: values.name,
-      // One starter kit: every new project ships the full Kortix skill kit (the
-      // general-knowledge-worker template seeds every skill).
       starter_template: 'general-knowledge-worker',
       marketplace_items: [],
     });

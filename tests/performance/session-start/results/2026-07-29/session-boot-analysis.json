@@ -1,0 +1,1888 @@
+{
+  "generated_at": "2026-07-29T00:08:23.701Z",
+  "inputs": [
+    "/tmp/kortix-session-boot-prod-starter-20260729.json",
+    "/tmp/kortix-session-boot-dev-starter-20260729.json",
+    "/tmp/kortix-session-boot-local-20260729.json"
+  ],
+  "targets": [
+    {
+      "source": "kortix-session-boot-prod-starter-20260729.json",
+      "api": "https://api.kortix.com",
+      "target": "daytona-starter",
+      "provider": "daytona",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 581,
+          "p50": 902,
+          "p90": 2516,
+          "max": 2516,
+          "raw": [
+            1544,
+            902,
+            2516,
+            617,
+            581
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 1947,
+          "p50": 4976,
+          "p90": 27436,
+          "max": 27436,
+          "raw": [
+            4976,
+            27436,
+            6127,
+            2555,
+            1947
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 1947,
+          "p50": 4976,
+          "p90": 27436,
+          "max": 27436,
+          "raw": [
+            4976,
+            27436,
+            6127,
+            2555,
+            1947
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 2963,
+          "p50": 6516,
+          "p90": 28132,
+          "max": 28132,
+          "raw": [
+            6516,
+            28132,
+            7541,
+            3470,
+            2963
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 19014,
+          "p50": 22430,
+          "p90": 46467,
+          "max": 46467,
+          "raw": [
+            22430,
+            46467,
+            21093,
+            19014,
+            22555
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 165,
+          "p50": 360,
+          "p90": 1717,
+          "max": 1717,
+          "raw": [
+            826,
+            1717,
+            360,
+            180,
+            165
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 3,
+          "p50": 9,
+          "p90": 185,
+          "max": 185,
+          "raw": [
+            9,
+            68,
+            185,
+            3,
+            6
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 1056,
+          "p50": 1412,
+          "p90": 23217,
+          "max": 23217,
+          "raw": [
+            1056,
+            23217,
+            1412,
+            1519,
+            1128
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 4,
+          "p50": 4,
+          "p90": 12,
+          "max": 12,
+          "raw": [
+            4,
+            12,
+            4,
+            4,
+            6
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 14,
+          "p50": 19,
+          "p90": 81,
+          "max": 81,
+          "raw": [
+            14,
+            81,
+            24,
+            16,
+            19
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 4,
+          "p50": 6,
+          "p90": 7,
+          "max": 7,
+          "raw": [
+            4,
+            7,
+            6,
+            7,
+            4
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 3506,
+          "p50": 7764,
+          "p90": 12177,
+          "max": 12177,
+          "raw": [
+            9667,
+            4953,
+            3506,
+            7764,
+            12177
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 2,
+          "p50": 8,
+          "p90": 13,
+          "max": 13,
+          "raw": [
+            2,
+            9,
+            8,
+            5,
+            13
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 6506,
+          "p50": 7222,
+          "p90": 11738,
+          "max": 11738,
+          "raw": [
+            6506,
+            11738,
+            9162,
+            7222,
+            6735
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 226,
+          "p50": 290,
+          "p90": 368,
+          "max": 368,
+          "raw": [
+            226,
+            368,
+            267,
+            311,
+            290
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 722,
+          "p50": 768,
+          "p90": 1789,
+          "max": 1789,
+          "raw": [
+            723,
+            1364,
+            1789,
+            722,
+            768
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 1,
+          "p90": 1,
+          "max": 1,
+          "raw": [
+            0,
+            1,
+            1,
+            0,
+            1
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "source": "kortix-session-boot-prod-starter-20260729.json",
+      "api": "https://api.kortix.com",
+      "target": "platinum-starter",
+      "provider": "platinum",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 449,
+          "p50": 817,
+          "p90": 1214,
+          "max": 1214,
+          "raw": [
+            936,
+            817,
+            1214,
+            449,
+            560
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 3006,
+          "p50": 3703,
+          "p90": 12176,
+          "max": 12176,
+          "raw": [
+            12176,
+            3283,
+            4590,
+            3006,
+            3703
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 3006,
+          "p50": 3703,
+          "p90": 12176,
+          "max": 12176,
+          "raw": [
+            12176,
+            3283,
+            4590,
+            3006,
+            3703
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 3712,
+          "p50": 5079,
+          "p90": 14767,
+          "max": 14767,
+          "raw": [
+            14767,
+            3712,
+            5079,
+            4024,
+            9227
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 25084,
+          "p50": 27279,
+          "p90": 32202,
+          "max": 32202,
+          "raw": [
+            32202,
+            27279,
+            25852,
+            25084,
+            30028
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 113,
+          "p50": 148,
+          "p90": 267,
+          "max": 267,
+          "raw": [
+            267,
+            113,
+            258,
+            118,
+            148
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 3,
+          "p50": 39,
+          "p90": 83,
+          "max": 83,
+          "raw": [
+            3,
+            83,
+            4,
+            39,
+            46
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 2117,
+          "p50": 2271,
+          "p90": 10891,
+          "max": 10891,
+          "raw": [
+            10891,
+            2117,
+            2271,
+            2200,
+            2864
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 18,
+          "p50": 20,
+          "p90": 21,
+          "max": 21,
+          "raw": [
+            18,
+            20,
+            20,
+            20,
+            21
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 34,
+          "p50": 40,
+          "p90": 43,
+          "max": 43,
+          "raw": [
+            34,
+            40,
+            40,
+            39,
+            43
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 11,
+          "p50": 12,
+          "p90": 13,
+          "max": 13,
+          "raw": [
+            11,
+            13,
+            12,
+            13,
+            12
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 3522,
+          "p50": 6287,
+          "p90": 10195,
+          "max": 10195,
+          "raw": [
+            4193,
+            8587,
+            3522,
+            6287,
+            10195
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 3,
+          "p50": 4,
+          "p90": 5,
+          "max": 5,
+          "raw": [
+            3,
+            4,
+            4,
+            3,
+            5
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 12663,
+          "p50": 12973,
+          "p90": 13494,
+          "max": 13494,
+          "raw": [
+            13494,
+            13185,
+            12727,
+            12663,
+            12973
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 447,
+          "p50": 486,
+          "p90": 503,
+          "max": 503,
+          "raw": [
+            447,
+            479,
+            496,
+            486,
+            503
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 1468,
+          "p50": 1639,
+          "p90": 3076,
+          "max": 3076,
+          "raw": [
+            1527,
+            1639,
+            3076,
+            1918,
+            1468
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 1,
+          "p50": 2,
+          "p90": 3,
+          "max": 3,
+          "raw": [
+            1,
+            2,
+            2,
+            3,
+            2
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "source": "kortix-session-boot-dev-starter-20260729.json",
+      "api": "https://dev-api.kortix.com",
+      "target": "daytona-starter",
+      "provider": "daytona",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 2228,
+          "p50": 2566,
+          "p90": 3405,
+          "max": 3405,
+          "raw": [
+            2672,
+            2228,
+            3405,
+            2566,
+            2362
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 4151,
+          "p50": 8982,
+          "p90": 27360,
+          "max": 27360,
+          "raw": [
+            5325,
+            4151,
+            27360,
+            8982,
+            25047
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 4151,
+          "p50": 8982,
+          "p90": 27360,
+          "max": 27360,
+          "raw": [
+            5325,
+            4151,
+            27360,
+            8982,
+            25047
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 6320,
+          "p50": 10560,
+          "p90": 28883,
+          "max": 28883,
+          "raw": [
+            7608,
+            6320,
+            28883,
+            10560,
+            26722
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 15859,
+          "p50": 20573,
+          "p90": 47840,
+          "max": 47840,
+          "raw": [
+            20573,
+            15859,
+            47840,
+            20294,
+            39803
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 344,
+          "p50": 410,
+          "p90": 906,
+          "max": 906,
+          "raw": [
+            583,
+            344,
+            906,
+            391,
+            410
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 95,
+          "p50": 112,
+          "p90": 148,
+          "max": 148,
+          "raw": [
+            112,
+            95,
+            148,
+            109,
+            135
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 731,
+          "p50": 5197,
+          "p90": 21944,
+          "max": 21944,
+          "raw": [
+            1078,
+            731,
+            21944,
+            5197,
+            21318
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 3,
+          "p50": 7,
+          "p90": 18,
+          "max": 18,
+          "raw": [
+            9,
+            3,
+            18,
+            5,
+            7
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 10,
+          "p50": 16,
+          "p90": 56,
+          "max": 56,
+          "raw": [
+            16,
+            10,
+            56,
+            12,
+            28
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 3,
+          "p50": 5,
+          "p90": 9,
+          "max": 9,
+          "raw": [
+            6,
+            3,
+            9,
+            5,
+            4
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 5366,
+          "p50": 5974,
+          "p90": 6484,
+          "max": 6484,
+          "raw": [
+            6107,
+            5974,
+            6484,
+            5366,
+            5889
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 2,
+          "p50": 4,
+          "p90": 6,
+          "max": 6,
+          "raw": [
+            3,
+            2,
+            6,
+            5,
+            4
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 4649,
+          "p50": 7610,
+          "p90": 11961,
+          "max": 11961,
+          "raw": [
+            7610,
+            4988,
+            11961,
+            4649,
+            7821
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 187,
+          "p50": 274,
+          "p90": 442,
+          "max": 442,
+          "raw": [
+            317,
+            192,
+            442,
+            187,
+            274
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 474,
+          "p50": 698,
+          "p90": 1185,
+          "max": 1185,
+          "raw": [
+            698,
+            487,
+            1185,
+            474,
+            711
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 1,
+          "p90": 1,
+          "max": 1,
+          "raw": [
+            0,
+            0,
+            1,
+            1,
+            1
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "source": "kortix-session-boot-dev-starter-20260729.json",
+      "api": "https://dev-api.kortix.com",
+      "target": "platinum-starter",
+      "provider": "platinum",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 2056,
+          "p50": 2367,
+          "p90": 4180,
+          "max": 4180,
+          "raw": [
+            4180,
+            3169,
+            2171,
+            2056,
+            2367
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 5896,
+          "p50": 6415,
+          "p90": 9117,
+          "max": 9117,
+          "raw": [
+            9117,
+            8512,
+            6276,
+            5896,
+            6415
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 5896,
+          "p50": 6415,
+          "p90": 9117,
+          "max": 9117,
+          "raw": [
+            9117,
+            8513,
+            6276,
+            5896,
+            6415
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 7993,
+          "p50": 8421,
+          "p90": 11097,
+          "max": 11097,
+          "raw": [
+            11097,
+            10508,
+            8305,
+            7993,
+            8421
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 26683,
+          "p50": 29103,
+          "p90": 33167,
+          "max": 33167,
+          "raw": [
+            33167,
+            30960,
+            27181,
+            26683,
+            29103
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 300,
+          "p50": 358,
+          "p90": 709,
+          "max": 709,
+          "raw": [
+            709,
+            358,
+            392,
+            300,
+            335
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 287,
+          "p50": 311,
+          "p90": 695,
+          "max": 695,
+          "raw": [
+            287,
+            695,
+            354,
+            311,
+            295
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 2409,
+          "p50": 2427,
+          "p90": 2629,
+          "max": 2629,
+          "raw": [
+            2629,
+            2409,
+            2488,
+            2421,
+            2427
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 21,
+          "p50": 22,
+          "p90": 25,
+          "max": 25,
+          "raw": [
+            22,
+            22,
+            24,
+            21,
+            25
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 32,
+          "p50": 34,
+          "p90": 38,
+          "max": 38,
+          "raw": [
+            32,
+            34,
+            36,
+            33,
+            38
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 11,
+          "p50": 12,
+          "p90": 13,
+          "max": 13,
+          "raw": [
+            12,
+            11,
+            12,
+            13,
+            11
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 5881,
+          "p50": 6923,
+          "p90": 8835,
+          "max": 8835,
+          "raw": [
+            8835,
+            7809,
+            6889,
+            5881,
+            6923
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 4,
+          "p50": 4,
+          "p90": 5,
+          "max": 5,
+          "raw": [
+            5,
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 12149,
+          "p50": 12385,
+          "p90": 12846,
+          "max": 12846,
+          "raw": [
+            12846,
+            12155,
+            12149,
+            12385,
+            12787
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 457,
+          "p50": 477,
+          "p90": 1047,
+          "max": 1047,
+          "raw": [
+            457,
+            533,
+            463,
+            477,
+            1047
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 1445,
+          "p50": 1651,
+          "p90": 1834,
+          "max": 1834,
+          "raw": [
+            1651,
+            1445,
+            1654,
+            1834,
+            1565
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 1,
+          "max": 1,
+          "raw": [
+            1,
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "source": "kortix-session-boot-local-20260729.json",
+      "api": "http://localhost:8008",
+      "target": "daytona-local",
+      "provider": "daytona",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 19,
+          "p50": 565,
+          "p90": 2100,
+          "max": 2100,
+          "raw": [
+            2100,
+            565,
+            577,
+            19,
+            173
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 1648,
+          "p50": 2617,
+          "p90": 4251,
+          "max": 4251,
+          "raw": [
+            4251,
+            2914,
+            2617,
+            1648,
+            2317
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 1648,
+          "p50": 2617,
+          "p90": 4252,
+          "max": 4252,
+          "raw": [
+            4252,
+            2914,
+            2617,
+            1648,
+            2317
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 3535,
+          "p50": 4087,
+          "p90": 5735,
+          "max": 5735,
+          "raw": [
+            5735,
+            4583,
+            4087,
+            3535,
+            3823
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 12410,
+          "p50": 15222,
+          "p90": 17795,
+          "max": 17795,
+          "raw": [
+            15828,
+            17795,
+            15222,
+            12410,
+            13945
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 47,
+          "p50": 54,
+          "p90": 140,
+          "max": 140,
+          "raw": [
+            140,
+            49,
+            47,
+            54,
+            69
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 1,
+          "p50": 2,
+          "p90": 347,
+          "max": 347,
+          "raw": [
+            347,
+            2,
+            2,
+            1,
+            1
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 1442,
+          "p50": 1898,
+          "p90": 2179,
+          "max": 2179,
+          "raw": [
+            1512,
+            2179,
+            1898,
+            1442,
+            1977
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 5,
+          "p50": 6,
+          "p90": 11,
+          "max": 11,
+          "raw": [
+            6,
+            6,
+            11,
+            5,
+            6
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 13,
+          "p50": 15,
+          "p90": 22,
+          "max": 22,
+          "raw": [
+            15,
+            22,
+            19,
+            13,
+            13
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 4,
+          "p50": 5,
+          "p90": 7,
+          "max": 7,
+          "raw": [
+            5,
+            6,
+            7,
+            4,
+            4
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 3877,
+          "p50": 3978,
+          "p90": 4909,
+          "max": 4909,
+          "raw": [
+            4909,
+            4789,
+            3903,
+            3877,
+            3978
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 2,
+          "p50": 5,
+          "p90": 6,
+          "max": 6,
+          "raw": [
+            2,
+            5,
+            6,
+            3,
+            6
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 5773,
+          "p50": 6996,
+          "p90": 8677,
+          "max": 8677,
+          "raw": [
+            5773,
+            8677,
+            7560,
+            5780,
+            6996
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 229,
+          "p50": 266,
+          "p90": 298,
+          "max": 298,
+          "raw": [
+            229,
+            298,
+            288,
+            266,
+            260
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 656,
+          "p50": 820,
+          "p90": 1040,
+          "max": 1040,
+          "raw": [
+            725,
+            966,
+            1040,
+            820,
+            656
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 1,
+          "p90": 1,
+          "max": 1,
+          "raw": [
+            0,
+            1,
+            1,
+            0,
+            1
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "source": "kortix-session-boot-local-20260729.json",
+      "api": "http://localhost:8008",
+      "target": "platinum-local",
+      "provider": "platinum",
+      "image_kinds": [
+        "default-cold"
+      ],
+      "samples": 5,
+      "errors": [],
+      "metrics": {
+        "api_create_ms": {
+          "n": 5,
+          "min": 541,
+          "p50": 640,
+          "p90": 2099,
+          "max": 2099,
+          "raw": [
+            2099,
+            541,
+            604,
+            640,
+            759
+          ]
+        },
+        "vm_created_ms": {
+          "n": 5,
+          "min": 2885,
+          "p50": 3208,
+          "p90": 4764,
+          "max": 4764,
+          "raw": [
+            4764,
+            2885,
+            3144,
+            3295,
+            3208
+          ]
+        },
+        "row_active_ms": {
+          "n": 5,
+          "min": 2885,
+          "p50": 3208,
+          "p90": 4764,
+          "max": 4764,
+          "raw": [
+            4764,
+            2885,
+            3144,
+            3295,
+            3208
+          ]
+        },
+        "daemon_reachable_ms": {
+          "n": 5,
+          "min": 3681,
+          "p50": 3896,
+          "p90": 5524,
+          "max": 5524,
+          "raw": [
+            5524,
+            3681,
+            3896,
+            3910,
+            3862
+          ]
+        },
+        "runtime_ready_ms": {
+          "n": 5,
+          "min": 19694,
+          "p50": 20728,
+          "p90": 21770,
+          "max": 21770,
+          "raw": [
+            20728,
+            19694,
+            20399,
+            21526,
+            21770
+          ]
+        },
+        "host_row_and_tokens_ms": {
+          "n": 5,
+          "min": 48,
+          "p50": 65,
+          "p90": 118,
+          "max": 118,
+          "raw": [
+            118,
+            51,
+            65,
+            85,
+            48
+          ]
+        },
+        "host_image_resolution_ms": {
+          "n": 5,
+          "min": 195,
+          "p50": 291,
+          "p90": 300,
+          "max": 300,
+          "raw": [
+            287,
+            195,
+            300,
+            294,
+            291
+          ]
+        },
+        "host_provider_create_ms": {
+          "n": 5,
+          "min": 2026,
+          "p50": 2055,
+          "p90": 2208,
+          "max": 2208,
+          "raw": [
+            2097,
+            2026,
+            2026,
+            2208,
+            2055
+          ]
+        },
+        "guest_static_web_ms": {
+          "n": 5,
+          "min": 19,
+          "p50": 20,
+          "p90": 21,
+          "max": 21,
+          "raw": [
+            20,
+            21,
+            19,
+            20,
+            20
+          ]
+        },
+        "guest_git_identity_ms": {
+          "n": 5,
+          "min": 37,
+          "p50": 38,
+          "p90": 40,
+          "max": 40,
+          "raw": [
+            37,
+            38,
+            37,
+            39,
+            40
+          ]
+        },
+        "guest_proxy_start_ms": {
+          "n": 5,
+          "min": 12,
+          "p50": 12,
+          "p90": 14,
+          "max": 14,
+          "raw": [
+            12,
+            12,
+            12,
+            12,
+            14
+          ]
+        },
+        "guest_repository_ms": {
+          "n": 5,
+          "min": 2670,
+          "p50": 2873,
+          "p90": 3129,
+          "max": 3129,
+          "raw": [
+            2670,
+            2725,
+            3071,
+            2873,
+            3129
+          ]
+        },
+        "guest_config_deps_ms": {
+          "n": 5,
+          "min": 4,
+          "p50": 4,
+          "p90": 8,
+          "max": 8,
+          "raw": [
+            4,
+            4,
+            8,
+            5,
+            4
+          ]
+        },
+        "guest_runtime_binary_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_cwd_resolution_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_config_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_process_spawn_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_first_acp_output_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_acp_initialize_tail_ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "max": null,
+          "raw": []
+        },
+        "guest_runtime_start_legacy_ms": {
+          "n": 5,
+          "min": 10888,
+          "p50": 11977,
+          "p90": 13301,
+          "max": 13301,
+          "raw": [
+            10888,
+            11599,
+            11977,
+            13301,
+            12073
+          ]
+        },
+        "guest_runtime_answering_ms": {
+          "n": 5,
+          "min": 450,
+          "p50": 463,
+          "p90": 503,
+          "max": 503,
+          "raw": [
+            503,
+            487,
+            461,
+            463,
+            450
+          ]
+        },
+        "guest_acp_session_ms": {
+          "n": 5,
+          "min": 1395,
+          "p50": 1602,
+          "p90": 2720,
+          "max": 2720,
+          "raw": [
+            1535,
+            1619,
+            1395,
+            1602,
+            2720
+          ]
+        },
+        "guest_prompt_delivery_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 1,
+          "p90": 1,
+          "max": 1,
+          "raw": [
+            0,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "guest_ready_tail_ms": {
+          "n": 5,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "max": 0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

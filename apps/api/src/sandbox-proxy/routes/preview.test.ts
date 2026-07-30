@@ -18,10 +18,44 @@ describe('shouldAutoResumeStoppedSandbox', () => {
     expect(shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal')).toBe(true);
   });
 
-  test('a non-daemon (passive/asset/preview) port never resumes', () => {
+  test('a non-daemon port never resumes on passive (asset / XHR) traffic', () => {
     expect(shouldAutoResumeStoppedSandbox('stopped', 4096, 'principal')).toBe(false);
     expect(shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal')).toBe(false);
     expect(shouldAutoResumeStoppedSandbox('stopped', 443, 'principal')).toBe(false);
+  });
+
+  // ═══ THE REGRESSION ═══ a parked dev server could not be recovered through the
+  // preview AT ALL — only by prompting the agent — because no preview traffic
+  // resumed a box. A human LOADING the page is an explicit open, the same class of
+  // intent as clicking into the session.
+  test('REGRESSION: a human LOADING a preview page resumes the box', () => {
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal', { browserNavigation: true }),
+    ).toBe(true);
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 5173, 'principal', { browserNavigation: true }),
+    ).toBe(true);
+  });
+
+  test('a page load on a SESSION-DATA port is still not a preview resume', () => {
+    // 4096 carries the conversation; only the 8000 daemon branch may resume it.
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 4096, 'principal', { browserNavigation: true }),
+    ).toBe(false);
+  });
+
+  // The box holds a credential that resolves to a valid principal. If its own
+  // traffic could resume it, the self-renewing lease is rebuilt through the proxy.
+  test('a request the SANDBOX authored never resumes it, on any port', () => {
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { sandboxAuthored: true }),
+    ).toBe(false);
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal', {
+        sandboxAuthored: true,
+        browserNavigation: true,
+      }),
+    ).toBe(false);
   });
 
   test('non-user (service / share) access never resumes', () => {

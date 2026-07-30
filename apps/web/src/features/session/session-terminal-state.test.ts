@@ -35,6 +35,16 @@ describe('isUnmaterializedSessionFailure', () => {
     }
   });
 
+  test('does not claim that an active sandbox was never created', () => {
+    expect(
+      isUnmaterializedSessionFailure({
+        phase: 'error',
+        hasStartError: false,
+        sandboxStatus: 'active',
+      }),
+    ).toBe(false);
+  });
+
   test('does not classify an active boot as terminal', () => {
     expect(
       isUnmaterializedSessionFailure({

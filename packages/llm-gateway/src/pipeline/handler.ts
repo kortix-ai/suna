@@ -19,6 +19,7 @@ import {
   extractUsageFromJson,
   extractUsageFromSseBuffer,
   jsonHasContent,
+  jsonSoftFailureFrame,
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { type RoutedUpstreamCandidate, runFailover } from './failover';
@@ -146,7 +147,7 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 // a few times — before falling over to a different candidate, and before ever
 // giving up — resolves the overwhelming majority of these transparently,
 // including the common case where there is only one candidate to begin with.
-const MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
+const MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
 
 function idOf(principal: AuthedPrincipal) {
   return {
@@ -543,16 +544,13 @@ export async function handleChatCompletions(
 
   step('dispatch_upstream', { streaming, candidateCount: candidates.length, routeModels });
 
-  // An upstream can return a syntactically valid 200 with empty `choices`/content
-  // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
-  // turn. That never throws, so runFailover's transport-level retry/failover never
-  // sees it. This loop adds a second failover tier on top: each candidate gets a
-  // few immediate retries in place (below), and only once it's exhausted its own
-  // retries is it excluded so the remaining candidates get a turn — only once
-  // every candidate has produced nothing do we give up and tell the caller,
-  // instead of silently forwarding a blank "stop".
+  // Some upstream failures arrive inside syntactically successful HTTP 200
+  // completions. Known forms are empty completions and an exact rate-limit
+  // sentence encoded as assistant text. The transport retry layer cannot see
+  // either form. This loop validates each completion before relaying bytes.
+  // Each candidate gets three attempts before failover.
   const exhaustedCandidates = new Set<string>();
-  const emptyAttemptsByCandidate = new Map<string, number>();
+  const invalidAttemptsByCandidate = new Map<string, number>();
   const candidateKey = ({ descriptor, routeModel }: RoutedUpstreamCandidate): string =>
     `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}`;
   const sleep = config.retry?.sleep ?? realSleep;
@@ -561,25 +559,23 @@ export async function handleChatCompletions(
   const maxDelayMs = config.retry?.maxDelayMs ?? 8_000;
   const jitter = config.retry?.jitter ?? true;
 
-  // Records an empty completion from a routed candidate. Retries it (via
-  // a short backoff, then `continue`) while it's under budget; once exhausted,
-  // excludes it from `remaining` so the loop moves on to the next candidate (or
-  // to the all-candidates-empty exit if there isn't one).
-  const registerEmptyCompletion = async (
+  const registerInvalidCompletion = async (
     candidate: RoutedUpstreamCandidate,
+    kind: 'empty_completion' | 'rate_limit',
     fields: Record<string, unknown>,
   ): Promise<void> => {
     const key = candidateKey(candidate);
     const { descriptor, routeModel } = candidate;
-    const attempt = (emptyAttemptsByCandidate.get(key) ?? 0) + 1;
-    emptyAttemptsByCandidate.set(key, attempt);
-    const exhausted = attempt >= MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE;
+    const attempt = (invalidAttemptsByCandidate.get(key) ?? 0) + 1;
+    invalidAttemptsByCandidate.set(key, attempt);
+    const exhausted = attempt >= MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE;
     logger.warn(
-      `[llm-gateway] empty completion from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
+      `[llm-gateway] ${kind} from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
     );
-    step('empty_completion_retry', {
+    step('invalid_completion_retry', {
       provider: descriptor.provider,
       routeModel,
+      kind,
       attempt,
       exhausted,
       ...fields,
@@ -588,7 +584,11 @@ export async function handleChatCompletions(
       exhaustedCandidates.add(key);
       return;
     }
-    await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs, jitter, rand));
+    // A rate-limit rejection needs a slower request ramp than an empty
+    // completion. The injected test sleeper still removes this delay in tests.
+    const retryBaseDelayMs = kind === 'rate_limit' ? Math.max(baseDelayMs, 1_000) : baseDelayMs;
+    const retryMaxDelayMs = kind === 'rate_limit' ? Math.max(maxDelayMs, 8_000) : maxDelayMs;
+    await sleep(backoffDelay(attempt, retryBaseDelayMs, retryMaxDelayMs, jitter, rand));
   };
 
   let upstream: Response | null = null;
@@ -752,7 +752,8 @@ export async function handleChatCompletions(
         provider: chosenDescriptor.provider,
         routeModel: chosenRouteModel,
       });
-      if (jsonHasContent(data)) {
+      const softFailure = jsonSoftFailureFrame(data);
+      if (!softFailure && jsonHasContent(data)) {
         upstream = candidateUpstream;
         descriptor = chosenDescriptor;
         selectedRouteModel = chosenRouteModel;
@@ -763,16 +764,26 @@ export async function handleChatCompletions(
       // (a real generation that came back badly shaped) — capture any usage
       // before discarding the body.
       accumulateDiscardedUsage(extractUsageFromJson(data));
-      await registerEmptyCompletion(chosen, { streaming: false });
+      if (softFailure) lastErrorFrame = softFailure;
+      await registerInvalidCompletion(
+        chosen,
+        softFailure ? 'rate_limit' : 'empty_completion',
+        { streaming: false },
+      );
       continue;
     }
 
     if (!candidateUpstream.body) {
-      await registerEmptyCompletion(chosen, { streaming: true, reason: 'no_body' });
+      await registerInvalidCompletion(chosen, 'empty_completion', {
+        streaming: true,
+        reason: 'no_body',
+      });
       continue;
     }
 
-    const probe = await probeStream(candidateUpstream.body);
+    const probe = await probeStream(candidateUpstream.body, {
+      inactivityTimeoutMs: config.streamProbeTimeoutMs,
+    });
     if (probe.hasContent) {
       upstream = candidateUpstream;
       descriptor = chosenDescriptor;
@@ -780,12 +791,11 @@ export async function handleChatCompletions(
       streamProbe = probe;
       break;
     }
-    // A structured error frame is a definitive failure for THIS candidate, not the
-    // transient empty-stop hiccup the same-candidate retry targets — so exclude the
-    // candidate at once (no in-place retry) and remember the real error to surface
-    // if nothing usable ever arrives. Other candidates, if any, still get a turn.
+    // Most structured error frames are terminal for this candidate. A 429 is
+    // transient. Retry a 429 with rate-limit backoff before failover.
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
+      await probe.reader.cancel('upstream completion rejected by gateway').catch(() => undefined);
       // `detail` carries the fields that actually identify WHICH part of the
       // request the upstream rejected (OpenAI-shaped backends: `type`/`param`).
       // Without it a body-level rejection logs as a bare "Bad Request" and is
@@ -801,6 +811,14 @@ export async function handleChatCompletions(
         code: probe.errorFrame.code,
         ...(errorDetail ? { detail: errorDetail } : {}),
       });
+      if (statusForErrorFrame(probe.errorFrame) === 429) {
+        await registerInvalidCompletion(chosen, 'rate_limit', {
+          streaming: true,
+          message: probe.errorFrame.message,
+          code: probe.errorFrame.code,
+        });
+        continue;
+      }
       exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
@@ -824,7 +842,7 @@ export async function handleChatCompletions(
       const decoded = new TextDecoder().decode(concatChunks(probe.chunks));
       accumulateDiscardedUsage(extractUsageFromSseBuffer(decoded));
     }
-    await registerEmptyCompletion(chosen, { streaming: true });
+    await registerInvalidCompletion(chosen, 'empty_completion', { streaming: true });
   }
 
   // Every loop exit above either `return`s (transport failure / all-empty) or

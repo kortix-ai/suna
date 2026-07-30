@@ -55,7 +55,9 @@ const fakeDb = {
   }),
 };
 
+const actualDrizzle = await import('drizzle-orm');
 mock.module('drizzle-orm', () => ({
+  ...actualDrizzle,
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   eq: (column: unknown, value: unknown) => ({ op: 'eq', column, value }),
   gt: (column: unknown, value: unknown) => ({ op: 'gt', column, value }),

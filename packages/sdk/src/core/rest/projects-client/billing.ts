@@ -9,6 +9,20 @@
 import { backendApi } from '../../http/api-client';
 import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 
+/**
+ * The unambiguous billing situation for an account — the SAME state the API's
+ * billing gate admits on (apps/api/src/billing/services/billing-state.ts).
+ *
+ * Branch on this, never on `tier_key` (which stays `free` for per-seat Team
+ * accounts) and never on `can_run` alone (`false` means BLOCKED, not "no plan").
+ */
+export type BillingState =
+  | 'active'
+  | 'out_of_credits'
+  | 'no_subscription'
+  | 'payment_failed'
+  | 'no_account';
+
 export interface AccountState {
   credits: {
     total: number;
@@ -16,6 +30,11 @@ export interface AccountState {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived from credit_ledger, server-side. Present once
+     *  the API is updated; absent on older responses. */
+    lifetime_granted?: number;
+    lifetime_purchased?: number;
+    lifetime_used?: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;
@@ -25,6 +44,11 @@ export interface AccountState {
       seconds_until_refresh?: number;
     } | null;
   };
+  /** Present once the API is updated; absent → derive client-side. */
+  billing_state?: BillingState;
+  /** True when a Stripe subscription is currently providing service (distinct
+   *  from `subscription.subscription_id`, which survives cancellation). */
+  has_active_subscription?: boolean;
   subscription: {
     tier_key: string;
     tier_display_name: string;
@@ -670,8 +694,15 @@ export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promis
 }
 
 export interface AutoTopupSetupStatus {
+  /** A chargeable saved payment method exists — of ANY type (card, Link, SEPA…).
+   *  This is the field that gates enabling auto top-up. */
   has_payment_method: boolean;
+  /** Informational: a method is designated default at the customer or
+   *  subscription level. Never gate the UI on this — a Stripe Link checkout
+   *  leaves the customer-level invoice default null while still having a
+   *  perfectly chargeable method. */
   has_default_payment_method: boolean;
+  payment_method_source?: 'customer_default' | 'subscription_default' | 'attached' | null;
 }
 
 export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoTopupSetupStatus> {

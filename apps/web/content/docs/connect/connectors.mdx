@@ -130,7 +130,7 @@ connectors:
       type: bearer
 ```
 
-`provider` is one of `openapi`, `graphql`, `postman`, `http`, or `mcp`. `auth.type` is `bearer`, `basic`, `custom`, `oauth1`, or `none`.
+`provider` is one of `openapi`, `graphql`, `postman`, `http`, or `mcp`. `auth.type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none`.
 </Step>
 <Step>
 ### Merge the change request
@@ -164,9 +164,9 @@ Inside a session, the agent reaches connectors through the `kortix executor` CLI
 
 ```
 kortix executor connectors
-kortix executor call stripe <action> '<json-args>'
+kortix executor call stripe.<action> '<json-args>'
 ```
 
-`connectors` lists what the session can call. `call` runs one action. The Kortix Executor Gateway resolves the credential, checks the agent's grant, runs the call, and audits it.
+`connectors` lists what the session can call. Copy its `<connector>.<action>` tool reference into `call`. The Kortix Executor Gateway resolves the credential, checks the agent's grant, runs the call, and audits it.
 
 Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).

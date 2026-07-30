@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Agent, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
+import type { MessageWithParts, ProviderListResponse, RuntimeAgent } from '@kortix/sdk/react';
 import { Paperclip } from 'lucide-react';
 
 import type { FlatModel } from '../model-flatten';
@@ -39,7 +39,7 @@ export interface ComposerToolbarProps {
 
   /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
    *  session-chat-input.tsx) — this component does no further filtering. */
-  agents: Agent[];
+  agents: RuntimeAgent[];
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
   agentSelectorLocked: boolean;
@@ -143,7 +143,9 @@ export function ComposerToolbar({
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p>
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
+            </p>
           </TooltipContent>
         </Tooltip>
 

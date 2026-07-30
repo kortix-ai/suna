@@ -2282,6 +2282,93 @@ const CONNECTION_CLOSED_NOISE_PATTERN = /^Connection closed\.$/;
  * message alone is the library's canonical close string. See
  * `CONNECTION_CLOSED_NOISE_PATTERN` for the full rationale.
  */
+// Safari generic SecurityError noise — the bare `The operation is insecure.`
+// message that Safari 26.6+ on iOS throws for cross-origin restricted API
+// access (`crypto.subtle`, `fetch` in a restricted context, or a Web Crypto
+// operation in a sandboxed iframe / Safari private-mode context). This is a
+// SIBLING of `isStorageSecurityErrorNoise` (which covers the storage-specific
+// `SecurityError: Failed to read the 'localStorage'/'sessionStorage' property
+// from 'Window'` wording) — the storage matcher does NOT match the bare
+// `The operation is insecure.` message because its regex anchors on the
+// storage property name `'localStorage'`/`'sessionStorage'`.
+//
+// Better Stack frontend prod patterns
+//   e1d25be3ab38488ba0bfb2b3f069f24641914e3d20bacc1027178a5522376294
+//   1918c62ac5434aa56d7ce150e96b99be1b520471360fa3ef091802327297cf73
+//   70e1c309921716ee01cd5cd083cef876b41a81311b51db3d5bd55def644fdc47
+//   1cec609ee07b7f15aea6fea1eed550e4ce45a838abdf40171050336ff4abc2aa
+// (Kortix Frontend prod, application_id 2346967): all `SecurityError: The
+// operation is insecure.`, 1 occurrence each / 0 identified users, last
+// 2026-07-29 08:36:02 UTC, release `c330eda4d96e7aee557618254a86df7d16ba5d9b`
+// (v0.11.0 — POST-Promote), transaction `/` (marketing homepage), URL
+// `https://kortix.com/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). Frames: all
+// in `webpack-befb5b1662175048.js` function `a` (webpack runtime) +
+// `59675-a333ed5b0ae6dae4.js` functions `17725`/`20532`/`63613` (in_app) —
+// NO first-party `apps/web/src/…` frame.
+//
+// The EXACT message `The operation is insecure.` is Safari's canonical
+// security-error string for cross-origin restricted API access (never a
+// first-party throw), so matching on the exact message alone is safe. BUT a
+// NEGATIVE guard preserves any event whose stack carries a resolved first-party
+// `apps/web/src/…` frame (a real first-party `SecurityError` with this message
+// would be a first-party code regression → actionable). Unlike the storage
+// SecurityError sibling, a frameless capture with this exact message still
+// classifies as noise — the message is Safari-specific and generic enough that
+// a frameless capture with this exact message is still Safari's own WebKit
+// internals, never first-party code.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there could swallow a
+// real first-party `SecurityError` regression the negative guard exists to
+// preserve. The frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const SAFARI_GENERIC_SECURITY_ERROR_NOISE_MESSAGE = /^The operation is insecure\.$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the Safari generic `SecurityError:
+ * The operation is insecure.` noise class — Safari 26.6+ on iOS throws this for
+ * cross-origin restricted API access (`crypto.subtle`, `fetch` in a restricted
+ * context, or a Web Crypto operation in a sandboxed iframe / Safari private-mode
+ * context). This is a SIBLING of `isStorageSecurityErrorNoise` (which covers the
+ * storage-specific `SecurityError: Failed to read the 'localStorage'/'sessionStorage'
+ * property from 'Window'` wording); the storage matcher does NOT catch the bare
+ * `The operation is insecure.` message because its regex anchors on the storage
+ * property name.
+ *
+ * Requires the EXACT message `The operation is insecure.` (case-sensitive,
+ * Safari's canonical security error string) AND a NEGATIVE guard: if any frame
+ * (or the window.onerror filename) resolves to a de-minified first-party
+ * `apps/web/src/…` source, the event keeps reporting — a real first-party
+ * `SecurityError` with this message would be a first-party code regression and
+ * is actionable. Only events with NO resolved first-party frame are dropped.
+ * A frameless capture with this exact message still classifies as noise (the
+ * message is Safari-specific and generic enough that a frameless capture with
+ * this exact message is still Safari's own WebKit internals, never first-party
+ * code). See `SAFARI_GENERIC_SECURITY_ERROR_NOISE_MESSAGE` for the full rationale
+ * and the four Better Stack patterns.
+ */
+export function isSafariGenericSecurityErrorNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!SAFARI_GENERIC_SECURITY_ERROR_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party frame means our own code threw this
+  // SecurityError — actionable (a real first-party code regression), keep
+  // reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function isConnectionClosedNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -2447,6 +2534,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // carries a resolved first-party `apps/web/src/…` frame (our own code is the
   // culprit → actionable). See `isStorageSecurityErrorNoise`.
   if (isStorageSecurityErrorNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Safari generic SecurityError noise — the bare `The operation is insecure.`
+  // message from Safari 26.6+ on iOS for cross-origin restricted API access
+  // (`crypto.subtle`, `fetch` in a restricted context, or a Web Crypto operation
+  // in a sandboxed iframe / Safari private-mode context). This is a SIBLING of
+  // `isStorageSecurityErrorNoise` (which covers the storage-specific wording) —
+  // the storage matcher does NOT catch the bare `The operation is insecure.`
+  // message. See `isSafariGenericSecurityErrorNoise`.
+  if (isSafariGenericSecurityErrorNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -2692,6 +2790,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // carries a resolved first-party `apps/web/src/…` frame (our own code is the
   // culprit → actionable). See `isStorageSecurityErrorNoise`.
   if (isStorageSecurityErrorNoise({ message, frames })) {
+    return true;
+  }
+
+  // Safari generic SecurityError noise — the bare `The operation is insecure.`
+  // message from Safari 26.6+ on iOS for cross-origin restricted API access
+  // (`crypto.subtle`, `fetch` in a restricted context, or a Web Crypto operation
+  // in a sandboxed iframe / Safari private-mode context). This is a SIBLING of
+  // `isStorageSecurityErrorNoise` (which covers the storage-specific wording) —
+  // the storage matcher does NOT catch the bare `The operation is insecure.`
+  // message. See `isSafariGenericSecurityErrorNoise`.
+  if (isSafariGenericSecurityErrorNoise({ message, frames })) {
     return true;
   }
 

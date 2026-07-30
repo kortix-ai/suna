@@ -13,7 +13,9 @@ function makeChain(): any {
 mock.module('../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
 
 // Stub the dispatch graph so importing interactivity stays light.
+const actualDispatch = await import('../channels/slack/dispatch');
 mock.module('../channels/slack/dispatch', () => ({
+  ...actualDispatch,
   dispatchSlackEvent: async () => {},
   pendingPickers: new Map(),
   spawnAgentTurn: async () => {},

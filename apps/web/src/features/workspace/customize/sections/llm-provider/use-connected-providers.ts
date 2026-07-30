@@ -10,13 +10,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import {
+  CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
   CODEX_AUTH_JSON_SECRET_NAME,
   LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
 import { isProviderStateLoading } from './provider-loading-state';
 import { useLlmProviderCatalogRevision } from './use-live-catalog';
-import { buildCodexProvider } from './utils';
+import { buildClaudeSubscriptionProvider, buildCodexProvider } from './utils';
 
 export function useConnectedProviders(projectId: string, enabled: boolean) {
   // Re-renders this hook when LlmCatalogBootstrap's fetch lands (module
@@ -106,12 +107,16 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     const hasCodexSubscription =
       secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
       secretNames.has(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME);
+    const hasClaudeSubscription = secretNames.has(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
         p.id !== 'kortix' && isProviderAuthSatisfied(p.authRequirement, (v) => secretNames.has(v)),
     );
-    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
-    return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
+    const subscriptions = [
+      ...(hasClaudeSubscription ? [buildClaudeSubscriptionProvider()] : []),
+      ...(hasCodexSubscription ? [buildCodexProvider(ocProviders)] : []),
+    ];
+    return kortixProvider ? [kortixProvider, ...subscriptions, ...byo] : [...subscriptions, ...byo];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 

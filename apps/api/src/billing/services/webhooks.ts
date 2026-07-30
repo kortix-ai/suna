@@ -21,7 +21,7 @@ import {
   isRevenueCatAnonymous,
   isPerSeatAccount,
   resolvePerSeatPriceId,
-  PER_SEAT_PRICE_USD,
+  INCLUDED_CREDITS_PER_SEAT_USD,
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
@@ -376,10 +376,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       subscription.metadata?.billing_model === 'per_seat',
   );
   let perSeatDelta = 0;
+  let perSeatNewSeats = 0;
   if (perSeatItem) {
     const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
     const oldSeats = account?.seatCount ?? 0;
     perSeatDelta = newSeats - oldSeats;
+    perSeatNewSeats = newSeats;
     updates.billingModel = 'per_seat';
     updates.seatCount = newSeats;
     updates.seatSubscriptionItemId = perSeatItem.id;
@@ -399,37 +401,85 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     await updateCreditAccount(accountId, updates);
   }
 
+  // A per-seat recovery must be sized by SEATS. getMonthlyCredits('per_seat')
+  // returns the per-seat allowance for ONE seat ($25) and knows nothing about
+  // seat_count, so a recovering 6-seat team used to be reset to $25 instead of
+  // $150 — visible in production as 41 ledger rows reading exactly
+  // "Recovered Stripe subscription: 25 credits" regardless of team size.
+  const recoveryCredits = resolvedTier
+    ? perSeatItem
+      ? grantForSeats(perSeatNewSeats)
+      : getMonthlyCredits(resolvedTier)
+    : 0;
+
+  // This reset SETS expiring credit to the whole seat allowance, so it already
+  // funds every seat including the ones counted in perSeatDelta. Letting the
+  // delta grant below also run would stack a second full allowance on top
+  // (a brand-new N-seat team would land on 2 x $25N).
+  const recoveryCoveredEverySeat = shouldGrantRecoveryCredits && !!perSeatItem && recoveryCredits > 0;
+
   if (shouldGrantRecoveryCredits && resolvedTier) {
-    const credits = getMonthlyCredits(resolvedTier);
-    if (credits > 0) {
+    if (recoveryCredits > 0) {
       await resetExpiringCredits(
         accountId,
-        credits,
-        `Recovered Stripe subscription: ${credits} credits`,
+        recoveryCredits,
+        `Recovered Stripe subscription: ${recoveryCredits} credits`,
         `subscription_activation:${subscription.id}`,
       );
     }
   }
 
-  if (perSeatItem && perSeatDelta > 0) {
-    const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
+  if (perSeatItem && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
+    // INCLUDED_CREDITS_PER_SEAT_USD ($25 of wallet allowance), never
+    // PER_SEAT_PRICE_USD ($40, the price the customer pays). tiers.ts documents
+    // that the two are decoupled on purpose — the other $15 is platform margin.
+    // Using the price here over-granted every mid-cycle seat addition by 1.6x;
+    // all 7 seat_grant rows in production history are wrong by exactly that
+    // factor ($760 granted where $475 was owed).
+    const seatGrant = INCLUDED_CREDITS_PER_SEAT_USD * perSeatDelta;
     await grantCredits(
       accountId,
       seatGrant,
       'seat_grant',
       `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
       true,
-      `${subscription.id}:seats:${updates.seatCount}`,
+      // Keyed on the seat count REACHED, scoped to the current billing period.
+      //
+      // Both halves matter, and each fixes a different real defect:
+      //
+      // - Period scope fixes an UNDER-grant. The old key
+      //   (`${sub}:seats:${newSeats}`) had no period in it, so a team that grew
+      //   to 3 seats in one month, shrank, then grew back to 3 in a LATER month
+      //   reused the first month's key and was silently deduped — those seats
+      //   went unfunded until the next monthly reset.
+      // - Keying on the seat count reached, rather than on the `old->new`
+      //   transition, bounds an OVER-grant. Seat removals never claw allowance
+      //   back (there is no negative branch here on purpose), so an account that
+      //   shrinks and regrows inside one period is already funded for the larger
+      //   count. `4->5` and `3->5` and `2->5` are distinct transitions but the
+      //   same destination: keyed on the destination, only the first one funds.
+      //
+      // What this still does NOT catch: a team that starts a period at N seats,
+      // shrinks, then returns to N grants one extra delta, because the monthly
+      // reset that funded N is not a `seat_grant` row and so never wrote this
+      // key. Bounding that needs a per-period funded-seat high-water mark, which
+      // is a schema change, not a key change. Tracked as follow-up.
+      `${subscription.id}:seats:${subscription.current_period_start}:${perSeatNewSeats}`,
     ).catch((err) =>
       console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
     );
+  }
 
-    if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
-      const { mintYoloTokensForAllMembers } = await import('./seat-management');
-      void mintYoloTokensForAllMembers(accountId).catch((err) =>
-        console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
-      );
-    }
+  // Minting seat tokens is NOT part of the grant decision and must not be
+  // nested inside it. It lived inside the `perSeatDelta > 0` block, so adding
+  // the `!recoveryCoveredEverySeat` credit guard above would have silently
+  // stopped minting for exactly the case this mint exists for — a brand-new
+  // per-seat team, which is also the case the recovery reset covers.
+  if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
+    const { mintYoloTokensForAllMembers } = await import('./seat-management');
+    void mintYoloTokensForAllMembers(accountId).catch((err) =>
+      console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
+    );
   }
 }
 

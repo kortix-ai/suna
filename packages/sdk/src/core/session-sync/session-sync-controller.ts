@@ -1,6 +1,16 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
-export const SESSION_SYNC_PAGE_SIZE = 10;
+/**
+ * Messages per bounded read — the newest-first window a session opens with,
+ * and the step size when the transcript pulls older history.
+ *
+ * OpenCode carries tool output as *parts* of the assistant message, so a page
+ * is roughly half as many turns as it is messages: 50 covers ~25 turns, which
+ * is a whole ordinary session. That is the point — most sessions now open
+ * fully loaded and never pull at all, while a long one still opens bounded
+ * instead of dragging its entire history over the sandbox proxy.
+ */
+export const SESSION_SYNC_PAGE_SIZE = 50;
 
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
 

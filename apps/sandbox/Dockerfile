@@ -174,6 +174,20 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && command -v opencode \
     && opencode --version
 
+RUN CLAUDE_AGENT_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeAgentAcp)")" \
+    && CODEX_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexAcp)")" \
+    && PI_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piAcp)")" \
+    && PI_CODING_AGENT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piCodingAgent)")" \
+    && pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
+    && command -v claude-agent-acp \
+    && command -v codex-acp \
+    && command -v pi-acp \
+    && command -v pi \
+    && claude-agent-acp --version \
+    && codex-acp --version \
+    && pi-acp --help >/dev/null \
+    && pi --version
+
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
     && BUN_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Arm64)")" \

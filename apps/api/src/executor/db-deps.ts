@@ -35,6 +35,7 @@ import {
 import { resolveProjectBotName } from '../channels/voice-identity';
 import { joinPageUrl } from '../channels/voice/livekit';
 import { mintJoinLink } from '../channels/voice/join-links';
+import { approvalPageUrl } from '../setup-links/token';
 import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/voice/runtime';
 import { readTranscriptForAgent } from '../channels/voice/transcript-read';
 import { kortixSay } from '../channels/voice/utterance';
@@ -94,6 +95,7 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
+  parseStoredConditions,
   resolveEffectiveAction,
 } from './policy';
 import type {
@@ -549,6 +551,11 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
     loadConnectionPolicies: loadConnectionPoliciesFor,
+    // Minting needs the project key; approvalPageUrl swallows a failure and
+    // returns null so it can never break the call path — the gate still holds,
+    // the human just uses the in-app surface.
+    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
+      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(executorExecutions)
@@ -678,7 +685,13 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     .select()
     .from(executorConnectorPolicies)
     .where(eq(executorConnectorPolicies.connectorId, connectorId));
-  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+  return rows.map((r) => ({
+    match: r.match,
+    action: r.action,
+    position: r.position,
+    // Conditions are re-validated on READ, never trusted from storage.
+    ...parseStoredConditions(r.conditions),
+  }));
 }
 
 /** Rules attached to ONE connection (profile), the scope between project and connector. */
@@ -688,7 +701,12 @@ async function loadConnectionPoliciesFor(profileId: string): Promise<Policy[]> {
     .from(executorConnectionPolicies)
     .where(eq(executorConnectionPolicies.profileId, profileId))
     .orderBy(executorConnectionPolicies.position);
-  return rows.map((r) => ({ match: r.match, action: r.action as PolicyAction, position: r.position }));
+  return rows.map((r) => ({
+    match: r.match,
+    action: r.action as PolicyAction,
+    position: r.position,
+    ...parseStoredConditions(r.conditions),
+  }));
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -696,7 +714,12 @@ async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
     .select()
     .from(executorProjectPolicies)
     .where(eq(executorProjectPolicies.projectId, projectId));
-  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+  return rows.map((r) => ({
+    match: r.match,
+    action: r.action,
+    position: r.position,
+    ...parseStoredConditions(r.conditions),
+  }));
 }
 
 async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {

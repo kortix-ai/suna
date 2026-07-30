@@ -11,7 +11,9 @@ process.env.LOCAL_DOCKER_NETWORK = 'kortix-local-docker-test';
 
 let stagedContexts: Array<{ snapshotName: string; userDockerfile: string }> = [];
 
+const actualBuildContext = await import('../build-context');
 mock.module('../build-context', () => ({
+  ...actualBuildContext,
   DEFAULT_CPU: 2,
   DEFAULT_MEMORY_GB: 6,
   DEFAULT_DISK_GB: 20,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
+import type { BillingState } from './billing/services/billing-state';
 
 // === Request Schemas (Router) ===
 
@@ -165,6 +166,12 @@ export interface AccountStateResponse {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived from credit_ledger (see the
+     *  apply_credit_ledger_lifetime_rollup trigger). Reporting figures only —
+     *  no gate reads them. */
+    lifetime_granted: number;
+    lifetime_purchased: number;
+    lifetime_used: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;
@@ -174,6 +181,14 @@ export interface AccountStateResponse {
       seconds_until_refresh: number | null;
     } | null;
   };
+  /** The unambiguous billing situation (billing/services/billing-state.ts) —
+   *  the SAME state the billing gate admits on. Clients must branch on this,
+   *  never on `tier_key` or on `can_run` alone: `can_run: false` means "blocked",
+   *  it does NOT mean "no plan". */
+  billing_state: BillingState;
+  /** True when a Stripe subscription is currently providing service. Distinct
+   *  from `subscription.subscription_id`, which stays set after cancellation. */
+  has_active_subscription: boolean;
   subscription: {
     tier_key: string;
     tier_display_name: string;

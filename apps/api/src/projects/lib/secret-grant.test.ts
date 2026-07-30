@@ -17,14 +17,20 @@ mock.module('../agents', () => ({
 
 const {
   AgentSecretGrantMismatchError,
+  agentGrantDiffers,
   SecretGrantResolutionError,
   effectiveRunningAgent,
+  resolveSessionAgentGrant,
   resolveSessionSecretGrant,
   secretGrantEnvDiffers,
   secretGrantEnvForRunningAgent,
 } = await import('./secret-grant');
 
-function spec(name: string, env: AgentSpec['env']): AgentSpec {
+function spec(
+  name: string,
+  env: AgentSpec['env'],
+  extra: Partial<Pick<AgentSpec, 'connectors' | 'kortixCli'>> = {},
+): AgentSpec {
   return {
     name,
     path: `kortix.yaml#agents.${name}`,
@@ -34,6 +40,7 @@ function spec(name: string, env: AgentSpec['env']): AgentSpec {
     env,
     file: null,
     model: null,
+    ...extra,
   } as AgentSpec;
 }
 
@@ -69,6 +76,51 @@ describe('effectiveRunningAgent', () => {
 
   test('surrounding whitespace does not create a distinct agent', () => {
     expect(effectiveRunningAgent('  release-bot  ', 'kortix')).toBe('release-bot');
+  });
+});
+
+describe('agentGrantDiffers', () => {
+  const grant = (extra: Record<string, unknown>) =>
+    ({ agent: 'a', kortixCli: 'all', connectors: 'all', env: 'all', ...extra }) as never;
+
+  test('an identical grant is a free switch', () => {
+    expect(agentGrantDiffers(grant({}), grant({}))).toBe(false);
+  });
+
+  test('a DIFFERENT connector grant is a switch, even when secrets match', () => {
+    // The leg the secrets-only lock left open: the token's connector grant is
+    // written once at mint, so the switched-to agent would call the boot
+    // agent's connectors.
+    expect(agentGrantDiffers(grant({}), grant({ connectors: ['calendar'] }))).toBe(true);
+  });
+
+  test('a DIFFERENT kortixCli grant is a switch too', () => {
+    expect(agentGrantDiffers(grant({}), grant({ kortixCli: ['session.read'] }))).toBe(true);
+  });
+
+  test('order and duplicates in a connector list are not a difference', () => {
+    expect(
+      agentGrantDiffers(
+        grant({ connectors: ['b', 'a', 'a'] }),
+        grant({ connectors: ['a', 'b'] }),
+      ),
+    ).toBe(false);
+  });
+
+  test('connector case IS a difference — the call gate matches exactly', () => {
+    // agentMayUseConnector uses includes(), not a case-insensitive compare, so
+    // calling these equal here would predict the wrong thing at the gate.
+    expect(agentGrantDiffers(grant({ connectors: ['Calendar'] }), grant({ connectors: ['calendar'] }))).toBe(
+      true,
+    );
+  });
+
+  test('a null grant is unrestricted, and equal to an explicit all', () => {
+    expect(agentGrantDiffers(null, grant({}))).toBe(false);
+  });
+
+  test('an explicit EMPTY list is a real narrowing, not "all"', () => {
+    expect(agentGrantDiffers(null, grant({ connectors: [] }))).toBe(true);
   });
 });
 
@@ -209,6 +261,49 @@ describe('resolveSessionSecretGrant', () => {
     await expect(
       resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'narrow', requestedAgent: 'broad' }),
     ).rejects.toThrow(AgentSecretGrantMismatchError);
+  });
+
+  test('ALLOWS a switch that changes only the connector grant', async () => {
+    // Identical secrets, different connectors. This must NOT 409: per-agent
+    // `connectors:` with no `secrets:` declared is the most ordinary manifest
+    // shape there is, and the dashboard offers the switch. The connector
+    // difference is handled by re-minting the token
+    // (lib/session-token-grant.ts), which is possible precisely because those
+    // grants are checked at call time rather than already sitting in the box.
+    loadProjectAgentsImpl = async () =>
+      loaded([
+        spec('a', ['NPM_TOKEN'], { connectors: 'all' }),
+        spec('b', ['NPM_TOKEN'], { connectors: ['calendar'] }),
+      ]);
+    await expect(
+      resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'a', requestedAgent: 'b' }),
+    ).resolves.toEqual(['NPM_TOKEN']);
+  });
+
+  test('resolveSessionAgentGrant returns the RUNNING agent grant, not the session one', async () => {
+    loadProjectAgentsImpl = async () =>
+      loaded([
+        spec('a', ['NPM_TOKEN'], { connectors: 'all' }),
+        spec('b', ['NPM_TOKEN'], { connectors: ['calendar'] }),
+      ]);
+    const grant = await resolveSessionAgentGrant({
+      ...PROJECT,
+      sessionAgent: 'a',
+      requestedAgent: 'b',
+    });
+    expect(grant?.agent).toBe('b');
+    expect(grant?.connectors).toEqual(['calendar']);
+  });
+
+  test('allows a switch between agents whose grants match in every dimension', async () => {
+    loadProjectAgentsImpl = async () =>
+      loaded([
+        spec('a', ['NPM_TOKEN'], { connectors: ['calendar'], kortixCli: ['session.read'] }),
+        spec('b', ['npm_token'], { connectors: ['calendar'], kortixCli: ['session.read'] }),
+      ]);
+    await expect(
+      resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'a', requestedAgent: 'b' }),
+    ).resolves.toEqual(['npm_token']);
   });
 
   test('the default sentinel on a bound session is not treated as a switch', async () => {

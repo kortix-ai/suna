@@ -1,4 +1,11 @@
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
+import {
+  isSessionTargetVisibleToCaller,
+  isSessionVisibleTo,
+  loadSessionGrants,
+  resolveShareSubject,
+  type SecretGrant,
+  type ShareSubject,
+} from '../../executor/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
@@ -19,7 +26,7 @@ import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
 
-// Enforce the per-account project cap (free → 3, paid → effectively uncapped).
+// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
 // project. Every isolated project counts, even when another project uses the
 // same Git repository or branch.
@@ -38,12 +45,15 @@ export async function enforceProjectQuota(
     .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
   const count = counted?.count ?? 0;
   if (count >= limit) {
+    // FREE_TIER_PROJECT_LIMIT is 1, so this string is pluralized rather than
+    // hardcoded — "limited to 1 projects" reads as a bug to the user.
+    const projectsWord = limit === 1 ? 'project' : 'projects';
     return c.json(
       {
         error:
           limit === FREE_TIER_PROJECT_LIMIT
-            ? `Free accounts are limited to ${limit} projects. Upgrade to a paid plan to create more.`
-            : `This account has reached its limit of ${limit} projects.`,
+            ? `Free accounts are limited to ${limit} ${projectsWord}. Upgrade to a paid plan to create more.`
+            : `This account has reached its limit of ${limit} ${projectsWord}.`,
         code: 'project_limit_reached',
         limit,
         count,
@@ -140,6 +150,14 @@ export async function loadVisibleSession(
 export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
   sessionId: string,
+  /**
+   * The CALLER's own session when the credential is bound to one. REQUIRED —
+   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * a public share is UNAUTHENTICATED and its router is mounted before auth,
+   * so minting one against another end-user's session exposes their live app
+   * port and workspace files to anyone holding the URL.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -148,6 +166,16 @@ export async function loadSessionForSharing(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
+  // Apply only the session-bound KaaB narrowing here. Human project members
+  // must reach the sharing permission check and receive 403 when it rejects
+  // them. Session-content visibility does not govern share management.
+  if (!isSessionTargetVisibleToCaller({
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+  })) {
+    return null;
+  }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };

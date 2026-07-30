@@ -1,14 +1,17 @@
-import { buildAcpBridgeEndpoint } from '../session/runtime-transport';
 import { messagesBeforeRewind } from '../session/rewind';
-import { createAcpClient, type AcpClient } from './client';
-import { applyAcpEnvelope, createAcpProjection, type AcpProjection } from './projection';
+import { buildAcpBridgeEndpoint } from '../session/runtime-transport';
+import { type AcpClient, createAcpClient } from './client';
+import { type AcpProjection, applyAcpEnvelope, createAcpProjection } from './projection';
 import type {
   AcpContentBlock,
   AcpEnvelope,
   AcpJsonRpcId,
   AcpStreamEvent,
   AcpStreamHandle,
+  AcpTranscript,
 } from './types';
+
+type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
 import { AcpTransportError } from './types';
 
 const MAX_CONFIG_RESTART_RETRIES = 3;
@@ -22,10 +25,17 @@ class AcpRuntimeRestartError extends Error {
 }
 
 export interface AcpSessionClient {
+  initialize?(): Promise<Record<string, unknown>>;
+  newSession?(input: {
+    cwd: string;
+    mcpServers?: unknown[];
+  }): Promise<{ sessionId: string } & Record<string, unknown>>;
   connect(options: {
     onEvent(event: AcpStreamEvent): void;
     onError?(error: unknown): void;
+    lastEventId?: number;
   }): AcpStreamHandle;
+  transcript?(after?: number): Promise<AcpTranscript>;
   loadSession(input: {
     sessionId: string;
     cwd: string;
@@ -57,7 +67,21 @@ export interface AcpSessionControllerSnapshot {
 }
 
 export interface AcpSessionControllerOptions {
+  /** Durable Kortix project session id. It remains the legacy ACP id by default. */
   sessionId: string;
+  /** Sandbox process key. Supplying it enables the multi-harness ACP lifecycle. */
+  acpServerId?: string;
+  /** Harness-native conversation id. Null creates one with session/new. */
+  acpSessionId?: string | null;
+  runtimeHarness?: SessionRuntimeHarness;
+  /** Immutable harness-native agent or mode selected when the session was created. */
+  nativeAgent?: string | null;
+  /** Persist a new harness-native id before the controller accepts prompts. */
+  persistAcpSessionId?(sessionId: string): Promise<void>;
+  /** Exact authenticated platform ACP endpoint for durable transcript mode. */
+  endpoint?: string;
+  /** Load persisted envelopes and use their ordinal as the SSE cursor. */
+  durableTranscript?: boolean;
   runtimeUrl?: string;
   client?: AcpSessionClient;
   cwd?: string;
@@ -170,23 +194,37 @@ export class AcpSessionController {
     timer: ReturnType<typeof setTimeout> | null;
     resolve(): void;
   } | null = null;
+  private readonly usesManagedIdentity: boolean;
+  private readonly acpServerId: string;
+  private protocolSessionId: string | null;
   private snapshot: AcpSessionControllerSnapshot;
 
   constructor(private readonly options: AcpSessionControllerOptions) {
-    if (!options.client && !options.runtimeUrl) {
-      throw new Error('AcpSessionController requires a runtimeUrl or injected client');
+    if (!options.client && !options.endpoint && !options.runtimeUrl) {
+      throw new Error('AcpSessionController requires an endpoint, runtimeUrl, or injected client');
     }
+    this.usesManagedIdentity = !!options.acpServerId;
+    this.acpServerId = options.acpServerId ?? options.sessionId;
+    this.protocolSessionId = this.usesManagedIdentity
+      ? (asString(options.acpSessionId) ?? null)
+      : options.sessionId;
     this.client =
       options.client ??
       createAcpClient({
-        endpoint: buildAcpBridgeEndpoint(options.runtimeUrl as string, options.sessionId),
+        endpoint:
+          options.endpoint ??
+          buildAcpBridgeEndpoint(
+            options.runtimeUrl as string,
+            this.acpServerId,
+            options.runtimeHarness,
+          ),
       });
     this.snapshot = {
       ready: false,
       sending: false,
       connection: 'idle',
       error: null,
-      projection: createAcpProjection(options.sessionId),
+      projection: createAcpProjection(this.protocolSessionId ?? this.acpServerId),
       configOptions: [],
       rewind: null,
     };
@@ -214,6 +252,13 @@ export class AcpSessionController {
   private async open(): Promise<void> {
     this.resetCanonicalSessionState();
     this.patch({ connection: 'connecting', error: null });
+    if (this.usesManagedIdentity) {
+      if (!this.client.initialize) {
+        throw new Error('ACP client does not support initialize');
+      }
+      await this.client.initialize();
+    }
+    const transcriptOrdinal = await this.hydrateTranscript();
     if (!this.stream) {
       this.stream = this.client.connect({
         onEvent: (event) => this.onEnvelope(event.envelope),
@@ -225,6 +270,7 @@ export class AcpSessionController {
             error: error instanceof Error ? error : new Error(String(error)),
           });
         },
+        ...(transcriptOrdinal > 0 ? { lastEventId: transcriptOrdinal } : {}),
       });
     }
     try {
@@ -243,15 +289,60 @@ export class AcpSessionController {
   private resetCanonicalSessionState(): void {
     this.openRequests.clear();
     this.patch({
-      projection: createAcpProjection(this.options.sessionId),
+      projection: createAcpProjection(this.protocolSessionId ?? this.acpServerId),
     });
   }
 
+  private async hydrateTranscript(): Promise<number> {
+    if (!this.options.durableTranscript || !this.client.transcript) {
+      return 0;
+    }
+    const transcript = await this.client.transcript();
+    let projection = this.snapshot.projection;
+    let lastOrdinal = 0;
+    for (const row of transcript.envelopes) {
+      lastOrdinal = Math.max(lastOrdinal, row.ordinal);
+      projection = applyAcpEnvelope(projection, row.envelope);
+      if ('method' in row.envelope && 'id' in row.envelope && isObject(row.envelope.params)) {
+        this.openRequests.set(String(row.envelope.id), {
+          id: row.envelope.id,
+          params: row.envelope.params,
+        });
+      } else if ('id' in row.envelope && !('method' in row.envelope)) {
+        this.openRequests.delete(String(row.envelope.id));
+      }
+    }
+    this.patch({ projection });
+    return lastOrdinal;
+  }
+
   private async loadCanonicalSession(): Promise<void> {
-    const loaded = await this.client.loadSession({
-      sessionId: this.options.sessionId,
+    let loaded: Record<string, unknown>;
+    if (this.protocolSessionId) {
+      loaded = await this.client.loadSession({
+        sessionId: this.protocolSessionId,
       cwd: this.options.cwd ?? '/workspace',
     });
+    } else {
+      if (!this.client.newSession) {
+        throw new Error('ACP client does not support session/new');
+      }
+      const created = await this.client.newSession({
+        cwd: this.options.cwd ?? '/workspace',
+        mcpServers: [],
+      });
+      const createdSessionId = asString(created.sessionId);
+      if (!createdSessionId) {
+        throw new Error('ACP session/new returned no sessionId');
+      }
+      if (createdSessionId === this.acpServerId) {
+        throw new Error('ACP session/new overloaded acp_server_id as acp_session_id');
+      }
+      await this.options.persistAcpSessionId?.(createdSessionId);
+      this.protocolSessionId = createdSessionId;
+      this.resetCanonicalSessionState();
+      loaded = created;
+    }
     const configOptions = Array.isArray(loaded.configOptions)
       ? loaded.configOptions.filter(isObject)
       : [];
@@ -278,7 +369,8 @@ export class AcpSessionController {
     if (!this.snapshot.ready || this.runtimeReload) return;
     this.resetCanonicalSessionState();
     this.patch({ ready: false, connection: 'connecting', error: null });
-    const reload = this.loadCanonicalSession()
+    const reload = this.hydrateTranscript()
+      .then(() => this.loadCanonicalSession())
       .catch((error) => {
         this.patch({
           ready: false,
@@ -315,6 +407,13 @@ export class AcpSessionController {
     } finally {
       this.restartWaiters.delete(restart);
     }
+  }
+
+  private requireProtocolSessionId(): string {
+    if (!this.protocolSessionId) {
+      throw new Error('ACP harness-native session is not ready');
+    }
+    return this.protocolSessionId;
   }
 
   send(
@@ -356,13 +455,22 @@ export class AcpSessionController {
         try {
           if (options.model) {
             await this.raceWithRuntimeRestart(
-              this.client.setSessionConfigOption(this.options.sessionId, 'model', options.model),
+              this.client.setSessionConfigOption(
+                this.requireProtocolSessionId(),
+                'model',
+                options.model,
+              ),
               generation,
             );
           }
-          if (options.agent) {
+          const nativeAgent = this.usesManagedIdentity ? this.options.nativeAgent : options.agent;
+          if (nativeAgent) {
             await this.raceWithRuntimeRestart(
-              this.client.setSessionConfigOption(this.options.sessionId, 'mode', options.agent),
+              this.client.setSessionConfigOption(
+                this.requireProtocolSessionId(),
+                'mode',
+                nativeAgent,
+              ),
               generation,
             );
           }
@@ -387,7 +495,7 @@ export class AcpSessionController {
           jsonrpc: '2.0',
           method: 'session/update',
           params: {
-            sessionId: this.options.sessionId,
+            sessionId: this.requireProtocolSessionId(),
             update: {
               sessionUpdate: 'user_message_chunk',
               content: { type: 'text', text },
@@ -396,7 +504,7 @@ export class AcpSessionController {
         });
       }
       if (this.snapshot.rewind) this.patch({ rewind: null });
-      const promptOperation = this.client.prompt(this.options.sessionId, prompt);
+      const promptOperation = this.client.prompt(this.requireProtocolSessionId(), prompt);
       let result: Awaited<ReturnType<AcpSessionClient['prompt']>>;
       try {
         result = await this.raceWithRuntimeRestart(promptOperation, generation);
@@ -428,7 +536,7 @@ export class AcpSessionController {
   }
 
   async cancel(): Promise<void> {
-    await this.client.cancel(this.options.sessionId);
+    await this.client.cancel(this.requireProtocolSessionId());
     this.discardPromptSettlement();
     this.patch({
       projection: {
@@ -445,7 +553,7 @@ export class AcpSessionController {
     if (this.snapshot.sending) throw new Error('Cannot rewind a busy ACP session');
     if (!this.snapshot.ready) await this.connect();
     const canonicalMessageId = await this.resolveRewindMessageId(messageId);
-    await this.client.revertSession(this.options.sessionId, canonicalMessageId);
+    await this.client.revertSession(this.requireProtocolSessionId(), canonicalMessageId);
     this.patch({ rewind: { messageId: canonicalMessageId } });
     this.resetCanonicalSessionState();
     await this.loadCanonicalSession();
@@ -456,9 +564,7 @@ export class AcpSessionController {
     const optimisticUsers = this.snapshot.projection.messages.filter(
       (message) => message.info.role === 'user',
     );
-    const optimisticIndex = optimisticUsers.findIndex(
-      (message) => message.info.id === messageId,
-    );
+    const optimisticIndex = optimisticUsers.findIndex((message) => message.info.id === messageId);
     const optimisticText = optimisticUsers[optimisticIndex]?.parts
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
@@ -490,7 +596,7 @@ export class AcpSessionController {
   async restoreRewind(): Promise<void> {
     if (!this.snapshot.rewind) return;
     if (this.snapshot.sending) throw new Error('Cannot restore a busy ACP session');
-    await this.client.unrevertSession(this.options.sessionId);
+    await this.client.unrevertSession(this.requireProtocolSessionId());
     this.patch({ rewind: null });
     this.resetCanonicalSessionState();
     await this.loadCanonicalSession();
@@ -563,7 +669,7 @@ export class AcpSessionController {
       envelope.method === 'kortix/runtime_ready' &&
       (!isObject(envelope.params) ||
         envelope.params.sessionId === null ||
-        envelope.params.sessionId === this.options.sessionId)
+        envelope.params.sessionId === this.protocolSessionId)
     ) {
       this.onRuntimeReady();
     }

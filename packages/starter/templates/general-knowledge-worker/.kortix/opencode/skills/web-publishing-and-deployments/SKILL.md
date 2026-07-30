@@ -1,13 +1,96 @@
 ---
 name: web-publishing-and-deployments
-description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile), and points at find-skills-sh for other providers and deeper provider-specific skills."
+description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile). Also owns the publish GUARDRAILS: never publish unprompted, how to honestly take a site down, the runtime-dependency and data-persistence checks, and the mandatory pre-publish security review. Points at kortix-marketplace for other providers and deeper provider-specific skills."
 defaultProjectInstall: true
 ---
 
 # Web Publishing & Deployments
 
-Get a site or app that exists in the sandbox onto a public URL. There are two
-worlds, and picking the right one is 90% of the job:
+Get a site or app that exists in the sandbox onto a public URL — and decide
+whether it should go up at all. **When** to publish is the first half of this
+skill; **how** is the second.
+
+## Never publish unprompted
+
+Default posture: **everything stays a local preview until the user explicitly
+asks to go live.** Previewing is free and re-runnable; publishing is a
+deliberate, opt-in step that puts code on a URL other people can reach.
+
+Publish only when the user asks in plain terms — "publish this", "make it
+live", "give me a real/permanent/shareable link", "put this online", "I want to
+send this to people".
+
+- **Never publish unprompted.** If the site looks finished and you suspect
+  they'll want it live, *offer* — "Want me to publish this to a shareable
+  URL?" — and wait for the yes.
+- **Don't auto-republish after edits.** Re-running a local preview is fine any
+  time. Pushing changes to a live URL is not — offer, then wait.
+- **Don't publish from memory.** If you believe a site went live earlier but the
+  current state doesn't confirm it's still up, assume the user took it down on
+  purpose. Re-publish only on a fresh, explicit request.
+- **Subagents never publish.** Approval only routes back to the main thread.
+  Finish the build, verify the preview, hand the project path back.
+
+## Taking a published site down
+
+You cannot quietly revoke a live URL, and you must never fake a takedown by
+overwriting the site with a blank page, a placeholder, or a redirect — that
+leaves confusing, half-broken state and is not a real unpublish. Point the user
+at the real control (their deploy platform's dashboard, or stopping the shared
+sandbox preview), leave the project files untouched, and say plainly that a
+shared preview URL is public-by-link if they asked for privacy.
+
+## Before you publish
+
+1. **Verify the live build, not just the source.** Start the server, exercise
+   the real URL, and confirm the *built* output works. Don't grep the source and
+   assume.
+2. **Run the pre-publish security review** — mandatory, every publish. See
+   "Security review" below.
+3. **Flag runtime-only dependencies that won't survive publishing.** API keys
+   set in the dev environment aren't automatically present in a standalone
+   deployment, and anything reaching back into the Kortix agent runtime or its
+   connectors has no bridge once deployed. Scan first:
+
+   ```bash
+   grep -rn -E "(ANTHROPIC_API_KEY|OPENAI_API_KEY|ELEVENLABS_API_KEY|generate_image|generate_video|generate_audio)" \
+     --include='*.py' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
+     --exclude-dir=node_modules --exclude-dir=dist . 2>/dev/null
+   ```
+
+   For each hit: refactor it out (bake the output as a static asset at build
+   time — cleanest), provision the credential on the deploy host, or tell the
+   user the feature will be degraded and let them choose.
+4. **Disclose data-persistence limits.** If the app stores user-submitted data
+   in SQLite, an in-memory store, or a local file, that data is not durable on
+   an ephemeral host. Say so plainly *before* publishing, once per publish, in
+   non-technical terms. For real multi-user persistence use Supabase, with the
+   URL and anon key provisioned as production env vars — never hardcoded into
+   the shipped bundle.
+5. **Use secure cookies behind the preview proxy.** Sites served through the
+   sandbox preview proxy sit behind Kortix's domain — set `Secure`,
+   explicitly-named, properly-scoped session cookies rather than relying on
+   framework defaults.
+
+## Security review
+
+Before publishing, run a security-review **subagent** with the prompt in
+`references/security-review-prompt.md`. The checks are mostly grep/bash, so a
+fast, cheap model is fine. Pass it `{{project_path}}` (absolute path) and
+`{{context}}` (one or two lines on what the site is and whether it handles user
+data — "public marketing page, no user data" vs "small-team task tracker backed
+by Supabase") so it can calibrate severity.
+
+- **BLOCK** (exposed secrets, leaked credentials, critical exploitable
+  vulnerabilities): fix what you can automatically — pull hardcoded keys into
+  env vars, add `.env` to `.gitignore`. If a fix needs the user, surface it and
+  stop. **Never publish over an unaddressed BLOCK.**
+- **WARN**: present it and let the user decide.
+
+---
+
+Once the user has said yes and the checks are clean, there are two worlds, and
+picking the right one is 90% of the job:
 
 - **Instant & throwaway** — a live URL in seconds, **no account, no login**, for
   a preview/demo the user can click and share. It self-destructs after ~1 hour
@@ -19,6 +102,11 @@ Always build the site first (`npm run build`, etc.) so you're publishing the
 final output directory (`dist/`, `out/`, `build/`, `.next/`, …), not source.
 
 ## Which one?
+
+**First, check whether the project already answers this.** If the repo targets a
+host — a Vercel or Cloudflare config, a Dockerfile, a CI deploy step — use that
+exact workflow. Don't invent a competing one. The table below is for projects
+with no deploy target of their own.
 
 | The user wants… | Use | Account needed? |
 | --- | --- | --- |
@@ -81,22 +169,22 @@ Vercel account/token. Full detail: **`references/vercel.md`**.
    public URL** — anything you deploy this way is world-readable. Treat a public
    URL as public.
 
-## Other providers & going deeper (`find-skills-sh`)
+## Other providers & going deeper (`kortix-marketplace`)
 
 This skill covers the two fast paths (Cloudflare + Vercel) inline. For anything
 beyond that — **a different provider** (Netlify, Render, Fly.io, AWS, Deno
 Deploy, GitHub Pages, Railway, …) or a **deeper, provider-specific skill** for
 Vercel or Cloudflare (full framework configs, edge functions, DNS/domains, CI) —
-use the **`find-skills-sh`** skill to search the open ecosystem and install a
+use the **`kortix-marketplace`** skill to search the catalog and import a
 battle-tested one:
 
 ```bash
-npx skills find "netlify deploy"
-npx skills find "cloudflare workers"
-npx skills find "vercel deployment"
-npx skills find "fly.io deploy docker"
+kortix marketplace search "netlify deploy" --json
+kortix marketplace search "cloudflare workers" --json
+kortix marketplace search "fly.io deploy docker" --json
 ```
 
-Reach for `find-skills-sh` whenever the user names a provider this skill doesn't
-cover, or wants richer, dedicated Vercel/Cloudflare tooling than the quickstarts
-here — pull in and use the specialized skill rather than hand-rolling it.
+Reach for `kortix-marketplace` whenever the user names a provider this skill
+doesn't cover, or wants richer, dedicated Vercel/Cloudflare tooling than the
+quickstarts here — import and use the specialized skill rather than
+hand-rolling it.

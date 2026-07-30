@@ -38,6 +38,11 @@ module "network" {
   az_count           = 2
   single_nat_gateway = false
   tags               = local.tags
+
+  # compliance-monitoring owns this VPC's default NACL (aws_default_network_acl.use2)
+  # and points its subnets at aws_network_acl.use2_restricted. Adopting it here too
+  # would make the two roots overwrite each other on every apply.
+  manage_default_network_acl = false
 }
 
 module "certificate" {

@@ -1,0 +1,300 @@
+// What the PROXY treats as an observation that a sandbox is still wanted, and
+// what it does when the box has burned its whole 24-hour stretch.
+//
+// Three defects review found in the first cut of the deadline model, all of them
+// user-visible:
+//
+//  1. A human clicking through the dev server their agent just built extended
+//     NOTHING, so the live preview died 15 minutes after the last AGENT turn
+//     while the user was still using it — a worse regression than the zombie
+//     boxes the model exists to kill.
+//  2. At the absolute run cap the extend clamps into the past, so the prompt was
+//     ACCEPTED and the reaper stopped the box seconds later, mid-work, with the
+//     user's message swallowed. Accepting work you are about to kill is worse
+//     than refusing it.
+//  3. Passive traffic on the session-data ports must STILL not count — that
+//     resurrection is what produced 1,597 phantom-active compute rows.
+//
+// `mock.module` is process-global in bun, so this lives in its own file.
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realRequestContext from '../../lib/request-context';
+
+const ACTIVE_RECORD = {
+  sandboxId: 'sb-1',
+  status: 'active',
+  serviceKey: 'svc-key',
+  sessionId: 'sess-1',
+  projectId: 'proj-1',
+  accountId: 'acct-1',
+  externalId: 'ext-1',
+  agentName: 'default',
+  provider: 'daytona',
+};
+
+/** Every deadline write the proxy attempts, with the grant it asked for. */
+let extends_: Array<{ target: unknown; grantMs: number | undefined }> = [];
+/** What observeTurnStart answers — the box's remaining stretch, in effect. */
+let turnStartObservation: 'granted' | 'at_cap' | 'no_box' = 'granted';
+let observeCalls: unknown[] = [];
+let parkCalls: unknown[] = [];
+
+let upstreamPort = 3000;
+
+mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
+mock.module('../../lib/request-context', () => ({
+  ...realRequestContext,
+  getTraceHeaders: () => ({}),
+}));
+mock.module('../../shared/kortix-user-context', () => ({
+  KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
+}));
+mock.module('../../shared/preview-ownership', () => ({
+  canAccessPreviewSandbox: async () => true,
+  canAccessSandboxSession: async () => true,
+}));
+mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async () => {},
+}));
+mock.module('../../projects/lib/session-token-grant', () => ({
+  remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
+  SessionGrantRemintError: class SessionGrantRemintError extends Error {},
+}));
+mock.module('../../projects/opencode-session-snapshot', () => ({
+  scheduleOpencodeSnapshotSync: () => {},
+}));
+mock.module('../../projects/routes/shared', () => ({
+  resumeStoppedSandboxByExternalId: async () => true,
+}));
+mock.module('../../projects/reaping/stop-box', () => ({
+  parkBoxAtRunCap: async (row: unknown) => {
+    parkCalls.push(row);
+  },
+}));
+
+// The deadline module is stubbed only where it TALKS TO THE DATABASE. The
+// classifiers (isTurnStartRequest / isPreviewUseObservation / isSandboxAuthored)
+// and the grant sizes are the REAL ones, because the thing under test here is
+// which requests reach a writer and with what grant.
+const realDeadline = await import('../../projects/sandbox-deadline-policy');
+mock.module('../../projects/sandbox-deadline', () => ({
+  ...realDeadline,
+  extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
+    extends_.push({ target, grantMs });
+  },
+  observeTurnStart: async (target: unknown) => {
+    observeCalls.push(target);
+    return turnStartObservation;
+  },
+}));
+
+mock.module('../backend', () => ({
+  loadSandbox: async () => ({ ...ACTIVE_RECORD }),
+  routeSandboxIngress: () => ({ effectivePort: upstreamPort }),
+  resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),
+  buildSandboxUpstreamHeaders: async () => ({}),
+  invalidatePreviewLink: () => {},
+  markSandboxUsed: () => {},
+  markSandboxErrored: async () => {},
+  wakeSandbox: async () => {},
+}));
+
+const { forwardToSandbox } = await import('./preview');
+const { __resetPromptDedupe } = await import('../prompt-dedupe');
+
+const ORIGINAL_FETCH = globalThis.fetch;
+function respondWith(response: Response) {
+  (globalThis as { fetch: unknown }).fetch = async () => response.clone();
+}
+
+const HUMAN = {
+  kind: 'principal',
+  userId: 'u1',
+  callerSessionId: null,
+  sandboxAuthored: false,
+} as const;
+const BOX_ITSELF = {
+  kind: 'principal',
+  userId: 'u1',
+  callerSessionId: 'sess-1',
+  sandboxAuthored: true,
+} as const;
+const SHARE = { kind: 'public_share' } as const;
+
+const PROMPT_BODY = new TextEncoder().encode(
+  JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+).buffer;
+
+// The preview-use extend is throttled per BOX and the throttle is module state
+// that outlives a single test, so each test drives its own external id. Sharing
+// one would let a later assertion of "no extend" pass because an earlier test had
+// already consumed the window.
+let boxCounter = 0;
+let externalId = 'ext-0';
+
+function get(access: typeof HUMAN | typeof BOX_ITSELF | typeof SHARE, path: string, port = 3000) {
+  upstreamPort = port;
+  return forwardToSandbox(
+    externalId,
+    port,
+    access,
+    'GET',
+    path,
+    '',
+    new Headers(),
+    undefined,
+    'http://localhost',
+  );
+}
+
+function prompt(access: typeof HUMAN | typeof BOX_ITSELF) {
+  upstreamPort = 8000;
+  return forwardToSandbox(
+    externalId,
+    8000,
+    access,
+    'POST',
+    '/session/sess-1/prompt_async',
+    '',
+    new Headers({ 'content-type': 'application/json' }),
+    PROMPT_BODY,
+    'http://localhost',
+  );
+}
+
+beforeEach(() => {
+  __resetPromptDedupe();
+  extends_ = [];
+  observeCalls = [];
+  parkCalls = [];
+  turnStartObservation = 'granted';
+  upstreamPort = 3000;
+  boxCounter += 1;
+  externalId = `ext-${boxCounter}`;
+  respondWith(new Response('ok', { status: 200 }));
+});
+afterEach(() => {
+  (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
+});
+afterAll(() => {
+  (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
+});
+
+describe('a human using the live preview keeps the box alive', () => {
+  test('REGRESSION: authenticated human traffic to a dev-server port EXTENDS the box', async () => {
+    const res = await get(HUMAN, '/');
+
+    expect(res.status).toBe(200);
+    expect(extends_).toHaveLength(1);
+    expect(extends_[0].target).toEqual({ externalId });
+    // The preview grant, not the 4-hour turn grant.
+    expect(extends_[0].grantMs).toBe(realDeadline.previewGrantMs());
+  });
+
+  test('the box fetching its OWN preview extends nothing', async () => {
+    await get(BOX_ITSELF, '/');
+
+    expect(extends_).toEqual([]);
+  });
+
+  test('a public share link extends nothing', async () => {
+    await get(SHARE, '/');
+
+    expect(extends_).toEqual([]);
+  });
+
+  test('REGRESSION: passive traffic on the session-data port extends nothing', async () => {
+    await get(HUMAN, '/session', 8000);
+    await get(HUMAN, '/event', 4096);
+
+    expect(extends_).toEqual([]);
+  });
+
+  test('a non-2xx from the dev server is not an observation', async () => {
+    respondWith(new Response('nope', { status: 404 }));
+
+    await get(HUMAN, '/');
+
+    expect(extends_).toEqual([]);
+  });
+
+  test('a page load worth of requests collapses into ONE deadline write', async () => {
+    for (const asset of ['/', '/app.js', '/app.css', '/logo.svg', '/api/me']) {
+      await get(HUMAN, asset);
+    }
+
+    expect(extends_).toHaveLength(1);
+  });
+});
+
+describe('a turn start is observed BEFORE the prompt is relayed', () => {
+  test('a live box is granted its turn and the prompt goes through', async () => {
+    turnStartObservation = 'granted';
+
+    const res = await prompt(HUMAN);
+
+    expect(observeCalls).toEqual([{ externalId }]);
+    expect(res.status).toBe(200);
+    expect(parkCalls).toEqual([]);
+  });
+
+  // ═══ THE DEFECT ═══ the observation used to happen AFTER the response, so a
+  // box at its cap accepted the prompt and was stopped by the reaper seconds
+  // later — mid-work, message swallowed.
+  test('REGRESSION: a box at its 24h cap REFUSES the prompt instead of eating it', async () => {
+    turnStartObservation = 'at_cap';
+
+    const res = await prompt(HUMAN);
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { code?: string; retry?: boolean };
+    expect(body.code).toBe('sandbox_run_cap_reached');
+    expect(body.retry).toBe(true);
+  });
+
+  test('the refused box is PARKED, so the very next prompt re-anchors a fresh stretch', async () => {
+    turnStartObservation = 'at_cap';
+
+    await prompt(HUMAN);
+    // The park is scheduled through a dynamic import; let the microtasks drain.
+    await Bun.sleep(5);
+
+    expect(parkCalls).toHaveLength(1);
+    expect(parkCalls[0]).toMatchObject({
+      sandboxId: 'sb-1',
+      sessionId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+    });
+  });
+
+  test('the refusal does NOT reach the sandbox at all', async () => {
+    turnStartObservation = 'at_cap';
+    let fetched = 0;
+    (globalThis as { fetch: unknown }).fetch = async () => {
+      fetched += 1;
+      return new Response('ok', { status: 200 });
+    };
+
+    await prompt(HUMAN);
+
+    expect(fetched).toBe(0);
+  });
+
+  // A refusal must not consume the caller's idempotency claim, or their retry
+  // short-circuits to a bogus 200 "duplicate" and the message is lost forever.
+  test('a refusal leaves the prompt-dedupe claim free for the retry', async () => {
+    turnStartObservation = 'at_cap';
+    await prompt(HUMAN);
+
+    turnStartObservation = 'granted';
+    const retry = await prompt(HUMAN);
+
+    expect(retry.status).toBe(200);
+  });
+
+  test('the BOX cannot observe its own turn start', async () => {
+    await prompt(BOX_ITSELF);
+
+    expect(observeCalls).toEqual([]);
+  });
+});

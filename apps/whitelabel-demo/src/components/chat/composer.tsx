@@ -13,6 +13,11 @@ type Command = { name: string; description: string | null };
  * newlines. Typing "/" opens a project-command menu (server-side `commands`);
  * picking + sending a "/cmd args" line runs it via `onCommand` instead of
  * sending a text prompt. While the agent is busy the send button stops the run.
+ *
+ * `footer` sits BELOW the card rather than in `toolbar`: it carries the session's
+ * scope, which is mostly read-only facts about what this session may reach, and
+ * putting that inside the input's own control row would read as more send-time
+ * options.
  */
 export function Composer({
   onSend,
@@ -21,6 +26,7 @@ export function Composer({
   disabled,
   placeholder = 'Message the agent…',
   toolbar,
+  footer,
   commands,
   onCommand,
 }: {
@@ -30,6 +36,8 @@ export function Composer({
   disabled?: boolean;
   placeholder?: string;
   toolbar?: ReactNode;
+  /** Rendered under the input card — see above. */
+  footer?: ReactNode;
   commands?: Command[];
   onCommand?: (name: string, args: string) => void;
 }) {
@@ -186,6 +194,8 @@ export function Composer({
           )}
         </div>
       </div>
+
+      {footer}
     </div>
   );
 }

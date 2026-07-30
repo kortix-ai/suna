@@ -1,11 +1,22 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
+import { useQuery } from '@tanstack/react-query';
+import { type ProjectConfigSummary, getProjectDetail } from '../../core/rest/projects-client';
+import { getClient } from '../../core/runtime/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
-import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
+import { CACHE_SCOPE_GLOBAL, LS_AGENTS, getLSCache, setLSCache, unwrap } from './shared';
+
+/**
+ * Runtime-neutral agent metadata layered onto the published OpenCode `Agent`
+ * contract. All added fields are optional so existing `Agent` consumers remain
+ * source-compatible.
+ */
+export type RuntimeAgent = Agent & {
+  runtime?: string | null;
+  harness?: ProjectConfigSummary['agents'][number]['harness'];
+  nativeAgent?: string | null;
+};
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
@@ -29,7 +40,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
     : directory
       ? `dir:${directory}`
       : CACHE_SCOPE_GLOBAL;
-  return useQuery<Agent[]>({
+  return useQuery<RuntimeAgent[]>({
     queryKey: projectId
       ? ['project-detail', projectId, 'agents']
       : directory
@@ -45,9 +56,9 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       const client = getClient();
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
-      const agents: Agent[] = Array.isArray(data)
+      const agents: RuntimeAgent[] = Array.isArray(data)
         ? data
-        : Object.values(data as Record<string, Agent>);
+        : Object.values(data as Record<string, RuntimeAgent>);
       // Agents are defined in the project repo (.kortix/opencode/agents), so the
       // roster is stable across every session that shares a working directory.
       // Cache under a directory-scoped (or global) STABLE key — not the
@@ -57,9 +68,9 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       setLSCache(LS_AGENTS, agents, cacheScope);
       return agents;
     },
-    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
+    placeholderData: () => getLSCache<RuntimeAgent[]>(LS_AGENTS, cacheScope),
     enabled: projectId ? true : runtimeReady,
-    staleTime: projectId ? 30_000 : Infinity,
+    staleTime: projectId ? 30_000 : Number.POSITIVE_INFINITY,
     gcTime: 10 * 60 * 1000,
   });
 }
@@ -69,7 +80,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
  * "first visible agent" fallback agrees with the project contract. Explicit
  * per-session/user picks still resolve by name and therefore keep precedence.
  */
-export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
+export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): RuntimeAgent[] {
   const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
   const defaultName = config.default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
@@ -80,14 +91,19 @@ export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary
   });
 }
 
-function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
+function projectConfigAgentToOpenCodeAgent(
+  agent: ProjectConfigSummary['agents'][number],
+): RuntimeAgent {
   return {
     name: agent.name,
     description: agent.description ?? undefined,
     mode: agent.mode ?? undefined,
     source: agent.source,
     hidden: agent.enabled === false,
-  } as unknown as Agent;
+    runtime: agent.runtime ?? null,
+    harness: agent.harness ?? null,
+    nativeAgent: agent.native_agent ?? null,
+  } as unknown as RuntimeAgent;
 }
 
 export function useOpenCodeAgent(agentName: string) {
@@ -101,6 +117,6 @@ export function useOpenCodeAgent(agentName: string) {
       return agents.find((a: Agent) => a.name === agentName);
     },
     enabled: runtimeReady && !!agentName,
-    staleTime: Infinity,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }

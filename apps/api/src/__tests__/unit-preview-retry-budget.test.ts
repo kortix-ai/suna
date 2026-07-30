@@ -24,4 +24,14 @@ describe('preview proxy retry budget', () => {
       }),
     ).toBe(PROXY_ATTEMPT_TIMEOUT_MS);
   });
+
+  test('allows a blocking ACP prompt to use the remaining proxy budget', () => {
+    expect(
+      proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, {
+        method: 'POST',
+        path: '/kortix/acp/project-session-1',
+        acpPrompt: true,
+      }),
+    ).toBe(PROXY_RETRY_BUDGET_MS - 500);
+  });
 });

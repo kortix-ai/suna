@@ -397,6 +397,29 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(false);
   });
 
+  test('classifies a provider no-capacity response as transient capacity failure', async () => {
+    providerCreateErrors.daytona =
+      'platinum POST /v1/sandboxes -> 503 {"error":"no capacity","code":"unavailable"}';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await failed;
+
+    const failureCalls = updateCalls.filter(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'error' &&
+        'metadata' in call.updates,
+    );
+    expect(failureCalls.at(-1)?.updates.metadata).toMatchObject({
+      failureCategory: 'provider-capacity',
+      errorMessage:
+        'The sandbox provider is at capacity right now. Try again in a minute.',
+    });
+  });
+
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
     providerFallbackEnabled = true;
     providerCreateErrors.e2b = 'E2B unavailable';

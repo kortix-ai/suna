@@ -1,0 +1,73 @@
+{
+  "mode": "opencode",
+  "scenario": "acp-warmed",
+  "command": "/Users/markokraemer/.opencode/bin/opencode",
+  "version": "1.18.7",
+  "runs": 3,
+  "summary": {
+    "process_spawn_ms": {
+      "n": 3,
+      "min": 1.125,
+      "p50": 1.147,
+      "p90": 1.214,
+      "max": 1.214
+    },
+    "first_output_ms": {
+      "n": 3,
+      "min": 434.452,
+      "p50": 436.058,
+      "p90": 439.005,
+      "max": 439.005
+    },
+    "initialize_ms": {
+      "n": 3,
+      "min": 521.146,
+      "p50": 522.31,
+      "p90": 530.729,
+      "max": 530.729
+    },
+    "session_new_ms": {
+      "n": 3,
+      "min": 169.776,
+      "p50": 170.502,
+      "p90": 176.138,
+      "max": 176.138
+    },
+    "total_ms": {
+      "n": 3,
+      "min": 692.747,
+      "p50": 699.636,
+      "p90": 701.623,
+      "max": 701.623
+    }
+  },
+  "samples": [
+    {
+      "run": 1,
+      "process_spawn_ms": 1.214,
+      "first_output_ms": 436.058,
+      "initialize_ms": 522.31,
+      "session_new_ms": 176.138,
+      "total_ms": 699.636,
+      "error": null
+    },
+    {
+      "run": 2,
+      "process_spawn_ms": 1.125,
+      "first_output_ms": 434.452,
+      "initialize_ms": 521.146,
+      "session_new_ms": 170.502,
+      "total_ms": 692.747,
+      "error": null
+    },
+    {
+      "run": 3,
+      "process_spawn_ms": 1.147,
+      "first_output_ms": 439.005,
+      "initialize_ms": 530.729,
+      "session_new_ms": 169.776,
+      "total_ms": 701.623,
+      "error": null
+    }
+  ]
+}

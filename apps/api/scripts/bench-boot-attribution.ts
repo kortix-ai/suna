@@ -27,11 +27,13 @@
  *   cd apps/api
  *   BENCH_DB_URL="$(dotenvx get DATABASE_URL -f .env.prod)" \
  *   BENCH_TOKEN=... BENCH_API=https://api.kortix.com \
- *   BENCH_TARGETS='[{"label":"daytona","projectId":"..."},{"label":"platinum","projectId":"..."}]' \
+ *   BENCH_TARGETS='[{"label":"daytona","projectId":"...","provider":"daytona"},{"label":"platinum","projectId":"...","provider":"platinum"}]' \
  *   bun run scripts/bench-boot-attribution.ts
  *
  * Env:
- *   BENCH_TARGETS   JSON array of {label, projectId}. Required.
+ *   BENCH_TARGETS   JSON array of {label, projectId, provider?, repoUrl?,
+ *                   baseSha?}. Required. Optional source fields are copied to
+ *                   the raw result.
  *   BENCH_DB_URL    Postgres URL for host-side transitions. Required.
  *   BENCH_API       API base origin (default https://api.kortix.com).
  *   BENCH_TOKEN     kortix_pat_… Required. Read from env only, never from a
@@ -64,7 +66,13 @@ const DB_URL = process.env.BENCH_DB_URL ?? '';
 //      js/file-data-in-outbound-request), rather than suppressing the alert.
 const TOKEN = (process.env.BENCH_TOKEN ?? '').trim();
 
-interface Target { label: string; projectId: string }
+interface Target {
+  label: string;
+  projectId: string;
+  provider?: string;
+  repoUrl?: string;
+  baseSha?: string;
+}
 const TARGETS: Target[] = JSON.parse(process.env.BENCH_TARGETS ?? '[]');
 
 if (!TARGETS.length || !DB_URL || !TOKEN) {
@@ -80,6 +88,7 @@ interface Boot {
   target: string;
   round: number;
   sessionId: string | null;
+  externalId: string | null;
   provider: string | null;
   /** Snapshot the session actually booted from — distinguishes a warm (ppwarm) image from a cold one. */
   image: string | null;
@@ -115,7 +124,8 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
 /** One boot, fully attributed. Never throws — a failed boot is recorded as one. */
 async function measureBoot(target: Target, round: number): Promise<Boot> {
   const boot: Boot = {
-    target: target.label, round, sessionId: null, provider: null, image: null, imageKind: 'unknown',
+    target: target.label, round, sessionId: null, externalId: null,
+    provider: null, image: null, imageKind: 'unknown',
     apiCreateMs: null, vmCreatedMs: null, rowActiveMs: null,
     daemonReachableMs: null, runtimeReadyMs: null, hostMarks: null, bootTimeline: null,
   };
@@ -125,7 +135,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
   try {
     const res = await api(`/v1/projects/${target.projectId}/sessions`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(target.provider ? { provider: target.provider } : {}),
     });
     boot.apiCreateMs = at();
     const body: any = await res.json().catch(() => null);
@@ -168,6 +178,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
         if (row.external_id && boot.vmCreatedMs === null) {
           boot.vmCreatedMs = at();
           externalId = row.external_id;
+          boot.externalId = externalId;
           healthPolling = pollHealth(externalId!);
         }
         if (row.status === 'active' && boot.rowActiveMs === null) boot.rowActiveMs = at();
@@ -274,7 +285,12 @@ function report(boots: Boot[]): void {
 
 async function main() {
   console.error(`session-boot attribution — API ${API}, ${ROUNDS} rounds/target`);
-  console.error(`targets: ${TARGETS.map((t) => `${t.label}(${t.projectId.slice(0, 8)})`).join(', ')}\n`);
+  console.error(
+    `targets: ${TARGETS.map((t) => {
+      const provider = t.provider ? `/${t.provider}` : '';
+      return `${t.label}${provider}(${t.projectId.slice(0, 8)})`;
+    }).join(', ')}\n`,
+  );
 
   const results = await Promise.all(
     TARGETS.map(async (t) => {
@@ -289,7 +305,17 @@ async function main() {
   const boots = results.flat();
   report(boots);
 
-  const json = JSON.stringify({ api: API, rounds: ROUNDS, boots }, null, 1);
+  const json = JSON.stringify(
+    {
+      generatedAt: new Date().toISOString(),
+      api: API,
+      rounds: ROUNDS,
+      targets: TARGETS,
+      boots,
+    },
+    null,
+    1,
+  );
   if (process.env.BENCH_OUT) {
     writeFileSync(process.env.BENCH_OUT, json);
     console.error(`\nraw → ${process.env.BENCH_OUT}`);

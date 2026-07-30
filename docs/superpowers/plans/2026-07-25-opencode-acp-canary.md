@@ -1,5 +1,9 @@
 # OpenCode ACP canary implementation plan
 
+> **Historical plan.** The active implementation supports OpenCode, Claude
+> Code, Codex, and Pi through immutable v3 runtime profiles. Use
+> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`.
+
 **Spec:** `docs/superpowers/specs/2026-07-25-opencode-acp-canary-design.md`
 
 ## Task 1: Native process and protocol core

@@ -17,7 +17,6 @@
 
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
-import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
@@ -36,6 +35,7 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
 } from './constants';
+import { type ManifestFormat, parseManifestText } from './format';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
 // imports them itself — but are kept in the re-export block just below for
@@ -47,6 +47,7 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+import { validateAgentsV3, validateManifestCrossRefsV3, validateRuntimesV3 } from './index.v3';
 
 export {
   type ManifestFormat,
@@ -100,6 +101,7 @@ export {
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
+  V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 
@@ -124,6 +126,17 @@ export {
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
+export {
+  type HarnessV3,
+  type RuntimeBlockV3,
+  type AgentBlockV3,
+  type ManifestV3,
+  type RuntimesV3Scan,
+  type AgentsV3Scan,
+  validateRuntimesV3,
+  validateAgentsV3,
+  validateManifestCrossRefsV3,
+} from './index.v3';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -137,7 +150,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 2;
+const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -219,7 +232,9 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
+  if (version === 3) {
+    validateManifestBodyV3(parsed, format, issues);
+  } else if (version === 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -230,6 +245,39 @@ export function validateManifest(
     parsed,
     issues,
   };
+}
+
+function validateManifestBodyV3(
+  parsed: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): void {
+  validateProject(parsed.project, 'project', issues);
+  validateEnv(parsed.env, 'env', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
+  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  rejectRetiredApps(parsed.apps, 'apps', issues);
+  rejectChannelsV2(parsed.channels, 'channels', issues);
+  if (parsed.runtime !== undefined) {
+    issues.push({
+      path: 'runtime',
+      message: 'kortix_version 3 uses the `runtimes` map.',
+      severity: 'error',
+    });
+  }
+  if (parsed.opencode !== undefined) {
+    issues.push({
+      path: 'opencode',
+      message: 'kortix_version 3 configures OpenCode through a runtime profile.',
+      severity: 'error',
+    });
+  }
+  const runtimes = validateRuntimesV3(parsed.runtimes, 'runtimes', issues);
+  const agents = validateAgentsV3(parsed.agents, 'agents', issues);
+  validateManifestCrossRefsV3(parsed.default_agent, agents, runtimes, issues);
+  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agents.names, issues);
 }
 
 /**
@@ -332,7 +380,7 @@ export function validateGrantList(
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
-  version: 1 | 2 = 1,
+  version: 1 | 2 | 3 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -370,10 +418,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+            version >= 2
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: version >= 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -387,7 +435,12 @@ export function validateGrantList(
 }
 
 /** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
-function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateAgents(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -473,11 +526,10 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (version >= 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
-      message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+      message: `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml.`,
       severity: 'error',
     });
     return version;
@@ -555,7 +607,12 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandbox(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -612,13 +669,17 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
   }
 }
 
-function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandboxTemplates(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message:
-        listSectionHint('sandbox.templates', format),
+      message: listSectionHint('sandbox.templates', format),
       severity: 'error',
     });
     return;
@@ -733,7 +794,12 @@ function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[])
   });
 }
 
-function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateTriggers(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -926,7 +992,13 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  version: 1 | 2 = 1,
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1048,8 +1120,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
-        message:
-          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
+        message: `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1138,7 +1209,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
-        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
+        if (
+          t === 'oauth1' &&
+          provider !== 'openapi' &&
+          provider !== 'postman' &&
+          provider !== 'http'
+        ) {
           issues.push({
             path: `${where}.auth.type`,
             message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
@@ -1162,12 +1238,15 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if (entry.headers !== undefined) {
       const parsedHeaders = parseConnectorHeaders(entry.headers);
       if (!parsedHeaders.ok) {
-        issues.push({ path: `${where}.headers`, message: `${parsedHeaders.error}.`, severity: 'error' });
+        issues.push({
+          path: `${where}.headers`,
+          message: `${parsedHeaders.error}.`,
+          severity: 'error',
+        });
       } else if (provider === 'pipedream' || provider === 'channel') {
         issues.push({
           path: `${where}.headers`,
-          message:
-            `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
+          message: `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
           severity: 'warning',
         });
       }
@@ -1209,7 +1288,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
   });
 }
 
-function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateChannels(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({

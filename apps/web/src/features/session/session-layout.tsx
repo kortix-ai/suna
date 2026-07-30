@@ -12,17 +12,14 @@ import { useDeliverableReadiness } from '@/features/session/action-panel/shared/
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionVoiceTranscriptPanel } from '@/features/session/session-voice-transcript-panel';
-import { useVoiceTranscript } from '@/features/session/session-voice-transcript-shared';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useRuntimeMessages } from '@kortix/sdk/react';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import {
+  normalizeSessionPanelLayoutView,
   SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
@@ -30,6 +27,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
+import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -90,8 +88,8 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [transient, isActiveTab, sessionId, setActiveSession]);
 
-  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
-  const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
+  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
+  const panelView = normalizeSessionPanelLayoutView(storedPanelView);
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const setActivePanelSession = useSessionBrowserStore((s) => s.setActiveSessionId);
 
@@ -122,7 +120,6 @@ export const SessionLayout = memo(function SessionLayout({
   const showExplorer = !isEasy && effectiveView === 'explorer';
   const showTerminal = !isEasy && effectiveView === 'terminal';
   const showAudit = !isEasy && effectiveView === 'audit';
-  const showVoice = !isEasy && effectiveView === 'voice';
 
   // Pending-approval count for the "Audit" tab badge. Shares the header nudge's
   // query key so this is one deduped request; skipped while booting/transient.
@@ -131,16 +128,6 @@ export const SessionLayout = memo(function SessionLayout({
     silent: true,
   });
   const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
-
-  // Whether a voice-agent worker is in this session's call right now — drives
-  // the "Voice" tab's live dot. Polled at the same cadence the panel itself
-  // uses (see session-voice-transcript-shared.ts) so the two never disagree;
-  // react-query dedupes this against the panel's own query when both mount.
-  const { data: voiceData } = useVoiceTranscript(projectId, projectSessionId, {
-    enabled: !transient && !booting && !!projectId && !!projectSessionId,
-    silent: true,
-  });
-  const voiceLive = voiceData?.live ?? false;
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -300,7 +287,6 @@ export const SessionLayout = memo(function SessionLayout({
       isSidePanelOpen={isSidePanelOpen}
       onTogglePanel={handleTogglePanel}
       auditBadge={auditPendingCount}
-      voiceLive={voiceLive}
       onToggleMode={togglePanelMode}
     />
   );
@@ -317,8 +303,6 @@ export const SessionLayout = memo(function SessionLayout({
 
   const swappableBody = showAudit ? (
     <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
-  ) : showVoice ? (
-    <SessionVoiceTranscriptPanel projectId={projectId} projectSessionId={projectSessionId} />
   ) : showExplorer ? (
     <SessionFilesExplorer
       chatSessionId={sessionId}
@@ -503,7 +487,6 @@ function PanelHeaderSwitcher({
   isSidePanelOpen,
   onTogglePanel,
   auditBadge = 0,
-  voiceLive = false,
   onToggleMode,
 }: {
   view: SessionPanelView;
@@ -512,9 +495,6 @@ function PanelHeaderSwitcher({
   onTogglePanel: () => void;
   /** Pending-approval count shown on the "Audit" tab; 0 hides the badge. */
   auditBadge?: number;
-  /** Whether a voice-agent worker is in this session's call right now —
-   *  shows a live dot on the "Voice" tab. */
-  voiceLive?: boolean;
   /** Flips `preferences.panelMode` back to 'easy'. Advanced-only — Easy mode
    *  renders no header at all, so it has no button to switch with. */
   onToggleMode: () => void;
@@ -581,10 +561,6 @@ function PanelHeaderSwitcher({
           </TabsTrigger>
           <TabsTrigger size="xs" value="audit" variant="secondary" className="h-7 w-fit">
             Audit
-          </TabsTrigger>
-          <TabsTrigger size="xs" value="voice" variant="secondary" className="h-7 w-fit gap-1.5">
-            Voice
-            {voiceLive && <span className="bg-kortix-green size-1.5 shrink-0 animate-pulse rounded-full" />}
           </TabsTrigger>
         </TabsList>
       </Tabs>

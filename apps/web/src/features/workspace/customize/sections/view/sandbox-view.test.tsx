@@ -4,8 +4,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ProjectSnapshotBuild } from '@kortix/sdk';
 
-import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+import type { FailedBuildRelevance } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import type { SandboxProviderMode } from './sandbox-provider-coverage';
+import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
 
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
   build_id: 'build-1',
@@ -58,9 +61,50 @@ describe('project accelerator build presentation', () => {
   });
 });
 
-function renderBuildRow(providerMode: SandboxProviderMode, overrides?: Partial<ProjectSnapshotBuild>) {
-  return renderToStaticMarkup(createElement(BuildRow, { build: build(overrides), providerMode }));
+function renderBuildRow(
+  providerMode: SandboxProviderMode,
+  overrides?: Partial<ProjectSnapshotBuild>,
+  relevance?: FailedBuildRelevance | null,
+) {
+  return renderToStaticMarkup(
+    // The app mounts one provider in the root layout (src/app/layout.tsx).
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(BuildRow, { build: build(overrides), providerMode, relevance }),
+    ),
+  );
 }
+
+describe('failed build rows that no longer apply', () => {
+  // A red row is a claim that something is wrong right now. A build that failed
+  // against a definition nobody boots anymore makes that claim falsely — which
+  // is how an 11-day-old failure read as a live outage.
+  test('drops the red tile for a superseded or resolved failure', () => {
+    for (const [relevance, label] of [
+      ['superseded', 'superseded'],
+      ['recovered', 'resolved'],
+      ['retrying', 'retrying'],
+    ] as const) {
+      const html = renderBuildRow('automatic', {}, relevance);
+
+      expect(html).toContain(label);
+      expect(html).not.toContain('bg-kortix-red/15');
+      expect(html).not.toContain('text-kortix-red');
+    }
+  });
+
+  test('keeps the red tile while the failure still blocks sessions', () => {
+    const html = renderBuildRow('automatic', {}, 'blocking');
+
+    expect(html).toContain('bg-kortix-red/15');
+    expect(html).not.toContain('superseded');
+  });
+
+  test('leaves an unclassified failure exactly as it was', () => {
+    expect(renderBuildRow('automatic', {}, null)).toContain('bg-kortix-red/15');
+  });
+});
 
 describe('sandbox template build row provider disclosure', () => {
   test('never names the resolved provider when the project is on Automatic', () => {

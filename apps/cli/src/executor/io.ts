@@ -33,7 +33,7 @@ export interface ExecArgs {
 /**
  * Parse the args that follow `kortix executor` into command/positional/flags.
  * `argv` is everything AFTER the `executor` token, e.g.
- * `['call', 'stripe', 'charges.create', '{"amount":999}']`.
+ * `['call', 'stripe.charges.create', '{"amount":999}']`.
  */
 export function parseExecArgs(argv: string[]): ExecArgs {
   const command = argv[0] ?? 'help';

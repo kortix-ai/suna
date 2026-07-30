@@ -122,10 +122,10 @@ export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
   /**
-   * The manifest's own top-level `default_agent` (v2 only — `ManifestV2` in
-   * `@kortix/manifest-schema`; v1 has no such field, so this is always `null`
-   * for a v1 manifest). Lets grant resolution make the non-binding `"default"`
-   * sentinel resolve to a concrete declared agent's grant for a v2 project,
+   * The manifest's own top-level `default_agent` (v2 and v3; v1 has no such
+   * field, so this is always `null` for a v1 manifest). Lets grant resolution
+   * make the non-binding `"default"` sentinel resolve to a concrete declared
+   * agent's grant for a governed project,
    * instead of falling back to the permissive `null` (unrestricted) v1
    * behavior — see `grantFromLoadedAgents` (spec §2.1).
    */
@@ -139,7 +139,7 @@ export interface LoadedAgents {
  * write `agents` as an object still gets the v1 "must be an array" error
  * instead of silently routing into the v2 reader:
  *   - v1: `[[agents]]` — an array of tables (existing behavior, unchanged).
- *   - v2: `agents:` — a name → block map (spec §2.1/§2.2); see
+ *   - v2/v3: `agents:` — a name → block map (spec §2.1/§2.2); see
  *     `extractAgentsV2`.
  */
 export function extractAgents(manifest: ParsedManifest): LoadedAgents {
@@ -214,7 +214,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
         name: '(top-level)',
         path: filename,
         error:
-          '`agents` must be a map of agent name → agent block in kortix_version 2 (the v1 `[[agents]]` array becomes a map)',
+          `\`agents\` must be a map of agent name → agent block in kortix_version ${manifest.schemaVersion} (the v1 \`[[agents]]\` array becomes a map)`,
       }],
       defaultAgent: null,
     };
@@ -351,31 +351,46 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // still capped at the launching user's role; identical to a project that
   // never adopted [[agents]]).
   //
-  // v2 CHANGES this: the manifest declares a top-level `default_agent` that
+  // v2 and v3 change this: the manifest declares a top-level `default_agent` that
   // MUST always resolve to a concrete declared agent (spec §2.1 — "closes
   // trigger seam 7(a) structurally"). `loaded.defaultAgent` is only ever
-  // non-null for a v2 manifest (see `extractAgentsV2`), so this branch is a
-  // pure v2 addition — a v1 project (defaultAgent always null) falls straight
+  // non-null for a v2 or v3 manifest (see `extractAgentsV2`), so this branch is
+  // absent from v1 behavior — a v1 project (defaultAgent always null) falls
   // through to the unchanged `return null` below.
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     if (loaded.defaultAgent) {
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
       if (declared) {
-        return {
+        // Canonicalize here for the SAME reason the concrete-agent branch does
+        // (see above): catalog / call / create all compare canonical slugs, so
+        // a manifest that writes `email` rather than `kortix_email` would be
+        // silently denied at the call gate.
+        return canonicalizeGrantConnectors({
           agent: loaded.defaultAgent,
           kortixCli: declared.kortixCli,
           connectors: declared.connectors,
           env: declared.env,
-        };
+        });
       }
     }
     // A project locks down its default by setting `default_agent` to a
     // CONCRETE declared agent, which reaches us by that name and gets its
     // (possibly narrow) grant — so this never weakens an intentionally-
     // restricted default. Falling through here means either v1 (no
-    // manifest-level default_agent to honor) or a v2 manifest whose declared
+    // manifest-level default_agent to honor) or a v2/v3 manifest whose declared
     // default_agent doesn't resolve to an enabled spec (a validation-time
     // error the CR-merge gate should already have caught).
+    //
+    // EXCEPT when the manifest could not be read or parsed. `null` here means
+    // NO RESTRICTION (agent-scope.ts), and the mint resolves this grant with
+    // `.catch(() => null)` — so an unreadable manifest on a GOVERNED project
+    // would hand the session a fully unrestricted token for the life of the
+    // sandbox. Never widen on an error: a session that cannot prove what it is
+    // allowed to use gets nothing, which is the same rule the secrets path
+    // already follows (secret-grant.ts passes rethrowReadErrors for this).
+    if (loaded.errors.length > 0) {
+      return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+    }
     return null;
   }
 
@@ -457,9 +472,9 @@ export type GovernedAgentGrantResult = { ok: true; grant: AgentGrant | null } | 
  *     that doesn't name a declared/enabled agent, is rejected the same way —
  *     this is what closes trigger/spec seam 7(a) structurally (§2.1).
  *     `opts.projectDefaultAgent` (the DB `project.metadata.default_agent`
- *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2
+ *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2/v3
  *     manifest's own top-level `default_agent` — always null for v1) is the
- *     fallback, so a v2 project that never separately configured the DB-side
+ *     fallback, so a project that never separately configured the DB-side
  *     field still resolves the sentinel to what it actually declared in git.
  *
  * Exported for tests. Callers needing the historical `AgentGrant | null`

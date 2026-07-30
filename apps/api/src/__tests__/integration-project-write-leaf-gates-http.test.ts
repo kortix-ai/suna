@@ -130,6 +130,32 @@ const CASES: WCase[] = [
     // same destructive capability as the stop route.
     denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
   },
+  {
+    name: 'ACP session message (leaf session.start)',
+    leaf: A.PROJECT_SESSION_START, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp`,
+    body: {},
+    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SESSION_START],
+  },
+  {
+    name: 'ACP session identity (leaf session.start)',
+    leaf: A.PROJECT_SESSION_START, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp-identity`,
+    body: {
+      acp_server_id: 'test-server',
+      runtime_harness: 'codex',
+      acp_session_id: 'test-session',
+    },
+    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SESSION_START],
+  },
+  {
+    name: 'ACP runtime stop (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'DELETE',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/acp`,
+    tier: 'member',
+    denyGrant: [A.PROJECT_SESSION_START],
+    allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
   // ── Review ───────────────────────────────────────────────────────────────
   {
     name: 'CR request-changes (review.act, not gitops.push)',

@@ -871,6 +871,7 @@ export async function resumeCanonicalAcpSession(
 
 export interface OpencodeSupervisorOptions {
   getCanonicalAcpSessionId?: () => string | null
+  onStartupMark?: (label: string) => void
 }
 
 export function createOpencodeSupervisor(
@@ -892,6 +893,7 @@ export function createOpencodeSupervisor(
   let transport: OpenCodeTransport = resolveOpenCodeTransport(process.env)
   let acpConnection: AcpConnection | null = null
   let nextAcpEventId = 1
+  const startupMark = options.onStartupMark ?? (() => {})
 
   function rememberAcpEventCursor(): void {
     if (!acpConnection) return
@@ -986,6 +988,7 @@ export function createOpencodeSupervisor(
       delete env.OPENCODE_CONFIG_CONTENT
       logger.info(`[opencode] wrote config (${opencodeConfig.length} bytes) to ${configPath}`)
     }
+    startupMark('runtime-config-ready')
 
     const cwd = ensureCwdExists()
     transport = resolveOpenCodeTransport(env)
@@ -1014,6 +1017,7 @@ export function createOpencodeSupervisor(
       stdio: launch.stdio,
       detached: true,
     })
+    proc.once('spawn', () => startupMark('runtime-process-spawned'))
 
     proc.on('exit', (code, signal) => {
       logger.warn('[opencode] child exited', { code, signal })
@@ -1054,6 +1058,7 @@ export function createOpencodeSupervisor(
         output: proc.stdout,
         initialEventId: nextAcpEventId,
         onDiagnostic: (line) => logger.warn('[opencode-acp] protocol', { line }),
+        onFirstOutput: () => startupMark('runtime-acp-first-output'),
       })
       try {
         const initialized = await connection.initialize({
@@ -1065,6 +1070,7 @@ export function createOpencodeSupervisor(
         logger.info('[opencode-acp] initialized', {
           protocolVersion: initialized.protocolVersion,
         })
+        startupMark('runtime-acp-initialized')
         const canonicalSessionId = options.getCanonicalAcpSessionId?.()
         if (canonicalSessionId) {
           await resumeCanonicalAcpSession(
@@ -1075,6 +1081,7 @@ export function createOpencodeSupervisor(
           logger.info('[opencode-acp] resumed canonical session after process start', {
             sessionId: canonicalSessionId,
           })
+          startupMark('runtime-canonical-session-resumed')
         }
         acpConnection = connection
         connection.notifyClient('kortix/runtime_ready', {
@@ -1134,7 +1141,9 @@ export function createOpencodeSupervisor(
         return
       }
       binaryPath = bin
+      startupMark('runtime-binary-resolved')
       opencodeCwd = await resolveOpencodeCwd(currentCfg)
+      startupMark('runtime-cwd-resolved')
       try {
         await spawnChild(bin)
       } catch (err) {

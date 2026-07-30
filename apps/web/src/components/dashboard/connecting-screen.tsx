@@ -24,6 +24,7 @@ import {
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
 import { type SandboxRecoveryPhase, useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -56,6 +57,7 @@ export function ConnectingScreen({
   minimal = false,
   hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
+  const appHome = useAppHome();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const status = useRuntimeConnectionStore((s) => s.status);
   const wasConnected = useRuntimeConnectionStore((s) => s.wasConnected);
@@ -75,7 +77,7 @@ export function ConnectingScreen({
   const runtimeSummary = 'Runtime services degraded';
 
   const handleSwitch = () => {
-    router.push(backHref || '/projects');
+    router.push(backHref || appHome);
   };
 
   const serverLabel = labelOverride?.trim() || 'workspace';

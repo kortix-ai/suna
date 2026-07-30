@@ -11,4 +11,10 @@ export interface GatewayConfig {
   maxRequestBytes?: number;
   /** Maximum number of fallback models after the primary. Defaults to 3, hard-capped at 8. */
   maxFallbackModels?: number;
+  /**
+   * Maximum silence while probing a newly opened streaming response.
+   * The gateway cancels the stalled candidate and tries the next model.
+   * Defaults to 30 seconds.
+   */
+  streamProbeTimeoutMs?: number;
 }

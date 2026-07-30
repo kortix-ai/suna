@@ -47,7 +47,6 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
       <AppProviders
         showSidebar={false}
         showRightSidebar={false}
-        showGlobalNewInstanceModal={false}
         showGlobalUserSettingsModal={false}
       >
         {children}

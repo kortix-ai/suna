@@ -243,7 +243,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       const { apiLane, sandboxLane } = partitionParallelFlows(parallelLane);
       const apiWorkers = positiveWorkerCount(
         opts.apiWorkers ?? Number(process.env.KE2E_API_WORKERS),
-        8,
+        4,
       );
       const sandboxWorkers = positiveWorkerCount(
         opts.sandboxWorkers ?? Number(process.env.KE2E_SANDBOX_WORKERS),

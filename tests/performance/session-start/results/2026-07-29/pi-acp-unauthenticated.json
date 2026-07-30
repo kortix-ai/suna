@@ -1,0 +1,145 @@
+{
+  "mode": "generic-acp",
+  "command": "/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js",
+  "version": "",
+  "runs": 10,
+  "summary": {
+    "process_spawn_ms": {
+      "n": 10,
+      "min": 0.353,
+      "p50": 0.385,
+      "p90": 0.633,
+      "max": 2.04
+    },
+    "first_output_ms": {
+      "n": 10,
+      "min": 84.676,
+      "p50": 86.429,
+      "p90": 91.978,
+      "max": 483.858
+    },
+    "initialize_ms": {
+      "n": 10,
+      "min": 84.341,
+      "p50": 85.953,
+      "p90": 91.661,
+      "max": 482.242
+    },
+    "session_new_ms": {
+      "n": 0,
+      "min": null,
+      "p50": null,
+      "p90": null,
+      "max": null
+    },
+    "total_ms": {
+      "n": 0,
+      "min": null,
+      "p50": null,
+      "p90": null,
+      "max": null
+    }
+  },
+  "samples": [
+    {
+      "run": 1,
+      "process_spawn_ms": 2.04,
+      "first_output_ms": 483.858,
+      "initialize_ms": 482.242,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-1',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 2,
+      "process_spawn_ms": 0.633,
+      "first_output_ms": 85.197,
+      "initialize_ms": 84.753,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-2',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 3,
+      "process_spawn_ms": 0.608,
+      "first_output_ms": 86.429,
+      "initialize_ms": 85.953,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-3',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 4,
+      "process_spawn_ms": 0.367,
+      "first_output_ms": 86.018,
+      "initialize_ms": 85.723,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-4',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 5,
+      "process_spawn_ms": 0.57,
+      "first_output_ms": 89.513,
+      "initialize_ms": 89.038,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-5',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 6,
+      "process_spawn_ms": 0.357,
+      "first_output_ms": 85.465,
+      "initialize_ms": 85.162,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-6',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 7,
+      "process_spawn_ms": 0.405,
+      "first_output_ms": 91.398,
+      "initialize_ms": 91.048,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-7',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 8,
+      "process_spawn_ms": 0.353,
+      "first_output_ms": 87.819,
+      "initialize_ms": 87.527,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-8',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 9,
+      "process_spawn_ms": 0.376,
+      "first_output_ms": 91.978,
+      "initialize_ms": 91.661,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-9',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    },
+    {
+      "run": 10,
+      "process_spawn_ms": 0.385,
+      "first_output_ms": 84.676,
+      "initialize_ms": 84.341,
+      "session_new_ms": null,
+      "total_ms": null,
+      "error": "ACP session/new failed: {\"code\":-32000,\"message\":\"Authentication required: Configure an API key or log in with an OAuth provider.\",\"data\":{\"authMethods\":[{\"id\":\"pi_terminal_login\",\"name\":\"Launch pi in the terminal\",\"description\":\"Start pi in an interactive terminal to configure API keys or login\",\"type\":\"terminal\",\"args\":[\"--terminal-login\"],\"env\":{},\"_meta\":{\"terminal-auth\":{\"command\":\"/opt/homebrew/Cellar/node@22/22.22.0/bin/node\",\"args\":[\"/private/tmp/kortix-pi-acp-install.J8sdya/node_modules/pi-acp/dist/index.js\",\"--terminal-login\"],\"label\":\"Launch pi\"}}}]}}",
+      "stderr": "Error handling request {\n  jsonrpc: '2.0',\n  id: 'bench:2',\n  method: 'session/new',\n  params: {\n    cwd: '/var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/kortix-generic-acp-bench-HUr0Gi/cwd-10',\n    mcpServers: []\n  }\n} {\n  code: -32000,\n  message: 'Authentication required: Configure an API key or log in with an OAuth provider.',\n  data: { authMethods: [ [Object] ] }\n}\n"
+    }
+  ]
+}

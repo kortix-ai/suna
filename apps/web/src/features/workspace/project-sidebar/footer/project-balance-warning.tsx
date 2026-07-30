@@ -2,6 +2,7 @@
 
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAccountState } from '@/hooks/billing';
+import { billingDialogArgs, resolveBillingState } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -23,15 +24,8 @@ function useBalanceWarning(accountId?: string) {
   const canTopUp = (accountState?.tier?.can_purchase_credits ?? false) || isPerSeat;
 
   const handleClick = useCallback(
-    () =>
-      openUpgradeDialog({
-        reason: 'insufficient_credits',
-        accountId,
-        billingModel: accountState?.billing_model,
-        hasSubscription: Boolean(accountState?.subscription?.subscription_id),
-        balance,
-      }),
-    [openUpgradeDialog, accountId, accountState, balance],
+    () => openUpgradeDialog(billingDialogArgs(resolveBillingState(accountState), accountState, accountId)),
+    [openUpgradeDialog, accountId, accountState],
   );
 
   if (!isBillingEnabled() || !accountState || !canTopUp) {

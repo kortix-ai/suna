@@ -291,7 +291,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         }
       }
       const userIds = [...provisioned.supabaseUserIds, ...extraUserIds];
-      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 4);
+      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 2);
       await mapWithConcurrency(userIds, cleanupWorkers, async (uid) => {
         try {
           await adminDeleteUser(env, uid);

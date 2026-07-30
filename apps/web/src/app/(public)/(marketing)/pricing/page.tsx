@@ -49,7 +49,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 200 credits each month for sandbox compute and 3 projects. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',

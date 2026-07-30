@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { chromium, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from 'playwright';
 
 type ProvisionPayload = {
   account_id: string;
   name: string;
   seed_starter: boolean;
-  starter_template: 'minimal' | 'general-knowledge-worker';
+  starter_template: 'minimal' | 'general-knowledge-worker' | 'acp-multi-harness';
   marketplace_items?: string[];
 };
 
@@ -36,6 +36,17 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function mockAccounts(page: Page) {
+  await page.route('**/*', async (route) => {
+    if (!route.request().url().includes('/projects/managed-git/status')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ configured: true, provider: 'github' }),
+    });
+  });
   await page.route(/\/accounts$/, async (route) => {
     assert(
       route.request().headers().authorization === 'Bearer debug-project-create-token',
@@ -77,9 +88,22 @@ async function openHarness(page: Page) {
     });
   });
   await page.goto(`${baseUrl}/debug/project-create-modal`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('dialog', { name: /new project/i }).waitFor({ state: 'visible', timeout: 30_000 });
-  // One starter kit — every project ships the full skill pack; there's no toggle.
-  await page.getByText(/starter pack/i).first().waitFor({ state: 'visible', timeout: 30_000 });
+  await page
+    .getByRole('dialog', { name: /new project/i })
+    .waitFor({ state: 'visible', timeout: 30_000 });
+  await page
+    .getByRole('textbox', { name: /project name/i })
+    .waitFor({ state: 'visible', timeout: 30_000 });
+  assert(
+    (await page.getByTestId('project-create-starter').count()) === 0,
+    'project creation should not show a starter selector',
+  );
+}
+
+async function newHarnessPage(browser: Browser): Promise<Page> {
+  const page = await browser.newPage();
+  await mockAccounts(page);
+  return page;
 }
 
 function defaultMarketplaceItem(name: string, title: string, order: number) {
@@ -129,9 +153,17 @@ async function submitProjectCreate(page: Page, name: string): Promise<ProvisionP
     });
   });
 
-  await page.getByRole('textbox', { name: /project name/i }).fill(name);
+  const nameField = page.getByRole('textbox', { name: /project name/i });
+  if (!(await nameField.isVisible())) {
+    throw new Error(
+      `Project name field is not visible:\n${await page.locator('body').innerText()}`,
+    );
+  }
+  await nameField.fill(name);
   const request = page.waitForRequest((req) => req.url().includes('/projects/provision'));
-  await page.getByRole('button', { name: /^create project$/i }).click();
+  const createButton = page.getByRole('button', { name: /^create project$/i });
+  assert(await createButton.isEnabled(), 'Create project button should be enabled');
+  await createButton.click();
   await request;
   const projectPath = `/projects/proj_${name}`;
   await page.waitForURL(
@@ -148,11 +180,14 @@ async function submitProjectCreate(page: Page, name: string): Promise<ProvisionP
 async function main() {
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage();
+    let page = await newHarnessPage(browser);
 
     await openHarness(page);
     const defaultPayload = await submitProjectCreate(page, 'default-full');
-    assert(defaultPayload.account_id === '00000000-0000-4000-a000-000000000101', 'default payload account_id mismatch');
+    assert(
+      defaultPayload.account_id === '00000000-0000-4000-a000-000000000101',
+      'default payload account_id mismatch',
+    );
     assert(defaultPayload.name === 'default-full', 'default payload name mismatch');
     assert(defaultPayload.seed_starter === true, 'default payload should seed starter');
     // One starter kit: every project scaffolds with the full general-knowledge-worker starter.
@@ -161,7 +196,8 @@ async function main() {
       'default payload should use the general-knowledge-worker starter_template',
     );
 
-    await mockAccounts(page);
+    await page.close();
+    page = await newHarnessPage(browser);
     await openHarness(page);
     const accountField = page.getByTestId('project-create-account');
     await accountField.waitFor({ state: 'visible', timeout: 30_000 });
@@ -175,9 +211,13 @@ async function main() {
       'payload should target the displayed default account',
     );
 
+    await page.close();
+    page = await newHarnessPage(browser);
     await openHarness(page);
     await page.getByRole('button', { name: /personal/i }).click();
-    await page.getByRole('menuitem', { name: /acme team/i }).click();
+    const teamOption = page.getByRole('menuitem', { name: /acme team/i });
+    await teamOption.click();
+    await teamOption.waitFor({ state: 'hidden' });
     assert(
       (await page.getByTestId('project-create-account').textContent())?.includes('Acme Team'),
       'account field should show the switched account',
@@ -188,7 +228,9 @@ async function main() {
       'payload should target the account picked in the modal',
     );
 
-    console.log('[project-create-modal] ok: starter template, marketplace item, and account picker payloads verified');
+    console.log(
+      '[project-create-modal] ok: one generic starter and account picker payloads verified',
+    );
   } finally {
     await browser.close();
   }

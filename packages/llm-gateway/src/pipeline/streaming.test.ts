@@ -6,11 +6,16 @@ const dec = new TextDecoder();
 
 function controllableUpstream() {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c; } });
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) { controller = c; },
+    cancel() { cancelled = true; },
+  });
   return {
     stream,
     push: (s: string) => controller.enqueue(enc.encode(s)),
     close: () => controller.close(),
+    get cancelled() { return cancelled; },
   };
 }
 
@@ -154,6 +159,80 @@ describe('probeStream', () => {
     });
     const result = await probeStream(stream);
     expect(result.hasContent).toBe(false);
+  });
+
+  test('times out and cancels a stream that opens but produces no bytes', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+
+    expect(result.hasContent).toBe(false);
+    expect(result.readError).toEqual({
+      message: 'upstream stream probe timeout exceeded (20ms with no bytes)',
+      code: 'stream_probe_timeout',
+    });
+    expect(up.cancelled).toBe(true);
+  });
+
+  test('holds and classifies the production soft rate-limit completion before relaying bytes', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame).toEqual({
+      message:
+        'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.',
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('relays the exact soft-failure sentence when streaming usage is non-zero', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(true);
+    expect(result.errorFrame).toBeUndefined();
+  });
+
+  test('does not release a soft-failure prefix at the normal chunk budget', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    for (let index = 0; index < 70; index += 1) up.push(': provider-heartbeat\n\n');
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame?.code).toBe(429);
   });
 });
 

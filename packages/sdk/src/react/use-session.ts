@@ -55,6 +55,7 @@ import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useAcpSessionRuntime } from './use-acp-session-runtime';
+import { isSessionRuntimeActionReady } from './session-runtime-identity';
 import { resolveSessionBusy } from './session-busy';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
@@ -476,7 +477,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 4. Open the live SSE stream. This was a provider component (OpenCodeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useOpenCodeEventStream({ enabled: runtimePolicy.streamOpenCodeEvents });
+  useOpenCodeEventStream({
+    enabled: switched && runtimePolicy.streamOpenCodeEvents,
+  });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -485,14 +488,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
     initialPin: initialOpenCodeSessionId,
-    listRuntimeSessions: runtimePolicy.listOpenCodeSessions,
+    listRuntimeSessions: switched && runtimePolicy.listOpenCodeSessions,
   });
   const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';
   const runtimeUrl = sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : null;
   const acpRuntime = useAcpSessionRuntime({
+    projectId,
     runtimeUrl,
-    sessionId: rootSessionId,
+    sessionId,
+    acpServerId: startData?.acp_server_id ?? null,
+    acpSessionId: startData?.acp_session_id ?? null,
+    runtimeHarness: startData?.runtime_harness ?? null,
+    nativeAgent: startData?.native_agent ?? null,
+    legacySessionId: rootSessionId,
     enabled: enabled && switched && usesAcp,
   });
   const acpSessionTitle = readAcpSessionTitle(acpRuntime.projection.sessionInfo);
@@ -514,6 +523,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(
     chatEngine && runtimePolicy.syncOpenCodeMessages ? ocSessionId : '',
+    {
+      kortixSessionScope: `${projectId}/${sessionId}`,
+      networkEnabled: switched,
+    },
   );
   const acpSync = useMemo(
     () => ({
@@ -562,10 +575,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // is off — see that option's jsdoc: a host mounting its own chat surface
   // already runs its own copy of this poller for the same session.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: !usesAcp && chatEngine && !!ocSessionId,
+    enabled: switched && !usesAcp && chatEngine && !!ocSessionId,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: !usesAcp && chatEngine && !!ocSessionId,
+    enabled: switched && !usesAcp && chatEngine && !!ocSessionId,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -573,7 +586,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const questionMap = useOpenCodePendingStore((s) => s.questions);
   const permissionMap = useOpenCodePendingStore((s) => s.permissions);
   const isCompacting = useOpenCodeCompactionStore(
-    (state) => !usesAcp && Boolean(state.compactingBySession[ocSessionId]),
+    (state) =>
+      switched &&
+      !usesAcp &&
+      Boolean(state.compactingBySession[ocSessionId]),
   );
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -581,16 +597,26 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () =>
       usesAcp
         ? acpRuntime.projection.questions
-        : Object.values(questionMap).filter((q) => q.sessionID === ocSessionId),
-    [usesAcp, acpRuntime.projection.questions, questionMap, ocSessionId],
+        : switched
+          ? Object.values(questionMap).filter((q) => q.sessionID === ocSessionId)
+          : [],
+    [usesAcp, acpRuntime.projection.questions, questionMap, ocSessionId, switched],
   );
   const permissions = useMemo(
     () =>
       usesAcp
         ? acpRuntime.projection.permissions
-        : Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId),
-    [usesAcp, acpRuntime.projection.permissions, permissionMap, ocSessionId],
+        : switched
+          ? Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId)
+          : [],
+    [usesAcp, acpRuntime.projection.permissions, permissionMap, ocSessionId, switched],
   );
+
+  const runtimeActionReady = isSessionRuntimeActionReady({
+    switched,
+    usesAcp,
+    opencodeSessionId: rootSessionId,
+  });
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
   const models = useProjectModels(projectId);
@@ -636,7 +662,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       directory?: string | null;
     },
   ): Promise<void> => {
-    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!runtimeActionReady) {
+      throw new RuntimeNotReadyError();
+    }
     titleRefreshAbortRef.current?.abort();
     const titleRefreshAbort = new AbortController();
     titleRefreshAbortRef.current = titleRefreshAbort;
@@ -693,7 +721,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       variant?: string | null;
     },
   ) => {
-    if (!ocSessionId) return;
+    if (!runtimeActionReady) return;
     pendingBaseCount.current = userMsgCount;
     if (!usesAcp) beginRestPromptObservation(ocSessionId);
     setSendState(sendStateOnStart(text));
@@ -709,7 +737,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     args: string,
     options: SessionCommandOptions = {},
   ): Promise<void> => {
-    if (!ocSessionId) return Promise.resolve();
+    if (!runtimeActionReady) {
+      return Promise.resolve();
+    }
     if (usesAcp) {
       return acpRuntime.runCommand(command, args, {
         model: options.model ? formatModelString(options.model) : null,
@@ -722,7 +752,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   };
 
   const rewind = async (messageId: string): Promise<void> => {
-    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!runtimeActionReady) {
+      throw new RuntimeNotReadyError();
+    }
     if (!messageId) throw new Error('Session rewind requires a message id');
     if (sync.isBusy || pending || rewindPending) {
       throw new Error('Cannot rewind a busy session');
@@ -746,7 +778,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   };
 
   const restoreRewind = async (): Promise<void> => {
-    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!runtimeActionReady) throw new RuntimeNotReadyError();
     if (!rewindMessageId || rewindPending) return;
     setRewindPending(true);
     setRewindError(null);
@@ -768,7 +800,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
 
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
   const cancel = () => {
-    if (ocSessionId) {
+    if (runtimeActionReady) {
       if (usesAcp) void acpRuntime.cancel();
       else {
         endRestPromptObservation(ocSessionId);

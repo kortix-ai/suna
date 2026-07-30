@@ -13,6 +13,7 @@ describe('create session command payload', () => {
         name: 'Queue principal test',
         status: 'active',
         sandboxProviderGeneration: 0,
+        secretDefaultStrategy: 'runtime' as const,
         repoUrl: 'https://example.test/queue-principal.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',

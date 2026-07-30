@@ -57,3 +57,45 @@ export function injectEndUserRef(
     body: { ...record, end_user_ref: userId, origin_ref: undefined },
   };
 }
+
+/** `GET /projects/{projectId}/sessions` — the session list. */
+const SESSION_LIST = /^projects\/[^/]+\/sessions\/?$/;
+
+export function isSessionList(method: string, upstreamPath: string): boolean {
+  return method.toUpperCase() === 'GET' && SESSION_LIST.test(upstreamPath);
+}
+
+export type EndUserScoping =
+  | { action: 'rewrite'; search: string }
+  | { action: 'reject'; reason: string };
+
+/**
+ * Force the session list to ONE end-user — the signed-in one.
+ *
+ * Upstream happily lists every session in the project, because upstream sees a
+ * single wrapper credential and cannot tell Lumen's users apart. Passing the
+ * browser's query string through unchanged would therefore let any signed-in
+ * user read every OTHER user's session list by adding `?end_user_ref=`, and
+ * would show them everyone's sessions even if they added nothing at all.
+ *
+ * So the filter is stamped here, server-side, exactly like the create path — and
+ * a client that names somebody else is REJECTED rather than quietly corrected,
+ * so the attempt surfaces instead of looking like it worked.
+ */
+export function scopeSessionListToEndUser(search: string, userId: string): EndUserScoping {
+  const params = new URLSearchParams(search);
+  const claimed = [params.get('end_user_ref'), params.get('origin_ref')].find(
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+  if (typeof claimed === 'string' && claimed.trim() !== userId) {
+    return {
+      action: 'reject',
+      reason: 'end_user_ref must not be set by the client — it is derived from your session',
+    };
+  }
+  // Send exactly one canonical spelling so upstream never has to adjudicate a
+  // disagreeing pair.
+  params.delete('origin_ref');
+  params.set('end_user_ref', userId);
+  return { action: 'rewrite', search: `?${params}` };
+}

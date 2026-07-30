@@ -67,7 +67,9 @@ const stubBackend = {
   seedFiles: async () => { backendCalls.push('seedFiles'); },
 };
 
+const actualGitBackends = await import('../projects/git-backends');
 mock.module('../projects/git-backends', () => ({
+  ...actualGitBackends,
   hasBackend: (provider: string) => provider === 'github',
   getBackend: () => stubBackend,
   getDefaultManagedBackend: () => stubBackend,
@@ -109,7 +111,9 @@ mock.module('../middleware/auth', () => ({
 mockIamEngineAllowAll();
 mockIamMembershipSyncNoop();
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,

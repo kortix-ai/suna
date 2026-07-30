@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import {
+  SESSION_SYNC_PAGE_SIZE,
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
@@ -90,7 +91,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: 'https://runtime.example.test/session/session%2F1/message?limit=10',
+        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
@@ -110,9 +111,9 @@ describe('SessionSyncController', () => {
     });
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-2' },
-      { limit: 10, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
     ]);
     expect(messages.map((message) => message.info.id)).toEqual([
       'message-1',
@@ -121,7 +122,7 @@ describe('SessionSyncController', () => {
     ]);
   });
 
-  test('loads only the newest ten messages and exposes older pagination', async () => {
+  test('loads only the newest page and exposes older pagination', async () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: MessageWithParts[][] = [];
     const controller = new SessionSyncController({
@@ -137,7 +138,7 @@ describe('SessionSyncController', () => {
     });
 
     await controller.start();
-    expect(requests).toEqual([{ limit: 10 }]);
+    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: true,
@@ -145,7 +146,10 @@ describe('SessionSyncController', () => {
     });
 
     await controller.loadOlder();
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10, before: 'cursor-older' }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-older' },
+    ]);
     expect(hydrated.flat().map((entry) => entry.info.id)).toEqual([
       'message-newest',
       'message-older',
@@ -209,9 +213,9 @@ describe('SessionSyncController', () => {
     await controller.start();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
     expect(hydrated).toEqual([
       [
@@ -295,10 +299,10 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10, before: 'cursor-2' },
-      { limit: 10, before: 'cursor-3' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
     ]);
     expect(hydrated).toEqual([
       ['user-new', 'assistant-new'],
@@ -335,7 +339,10 @@ describe('SessionSyncController', () => {
     await expect(controller.loadOlder()).rejects.toThrow(
       'Session history cursor repeated: cursor-1',
     );
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10, before: 'cursor-1' }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+    ]);
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
   });
 
@@ -394,7 +401,10 @@ describe('SessionSyncController', () => {
     await controller.reconcile('manual');
     await controller.reconcile('manual');
 
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10 }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+    ]);
   });
 
   test('uses event activity instead of part count for busy liveness', async () => {
@@ -535,7 +545,7 @@ describe('SessionSyncController', () => {
 
     await controller.loadOlder();
     expect(requests.at(-1)).toEqual({
-      limit: 10,
+      limit: SESSION_SYNC_PAGE_SIZE,
       before: 'cursor-older',
     });
   });
@@ -560,10 +570,10 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10 },
-      { limit: 10, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
   });
 

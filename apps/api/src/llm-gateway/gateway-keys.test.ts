@@ -3,7 +3,13 @@ import { accounts, gatewayApiKeys, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { hashSecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
-import { validateGatewayKey } from './gateway-keys';
+import {
+  INTERNAL_SESSION_TITLE_KEY_NAME,
+  createGatewayKey,
+  deleteGatewayKey,
+  listGatewayKeys,
+  validateGatewayKey,
+} from './gateway-keys';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -88,6 +94,37 @@ describe('validateGatewayKey', () => {
 
   test('rejects an unknown secret', async () => {
     expect(await validateGatewayKey(`kortix_gw_${crypto.randomUUID()}`)).toBeNull();
+  });
+
+  test('the internal title key is DELETED, never hidden from the key list', async () => {
+    // Excluding it from listGatewayKeys by its `name` — a value any caller of
+    // POST /gateway/keys can set — would let a member mint a fully valid, fully
+    // billable key that no owner or auditor can see or revoke. Deleting it
+    // instead also keeps one row per prompt out of gateway_api_keys forever.
+    const created = await createGatewayKey({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      name: INTERNAL_SESSION_TITLE_KEY_NAME,
+      createdBy: CREATOR,
+    });
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).toContain(created.key_id);
+
+    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(true);
+    expect(await validateGatewayKey(created.secret_key)).toBeNull();
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(created.key_id);
+    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(false);
+  });
+
+  test('deleteGatewayKey is scoped to the owning project', async () => {
+    const created = await createGatewayKey({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      name: INTERNAL_SESSION_TITLE_KEY_NAME,
+      createdBy: CREATOR,
+    });
+    expect(await deleteGatewayKey(crypto.randomUUID(), created.key_id)).toBe(false);
+    expect(await validateGatewayKey(created.secret_key)).not.toBeNull();
+    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(true);
   });
 
   test('stamps lastUsedAt on a successful validation (fire-and-forget)', async () => {

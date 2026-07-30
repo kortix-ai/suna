@@ -1,9 +1,11 @@
-import { reopenComputeForSandbox } from '../../billing/services/compute-metering';
+import { pauseComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { logSafe } from '../../shared/log-safe';
+import { enforcePerOriginSessionCap } from '../lib/sessions';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
@@ -13,7 +15,9 @@ import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import { inspectSandboxRuntime, readManagedAcpSessionIdentity } from '../runtime-inspection';
 import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
@@ -57,14 +61,35 @@ export async function resumeStoppedSandbox(row: {
   if (!row.externalId) return false;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
 
+  // The per-end-user concurrency cap was enforced only at session CREATE, so it
+  // was bypassable by simply resuming: stop N sessions, resume them all, and one
+  // end-user holds more live sandboxes than the operator allowed. A cap that any
+  // caller can step around by pausing is not a cap.
+  //
+  // Safe to count here: the session being resumed is still `stopped`, which is
+  // NOT in ACTIVE_SESSION_STATUSES, so it cannot count itself.
+  const [sessionRow] = await db
+    .select({ originRef: projectSessions.originRef })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
+  const capRefusal = await enforcePerOriginSessionCap(row.accountId, sessionRow?.originRef ?? null);
+  if (capRefusal) {
+    // Returning false degrades to the caller's existing "could not resume" path.
+    // Logged at warn because the surfaced error is a generic unreachable page,
+    // and an operator debugging "why won't this session wake" needs the real
+    // reason to be findable.
+    console.warn(
+      `[projects] resume refused by per-end-user session cap for ${row.sessionId} (end_user_ref=${logSafe(sessionRow?.originRef)})`,
+    );
+    return false;
+  }
+
   const externalId = row.externalId;
   const now = new Date();
   const runtimeWakeId = crypto.randomUUID();
   const wakeMetadata = { ...(row.metadata ?? {}) };
   for (const key of [
-    'idleQuiesced',
-    'idleQuiescedAt',
-    'idleObservedAt',
     'runtimeIdentityState',
     'runtimeUnavailableReason',
     'runtimeUnavailableAt',
@@ -77,7 +102,6 @@ export async function resumeStoppedSandbox(row: {
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
-    lastTurnAt: now.toISOString(),
     runtimeWakeStartedAt: now.toISOString(),
     runtimeWakeId,
     runtimeWakeProviderStatus: 'starting',
@@ -89,10 +113,10 @@ export async function resumeStoppedSandbox(row: {
     .set({
       status: 'active',
       updatedAt: now,
-      // Explicit resume clears the reaper's idle-quiesce marker AND its idle
-      // countdown (idleObservedAt — a stale pre-stop stamp would shut the box
-      // down on the very next pass), and stamps lastTurnAt so the resume opens
-      // a FRESH idle window for the unreachable-box fallback clock too.
+      // Explicit resume clears the stale runtime-identity keys. It stamps NO
+      // liveness timestamp: the box's lifetime is `deadline_at`, and the DB
+      // trigger re-anchors + re-floors it on this very stopped->active
+      // transition. A TypeScript writer here could only get that wrong.
       metadata: wakeMetadata,
     })
     .where(
@@ -112,9 +136,13 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId, null, row.provider as SandboxProviderName).catch((err) =>
-    console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
-  );
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+    null,
+    row.provider as SandboxProviderName,
+  ).catch((err) => console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err));
 
   const provider = getProvider(row.provider as SandboxProviderName);
   void provider
@@ -165,6 +193,18 @@ export async function resumeStoppedSandbox(row: {
       .set({ status: 'stopped', updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, row.sessionId))
       .catch(() => {});
+    // The meter was opened optimistically above, BEFORE provider.start() had
+    // resolved. This branch is the proof it never came up, so the window must
+    // close here — reverting the two status rows and leaving the meter running
+    // is how a box that failed to start in 134ms went on accruing wall-clock
+    // (observed in prod 2026-07-29). The billing-invariant sweep would also
+    // catch it, but a leak this deterministic should not wait for a sweep.
+    await pauseComputeSession(row.sandboxId).catch((pauseErr) =>
+      console.warn(
+        `[projects] compute pause after failed wake failed for ${row.sandboxId}:`,
+        pauseErr,
+      ),
+    );
   });
   return true;
 }
@@ -252,6 +292,9 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
+        compiledRuntimeConfig:
+          (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
   });
@@ -683,6 +726,11 @@ export async function openSession(args: {
   } catch {
     providerStatus = 'unknown';
   }
+  let observedRuntimeHealth: Awaited<ReturnType<typeof inspectSandboxRuntime>> = null;
+  if (providerStatus === 'unknown') {
+    observedRuntimeHealth = await inspectSandboxRuntime(row.externalId, loaded.userId);
+    if (observedRuntimeHealth) providerStatus = 'running';
+  }
 
   if (providerStatus === 'removed') {
     if (removedRuntimeStillInGrace(row)) {
@@ -805,6 +853,82 @@ export async function openSession(args: {
   const runningExternalId = row.externalId;
   if (!runningExternalId) {
     throw new Error(`Provider-running sandbox ${row.sandboxId} has no external_id`);
+  }
+
+  const sessionMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+  const managedAcpIdentity = readManagedAcpSessionIdentity(sessionMetadata);
+  if (managedAcpIdentity) {
+    const expectedServerId = managedAcpIdentity.acpServerId;
+    const expectedHarness = managedAcpIdentity.runtimeHarness;
+    const health =
+      observedRuntimeHealth ?? (await inspectSandboxRuntime(runningExternalId, loaded.userId));
+    const identityMatches =
+      !!expectedServerId &&
+      !!expectedHarness &&
+      health?.runtime === 'acp' &&
+      health.acpServerId === expectedServerId &&
+      health.runtimeHarness === expectedHarness;
+    const runtimeReady = identityMatches && health?.runtimeReady === true;
+
+    if (health?.bootError) {
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: health.bootError,
+      };
+    }
+
+    if (!runtimeReady) {
+      const reason = !health
+        ? 'unreachable'
+        : !identityMatches
+          ? 'acp_runtime_identity_mismatch'
+          : 'not_ready';
+      const staleBoot = staleOpencodeReadyReason(
+        sandboxMetadata(row),
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+        Date.now(),
+        STALE_OPENCODE_READY_MS,
+      );
+      if (staleBoot) {
+        return preserveEstablishedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          staleBoot,
+        );
+      }
+      await markOpencodeReadyWaitStarted(
+        row,
+        reason === 'unreachable' ? 'unreachable' : 'not_ready',
+      );
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason,
+      };
+    }
+
+    await clearRuntimeReadinessClocks(row);
+    return {
+      stage: 'ready',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: visible.row.opencodeSessionId,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: 'acp_ready',
+    };
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin

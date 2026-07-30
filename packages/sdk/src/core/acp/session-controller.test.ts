@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createAcpSessionController, type AcpSessionClient } from './session-controller';
-import { AcpTransportError, type AcpEnvelope, type AcpStreamEvent } from './types';
+import { type AcpSessionClient, createAcpSessionController } from './session-controller';
+import { type AcpEnvelope, type AcpStreamEvent, AcpTransportError } from './types';
 
 function harness() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
@@ -80,6 +80,194 @@ function harness() {
 }
 
 describe('ACP session controller', () => {
+  test('hydrates both persisted turns before loading a managed harness session', async () => {
+    const h = harness();
+    Object.assign(h.client, {
+      async initialize() {
+        h.calls.push({ method: 'initialize', args: [] });
+        return { protocolVersion: 1 };
+      },
+      async transcript() {
+        h.calls.push({ method: 'transcript', args: [] });
+        return {
+          runtime_id: 'project-session-1',
+          envelopes: [
+            {
+              ordinal: 1,
+              direction: 'client_to_agent',
+              streamEventId: null,
+              envelope: {
+                jsonrpc: '2.0',
+                id: 'prompt-1',
+                method: 'session/prompt',
+                params: {
+                  sessionId: 'codex-native-1',
+                  prompt: [{ type: 'text', text: 'first question' }],
+                },
+              },
+              createdAt: '2026-07-28T00:00:00.000Z',
+            },
+            {
+              ordinal: 2,
+              direction: 'agent_to_client',
+              streamEventId: 41,
+              envelope: {
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: 'codex-native-1',
+                  update: {
+                    sessionUpdate: 'agent_message_chunk',
+                    content: { type: 'text', text: 'first answer' },
+                  },
+                },
+              },
+              createdAt: '2026-07-28T00:00:01.000Z',
+            },
+            {
+              ordinal: 3,
+              direction: 'client_to_agent',
+              streamEventId: null,
+              envelope: {
+                jsonrpc: '2.0',
+                id: 'prompt-2',
+                method: 'session/prompt',
+                params: {
+                  sessionId: 'codex-native-1',
+                  prompt: [{ type: 'text', text: 'second question' }],
+                },
+              },
+              createdAt: '2026-07-28T00:00:02.000Z',
+            },
+            {
+              ordinal: 4,
+              direction: 'agent_to_client',
+              streamEventId: 42,
+              envelope: {
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: 'codex-native-1',
+                  update: {
+                    sessionUpdate: 'agent_message_chunk',
+                    content: { type: 'text', text: 'second answer' },
+                  },
+                },
+              },
+              createdAt: '2026-07-28T00:00:03.000Z',
+            },
+          ],
+        };
+      },
+    });
+    const controller = createAcpSessionController({
+      sessionId: 'project-session-1',
+      acpServerId: 'project-session-1',
+      acpSessionId: 'codex-native-1',
+      runtimeHarness: 'codex',
+      durableTranscript: true,
+      client: h.client,
+    } as never);
+
+    await controller.connect();
+
+    expect(
+      controller.getSnapshot().projection.messages.map((message) => ({
+        role: message.info.role,
+        text: message.parts
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join(''),
+      })),
+    ).toEqual([
+      { role: 'user', text: 'first question' },
+      { role: 'assistant', text: 'first answer' },
+      { role: 'user', text: 'second question' },
+      { role: 'assistant', text: 'second answer' },
+    ]);
+    expect(h.calls.map((call) => call.method).slice(0, 4)).toEqual([
+      'initialize',
+      'transcript',
+      'connect',
+      'loadSession',
+    ]);
+  });
+
+  test('creates and persists a harness-native session before the first prompt', async () => {
+    const h = harness();
+    Object.assign(h.client, {
+      async initialize() {
+        h.calls.push({ method: 'initialize', args: [] });
+        return { protocolVersion: 1 };
+      },
+      async newSession(input: { cwd: string; mcpServers?: unknown[] }) {
+        h.calls.push({ method: 'newSession', args: [input] });
+        return { sessionId: 'codex-native-1' };
+      },
+    });
+    const persisted: string[] = [];
+    const controller = createAcpSessionController({
+      sessionId: 'project-session-1',
+      acpServerId: 'project-session-1',
+      acpSessionId: null,
+      runtimeHarness: 'codex',
+      persistAcpSessionId: async (sessionId: string) => {
+        persisted.push(sessionId);
+      },
+      client: h.client,
+    } as never);
+
+    await controller.connect();
+    await controller.send([{ type: 'text', text: 'ping' }]);
+
+    expect(h.calls.slice(0, 3)).toEqual([
+      { method: 'initialize', args: [] },
+      { method: 'connect', args: [] },
+      {
+        method: 'newSession',
+        args: [{ cwd: '/workspace', mcpServers: [] }],
+      },
+    ]);
+    expect(persisted).toEqual(['codex-native-1']);
+    expect(h.calls).toContainEqual({
+      method: 'prompt',
+      args: ['codex-native-1', [{ type: 'text', text: 'ping' }]],
+    });
+  });
+
+  test('managed sessions use the immutable native agent for prompts and commands', async () => {
+    const h = harness();
+    Object.assign(h.client, {
+      async initialize() {
+        h.calls.push({ method: 'initialize', args: [] });
+        return { protocolVersion: 1 };
+      },
+    });
+    const controller = createAcpSessionController({
+      sessionId: 'project-session-1',
+      acpServerId: 'project-session-1',
+      acpSessionId: 'codex-native-1',
+      runtimeHarness: 'codex',
+      nativeAgent: 'reviewer',
+      client: h.client,
+    } as never);
+
+    await controller.connect();
+    await controller.send([{ type: 'text', text: 'ping' }], { agent: 'later-ui-agent' });
+    await controller.runCommand('status', '', { agent: 'another-ui-agent' });
+
+    expect(h.calls.filter((call) => call.method === 'setSessionConfigOption')).toEqual([
+      {
+        method: 'setSessionConfigOption',
+        args: ['codex-native-1', 'mode', 'reviewer'],
+      },
+      {
+        method: 'setSessionConfigOption',
+        args: ['codex-native-1', 'mode', 'reviewer'],
+      },
+    ]);
+  });
+
   test('rewinds the same ACP session and reloads a transcript that can be restored', async () => {
     const h = harness();
     h.client.loadSession = async (input) => {
@@ -157,6 +345,7 @@ describe('ACP session controller', () => {
     });
     const optimisticId = controller.getSnapshot().projection.messages[0]?.info.id;
     expect(optimisticId).toStartWith('acp-user-');
+    if (!optimisticId) throw new Error('Expected an optimistic ACP message id');
 
     h.client.loadSession = async (input) => {
       h.calls.push({ method: 'loadSession', args: [input] });
@@ -175,7 +364,7 @@ describe('ACP session controller', () => {
       return {};
     };
 
-    await controller.rewind(optimisticId!);
+    await controller.rewind(optimisticId);
 
     expect(h.calls).toContainEqual({
       method: 'revertSession',

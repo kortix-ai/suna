@@ -3,8 +3,10 @@
 /**
  * The cost pass-through surface: per-project, per-session Kortix gateway
  * costs alongside the marked-up "your price" this wrapper would actually bill
- * its own users — backed by `GET /api/usage` (server-side aggregation over
- * every project the signed-in user owns; see `src/app/api/usage/route.ts`).
+ * its own users — plus the two things that decide whether that billing is
+ * trustworthy: per-END-USER metering, and the guardrails that fire at session
+ * create. Backed by `GET /api/usage` (server-side aggregation over every
+ * project the signed-in user owns; see `src/app/api/usage/route.ts`).
  *
  * Wrapper-mode only — direct mode has no per-user ownership model to scope
  * this to, so it gets the same short explainer pattern as `/account` in
@@ -12,48 +14,28 @@
  */
 
 import { BrandMark } from '@/components/brand-mark';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UsageCaps } from '@/components/usage-caps';
+import { UsageEndUserBreakdown } from '@/components/usage-end-user-breakdown';
+import { UsageIdempotency } from '@/components/usage-idempotency';
 import { getSessionToken } from '@/lib/session';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Receipt } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
+import type { UsageResponse } from './contract';
 import { useWrapperMode } from '../providers';
-
-interface UsageSession {
-  session_id: string;
-  llm_cost?: number;
-  compute_cost?: number;
-  tokens?: number;
-  compute_seconds?: number;
-  total_cost?: number;
-  billed_cost?: number;
-}
-
-interface UsageProject {
-  projectId: string;
-  sessions: UsageSession[];
-  error?: string;
-}
-
-interface EndUserBill {
-  endUserRef: string;
-  rawCost: number;
-  billedCost: number;
-  sessions: number;
-}
-
-interface UsageResponse {
-  markup: number;
-  totals: { raw: number; billed: number };
-  /** Per-END-USER split, keyed on the end_user_ref the proxy stamps. */
-  by_end_user: EndUserBill[];
-  /** Spend with no end_user_ref — Lumen's own, deliberately not billed to anyone. */
-  unattributed_cost: number;
-  projects: UsageProject[];
-}
 
 async function fetchUsage(): Promise<UsageResponse> {
   const token = getSessionToken();
@@ -97,6 +79,13 @@ function NotInDirectMode() {
 function UsageDashboard() {
   const usage = useQuery({ queryKey: ['usage'], queryFn: fetchUsage });
   const data = usage.data;
+
+  // Both probes create a real session, so they need a project the caller owns.
+  // Defaulting to the first one keeps the common case one click.
+  const [probeProject, setProbeProject] = useState<string | null>(null);
+  const projectIds = data?.projects.map((p) => p.projectId) ?? [];
+  const activeProbeProject =
+    probeProject && projectIds.includes(probeProject) ? probeProject : (projectIds[0] ?? null);
 
   return (
     <div className="min-h-dvh bg-background">
@@ -143,6 +132,9 @@ function UsageDashboard() {
                 <div className="mt-1 text-2xl font-semibold tracking-tight">
                   {usd(data.totals.raw)}
                 </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  Summed from the projects you own.
+                </div>
               </Card>
               <Card className="border-brand/30 p-4">
                 <div className="text-xs text-muted-foreground">Your price ({data.markup}×)</div>
@@ -152,54 +144,66 @@ function UsageDashboard() {
               </Card>
             </div>
 
-            {/* The wrapper's actual invoice: upstream bills this account once,
-                and end_user_ref splits it back out per Lumen user. */}
-            {data.by_end_user.length > 0 && (
-              <Card className="mt-6 overflow-hidden">
-                <div className="border-b px-4 py-3">
-                  <div className="text-sm font-medium">Your end-user charge</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    Split from one upstream bill using the <code>end_user_ref</code> stamped on each
-                    session. Scoped to you — an operator dashboard would gate the account-wide view
-                    behind an operator role.
-                  </div>
+            <UsageEndUserBreakdown data={data} />
+
+            {/* The two reads behind the numbers above: the split, and one
+                customer's line. Both run server-side — a browser cannot reach
+                /usage at all (src/server/policy.ts is deny-by-default). */}
+            <div className="mt-3 space-y-1">
+              <CallSnippet id="usage.byEndUser" />
+              <CallSnippet id="usage.forEndUser" context={{ endUserRef: data.endUserRef }} />
+            </div>
+
+            <div className="mt-8">
+              <h2 className="text-sm font-semibold tracking-tight">Guardrails</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Both controls below make a real session-create call as you, so they need one of your
+                projects to create in.
+              </p>
+              {projectIds.length === 0 ? (
+                <Card className="mt-3 p-4 text-xs text-muted-foreground">
+                  No projects yet — create one first, then come back to run these.
+                </Card>
+              ) : (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Project</span>
+                  <Select
+                    value={activeProbeProject ?? undefined}
+                    onValueChange={(value) => setProbeProject(value)}
+                  >
+                    <SelectTrigger size="sm" className="max-w-sm font-mono text-xs">
+                      <SelectValue placeholder="Pick a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projectIds.map((id) => (
+                        <SelectItem key={id} value={id} className="font-mono text-xs">
+                          {id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="px-4 py-2 text-left font-normal">End-user</th>
-                      <th className="px-4 py-2 text-right font-normal">Sessions</th>
-                      <th className="px-4 py-2 text-right font-normal">Cost</th>
-                      <th className="px-4 py-2 text-right font-normal">You charge</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.by_end_user.map((bill) => (
-                      <tr key={bill.endUserRef} className="border-b last:border-b-0">
-                        <td className="px-4 py-2 font-mono text-xs">{bill.endUserRef}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{bill.sessions}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                          {usd(bill.rawCost)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-medium tabular-nums">
-                          {usd(bill.billedCost)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.unattributed_cost > 0 && (
-                  <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-                    {usd(data.unattributed_cost)} is not attributed to any end-user — your own
-                    sessions, and anything from before this was tracked. It is deliberately not
-                    billed to anyone, so these rows will not sum to the total above.
-                  </div>
-                )}
-              </Card>
-            )}
+              )}
+            </div>
+
+            <UsageCaps projectId={activeProbeProject} />
+            <UsageIdempotency projectId={activeProbeProject} />
+
+            <h2 className="mt-8 text-sm font-semibold tracking-tight">Per-session cost</h2>
+
+            {/* The read behind this table — one project at a time, whoever
+                started the sessions. The path is filled in with the first
+                project below; the un-narrowed counterpart to the session list
+                a signed-in browser gets. */}
+            <div className="mt-1">
+              <CallSnippet
+                id="usage.projectSessions"
+                context={{ projectId: data.projects[0]?.projectId }}
+              />
+            </div>
 
             {data.projects.length === 0 && (
-              <Card className="mt-6 p-8 text-center text-sm text-muted-foreground">
+              <Card className="mt-3 p-8 text-center text-sm text-muted-foreground">
                 No projects yet — usage will show up here once you&apos;ve run a session.
               </Card>
             )}
