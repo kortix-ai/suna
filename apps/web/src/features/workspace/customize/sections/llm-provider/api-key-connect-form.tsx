@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
+import { useMultiHarnessEnabled } from '@/hooks/projects/use-multi-harness-enabled';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { upsertProjectSecret } from '@kortix/sdk';
@@ -45,6 +46,12 @@ export function ApiKeyConnectForm({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  // A Claude Pro/Max token (`CLAUDE_CODE_OAUTH_TOKEN`) is read by exactly one
+  // consumer: the ACP `claude` harness. It serves no gateway model — note
+  // `buildClaudeSubscriptionProvider()` declares `models: []`. So on a
+  // deployment running OpenCode over REST the form stores a secret nothing can
+  // ever use. Gate it on the same `acp_runtime` flag that decides the transport.
+  const multiHarnessEnabled = useMultiHarnessEnabled(projectId);
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(provider.envVars.map((v) => [v, ''])),
   );
@@ -117,7 +124,7 @@ export function ApiKeyConnectForm({
       {provider.id === 'openai' && (
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
-      {provider.id === 'anthropic' && (
+      {provider.id === 'anthropic' && multiHarnessEnabled && (
         <ClaudeSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 

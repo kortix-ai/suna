@@ -8,6 +8,7 @@ import {
   connectorAuthorizationStrategyForProvider,
   connectorAuthorizationStrategyIsEditable,
   connectorAuthorizationUpdateIsPending,
+  connectorProfileSlugAfterNameChange,
   connectorSetupStatus,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
@@ -17,18 +18,40 @@ import {
 } from './connector-profile-form';
 
 describe('connector profile slug proposal', () => {
-  test('uses the provider app slug when the project has no matching profile', () => {
-    expect(proposeConnectorProfileSlug('google_drive', ['slack'])).toBe('google_drive');
+  test('generates the slug from the display name', () => {
+    expect(proposeConnectorProfileSlug('Gmail Read Only', ['slack'])).toBe('gmail-read-only');
   });
 
-  test('increments the suffix when the project has multiple profiles for one app', () => {
+  test('uses the first available numeric suffix after a collision', () => {
     expect(
-      proposeConnectorProfileSlug('google_drive', [
-        'google_drive',
-        'google_drive-2',
-        'google_drive-4',
+      proposeConnectorProfileSlug('Gmail Read Only', [
+        'gmail-read-only',
+        'gmail-read-only-1',
+        'gmail-read-only-3',
       ]),
-    ).toBe('google_drive-3');
+    ).toBe('gmail-read-only-2');
+  });
+
+  test('keeps an edited slug when the display name changes', () => {
+    expect(
+      connectorProfileSlugAfterNameChange({
+        displayName: 'Gmail Read Only',
+        currentSlug: 'private-inbox',
+        existingSlugs: [],
+        slugEdited: true,
+      }),
+    ).toBe('private-inbox');
+  });
+
+  test('updates an unedited slug when the display name changes', () => {
+    expect(
+      connectorProfileSlugAfterNameChange({
+        displayName: 'Gmail Read Only',
+        currentSlug: 'gmail',
+        existingSlugs: ['gmail-read-only'],
+        slugEdited: false,
+      }),
+    ).toBe('gmail-read-only-1');
   });
 
   test('normalizes an edited slug to the manifest format', () => {

@@ -202,6 +202,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -1506,6 +1509,12 @@ importers:
 
   packages/starter:
     devDependencies:
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../manifest-schema
       '@types/bun':
         specifier: ^1.1.0
         version: 1.3.14

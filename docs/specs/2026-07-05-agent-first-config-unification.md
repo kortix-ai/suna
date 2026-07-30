@@ -1,9 +1,9 @@
 # Agent-First Configuration & Authorization Unification
 
-> **Extended on 2026-07-28.** This document remains the version 2 governance
-> record. Version 3 keeps the governance model and adds `runtimes`,
-> `agents.<name>.runtime`, and OpenCode, Claude Code, Codex, or Pi selection.
-> Use `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md` for the
+> **Current for version 2.** This document is the `kortix_version: 2`
+> governance record, which is the shipped schema. The `kortix_version: 3`
+> extension referenced below is experimental, unreleased, and off by default
+> (`KORTIX_ACP_RUNTIME=false`). Ignore it. See the historical
 > current runtime contract.
 
 **Status:** Shipped — Marko + Fable, 2026-07-05. Phases 0–2 (hygiene, schema v2 +

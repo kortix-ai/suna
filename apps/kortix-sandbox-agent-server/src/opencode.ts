@@ -34,7 +34,6 @@ const READY_LIVENESS_MS = 5_000
 
 export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
-const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
@@ -462,6 +461,91 @@ function scheduleCatalogWarmToPath(
 }
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
+
+/**
+ * Where the composed Kortix config is materialized for an OpenCode child.
+ * Derived from the DAEMON's own home, never from `env.HOME`: a project may name
+ * a secret `HOME` (only `KORTIX_*` names are reserved), and an unwritable value
+ * would then fail every session boot instead of one shell command.
+ */
+const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-opencode.json')
+
+/**
+ * Materialize the composed Kortix config (see buildOpencodeConfigContent) and
+ * return the path OpenCode must read it from, or null when no contributor
+ * applies.
+ *
+ * The config carries the gateway's full model catalog — over a megabyte, far
+ * past Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN). Inlining it via
+ * OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and OpenCode never
+ * spawns ("runtime not ready"), so it is always handed over as a FILE.
+ */
+export async function writeKortixOpencodeConfig(
+  env: NodeJS.ProcessEnv,
+  opts: { configPath?: string } = {},
+): Promise<string | null> {
+  const content = await buildOpencodeConfigContent(env)
+  if (!content) return null
+  const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, content, { mode: 0o600 })
+  logger.info(`[opencode] wrote config (${content.length} bytes) to ${configPath}`)
+  return configPath
+}
+
+/**
+ * Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from an
+ * OpenCode child. With any such key in its env, OpenCode auto-connects a NATIVE
+ * provider and calls it directly — bypassing the gateway (no logs / spend /
+ * budgets) and leaving stale models that survive a BYOK disconnect. The gateway
+ * must be the only LLM path, so the API hands us the exact names to strip
+ * (Codex/OpenCode subscription auth is excluded — materializeOpencodeAuth has
+ * already consumed it into auth.json). This only shapes the child's env; the
+ * container itself keeps what it holds.
+ */
+export function withoutDeniedProviderEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const denied = (env.KORTIX_OPENCODE_DENY_ENV || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+  const next: NodeJS.ProcessEnv = { ...env }
+  let withheld = 0
+  for (const name of denied) {
+    if (name in next) {
+      delete next[name]
+      withheld++
+    }
+  }
+  if (withheld > 0) {
+    logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
+  }
+  return next
+}
+
+/**
+ * The env a MANAGED OpenCode child must launch with, whatever spawns it.
+ *
+ * A managed-ACP session starts only its selected harness — `opencode.start()`
+ * is skipped — so the OpenCode supervisor's spawn path never runs and none of
+ * its launch-env work happened for the ACP harness. OpenCode then booted with
+ * the project's own config alone: NO synthetic `kortix` provider, so every
+ * managed model id was rejected (`session/set_config_option` answering
+ * `-32602 model not found: kortix/<id>`, `data.providerId: "kortix"`), and the
+ * project's own provider secrets reached the harness so it advertised native
+ * `anthropic/*` models that bypass the gateway entirely. Both spawn paths now
+ * compose the same launch env here.
+ */
+export async function resolveManagedOpencodeLaunchEnv(
+  env: NodeJS.ProcessEnv,
+  opts: { configPath?: string } = {},
+): Promise<NodeJS.ProcessEnv> {
+  const next = withoutDeniedProviderEnv(env)
+  const configPath = await writeKortixOpencodeConfig(env, opts)
+  if (!configPath) return next
+  delete next.OPENCODE_CONFIG_CONTENT
+  next.OPENCODE_CONFIG = configPath
+  return next
+}
 
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
 // Per-request hard cap. `opencode serve` cannot bind its port until
@@ -932,7 +1016,7 @@ export function createOpencodeSupervisor(
       })
     }
     const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
-    const env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
+    let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
       OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
@@ -947,25 +1031,7 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
-    // Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from the
-    // opencode process. With any such key in its env, opencode auto-connects a
-    // NATIVE provider and calls it directly — bypassing the gateway (no logs /
-    // spend / budgets) and leaving stale models that survive a BYOK disconnect.
-    // The gateway must be the only LLM path, so the API hands us the exact names
-    // to strip (Codex/OpenCode subscription auth is excluded — it's already been
-    // consumed into auth.json by materializeOpencodeAuth above). This only touches
-    // the opencode process env; it doesn't change what the container itself holds.
-    const denyEnv = (env.KORTIX_OPENCODE_DENY_ENV || '').split(',').map((n) => n.trim()).filter(Boolean)
-    let withheld = 0
-    for (const name of denyEnv) {
-      if (name in env) {
-        delete env[name]
-        withheld++
-      }
-    }
-    if (withheld > 0) {
-      logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-    }
+    env = withoutDeniedProviderEnv(env)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
@@ -975,18 +1041,10 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
-    const opencodeConfig = await buildOpencodeConfigContent(baseEnv)
-    if (opencodeConfig) {
-      // The assembled config carries the gateway's full model catalog, which is
-      // ~400KB — far over Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN).
-      // Inlining it via OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and
-      // opencode never spawns ("runtime not ready"). Hand it a file path instead.
-      const configPath = join(OPENCODE_CONFIG_HOME, 'kortix-opencode.json')
-      mkdirSync(dirname(configPath), { recursive: true })
-      writeFileSync(configPath, opencodeConfig, { mode: 0o600 })
+    const configPath = await writeKortixOpencodeConfig(baseEnv)
+    if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
-      logger.info(`[opencode] wrote config (${opencodeConfig.length} bytes) to ${configPath}`)
     }
     startupMark('runtime-config-ready')
 

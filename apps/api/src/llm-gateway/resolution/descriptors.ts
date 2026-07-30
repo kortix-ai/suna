@@ -184,6 +184,23 @@ export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
   return managedCandidates(managed)[0] ?? null;
 }
 
+/**
+ * Whether THIS deployment can actually reach `managed` — i.e. its transport's
+ * credential is configured (ASTER_API_KEY / AWS_BEDROCK_API_KEY /
+ * OPENROUTER_API_KEY) and the managed provider is on.
+ *
+ * The served catalog reads this so a model that would fail resolution is never
+ * OFFERED. Without it, `/model-picker` advertised `glm-5.2` (the platform
+ * default, transport `aster`) on a deployment with no ASTER_API_KEY, and every
+ * attempt to select it came back `400 INVALID_SESSION_MODEL` — the picker and
+ * request-time resolution disagreed because only resolution checked the
+ * credential. Derived from `managedCandidates` rather than re-listing the env
+ * vars, so the two can never drift.
+ */
+export function managedTransportAvailable(managed: ManagedModel): boolean {
+  return managedCandidates(managed).length > 0;
+}
+
 export function codexDescriptor(credential: CodexCredential, model: string): UpstreamDescriptor {
   const headers: Record<string, string> = {
     originator: 'codex_cli_rs',

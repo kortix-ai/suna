@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { openKortixPtyWebSocket } from '../api/sandbox-proxy';
+import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 

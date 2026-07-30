@@ -6,7 +6,6 @@ description: >-
   draft cart for the office manager to approve. Places the order only after
   that explicit approval — never before.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

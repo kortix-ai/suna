@@ -3,6 +3,7 @@ import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
 import { RUNTIME_MANAGED_MODELS } from './managed-models';
+import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
@@ -156,9 +157,13 @@ export function labelForModelRef(ref: string): string {
   return ref;
 }
 
-/** Managed models as opencode refs (`kortix/<id>`), with tier hints. */
+/**
+ * Managed models as opencode refs (`kortix/<id>`), with tier hints. Reads the
+ * SERVED lineup, so a configured model whose transport credential is missing is
+ * never offered on a surface where picking it would fail.
+ */
 export function managedPickerModels(): PickerModel[] {
-  return RUNTIME_MANAGED_MODELS.map((m) => ({
+  return SERVED_MANAGED_MODELS.map((m) => ({
     id: `kortix/${m.id}`,
     label: m.name,
     provider: 'kortix',

@@ -72,7 +72,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       )}
       renderTriggerLabel={(agent) => (
         <span className="flex min-w-0 items-center gap-2">
-          <AgentHarnessIcon harness={agent.harness} />
+          <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
           <span className="truncate">{agent.name}</span>
         </span>
       )}
@@ -92,7 +92,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
-          <AgentHarnessIcon harness={agent.harness} />
+          <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -189,7 +189,7 @@ function DefaultAgentSelector({
             {availableAgents.map((agent) => (
               <SelectItem key={agent.name} value={agent.name}>
                 <span className="flex min-w-0 items-center gap-2">
-                  <AgentHarnessIcon harness={agent.harness} />
+                  <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
                   <span className="truncate">{agent.name}</span>
                 </span>
               </SelectItem>

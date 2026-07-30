@@ -881,6 +881,28 @@ test('changeModel invalidates the persisted default before the next send', async
   ]);
 });
 
+test('changeModel surfaces push_failed so a half-applied change is not read as saved', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.endsWith('/projects/PROJ/sessions/SESS-HALF/model')) {
+      return jsonResponse({
+        opencode_model: 'kortix/deepseek-v4-flash',
+        applied_live: false,
+        push_failed: true,
+        detail: 'stored, but not pushed: env sync failed: 502 upstream-closed-before-headers',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const result = await k.session('PROJ', 'SESS-HALF').changeModel('kortix/deepseek-v4-flash');
+
+  expect(result.push_failed).toBe(true);
+  expect(result.applied_live).toBe(false);
+  expect(result.detail).toContain('502 upstream-closed-before-headers');
+});
+
 test('per-call and handle prompt choices override persisted session defaults', async () => {
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
     const url = requestUrl(input);

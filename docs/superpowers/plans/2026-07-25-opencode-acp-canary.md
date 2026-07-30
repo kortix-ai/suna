@@ -1,8 +1,10 @@
 # OpenCode ACP canary implementation plan
 
-> **Historical plan.** The active implementation supports OpenCode, Claude
-> Code, Codex, and Pi through immutable v3 runtime profiles. Use
-> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`.
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
 
 **Spec:** `docs/superpowers/specs/2026-07-25-opencode-acp-canary-design.md`
 

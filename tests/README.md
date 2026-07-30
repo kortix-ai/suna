@@ -96,6 +96,11 @@ pnpm --filter @kortix/tests test:shell:vps               # VPS checks
 
 ## ACP Multi-Harness Protocol Smoke
 
+> **Not shipped.** ACP and multi-harness (`kortix_version: 3`, Claude Code /
+> Codex / Pi) are experimental, unreleased, and off by default
+> (`KORTIX_ACP_RUNTIME=false`). This script exercises development-only code. It
+> is not part of any release gate.
+
 Run `tests/e2e/scripts/acp-multi-harness-smoke.ts` against a live API. The
 script verifies session creation, the headless prompt, a follow-up prompt,
 transcript reload, immutable runtime identity, restart, and a post-restart

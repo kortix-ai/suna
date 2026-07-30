@@ -1,31 +1,24 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 
+import {
+  type CompactMessage,
+  compactAcpEnvelopes,
+  compactOpencodeMessages,
+} from '../../shared/compact-transcript';
 import { db } from '../../shared/db';
 import {
   ensureOpencodeSessionPin,
   sandboxOpencodeEndpoint,
 } from '../opencode-mapping';
+import { readManagedAcpSessionIdentity } from '../runtime-inspection';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { loadAcpTranscript } from './acp-transcript';
 import type { ProjectSessionRow } from './serializers';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
-export interface CompactToolCall {
-  tool: string;
-  status: string | null;
-}
-
-export interface CompactMessage {
-  role: string;
-  created: string | null;
-  completed: string | null;
-  text: string;
-  tools: CompactToolCall[];
-  files: Array<{ filename: string | null; mime: string | null }>;
-  reasoning_omitted: boolean;
-  error: { name?: string; message?: string } | null;
-}
+export type { CompactFileRef, CompactMessage, CompactToolCall } from '../../shared/compact-transcript';
 
 export interface SessionTranscriptDigest {
   available: boolean;
@@ -34,28 +27,6 @@ export interface SessionTranscriptDigest {
   message_count: number;
   messages: CompactMessage[];
 }
-
-type RawOpencodeMessage = {
-  info?: {
-    role?: string;
-    time?: { created?: number; completed?: number };
-    error?: { name?: string; message?: string } | null;
-  };
-  role?: string;
-  time?: { created?: number; completed?: number };
-  error?: { name?: string; message?: string } | null;
-  parts?: RawOpencodePart[];
-};
-
-type RawOpencodePart = {
-  type?: string;
-  text?: string;
-  synthetic?: boolean;
-  tool?: string;
-  state?: { status?: string };
-  filename?: string;
-  mime?: string;
-};
 
 export async function buildSessionTranscriptDigest(input: {
   session: ProjectSessionRow;
@@ -73,6 +44,21 @@ export async function buildSessionTranscriptDigest(input: {
     message_count: 0,
     messages: [],
   });
+
+  // ACP sessions are served from `kortix.acp_session_envelopes`, never from the
+  // sandbox. Managed ACP never mints an OpenCode REST pin
+  // (projects/lib/sessions.ts writes none) and never starts the in-sandbox REST
+  // server (kortix-sandbox-agent-server main.ts skips opencode.start()), so the
+  // REST read below is structurally dead for every ACP harness. The envelope
+  // log is durable in Postgres, which also means a stopped or destroyed sandbox
+  // still has a readable transcript — hence this runs BEFORE the
+  // `status !== 'running'` gate.
+  const acpIdentity = readManagedAcpSessionIdentity(
+    (session.metadata ?? {}) as Record<string, unknown>,
+  );
+  if (acpIdentity) {
+    return buildAcpTranscriptDigest({ session, projectId, limit, maxChars });
+  }
 
   if (session.status !== 'running') {
     return unavailable(`session is ${session.status}; live transcript requires a running sandbox`);
@@ -141,13 +127,13 @@ export async function buildSessionTranscriptDigest(input: {
       };
     }
     const payload = (await res.json().catch(() => null)) as unknown;
-    const rawMessages = normalizeMessageList(payload).slice(-limit);
+    const messages = compactOpencodeMessages(payload, { limit, maxChars });
     return {
       available: true,
       reason: null,
       opencode_session_id: opencodeSessionId,
-      message_count: rawMessages.length,
-      messages: rawMessages.map((m) => compactMessage(m, maxChars)),
+      message_count: messages.length,
+      messages,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -219,51 +205,46 @@ async function messageReadReason(res: Response): Promise<string> {
   return detail ? `OpenCode messages unavailable: ${detail}` : `OpenCode messages unavailable: HTTP ${res.status}`;
 }
 
-function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
-  const list = Array.isArray(payload)
-    ? payload
-    : typeof payload === 'object' && payload && 'messages' in payload && Array.isArray((payload as { messages?: unknown }).messages)
-      ? (payload as { messages: unknown[] }).messages
-      : [];
-  return list.filter((m): m is RawOpencodeMessage => typeof m === 'object' && m !== null);
-}
-
-function compactMessage(msg: RawOpencodeMessage, maxChars: number): CompactMessage {
-  const info = msg.info ?? msg;
-  const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const text = parts
-    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .filter(Boolean)
-    .join('\n');
-  const tools = parts
-    .filter((p) => p.type === 'tool')
-    .map((p) => ({
-      tool: p.tool ?? 'tool',
-      status: p.state?.status ?? null,
-    }));
-  const files = parts
-    .filter((p) => p.type === 'file')
-    .map((p) => ({
-      filename: p.filename ?? null,
-      mime: p.mime ?? null,
-    }));
-  return {
-    role: info.role ?? 'unknown',
-    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
-    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), maxChars),
-    tools,
-    files,
-    reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
-    error: info.error ?? null,
-  };
-}
-
-function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
+/**
+ * ACP transcript, folded from the durable envelope log. No sandbox call, no
+ * OpenCode pin: minting one would need a REST server this transport never
+ * starts, and is structurally impossible for the claude/codex/pi harnesses.
+ * Every ACP harness is read identically — nothing here branches on which one.
+ *
+ * `available` is true even with zero envelopes: an ACP session that has not
+ * spoken yet has an empty transcript, not an error.
+ */
+async function buildAcpTranscriptDigest(input: {
+  session: ProjectSessionRow;
+  projectId: string;
+  limit: number;
+  maxChars: number;
+}): Promise<SessionTranscriptDigest> {
+  const { session, projectId, limit, maxChars } = input;
+  const metadata = (session.metadata ?? {}) as Record<string, unknown>;
+  const acpSessionId =
+    typeof metadata.acp_session_id === 'string' && metadata.acp_session_id.trim()
+      ? metadata.acp_session_id
+      : null;
+  try {
+    const envelopes = await loadAcpTranscript({ projectId, sessionId: session.sessionId });
+    const messages = compactAcpEnvelopes(envelopes, { acpSessionId, limit, maxChars });
+    return {
+      available: true,
+      reason: null,
+      // Deliberately null for ACP: there is no OpenCode REST session to pin.
+      opencode_session_id: null,
+      message_count: messages.length,
+      messages,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      available: false,
+      reason: `could not read ACP transcript: ${message}`,
+      opencode_session_id: null,
+      message_count: 0,
+      messages: [],
+    };
+  }
 }

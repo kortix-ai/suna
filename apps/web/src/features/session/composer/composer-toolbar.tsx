@@ -156,6 +156,7 @@ export function ComposerToolbar({
             model) stopped showing their current value at rest. */}
         {showAgent && (
           <AgentSelector
+            projectId={projectId}
             agents={agents}
             selectedAgent={selectedAgent}
             onSelect={onAgentChange ?? (() => {})}

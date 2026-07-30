@@ -7,6 +7,7 @@ import { isAbsolute, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 import { logger } from '../logger'
+import { resolveManagedOpencodeLaunchEnv } from '../opencode'
 import {
   mergeProjectEnv,
   type ProjectEnvStore,
@@ -40,26 +41,10 @@ const HARNESS_CONFIG_DIR_ENV = [
   'PI_CODING_AGENT_DIR',
 ] as const
 
-function ensureHarnessConfigDirs(
-  env: NodeJS.ProcessEnv,
-  cwd: string,
-): void {
-  for (const name of HARNESS_CONFIG_DIR_ENV) {
-    const raw = env[name]?.trim()
-    if (!raw) continue
-    mkdirSync(isAbsolute(raw) ? raw : join(cwd, raw), {
-      recursive: true,
-    })
-  }
-
-  const piDir = env.PI_CODING_AGENT_DIR?.trim()
-  const models = env.KORTIX_PI_MODELS_JSON?.trim()
-  if (!piDir || !models) return
-
-  const dir = isAbsolute(piDir) ? piDir : join(cwd, piDir)
-  const file = join(dir, 'models.json')
+/** Write `file` unless it already exists, so an author-owned config wins. */
+function writeConfigIfAbsent(file: string, content: string): void {
   try {
-    writeFileSync(file, `${models}\n`, {
+    writeFileSync(file, content, {
       flag: 'wx',
       mode: 0o600,
     })
@@ -74,6 +59,39 @@ function ensureHarnessConfigDirs(
       throw error
     }
   }
+}
+
+function ensureHarnessConfigDirs(
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): void {
+  for (const name of HARNESS_CONFIG_DIR_ENV) {
+    const raw = env[name]?.trim()
+    if (!raw) continue
+    mkdirSync(isAbsolute(raw) ? raw : join(cwd, raw), {
+      recursive: true,
+    })
+  }
+
+  const piDir = env.PI_CODING_AGENT_DIR?.trim()
+  if (!piDir) return
+  const dir = isAbsolute(piDir) ? piDir : join(cwd, piDir)
+
+  // pi-acp reads `quietStartup` from <PI_CODING_AGENT_DIR>/settings.json and
+  // then stops composing the `pi vX.Y.Z` / Context / Skills banner it pushes
+  // into the session as an agent message. It also skips that banner's skill
+  // directory scan on every session/new. pi-acp 0.0.32 offers no env var for
+  // this and still emits the upgrade nag regardless, so this only reduces the
+  // noise at the source — AcpConnection's pre-turn guard is what keeps harness
+  // chatter out of the transcript.
+  writeConfigIfAbsent(
+    join(dir, 'settings.json'),
+    `${JSON.stringify({ quietStartup: true }, null, 2)}\n`,
+  )
+
+  const models = env.KORTIX_PI_MODELS_JSON?.trim()
+  if (!models) return
+  writeConfigIfAbsent(join(dir, 'models.json'), `${models}\n`)
 }
 
 function killProcessGroup(
@@ -284,6 +302,8 @@ export class AcpRuntime {
       requestTimeoutMs?: number
       initializeOnCreate?: boolean
       onStartupMark?: (label: string) => void
+      /** Overrides where the OpenCode harness's composed config is written. */
+      opencodeConfigPath?: string
     },
   ) {}
 
@@ -356,9 +376,19 @@ export class AcpRuntime {
       throw new Error(`unsupported ACP agent '${harness}'`)
     }
     const baseEnv = this.options.baseEnv ?? process.env
-    const env = this.options.projectEnv
+    const merged = this.options.projectEnv
       ? mergeProjectEnv(baseEnv, this.options.projectEnv)
       : baseEnv
+    // The OpenCode harness is the same binary the supervisor spawns for the
+    // legacy REST transport, so it needs that path's managed launch env — the
+    // synthetic `kortix` gateway provider above all. Without it OpenCode knows
+    // no `kortix/*` model and rejects every managed model the picker offers.
+    const env =
+      harness === 'opencode'
+        ? await resolveManagedOpencodeLaunchEnv(merged, {
+            configPath: this.options.opencodeConfigPath,
+          })
+        : merged
     const instance = new AcpRuntimeProcess(
       serverId,
       descriptor,

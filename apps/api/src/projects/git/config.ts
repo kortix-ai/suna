@@ -10,6 +10,7 @@ import {
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { compileRuntimeConfig, type CompiledRuntimeConfig } from '../lib/compile-runtime-config';
+import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -351,6 +352,14 @@ export async function loadProjectConfig(
     signals,
     manifest_raw: manifestRaw,
     manifest,
+    // The authoritative version verdict. Computed here so no client ever has to
+    // infer a version from the raw text — and so an unreadable manifest reports
+    // `unknown` instead of being mistaken for a legacy v1.
+    manifest_version: resolveManifestVerdict({
+      raw: manifestRaw,
+      format: manifestFormat,
+      path: resolved?.path ?? null,
+    }),
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
     // v2 makes the manifest's declared default authoritative. Legacy projects

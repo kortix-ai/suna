@@ -1,5 +1,11 @@
 # Session-start latency and ACP architecture
 
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
+
 **Date:** 2026-07-29
 
 **Status:** Measured baseline, canonical ACP starter, selected-harness

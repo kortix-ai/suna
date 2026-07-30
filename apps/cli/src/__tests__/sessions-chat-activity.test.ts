@@ -4,20 +4,20 @@
 // dispatched subagent batch) must NOT be labelled "queued — agent picking up…".
 import { describe, expect, test } from 'bun:test';
 
-import type { OpencodeMessageWithParts } from '../api/sandbox-proxy.ts';
+import type { AcpMessageWithParts } from '@kortix/sdk';
 import { deriveActivity } from '../commands/sessions-chat.ts';
 
-function userMsg(created: number, text = 'do the thing'): OpencodeMessageWithParts {
+function userMsg(created: number, text = 'do the thing'): AcpMessageWithParts {
   return {
     info: { id: `u-${created}`, role: 'user', sessionID: 's', time: { created } },
     parts: [{ type: 'text', text }],
-  };
+  } as unknown as AcpMessageWithParts;
 }
 function assistantMsg(
   created: number,
   opts: { completed?: number; tool?: { name: string; status: string }; text?: string } = {},
-): OpencodeMessageWithParts {
-  const parts: OpencodeMessageWithParts['parts'] = [];
+): AcpMessageWithParts {
+  const parts: unknown[] = [];
   if (opts.tool) parts.push({ type: 'tool', tool: opts.tool.name, state: { status: opts.tool.status } });
   if (opts.text) parts.push({ type: 'text', text: opts.text });
   return {
@@ -28,7 +28,7 @@ function assistantMsg(
       time: { created, ...(opts.completed ? { completed: opts.completed } : {}) },
     },
     parts,
-  };
+  } as unknown as AcpMessageWithParts;
 }
 
 describe('deriveActivity', () => {

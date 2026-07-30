@@ -23,6 +23,7 @@ import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
@@ -348,8 +349,11 @@ export async function stageWarmRepoCheckout(
   await assertCheckoutHasNoCredentials(dest);
   const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_ARCHIVE);
   await rm(stagedGit, { force: true });
-  await execFileAsyncBC('tar', ['-cf', stagedGit, '-C', dest, '.git'], {
-    env: plainEnv,
+  // Apple-metadata-free: this archive is extracted INSIDE the image, so leaked
+  // xattrs land as `._*` sidecars in `.git` (`.git/objects/pack/._pack-*.idx`
+  // makes git log `index file … is too small`). See staging-tar.ts.
+  await execFileAsyncBC('tar', stagingTarArgs(['-cf', stagedGit], ['-C', dest, '.git']), {
+    env: stagingTarEnv(plainEnv),
     timeout: 300_000,
     maxBuffer: 64 * 1024 * 1024,
   });

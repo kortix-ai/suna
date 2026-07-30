@@ -4,6 +4,7 @@ import {
   AcpProtocolError,
   parseJsonRpcEnvelope,
   type AcpConnection,
+  type JsonRpcEnvelope,
 } from '../acp/connection'
 import {
   parseAcpHarnessId,
@@ -92,6 +93,54 @@ export function createOpenCodeSessionHistory(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Is this envelope an attempt to re-point the ACTING AGENT away from the one
+ * this sandbox booted with?
+ *
+ * On OpenCode the ACP `mode` config option selects the harness AGENT — the
+ * built-ins `build` / `plan` plus every project agent declared `mode: primary`,
+ * which is what a marketplace template installs. That agent is the identity the
+ * session token's `agent_grant` was minted for, so honouring a foreign value
+ * runs agent B under agent A's connector and Kortix-CLI grant. The API refuses
+ * the same envelope first (apps/api/src/projects/routes/acp.ts); this is the box
+ * refusing to be re-pointed even if that refusal is bypassed.
+ *
+ * `mode` means something else entirely on every other harness — Claude's
+ * permission modes (`default`, `acceptEdits`, `plan`, `bypassPermissions`) and
+ * Codex's approval presets — where the acting agent is fixed at process launch
+ * by the harness config dir and no `mode` value can move it. Policing the value
+ * there would break legitimate permission changes, so we do not.
+ *
+ * With no booted native agent (`KORTIX_NATIVE_AGENT` absent) the project's
+ * Kortix agent is not an OpenCode agent at all: the only selectable modes are
+ * OpenCode's own built-ins, which carry no grant. Nothing to pin.
+ */
+export function foreignAgentModeSwitch(
+  cfg: Pick<Config, 'nativeAgent'>,
+  harness: AcpHarnessId,
+  envelope: JsonRpcEnvelope,
+): { expectedAgent: string; requestedAgent: string } | null {
+  if (harness !== 'opencode') return null
+  const bootedAgent = cfg.nativeAgent?.trim()
+  if (!bootedAgent) return null
+  if (!('method' in envelope) || envelope.method !== 'session/set_config_option') {
+    return null
+  }
+  const params =
+    envelope.params && typeof envelope.params === 'object' && !Array.isArray(envelope.params)
+      ? (envelope.params as Record<string, unknown>)
+      : {}
+  if (params.configId !== 'mode') return null
+  const requested = typeof params.value === 'string' ? params.value.trim() : ''
+  if (requested === bootedAgent) return null
+  // A non-string value cannot prove it names the booted agent. Refuse rather
+  // than guess — this is the branch a bypass would reach for.
+  return {
+    expectedAgent: bootedAgent,
+    requestedAgent: requested || String(params.value),
+  }
 }
 
 export function createAcpRouter(
@@ -207,6 +256,29 @@ export function createAcpRouter(
         c.req.param('serverId'),
         harness,
       )
+      // Before EITHER delivery path. The managed branch below posts the envelope
+      // with no allowlist and no params check at all, so a guard placed after it
+      // would cover only the legacy native connection.
+      const foreignAgent = foreignAgentModeSwitch(
+        cfg,
+        managed?.harness ?? 'opencode',
+        envelope,
+      )
+      if (foreignAgent) {
+        logger.warn('[opencode-acp] refusing foreign agent mode switch', {
+          serverId: c.req.param('serverId'),
+          ...foreignAgent,
+        })
+        return c.json(
+          {
+            error: 'agent switch requires a new session',
+            code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+            expected_agent: foreignAgent.expectedAgent,
+            requested_agent: foreignAgent.requestedAgent,
+          },
+          409,
+        )
+      }
       if (managed) {
         c.header('X-Kortix-ACP-Runtime-Instance', managed.connection.instanceId)
         const response = await managed.post(envelope)

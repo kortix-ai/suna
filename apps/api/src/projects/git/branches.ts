@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
+import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
 import {
   hostFromRepoUrl,
@@ -166,6 +167,37 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
   return branches;
 }
 
+/**
+ * Does `refs/heads/<branch>` exist on the REMOTE right now?
+ *
+ * One `git ls-remote` round trip against the upstream — no clone, no shared
+ * mirror, no cache. That matters for both callers: provisioning must PROVE a
+ * scaffold seed produced the default branch before it reports the project
+ * active, and session start must decide whether the repo needs a repair seed.
+ * `listBranches` cannot answer either question — it reads the cached bare
+ * mirror, which happily returns an empty list for a repo with no refs.
+ *
+ * The ref is validated before it reaches argv, so a branch name can never be
+ * smuggled in as a `git ls-remote` option (`--upload-pack=…`).
+ */
+export async function remoteBranchExists(
+  project: GitBackedProject,
+  branch: string,
+): Promise<boolean> {
+  const ref = validateRef(branch);
+  const result = await runGit(
+    ['ls-remote', '--heads', project.repoUrl, `refs/heads/${ref}`],
+    undefined,
+    true,
+    project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    undefined,
+    project.gitAuthHeaders,
+  );
+  return result.stdout.trim().length > 0;
+}
+
 export async function createRemoteSessionBranch(
   project: GitBackedProject,
   branchName: string,
@@ -202,16 +234,32 @@ export async function createRemoteSessionBranch(
     // block on cloning every branch and all history from large repos.
     await runGit(['init', '--bare', repoPath], undefined, false);
     await runGit(['remote', 'add', 'origin', project.repoUrl], repoPath, false);
-    await runGit(
-      ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      authHost,
-      undefined,
-      project.gitAuthHeaders,
-    );
+    const fetchBase = () =>
+      runGit(
+        ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
+        repoPath,
+        true,
+        project.gitAuthToken,
+        undefined,
+        authHost,
+        undefined,
+        project.gitAuthHeaders,
+      );
+    try {
+      await fetchBase();
+    } catch (error) {
+      // `couldn't find remote ref refs/heads/<base>` on a MANAGED repo means the
+      // scaffold seed never landed — the repo is structurally empty and every
+      // surface built on it (files, agents, skills, manifest version, session
+      // start) is dead. Seed it on demand, then retry once. Reactive by design:
+      // the happy path pays nothing, and a repair only runs for the exact
+      // failure it can fix (see isMissingRemoteBranchError).
+      if (!isMissingRemoteBranchError(error)) throw error;
+      const { ensureManagedRepoSeeded } = await import('../managed-repo-seed');
+      const outcome = await ensureManagedRepoSeeded(project.projectId, 'session-branch');
+      if (!outcome.repaired) throw error;
+      await fetchBase();
+    }
     await runGit(
       ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
       repoPath,

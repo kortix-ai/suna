@@ -158,6 +158,56 @@ test('deliverHeadlessAcpPrompt initializes, creates, streams, persists, and prom
   ]);
 });
 
+test('deliverHeadlessAcpPrompt loads an already-minted session instead of minting a second one', async () => {
+  const rpcMethods: string[] = [];
+  const persisted: unknown[] = [];
+
+  const delivered = await deliverHeadlessAcpPrompt(
+    {
+      acpServerId: 'project-session-1',
+      acpSessionId: 'codex-native-winner',
+      runtimeHarness: 'codex',
+      nativeAgent: null,
+      projectId: 'project-1',
+      projectSessionId: 'project-session-1',
+      text: 'inspect this repo',
+    },
+    {
+      request: async (method, _route, _query, _headers, body) => {
+        const envelope = body
+          ? (JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>)
+          : null;
+        if (typeof envelope?.method === 'string') rpcMethods.push(envelope.method);
+        if (method === 'GET') {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              cancel() {},
+            }),
+            { status: 200 },
+          );
+        }
+        if (envelope?.method === 'session/prompt') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: envelope.id,
+            result: { stopReason: 'end_turn' },
+          });
+        }
+        return Response.json({ jsonrpc: '2.0', id: envelope?.id, result: {} });
+      },
+      persistIdentity: async (identity) => {
+        persisted.push(identity);
+      },
+      persistEnvelope: async () => {},
+    },
+  );
+
+  expect(delivered).toEqual({ ok: true, acpSessionId: 'codex-native-winner' });
+  expect(rpcMethods).toEqual(['initialize', 'session/load', 'session/prompt']);
+  expect(rpcMethods).not.toContain('session/new');
+  expect(persisted).toEqual([]);
+});
+
 test('shouldScheduleInitialAcpPrompt selects ACP creates without duplicate post-create delivery', () => {
   expect(
     shouldScheduleInitialAcpPrompt({

@@ -52,21 +52,10 @@ In a version 2 project, OpenCode skills use:
 .kortix/opencode/skills/<name>/SKILL.md
 ```
 
-In version 3, author a project skill in the selected harness's native discovery
-directory:
-
-| Harness | Project skill path |
-| --- | --- |
-| OpenCode | `<config_dir>/skills/<name>/SKILL.md` |
-| Claude Code | `<config_dir>/skills/<name>/SKILL.md` |
-| Codex | `.agents/skills/<name>/SKILL.md` |
-| Pi | `<config_dir>/skills/<name>/SKILL.md` or `.agents/skills/<name>/SKILL.md` |
-
 The directory name **must equal** the `name` in the frontmatter. Kortix-managed
-system skills remain sourced from `.kortix/opencode/skills` and the sandbox
-injects their deployed copy into the selected harness path. Optional
-project-owned skills are git files. Place them in each harness path that must
-discover them.
+system skills are sourced from `.kortix/opencode/skills`, and the sandbox
+force-writes their deployed copy there at boot. Optional project-owned skills
+are ordinary git files in the same directory.
 
 OpenCode lists every discovered skill in the `skill` tool description and
 loads the body on demand when the agent calls it. Two consequences worth
@@ -193,11 +182,10 @@ Two complementary checks — do both:
    Read any error and fix it before moving on. Don't validate
    mid-authoring — wait until the files are final.
 
-2. **Runtime check.** Start a fresh session with the target harness. Confirm
-   `SKILL.md` is uppercase, the frontmatter has `name` and `description`, the
-   name matches the directory, and the name is unique. Ask the harness to list
-   or load the skill. For OpenCode, also check `permission.skill` rules in
-   `opencode.jsonc`.
+2. **Runtime check.** Start a fresh session. Confirm `SKILL.md` is uppercase,
+   the frontmatter has `name` and `description`, the name matches the
+   directory, and the name is unique. Ask the agent to list or load the skill.
+   Also check `permission.skill` rules in `opencode.jsonc`.
 
 ## Make it land and shareable
 

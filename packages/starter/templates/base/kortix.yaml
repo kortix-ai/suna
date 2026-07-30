@@ -1,15 +1,20 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
 #
 # Kortix project manifest. This file is the source of truth for project-wide
 # configuration stored with the repository.
 #
-# Version 3 supports ACP runtime profiles. The selected runtime profile becomes
-# immutable when a session starts. An in-place restart keeps the same harness.
-# Start a new session to use another harness.
-kortix_version: 3
+# Version 2 is the current schema. It runs one runtime: OpenCode. Agent
+# identity, governance, and behavior live in this one `agents:` map plus each
+# agent's own `.kortix/opencode/agents/<name>.md`. Run
+# `kortix schema --version 2` for the exact field list.
+kortix_version: 2
 
-# The logical agent used when a session or trigger does not name one.
-default_agent: opencode
+# The agent used when a session or trigger does not name one. It must resolve to
+# an agent declared below.
+default_agent: kortix
+
+# The only runtime this schema version supports.
+runtime: opencode
 
 project:
   name: "{{projectName}}"
@@ -21,12 +26,11 @@ env:
   required: []
   optional:
     - STRIPE_API_KEY
-    - ANTHROPIC_API_KEY
-    - ANTHROPIC_AUTH_TOKEN
-    - CLAUDE_CODE_OAUTH_TOKEN
-    - CODEX_AUTH_JSON
-    - OPENAI_API_KEY
-    - CODEX_API_KEY
+
+# OpenCode keeps its agents, skills, commands, tools, plugins, providers, and
+# models under this directory.
+opencode:
+  config_dir: .kortix/opencode
 
 # Sessions boot from a sandbox image. The platform default image includes the
 # Kortix runtime layer and clones this repository into `/workspace`.
@@ -47,72 +51,24 @@ env:
 # An agent can override the project default with
 # `agents.<name>.sandbox: <template-slug>`.
 
-# Each profile selects one native harness and its repository configuration
-# directory. OpenCode keeps its agents, skills, commands, tools, plugins,
-# providers, and models under `.kortix/opencode`.
-runtimes:
-  opencode:
-    harness: opencode
-    config_dir: .kortix/opencode
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  pi:
-    harness: pi
-    config_dir: .pi
-
-# Logical agents select runtime profiles. Kortix applies project governance
-# fields such as connectors, secrets, skills, CLI grants, workspace, enabled,
-# and sandbox. Harness-native behavior stays in the selected runtime's files.
+# Each agent name matches its definition at
+# `.kortix/opencode/agents/<name>.md`. Kortix applies the governance fields
+# below — connectors, secrets, skills, CLI grants, workspace, enabled, and
+# sandbox. OpenCode behavior stays in that agent's own frontmatter.
 #
-# Direct credentials differ by harness:
-# - Claude Code: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
-#   CLAUDE_CODE_OAUTH_TOKEN.
-# - Codex: CODEX_AUTH_JSON, OPENAI_API_KEY, or CODEX_API_KEY.
-# - Pi: OPENAI_API_KEY or CODEX_API_KEY.
-#
-# Kortix-managed model access needs no project credential when the platform
-# gateway supports the selected harness and model.
+# Omitted grants resolve to `none` in this schema version. Grant explicitly.
 agents:
-  opencode:
-    runtime: opencode
-    agent: kortix
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-
-  claude:
-    runtime: claude
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-
-  codex:
-    runtime: codex
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-
-  pi:
-    runtime: pi
+  kortix:
     connectors: all
     secrets: all
     skills: all
     kortix_cli: all
 
   memory-reflector:
-    runtime: opencode
-    agent: memory-reflector
     kortix_cli: [project.cr.open]
 
 # Each trigger creates a session and sends `prompt` as its initial message.
-# `agent` must name a logical agent above. Omit it to use `default_agent`.
+# `agent` must name a declared agent above. Omit it to use `default_agent`.
 triggers:
   # The memory reflector reviews recent project activity. It updates
   # `.kortix/memory/` through a change request when it finds durable knowledge.
@@ -135,7 +91,7 @@ triggers:
   # - slug: daily-digest
   #   name: Daily digest
   #   type: cron
-  #   agent: claude
+  #   agent: kortix
   #   enabled: true
   #   cron: "0 0 9 * * 1-5"
   #   timezone: America/Los_Angeles
@@ -147,7 +103,7 @@ triggers:
   # - slug: webhook-handler
   #   name: Webhook handler
   #   type: webhook
-  #   agent: codex
+  #   agent: kortix
   #   enabled: true
   #   secret_env: WEBHOOK_SECRET
   #   prompt: |

@@ -268,8 +268,6 @@ projectsApp.openapi(
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
-  const acpRuntimeStarter = !sourceItemId;
-
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
 
@@ -381,11 +379,10 @@ projectsApp.openapi(
     name: projectName,
     defaultBranch,
       managed: true,
-    projectMetadata: acpRuntimeStarter
-      ? { experimental: { acp_runtime: true } }
-      : undefined,
-    // The starter just committed above (buildStarterFiles) ships kortix.yaml
-    // (kortix_version 3) — record that path so it's never stale from birth.
+    // No `experimental` block: a new project states no opinion about ACP and
+    // inherits the platform default (KORTIX_ACP_RUNTIME, off ⇒ OpenCode REST).
+    // The starter just committed above (buildStarterFiles) ships kortix.yaml —
+    // record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',
   });
 

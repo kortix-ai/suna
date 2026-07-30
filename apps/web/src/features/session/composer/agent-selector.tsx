@@ -23,11 +23,14 @@ import { AgentHarnessIcon } from './agent-harness-icon';
 // ============================================================================
 
 export function AgentSelector({
+  projectId,
   agents,
   selectedAgent,
   onSelect,
   disabled = false,
 }: {
+  /** Scopes the harness badge to this project's `acp_runtime` experiment. */
+  projectId: string | undefined;
   agents: RuntimeAgent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -154,7 +157,7 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <AgentHarnessIcon harness={agent.harness} />
+                    <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
                     <div className="min-w-0 flex-1 py-0.5">
                       <div
                         className={cn(

@@ -396,6 +396,7 @@ function ChannelBindingTableRow({
       <TableCell>
         <div className="bg-card inline-flex rounded-2xl border px-2 py-1">
           <AgentSelector
+            projectId={projectId}
             agents={agentSelectorAgents}
             selectedAgent={selectedAgentValue}
             onSelect={(v) =>

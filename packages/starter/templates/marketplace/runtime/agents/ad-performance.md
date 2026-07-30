@@ -6,7 +6,6 @@ description: >-
   and optimization recommendations to {{alert_channel}}. Never changes a
   budget, pauses a campaign, or edits an ad.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let sessionRows: Array<Record<string, unknown>> = [];
 
 mock.module('./db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: () => ({
@@ -11,6 +12,16 @@ mock.module('./db', () => ({
         }),
       }),
     }),
+  },
+}));
+
+let storedEnvelopes: unknown[] = [];
+let acpTranscriptCalls: Array<{ projectId: string; sessionId: string }> = [];
+
+mock.module('../projects/lib/acp-transcript', () => ({
+  loadAcpTranscript: async (input: { projectId: string; sessionId: string }) => {
+    acpTranscriptCalls.push(input);
+    return storedEnvelopes;
   },
 }));
 
@@ -45,8 +56,45 @@ beforeEach(() => {
   endpointResult = { url: 'http://daemon.local', headers: {} };
   endpointThrow = null;
   resolvedRootId = 'oc-root-1';
+  storedEnvelopes = [];
+  acpTranscriptCalls = [];
   globalThis.fetch = mock(async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
 });
+
+function acpSessionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    sessionId: 'sess-1',
+    projectId: 'project-1',
+    opencodeSessionId: null,
+    status: 'stopped',
+    metadata: {
+      runtime_transport: 'acp',
+      runtime_harness: 'opencode',
+      acp_server_id: 'acp-server-1',
+      acp_session_id: 'ses_1',
+    },
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+function acpEnvelope(body: Record<string, unknown>, ordinal: number) {
+  return {
+    ordinal,
+    direction: 'agent_to_client' as const,
+    streamEventId: ordinal,
+    envelope: body,
+    createdAt: '2026-07-30T00:00:00.000Z',
+  };
+}
+
+function acpUpdate(update: Record<string, unknown>, ordinal: number) {
+  return acpEnvelope(
+    { jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses_1', update } },
+    ordinal,
+  );
+}
 
 describe('getPublicSessionInfo', () => {
   test('404s when the session row does not exist', async () => {
@@ -232,5 +280,118 @@ describe('getPublicSessionMessages', () => {
       expect(result.transcript.reason).toBeTruthy();
       expect(result.transcript.opencode_session_id).toBe('oc-root-1');
     }
+  });
+});
+
+describe('getPublicSessionMessages — ACP sessions', () => {
+  const stoppedShare = { sessionId: 'sess-1', externalId: 'ext-1', sandboxStatus: 'stopped' };
+
+  test('serves the transcript from the envelope log even though the sandbox is stopped', async () => {
+    sessionRows = [acpSessionRow()];
+    storedEnvelopes = [
+      acpEnvelope(
+        {
+          jsonrpc: '2.0',
+          id: 7,
+          method: 'session/prompt',
+          params: { sessionId: 'ses_1', prompt: [{ type: 'text', text: 'onboard me' }] },
+        },
+        1,
+      ),
+      acpUpdate({ sessionUpdate: 'agent_thought_chunk', messageId: 'msg_1', content: { type: 'text', text: 'thinking' } }, 2),
+      acpUpdate(
+        { sessionUpdate: 'tool_call', toolCallId: 'call_1', status: 'completed', kind: 'read', title: 'read' },
+        3,
+      ),
+      acpUpdate({ sessionUpdate: 'agent_message_chunk', messageId: 'msg_1', content: { type: 'text', text: 'here you go' } }, 4),
+      acpEnvelope({ jsonrpc: '2.0', id: 7, result: { stopReason: 'end_turn' } }, 5),
+    ];
+
+    const result = await getPublicSessionMessages(stoppedShare);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.available).toBe(true);
+    expect(result.transcript.opencode_session_id).toBeNull();
+    expect(result.transcript.message_count).toBe(2);
+    expect(result.transcript.messages[0]).toMatchObject({ role: 'user', text: 'onboard me' });
+    expect(result.transcript.messages[1]).toMatchObject({
+      role: 'assistant',
+      text: 'here you go',
+      tools: [{ tool: 'read', status: 'completed' }],
+      reasoning_omitted: true,
+    });
+    expect(acpTranscriptCalls).toEqual([{ projectId: 'project-1', sessionId: 'sess-1' }]);
+  });
+
+  test('never returns a per-message error object to an anonymous viewer', async () => {
+    sessionRows = [acpSessionRow()];
+    storedEnvelopes = [
+      acpEnvelope(
+        {
+          jsonrpc: '2.0',
+          id: 7,
+          method: 'session/prompt',
+          params: { sessionId: 'ses_1', prompt: [{ type: 'text', text: 'go' }] },
+        },
+        1,
+      ),
+      acpUpdate({ sessionUpdate: 'agent_message_chunk', messageId: 'msg_1', content: { type: 'text', text: 'partial' } }, 2),
+      acpEnvelope({ jsonrpc: '2.0', id: 7, error: { code: -32000, message: 'internal upstream detail' } }, 3),
+    ];
+
+    const result = await getPublicSessionMessages(stoppedShare);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.messages[1]).not.toHaveProperty('error');
+    expect(JSON.stringify(result.transcript)).not.toContain('internal upstream detail');
+  });
+
+  test('an ACP session with no envelopes is empty-but-available', async () => {
+    sessionRows = [acpSessionRow()];
+    storedEnvelopes = [];
+    const result = await getPublicSessionMessages(stoppedShare);
+    expect(result).toEqual({
+      ok: true,
+      transcript: {
+        available: true,
+        reason: null,
+        opencode_session_id: null,
+        message_count: 0,
+        messages: [],
+      },
+    });
+  });
+
+  test('an envelope-log read failure degrades to a generic unavailable transcript', async () => {
+    sessionRows = [acpSessionRow()];
+    acpTranscriptCalls = [];
+    const original = globalThis.console.warn;
+    globalThis.console.warn = () => {};
+    mock.module('../projects/lib/acp-transcript', () => ({
+      loadAcpTranscript: async () => {
+        throw new Error('relation "kortix.acp_session_envelopes" does not exist');
+      },
+    }));
+    const result = await getPublicSessionMessages(stoppedShare);
+    globalThis.console.warn = original;
+    mock.module('../projects/lib/acp-transcript', () => ({
+      loadAcpTranscript: async (input: { projectId: string; sessionId: string }) => {
+        acpTranscriptCalls.push(input);
+        return storedEnvelopes;
+      },
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.available).toBe(false);
+    expect(result.transcript.reason).not.toContain('acp_session_envelopes');
+  });
+
+  test('a REST session still 503s when its sandbox is not active', async () => {
+    sessionRows = [
+      { sessionId: 'sess-1', projectId: 'project-1', opencodeSessionId: 'oc-root-1', metadata: {} },
+    ];
+    const result = await getPublicSessionMessages(stoppedShare);
+    expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
+    expect(acpTranscriptCalls).toEqual([]);
   });
 });

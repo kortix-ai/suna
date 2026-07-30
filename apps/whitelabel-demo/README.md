@@ -10,9 +10,9 @@ The app has five architecture rules:
 4. Server routes own privileged credentials and preview URL resolution.
 5. Only the SDK transport layer sends Kortix backend HTTP requests.
 
-The current experimental session transport is ACP. The project API controls its
-availability and selected state. The client renders the server-provided
-`experimental_features` catalog. It does not hard-code a transport flag.
+The client renders the server-provided `experimental_features` catalog. It does
+not hard-code a transport flag and does not know which transport a session
+uses.
 
 ## Client boundary
 
@@ -29,7 +29,7 @@ Client code does not:
 - Call provider REST endpoints.
 - Use a legacy runtime store.
 - Call `session.previewUrl()` or `session.proxyUrl()`.
-- Select ACP or the rollback transport.
+- Select a session transport.
 - Send raw requests to the Kortix backend.
 
 `scripts/sdk-boundary.mjs` enforces these rules across client source, server
@@ -96,7 +96,7 @@ It updates a feature through:
 kortix.project(projectId).updateExperimentalFeature(feature.key, enabled);
 ```
 
-The host does not contain the ACP experiment key. This keeps the app compatible
+The host does not contain any experiment key. This keeps the app compatible
 with future transports and runtimes.
 
 ## Server-first preview

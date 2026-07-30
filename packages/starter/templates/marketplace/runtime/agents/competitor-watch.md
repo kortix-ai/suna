@@ -5,7 +5,6 @@ description: >-
   posts a short summary of what changed to {{slack_channel}}. Silent on quiet
   days.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

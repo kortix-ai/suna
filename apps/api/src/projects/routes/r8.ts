@@ -101,6 +101,11 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    // Read the row AFTER startSession() resolves, never before. The long poll
+    // above holds this request for up to 8s, and a headless ACP delivery can
+    // write metadata.acp_session_id inside that window. Answering from a
+    // pre-poll snapshot returns acp_session_id: null, which makes the browser
+    // mint a SECOND harness-native session and lose the CAS guard with a 409.
     const [freshSession] = await db
       .select({ metadata: projectSessions.metadata })
       .from(projectSessions)

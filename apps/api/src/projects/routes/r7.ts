@@ -32,6 +32,7 @@ import {
   canChangeSessionModel,
   mayChangeSessionModel,
   modelChangeNeedsLivePush,
+  modelChangeResult,
   validateModelChangeShape,
 } from '../lib/session-model-change';
 import { pushSessionModelToSandbox } from '../lib/sandbox-env-sync';
@@ -2445,6 +2446,14 @@ projectsApp.openapi(
           opencode_model: z.string(),
           /** True when a live sandbox took it; false when it applies at next boot. */
           applied_live: z.boolean(),
+          /**
+           * Present only when a live push was REQUIRED and FAILED — the row is
+           * written but the running harness still answers from the OLD model.
+           * `applied_live: false` cannot express this on its own (it is also the
+           * benign cold-session answer), so a client must read THIS to tell a
+           * half-applied change from a stored one.
+           */
+          push_failed: z.literal(true).optional(),
           detail: z.string().optional(),
         }),
         'Model changed',
@@ -2535,21 +2544,12 @@ projectsApp.openapi(
       .where(eq(projectSessions.sessionId, sessionId));
 
     if (!needsPush) {
-      return c.json({
-        opencode_model: nextModel,
-        applied_live: false,
-        detail:
-          currentModel === nextModel
-            ? 'already set to this model'
-            : 'stored — applies when the sandbox next starts',
-      });
+      return c.json(
+        modelChangeResult({ model: nextModel, needsPush: false, current: currentModel }),
+      );
     }
 
     const push = await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel });
-    return c.json({
-      opencode_model: nextModel,
-      applied_live: push.applied,
-      ...(push.applied ? {} : { detail: `stored, but not pushed: ${push.reason ?? 'unknown'}` }),
-    });
+    return c.json(modelChangeResult({ model: nextModel, needsPush: true, push }));
   },
 );

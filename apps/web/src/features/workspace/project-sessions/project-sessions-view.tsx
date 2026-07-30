@@ -36,6 +36,7 @@ import {
   sessionLastActivityAt,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
@@ -413,6 +414,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     null,
   );
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
     queryKey: ['project-session-inventory', projectId],
@@ -461,6 +463,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       variant="secondary"
       className="gap-1.5"
       onClick={() => newSession()}
+      disabled={creatingSession}
+      aria-busy={creatingSession}
     >
       <Plus className="size-4 shrink-0" />
       New session
@@ -528,7 +532,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             title="No sessions yet"
             description="Start a session to give this project its first task."
             action={
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => newSession()}
+                disabled={creatingSession}
+                aria-busy={creatingSession}
+              >
                 <Plus className="size-3.5 shrink-0" />
                 New session
               </Button>

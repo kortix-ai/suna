@@ -4096,7 +4096,7 @@ function AppCatalogue({
         description="Create a connector profile for this app. The profile name and slug identify it in sessions and project configuration."
         initialName={selectedApp?.name ?? ''}
         initialSlug={
-          selectedApp ? proposeConnectorProfileSlug(selectedApp.slug, existingSlugs) : ''
+          selectedApp ? proposeConnectorProfileSlug(selectedApp.name, existingSlugs) : ''
         }
         existingSlugs={existingSlugs}
         pending={addApp.isPending}

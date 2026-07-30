@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { createHmac } from 'node:crypto'
 
 import type { AcpConnection, AcpStreamEvent, JsonRpcEnvelope } from '../acp/connection'
+import type { AcpHarnessId } from '../acp/harness-registry'
+import type { AcpRuntime } from '../acp/runtime'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { createAcpRouter, createOpenCodeSessionHistory } from './acp'
@@ -487,5 +489,163 @@ describe('authenticated OpenCode ACP bridge', () => {
       }),
     })
     expect(wrongPayload.status).toBe(409)
+  })
+})
+
+// The box is the last line: it must not honour a `mode` change that names an
+// agent other than the one it BOOTED with. Its anchor is KORTIX_NATIVE_AGENT,
+// injected by the API at provision (apps/api/src/projects/lib/session-runtime-env.ts)
+// and unforgeable from inside. The API refuses the same envelope first; this
+// exists because a compromised or bypassed control plane must still not be able
+// to re-point the acting agent under the grant the token already holds.
+describe('OpenCode ACP mode is pinned to the booted agent', () => {
+  function fakeManaged(harness: AcpHarnessId, seen: JsonRpcEnvelope[]) {
+    return {
+      serverId: 'session',
+      harness,
+      connection: { instanceId: 'inst-1' },
+      post: async (envelope: JsonRpcEnvelope) => {
+        seen.push(envelope)
+        return null
+      },
+    }
+  }
+
+  function fakeRuntime(process: unknown): AcpRuntime {
+    return {
+      get: () => process,
+      getOrCreate: async () => process,
+      list: () => [],
+      delete: async () => {},
+      shutdown: async () => {},
+    } as unknown as AcpRuntime
+  }
+
+  function setMode(
+    app: ReturnType<typeof createAcpRouter>,
+    value: unknown,
+    configId = 'mode',
+  ) {
+    return request(app, '/session?agent=opencode', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'mode-1',
+        method: 'session/set_config_option',
+        params: { sessionId: 'session', configId, value },
+      }),
+    })
+  }
+
+  test('refuses a foreign agent on the managed OpenCode runtime', async () => {
+    const seen: JsonRpcEnvelope[] = []
+    const app = createAcpRouter(
+      { ...config(), nativeAgent: 'pipeline-hygiene' },
+      () => connection(),
+      () => 'session',
+      undefined,
+      fakeRuntime(fakeManaged('opencode', seen)),
+    )
+
+    const response = await setMode(app, 'nda-turnaround')
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      expected_agent: 'pipeline-hygiene',
+      requested_agent: 'nda-turnaround',
+    })
+    expect(seen).toEqual([])
+  })
+
+  test('refuses a foreign agent on the native OpenCode connection too', async () => {
+    const seen: JsonRpcEnvelope[] = []
+    const app = createAcpRouter(
+      { ...config(), nativeAgent: 'pipeline-hygiene' },
+      () =>
+        connection({
+          post: async (envelope) => {
+            seen.push(envelope)
+          },
+        }),
+      () => 'session',
+    )
+
+    const response = await request(app, '/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'mode-2',
+        method: 'session/set_config_option',
+        params: { sessionId: 'session', configId: 'mode', value: 'nda-turnaround' },
+      }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(seen).toEqual([])
+  })
+
+  test('allows the booted agent, and allows any mode when none was injected', async () => {
+    const seen: JsonRpcEnvelope[] = []
+    const pinned = createAcpRouter(
+      { ...config(), nativeAgent: 'pipeline-hygiene' },
+      () => connection(),
+      () => 'session',
+      undefined,
+      fakeRuntime(fakeManaged('opencode', seen)),
+    )
+    expect((await setMode(pinned, 'pipeline-hygiene')).status).toBe(202)
+
+    const unpinned = createAcpRouter(
+      config(),
+      () => connection(),
+      () => 'session',
+      undefined,
+      fakeRuntime(fakeManaged('opencode', seen)),
+    )
+    expect((await setMode(unpinned, 'plan')).status).toBe(202)
+
+    expect(seen).toHaveLength(2)
+  })
+
+  test('does not police a permission-mode change on a non-OpenCode harness', async () => {
+    const seen: JsonRpcEnvelope[] = []
+    const app = createAcpRouter(
+      { ...config(), nativeAgent: 'reviewer' },
+      () => connection(),
+      () => 'session',
+      undefined,
+      fakeRuntime(fakeManaged('claude', seen)),
+    )
+
+    const response = await request(app, '/session?agent=claude', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'mode-3',
+        method: 'session/set_config_option',
+        params: { sessionId: 'session', configId: 'mode', value: 'acceptEdits' },
+      }),
+    })
+
+    expect(response.status).toBe(202)
+    expect(seen).toHaveLength(1)
+  })
+
+  test('only configId "mode" is policed', async () => {
+    const seen: JsonRpcEnvelope[] = []
+    const app = createAcpRouter(
+      { ...config(), nativeAgent: 'pipeline-hygiene' },
+      () => connection(),
+      () => 'session',
+      undefined,
+      fakeRuntime(fakeManaged('opencode', seen)),
+    )
+
+    expect((await setMode(app, 'kortix/glm-5.2', 'model')).status).toBe(202)
+    expect(seen).toHaveLength(1)
   })
 })

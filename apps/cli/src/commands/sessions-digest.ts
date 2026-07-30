@@ -1,4 +1,7 @@
-import type { ApiClient } from '../api/client.ts';
+import { getSessionTranscript } from '@kortix/sdk';
+
+import type { Auth } from '../api/auth.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
@@ -13,14 +16,14 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
-Compact review of recent sessions for reflection / handoff. It lists sessions
-in a time window and, for running sessions, reads the live OpenCode transcript
-through the project sessions API. Tool calls are compressed to name/status only;
-tool inputs and outputs are intentionally stripped so the digest stays readable.
+Compact review of recent sessions for reflection / handoff. It lists sessions in
+a time window and reads each one's transcript through the project sessions API.
+Tool calls are compressed to name/status only; tool inputs and outputs are
+intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per running session (default 40).
+  --messages, -n <N>   Recent messages per session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -32,9 +35,9 @@ tool inputs and outputs are intentionally stripped so the digest stays readable.
 Aliases: review, summary.
 
 Notes:
-- Running sessions include a compact transcript when the sandbox is reachable.
-- Stopped/failed sessions include metadata and any mirrored OpenCode titles, but
-  their transcript is unavailable unless the sandbox is running/resumed.
+- Transcripts are served from the platform's stored ACP envelopes, so a stopped
+  or failed session keeps its conversation even after its sandbox is gone.
+- A session the API cannot serve a transcript for reports why in \`reason\`.
 `;
 
 interface CompactToolCall {
@@ -147,7 +150,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   await mapLimit(filtered, 6, async (s) => {
     digests.set(
       s.session_id,
-      await buildDigest(s, ctx.client, ctx.projectId, messageLimit, maxChars),
+      await buildDigest(s, ctx.auth, ctx.projectId, messageLimit, maxChars),
     );
   });
   const out = filtered.map((s) => digests.get(s.session_id)!).filter(Boolean);
@@ -172,21 +175,29 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   return 0;
 }
 
+/**
+ * Build one session's digest.
+ *
+ * Always ASKS the API for the transcript — never decides client-side that a
+ * non-`running` session cannot have one. The transcript route is ACP-native and
+ * reads `kortix.acp_session_envelopes` out of Postgres, so a stopped session
+ * whose sandbox is long gone still has its full conversation. The old
+ * `status !== 'running'` short-circuit hid every one of those: it reported
+ * "live transcript requires a running sandbox" for a transcript the API was
+ * already able to serve. The API is the authority on availability; when it
+ * genuinely cannot serve one it says so in `available`/`reason`.
+ */
 async function buildDigest(
   s: ProjectSession,
-  client: ApiClient,
+  auth: Auth,
   projectId: string,
   messageLimit: number,
   maxChars: number,
 ): Promise<SessionDigest> {
   const base = baseDigest(s);
-  if (s.status !== 'running') {
-    base.transcript.reason = `session is ${s.status}; live transcript requires a running sandbox`;
-    return base;
-  }
   try {
-    const transcript = await client.get<unknown>(
-      `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
+    const transcript = await withKortixScope(auth, async () =>
+      getSessionTranscript(projectId, s.session_id, { limit: messageLimit, chars: maxChars }),
     );
     base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
     return base;

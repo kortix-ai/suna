@@ -5,7 +5,6 @@ description: >-
   by area, writes plain-language notes, and opens a PR against
   {{changelog_path}} — never publishing, tagging, or announcing.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

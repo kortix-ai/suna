@@ -8,7 +8,10 @@ let persistError: Error | null = null;
 let capabilityActions: string[] = [];
 
 class TestConflictError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly storedAcpSessionId: string | null = null,
+  ) {
     super(code);
   }
 }
@@ -101,6 +104,23 @@ test('PUT .../acp-identity maps immutable binding conflicts to HTTP 409', async 
   expect(await response.json()).toEqual({
     error: 'ACP_SESSION_ID_CONFLICT',
     code: 'ACP_SESSION_ID_CONFLICT',
+  });
+});
+
+test('PUT .../acp-identity returns the winning acp_session_id with the 409', async () => {
+  persistError = new TestConflictError('ACP_SESSION_ID_CONFLICT', 'codex-native-winner');
+
+  const response = await putIdentity({
+    acp_server_id: SESSION_ID,
+    runtime_harness: 'codex',
+    acp_session_id: 'codex-native-loser',
+  });
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({
+    error: 'ACP_SESSION_ID_CONFLICT',
+    code: 'ACP_SESSION_ID_CONFLICT',
+    acp_session_id: 'codex-native-winner',
   });
 });
 

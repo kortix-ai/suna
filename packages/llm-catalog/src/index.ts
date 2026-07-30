@@ -572,6 +572,43 @@ export const MANAGED_MODELS: ManagedModel[] = [
     providerBrand: 'deepseek',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
+    // 21 OpenRouter endpoints serve this slug and they are NOT interchangeable.
+    // Unpinned, OpenRouter picks freely and prompt-cache locality is luck:
+    // replaying a BYTE-IDENTICAL body measured 0% then 99% cached on
+    // consecutive calls, and identical input tokenizes differently per endpoint
+    // (7041 / 7066 / 7081 / 7127 / 7361 prompt_tokens), which is the direct
+    // proof that turns land on different hosts. Landing on `coreweave/fp8`
+    // measured 0/0/99/5/0% cached across five calls (it also publishes a p99
+    // latency of 107_688ms); landing on `alibaba/fp8` or `streamlake/fp8`
+    // measured a stable 99%. In the production logs the difference is 4.4x on
+    // cost alone: $0.0032832 for a 0%-cached turn vs $0.0007499 for the same
+    // turn at 97%.
+    //
+    // Order rationale:
+    //  - `deepseek` first: the ONLY endpoint reporting
+    //    `supports_implicit_caching: true`, with the best published stats
+    //    (p50 848ms / 79 tok/s / 100% uptime) and a cache-read price ~10x below
+    //    the community hosts. NOTE it is currently REJECTED for our account
+    //    ("No allowed providers are available for the selected model" — an
+    //    OpenRouter account data-policy setting, not something code can fix),
+    //    so today it is skipped and the next entry serves. It is listed first
+    //    so the pin becomes optimal the moment that account setting is changed.
+    //  - then `alibaba`, `baidu`, `novita`: reachable today, fp8 (never an fp4
+    //    requantization), the full 1_048_576 context this entry advertises, and
+    //    >=99.8% 30m uptime with the best measured p50 latency of the reachable
+    //    set. Verified live: this order lands 6/6 calls on one endpoint.
+    // Excluded by construction: `io-net/fp8` (32_768 context) and
+    // `akashml/fp8` (131_072) cannot hold a session this model advertises as
+    // 1M-context, and `morph`/`mancer` publish no cache-read price at all.
+    //
+    // `allow_fallbacks` stays TRUE on purpose: this is a cache-locality and
+    // quality preference, not a hard pin, so an outage across the listed hosts
+    // degrades to the rest of the pool exactly like today instead of failing
+    // the platform's fallback model outright.
+    openrouterProvider: {
+      order: ['deepseek', 'alibaba', 'baidu', 'novita'],
+      allow_fallbacks: true,
+    },
   },
 ];
 

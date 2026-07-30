@@ -1,12 +1,14 @@
 import { createInterface } from 'node:readline';
-import { randomUUID } from 'node:crypto';
 
-import { ApiError } from '../api/client.ts';
+import type { AcpMessageWithParts, AcpSessionController } from '@kortix/sdk';
+
+import { getSessionTranscript } from '@kortix/sdk';
 import {
-  opencodeClient,
-  type OpencodeMessageWithParts,
-  type OpencodePart,
-} from '../api/sandbox-proxy.ts';
+  openAcpSession,
+  readAcpTranscript,
+  sendAcpPromptAndWait,
+} from '../api/acp-session.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import { loadAuthForHost, loadAuth, type Auth } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { loadLink } from '../project-link.ts';
@@ -27,17 +29,19 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 export interface ResolvedSession {
   /** Kortix session row. */
   session: ProjectSession;
-  /** Auth used (so opencodeClient builds with the right base URL). */
+  /** Auth used (so the SDK client binds the right host + token). */
   auth: Auth;
-  /** Convenience: bound OpenCode client. */
-  oc: ReturnType<typeof opencodeClient>;
+  /**
+   * Connect (once) to this session's ACP runtime through the SDK's session
+   * controller. Lazy: `sessions log` reads a transcript out of Postgres and must
+   * never pay for — or require — a live sandbox connection.
+   */
+  acp: () => Promise<AcpSessionController>;
   /** The sandbox's external/provider id — the `/v1/p/{proxyId}/…` proxy key. */
   proxyId: string;
   /** Sandbox daemon/runtime port parsed from sandbox_url. */
   runtimePort: number;
-  /** The OpenCode session id INSIDE the sandbox. May need creating. */
-  opencodeSessionId: string | null;
-  /** Kortix-side API client (for PATCH/save-back). */
+  /** Kortix-side API client (for reads/writes on the project session row). */
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
 
@@ -58,7 +62,9 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
+  loadOpts: { requireRunning?: boolean } = {},
 ): Promise<ResolvedSession | null> {
+  const requireRunning = loadOpts.requireRunning ?? true;
   const found = await locateSessionAnywhere(
     sessionId,
     opts,
@@ -74,21 +80,22 @@ export async function loadSessionForChat(
     );
   }
 
-  if (session.status !== 'running') {
+  if (requireRunning && session.status !== 'running') {
     process.stderr.write(
       `${status.err(`Session ${session.session_id} is ${session.status}, not running.`)}\n` +
         `  ${C.dim}Run \`kortix sessions restart ${session.session_id}\` first.${C.reset}\n`,
     );
     return null;
   }
-  // The OpenCode proxy is keyed by the sandbox's *external* (provider) id and
+  // The sandbox proxy is keyed by the sandbox's *external* (provider) id and
   // runtime daemon port, which appear inside sandbox_url:
   //   https://<host>/v1/p/<external-id>/8000
   // `sandbox_id` is the Kortix row id and the proxy rejects it ("sandbox not
   // found"). The external id is also ephemeral — it changes on every restart —
-  // so we always derive it fresh from the just-fetched session row.
+  // so we always derive it fresh from the just-fetched session row. Only the
+  // PTY path needs it; ACP is reached through the durable platform endpoint.
   const proxyTarget = proxyTargetFromSession(session);
-  if (!proxyTarget) {
+  if (requireRunning && !proxyTarget) {
     process.stderr.write(
       `${status.err('Session has no reachable sandbox yet — provisioning may not be done.')}\n` +
         `  ${C.dim}Check \`kortix sessions info ${session.session_id}\`.${C.reset}\n`,
@@ -96,103 +103,32 @@ export async function loadSessionForChat(
     return null;
   }
 
-  // Same auth `locateSessionAnywhere` resolved the session with, so the
-  // sandbox proxy auth header matches the host the session actually lives on.
-  const oc = opencodeClient({
-    auth,
-    sandboxId: proxyTarget.proxyId,
-    port: proxyTarget.runtimePort,
-  });
+  // Same auth `locateSessionAnywhere` resolved the session with, so the ACP
+  // endpoint and its bearer match the host the session actually lives on.
+  let controller: Promise<AcpSessionController> | null = null;
+  const acp = () => {
+    controller ??= openAcpSession({ auth, projectId, session });
+    return controller;
+  };
   return {
     session,
     auth,
-    oc,
-    proxyId: proxyTarget.proxyId,
-    runtimePort: proxyTarget.runtimePort,
-    opencodeSessionId: session.opencode_session_id,
+    acp,
+    proxyId: proxyTarget?.proxyId ?? session.sandbox_id ?? '',
+    runtimePort: proxyTarget?.runtimePort ?? 8000,
     ctx,
   };
 }
 
-/**
- * Ensure the session has a working OpenCode session id. If the Kortix
- * row already has one, use it. Otherwise: list, pick the first, or
- * create one — and persist the id back to Kortix so subsequent CLI calls
- * stay glued to the same conversation.
- */
-export async function ensureOpencodeSession(r: ResolvedSession): Promise<string | null> {
-  if (r.opencodeSessionId) {
-    try {
-      await r.oc.getSession(r.opencodeSessionId);
-      return r.opencodeSessionId;
-    } catch (err) {
-      // A restarted sandbox can leave the DB pin pointing at an OpenCode root
-      // that no longer exists. Heal below by adopting the live root instead of
-      // surfacing "Session not found" to every chat/log/connect command.
-      if (!(err instanceof ApiError) || err.status !== 404) {
-        surfaceApiError(err);
-        return null;
-      }
-    }
-  }
-
-  // First try to discover an existing session inside the sandbox.
-  try {
-    const sessions = await r.oc.listSessions();
-    const first = sessions[0];
-    if (first?.id) {
-      await persistOpencodeSessionId(r, first.id);
-      return first.id;
-    }
-  } catch (err) {
-    if (err instanceof ApiError && err.status >= 500) {
-      // Sandbox still booting — surface and bail. Don't try to create
-      // a session against a half-up service.
-      surfaceApiError(err);
-      return null;
-    }
-    // 404/empty — fall through to create.
-  }
-
-  // Create one.
-  try {
-    const created = await r.oc.createSession();
-    if (!created?.id) {
-      process.stderr.write(`${status.err('OpenCode returned no session id.')}\n`);
-      return null;
-    }
-    await persistOpencodeSessionId(r, created.id);
-    return created.id;
-  } catch (err) {
-    surfaceApiError(err);
-    return null;
-  }
-}
-
-async function persistOpencodeSessionId(
-  r: ResolvedSession,
-  opencodeSessionId: string,
-): Promise<void> {
-  try {
-    await r.ctx.client.patch<ProjectSession>(
-      `/projects/${r.ctx.projectId}/sessions/${r.session.session_id}`,
-      { opencode_session_id: opencodeSessionId },
-    );
-  } catch {
-    // Non-fatal — the message will still go through, the link is just
-    // not pinned in our DB. The drift sync job picks this up eventually.
-  }
-}
-
 /** Extract a plain-text representation of a message's parts. */
-export function extractMessageText(msg: OpencodeMessageWithParts): string {
+export function extractMessageText(msg: AcpMessageWithParts): string {
   return msg.parts
     .map((p) => partToText(p))
     .filter((s) => s.length > 0)
     .join('\n');
 }
 
-function partToText(part: OpencodePart): string {
+function partToText(part: AcpMessageWithParts['parts'][number]): string {
   if (part.type === 'text' && typeof (part as { text?: string }).text === 'string') {
     if ((part as { synthetic?: boolean }).synthetic) return '';
     return (part as { text: string }).text;
@@ -213,7 +149,7 @@ function partToText(part: OpencodePart): string {
   return '';
 }
 
-export function printMessage(msg: OpencodeMessageWithParts): void {
+export function printMessage(msg: AcpMessageWithParts): void {
   const role = msg.info.role === 'assistant' ? 'assistant' : msg.info.role;
   const color = role === 'assistant' ? C.cyan : C.green;
   const ts = msg.info.time?.created
@@ -335,43 +271,50 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
 
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
+  // Connecting the ACP controller performs session/load (or session/new plus
+  // the identity claim) and hydrates the stored transcript — so history is
+  // already on the projection by the time the first prompt goes out.
+  let controller: AcpSessionController;
+  try {
+    controller = await resolved.acp();
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 
   const extra = agent ? { agent } : undefined;
 
-  // ── One-shot ─────────────────────────────────────────────────────────────
-  if (promptText !== undefined) {
-    return sendAndPrint(resolved, ocSessionId, promptText, extra, json);
-  }
-
-  // ── Interactive REPL ───────────────────────────────────────────────────────
-  process.stdout.write(
-    `\n${C.dim}Chatting with ${C.reset}${C.bold}${resolved.session.name ?? resolved.session.session_id.split('-')[0]}${C.reset}` +
-      ` ${C.faded}(${resolved.session.agent_name})${C.reset}\n` +
-      `${C.dim}Type a message and press Enter. Ctrl-D or \`exit\` to quit.${C.reset}\n`,
-  );
-  // Replay any prior conversation so the REPL has context on screen.
   try {
-    const history = await resolved.oc.listMessages(ocSessionId, 20);
-    for (const msg of history) printMessage(msg);
-  } catch {
-    /* no history / sandbox warming — start fresh */
-  }
-
-  for (;;) {
-    const line = await prompt(`\n${C.green}${C.bold}you${C.reset} `);
-    const text = line.trim();
-    if (text === '' ) continue;
-    if (text === 'exit' || text === 'quit') break;
-    const code = await sendAndPrint(resolved, ocSessionId, text, extra);
-    if (code !== 0) {
-      // Transient sandbox error — let the user retry rather than killing the REPL.
-      process.stderr.write(`${C.dim}(message failed — try again, or \`exit\`)${C.reset}\n`);
+    // ── One-shot ───────────────────────────────────────────────────────────
+    if (promptText !== undefined) {
+      return await sendAndPrint(controller, resolved.auth, promptText, extra, json);
     }
+
+    // ── Interactive REPL ───────────────────────────────────────────────────
+    process.stdout.write(
+      `\n${C.dim}Chatting with ${C.reset}${C.bold}${resolved.session.name ?? resolved.session.session_id.split('-')[0]}${C.reset}` +
+        ` ${C.faded}(${resolved.session.agent_name})${C.reset}\n` +
+        `${C.dim}Type a message and press Enter. Ctrl-D or \`exit\` to quit.${C.reset}\n`,
+    );
+    // Replay recent prior conversation so the REPL has context on screen.
+    const history = controller.getSnapshot().projection.messages;
+    for (const msg of history.slice(-20)) printMessage(msg);
+
+    for (;;) {
+      const line = await prompt(`\n${C.green}${C.bold}you${C.reset} `);
+      const text = line.trim();
+      if (text === '') continue;
+      if (text === 'exit' || text === 'quit') break;
+      const code = await sendAndPrint(controller, resolved.auth, text, extra);
+      if (code !== 0) {
+        // Transient runtime error — let the user retry rather than killing the REPL.
+        process.stderr.write(`${C.dim}(message failed — try again, or \`exit\`)${C.reset}\n`);
+      }
+    }
+    process.stdout.write(`${C.dim}bye.${C.reset}\n`);
+    return 0;
+  } finally {
+    controller.close();
   }
-  process.stdout.write(`${C.dim}bye.${C.reset}\n`);
-  return 0;
 }
 
 /**
@@ -527,7 +470,8 @@ const LOG_HELP = help`Usage: kortix sessions log [<session-id>] [options]
 
 Print a session agent's recent messages — a read-only peek at what an agent is
 doing *right now*, without sending it anything. With no session id, uses your
-most recent running session.
+most recent running session. Works on stopped sessions too: the transcript is
+served from the platform's stored ACP envelopes, not from the sandbox.
 
   --limit, -n <N>   How many recent messages to show (default 10).
   --json            Emit structured JSON (role / text / parts) for scripting.
@@ -540,10 +484,12 @@ agents: list them, then \`kortix sessions log <id>\` to read what any one of
 them is currently doing. Aliases: \`messages\`, \`history\`.`;
 
 /**
- * `kortix sessions log` — print a running session's recent OpenCode messages.
+ * `kortix sessions log` — print a session's recent messages.
+ *
  * Read-only: it never sends a prompt, so it's the safe way for one agent to
- * observe what other agents are doing. Reading requires a live sandbox, so the
- * session must be `running` (a stopped session has no sandbox to query).
+ * observe what other agents are doing. It reads the session's persisted ACP
+ * transcript, so it does NOT require a live sandbox — a `stopped` session keeps
+ * its conversation and can still be read.
  */
 export async function runSessionsLog(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -595,14 +541,15 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     sessionId = chosen.session_id;
   }
 
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions log');
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions log', {
+    requireRunning: false,
+  });
   if (!resolved) return 1;
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
 
-  let messages: OpencodeMessageWithParts[];
+  let messages: AcpMessageWithParts[];
   try {
-    messages = await resolved.oc.listMessages(ocSessionId, limit);
+    const all = await readAcpTranscript(resolved.auth, resolved.ctx.projectId, resolved.session);
+    messages = all.slice(-limit);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -627,8 +574,8 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
 }
 
 /** Compact, ANSI-free shape of a message for `--json` consumption. */
-function messageToJson(msg: OpencodeMessageWithParts): Record<string, unknown> {
-  const info = msg.info as OpencodeMessageWithParts['info'] & {
+function messageToJson(msg: AcpMessageWithParts): Record<string, unknown> {
+  const info = msg.info as AcpMessageWithParts['info'] & {
     time?: { created?: number; completed?: number };
     error?: { name?: string; message?: string } | null;
     agent?: string;
@@ -662,35 +609,31 @@ function messageToJson(msg: OpencodeMessageWithParts): Record<string, unknown> {
   };
 }
 
-/** Send one prompt, print the assistant reply (and any error). */
+/** Send one prompt through the SDK's ACP controller, print the reply. */
 async function sendAndPrint(
-  resolved: ResolvedSession,
-  ocSessionId: string,
+  controller: AcpSessionController,
+  auth: Auth,
   text: string,
   extra: { agent?: string } | undefined,
   json = false,
 ): Promise<number> {
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
-  // One stable idempotency key per logical prompt: if the server proxy retries a
-  // 502/timeout on the delivery POST, it dedupes on this key instead of enqueueing
-  // the same user message again. The CLI itself never retries.
-  const idempotencyKey = randomUUID();
   try {
-    const reply = await resolved.oc.sendPrompt(
-      ocSessionId,
-      [{ type: 'text', text }],
-      extra,
-      undefined,
-      idempotencyKey,
+    // The controller's transport is the platform ACP endpoint, whose bearer is
+    // resolved from the SDK platform config — so the send runs inside this
+    // host's scope.
+    const reply = await withKortixScope(auth, async () =>
+      sendAcpPromptAndWait(controller, text, extra?.agent ? { agent: extra.agent } : {}),
     );
+    const errored = Boolean((reply.info as { error?: unknown }).error);
     if (json) {
-      emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
-      return reply.info.error ? 1 : 0;
+      emitJson(messageToJson(reply));
+      return errored ? 1 : 0;
     }
     process.stdout.write(`${' '.repeat(12)}\r`); // clear "…thinking"
-    printMessage({ info: reply.info, parts: reply.parts });
-    return reply.info.error ? 1 : 0;
+    printMessage(reply);
+    return errored ? 1 : 0;
   } catch (err) {
     if (!json) process.stdout.write(`${' '.repeat(12)}\r`);
     return surfaceApiError(err);
@@ -790,7 +733,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
   await mapLimit(running, 8, async (s) => {
-    const a = await fetchSessionActivity(s, auth);
+    const a = await fetchSessionActivity(s, auth, ctx.projectId);
     if (a) activity.set(s.session_id, a);
   });
 
@@ -844,30 +787,72 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   return 0;
 }
 
-/** Read one running session's latest message and summarize what it's doing. */
+/** One compact transcript message, as the sessions transcript route returns it. */
+interface CompactTranscriptMessage {
+  role?: string;
+  created?: string | null;
+  completed?: string | null;
+  text?: string;
+  tools?: Array<{ tool?: string; status?: string | null }>;
+  error?: { name?: string; message?: string } | null;
+}
+
+/**
+ * Adapt a compact transcript message to the `{info, parts}` shape
+ * {@link deriveActivity} classifies. Keeps ONE activity classifier for the whole
+ * CLI instead of a second, subtly-different implementation for this route.
+ */
+function compactToMessage(message: CompactTranscriptMessage): AcpMessageWithParts {
+  const created = message.created ? Date.parse(message.created) : undefined;
+  const completed = message.completed ? Date.parse(message.completed) : undefined;
+  const parts: unknown[] = [];
+  if (message.text) parts.push({ type: 'text', text: message.text });
+  for (const tool of message.tools ?? []) {
+    parts.push({ type: 'tool', tool: tool.tool, state: { status: tool.status ?? undefined } });
+  }
+  return {
+    info: {
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      ...(Number.isFinite(created) || Number.isFinite(completed)
+        ? {
+            time: {
+              ...(Number.isFinite(created) ? { created } : {}),
+              ...(Number.isFinite(completed) ? { completed } : {}),
+            },
+          }
+        : {}),
+      ...(message.error ? { error: message.error } : {}),
+    },
+    parts,
+  } as unknown as AcpMessageWithParts;
+}
+
+/**
+ * Read one session's latest activity and summarize what it's doing.
+ *
+ * Uses the platform's COMPACT transcript (a small server-side projection),
+ * not the raw envelope stream: `sessions status` fans out over every running
+ * session, and a full transcript per session would move megabytes to render one
+ * line each.
+ */
 async function fetchSessionActivity(
   s: ProjectSession,
   auth: Auth,
+  projectId: string,
 ): Promise<SessionActivity | null> {
-  const proxyId = proxyIdFromSession(s);
-  if (!proxyId) return null;
-  const oc = opencodeClient({ auth, sandboxId: proxyId, port: runtimePortFromSession(s) });
   try {
-    let ocId = s.opencode_session_id;
-    if (!ocId) {
-      const list = await oc.listSessions();
-      ocId = list[0]?.id ?? null;
-    }
-    if (!ocId) return null;
-    // Fetch a small recent window (not just the last message): an assistant turn
+    // Read a small recent window (not just the last message): an assistant turn
     // can start — or dispatch a subagent batch that leaves a user-role message
-    // newest — after the user's prompt, and classifying off ONLY the last message
-    // then mislabels a busy session as "queued".
-    const msgs = await oc.listMessages(ocId, 6);
-    if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
-    return deriveActivity(msgs, s.status);
+    // newest — after the user's prompt, and classifying off ONLY the last
+    // message then mislabels a busy session as "queued".
+    const transcript = await withKortixScope(auth, async () =>
+      getSessionTranscript(projectId, s.session_id, { limit: 6 }),
+    );
+    const raw = (transcript as { messages?: CompactTranscriptMessage[] }).messages ?? [];
+    if (raw.length === 0) return { working: false, summary: 'no messages yet' };
+    return deriveActivity(raw.map(compactToMessage), s.status);
   } catch {
-    // Sandbox still warming / proxy hiccup — treat as unknown, not fatal.
+    // Runtime still warming / transient read failure — unknown, not fatal.
     return null;
   }
 }
@@ -879,7 +864,7 @@ async function fetchSessionActivity(
  * so a still-booting box isn't reported as an idle/queued agent.
  */
 export function deriveActivity(
-  messages: OpencodeMessageWithParts[],
+  messages: AcpMessageWithParts[],
   status: ProjectSession['status'],
 ): SessionActivity {
   // Lifecycle states before the agent can run describe the BOX, not a turn.
@@ -892,7 +877,7 @@ export function deriveActivity(
 
   const last = messages[messages.length - 1];
   if (!last) return { working: false, summary: 'no messages yet' };
-  const lastInfo = last.info as OpencodeMessageWithParts['info'] & {
+  const lastInfo = last.info as AcpMessageWithParts['info'] & {
     time?: { created?: number; completed?: number };
   };
   const at = lastInfo.time?.created ? new Date(lastInfo.time.created).toISOString() : undefined;
@@ -917,12 +902,12 @@ export function deriveActivity(
   // agent is still generating — report "working", not "queued", even if a later
   // user-role message is technically newest.
   let latestAssistant:
-    | (OpencodeMessageWithParts['info'] & { time?: { completed?: number }; error?: unknown })
+    | (AcpMessageWithParts['info'] & { time?: { completed?: number }; error?: unknown })
     | undefined;
   for (let i = messages.length - 1; i >= 0; i--) {
     const info = messages[i]!.info;
     if (info.role === 'assistant') {
-      latestAssistant = info as OpencodeMessageWithParts['info'] & {
+      latestAssistant = info as AcpMessageWithParts['info'] & {
         time?: { completed?: number };
         error?: unknown;
       };

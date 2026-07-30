@@ -588,13 +588,31 @@ export async function setProjectSessionScope(
   );
 }
 
+export interface SessionModelChangeResult {
+  opencode_model: string;
+  /** True only when a LIVE sandbox took the new model. */
+  applied_live: boolean;
+  /**
+   * `true` when a live push was required and FAILED: the model is stored, but
+   * the running harness still answers from the OLD one.
+   *
+   * Check this, never `!applied_live`, before telling a user the change landed.
+   * `applied_live: false` is also the ordinary answer for a session with no live
+   * sandbox, where the stored value IS the mechanism and the next start reads
+   * it. Treating the two the same is how a `502` env-sync failure got reported
+   * as "saved — applies when this session next starts".
+   */
+  push_failed?: true;
+  detail?: string;
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
   opencodeModel: string,
-): Promise<{ opencode_model: string; applied_live: boolean; detail?: string }> {
+): Promise<SessionModelChangeResult> {
   return unwrap(
-    await backendApi.put<{ opencode_model: string; applied_live: boolean; detail?: string }>(
+    await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
     ),

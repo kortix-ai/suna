@@ -6,7 +6,6 @@ description: >-
   grant only after a reply from someone on {{authorized_approvers}} — never
   the requester — signs off, and logs every one.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

@@ -41,6 +41,7 @@ import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
@@ -127,6 +128,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   // Optimistic + shared with every other entry point (see useNewProjectSession).
   // The timing marks + mobile-drawer close fire on the synchronous navigation.
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
   const handleNewSession = useCallback(() => {
     markSessionClick();
     newSession({
@@ -185,6 +187,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={handleNewSession}
+                  // The guard already makes a second activation a no-op; the
+                  // disabled state is what makes that visible instead of
+                  // looking like a dead button worth hammering.
+                  disabled={creatingSession}
+                  aria-busy={creatingSession}
                   size="md"
                   className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
                 >

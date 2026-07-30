@@ -91,6 +91,30 @@ describe('persistAcpSessionIdentity', () => {
     expect(updateCalls).toHaveLength(0);
   });
 
+  test('exposes the already-stored session id on the immutability conflict', async () => {
+    storedMetadata = {
+      ...storedMetadata,
+      acp_session_id: 'codex-native-winner',
+    };
+
+    await expect(
+      persistAcpSessionIdentity(
+        { db: fakeDb() },
+        {
+          projectId: 'project-1',
+          projectSessionId: 'project-session-1',
+          acpServerId: 'server-1',
+          runtimeHarness: 'codex',
+          acpSessionId: 'codex-native-loser',
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'ACP_SESSION_ID_CONFLICT',
+      storedAcpSessionId: 'codex-native-winner',
+    });
+    expect(updateCalls).toHaveLength(0);
+  });
+
   for (const [name, metadata, input, code] of [
     [
       'rejects REST sessions',

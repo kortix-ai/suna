@@ -1,14 +1,14 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { useSyncStore } from '../stores/sync-store';
 import { getClient } from '../../core/runtime/client';
-import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
 import {
   SessionSyncController,
-  loadCompleteSessionHistory,
   type SessionSyncPage,
   type SessionSyncReason,
   type SessionSyncTelemetryEvent,
+  loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
+import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -228,7 +228,12 @@ export function noteSessionSyncEvent(event: {
   type?: string;
   properties: unknown;
 }): void {
-  const properties = event.properties as Record<string, unknown>;
+  // Not every event on this stream carries `properties` (the runtime's own
+  // `sync` event does not). Reading through it threw, and `openEventStream`
+  // catches that by SKIPPING the whole event — so one propertyless event type
+  // silently took `handleEvent` down with it. Bail out instead of throwing.
+  const properties = event.properties as Record<string, unknown> | undefined;
+  if (!properties) return;
   const info = properties.info as { sessionID?: string; role?: string } | undefined;
   const part = properties.part as { sessionID?: string } | undefined;
   const sessionId =

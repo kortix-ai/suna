@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { applyDetailCapabilityFilter } from '../projects/lib/detail-capability-filter';
+import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 // Record<string, unknown> so the filtered fields (which the runtime blanks to
 // {} / [] / null) type as `unknown` at the assertions — otherwise the literal
@@ -16,6 +17,11 @@ const sampleConfig: Record<string, unknown> = {
   agents: [{ name: 'a' }],
   skills: [{ name: 's' }],
   commands: [{ name: 'c' }],
+  manifest_version: resolveManifestVerdict({
+    raw: 'kortix_version = 1\n',
+    format: 'toml',
+    path: 'kortix.toml',
+  }),
 };
 const files = [{ path: 'a' }, { path: 'b' }, { path: 'c' }];
 const ALL = { canFiles: true, canAgents: true, canSkills: true, canCommands: true, canCustomize: true };
@@ -66,6 +72,30 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     // Structural signals survive so the workspace shell still renders.
     expect(out.config.is_kortix_repo).toBe(true);
     expect(out.config.signals).toEqual({ manifest: true });
+  });
+
+  test('no customize.read → the manifest verdict is restricted, never a migration prompt', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
+    expect(out.config.manifest_version).toEqual({
+      version: null,
+      latest_version: 3,
+      migration_offered: false,
+      target_version: null,
+      unknown_reason: 'restricted',
+      path: null,
+    });
+  });
+
+  test('with customize.read the real verdict passes through untouched', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, ALL);
+    expect(out.config.manifest_version).toEqual({
+      version: 1,
+      latest_version: 3,
+      migration_offered: true,
+      target_version: 2,
+      unknown_reason: null,
+      path: 'kortix.toml',
+    });
   });
 
   test('member profile (all config reads, NO file.read) → config visible, file list hidden', () => {

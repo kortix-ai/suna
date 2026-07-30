@@ -75,7 +75,17 @@ projectsApp.openapi(
     } catch (error) {
       if (error instanceof AcpSessionIdentityConflictError) {
         const status = error.code === 'ACP_SESSION_NOT_FOUND' ? 404 : 409;
-        return c.json({ error: error.message, code: error.code }, status);
+        // A lost session/new race is recoverable: hand the loser the id that
+        // won so it adopts that session instead of surfacing a dead-end error.
+        // The invariant itself does not bend — the write is still rejected.
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            ...(error.storedAcpSessionId ? { acp_session_id: error.storedAcpSessionId } : {}),
+          },
+          status,
+        );
       }
       throw error;
     }

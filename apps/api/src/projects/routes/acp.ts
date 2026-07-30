@@ -9,6 +9,7 @@ import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import type { AppEnv } from '../../types';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { foreignAgentModeSwitch } from '../lib/acp-agent-mode';
 import { createPersistedAcpSseProxy } from '../lib/acp-sse-proxy';
 import { appendAcpEnvelope, loadAcpTranscript } from '../lib/acp-transcript';
 import { projectsApp } from '../lib/app';
@@ -28,6 +29,12 @@ type AcpSessionBinding = {
   sessionId: string;
   acpServerId: string;
   runtimeHarness: 'claude' | 'codex' | 'opencode' | 'pi';
+  /** `metadata.native_agent` — the HARNESS-native agent this session committed
+   *  to at create (compile-runtime-config.ts → sessions.ts). Null when the
+   *  project's Kortix agent maps to no harness agent, so the harness runs its
+   *  own default. Immutable for the session's life; the grant on
+   *  `account_tokens.agent_grant` was minted from it. */
+  nativeAgent: string | null;
   userId: string;
   canManageSharing: boolean;
 };
@@ -67,6 +74,7 @@ async function resolveAcpBinding(
     sessionId,
     acpServerId: metadata.acp_server_id,
     runtimeHarness: metadata.runtime_harness,
+    nativeAgent: typeof metadata.native_agent === 'string' ? metadata.native_agent : null,
     userId: loaded.userId,
     canManageSharing: visible.canManageSharing,
   };
@@ -201,6 +209,22 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
       envelope = parsed as Record<string, unknown>;
     } catch {
       return c.json({ error: 'request body must be JSON' }, 400);
+    }
+
+    // WHO RUNS, before anything else. This must precede the transcript append
+    // and the relay: a refused switch may not be recorded as if the harness had
+    // accepted it, and must never reach the box. See foreignAgentModeSwitch.
+    const foreignAgent = foreignAgentModeSwitch(target, envelope);
+    if (foreignAgent) {
+      return c.json(
+        {
+          error: 'agent switch requires a new session',
+          code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+          expected_agent: foreignAgent.expectedAgent,
+          requested_agent: foreignAgent.requestedAgent,
+        },
+        409,
+      );
     }
 
     // The web UI's send path for every managed-ACP session. It does not go

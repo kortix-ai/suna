@@ -62,15 +62,6 @@ type DiscoverProfileTarget =
   | { source: 'integration'; item: DiscoverIntegration; variant: DiscoverIntegrationVariant }
   | { source: 'pipedream'; app: PipedreamApp };
 
-function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVariant): string {
-  return `${item.slug}-${variant.kind}`
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48);
-}
-
 export function DiscoverCatalogue({
   projectId,
   existingSlugs,
@@ -201,6 +192,10 @@ export function DiscoverCatalogue({
   });
 
   const loading = integrationsQuery.isLoading || (pipedreamEnabled && pipedreamQuery.isLoading);
+  const profileDisplayName =
+    profileTarget?.source === 'pipedream'
+      ? profileTarget.app.name
+      : (profileTarget?.variant.name ?? '');
 
   return (
     <div className="space-y-4">
@@ -437,26 +432,11 @@ export function DiscoverCatalogue({
       <ConnectorProfileModal
         open={profileTarget !== null}
         idPrefix="discover-profile"
-        title={`Add ${
-          profileTarget?.source === 'pipedream'
-            ? profileTarget.app.name
-            : (profileTarget?.variant.name ?? 'integration')
-        }`}
+        title={`Add ${profileDisplayName || 'integration'}`}
         description="Create a connector profile. The display name and slug identify this specific connection in project configuration."
-        initialName={
-          profileTarget?.source === 'pipedream'
-            ? profileTarget.app.name
-            : (profileTarget?.variant.name ?? '')
-        }
+        initialName={profileDisplayName}
         initialSlug={
-          profileTarget
-            ? proposeConnectorProfileSlug(
-                profileTarget.source === 'pipedream'
-                  ? profileTarget.app.slug
-                  : connectorSlug(profileTarget.item, profileTarget.variant),
-                existingSlugs,
-              )
-            : ''
+          profileTarget ? proposeConnectorProfileSlug(profileDisplayName, existingSlugs) : ''
         }
         existingSlugs={existingSlugs}
         pending={addProfile.isPending}

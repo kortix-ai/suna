@@ -36,10 +36,8 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← v3 manifest with four runtime profiles
-├── .claude/CLAUDE.md                  ← Claude Code runtime instructions
-├── .codex/AGENTS.md                   ← Codex runtime instructions
-├── .pi/README.md                      ← Pi runtime instructions
+├── kortix.yaml                        ← kortix_version: 2 manifest (OpenCode)
+├── .claude/ .codex/ .pi/              ← only for the LOCAL tools you wire up
 └── .kortix/
     ├── memory/MEMORY.md               ← project-wide memory for agents
     └── opencode/                      ← OpenCode native config dir
@@ -54,19 +52,14 @@ OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
 `.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
 `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
 
-This local tool choice does not select the cloud session harness.
-
-The one public starter uses `kortix_version: 3`. It declares OpenCode, Claude
-Code, Codex, and Pi agents. Cloud project creation enables **ACP &
-Multi-Harness** automatically.
-
-Create a four-harness test project with:
+This local tool choice does not change what a cloud session runs. The one public
+starter writes `kortix_version: 2`, and every cloud session runs OpenCode.
 
 ```sh
-kortix init harness-lab --yes --no-git
+kortix init my-project --yes --no-git
 ```
 
-Agents can retrieve the deployed platform manual from any harness:
+Agents can retrieve the deployed platform manual from a session:
 
 ```sh
 kortix system-skills

@@ -25,6 +25,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills, managedSkillConfigDirs } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
@@ -225,6 +226,10 @@ async function main() {
       opencodeConfigDir,
       usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
     })
+    // Drop any macOS AppleDouble sidecar BEFORE OpenCode indexes the dir —
+    // its ToolRegistry cannot build them and memoizes the failure, which kills
+    // every prompt on the sandbox. See apple-double.ts.
+    await repairOpencodeConfigDir(opencodeConfigDir)
     // Satisfy the config dir's npm deps offline before an OpenCode harness
     // starts. Non-OpenCode harnesses do not pay this cost.
     await ensureOpencodeConfigDeps(opencodeConfigDir)
@@ -618,6 +623,7 @@ async function runWarmSeedMode(
   const opencodeConfigDir = materialized
     ? await resolveOpencodeConfigDir(cfg)
     : cfg.defaultOpencodeConfigDir
+  await repairOpencodeConfigDir(opencodeConfigDir)
   await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
@@ -779,6 +785,7 @@ async function runWarmSeedMode(
       const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
+      await repairOpencodeConfigDir(adoptedOpencodeConfigDir)
       await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
         logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
       )

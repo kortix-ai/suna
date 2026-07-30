@@ -1,11 +1,9 @@
 # OpenCode reference — overview
 
-OpenCode is one supported Kortix runtime harness. Version 2 uses OpenCode REST.
-Version 3 can select OpenCode ACP, Claude Code, Codex, or Pi. This directory is
-the complete OpenCode-specific reference. It does not define other harnesses.
+OpenCode is the Kortix runtime. Every session runs OpenCode over its REST
+compatibility interface. This directory is the complete OpenCode reference.
 
-When a project selects OpenCode, the same `.kortix/opencode/` config directory
-can drive both surfaces:
+The same `.kortix/opencode/` config directory drives both surfaces:
 
 - **Remote** — when a Kortix session boots, the platform points OpenCode
   at this dir via `OPENCODE_CONFIG_DIR=.kortix/opencode` and launches
@@ -14,8 +12,6 @@ can drive both surfaces:
   their machine, the same config dir drives that session too.
 
 OpenCode-specific files can therefore serve both local and remote OpenCode.
-Claude Code, Codex, and Pi use their own native configuration directories. See
-`../kortix/runtime-harnesses.md` for the multi-harness contract.
 
 This folder mirrors the upstream OpenCode docs as standalone Markdown
 files so an agent can read them without a network fetch. Pages are

@@ -7,7 +7,6 @@ description: >-
   {{escalation_channel}} for a human instead of guessing. Never deletes or
   merges a lead.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

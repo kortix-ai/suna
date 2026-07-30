@@ -190,6 +190,21 @@ mock.module('../shared/db', () => {
   };
 });
 
+// IAM — a prompt that switches to a CONCRETE agent is authorized for
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// The real engine issues an `innerJoin` this file's `db` stub does not build, so
+// leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
+// agent-switch assertion answer 502 instead of the 204 it is about.
+//
+// This file's subject is proxy FORWARDING, so the gate is held open here and the
+// gate itself — 403-before-re-mint, the requested agent as the resource, the
+// non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
+// in sandbox-proxy/routes/preview-agent-authz.test.ts.
+mock.module('../iam', () => ({
+  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  authorize: async () => ({ allowed: true, reason: 'project_role' }),
+}));
+
 mock.module('../shared/preview-ownership', () => ({
   // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock

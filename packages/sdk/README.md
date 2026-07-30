@@ -120,17 +120,9 @@ persisted session default.
 ### React runtime transport
 
 `useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
-The default is the OpenCode REST client. A project with the `acp_runtime`
-experiment uses ACP through the authenticated sandbox bridge. A v3 session can
-select OpenCode, Claude Code, Codex, or Pi. The hook keeps one return shape
-across transports and harnesses. It routes messages, message rewind and restore,
-cancellation, commands, permissions, and questions inside the SDK. A host does
-not construct ACP routes or branch on `runtime_harness`.
-
-`POST /start` also returns the immutable runtime identity:
-`runtime_name`, `runtime_harness`, `native_agent`, `acp_server_id`, and
-`acp_session_id`. Restart and resume keep that identity. Disable `acp_runtime`
-to use OpenCode REST for new compatible sessions.
+That is the OpenCode REST client. The hook keeps one return shape, and routes
+messages, message rewind and restore, cancellation, commands, permissions, and
+questions inside the SDK. A host never constructs a transport route itself.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -254,9 +246,8 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. It is not the harness-neutral ACP
-stream. Use `useSession()` in React. Framework-free ACP consumers can build an
-`AcpSessionController` through the public ACP exports.
+`session.stream()` emits OpenCode v2 events. Prefer `useSession()` in React —
+it owns the whole lifecycle.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -496,5 +487,5 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API, ACP, and OpenCode REST compatibility. See **`CHANGELOG.md`** for
+REST API and OpenCode REST compatibility. See **`CHANGELOG.md`** for
 per-release changes.
