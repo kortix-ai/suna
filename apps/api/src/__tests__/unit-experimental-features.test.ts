@@ -24,6 +24,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('connectors_api_discover')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
+    expect(isExperimentalFeatureKey('teams')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
     expect(isExperimentalFeatureKey('acp_runtime')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
@@ -60,6 +61,17 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
     ).toBe(false);
+  });
+
+  test('teams is explicit opt-in and needs no operator env var', () => {
+    expect(resolveExperimentalFeature({}, 'teams')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { teams: true } }, 'teams')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { teams: false } }, 'teams')).toBe(false);
+    // The channel is always listable — server bot credentials only decide
+    // whether the MANAGED install path is offered, never whether a project may
+    // hold an opinion (bring-your-own works without them).
+    expect(findCatalogFeature('teams').available).toBe(true);
+    expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
   test('connectors API Discover is explicit opt-in', () => {
@@ -199,6 +211,13 @@ describe('buildExperimentalCatalog', () => {
     expect(reviewCenter.enabled).toBe(true);
     expect(reviewCenter.overridden).toBe(true);
     expect(typeof reviewCenter.available).toBe('boolean');
+
+    const teams = catalog.find((f) => f.key === 'teams');
+    if (!teams) throw new Error('Missing Microsoft Teams feature');
+    expect(teams.name).toBe('Microsoft Teams');
+    expect(teams.stability).toBe('experimental');
+    expect(teams.enabled).toBe(false);
+    expect(teams.overridden).toBe(false);
 
     const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
     if (!tunnel) throw new Error('Missing Agent Computer Tunnel feature');

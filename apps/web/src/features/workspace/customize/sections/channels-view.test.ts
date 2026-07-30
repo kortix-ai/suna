@@ -93,8 +93,12 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
     expect(channelsSource).toContain('useDisconnectTeams');
   });
 
-  test('keeps the Teams row behind the channel feature flag', () => {
-    expect(channelsSource).toContain('if (mode && !mode.enabled) return null;');
+  test('keeps Teams behind the per-project `teams` experimental flag, exactly like Email', () => {
+    expect(channelsSource).toContain("projectQuery.data?.experimental?.teams === true");
+    expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);
+    expect(channelsSource).toMatch(/teamsChannelEnabled \? \([\s\S]{0,200}<TeamsChannelPanel/);
+    // One gate only — the old `mode.enabled` row check is gone.
+    expect(channelsSource).not.toContain('if (mode && !mode.enabled) return null;');
   });
 
   test('offers one-click Install / Add to Teams / Disconnect in the row', () => {

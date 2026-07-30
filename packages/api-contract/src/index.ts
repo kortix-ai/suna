@@ -49,6 +49,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
+  teams: z.boolean(),
   voice: z.boolean(),
   llm_gateway: z.boolean(),
   acp_runtime: z.boolean(),

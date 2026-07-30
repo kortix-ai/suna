@@ -6,7 +6,6 @@ import {
   loadTeamsInstall,
 } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
-import { teamsChannelEnabled } from '../channels/teams-auth';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -81,7 +80,9 @@ export async function synthesizeChannelConnectors(
 ): Promise<ConnectorSpec[]> {
   const specs: ConnectorSpec[] = [];
 
-  // Slack (Telegram/Teams slot in here the same way — see KORTIX-206 Phase D).
+  // Slack — no experimental flag: the install IS the registration (Telegram
+  // slots in here the same way — see KORTIX-206 Phase D). Teams sits below,
+  // with the other flag-gated channels.
   // Use the reserved platform-owned slug so user-defined connectors like
   // `[[connectors]] slug="slack" provider="pipedream" app="slack"` cannot
   // shadow the built-in Slack CLI's channel catalog.
@@ -91,19 +92,21 @@ export async function synthesizeChannelConnectors(
     if (install) specs.push(channelSpec('slack', slackSlug));
   }
 
-  if (teamsChannelEnabled()) {
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  // Teams — gated on the per-project `teams` experimental flag, then the
+  // install, exactly like email below.
+  if (project && resolveExperimentalFeature(project.metadata, 'teams')) {
     const teamsSlug = channelDefaultSlug('teams');
     if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
       const install = await loadTeamsInstall(projectId).catch(() => null);
       if (install) specs.push(channelSpec('teams', teamsSlug));
     }
   }
-
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
 
   // Voice — gated on the per-project `voice` experimental flag. Unlike
   // Slack/Teams/email there is no install to check: LiveKit config lives in

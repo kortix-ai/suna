@@ -104,6 +104,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     staleTime: 10_000,
   });
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const teamsChannelEnabled = projectQuery.data?.experimental?.teams === true;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
@@ -202,7 +203,9 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                     canWrite={canWrite}
                   />
                 ) : null}
-                <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+                {teamsChannelEnabled ? (
+                  <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+                ) : null}
               </TableBody>
             </Table>
 
@@ -227,9 +230,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            <div className="border-border/60 border-t pt-6">
-              <TeamsChannelPanel projectId={projectId} />
-            </div>
+            {teamsChannelEnabled ? (
+              <div className="border-border/60 border-t pt-6">
+                <TeamsChannelPanel projectId={projectId} />
+              </div>
+            ) : null}
 
             {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
           </>
@@ -587,8 +592,6 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
   const [confirming, setConfirming] = useState(false);
-
-  if (mode && !mode.enabled) return null;
 
   const connected = Boolean(install);
   const installUrl = mode?.orgConsentUrl ?? null;
