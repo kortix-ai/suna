@@ -699,14 +699,11 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
   return {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`,
-    title: 'Kortix manifest (kortix_version 3)',
+    title: 'Kortix manifest (kortix_version 3) — EXPERIMENTAL, UNRELEASED',
     description:
-      'ACP & Multi-Harness manifest for OpenCode, Claude Code, Codex, and Pi. ' +
-      'New generic projects enable the `acp_runtime` experiment automatically. Existing projects ' +
-      'must enable it before they can start a version 3 session. ' +
-      'Each logical agent selects one declared runtime profile. The selected harness, runtime profile, ' +
-      'and harness-native agent identifier are immutable when a session starts. Native harness ' +
-      'configuration owns model, prompt, permission, and tool behavior.',
+      'EXPERIMENTAL AND UNRELEASED — do not use. Write `kortix_version: 2` instead. ' +
+      'This shape is off by default and cannot start a session on a released Kortix deployment. ' +
+      'It is published only so tooling can parse it; it is not a supported project format.',
     type: 'object',
     required: ['kortix_version', 'default_agent', 'runtimes', 'agents'],
     properties: {
@@ -715,7 +712,7 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       runtimes: {
         type: 'object',
         description:
-          'Named ACP runtime profiles. Each profile selects one supported harness and its native configuration directory.',
+          'EXPERIMENTAL AND UNRELEASED. Named runtime profiles. Not usable on a released deployment.',
         minProperties: 1,
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: runtimeBlockV3Schema(),
@@ -757,7 +754,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.schema.json`,
     title: 'Kortix manifest',
-    description: `kortix.toml / kortix.yaml — combined schema covering every published \`kortix_version\`. Dispatches to the v1, v2, or v3 shape by \`kortix_version\`. Prefer this URL when the version is not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json\` when it is.`,
+    description: `kortix.toml / kortix.yaml — combined schema covering every published \`kortix_version\`. Dispatches to the v1, v2, or v3 shape by \`kortix_version\`. Version 2 is the current schema; version 3 is experimental and unreleased. Prefer this URL when the version is not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json\` when it is.`,
     type: 'object',
     required: ['kortix_version'],
     properties: {

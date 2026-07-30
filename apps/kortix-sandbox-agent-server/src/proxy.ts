@@ -54,6 +54,22 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 // retry+auto-wake loop can act on immediately.
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 
+/**
+ * True when this daemon runs a managed ACP harness instead of the legacy
+ * OpenCode REST supervisor. Mirrors `usesManagedAcpRuntime` in main.ts (which
+ * proxy.ts cannot import — main.ts imports proxy.ts) and the `managedAcp`
+ * predicate in routes/health.ts, so all three agree on one definition of the
+ * runtime.
+ *
+ * Under managed ACP, `main()` never calls `opencode.start()`, so `markReady()`
+ * — the only writer of `state='ok'` — is unreachable and `getState()` stays at
+ * its initial `'starting'` for the life of the VM. That is not a boot phase; it
+ * is a process that will never exist.
+ */
+function usesManagedAcpRuntime(bootState: SandboxBootState): boolean {
+  return !!bootState.acpHarness && !!bootState.acpServerId
+}
+
 type OpencodeWsData = {
   // Absent when the client connects without an id — lookup-or-create then
   // mints a brand new pty (see `websocket.open` below).
@@ -226,6 +242,38 @@ export function buildOpencodeApp(
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
+    // Managed ACP serves no OpenCode REST surface at all — the supervisor is
+    // never started, so no amount of waiting produces one. Answer 404 (the
+    // resource genuinely does not exist on this runtime) FIRST, before the repo
+    // and boot-session gates: those describe a runtime that is still coming up,
+    // and a request that can never succeed must not pay for an `isRepoMaterialized`
+    // stat on the way to a permanent answer.
+    //
+    // 404 and not 503/501: every retry path in the stack keys off 5xx, so a 5xx
+    // here reproduces the original bug in a new costume.
+    //   - packages/sdk/.../messages.ts:98 — `status === 503` forces the FULL
+    //     ~29s boot backoff; 501 still lands in `isTransientSendStatus` (>=500).
+    //     A 4xx that is not 408/429 returns null on the first failure
+    //     (locked by messages.test.ts:340).
+    //   - apps/web/src/app/react-query-provider.tsx:28 — 4xx never retries; a
+    //     503 retries 3x.
+    //   - apps/api/src/sandbox-proxy/routes/preview.ts:1076 — only 502/503 enter
+    //     the auto-wake retry loop, and a 503 whose body lacks the exact string
+    //     "opencode not ready" burns that whole loop before it passes through.
+    // The daemon's own /kortix/health already reports `opencode: 'down'` +
+    // `runtime: 'acp'` here (routes/health.ts:141,151); this keeps the proxy
+    // consistent with it instead of contradicting it.
+    if (usesManagedAcpRuntime(bootState)) {
+      return c.json(
+        {
+          error: 'opencode rest is not served for this runtime',
+          runtime: 'acp',
+          harness: bootState.acpHarness,
+        },
+        404,
+      )
+    }
+
     if (bootState.repoMaterializationError) {
       return c.json(
         {

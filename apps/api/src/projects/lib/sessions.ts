@@ -9,6 +9,7 @@ import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { type SandboxProviderName, config } from '../../config';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { agentMayUseConnector } from '../../iam/agent-scope';
@@ -54,6 +55,7 @@ import {
   type CompiledRuntimeConfig,
 } from './compile-runtime-config';
 import { withProjectGitAuth } from './git';
+import { harnessNotEnabledError, isHarnessEnabled } from './harness-gate';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -723,6 +725,15 @@ export async function createProjectSession(input: {
       },
     };
   }
+  // The manifest DECLARES the harness; the platform decides whether it runs it.
+  // Stable deployments launch `opencode` only, so a repo that declares
+  // `harness: claude|codex|pi` is refused here by name rather than silently
+  // started on a different harness against the wrong native config directory.
+  // Gated at CREATE only: an already-running session keeps its immutable
+  // `runtime_harness` binding, so flipping the switch never kills live work.
+  if (acpRuntimeEnabled && runtimeAgent && !isHarnessEnabled(runtimeAgent.harness)) {
+    return { error: harnessNotEnabledError(runtimeAgent.harness) };
+  }
   if (runtimeAgent) agentName = runtimeAgent.name;
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
@@ -791,7 +802,7 @@ export async function createProjectSession(input: {
         freeModelsOnly,
       });
       const concreteModel =
-        resolved.model ?? (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+        resolved.model ?? (!freeModelsOnly ? platformDefaultModelId() : null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';

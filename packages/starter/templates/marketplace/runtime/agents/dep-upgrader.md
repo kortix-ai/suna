@@ -5,7 +5,6 @@ description: >-
   verification suite in the sandbox, and opens a PR only when everything is
   green. Handles breaking changes with documented migration steps.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

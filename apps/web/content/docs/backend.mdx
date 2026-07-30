@@ -89,7 +89,7 @@ export SESSION_ID="<session-id>"
 
 | Field                | Contract                                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_name`         | Selects a declared logical agent. A v3 agent also selects its immutable runtime profile and harness.                                                    |
+| `agent_name`         | Selects a declared agent.                                                                                                                               |
 | `opencode_model`     | Selects the initial model. The wire name remains stable for every supported harness. An unavailable model returns `400 INVALID_SESSION_MODEL`.          |
 | `runtime_context`    | Stores non-secret scalar context. The API rejects credential-like keys, more than 64 entries, or more than 16 KiB.                                      |
 | `connector_bindings` | Maps a connector-profile slug to one strategy-compatible `authorization_id`. The credential stays outside the sandbox.                                  |

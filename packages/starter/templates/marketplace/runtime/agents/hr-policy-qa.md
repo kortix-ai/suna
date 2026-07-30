@@ -7,7 +7,6 @@ description: >-
   Slack instead of answering it. Never sends email and never makes a policy
   exception.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

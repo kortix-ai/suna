@@ -291,6 +291,11 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         }
       }
 
+      const sessionsMatch = p.match(/^projects\/([^/]+)\/sessions$/);
+      if (sessionsMatch && method === 'GET') {
+        return Response.json([]);
+      }
+
       // Any other `projects/:id/...` sub-path (sessions, files, connectors, …) —
       // generic forwarded-OK, recorded for assertion.
       if (/^projects\/[^/]+(\/.*)?$/.test(p)) {

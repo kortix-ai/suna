@@ -416,6 +416,25 @@ export async function continueSession(
     });
   };
 
+  // The `acpSessionId` read above is a snapshot taken BEFORE the readiness wait,
+  // which runs up to READY_DEADLINE_MS and is re-entered by every requeued
+  // delivery. In that window the browser-side controller can win the
+  // `session/new` race and write metadata.acp_session_id. Delivering on the
+  // stale null mints a SECOND harness-native session, which persistAcpSession-
+  // Identity() then rejects with ACP_SESSION_ID_CONFLICT (the 409 the user sees
+  // as "acp_session_id is immutable…"). Re-read at send time instead.
+  const readStoredAcpSessionId = async (): Promise<string | null> => {
+    const [row] = await db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    const meta = (row?.metadata ?? {}) as Record<string, unknown>;
+    return typeof meta.acp_session_id === 'string' && meta.acp_session_id.trim()
+      ? meta.acp_session_id
+      : null;
+  };
+
   const deadline = Date.now() + READY_DEADLINE_MS;
   let opened: Awaited<ReturnType<typeof openOnce>>;
   for (;;) {
@@ -455,6 +474,7 @@ export async function continueSession(
       if (!usesAcp || !runtimeHarness || !acpServerId) {
         return postPrompt(externalId, runtimeId, text, userId, sessionId);
       }
+      acpSessionId = (await readStoredAcpSessionId()) ?? acpSessionId;
       const delivered = await postAcpPrompt({
         externalId,
         acpServerId,

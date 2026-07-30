@@ -6,9 +6,9 @@
 > [Drive Kortix as a Backend](./KORTIX_AS_A_BACKEND_GUIDE.md) for current
 > integration guidance.
 
-> **Historical audit scope.** This audit predates v3 multi-harness delivery.
-> OpenCode-specific findings remain compatibility evidence. They do not define
-> Claude Code, Codex, or Pi runtime behavior.
+> **Audit scope.** OpenCode over its REST compatibility interface — the shipped
+> runtime. ACP and multi-harness are experimental, unreleased, and off by
+> default; nothing here covers them.
 
 Method: a 35-agent adversarial audit of every Kortix-as-a-Backend edge case
 (plan `docs/KORTIX_AS_BACKEND_V1_PLAN.md` §4.1–4.11) against current `main` plus

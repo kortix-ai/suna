@@ -75,6 +75,7 @@ import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import {
@@ -2752,12 +2753,12 @@ projectsApp.openapi(
     // What `auto` resolves to for this project. Served below so the client can
     // LOCK its switch instead of offering a toggle that always 409s.
     const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
     );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
-      config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefaultModelId(),
       routing?.visionModel,
       ...(routing?.defaultFallback?.models ?? []),
       ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
@@ -2851,7 +2852,7 @@ projectsApp.openapi(
     // charge, which always offers the current one.
     const defaults = await getAccountModelDefaults(accountId, projectId);
     const effectiveDefault =
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId();
     if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
       return c.json(
         {
@@ -2951,11 +2952,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefault: platformDefaultModelId(),
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
+      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
       resolvedSource: resolved.source,
       freeTier,
     });

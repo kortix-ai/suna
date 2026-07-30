@@ -7,7 +7,6 @@ description: >-
   pass/fail result as a GitHub check and comment. Test environment only; never
   merges.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

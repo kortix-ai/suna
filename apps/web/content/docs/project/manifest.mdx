@@ -1,85 +1,28 @@
 ---
 title: Manifest reference
-description: Every kortix.yaml v2 and v3 key, with defaults, limits, and validation rules.
+description: Every kortix.yaml v2 key, with defaults, limits, and validation rules.
 ---
 
-The manifest is the file the platform treats as authoritative for a project. This page lists the `kortix.yaml` v2 and v3 runtime fields. It also lists the shared project fields. For the plain-language version, see [Your project](/docs/project).
+The manifest is the file the platform treats as authoritative for a project. This page lists the `kortix.yaml` v2 fields. For the plain-language version, see [Your project](/docs/project).
 
-## Choose v2 or v3
+## Version
 
-- Use `kortix_version: 3` for new projects and multiple harnesses.
-- Keep `kortix_version: 2` for an existing OpenCode REST project.
+`kortix_version: 2` is the current schema. Every new project scaffolds it, and it runs OpenCode. `kortix.toml` v1 still works for existing projects with no forced upgrade.
 
-Version 3 supports `opencode`, `claude`, `codex`, and `pi`. New generic
-projects enable **ACP & Multi-Harness** automatically. Enable the experiment
-before creating v3 sessions in an existing project. A disabled project uses
-the OpenCode REST transport.
-
-The runtime choice is immutable per session. The selected logical agent fixes the runtime profile, harness, and optional harness-native agent.
-
-```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
-default_agent: opencode
-
-runtimes:
-  opencode:
-    harness: opencode
-    config_dir: .kortix/opencode
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  pi:
-    harness: pi
-    config_dir: .pi
-
-agents:
-  opencode:
-    runtime: opencode
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-  claude:
-    runtime: claude
-  codex:
-    runtime: codex
-  pi:
-    runtime: pi
-```
-
-### Version 3 runtime fields
-
-| Field | Required | Notes |
-|---|---|---|
-| `kortix_version` | yes | Must be `3`. Version 3 is YAML-only. |
-| `default_agent` | yes | Must name a declared, enabled logical agent. |
-| `runtimes` | yes | Non-empty map of immutable runtime profiles. |
-| `runtimes.<name>.harness` | yes | `opencode`, `claude`, `codex`, or `pi`. |
-| `runtimes.<name>.config_dir` | no | Repo-relative path. The harness default applies when omitted. |
-| `agents` | yes | Non-empty map of logical agents. |
-| `agents.<name>.runtime` | yes | Must name a profile in `runtimes`. |
-| `agents.<name>.agent` | no | Harness-native agent or mode. Kortix stores it as `native_agent`. |
-| `agents.<name>.enabled` | no | Defaults to `true`. |
-| `agents.<name>.connectors` | no | Connector grants. Defaults to `none`. |
-| `agents.<name>.secrets` | no | Secret grants. Defaults to `none`. |
-| `agents.<name>.skills` | no | Skill grants. Defaults to `none`. |
-| `agents.<name>.kortix_cli` | no | Kortix CLI grants. Defaults to `none`. |
-| `agents.<name>.workspace` | no | `runtime`, `read`, or `branch`. |
-
-Version 3 rejects OpenCode behavior fields such as `model`, `mode`, and `permission` in a logical-agent block. Put native behavior in the selected harness configuration directory.
+<Callout type="warn" title="There is no v3">
+A `kortix_version: 3` schema exists in the codebase. It is **experimental,
+unreleased, and off by default** — you cannot create or run a v3 project. Write
+`kortix_version: 2`.
+</Callout>
 
 ## Two configuration surfaces
 
 A Kortix project has two configuration surfaces with strict, non-overlapping ownership.
 
 - **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/Dockerfile`. The platform reads this: the trigger sweep, the sandbox builder, session token minting, and the dashboard.
-- **Harness config** — `.kortix/opencode/`, `.claude/`, `.codex/`, or `.pi/`. The selected harness reads its own directory.
+- **OpenCode config** — `.kortix/opencode/`. OpenCode reads its own directory.
 
-For v2, the join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body:
+The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body:
 
 - system prompt
 - `model`, `mode`
@@ -90,14 +33,13 @@ The manifest's `agents:` block sets governance only: which agents may launch, an
 
 ## Location and versions
 
-Any repo with a valid manifest at its root is a Kortix project. `kortix.yaml` v2 and v3 are YAML-only. `kortix.toml` v1 still works for existing projects. See [Legacy TOML](/docs/project/legacy-toml) for the v1 schema.
+Any repo with a valid manifest at its root is a Kortix project. `kortix.yaml` v2 is YAML-only. `kortix.toml` v1 still works for existing projects. See [Legacy TOML](/docs/project/legacy-toml) for the v1 schema.
 
-`kortix_version: 2` and `kortix_version: 3` require YAML. A TOML file that declares either version fails validation. A manifest that declares a version higher than `3` is rejected.
+`kortix_version: 2` requires YAML. A TOML file that declares it fails validation.
 
 `validateManifest()` is the single gate behind `kortix ship`, the change request merge check, and `kortix validate`. The same rules apply everywhere, so anything that merges into `main` is structurally sound. The schema is public and generated from the same package:
 
 - [`kortix.v2.schema.json`](/schema/kortix.v2.schema.json)
-- [`kortix.v3.schema.json`](/schema/kortix.v3.schema.json)
 - [`kortix.v1.schema.json`](/schema/kortix.v1.schema.json)
 - [`kortix.schema.json`](/schema/kortix.schema.json) (dispatches on `kortix_version`)
 
@@ -109,7 +51,7 @@ kortix_version: 2
 ```
 
 ```bash
-kortix schema --version 3
+kortix schema --version 2
 ```
 
 ## Version 2 full example
@@ -396,7 +338,7 @@ is project-owned or member-owned.
 
 ## When config changes take effect
 
-- A manifest or harness-native config edit applies only after a change request merges to `main`. This includes `.kortix/opencode/`, `.claude/`, `.codex/`, and `.pi/`. Sessions and the trigger sweep read the default branch, not session branches.
+- A manifest or `.kortix/opencode/` config edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
 - A trigger's cron or webhook change is picked up by the scheduler within seconds of the merge.
 - A sandbox image or hardware change rebuilds the snapshot. The new spec applies on the next session, not the current one.
 - A secret value change in the dashboard resolves at sandbox-create time. It applies on the next session, not a running one.

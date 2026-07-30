@@ -6,7 +6,6 @@ description: >-
   {{hiring_manager_calendar}}. Never advances or rejects a candidate — a
   person makes every decision.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

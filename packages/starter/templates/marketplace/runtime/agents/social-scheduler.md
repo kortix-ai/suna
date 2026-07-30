@@ -7,7 +7,6 @@ description: >-
   {{approval_channel}} for a human to approve and publish. Never posts to
   any social account.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

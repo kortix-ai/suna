@@ -1,7 +1,12 @@
 import { ApiError } from '../api/client.ts';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { DEFAULT_SANDBOX_RUNTIME_PORT, opencodeClient } from '../api/sandbox-proxy.ts';
+import {
+  acpSessionTargetFromSession,
+  openAcpSession,
+  sendAcpPromptAndWait,
+} from '../api/acp-session.ts';
+import { extractMessageText } from './sessions-chat.ts';
 import { loadLink } from '../project-link.ts';
 import {
   resolveProjectContext,
@@ -110,10 +115,11 @@ export async function runDoctor(argv: string[]): Promise<number> {
   process.stdout.write(`  ${C.dim}creating session…${C.reset}\n`);
   let session: ProjectSession;
   try {
-    session = await ctx.client.post<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions`,
-      { initial_prompt: null },
-    );
+    // OMIT `initial_prompt` — do not send `null`. The route's schema declares it
+    // optional-and-string, so an explicit null fails validation with
+    // `400 Validation failed` ("Expected string, received null") and doctor
+    // never reached the runtime check at all.
+    session = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, {});
   } catch (err) {
     process.stdout.write(`${status.err(`session create failed: ${describe(err)}`)}\n`);
     return 1;
@@ -172,40 +178,35 @@ export async function runDoctor(argv: string[]): Promise<number> {
       `${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`,
     );
 
-    // ── 6. Open an opencode session + send a prompt ──────────────────────
-    const sandboxTarget = opencodeTargetFromSession(running);
-    if (!sandboxTarget) {
-      process.stdout.write(`${status.err('running session has no reachable sandbox target')}\n`);
-      return 1;
-    }
-    const oc = opencodeClient({
-      auth,
-      sandboxId: sandboxTarget.sandboxId,
-      port: sandboxTarget.port,
-    });
-    let ocSid: string;
+    // ── 6. Connect the ACP runtime + send a prompt ───────────────────────
+    // Reports on the SAME runtime the platform actually starts. Under managed
+    // ACP the in-sandbox OpenCode REST server is never launched, so the old
+    // `POST /session` probe failed on every healthy session — a false red.
+    const acpTarget = acpSessionTargetFromSession(running);
+    let controller: Awaited<ReturnType<typeof openAcpSession>>;
     try {
-      const created = await oc.createSession({ title: 'kortix doctor' });
-      ocSid = created.id;
+      controller = await openAcpSession({
+        auth,
+        projectId: ctx.projectId,
+        session: running,
+      });
     } catch (err) {
-      process.stdout.write(`${status.err(`opencode session create failed: ${describe(err)}`)}\n`);
+      process.stdout.write(`${status.err(`ACP connect failed: ${describe(err)}`)}\n`);
       return 1;
     }
-    process.stdout.write(`${status.ok(`opencode session ${C.faded}${ocSid}${C.reset}`)}\n`);
+    const harness = acpTarget.runtimeHarness ?? 'unknown';
+    const nativeId = controller.getSnapshot().projection.sessionId;
+    process.stdout.write(
+      `${status.ok(`ACP session ${C.faded}${nativeId}${C.reset} ${C.dim}(harness ${harness})${C.reset}`)}\n`,
+    );
 
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await oc.sendPrompt(
-        ocSid,
-        [{ type: 'text', text: flags.prompt }],
-        undefined,
-        flags.timeoutSec * 1000,
-      );
-      const text = reply.parts
-        .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
-        .join(' ')
-        .trim();
+      const reply = await sendAcpPromptAndWait(controller, flags.prompt, {
+        timeoutMs: flags.timeoutSec * 1000,
+      });
+      const text = extractMessageText(reply).trim();
       if (!text) {
         process.stdout.write(`${status.err('reply had no text content')}\n`);
         failures += 1;
@@ -219,6 +220,8 @@ export async function runDoctor(argv: string[]): Promise<number> {
     } catch (err) {
       process.stdout.write(`${status.err(`prompt failed: ${describe(err)}`)}\n`);
       failures += 1;
+    } finally {
+      controller.close();
     }
   } finally {
     await cleanup();
@@ -231,25 +234,6 @@ export async function runDoctor(argv: string[]): Promise<number> {
   }
   process.stdout.write(`${status.ok('all checks passed')}\n\n`);
   return 0;
-}
-
-function opencodeTargetFromSession(session: { sandbox_id?: string | null; sandbox_url?: string | null }): {
-  sandboxId: string;
-  port: number;
-} | null {
-  if (session.sandbox_url) {
-    const match = session.sandbox_url.match(/\/p\/([^/]+)\/(\d+)(?:\/|$)/);
-    if (match?.[1]) {
-      const port = Number(match[2]);
-      return {
-        sandboxId: match[1],
-        port: Number.isInteger(port) && port > 0 ? port : DEFAULT_SANDBOX_RUNTIME_PORT,
-      };
-    }
-  }
-  return session.sandbox_id
-    ? { sandboxId: session.sandbox_id, port: DEFAULT_SANDBOX_RUNTIME_PORT }
-    : null;
 }
 
 function parseFlags(argv: string[]): DoctorFlags {

@@ -1,9 +1,10 @@
 # Pluggable runtime harnesses: Claude Code and Codex in Kortix sandboxes
 
-> **Superseded on 2026-07-28.** This proposal predates the implemented v3
-> manifest. The active contract uses `runtimes`, `agents.<name>.runtime`, the
-> `acp_runtime` project experiment, and OpenCode, Claude Code, Codex, and Pi.
-> Use `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md`.
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
 
 Status: PROPOSAL — evaluation of sandboxagent.dev + design for `runtime:` selection
 Date: 2026-07-08

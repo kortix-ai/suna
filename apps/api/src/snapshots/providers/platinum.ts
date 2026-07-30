@@ -23,6 +23,7 @@ import {
   KORTIX_ENTRYPOINT,
 } from '../build-context';
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
+import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
@@ -490,8 +491,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
-      const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);
-      if ((await tar.exited) !== 0) throw new Error('tar build context failed');
+      await tarBuildContext(ctx.contextDir, tarPath);
 
       // Contexts are 100s of MB (baked agent + CLI binaries) — too big for the
       // API gateway's body cap, so upload DIRECTLY to object storage via a

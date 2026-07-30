@@ -59,6 +59,40 @@ describe('managed catalog', () => {
     }
   });
 
+  // Measured 2026-07-30 on live session fcfd1f38-5e64-4a65-9db1-78cb5a6a4690:
+  // `deepseek/deepseek-v4-flash` is served by 21 OpenRouter endpoints. With NO
+  // `provider` routing preference on the request, OpenRouter load-balances
+  // across all of them, and they are not interchangeable:
+  //   - exactly ONE (`deepseek`, the first-party endpoint) reports
+  //     supports_implicit_caching:true, so the prompt cache is a ~1-in-21
+  //     lottery — replaying a BYTE-IDENTICAL body twice measured 0% then 99%
+  //     cached, which is what made `cachedReadTokens` look like it collapsed
+  //     after turn 1 when the prefix had never changed at all;
+  //   - `io-net/fp8` caps context at 32_768 and `akashml/fp8` at 131_072
+  //     against a model advertised at 1_048_576, so a long session can be
+  //     routed onto an endpoint that cannot hold it;
+  //   - `coreweave/fp8` publishes a p99 latency of 107_688ms;
+  //   - identical input tokenizes differently per endpoint (7041 / 7066 /
+  //     7081 / 7361 prompt_tokens for the same body).
+  // `openrouterProvider` exists for exactly this and was set on ZERO models.
+  test('every openrouter-transport managed model pins its provider routing', () => {
+    const openRouterModels = MANAGED_MODELS.filter((m) => m.transport === 'openrouter');
+    expect(openRouterModels.length).toBeGreaterThan(0);
+    for (const m of openRouterModels) {
+      const pref = m.openrouterProvider;
+      expect(pref, `${m.id} must pin OpenRouter provider routing`).toBeDefined();
+      const order = (pref as { order?: unknown }).order;
+      expect(Array.isArray(order), `${m.id} needs a provider order`).toBe(true);
+      expect((order as string[]).length, `${m.id} needs a provider order`).toBeGreaterThan(0);
+      // Fallbacks stay ON: pinning must improve cache locality without turning
+      // a single endpoint's outage into a hard failure for the whole platform.
+      expect(
+        (pref as { allow_fallbacks?: unknown }).allow_fallbacks,
+        `${m.id} must keep OpenRouter fallbacks enabled`,
+      ).toBe(true);
+    }
+  });
+
   test('transport matches the upstream id shape', () => {
     for (const m of MANAGED_MODELS) {
       if (m.transport === 'bedrock') {

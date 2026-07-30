@@ -10,6 +10,8 @@ import { runWhoami } from '../commands/whoami.ts';
 import { getHost, loadConfig } from '../api/config.ts';
 import { stripAnsi } from '../style.ts';
 
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 // The host-centric auth surface: `kortix hosts login/logout/whoami` and the
 // thin top-level `login`/`logout`/`whoami` aliases must delegate to the SAME
 // shared helpers (performLogin/performLogout/performWhoami) and behave
@@ -88,10 +90,10 @@ function mockApi(accounts: typeof ACCOUNTS = ACCOUNTS) {
     if (url.endsWith('/v1/accounts/me')) {
       return new Response(
         JSON.stringify({ user_id: 'user_1', email: 'user@example.test', accounts }),
-        { status: 200 },
+        { status: 200, headers: JSON_HEADERS },
       );
     }
-    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500, headers: JSON_HEADERS });
   }) as typeof fetch;
 }
 

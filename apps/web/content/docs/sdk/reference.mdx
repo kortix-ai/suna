@@ -30,7 +30,7 @@ kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
+kortix.runtime(); // OpenCode REST compatibility client
 ```
 
 ### Accounts — `kortix.accounts`
@@ -410,7 +410,7 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 ### Escape hatch
 
 `kortix.runtime()` returns the typed OpenCode REST compatibility client for the
-active sandbox. It is not a harness-neutral ACP client.
+active sandbox.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
@@ -444,7 +444,6 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | --- | --- |
 | Files | Workspace file operations: list, read, search, write |
 | Session runtime | Health probe and preview/proxy URL builders |
-| ACP | Harness-neutral client, projection, and session controller for OpenCode, Claude Code, Codex, and Pi |
 | OpenCode client | The typed OpenCode v2 client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
 | Projects REST | The raw REST functions the facade wraps |

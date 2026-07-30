@@ -15,7 +15,7 @@ import {
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { shouldWaitForOpencodeReady, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 /**
  * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
@@ -154,7 +154,11 @@ async function postEnvToDaemon(args: {
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
-}): Promise<{ opencodeState: string | null }> {
+}): Promise<{
+  opencodeState: string | null;
+  projectEnvChanged: boolean;
+  opencodeEnvChanged: boolean;
+}> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
@@ -186,11 +190,23 @@ async function postEnvToDaemon(args: {
     const body = await res.text().catch(() => '');
     throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
   }
-  // The daemon echoes opencode's post-sync state. After a model-affecting change
-  // it restarts opencode and reports `starting` here — the signal we use to wait
-  // for readiness before the prompt is forwarded.
-  const body = (await res.json().catch(() => null)) as { opencode?: unknown } | null;
-  return { opencodeState: typeof body?.opencode === 'string' ? body.opencode : null };
+  // The daemon echoes opencode's post-sync state AND the two change flags that
+  // drove its own restart decision (`changed` = project env, `opencode_env_changed`
+  // = opencode/gateway runtime env). The caller needs the flags, not just the
+  // state: `opencode: 'down'` is the permanent steady state of a managed-ACP
+  // session, so the state alone cannot tell "a restart is in flight" apart from
+  // "opencode is not part of this session at all". See
+  // `shouldWaitForOpencodeReady`.
+  const body = (await res.json().catch(() => null)) as {
+    opencode?: unknown;
+    changed?: unknown;
+    opencode_env_changed?: unknown;
+  } | null;
+  return {
+    opencodeState: typeof body?.opencode === 'string' ? body.opencode : null,
+    projectEnvChanged: body?.changed === true,
+    opencodeEnvChanged: body?.opencode_env_changed === true,
+  };
 }
 
 export async function syncSandboxEnvForPrompt(args: {
@@ -216,7 +232,7 @@ export async function syncSandboxEnvForPrompt(args: {
   );
   if (!snapshot) return;
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
-  const { opencodeState } = await postEnvToDaemon({
+  const { opencodeState, projectEnvChanged, opencodeEnvChanged } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
@@ -226,11 +242,21 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
-  // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
-  // is forwarded the instant this returns, so block until opencode is serving —
-  // otherwise the forward hits the restart window and 503s "opencode not ready",
-  // dropping the session's first prompt (the user then has to resend).
-  if (opencodeState && opencodeState !== 'ok') {
+  // A model-affecting change just restarted opencode. The prompt is forwarded the
+  // instant this returns, so block until opencode is serving — otherwise the
+  // forward hits the restart window and 503s "opencode not ready", dropping the
+  // session's first prompt (the user then has to resend). Gated on the daemon's
+  // OWN restart predicate, never on the reported state alone: a managed-ACP
+  // session reports `opencode: 'down'` permanently, and waiting on that cost
+  // every ACP turn the full 18s budget for nothing.
+  if (
+    shouldWaitForOpencodeReady({
+      refreshModels: true,
+      projectEnvChanged,
+      opencodeEnvChanged,
+      opencodeState,
+    })
+  ) {
     const waitStartedAt = Date.now();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: args.previewUrl,

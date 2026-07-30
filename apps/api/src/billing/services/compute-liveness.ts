@@ -44,13 +44,25 @@
  *
  * What counts as evidence
  * -----------------------
- * ONLY observations made by the control plane: a `getStatus()` that answered
- * `running`, a busy probe the API completed, a proxied request the API served,
- * a real turn. Deliberately NOT the sandbox's own heartbeat — `lastTurnAt` and
- * `executionLeaseUntil` are written by the in-sandbox agent (renewed every 60s
- * while it believes any opencode session is 'busy' OR 'retry'), which is
- * precisely how 188 of 279 prod boxes held a permanent reprieve and billed
- * around the clock. A signal the box authors may never extend its own bill.
+ * ONLY observations made by the control plane. TODAY THAT IS EXACTLY ONE WRITER:
+ * `markComputeSessionAlive` in reaping/box-reaper.ts, stamped when the PROVIDER
+ * answered `getStatus() === 'running'`. Nothing else writes `lastAliveAt`, and
+ * that is deliberate — the stamp must stay somewhere the sandbox cannot reach.
+ *
+ * The busy probe this comment used to also list is GONE (deleted 2026-07-29 with
+ * `projects/sandbox-busy-probe.ts`), and it never belonged here: it asked the box
+ * itself, so a wedged daemon answered `busy` forever. Its ACP-transport successor
+ * would be worse still — `acp_busy` in the sandbox agent's own `/kortix/health` is
+ * `connection.pending.size > 0`, an in-box counter a hung harness pins `true`
+ * indefinitely. Never restore either as a liveness input. The same class of defect
+ * covers the sandbox's own heartbeat, `lastTurnAt` and `executionLeaseUntil`
+ * (renewed every 60s while the in-box agent believed any opencode session was
+ * 'busy' OR 'retry'), which is precisely how 188 of 279 prod boxes held a
+ * permanent reprieve and billed around the clock. A signal the box authors may
+ * never extend its own bill.
+ *
+ * A live ACP turn is kept alive by `session_sandboxes.deadline_at` instead — see
+ * projects/sandbox-deadline.ts and reaping/acp-turn-observation.test.ts.
  */
 
 import { config } from '../../config';

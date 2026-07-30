@@ -10,9 +10,9 @@ This page covers the v1 manifest (`kortix.toml`, `kortix_version: 1`). For the c
 
 ## Support status
 
-Kortix still supports v1 manifests. The platform resolves a project's manifest in this order: `kortix.yaml`, then `kortix.yml`, then `kortix.toml`. The current starter creates one v3 multi-harness `kortix.yaml`. A v1 project keeps working with no forced upgrade. Use the v1-to-v2 steps below only when the project must remain on OpenCode REST.
+Kortix still supports v1 manifests. The platform resolves a project's manifest in this order: `kortix.yaml`, then `kortix.yml`, then `kortix.toml`. The current starter creates a `kortix_version: 2` `kortix.yaml`. A v1 project keeps working with no forced upgrade.
 
-v1 accepts TOML or YAML syntax. Versions 2 and 3 accept YAML only. A v2 or v3 manifest written in TOML fails validation.
+v1 accepts TOML or YAML syntax. Version 2 accepts YAML only. A v2 manifest written in TOML fails validation.
 
 ## Migrate to v2
 

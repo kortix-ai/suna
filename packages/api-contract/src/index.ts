@@ -401,9 +401,9 @@ export type ConnectorAuthorization = z.infer<typeof ConnectorAuthorizationSchema
 export const ReconcileConnectorAuthorizationInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-    // `project` = a TEAM-shared connection (several are allowed per connector,
+    // `project` = a project-shared connection (several are allowed per connector,
     // distinguished by label); it takes no owner_id. Every other owner type
-    // requires one. Creating a team connection needs the profiles-manage
+    // requires one. Creating a project connection needs the profiles-manage
     // capability — enforced at the route.
     owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
     owner_id: z.string().trim().min(1).max(512).optional(),

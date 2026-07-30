@@ -2,14 +2,19 @@
 
 Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
+> **ACP and multi-harness are experimental and unreleased.** The ACP process
+> runtime and the Claude Code / Codex / Pi adapters below exist in this daemon
+> but are off by default (`KORTIX_ACP_RUNTIME=false` on the API). No released
+> session starts them. Every released session runs OpenCode over its REST
+> compatibility interface. Do not treat the ACP surface as available.
+
 **Scope:**
 
 1. Process supervisor for the OpenCode REST compatibility process.
-2. Lazy ACP process runtime for OpenCode, Claude Code, Codex, and Pi.
+2. Lazy ACP process runtime (experimental, unreleased — see the note above).
 3. Reverse proxy that fronts opencode's HTTP + SSE surface on
    `KORTIX_SERVICE_PORT` (default `8000`).
-4. Managed Kortix system-skill injection into each selected harness's native
-   discovery directory.
+4. Managed Kortix system-skill injection into the OpenCode skill directory.
 5. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
 6. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
@@ -47,7 +52,7 @@ in-process daemon.
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
 8. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
-9. Start or reuse the selected ACP process on the first ACP request.
+9. Start or reuse an ACP process on the first ACP request (experimental only).
 10. Trap signals; on shutdown, drain proxy + static web + kill child processes.
 
 ## Routes
@@ -56,7 +61,7 @@ in-process daemon.
 | ---------------- | ------------------------------------------------------------------------ |
 | `GET /kortix/health` | Daemon liveness + opencode state + repo info (always 200 from daemon) |
 | `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.     |
-| `GET /kortix/acp/` | List active ACP processes. |
+| `GET /kortix/acp/` | List active ACP processes. **Experimental, unreleased.** |
 | `POST /kortix/acp/:serverId?agent=codex` | Start or reuse one OpenCode, Claude Code, Codex, or Pi ACP process and send one JSON-RPC envelope. |
 | `GET /kortix/acp/:serverId` | Stream ACP requests and notifications over SSE. |
 | `DELETE /kortix/acp/:serverId` | Stop one ACP process. The operation is idempotent. |

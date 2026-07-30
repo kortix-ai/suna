@@ -980,6 +980,16 @@ export function buildAiSdkArgs(
     // its real models.dev capabilities in `normalizeRequest`. OPTIONAL: absent
     // → no gating (permissive parity — every param passes through unchanged).
     model?: CatalogModel;
+    // `UpstreamDescriptor.bodyExtras` — upstream-specific WIRE fields that have
+    // no AI-SDK equivalent and must reach the upstream verbatim (today: only
+    // OpenRouter's `provider` routing preferences, which pin a managed model to
+    // endpoints that actually support prompt caching and the advertised context
+    // window). 'openai-compatible' ONLY, matching the descriptor field's own
+    // contract: that family's provider package spreads any key it does not
+    // recognize straight onto the wire, which is what makes this work without a
+    // schema. Merged LAST so an upstream pin always wins over a same-named
+    // client field, exactly as the retired native openai-compat transport did.
+    bodyExtras?: Record<string, unknown>;
   } = {},
 ): AiSdkCallArgs {
   const req = normalizeRequest(body, opts);
@@ -994,8 +1004,17 @@ export function buildAiSdkArgs(
   const providerOptions: Record<string, Record<string, unknown>> = {};
   const rawFields = adapter.buildProviderOptions(req, opts.providerName);
   const definedFields = Object.entries(rawFields).filter(([, value]) => value !== undefined);
-  if (definedFields.length) {
-    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries(definedFields);
+  // See `bodyExtras`'s doc comment on this function's options: openai-compatible
+  // only, and merged after the adapter's own fields so an upstream pin wins.
+  const wireExtras =
+    family === 'openai-compatible' && opts.bodyExtras
+      ? Object.entries(opts.bodyExtras).filter(([, value]) => value !== undefined)
+      : [];
+  if (definedFields.length || wireExtras.length) {
+    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries([
+      ...definedFields,
+      ...wireExtras,
+    ]);
   }
 
   // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)

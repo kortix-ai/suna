@@ -99,4 +99,53 @@ export function isKnownManagedModelId(id: string): boolean {
   return BUNDLED_BY_ID.has(id);
 }
 
+/**
+ * The managed lineup this deployment can actually SERVE: every configured model
+ * whose transport credential is present. `hasTransportCredential` is injected so
+ * the rule stays pure and testable without config.
+ *
+ * `RUNTIME_MANAGED_MODELS` answers "which models did the operator configure",
+ * which is not the same question. Offering a configured-but-uncredentialed model
+ * is what made the picker advertise `glm-5.2` while every selection of it 400'd.
+ */
+export function servedManagedModels(
+  models: readonly ManagedModel[],
+  hasTransportCredential: (model: ManagedModel) => boolean,
+): ManagedModel[] {
+  return models.filter(hasTransportCredential);
+}
+
+/** Strip the opencode `kortix/` namespace off a managed ref. */
+function bareManagedId(ref: string): string {
+  return ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
+}
+
+/**
+ * The platform default model, guaranteed reachable.
+ *
+ * `LLM_GATEWAY_DEFAULT_MODEL` is what an operator asked for; it is not
+ * necessarily servable. When the configured default is a managed id this
+ * deployment cannot reach (its transport credential is absent — e.g. `glm-5.2`
+ * with no ASTER_API_KEY), every `auto` request and every "use the default" pick
+ * dies with a resolution error the user cannot act on. Degrade to a served
+ * managed model instead — flagship first, then catalog order.
+ *
+ * A BYOK ref (`provider/model`) is returned untouched: it resolves from a
+ * PROJECT key, so a managed transport says nothing about whether it works, and
+ * `degradeUnservableDefault` already probes that case per-project.
+ */
+export function resolvePlatformDefaultModelId(
+  configured: string,
+  served: readonly ManagedModel[],
+): string {
+  const trimmed = configured.trim();
+  if (!trimmed) return trimmed;
+  const bare = bareManagedId(trimmed);
+  // Not a managed id at all → a BYOK ref; leave it alone.
+  if (!isKnownManagedModelId(bare)) return trimmed;
+  if (served.some((model) => model.id === bare)) return trimmed;
+  const replacement = served.find((model) => model.tier === 'flagship') ?? served[0];
+  return replacement ? replacement.id : trimmed;
+}
+
 export type { ManagedModel };

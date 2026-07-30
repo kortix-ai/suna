@@ -1,10 +1,19 @@
 # ACP runtime status quo and handoff
 
-> **Superseded on 2026-07-28.** This document preserves the OpenCode-only
-> status before ACP multi-harness support. PR #5762 added runtime profiles and
-> OpenCode, Claude Code, Codex, and Pi harness selection. Use
-> `docs/superpowers/specs/2026-07-28-acp-multi-harness-design.md` and the current
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
+>
+> Historical note: this document preserves the OpenCode-only status before the
+> unshipped ACP multi-harness work. PR #5762 added runtime profiles behind the
+> flag. See the current
 > `kortix-system` runtime-harness reference for the active contract.
+>
+> **`KORTIX_OPENCODE_TRANSPORT` no longer exists.** Every `KORTIX_OPENCODE_TRANSPORT=acp`
+> below is dead. The operator switch is now `KORTIX_ACP_RUNTIME` (boolean,
+> default `false`) — see `apps/web/content/docs/work/runtime.mdx`.
 
 **Date:** 2026-07-26
 

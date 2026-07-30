@@ -52,13 +52,11 @@ Arguments:
                        in. Prompted if omitted.
 
 Pick the local coding tools to wire up. The starter's canonical skill source is
-linked into each native discovery location. Harness-native runtime files remain
-in .claude, .codex, and .pi.
+linked into each native discovery location.
 Codex, Pi, and Cursor also get a root AGENTS.md pointer.
 
-This local tool selection does not select the cloud session harness. Every
-new project includes OpenCode, Claude Code, Codex, and Pi runtime profiles.
-Select the logical agent when you create a cloud session.
+This local tool selection does not change the cloud session runtime. Every
+new project runs OpenCode, declared as kortix_version 2 in kortix.yaml.
 
 Options:
   --name <project>     Alias for the positional project-name.
@@ -217,8 +215,8 @@ function printAgentPreamble(): void {
     `  Pick the local coding tools to wire into this Kortix project.`,
     '',
     `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
-    `  ${dim}Ask it to configure triggers, agents, or runtime profiles.${reset}`,
-    `  ${dim}Cloud harness selection lives in kortix.yaml version 3.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or project settings.${reset}`,
+    `  ${dim}Cloud sessions run the OpenCode runtime declared in kortix.yaml.${reset}`,
     '',
     `  ${opts}`,
     '',

@@ -1193,6 +1193,57 @@ export function isInpageWalletStreamNoise(input: {
   );
 }
 
+/**
+ * Whether a Sentry / window.onerror event is the wallet-extension injected-
+ * `inpage.js` "No error message" noise class: a wallet extension's
+ * `onGlobalMessage` → `runIfPresent` → `run` handlers in `app:///inpage.js`
+ * throw a value that has no `.message` property, so Sentry SDK 10.x writes the
+ * `"No error message"` placeholder. The error propagates through the React
+ * reconciler and into the `global-error` boundary, which Sentry's `onerror`
+ * handler then captures. This is a SIBLING of the stream EventEmitter noise
+ * class (`isInpageWalletStreamNoise`), but a DIFFERENT throw — the message
+ * is the placeholder string `"No error message"`, NOT an `addListener`/`emit`
+ * TypeError. The stream-noise matcher does NOT catch it (message markers absent),
+ * and `isEmptyMessageUnresolvedBrowserChunkNoise` does NOT catch it because the
+ * `app:///inpage.js` frames are not browser-bundle sources.
+ *
+ * Requires BOTH the `"No error message"` placeholder (exact match:
+ * `/^No error message$/`) AND a frame from `app:///inpage.js` (the wallet-
+ * extension injected source), with a NEGATIVE guard: if any frame resolves to a
+ * de-minified first-party `apps/web/src/…` source path, the event keeps reporting
+ * (a real first-party error with no message that happens to have an inpage.js
+ * frame in the stack is still actionable). Returns false when there is no
+ * `app:///inpage.js` frame (can't confirm extension origin — keep reporting
+ * rather than swallow a possible app bug). See the `shouldIgnoreSentryBrowserNoise`
+ * call site for the full rationale and the production pattern `61949432…`.
+ */
+export function isInpageJsNoErrorMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (message !== 'No error message') {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code threw an error with no message — actionable, keep reporting so the call
+  // site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame is from `app:///inpage.js` (the wallet-
+  // extension injected source). Without an inpage.js frame we cannot confirm the
+  // extension origin — keep reporting rather than swallow a possible app bug.
+  return sources.some(
+    (filename) => isInpageWalletInjectedSource(filename) || isExtensionSource(filename),
+  );
+}
+
 export function isKnownTestNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_TEST_NOISE_MESSAGES);
@@ -3023,6 +3074,52 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // extension frame so a real first-party emitter TypeError keeps reporting.
   // See `isInpageWalletStreamNoise`.
   if (isInpageWalletStreamNoise({ message, frames })) {
+    return true;
+  }
+
+  // Wallet-extension injected-`inpage.js` "No error message" noise — a
+  // SIBLING of the stream EventEmitter noise class above (`isInpageWalletStreamNoise`),
+  // but a DIFFERENT throw: the wallet extension's `onGlobalMessage` →
+  // `runIfPresent` → `run` handlers in `app:///inpage.js` throw a value that
+  // has no `.message` property, so Sentry SDK 10.x writes the `"No error message"`
+  // placeholder. The error propagates through the React reconciler and into the
+  // `global-error` boundary, which Sentry's `onerror` handler then captures. The
+  // stream-noise matcher does NOT catch this because its message markers
+  // (`addListener`/`emit`) are absent — the message is the placeholder string
+  // `"No error message"` instead. The `isEmptyMessageUnresolvedBrowserChunkNoise`
+  // matcher also does NOT catch it because the `app:///inpage.js` frames are
+  // NOT browser-bundle sources (the negative guard at line ~1072 requires ALL
+  // frames to be browser bundle sources, and the extension frames violate that).
+  //
+  // Better Stack pattern
+  // 61949432528f8a88c74799f2dc1a8dd128479ae49e6e75865f501e5eb40fc94e
+  // (Kortix Frontend prod, application_id 2346967): `Error`, message
+  // `No error message`, 1 occurrence / 0 identified users, last 2026-07-30
+  // 09:14:21 UTC, route `/auth?expired=true&returnUrl=…`, mechanism
+  // `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never
+  // reached a React error boundary directly, but the stack passes through
+  // React's global-error boundary). Stack frames:
+  //   - `app:///inpage.js` function `onGlobalMessage`
+  //   - `app:///inpage.js` function `runIfPresent`
+  //   - `app:///inpage.js` function `run`
+  //   - React reconciler frames (`iX`, `iu`, `ib`, `ik`, `oq`, `o_`, `l9`, `l`)
+  //   - `app:///_next/static/chunks/app/global-error-*.js` function `l`
+  //   - ... React reconciler / chunk frames
+  // NO first-party `apps/web/src/…` frame. Chrome 150 / Windows 10, React 19.2.0.
+  //
+  // The `app:///inpage.js` source is the same wallet-extension injected script
+  // that `isInpageWalletStreamNoise` and `isInpageWalletInjectedSource` match.
+  // Requires BOTH the `"No error message"` placeholder AND a frame from
+  // `app:///inpage.js` (the wallet-extension injected source), with a NEGATIVE
+  // guard: if any frame resolves to a de-minified first-party `apps/web/src/…`
+  // source path, the event keeps reporting (a real first-party error with no
+  // message that happens to have an inpage.js frame in the stack is still
+  // actionable). Deliberately NOT added to `sentry.client.config.ts`'s
+  // `ignoreErrors` list — that gate has no frame context, so a bare `"No error
+  // message"` string match there would swallow a real first-party error with
+  // no message that has no inpage.js frame; the frame-aware `beforeSend` hook
+  // (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+  if (isInpageJsNoErrorMessageNoise({ message, frames })) {
     return true;
   }
 

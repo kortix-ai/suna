@@ -186,9 +186,8 @@ transport is `fetch` with a streaming response body, read through
 `ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
 backoff, and a heartbeat check.
 
-For ACP sessions, use `useSession()` in React. It selects ACP from
-`POST /start` and supports OpenCode, Claude Code, Codex, and Pi through one
-projected message model. A host must not branch on `runtime_harness`.
+In React, prefer `useSession()`. It owns start, readiness, the stream, and
+message sync for you.
 
 Stream a session:
 
@@ -289,10 +288,9 @@ the full method list.
 
 ## The raw runtime
 
-`s.runtime` is the typed OpenCode REST compatibility client. It is not the
-selected ACP harness client. Use it only for OpenCode REST calls that `send`,
-`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
-call `s.ensureReady()` first.
+`s.runtime` is the typed OpenCode REST compatibility client. Use it only for
+OpenCode REST calls that `send`, `abort`, and `stream` do not cover. It requires
+a resolved OpenCode runtime — call `s.ensureReady()` first.
 
 ```ts
 const { opencodeSessionId } = await s.ensureReady();
@@ -305,10 +303,6 @@ await s.runtime.session.prompt({
 The OpenCode `sessionID` here is not the session ID you pass to
 `kortix.session(projectId, sessionId)`. The SDK resolves it during
 `ensureReady()` and caches it on the handle.
-
-For an ACP session, use `useSession()` in React. Framework-free hosts can use
-`createAcpSessionController()` with `buildProjectAcpEndpoint()`. Both surfaces
-support OpenCode, Claude Code, Codex, and Pi without host-side harness branches.
 
 ## Warm a project session
 

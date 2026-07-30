@@ -4113,8 +4113,8 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.profileId,
     ),
     // A connector may hold MANY connections (e.g. support@ and sales@ for the
-    // team, plus each member's own). The default marker is therefore scoped PER
-    // OWNER, not per connector: exactly one team default, and at most one default
+    // project, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one project default, and at most one default
     // per member/agent/external owner. Split into two partial indexes so the
     // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
     // is still capped at one.
@@ -4132,7 +4132,7 @@ export const executorConnectionProfiles = kortixSchema.table(
       .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
     // Project-owned rows carry owner_id NULL, so the index above (partial on
-    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // owner_id IS NOT NULL) can't dedupe them. Several project connections per
     // connector are allowed, distinguished by label — this keeps that set unique.
     uniqueIndex('idx_executor_connection_profiles_project_label')
       .on(table.connectorId, table.label)

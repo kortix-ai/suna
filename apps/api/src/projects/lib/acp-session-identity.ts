@@ -22,6 +22,13 @@ export class AcpSessionIdentityConflictError extends Error {
   constructor(
     readonly code: AcpSessionIdentityErrorCode,
     message: string,
+    /**
+     * The id already bound to the row, when the rejection is a lost race for
+     * ACP_SESSION_ID_CONFLICT. The loser has no other way to learn which
+     * harness-native session won, so it carries the winner back out and the
+     * caller adopts it instead of dead-ending on the 409.
+     */
+    readonly storedAcpSessionId: string | null = null,
   ) {
     super(message);
     this.name = 'AcpSessionIdentityConflictError';
@@ -99,6 +106,7 @@ export async function persistAcpSessionIdentity(
       throw new AcpSessionIdentityConflictError(
         'ACP_SESSION_ID_CONFLICT',
         'acp_session_id is immutable after the first successful session/new response',
+        existingSessionId,
       );
     }
 

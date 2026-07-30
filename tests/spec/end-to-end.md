@@ -2,7 +2,7 @@
 
 Single source of truth for the e2e suite. Every flow the platform supports, start→finish, enumerated. Each step is `METHOD /path → expected`. CLI steps are `kortix …`. Negatives (`→ 4xx`) are part of the flow, not optional. Each flow has a stable ID (`PROJ-3`, `IAM-7`) so a test maps 1:1 to a line here.
 
-Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions use OpenCode REST or ACP with OpenCode, Claude Code, Codex, or Pi inside an ephemeral per-session sandbox.
+Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions run OpenCode over its REST compatibility interface inside an ephemeral per-session sandbox. (An ACP transport and a multi-harness runtime exist behind `KORTIX_ACP_RUNTIME`, default `false`; they are experimental, unreleased, and out of scope here.)
 
 > **Audited** against source on branch `newer-kortix` (every route/gate/status below confirmed at `file:line`). Coverage/dead-code tooling for running this suite is §22.
 

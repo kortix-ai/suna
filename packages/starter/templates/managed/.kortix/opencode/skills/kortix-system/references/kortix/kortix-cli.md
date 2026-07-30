@@ -342,18 +342,15 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold one general-purpose Kortix project. It writes a v3 manifest with OpenCode, Claude Code, Codex, and Pi profiles, the canonical skill source, and the default agents. Local coding-tool wiring remains separate from cloud harness selection. |
-
-Use this command for a local four-harness scaffold:
+| `kortix init` | Scaffold one general-purpose Kortix project. It writes a `kortix_version: 2` manifest, the canonical skill source, and the default agents. `--primary` / `--agents` wire the coding tools you run locally; they do not change the cloud runtime. |
 
 ```sh
-kortix init harness-lab --yes --no-git
+kortix init my-project --yes --no-git
 ```
 
 ### System skills
 
-System skills are the live agent manual for the deployed Kortix host. The
-command works from every runtime harness.
+System skills are the live agent manual for the deployed Kortix host.
 
 | Command | Effect |
 | --- | --- |
@@ -520,17 +517,14 @@ warns.
   works against your instance — just point it at your own URL.
 - **Not a `git` replacement.** `kortix cr` is the change-request
   surface; it composes with `git` rather than wrapping it.
-- **Not the runtime.** OpenCode, Claude Code, Codex, or Pi executes the agent
-  inside the sandbox. The CLI is the control plane for sessions, secrets,
-  triggers, system instructions, and change requests. See
-  `runtime-harnesses.md` for the runtime selection model.
+- **Not the runtime.** OpenCode executes the agent inside the sandbox. The CLI
+  is the control plane for sessions, secrets, triggers, system instructions,
+  and change requests.
 
 ## See also
 
 - `.kortix/opencode/skills/kortix-system/SKILL.md` — entry point for
   the kortix-system skill. Mention the CLI from there.
-- `runtime-harnesses.md` — ACP, OpenCode, Claude Code, Codex, Pi, and the
-  canonical four-harness smoke.
 - `change-requests.md` (alongside this file) — full CR data model,
   lifecycle, REST API, and the "MUST open a CR" agent mandate.
 - `kortix.yaml` — the manifest the dashboard + the CLI both read.

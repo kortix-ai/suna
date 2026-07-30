@@ -1,5 +1,11 @@
 # ACP and Multi-Harness Design
 
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
+
 ## Scope
 
 The project experiment `experimental.acp_runtime` controls one product feature.
@@ -8,6 +14,43 @@ The project experiment `experimental.acp_runtime` controls one product feature.
 - Enabled: sessions use ACP and can select OpenCode, Claude Code, Codex, or Pi.
 
 The implementation does not add a second harness experiment.
+
+## Enablement (current, 2026-07-30)
+
+ACP is experimental and OFF by default. The whole switch is one variable.
+
+| Knob | Kind | Default | Read at |
+|---|---|---|---|
+| `KORTIX_ACP_RUNTIME` | operator env | `false` | `experimental/features.ts` — the `acp_runtime` `platformDefault()` |
+| `experimental.acp_runtime` | per-project (`projects.metadata`) | absent | `resolveExperimentalFeature()` |
+| `KORTIX_ENABLED_HARNESSES` | operator env | empty = stable set (`opencode`) | `projects/lib/harness-gate.ts` |
+
+Resolution: the project's explicit choice wins over `KORTIX_ACP_RUNTIME`;
+`resolveProjectRuntimeTransport()` has no other input. The feature stays
+`available: () => true` so a project can hold an opinion even while the fleet
+default is off — otherwise every project already on ACP, including v3-manifest
+projects that cannot run REST, would silently fall back and break.
+
+`POST /projects/provision` and `POST /projects/create-repo` write NO
+`experimental` block. This matches `origin/prod`, where
+`git show origin/prod:apps/api/src/projects/routes/r1.ts | grep acp_runtime`
+returns nothing. A new project states no opinion and follows the fleet default.
+
+v3 acceptance follows the same switch. `projects/lib/acp-runtime-gate.ts`
+refuses a v3 starter scaffold with `409 ACP_RUNTIME_DISABLED` while
+`KORTIX_ACP_RUNTIME` is off, before any upstream repo or DB row exists. v3 is
+therefore not scaffolded, not defaulted to (the default starter is
+`general-knowledge-worker`, `kortix_version: 2`), and not offered as a migration
+target (`MIGRATIONS` in `projects/lib/manifest-verdict.ts` holds only `1 -> 2`).
+A repo that declares v3 itself still parses; it refuses at session create with
+`409 ACP_RUNTIME_REQUIRED`.
+
+`KORTIX_ACP_RUNTIME` does not change the sandbox process:
+`KORTIX_OPENCODE_PROCESS_TRANSPORT` stays pinned to `acp`
+(`projects/lib/sessions.ts`), and both client transports reach that one process.
+
+Removed: `KORTIX_OPENCODE_TRANSPORT`. It was a second operator knob that forced
+ACP fleet-wide and overrode an explicit per-project `false`.
 
 ## Manifest contract
 

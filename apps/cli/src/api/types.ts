@@ -117,6 +117,14 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  /** ACP process key inside the sandbox — the `/kortix/acp/<id>` route key. */
+  acp_server_id: string | null;
+  /** Harness-native conversation id. Null until the harness mints one. */
+  acp_session_id: string | null;
+  /** Which agent harness runs this session. */
+  runtime_harness: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+  /** Immutable harness-native agent/mode chosen when the session was created. */
+  native_agent: string | null;
   /** Resolved display name: user-set custom_name, else the auto opencode title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */

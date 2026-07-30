@@ -7,7 +7,6 @@ description: >-
   engineering is needed, and posts every escalation to {{escalation_channel}}.
   It never closes a ticket or promises the customer a resolution.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

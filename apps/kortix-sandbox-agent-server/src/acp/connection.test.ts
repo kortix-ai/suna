@@ -175,6 +175,7 @@ describe('ACP NDJSON connection', () => {
 
   test('continues event ids after an OpenCode ACP process restart', async () => {
     const harness = createHarness({ initialEventId: 41 })
+    await harness.connection.notify('session/prompt', { sessionId: 'session' })
     respond(harness, {
       method: 'session/update',
       params: { sessionId: 'session', update: { sessionUpdate: 'agent_message_chunk' } },
@@ -416,5 +417,205 @@ describe('ACP NDJSON connection', () => {
         HOME: '/workspace',
       }),
     ).toBe('failed [REDACTED]')
+  })
+})
+
+const PI_STARTUP_BANNER =
+  'pi v0.80.6\n---\n\n## Context\n- /workspace/AGENTS.md\n\n' +
+  '## Skills\n- /workspace/.kortix/opencode/skills/kortix-cli/SKILL.md\n\n---\n' +
+  'New version available: v0.83.0 (installed v0.80.6). ' +
+  'Run: `npm i -g @earendil-works/pi-coding-agent`\n'
+
+function agentMessage(sessionId: string, text: string) {
+  return {
+    method: 'session/update',
+    params: {
+      sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text },
+      },
+    },
+  }
+}
+
+function transcriptText(events: AcpStreamEvent[]): string[] {
+  return events.map((event) => {
+    const params = event.envelope.params as
+      | { update?: { content?: { text?: string } } }
+      | undefined
+    return params?.update?.content?.text ?? ''
+  })
+}
+
+describe('harness chatter never reaches the transcript', () => {
+  test('drops harness CLI banner lines written to stdout as raw text', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+
+    harness.output.write(`${PI_STARTUP_BANNER}`)
+    await nextTick()
+
+    expect(events).toEqual([])
+    expect(harness.connection.lastEventId).toBe(0)
+  })
+
+  test('logs every unframed stdout line instead of discarding it', async () => {
+    const harness = createHarness()
+
+    harness.output.write('pi v0.80.6\nNew version available: v0.83.0\n')
+    await nextTick()
+
+    expect(harness.diagnostics).toHaveLength(2)
+    expect(harness.diagnostics[0]).toContain('pi v0.80.6')
+    expect(harness.diagnostics[1]).toContain('New version available: v0.83.0')
+  })
+
+  test('still parses a valid JSON-RPC message interleaved with banner lines', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+    await harness.connection.notify('session/prompt', { sessionId: 'session' })
+
+    harness.output.write('pi v0.80.6\n')
+    respond(harness, agentMessage('session', 'real model text'))
+    harness.output.write('New version available: v0.83.0\n')
+    await nextTick()
+
+    expect(transcriptText(events)).toEqual(['real model text'])
+  })
+
+  test('suppresses a startup banner delivered as a pre-prompt agent message chunk', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+
+    const created = harness.connection.request(
+      'session/new',
+      { cwd: '/workspace' },
+      'new',
+    )
+    respond(harness, {
+      id: 'new',
+      result: {
+        sessionId: 'session',
+        _meta: { piAcp: { startupInfo: PI_STARTUP_BANNER } },
+      },
+    })
+    respond(harness, agentMessage('session', PI_STARTUP_BANNER))
+    await created
+    await nextTick()
+
+    expect(events).toEqual([])
+    expect(harness.connection.lastEventId).toBe(0)
+    expect(harness.diagnostics.join('\n')).toContain('pi v0.80.6')
+  })
+
+  test('suppresses declared startup info even once a turn is open', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+    const created = harness.connection.request(
+      'session/new',
+      { cwd: '/workspace' },
+      'new',
+    )
+    respond(harness, {
+      id: 'new',
+      result: {
+        sessionId: 'session',
+        _meta: { piAcp: { startupInfo: PI_STARTUP_BANNER } },
+      },
+    })
+    await created
+    await harness.connection.notify('session/prompt', { sessionId: 'session' })
+
+    respond(harness, agentMessage('session', PI_STARTUP_BANNER))
+    respond(harness, agentMessage('session', 'real model text'))
+    await nextTick()
+
+    expect(transcriptText(events)).toEqual(['real model text'])
+  })
+
+  test('suppresses a pre-prompt agent thought chunk', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+
+    respond(harness, {
+      method: 'session/update',
+      params: {
+        sessionId: 'session',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'warming up' },
+        },
+      },
+    })
+    await nextTick()
+
+    expect(events).toEqual([])
+  })
+
+  test('publishes agent message chunks once a prompt opens the turn', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+
+    respond(harness, agentMessage('session', PI_STARTUP_BANNER))
+    await harness.connection.notify('session/prompt', { sessionId: 'session' })
+    respond(harness, agentMessage('session', 'real model text'))
+    await nextTick()
+
+    expect(transcriptText(events)).toEqual(['real model text'])
+  })
+
+  test('keeps the suppression scoped to the session that has not prompted', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+    await harness.connection.notify('session/prompt', { sessionId: 'prompted' })
+
+    respond(harness, agentMessage('fresh', PI_STARTUP_BANNER))
+    respond(harness, agentMessage('prompted', 'real model text'))
+    await nextTick()
+
+    expect(transcriptText(events)).toEqual(['real model text'])
+  })
+
+  test('lets a resumed session replay its history before any new prompt', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+    const resumed = harness.connection.request(
+      'session/resume',
+      { sessionId: 'session' },
+      'resume',
+    )
+
+    respond(harness, agentMessage('session', 'earlier assistant turn'))
+    respond(harness, { id: 'resume', result: {} })
+    await resumed
+    await nextTick()
+
+    expect(transcriptText(events)).toEqual(['earlier assistant turn'])
+  })
+
+  test('never suppresses non-conversation session updates', async () => {
+    const harness = createHarness()
+    const events: AcpStreamEvent[] = []
+    harness.connection.subscribe(0, (event) => events.push(event))
+
+    respond(harness, {
+      method: 'session/update',
+      params: {
+        sessionId: 'session',
+        update: { sessionUpdate: 'available_commands_update', availableCommands: [] },
+      },
+    })
+    await nextTick()
+
+    expect(events).toHaveLength(1)
   })
 })

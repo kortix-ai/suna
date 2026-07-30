@@ -132,10 +132,20 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     key: 'acp_runtime',
     name: 'ACP & Multi-Harness',
     description:
-      'Use ACP with OpenCode, Claude Code, Codex, and Pi. Disable this experiment to use the compatibility transport.',
+      'NOT READY — do not enable. An unfinished, unreleased runtime transport, kept behind this switch for internal development only. Turning it on can break sessions in this project. Every supported project runs OpenCode over its REST compatibility transport.',
     stability: 'experimental',
+    // Always listable, and deliberately NOT gated on KORTIX_ACP_RUNTIME. The
+    // env var moves the fleet default; availability decides whether a project
+    // may hold an opinion at all. Tying the two together would silently drop
+    // every project that already opted into ACP back onto REST the moment the
+    // fleet default is off — including live v3-manifest projects, which cannot
+    // run on REST at all (createProjectSession answers 409
+    // ACP_RUNTIME_REQUIRED). ACP stays reachable per project; it is just not
+    // the default.
     available: () => true,
-    platformDefault: () => false,
+    // Fleet rollout switch — the ONE variable that decides what a project with
+    // no explicit choice gets. Off = REST for the whole deployment.
+    platformDefault: () => config.KORTIX_ACP_RUNTIME,
   },
   {
     key: 'review_center',
@@ -200,11 +210,15 @@ export function resolveExperimentalFeatures(
   ) as Record<ExperimentalFeatureKey, boolean>;
 }
 
-/** Select the SDK client transport for one project.
- *  `KORTIX_OPENCODE_TRANSPORT=acp` is the operator-wide rollout override.
- *  The normal rollout remains an explicit project `acp_runtime` opt-in. */
+/**
+ * Select the SDK client transport for one project. There is exactly ONE input:
+ * the `acp_runtime` experiment, which is the project's explicit choice over the
+ * fleet default `KORTIX_ACP_RUNTIME` (off ⇒ REST). No second env var can
+ * override a project here — an earlier `KORTIX_OPENCODE_TRANSPORT=acp` short
+ * circuit did exactly that and made the effective default contradict the
+ * documented one.
+ */
 export function resolveProjectRuntimeTransport(metadata: unknown): 'acp' | 'rest' {
-  if (config.KORTIX_OPENCODE_TRANSPORT === 'acp') return 'acp';
   return resolveExperimentalFeature(metadata, 'acp_runtime') ? 'acp' : 'rest';
 }
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.schema.json",
   "title": "Kortix manifest",
-  "description": "kortix.toml / kortix.yaml — combined schema covering every published `kortix_version`. Dispatches to the v1, v2, or v3 shape by `kortix_version`. Prefer this URL when the version is not known ahead of time; pin `https://kortix.com/schema/kortix.v3.schema.json` when it is.",
+  "description": "kortix.toml / kortix.yaml — combined schema covering every published `kortix_version`. Dispatches to the v1, v2, or v3 shape by `kortix_version`. Version 2 is the current schema; version 3 is experimental and unreleased. Prefer this URL when the version is not known ahead of time; pin `https://kortix.com/schema/kortix.v2.schema.json` when it is.",
   "type": "object",
   "required": [
     "kortix_version"
@@ -1888,7 +1888,7 @@
           },
           "runtimes": {
             "type": "object",
-            "description": "Named ACP runtime profiles. Each profile selects one supported harness and its native configuration directory.",
+            "description": "EXPERIMENTAL AND UNRELEASED. Named runtime profiles. Not usable on a released deployment.",
             "minProperties": 1,
             "propertyNames": {
               "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"

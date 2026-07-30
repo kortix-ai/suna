@@ -194,9 +194,17 @@ exact dev command or interaction in the final response.
 
 ## Architecture: `@kortix/sdk` is the source of truth
 
+> **ACP and multi-harness are NOT shipped.** The ACP transport, the
+> `kortix_version: 3` manifest, and the Claude Code / Codex / Pi harnesses exist
+> in this tree behind `KORTIX_ACP_RUNTIME` (boolean, default `false`). They are
+> experimental, unreleased, and unsupported. OpenCode REST + `kortix_version: 2`
+> are the only shipped path. Do not document, advertise, or default anything to
+> ACP or v3, and do not add ACP/v3 copy to public docs, the `kortix-system`
+> skill, READMEs, or CLI help.
+
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-session runtime, OpenCode REST compatibility, ACP, SSE streaming, model state,
+session runtime, OpenCode REST compatibility, SSE streaming, model state,
 and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
@@ -227,10 +235,10 @@ these as standing rules whenever you touch the data/runtime layer:
   and message sync. Hosts don't
   hand-roll the mount, drive a server-store "switch", or mount a separate event
   provider.
-- **Session-scoped + harness/provider-agnostic.** The public API is session-scoped
+- **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  The sandbox provider and selected OpenCode, Claude Code, Codex, or Pi harness
-  are server-side concerns. Host code must not branch on them.
+  The sandbox provider and the runtime are server-side concerns. Host code must
+  not branch on them.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/stores/server-store`, `lib/projects-client`, and
   `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).
@@ -289,8 +297,7 @@ mocked internals when a real surface exists.
   Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
-  OpenCode REST uses the compatibility proxy. ACP sessions use
-  `/kortix/acp/<acp_server_id>` for JSON-RPC and SSE.
+  OpenCode REST uses the compatibility proxy.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 

@@ -1,5 +1,11 @@
 # ACP and Multi-Harness Implementation Plan
 
+> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
+> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
+> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
+> `kortix_version: 2` are the shipped default. Read this file as a historical
+> record, not as current product guidance.
+
 1. Add one shared harness descriptor.
 2. Add `kortix_version: 3` validation and JSON Schema output.
 3. Compile v3 runtime profiles into a runtime-neutral launch plan.

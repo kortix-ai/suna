@@ -10,6 +10,7 @@ import {
   resolveProjectRuntimeTransport,
 } from '../experimental/features';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
+import { isHarnessEnabled } from '../projects/lib/harness-gate';
 
 function findCatalogFeature(key: string) {
   const feature = buildExperimentalCatalog({}).find((f) => f.key === key);
@@ -88,6 +89,43 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
         experimental: { acp_runtime: true },
       }),
     ).toBe('acp');
+  });
+
+  test('KORTIX_ACP_RUNTIME is the whole platform switch and ships off', () => {
+    expect(config.KORTIX_ACP_RUNTIME).toBe(false);
+    expect(config).not.toHaveProperty('KORTIX_OPENCODE_TRANSPORT');
+  });
+
+  test('KORTIX_ACP_RUNTIME moves the fleet default for projects with no explicit choice', () => {
+    const previous = config.KORTIX_ACP_RUNTIME;
+    try {
+      config.KORTIX_ACP_RUNTIME = false;
+      expect(resolveExperimentalFeature({}, 'acp_runtime')).toBe(false);
+      expect(resolveProjectRuntimeTransport({})).toBe('rest');
+      expect(resolveProjectRuntimeTransport(null)).toBe('rest');
+
+      config.KORTIX_ACP_RUNTIME = true;
+      expect(resolveExperimentalFeature({}, 'acp_runtime')).toBe(true);
+      expect(resolveProjectRuntimeTransport({})).toBe('acp');
+      expect(resolveProjectRuntimeTransport({ experimental: { acp_runtime: false } })).toBe('rest');
+    } finally {
+      config.KORTIX_ACP_RUNTIME = previous;
+    }
+  });
+
+  test('a project that opted into ACP keeps ACP while the platform default is off', () => {
+    const previous = config.KORTIX_ACP_RUNTIME;
+    try {
+      config.KORTIX_ACP_RUNTIME = false;
+      expect(
+        resolveExperimentalFeature({ experimental: { acp_runtime: true } }, 'acp_runtime'),
+      ).toBe(true);
+      expect(resolveProjectRuntimeTransport({ experimental: { acp_runtime: true } })).toBe('acp');
+      expect(findCatalogFeature('acp_runtime').available).toBe(true);
+      expect(findCatalogFeature('acp_runtime').enabled).toBe(false);
+    } finally {
+      config.KORTIX_ACP_RUNTIME = previous;
+    }
   });
 
   test('llm_gateway is platform-gated and defaults on when available', () => {
@@ -176,13 +214,26 @@ describe('buildExperimentalCatalog', () => {
     }
   });
 
-  test('the ACP experiment represents ACP and multi-harness routing', () => {
+  test('the ACP experiment tells the user it is not ready', () => {
     const acp = findCatalogFeature('acp_runtime');
     expect(acp.name).toBe('ACP & Multi-Harness');
+    expect(acp.stability).toBe('experimental');
+    expect(acp.description).toContain('NOT READY');
+    expect(acp.description).toContain('unreleased');
     expect(acp.description).toContain('OpenCode');
-    expect(acp.description).toContain('Claude Code');
-    expect(acp.description).toContain('Codex');
-    expect(acp.description).toContain('Pi');
+    // The copy must never advertise a selectable harness.
+    expect(acp.description).not.toContain('Claude Code');
+    expect(acp.description).not.toContain('Codex');
+  });
+
+  test('enabling ACP never enables an experimental harness by itself', () => {
+    const enabled = resolveExperimentalFeatures({ experimental: { acp_runtime: true } });
+    expect(enabled.acp_runtime).toBe(true);
+
+    for (const harness of ['claude', 'codex', 'pi']) {
+      expect(isHarnessEnabled(harness)).toBe(false);
+    }
+    expect(isHarnessEnabled('opencode')).toBe(true);
   });
 });
 

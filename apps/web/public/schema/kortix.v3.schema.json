@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.v3.schema.json",
-  "title": "Kortix manifest (kortix_version 3)",
-  "description": "ACP & Multi-Harness manifest for OpenCode, Claude Code, Codex, and Pi. New generic projects enable the `acp_runtime` experiment automatically. Existing projects must enable it before they can start a version 3 session. Each logical agent selects one declared runtime profile. The selected harness, runtime profile, and harness-native agent identifier are immutable when a session starts. Native harness configuration owns model, prompt, permission, and tool behavior.",
+  "title": "Kortix manifest (kortix_version 3) — EXPERIMENTAL, UNRELEASED",
+  "description": "EXPERIMENTAL AND UNRELEASED — do not use. Write `kortix_version: 2` instead. This shape is off by default and cannot start a session on a released Kortix deployment. It is published only so tooling can parse it; it is not a supported project format.",
   "type": "object",
   "required": [
     "kortix_version",
@@ -20,7 +20,7 @@
     },
     "runtimes": {
       "type": "object",
-      "description": "Named ACP runtime profiles. Each profile selects one supported harness and its native configuration directory.",
+      "description": "EXPERIMENTAL AND UNRELEASED. Named runtime profiles. Not usable on a released deployment.",
       "minProperties": 1,
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"

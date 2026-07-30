@@ -31,9 +31,84 @@ type Subscriber = {
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_REPLAY_EVENTS = 2_000
 const SENSITIVE_ENV_NAME = /(TOKEN|KEY|SECRET|PASSWORD|AUTH)/i
+const MAX_DIAGNOSTIC_CHARS = 600
+
+/**
+ * Requests that give a session permission to speak. `session/prompt` starts a
+ * new turn; `session/load` and `session/resume` replay an existing transcript.
+ * Until one of these is sent for a session, nothing the harness says about that
+ * session is conversation.
+ */
+const CONVERSATION_OPENING_METHODS = new Set([
+  'session/prompt',
+  'session/load',
+  'session/resume',
+])
+
+/** `session/update` kinds a client renders as assistant-authored content. */
+const AGENT_CONTENT_UPDATES = new Set([
+  'agent_message_chunk',
+  'agent_thought_chunk',
+])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function truncateForDiagnostic(value: string): string {
+  return value.length > MAX_DIAGNOSTIC_CHARS
+    ? `${value.slice(0, MAX_DIAGNOSTIC_CHARS)}… (+${value.length - MAX_DIAGNOSTIC_CHARS} chars)`
+    : value
+}
+
+function envelopeSessionId(envelope: JsonRpcEnvelope): string | null {
+  const params = envelope.params
+  if (!isObject(params)) return null
+  return typeof params.sessionId === 'string' && params.sessionId
+    ? params.sessionId
+    : null
+}
+
+/** The `sessionUpdate` kind when this envelope carries assistant content. */
+function agentContentKind(envelope: JsonRpcEnvelope): string | null {
+  if (envelope.method !== 'session/update') return null
+  const params = envelope.params
+  if (!isObject(params)) return null
+  const update = params.update
+  if (!isObject(update)) return null
+  const kind = update.sessionUpdate
+  return typeof kind === 'string' && AGENT_CONTENT_UPDATES.has(kind)
+    ? kind
+    : null
+}
+
+/**
+ * Startup text an adapter declares on a response, e.g. pi-acp's
+ * `result._meta.piAcp.startupInfo`. The adapter is telling us this string is a
+ * banner, so the same string arriving as assistant content is never
+ * conversation — no matter when it arrives.
+ */
+function declaredStartupInfo(envelope: JsonRpcEnvelope): string | null {
+  const result = envelope.result
+  if (!isObject(result)) return null
+  const meta = result._meta
+  if (!isObject(meta)) return null
+  for (const namespace of Object.values(meta)) {
+    if (!isObject(namespace)) continue
+    const info = namespace.startupInfo
+    if (typeof info === 'string' && info.trim()) return info.trim()
+  }
+  return null
+}
+
+function agentContentText(envelope: JsonRpcEnvelope): string {
+  const params = envelope.params
+  if (!isObject(params)) return ''
+  const update = params.update
+  if (!isObject(update)) return ''
+  const content = update.content
+  if (isObject(content) && typeof content.text === 'string') return content.text
+  return JSON.stringify(update)
 }
 
 function rpcIdKey(value: unknown): string {
@@ -134,6 +209,9 @@ export class AcpConnection {
   private readonly completedClientRequestIds = new Set<string>()
   private readonly completedClientRequestOrder: string[] = []
   private readonly subscribers = new Set<Subscriber>()
+  private readonly promptedSessions = new Set<string>()
+  private readonly declaredStartupBanners = new Set<string>()
+  private conversationOpenForAllSessions = false
   private readonly replay: AcpStreamEvent[] = []
   private readonly requestTimeoutMs: number
   private readonly maxReplayEvents: number
@@ -431,6 +509,7 @@ export class AcpConnection {
 
   private async write(envelope: JsonRpcEnvelope): Promise<void> {
     if (this.closed) throw new AcpProtocolError('ACP output closed')
+    this.noteConversationOpened(envelope)
     const line = `${JSON.stringify(envelope)}\n`
     const write = async () => {
       await new Promise<void>((resolve, reject) => {
@@ -450,13 +529,19 @@ export class AcpConnection {
     try {
       envelope = parseJsonRpcEnvelope(JSON.parse(trimmed))
     } catch (error) {
+      // Harness CLIs print banners, upgrade nags, and warnings on the same
+      // stdout that carries ACP framing. None of it is conversation, so it
+      // stops here — but it is logged verbatim, because an adapter that talks
+      // out of band is exactly what we need to see when one misbehaves.
+      const cause = error instanceof Error ? error.message : String(error)
       this.onDiagnostic(
-        `ignored invalid ACP output: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `ignored unframed ACP output: ${truncateForDiagnostic(trimmed)} (${cause})`,
       )
       return
     }
+
+    const startupInfo = declaredStartupInfo(envelope)
+    if (startupInfo) this.rememberStartupBanner(startupInfo)
 
     const hasMethod = typeof envelope.method === 'string'
     const hasId = Object.prototype.hasOwnProperty.call(envelope, 'id')
@@ -471,7 +556,55 @@ export class AcpConnection {
       }
     }
 
+    // A well-framed `session/update` is still not conversation when the harness
+    // is only announcing itself. pi-acp ships its CLI banner and upgrade nag as
+    // an `agent_message_chunk` right after `session/new`, which rendered as the
+    // assistant's first message. Two independent reasons to divert one to the
+    // log: the adapter declared that exact text as startup info, or no turn is
+    // open for the session yet.
+    const contentKind = agentContentKind(envelope)
+    if (contentKind) {
+      const text = agentContentText(envelope)
+      const reason = this.declaredStartupBanners.has(text.trim())
+        ? 'declared startup info'
+        : this.conversationIsOpen(envelope)
+          ? null
+          : 'no open turn'
+      if (reason) {
+        const detail = truncateForDiagnostic(text)
+        this.onDiagnostic(
+          `suppressed harness ${contentKind} (${reason}): ${detail}`,
+        )
+        return
+      }
+    }
+
     this.publish(envelope)
+  }
+
+  private rememberStartupBanner(text: string): void {
+    if (this.declaredStartupBanners.size >= 8) {
+      const oldest = this.declaredStartupBanners.values().next().value
+      if (oldest !== undefined) this.declaredStartupBanners.delete(oldest)
+    }
+    this.declaredStartupBanners.add(text)
+  }
+
+  private noteConversationOpened(envelope: JsonRpcEnvelope): void {
+    if (typeof envelope.method !== 'string') return
+    if (!CONVERSATION_OPENING_METHODS.has(envelope.method)) return
+    const sessionId = envelopeSessionId(envelope)
+    if (sessionId) this.promptedSessions.add(sessionId)
+    // A conversation-opening request we cannot attribute to a session opens
+    // every session. Losing real assistant text is worse than showing chatter.
+    else this.conversationOpenForAllSessions = true
+  }
+
+  private conversationIsOpen(envelope: JsonRpcEnvelope): boolean {
+    if (this.conversationOpenForAllSessions) return true
+    const sessionId = envelopeSessionId(envelope)
+    if (!sessionId) return true
+    return this.promptedSessions.has(sessionId)
   }
 
   private publish(envelope: JsonRpcEnvelope): void {

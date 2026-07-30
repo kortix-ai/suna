@@ -149,6 +149,7 @@ mock.module('../projects/git', () => ({
   },
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,

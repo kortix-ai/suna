@@ -28,6 +28,8 @@ const GKW_SKILL_PATHS = [
   '.kortix/opencode/skills/website-building/SKILL.md',
 ];
 
+const NATIVE_HARNESS_CONFIG_PATHS = ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md'];
+
 function baseStarterPaths(): string[] {
   const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-base-'));
   try {
@@ -100,22 +102,32 @@ describe('applyScaffold', () => {
     expect(walk(dir)).toEqual(base);
   });
 
-  test('ACP multi-harness template writes every native harness configuration', () => {
+  test('the deprecated acp-multi-harness template writes the OpenCode-native starter', () => {
     const result = applyScaffold({
       repoRoot: dir,
       projectName: 'Harness Lab',
       template: 'acp-multi-harness',
     });
 
-    for (const path of ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md']) {
-      expect(result.written).toContain(path);
-    }
+    for (const path of NATIVE_HARNESS_CONFIG_PATHS) expect(result.written).not.toContain(path);
+    for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
+
     const manifest = readFileSync(join(dir, 'kortix.yaml'), 'utf8');
-    expect(manifest).toContain('kortix_version: 3');
-    expect(manifest).toContain('harness: opencode');
-    expect(manifest).toContain('harness: claude');
-    expect(manifest).toContain('harness: codex');
-    expect(manifest).toContain('harness: pi');
+    expect(manifest).toContain('kortix_version: 2');
+    expect(manifest).toContain('runtime: opencode');
+    expect(manifest).not.toContain('runtimes:');
+  });
+
+  test('no template writes native config for another harness', () => {
+    for (const template of [undefined, 'general-knowledge-worker', 'minimal'] as const) {
+      const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-harness-'));
+      try {
+        const result = applyScaffold({ repoRoot: probe, projectName: 'Probe', template });
+        for (const path of NATIVE_HARNESS_CONFIG_PATHS) expect(result.written).not.toContain(path);
+      } finally {
+        rmSync(probe, { recursive: true, force: true });
+      }
+    }
   });
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {

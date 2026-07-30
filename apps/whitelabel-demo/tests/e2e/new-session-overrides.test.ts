@@ -140,6 +140,14 @@ describe('starting a session with overrides', () => {
     expect(body.session_id).toBe('00000000-0000-4000-8000-00000000a003');
   });
 
+  test('the mock returns the session collection shape used by the project page', async () => {
+    const sessions = await createTestKortix(app, token)
+      .project(projectId)
+      .sessions.list();
+
+    expect(sessions).toEqual([]);
+  });
+
   test('the picker offers the project connection and only the project connection', async () => {
     const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
     expect(slack.connections.map((c) => c.authorizationId)).toEqual([

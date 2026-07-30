@@ -222,6 +222,80 @@ describe('multi-harness ACP runtime', () => {
     })
   })
 
+  test('launches the OpenCode harness with the kortix gateway provider and no denied credentials', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-acp-opencode-gateway-'))
+    temporaryDirs.push(dir)
+    const envDumpFile = join(dir, 'child-env.txt')
+    const catalogFile = join(dir, 'catalog.json')
+    writeFileSync(
+      catalogFile,
+      JSON.stringify({ models: { 'glm-5.2': { name: 'GLM 5.2', tool_call: true } } }),
+    )
+
+    const registry: AcpHarnessRegistry = new Map([
+      [
+        'opencode',
+        {
+          id: 'opencode',
+          displayName: 'OpenCode env dump',
+          adapter: 'test',
+          launch: {
+            command: 'sh',
+            args: [
+              '-c',
+              'env > "$1"; sleep 30',
+              'acp-opencode-env-fixture',
+              envDumpFile,
+            ],
+          },
+        },
+      ],
+    ])
+    const runtime = new AcpRuntime({
+      registry,
+      cwd: dir,
+      opencodeConfigPath: join(dir, 'kortix-opencode.json'),
+      baseEnv: {
+        HOME: dir,
+        PATH: process.env.PATH,
+        KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm-gateway/v1',
+        KORTIX_LLM_API_KEY: 'kortix_pat_acp_child',
+        KORTIX_LLM_CATALOG_FILE: catalogFile,
+        KORTIX_OPENCODE_MODEL: 'kortix/glm-5.2',
+        KORTIX_OPENCODE_DENY_ENV: 'ANTHROPIC_API_KEY',
+        ANTHROPIC_API_KEY: 'sk-ant-leaked',
+      },
+    })
+    runtimes.push(runtime)
+
+    await runtime.getOrCreate('opencode-gateway', 'opencode')
+    await waitFor(() => existsSync(envDumpFile))
+
+    const childEnv = new Map(
+      readFileSync(envDumpFile, 'utf8')
+        .split('\n')
+        .map((line) => line.split('='))
+        .filter((parts) => parts.length >= 2)
+        .map((parts) => [parts[0] as string, parts.slice(1).join('=')]),
+    )
+
+    expect(childEnv.has('ANTHROPIC_API_KEY')).toBe(false)
+    const configPath = childEnv.get('OPENCODE_CONFIG')
+    expect(typeof configPath).toBe('string')
+    const config = JSON.parse(readFileSync(configPath as string, 'utf8')) as {
+      provider?: Record<string, { options?: Record<string, unknown>; models?: Record<string, unknown> }>
+      enabled_providers?: string[]
+      model?: string
+    }
+    expect(config.enabled_providers).toEqual(['kortix'])
+    expect(config.model).toBe('kortix/glm-5.2')
+    expect(config.provider?.kortix?.options).toMatchObject({
+      baseURL: 'https://api.kortix.test/v1/llm-gateway/v1',
+      apiKey: 'kortix_pat_acp_child',
+    })
+    expect(Object.keys(config.provider?.kortix?.models ?? {})).toEqual(['glm-5.2'])
+  })
+
   test('preserves an existing Pi native model configuration', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kortix-acp-pi-config-'))
     temporaryDirs.push(dir)
@@ -259,5 +333,127 @@ describe('multi-harness ACP runtime', () => {
     expect(readFileSync(modelsFile, 'utf8')).toBe(
       '{"native":true}\n',
     )
+  })
+
+  test('keeps a real harness process banner out of the transcript stream', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-acp-banner-'))
+    temporaryDirs.push(dir)
+
+    const fixture = join(import.meta.dir, 'fixtures/banner-acp-agent.ts')
+    const registry: AcpHarnessRegistry = new Map([
+      [
+        'pi',
+        {
+          id: 'pi',
+          displayName: 'Banner Pi',
+          adapter: 'test',
+          launch: { command: process.execPath, args: [fixture] },
+        },
+      ],
+    ])
+    const runtime = new AcpRuntime({
+      registry,
+      cwd: dir,
+      initializeOnCreate: true,
+      baseEnv: { ...process.env, KORTIX_RUNTIME_CONFIG_DIR: join(dir, 'pi') },
+    })
+    runtimes.push(runtime)
+
+    const instance = await runtime.getOrCreate('banner', 'pi')
+    const texts: string[] = []
+    instance.subscribe(0, (event) => {
+      const params = event.envelope.params as
+        | { update?: { content?: { text?: string } } }
+        | undefined
+      const text = params?.update?.content?.text
+      if (typeof text === 'string') texts.push(text)
+    })
+
+    await instance.post({
+      jsonrpc: '2.0',
+      id: 'new',
+      method: 'session/new',
+      params: { cwd: dir },
+    })
+    await instance.post({
+      jsonrpc: '2.0',
+      id: 'prompt',
+      method: 'session/prompt',
+      params: {
+        sessionId: 'banner-session',
+        prompt: [{ type: 'text', text: 'hello' }],
+      },
+    })
+
+    expect(texts).toEqual(['real model text'])
+  })
+
+  test('asks Pi for a quiet startup so it composes no banner to leak', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-acp-pi-quiet-'))
+    temporaryDirs.push(dir)
+    const configDir = join(dir, 'pi-config')
+
+    const fixture = join(import.meta.dir, 'fixtures/mock-acp-agent.ts')
+    const registry: AcpHarnessRegistry = new Map([
+      [
+        'pi',
+        {
+          id: 'pi',
+          displayName: 'Mock Pi',
+          adapter: 'test',
+          launch: { command: process.execPath, args: [fixture] },
+        },
+      ],
+    ])
+    const runtime = new AcpRuntime({
+      registry,
+      cwd: dir,
+      baseEnv: {
+        ...process.env,
+        KORTIX_RUNTIME_CONFIG_DIR: configDir,
+      },
+    })
+    runtimes.push(runtime)
+
+    await runtime.getOrCreate('pi-quiet', 'pi')
+
+    expect(
+      JSON.parse(readFileSync(join(configDir, 'settings.json'), 'utf8')),
+    ).toEqual({ quietStartup: true })
+  })
+
+  test('never overwrites author-owned Pi settings', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-acp-pi-settings-'))
+    temporaryDirs.push(dir)
+    const configDir = join(dir, 'pi-config')
+    const settingsFile = join(configDir, 'settings.json')
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(settingsFile, '{"quietStartup":false}\n')
+
+    const fixture = join(import.meta.dir, 'fixtures/mock-acp-agent.ts')
+    const registry: AcpHarnessRegistry = new Map([
+      [
+        'pi',
+        {
+          id: 'pi',
+          displayName: 'Mock Pi',
+          adapter: 'test',
+          launch: { command: process.execPath, args: [fixture] },
+        },
+      ],
+    ])
+    const runtime = new AcpRuntime({
+      registry,
+      cwd: dir,
+      baseEnv: {
+        ...process.env,
+        KORTIX_RUNTIME_CONFIG_DIR: configDir,
+      },
+    })
+    runtimes.push(runtime)
+
+    await runtime.getOrCreate('pi-settings', 'pi')
+
+    expect(readFileSync(settingsFile, 'utf8')).toBe('{"quietStartup":false}\n')
   })
 })
