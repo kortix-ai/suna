@@ -729,7 +729,6 @@ i,
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings:
-      'ss10' on,
       'ss09' on,
       'ss03' on,
       'ss04' on,
@@ -748,7 +747,6 @@ i,
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
     font-feature-settings:
-      'ss10' on,
       'ss09' on,
       'ss03' on,
       'ss04' on,
@@ -783,6 +781,20 @@ i,
       var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
       'Liberation Mono', 'Courier New', monospace, 'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR',
       'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
+    /* THIS is what makes the text monospaced — the family name does not.
+       Roobert is one family; mono is the MONO=100 position on its axis. The `*`
+       rule in the @font-face block re-substitutes this per element. */
+    --rb-mono: 100;
+    /* `->` `<-` (calt) and `tt` `ff` `ffi` (liga) collapse monospace cells, so
+       `getAttribute->off` renders three cells short. Disabling `calt` alone
+       fixes only the arrows — this single property fixes all five. */
+    font-variant-ligatures: none;
+    /* Reset the display-only stylistic sets. `html` and `body` set
+       font-feature-settings at ELEMENT level, so they inherit here and would
+       otherwise apply to code. Those sets swap E F L y : ; ? — and `:` and `;`
+       are everywhere in TypeScript. `zero` stays so a slashed 0 remains
+       distinguishable from O. */
+    font-feature-settings: 'zero';
   }
 }
 

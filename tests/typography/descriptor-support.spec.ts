@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { FIXTURE_ORIGIN } from './fixture-origin';
 
 // Served by the webServer in playwright.config.ts, rooted at the repo root.
 // Must be HTTP — @font-face is blocked under file://.
-const FIXTURE = 'http://127.0.0.1:8842/tests/typography/fixtures/descriptor.html';
+const FIXTURE = `${FIXTURE_ORIGIN}/tests/typography/fixtures/descriptor.html`;
 
 const measureIn = (page: import('@playwright/test').Page) =>
   page.evaluate(async () => {

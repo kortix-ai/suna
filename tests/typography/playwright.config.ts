@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { FIXTURE_PORT } from './fixture-origin';
 
 // Two targets live in this config:
 //   roobert.spec.ts            -> the running app, via baseURL
@@ -8,7 +9,6 @@ import { defineConfig, devices } from '@playwright/test';
 // and mean nothing. webServer serves the repo root so the fixture page and the
 // font binary are both reachable by absolute path.
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
-const FIXTURE_PORT = 8842;
 
 export default defineConfig({
   testDir: '.',
