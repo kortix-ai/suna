@@ -301,18 +301,19 @@ async function downloadPdfWithPageRotations({
 
 /**
  * A page's on-screen size once its own rotation is applied — a quarter turn
- * swaps width and height. Same convention as the `pageWidth`/`pageHeight`
- * pair below in `getThumbnailMetaForPage`, factored out so the page-1 size
- * report (see `PDFViewerDocumentLoader`) can reuse it verbatim instead of
- * re-deriving the swap.
+ * swaps width and height. Delegates to `getRotatedDimensions` further down
+ * this file (a hoisted function declaration, so the call is valid regardless
+ * of definition order) rather than re-deriving the swap — that helper is
+ * already this file's one convention for "does this rotation swap the
+ * axes", also used by `getRotatedPageDimensions` and the page-rotate
+ * transitions below. Exported so the page-1 size report (see
+ * `PDFViewerDocumentLoader`) is independently testable.
  */
 export function getRotatedPageSize(
   size: { width: number; height: number },
   rotation: Rotation,
 ): { width: number; height: number } {
-  return rotation % 2 === 1
-    ? { width: size.height, height: size.width }
-    : { width: size.width, height: size.height };
+  return getRotatedDimensions({ width: size.width, height: size.height, rotation });
 }
 
 function getThumbnailMetaForPage({
