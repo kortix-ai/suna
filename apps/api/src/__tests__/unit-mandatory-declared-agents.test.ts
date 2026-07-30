@@ -15,7 +15,6 @@ import { describe, expect, test } from 'bun:test';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
-import { compileRuntimeConfig } from '../projects/lib/compile-runtime-config';
 
 /**
  * The manifest's own `default_agent`, asserted present. Every starter assertion
@@ -269,7 +268,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
-// v3 manifest with a `default_agent` that resolves — otherwise
+// v2 manifest with a `default_agent` that resolves — otherwise
 // EVERY brand-new project's first session (agent 'default', the UI's
 // no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
 // is ever provisioned. This exercises the REAL shipped starter (not a
@@ -281,26 +280,14 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
   });
   const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
 
-  // Which schema version and which harnesses the DEFAULT starter ships is a
-  // product decision that moves (v3 multi-harness -> v2 OpenCode-only and back
-  // as ACP is gated on and off). Pinning either shape here made this guard fail
-  // on the decision instead of on the hazard, so every assertion below is
-  // written against the manifest's OWN declarations. The hazard it must keep
-  // catching is unchanged and version-independent: a first session on a
-  // brand-new project resolves.
-  test('the starter ships a YAML manifest, never a v1 kortix.toml', () => {
+  test('the starter ships a v2 kortix.yaml, not a v1 kortix.toml', () => {
     expect(manifestFile).toBeDefined();
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
   test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    // A YAML-era manifest the platform can read — a starter it cannot parse is
-    // the same outage by a different route. The ceiling itself is asserted by
-    // `compileRuntimeConfig` returning non-null below, not by a number here:
-    // `KNOWN_SCHEMA_VERSION` in projects/triggers.ts is the v1 TOML constant
-    // (1), not the manifest-schema ceiling.
-    expect(manifest.schemaVersion as number).toBeGreaterThanOrEqual(2);
+    expect(manifest.schemaVersion).toBe(2);
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
     // The manifest must name a default agent, and must declare it.
@@ -320,41 +307,21 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     // configuration, so it must carry the full grant — a narrowed default is a
     // silently crippled first session.
     expect(governed.grant).toEqual({
-      agent: declaredDefault,
+      agent: 'kortix',
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
     });
   });
 
-  test("the starter's declared default agent also resolves when named explicitly", () => {
+  test('the starter\'s declared "kortix" agent also resolves when named explicitly', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
     const loaded = extractAgents(manifest);
-    const governed = resolveGovernedAgentGrant(declaredDefaultAgent(loaded), loaded, {
+    const governed = resolveGovernedAgentGrant('kortix', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });
     expect(governed.ok).toBe(true);
   });
 
-  test('the starter compiles a runtime profile for every agent it declares', () => {
-    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    const loaded = extractAgents(manifest);
-    const compiled = compileRuntimeConfig(manifest.raw);
-    expect(compiled).not.toBeNull();
-    expect(compiled?.version as number).toBe(manifest.schemaVersion as number);
-    expect(compiled?.defaultAgent).toBe(declaredDefaultAgent(loaded));
-    // Every declared agent compiles, and each one lands on a runtime the
-    // platform actually implements — an agent pointing at an unknown harness
-    // cannot start a session.
-    expect(Object.keys(compiled?.agents ?? {}).sort()).toEqual(
-      loaded.specs.map((spec) => spec.name).sort(),
-    );
-    for (const runtime of Object.values(compiled?.runtimes ?? {})) {
-      expect(['claude', 'codex', 'opencode', 'pi']).toContain(runtime.harness);
-    }
-    for (const agent of Object.values(compiled?.agents ?? {})) {
-      expect(Object.keys(compiled?.runtimes ?? {})).toContain(agent.runtime);
-    }
-  });
 });

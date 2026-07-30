@@ -14,11 +14,9 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
-import { createAcpRouter, createOpenCodeSessionHistory } from './routes/acp'
 import webProxyRouter from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
-import type { AcpRuntime } from './acp/runtime'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -53,22 +51,6 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 // value. Failing fast here instead gives a clean 502 that apps/api's own
 // retry+auto-wake loop can act on immediately.
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
-
-/**
- * True when this daemon runs a managed ACP harness instead of the legacy
- * OpenCode REST supervisor. Mirrors `usesManagedAcpRuntime` in main.ts (which
- * proxy.ts cannot import — main.ts imports proxy.ts) and the `managedAcp`
- * predicate in routes/health.ts, so all three agree on one definition of the
- * runtime.
- *
- * Under managed ACP, `main()` never calls `opencode.start()`, so `markReady()`
- * — the only writer of `state='ok'` — is unreachable and `getState()` stays at
- * its initial `'starting'` for the life of the VM. That is not a boot phase; it
- * is a process that will never exist.
- */
-function usesManagedAcpRuntime(bootState: SandboxBootState): boolean {
-  return !!bootState.acpHarness && !!bootState.acpServerId
-}
 
 type OpencodeWsData = {
   // Absent when the client connects without an id — lookup-or-create then
@@ -127,7 +109,6 @@ export function buildOpencodeApp(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
-  acpRuntime?: AcpRuntime,
 ): Hono {
   const app = new Hono()
 
@@ -136,14 +117,7 @@ export function buildOpencodeApp(
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
   const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    staticWebPort,
-    acpRuntime,
-  )
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const abortRouter = createAbortRouter(cfg)
   const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
@@ -154,13 +128,6 @@ export function buildOpencodeApp(
   // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
   // the parameter is optional only so tests can build the app without one.
   const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
-  const acpRouter = createAcpRouter(
-    cfg,
-    () => opencode.getAcpConnection(),
-    () => bootState.initialOpenCodeSessionId ?? null,
-    createOpenCodeSessionHistory(cfg, () => opencode.getInternalUrl()),
-    acpRuntime,
-  )
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -171,8 +138,6 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
-  kortixRouter.route('/acp', acpRouter)
-  kortixRouter.route('/acp/', acpRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -242,38 +207,6 @@ export function buildOpencodeApp(
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
-    // Managed ACP serves no OpenCode REST surface at all — the supervisor is
-    // never started, so no amount of waiting produces one. Answer 404 (the
-    // resource genuinely does not exist on this runtime) FIRST, before the repo
-    // and boot-session gates: those describe a runtime that is still coming up,
-    // and a request that can never succeed must not pay for an `isRepoMaterialized`
-    // stat on the way to a permanent answer.
-    //
-    // 404 and not 503/501: every retry path in the stack keys off 5xx, so a 5xx
-    // here reproduces the original bug in a new costume.
-    //   - packages/sdk/.../messages.ts:98 — `status === 503` forces the FULL
-    //     ~29s boot backoff; 501 still lands in `isTransientSendStatus` (>=500).
-    //     A 4xx that is not 408/429 returns null on the first failure
-    //     (locked by messages.test.ts:340).
-    //   - apps/web/src/app/react-query-provider.tsx:28 — 4xx never retries; a
-    //     503 retries 3x.
-    //   - apps/api/src/sandbox-proxy/routes/preview.ts:1076 — only 502/503 enter
-    //     the auto-wake retry loop, and a 503 whose body lacks the exact string
-    //     "opencode not ready" burns that whole loop before it passes through.
-    // The daemon's own /kortix/health already reports `opencode: 'down'` +
-    // `runtime: 'acp'` here (routes/health.ts:141,151); this keeps the proxy
-    // consistent with it instead of contradicting it.
-    if (usesManagedAcpRuntime(bootState)) {
-      return c.json(
-        {
-          error: 'opencode rest is not served for this runtime',
-          runtime: 'acp',
-          harness: bootState.acpHarness,
-        },
-        404,
-      )
-    }
-
     if (bootState.repoMaterializationError) {
       return c.json(
         {
@@ -401,7 +334,6 @@ export function startProxy(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
-  acpRuntime?: AcpRuntime,
 ): ProxyServer {
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
@@ -409,16 +341,7 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
-  let app = buildOpencodeApp(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    projectEnv,
-    staticWebPort,
-    ptyRegistry,
-    acpRuntime,
-  )
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -494,16 +417,7 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(
-        next,
-        opencode,
-        bootTime,
-        bootState,
-        projectEnv,
-        staticWebPort,
-        ptyRegistry,
-        acpRuntime,
-      )
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {

@@ -559,9 +559,6 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'default-project');
-    expect(readFileSync(join(root, 'kortix.yaml'), 'utf8')).toContain('kortix_version: 2');
-    // Local tool wiring links the canonical skill source; the starter commits no
-    // harness-native runtime file of its own.
     expect(lstatSync(join(root, '.claude', 'skills')).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(root, '.pi', 'skills')).isSymbolicLink()).toBe(true);
     expect(existsSync(join(root, '.claude', 'CLAUDE.md'))).toBe(false);
@@ -585,9 +582,7 @@ describe('kortix CLI black-box behavior', () => {
     const result = await runCli(['init', '--help']);
 
     expect(result.code).toBe(0);
-    expect(result.stdout).toMatch(
-      /Every\s+new project runs OpenCode, declared as kortix_version 2 in kortix\.yaml\./,
-    );
+    expect(result.stdout).toContain('cloud OpenCode REST runtime');
     expect(result.stdout).not.toContain('--template');
     expect(result.stdout).not.toContain('acp-multi-harness');
     expect(result.stdout).not.toContain('minimal');

@@ -4,10 +4,10 @@ import { useTranslations } from 'next-intl';
 
 import { searchWorkspaceFiles } from '@/features/files';
 import type {
+  Agent,
   Command,
   MessageWithParts,
   ProviderListResponse,
-  RuntimeAgent,
   Session,
 } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
@@ -111,7 +111,7 @@ export interface SessionChatInputProps {
    * running" and shows a stop button instead.
    */
   isSending?: boolean;
-  agents?: RuntimeAgent[];
+  agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
   /** Show the selected agent but prevent switching inside an immutable session. */

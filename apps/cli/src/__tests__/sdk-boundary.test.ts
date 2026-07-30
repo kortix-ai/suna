@@ -142,19 +142,19 @@ describe('scanSource import rules', () => {
   });
 
   test('flags a deep @kortix/sdk source import', () => {
-    const source = "import { y } from '@kortix/sdk/src/core/acp/client';";
+    const source = "import { y } from '@kortix/sdk/src/core/rest/client';";
 
     expect(rules(source)).toContain('sdk-internal-import');
   });
 
   test('flags a relative reach into packages/sdk/src', () => {
-    const source = "import { y } from '../../../../packages/sdk/src/core/acp/client';";
+    const source = "import { y } from '../../../../packages/sdk/src/core/rest/client';";
 
     expect(rules(source)).toContain('sdk-internal-import');
   });
 
   test('flags a deep @kortix/sdk source import inside a test file', () => {
-    const source = "import { y } from '@kortix/sdk/src/core/acp/client';";
+    const source = "import { y } from '@kortix/sdk/src/core/rest/client';";
 
     expect(rules(source, { test: true })).toEqual(['sdk-internal-import']);
   });

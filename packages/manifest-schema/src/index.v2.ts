@@ -227,12 +227,11 @@ function equalConnectorSets(left: string[], right: string[]): boolean {
   return left.every((slug) => rightSet.has(slug));
 }
 
-/** @internal Shared by the v2 and v3 validators. */
+/** Validate the required-connector aliases in a v2 agent block. */
 export function validateRequiredConnectorFields(
   entry: Record<string, unknown>,
   where: string,
   issues: ManifestIssue[],
-  version: 2 | 3,
 ): void {
   const canonical = normalizeRequiredConnectorList(
     entry.connectors_required,
@@ -248,7 +247,7 @@ export function validateRequiredConnectorFields(
   if (entry.connectors_personal !== undefined) {
     issues.push({
       path: `${where}.connectors_personal`,
-      message: `connectors_personal is deprecated in kortix_version ${version}; use connectors_required.`,
+      message: 'connectors_personal is deprecated in kortix_version 2; use connectors_required.',
       severity: 'warning',
     });
   }
@@ -521,7 +520,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
   validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false, 2);
-  validateRequiredConnectorFields(entry, where, issues, 2);
+  validateRequiredConnectorFields(entry, where, issues);
   validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.

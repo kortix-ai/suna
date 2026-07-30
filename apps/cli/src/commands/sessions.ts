@@ -11,6 +11,7 @@ import {
 } from '../command-helpers.ts';
 import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
+import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { C, help, pad, status } from '../style.ts';
@@ -48,6 +49,8 @@ Subcommands:
                                       (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
+  connect [<session-id>]            Attach local OpenCode to the running
+                                    session sandbox. Pass args after --.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
@@ -96,20 +99,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
-  // `connect`/`attach` are gone: they proxied the in-sandbox OpenCode REST
-  // server for `opencode attach`, and managed ACP sessions never start that
-  // server (main.ts marks boot `opencode-skipped`). Point people at the
-  // ACP-native replacements instead of failing with a bare "unknown
-  // subcommand".
+  // `connect` owns its own flag parsing and forwards remaining args to
+  // `opencode attach`, so route it before we consume flags below.
   if (sub === 'connect' || sub === 'attach') {
-    process.stderr.write(
-      `${status.err('`sessions connect` was removed.')}\n` +
-        `  ${C.dim}It attached a local OpenCode TUI to an in-sandbox OpenCode REST server that\n` +
-        `  managed ACP sessions no longer start.${C.reset}\n` +
-        `  ${C.dim}Chat with the agent:${C.reset} ${C.cyan}kortix sessions chat <id>${C.reset}\n` +
-        `  ${C.dim}Get a shell in the sandbox:${C.reset} ${C.cyan}kortix sessions shell <id>${C.reset}\n`,
-    );
-    return 2;
+    return runSessionsConnect(argv.slice(1));
   }
   // `shell` owns its own flag parsing (incl. --new + a positional session id).
   if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {

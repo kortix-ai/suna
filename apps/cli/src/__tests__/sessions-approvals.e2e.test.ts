@@ -3,18 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { runSessions } from '../commands/sessions';
 
 const PROJECT_ID = '00000000-0000-4000-a000-000000000111';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000222';
 const SESSION_ID = '00000000-0000-4000-a000-000000000333';
 const PROXY_ID = 'external-approvals';
-const ACP_SERVER_ID = 'acp-server-approvals';
-const ACP_SESSION_ID = 'acp_ses_approvals';
-
-const SESSION_PATH = `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
-const ACP_PATH = `${SESSION_PATH}/acp`;
-const TRANSCRIPT_PATH = `${ACP_PATH}/transcript`;
 
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
@@ -26,13 +21,12 @@ const ENV_KEYS = [
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
 ] as const;
 
-type Envelope = Record<string, unknown>;
-
 let dir = '';
 let server: ReturnType<typeof Bun.serve> | null = null;
-let pendingAsks: Envelope[] = [];
-let rpcRequests: Envelope[] = [];
-let rpcResponses: Envelope[] = [];
+let permissionReplies: Array<{ id: string; body: unknown }> = [];
+let questionReplies: Array<{ id: string; body: unknown; kind: 'reply' | 'reject' }> = [];
+let pendingPermissions: unknown[] = [];
+let pendingQuestions: unknown[] = [];
 let stdoutChunks: string[] = [];
 let stderrChunks: string[] = [];
 const savedEnv: Record<string, string | undefined> = {};
@@ -48,10 +42,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${PROXY_ID}/8000`,
-    acp_server_id: ACP_SERVER_ID,
-    acp_session_id: ACP_SESSION_ID,
-    runtime_harness: 'opencode',
-    native_agent: null,
+    opencode_session_id: 'ses_oc',
     name: null,
     agent_name: 'default',
     status: 'running',
@@ -62,78 +53,16 @@ function sessionRow() {
   };
 }
 
-function permissionAsk(id: string): Envelope {
-  return {
-    jsonrpc: '2.0',
-    id,
-    method: 'session/request_permission',
-    params: {
-      sessionId: ACP_SESSION_ID,
-      toolCall: { toolCallId: `call-${id}`, title: 'bash' },
-      options: [
-        { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
-        { optionId: 'allow-always', name: 'Allow always', kind: 'allow_always' },
-        { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
-      ],
-    },
-  };
-}
-
-function questionAsk(id: string): Envelope {
-  return {
-    jsonrpc: '2.0',
-    id,
-    method: 'session/request_input',
-    params: {
-      sessionId: ACP_SESSION_ID,
-      questions: [
-        {
-          question: 'Which environment should I deploy to?',
-          header: 'Environment',
-          options: [
-            { label: 'Staging', description: 'the shared pre-production stack' },
-            { label: 'Production', description: 'live customer traffic' },
-          ],
-        },
-      ],
-    },
-  };
-}
-
-function acpEventStream(): Response {
-  const encoder = new TextEncoder();
-  const asks = [...pendingAsks];
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        let ordinal = 0;
-        for (const ask of asks) {
-          ordinal += 1;
-          controller.enqueue(encoder.encode(`id: ${ordinal}\ndata: ${JSON.stringify(ask)}\n\n`));
-        }
-      },
-    }),
-    { headers: { 'content-type': 'text/event-stream' } },
-  );
-}
-
-function permissionResponse(id: string, optionId: string): Envelope {
-  return {
-    jsonrpc: '2.0',
-    id,
-    result: { outcome: { outcome: 'selected', optionId } },
-  };
-}
-
 describe('sessions pending/approve/answer', () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
     dir = mkdtempSync(join(tmpdir(), 'kortix-approvals-'));
-    pendingAsks = [];
-    rpcRequests = [];
-    rpcResponses = [];
+    permissionReplies = [];
+    questionReplies = [];
+    pendingPermissions = [];
+    pendingQuestions = [];
     stdoutChunks = [];
     stderrChunks = [];
 
@@ -141,27 +70,47 @@ describe('sessions pending/approve/answer', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url);
-        if (req.method === 'GET' && url.pathname === SESSION_PATH) {
+        if (
+          req.method === 'GET' &&
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+        ) {
           return Response.json(sessionRow());
         }
-        if (req.method === 'GET' && url.pathname === TRANSCRIPT_PATH) {
-          return Response.json({ runtime_id: ACP_SERVER_ID, envelopes: [] });
+        if (
+          req.method === 'POST' &&
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
+        ) {
+          return Response.json({
+            stage: 'ready',
+            agent_name: 'default',
+            retriable: false,
+            sandbox: { external_id: PROXY_ID },
+            opencode_session_id: 'ses_oc',
+          });
         }
-        if (req.method === 'GET' && url.pathname === ACP_PATH) {
-          return acpEventStream();
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/permission`) {
+          return Response.json(pendingPermissions);
         }
-        if (req.method === 'POST' && url.pathname === ACP_PATH) {
-          const envelope = (await req.json()) as Envelope;
-          if (typeof envelope.method === 'string') {
-            rpcRequests.push(envelope);
-            return Response.json({
-              jsonrpc: '2.0',
-              id: envelope.id,
-              result: envelope.method === 'session/load' ? { configOptions: [] } : {},
-            });
-          }
-          rpcResponses.push(envelope);
-          return new Response(null, { status: 202 });
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/question`) {
+          return Response.json(pendingQuestions);
+        }
+        const permReply = url.pathname.match(
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/permission/([^/]+)/reply$`),
+        );
+        if (req.method === 'POST' && permReply) {
+          permissionReplies.push({ id: permReply[1], body: await req.json() });
+          return Response.json(true);
+        }
+        const qReply = url.pathname.match(
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/question/([^/]+)/(reply|reject)$`),
+        );
+        if (req.method === 'POST' && qReply) {
+          questionReplies.push({
+            id: qReply[1],
+            body: await req.json().catch(() => null),
+            kind: qReply[2] as 'reply' | 'reject',
+          });
+          return Response.json(true);
         }
         return Response.json({ error: `not found ${url.pathname}` }, { status: 404 });
       },
@@ -196,9 +145,22 @@ describe('sessions pending/approve/answer', () => {
     }) as typeof process.stderr.write;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.stdout.write = realStdoutWrite;
     process.stderr.write = realStderrWrite;
+    if (server) {
+      const auth = {
+        api_base: `http://127.0.0.1:${server.port}`,
+        token: 'kortix_pat_test',
+        user_id: 'user-1',
+        user_email: 'user@example.test',
+        account_id: ACCOUNT_ID,
+        logged_in_at: '2026-01-01T00:00:00.000Z',
+      };
+      await withKortixScope(auth, () =>
+        kortixFromAuth(auth).session(PROJECT_ID, SESSION_ID).stop(),
+      ).catch(() => {});
+    }
     server?.stop(true);
     server = null;
     for (const k of ENV_KEYS) {
@@ -208,22 +170,39 @@ describe('sessions pending/approve/answer', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('connecting loads the harness-native acp session id off the session row', async () => {
-    pendingAsks = [permissionAsk('perm_1')];
+  function permission(id: string) {
+    return {
+      id,
+      sessionID: 'ses_oc',
+      permission: 'bash',
+      patterns: ['rm -rf *'],
+      metadata: {},
+      always: [],
+      tool: { messageID: 'msg_1', callID: 'call_1' },
+    };
+  }
 
-    const code = await runSessions(['pending', SESSION_ID, '--project', PROJECT_ID, '--json']);
-
-    expect(code).toBe(0);
-    expect(rpcRequests.map((envelope) => envelope.method)).toEqual(['initialize', 'session/load']);
-    expect(rpcRequests[1].params).toEqual({
-      sessionId: ACP_SESSION_ID,
-      cwd: '/workspace',
-      mcpServers: [],
-    });
-  });
+  function question(id: string) {
+    return {
+      id,
+      sessionID: 'ses_oc',
+      questions: [
+        {
+          question: 'Which environment should I deploy to?',
+          header: 'Environment',
+          options: [
+            { label: 'Staging', description: 'Deploy to staging.' },
+            { label: 'Production', description: 'Deploy to production.' },
+          ],
+        },
+      ],
+      tool: { messageID: 'msg_2', callID: 'call_2' },
+    };
+  }
 
   test('pending --json emits permissions and questions', async () => {
-    pendingAsks = [permissionAsk('perm_1'), questionAsk('q_1')];
+    pendingPermissions = [permission('perm_1')];
+    pendingQuestions = [question('q_1')];
 
     const code = await runSessions(['pending', SESSION_ID, '--project', PROJECT_ID, '--json']);
 
@@ -234,7 +213,7 @@ describe('sessions pending/approve/answer', () => {
   });
 
   test('pending human output lists the ask and the command to answer it', async () => {
-    pendingAsks = [permissionAsk('perm_1')];
+    pendingPermissions = [permission('perm_1')];
 
     const code = await runSessions(['pending', SESSION_ID, '--project', PROJECT_ID]);
 
@@ -246,25 +225,14 @@ describe('sessions pending/approve/answer', () => {
   });
 
   test('approve with an explicit request id replies once', async () => {
-    pendingAsks = [permissionAsk('perm_1'), permissionAsk('perm_2')];
-
     const code = await runSessions(['approve', SESSION_ID, 'perm_1', '--project', PROJECT_ID]);
 
     expect(code).toBe(0);
-    expect(rpcResponses).toEqual([permissionResponse('perm_1', 'allow-once')]);
+    expect(permissionReplies).toEqual([{ id: 'perm_1', body: { reply: 'once' } }]);
   });
 
-  test('approve --always passes through; bare approve resolves the single pending ask', async () => {
-    pendingAsks = [permissionAsk('perm_solo')];
-
-    const code = await runSessions(['approve', SESSION_ID, '--always', '--project', PROJECT_ID]);
-
-    expect(code).toBe(0);
-    expect(rpcResponses).toEqual([permissionResponse('perm_solo', 'allow-always')]);
-  });
-
-  test('approve --message warns that ACP carries no note and still sends the decision', async () => {
-    pendingAsks = [permissionAsk('perm_solo')];
+  test('approve --always and --message pass through; bare approve resolves the single pending ask', async () => {
+    pendingPermissions = [permission('perm_solo')];
 
     const code = await runSessions([
       'approve',
@@ -277,13 +245,12 @@ describe('sessions pending/approve/answer', () => {
     ]);
 
     expect(code).toBe(0);
-    expect(stderrChunks.join('')).toContain('--message is not forwarded');
-    expect(rpcResponses).toEqual([permissionResponse('perm_solo', 'allow-always')]);
+    expect(permissionReplies).toEqual([
+      { id: 'perm_solo', body: { reply: 'always', message: 'go ahead' } },
+    ]);
   });
 
   test('approve --reject sends a rejection', async () => {
-    pendingAsks = [permissionAsk('perm_x')];
-
     const code = await runSessions([
       'approve',
       SESSION_ID,
@@ -294,46 +261,42 @@ describe('sessions pending/approve/answer', () => {
     ]);
 
     expect(code).toBe(0);
-    expect(rpcResponses).toEqual([permissionResponse('perm_x', 'reject-once')]);
+    expect(permissionReplies).toEqual([{ id: 'perm_x', body: { reply: 'reject' } }]);
   });
 
   test('bare approve with several pending permissions errors and lists ids', async () => {
-    pendingAsks = [permissionAsk('perm_a'), permissionAsk('perm_b')];
+    pendingPermissions = [permission('perm_a'), permission('perm_b')];
 
     const code = await runSessions(['approve', SESSION_ID, '--project', PROJECT_ID]);
 
     expect(code).toBe(1);
-    expect(rpcResponses).toEqual([]);
+    expect(permissionReplies).toEqual([]);
     const err = stderrChunks.join('');
     expect(err).toContain('perm_a');
     expect(err).toContain('perm_b');
   });
 
-  test('answer maps option labels to the option the harness advertised', async () => {
-    pendingAsks = [questionAsk('q_1')];
+  test('answer sends the selected OpenCode option label', async () => {
+    pendingQuestions = [question('q_1')];
 
     const code = await runSessions([
       'answer',
       SESSION_ID,
       'q_1',
       '--option',
-      'staging',
+      'Staging',
       '--project',
       PROJECT_ID,
     ]);
 
     expect(code).toBe(0);
-    expect(rpcResponses).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'q_1',
-        result: { action: 'accept', content: { answers: [['Staging']] } },
-      },
+    expect(questionReplies).toEqual([
+      { id: 'q_1', body: { answers: [['Staging']] }, kind: 'reply' },
     ]);
   });
 
   test('answer --text sends free text; --reject dismisses', async () => {
-    pendingAsks = [questionAsk('q_1')];
+    pendingQuestions = [question('q_1')];
 
     let code = await runSessions([
       'answer',
@@ -346,17 +309,13 @@ describe('sessions pending/approve/answer', () => {
     ]);
     expect(code).toBe(0);
 
-    pendingAsks = [questionAsk('q_2')];
+    pendingQuestions = [question('q_2')];
     code = await runSessions(['answer', SESSION_ID, 'q_2', '--reject', '--project', PROJECT_ID]);
     expect(code).toBe(0);
 
-    expect(rpcResponses).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'q_1',
-        result: { action: 'accept', content: { answers: [['use the blue one']] } },
-      },
-      { jsonrpc: '2.0', id: 'q_2', result: { action: 'decline' } },
+    expect(questionReplies).toEqual([
+      { id: 'q_1', body: { answers: [['use the blue one']] }, kind: 'reply' },
+      { id: 'q_2', body: null, kind: 'reject' },
     ]);
   });
 
@@ -364,7 +323,6 @@ describe('sessions pending/approve/answer', () => {
     const code = await runSessions(['answer', SESSION_ID, 'q_1', '--project', PROJECT_ID]);
 
     expect(code).toBe(2);
-    expect(rpcRequests).toEqual([]);
-    expect(rpcResponses).toEqual([]);
+    expect(questionReplies).toEqual([]);
   });
 });

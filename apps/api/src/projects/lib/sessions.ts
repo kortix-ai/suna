@@ -9,16 +9,17 @@ import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { type SandboxProviderName, config } from '../../config';
-import { resolveExperimentalFeature } from '../../experimental/features';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
-import { type ModelSource, toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import {
+  type ModelSource,
+  toOpencodeModelRef,
+} from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -50,12 +51,7 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
-import {
-  resolveCompiledRuntimeConfigForSession,
-  type CompiledRuntimeConfig,
-} from './compile-runtime-config';
 import { withProjectGitAuth } from './git';
-import { harnessNotEnabledError, isHarnessEnabled } from './harness-gate';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -89,7 +85,7 @@ import {
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
-import { buildSessionRuntimeEnv, shouldResolvePlatformDefaultModel } from './session-runtime-env';
+import { buildSessionRuntimeEnv } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
@@ -271,10 +267,6 @@ export async function buildSessionSandboxEnvVars(input: {
    *  grant defaults to 'all' (back-compat, no narrowing). */
   defaultBranch?: string;
   manifestPath?: string;
-  /** Effective project ACP experiment. */
-  acpRuntimeEnabled?: boolean;
-  /** Immutable create-time launch plan. Restarts pass the stored plan. */
-  compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -295,7 +287,6 @@ export async function buildSessionSandboxEnvVars(input: {
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
-  let compiledRuntimeConfig: CompiledRuntimeConfig | null = input.compiledRuntimeConfig ?? null;
   if (input.defaultBranch) {
     compiledAgentConfig = await resolveCompiledAgentConfigForSession({
       projectId: input.projectId,
@@ -304,15 +295,6 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
-    if (input.acpRuntimeEnabled && !compiledRuntimeConfig) {
-      compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
-        projectId: input.projectId,
-        repoUrl: input.repoUrl,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      }).catch(() => null);
-    }
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -467,12 +449,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
-      // OpenCode ACP starts its internal REST server. Existing REST clients
-      // continue to work while the project experiment selects the ACP client.
-      opencodeProcessTransport: 'acp',
       compiledAgentConfig,
-      compiledRuntimeConfig: input.acpRuntimeEnabled ? compiledRuntimeConfig : null,
-      runtimeModel: input.opencodeModel,
     }),
   };
 }
@@ -686,55 +663,10 @@ export async function createProjectSession(input: {
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
-  let agentName =
+  const agentName =
     (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
     projectDefaultAgent ??
     'default';
-  const acpRuntimeEnabled = resolveExperimentalFeature(project.metadata, 'acp_runtime');
-  const compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
-    projectId,
-    repoUrl: project.repoUrl,
-    defaultBranch: project.defaultBranch,
-    manifestPath: project.manifestPath,
-    gitAuthToken: null,
-  }).catch(() => null);
-  if (compiledRuntimeConfig?.version === 3 && !acpRuntimeEnabled) {
-    return {
-      error: {
-        status: 409,
-        body: {
-          error: 'kortix_version 3 requires the ACP & Multi-Harness project experiment',
-          code: 'ACP_RUNTIME_REQUIRED',
-        },
-      },
-    };
-  }
-  const runtimeAgent =
-    compiledRuntimeConfig?.agents[agentName] ??
-    (agentName === 'default'
-      ? compiledRuntimeConfig?.agents[compiledRuntimeConfig.defaultAgent]
-      : undefined);
-  if (acpRuntimeEnabled && compiledRuntimeConfig && (!runtimeAgent || !runtimeAgent.enabled)) {
-    return {
-      error: {
-        status: 400,
-        body: {
-          error: `Agent "${agentName}" is not declared and enabled in kortix.yaml`,
-          code: 'AGENT_NOT_DECLARED',
-        },
-      },
-    };
-  }
-  // The manifest DECLARES the harness; the platform decides whether it runs it.
-  // Stable deployments launch `opencode` only, so a repo that declares
-  // `harness: claude|codex|pi` is refused here by name rather than silently
-  // started on a different harness against the wrong native config directory.
-  // Gated at CREATE only: an already-running session keeps its immutable
-  // `runtime_harness` binding, so flipping the switch never kills live work.
-  if (acpRuntimeEnabled && runtimeAgent && !isHarnessEnabled(runtimeAgent.harness)) {
-    return { error: harnessNotEnabledError(runtimeAgent.harness) };
-  }
-  if (runtimeAgent) agentName = runtimeAgent.name;
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,
@@ -761,10 +693,7 @@ export async function createProjectSession(input: {
       return {
         error: {
           status: 400,
-          body: {
-            error: `"${requestedModel}" doesn't look like a model id`,
-            code: 'INVALID_SESSION_MODEL',
-          },
+          body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
         },
       };
     }
@@ -788,10 +717,7 @@ export async function createProjectSession(input: {
     }
     opencodeModel = toOpencodeModelRef(requestedModel);
     opencodeModelSource = 'explicit';
-  } else if (
-    llmGatewayEnabled &&
-    shouldResolvePlatformDefaultModel(acpRuntimeEnabled, runtimeAgent?.harness)
-  ) {
+  } else if (llmGatewayEnabled) {
     try {
       const resolved = await resolveEffectiveModel({
         userId,
@@ -802,7 +728,8 @@ export async function createProjectSession(input: {
         freeModelsOnly,
       });
       const concreteModel =
-        resolved.model ?? (!freeModelsOnly ? platformDefaultModelId() : null);
+        resolved.model ??
+        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -1072,16 +999,6 @@ export async function createProjectSession(input: {
       : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
-    runtime_transport: acpRuntimeEnabled ? 'acp' : 'rest',
-    runtime_harness: acpRuntimeEnabled ? (runtimeAgent?.harness ?? 'opencode') : 'opencode',
-    ...(acpRuntimeEnabled && runtimeAgent
-      ? {
-          runtime_name: runtimeAgent.runtime,
-          native_agent: runtimeAgent.nativeAgent,
-          acp_server_id: sessionId,
-          compiled_runtime_plan: compiledRuntimeConfig,
-        }
-      : {}),
     ...(input.metadata ?? {}),
     sandbox_slug: sandboxSlug,
   };
@@ -1216,8 +1133,6 @@ export async function createProjectSession(input: {
           initialPrompt,
           opencodeModel,
           llmGatewayEnabled,
-            acpRuntimeEnabled,
-            compiledRuntimeConfig,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,
@@ -1318,7 +1233,7 @@ export async function createProjectSession(input: {
             error: message,
             // Merge, never re-write the create-time snapshot: by the time
             // provisioning fails the row may already carry a generated title,
-            // acp_session_id, remote_branch or the start timeline.
+            // remote_branch or the start timeline.
             metadata: projectSessionMetadataMerge({ provisioning_error: message }),
             updatedAt: new Date(),
           })

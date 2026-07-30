@@ -1,7 +1,8 @@
 // Server-side manifest-version verdict for GET /projects/:id/detail.
 //
 // The manifest declares its own schema version: `kortix_version` is REQUIRED by
-// every published schema (`kortix.v1/v2/v3.schema.json` each pin it to a
+// every published schema (`kortix.v1.schema.json` and
+// `kortix.v2.schema.json` each pin it to a
 // `const`). So the version is read, never inferred — there is no sniffing of
 // which keys happen to be present.
 //
@@ -9,8 +10,7 @@
 // as v1. A manifest that is absent, unparseable, version-less, or hidden by IAM
 // is `version: null` with an `unknown_reason`, and offers no migration. The old
 // client-side detector defaulted all four of those cases to v1, so every
-// project whose manifest could not be read was told to "upgrade" — including
-// brand-new v3 projects whose repo had not been read yet.
+// project whose manifest could not be read was told to "upgrade".
 //
 // `migration_offered` is deliberately NOT `version < latest_version`. It is true
 // only when MIGRATIONS below has an implemented, agent-runnable upgrade for that
@@ -23,13 +23,12 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 /** Highest manifest schema version this platform ships and reads. Mirrored by
  *  `MAX_SCHEMA_VERSION` in `../triggers` (kept separate to avoid an import
  *  cycle: `triggers` pulls in the git layer, which consumes this module). */
-export const LATEST_MANIFEST_VERSION = 3;
+export const LATEST_MANIFEST_VERSION = 2;
 
 /**
  * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
- * `kortix.toml` → `kortix.yaml` governance conversion). v2 → v3 has no
- * migration authored yet, so a v2 project is reported as v2 and offered
- * nothing rather than pointed at a destination no agent can reach.
+ * `kortix.toml` → `kortix.yaml` governance conversion). Version 2 is the
+ * current schema, so a v2 project is reported as current and offered nothing.
  */
 const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
 

@@ -1,8 +1,7 @@
 # SDK Runtime Model — first-principles redesign (per-session, no "active server")
 
-> **Current.** The session-scoped invariant and the OpenCode REST
-> compatibility path below are the shipped behavior. The SDK's ACP projection is
-> experimental, unreleased, and off by default (`KORTIX_ACP_RUNTIME=false`).
+> The session-scoped invariant remains current. The OpenCode client and SSE
+> details below describe the active REST path.
 
 > Status: **proposal** · 2026-06-27 · Follows `sdk-session-collapse.md` (which shipped
 > `useSession`). This redesigns the layer *underneath* it — the client/server/store model —

@@ -1,8 +1,6 @@
 # Session boot — 1-second threshold gap analysis + attack sequence
 
-> **Current runtime scope.** This analysis measures the `kortix_version: 2`
-> OpenCode compatibility boot path, which is the shipped path. ACP and
-> multi-harness are experimental, unreleased, and off by default.
+> This analysis measures the v2 OpenCode REST boot path.
 
 > Goal §1: *Performance: Kortix minimal harness + session boot optimization —
 > **1-second threshold**.* This doc is the grounded scoping step before any

@@ -9,7 +9,6 @@ import {
   parseManifestText,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
-import { compileRuntimeConfig, type CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
@@ -200,21 +199,6 @@ export function resolveConfigAgents(
   };
 }
 
-export function attachCompiledRuntimeIdentity(
-  agents: ProjectConfigSummary['agents'],
-  compiledRuntime: CompiledRuntimeConfig | null,
-): ProjectConfigSummary['agents'] {
-  return agents.map((agent) => {
-    const launch = compiledRuntime?.agents[agent.name];
-    return {
-      ...agent,
-      runtime: launch?.runtime ?? null,
-      harness: launch?.harness ?? null,
-      native_agent: launch?.nativeAgent ?? null,
-    };
-  });
-}
-
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -257,13 +241,6 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
-  const compiledRuntime = (() => {
-    try {
-      return parsedManifest ? compileRuntimeConfig(parsedManifest) : null;
-    } catch {
-      return null;
-    }
-  })();
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -293,9 +270,7 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const resolvedAgents = resolveConfigAgents(nativeAgents, loadedAgents);
-  const agent_discovery = resolvedAgents.agent_discovery;
-  const agents = attachCompiledRuntimeIdentity(resolvedAgents.agents, compiledRuntime);
+  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles

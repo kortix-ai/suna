@@ -10,8 +10,6 @@ import {
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-import { config } from '../config';
-import { resolveProjectRuntimeTransport } from '../experimental/features';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -30,9 +28,6 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // The starter floor ships the core Kortix OpenCode files plus default runtime
 // tools/plugins. Optional skills (agent-browser and knowledge-work skills) are
 // marketplace installable instead.
-// The stable scaffold. `.claude/`, `.codex/`, and `.pi/` are NOT here: native
-// config for an experimental harness ships only with the experimental
-// multi-harness starter (see MULTI_HARNESS_ONLY_PATHS).
 const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
@@ -62,9 +57,6 @@ const BASE_STARTER_PATHS = [
   'kortix.yaml',
   'README.md',
 ];
-
-/** The only paths the experimental multi-harness starter adds. */
-const MULTI_HARNESS_ONLY_PATHS = ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md'];
 
 let repoCreateCalls: any[];
 let fileShaCalls: any[];
@@ -981,8 +973,7 @@ describe('create-repo starter scaffold contract', () => {
         },
       },
     });
-    // Default starter = kortix_version 2 = OpenCode REST. No ACP opt-in is
-    // stamped, so the project follows the platform default (KORTIX_ACP_RUNTIME).
+    // The default starter uses only the version 2 OpenCode REST contract.
     expect(insertedProject?.metadata).not.toHaveProperty('experimental');
     expect(gitConnectionRows).toContainEqual(
       expect.objectContaining({
@@ -1006,53 +997,6 @@ describe('create-repo starter scaffold contract', () => {
       projectRole: 'manager',
       grantedBy: USER_ID,
     });
-  });
-
-
-
-  test('the stable starter commits kortix_version 2 and no experimental harness config', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/create-repo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'stable-lab',
-        project_name: 'Stable Lab',
-        private: true,
-        starter_template: 'general-knowledge-worker',
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    const committedPaths = commitCalls.map((call) => call.path);
-    for (const path of MULTI_HARNESS_ONLY_PATHS) expect(committedPaths).not.toContain(path);
-    const manifest = commitCalls.find((call) => call.path === 'kortix.yaml')?.content ?? '';
-    expect(manifest).toContain('kortix_version: 2');
-    expect(manifest).not.toContain('kortix_version: 3');
-    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
-  });
-
-  test('an unspecified starter template commits the stable kortix_version 2 manifest', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/create-repo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'unspecified-lab',
-        project_name: 'Unspecified Lab',
-        private: true,
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(commitCalls.find((call) => call.path === 'kortix.yaml')?.content).toContain(
-      'kortix_version: 2',
-    );
-    for (const path of MULTI_HARNESS_ONLY_PATHS) {
-      expect(commitCalls.map((call) => call.path)).not.toContain(path);
-    }
   });
 
   test('commits a selected marketplace project template into the new GitHub repository', async () => {

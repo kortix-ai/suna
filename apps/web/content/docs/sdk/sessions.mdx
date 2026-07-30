@@ -186,9 +186,6 @@ transport is `fetch` with a streaming response body, read through
 `ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
 backoff, and a heartbeat check.
 
-In React, prefer `useSession()`. It owns start, readiness, the stream, and
-message sync for you.
-
 Stream a session:
 
 1. Call `ensureReady()` first. The runtime does not exist until the sandbox
@@ -288,9 +285,9 @@ the full method list.
 
 ## The raw runtime
 
-`s.runtime` is the typed OpenCode REST compatibility client. Use it only for
-OpenCode REST calls that `send`, `abort`, and `stream` do not cover. It requires
-a resolved OpenCode runtime — call `s.ensureReady()` first.
+`s.runtime` is the typed OpenCode REST client. Use it only for calls that `send`,
+`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
+call `s.ensureReady()` first.
 
 ```ts
 const { opencodeSessionId } = await s.ensureReady();

@@ -40,7 +40,7 @@ const RULES = [
     scope: 'all',
     rule: 'direct-runtime-import',
     pattern:
-      /['"]@kortix\/sdk\/(?:acp|event-stream|idb-sync-cache|opencode(?:-[^'"]*)?|sandbox(?:-[^'"]*)?|server-store|session|sync-store)['"]/gi,
+      /['"]@kortix\/sdk\/(?:event-stream|idb-sync-cache|opencode(?:-[^'"]*)?|sandbox(?:-[^'"]*)?|server-store|session|sync-store)['"]/gi,
     message: 'Client code must use @kortix/sdk and @kortix/sdk/react only.',
   },
   {
@@ -233,8 +233,8 @@ export function listWhiteLabelTestFiles() {
       /\.test\.[cm]?[jt]sx?$/.test(path) &&
       !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
   );
-  const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT).filter((path) =>
-    /whitelabel.*\.spec\.[cm]?[jt]sx?$/.test(path),
+  const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT).filter(
+    (path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path),
   );
   return [...localTests, ...repositoryTests];
 }

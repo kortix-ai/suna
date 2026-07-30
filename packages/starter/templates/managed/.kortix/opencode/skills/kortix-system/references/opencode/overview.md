@@ -1,7 +1,7 @@
 # OpenCode reference — overview
 
-OpenCode is the Kortix runtime. Every session runs OpenCode over its REST
-compatibility interface. This directory is the complete OpenCode reference.
+OpenCode is the Kortix session runtime. Version 2 uses OpenCode REST. This
+directory is the complete OpenCode reference.
 
 The same `.kortix/opencode/` config directory drives both surfaces:
 

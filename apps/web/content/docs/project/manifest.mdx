@@ -3,26 +3,16 @@ title: Manifest reference
 description: Every kortix.yaml v2 key, with defaults, limits, and validation rules.
 ---
 
-The manifest is the file the platform treats as authoritative for a project. This page lists the `kortix.yaml` v2 fields. For the plain-language version, see [Your project](/docs/project).
-
-## Version
-
-`kortix_version: 2` is the current schema. Every new project scaffolds it, and it runs OpenCode. `kortix.toml` v1 still works for existing projects with no forced upgrade.
-
-<Callout type="warn" title="There is no v3">
-A `kortix_version: 3` schema exists in the codebase. It is **experimental,
-unreleased, and off by default** — you cannot create or run a v3 project. Write
-`kortix_version: 2`.
-</Callout>
+The manifest is the file the platform treats as authoritative for a project. This page lists every `kortix.yaml` (v2) key, its type, its default, and how the platform validates it. For the plain-language version, see [Your project](/docs/project).
 
 ## Two configuration surfaces
 
 A Kortix project has two configuration surfaces with strict, non-overlapping ownership.
 
 - **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/Dockerfile`. The platform reads this: the trigger sweep, the sandbox builder, session token minting, and the dashboard.
-- **OpenCode config** — `.kortix/opencode/`. OpenCode reads its own directory.
+- **OpenCode config** — everything under `.kortix/opencode/` (`opencode.jsonc`, `agents/`, `skills/`, `commands/`, `tools/`, `plugins/`). The OpenCode runtime reads this, in the sandbox and locally.
 
-The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body:
+The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body, never in `kortix.yaml`:
 
 - system prompt
 - `model`, `mode`
@@ -33,9 +23,9 @@ The manifest's `agents:` block sets governance only: which agents may launch, an
 
 ## Location and versions
 
-Any repo with a valid manifest at its root is a Kortix project. `kortix.yaml` v2 is YAML-only. `kortix.toml` v1 still works for existing projects. See [Legacy TOML](/docs/project/legacy-toml) for the v1 schema.
+Any repo with a valid manifest at its root is a Kortix project. `kortix.yaml` (v2, YAML only) is the current format for new projects, created by the web "Create project" flow and by `kortix init`. `kortix.toml` (v1) still works for existing projects, but the platform accepts no new v2 features on it. See [Legacy TOML](/docs/project/legacy-toml) for the v1 schema and the v1-to-v2 migration steps.
 
-`kortix_version: 2` requires YAML. A TOML file that declares it fails validation.
+`kortix_version: 2` requires YAML — a `.toml` file that declares `kortix_version: 2` fails validation. A manifest that declares a version higher than `2` is rejected outright, so the platform never silently misreads a future field. Unknown top-level keys are ignored, so you can park your own metadata in the file.
 
 `validateManifest()` is the single gate behind `kortix ship`, the change request merge check, and `kortix validate`. The same rules apply everywhere, so anything that merges into `main` is structurally sound. The schema is public and generated from the same package:
 
@@ -54,7 +44,7 @@ kortix_version: 2
 kortix schema --version 2
 ```
 
-## Version 2 full example
+## Full example
 
 ```yaml
 kortix_version: 2
@@ -102,7 +92,7 @@ triggers:
       Summarize yesterday's commits. Open a CR against main.
 ```
 
-## Version 2 top-level keys
+## Top-level keys
 
 | Key | Required | Notes |
 |---|---|---|
@@ -338,7 +328,7 @@ is project-owned or member-owned.
 
 ## When config changes take effect
 
-- A manifest or `.kortix/opencode/` config edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
+- A manifest or `.kortix/opencode/` edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
 - A trigger's cron or webhook change is picked up by the scheduler within seconds of the merge.
 - A sandbox image or hardware change rebuilds the snapshot. The new spec applies on the next session, not the current one.
 - A secret value change in the dashboard resolves at sandbox-create time. It applies on the next session, not a running one.

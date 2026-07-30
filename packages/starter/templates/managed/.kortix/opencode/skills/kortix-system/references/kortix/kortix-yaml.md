@@ -9,8 +9,8 @@ The platform parser is permissive: it never throws on a bad entry.
 Instead, bad triggers go into an `errors` list returned alongside the
 good ones, so a single typo doesn't break the whole file.
 
-This page documents the current YAML schema, `kortix_version: 2`. It runs
-OpenCode and uses a governance-only `agents:` name-to-block map.
+This page documents `kortix_version: 2`, which uses OpenCode REST and a
+governance-only `agents:` name-to-block map.
 
 The authoritative structural spec is the public JSON Schema:
 `https://kortix.com/schema/kortix.v2.schema.json`, or
@@ -181,7 +181,7 @@ self-describing at a glance.
 | ---------------------- | ------------------------------------------------------------------- |
 | Trigger sweep          | `triggers:`                                                          |
 | Sandbox builder        | `sandbox:`                                                           |
-| Sandbox runtime        | `opencode:`                                                          |
+| Sandbox runtime        | v2 `opencode:`                                                   |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |

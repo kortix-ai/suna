@@ -27,7 +27,6 @@ let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
 let transcriptRequests: URL[] = [];
 let apiRequests: string[] = [];
-let noTranscriptSessionId: string | null = null;
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -62,7 +61,6 @@ describe('sessions new CLI flow', () => {
     sessionList = [];
     transcriptRequests = [];
     apiRequests = [];
-    noTranscriptSessionId = null;
 
     mkdirSync(repo, { recursive: true });
     git(['init', '-b', 'main'], repo);
@@ -136,15 +134,6 @@ describe('sessions new CLI flow', () => {
         const transcriptMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/transcript$`));
         if (req.method === 'GET' && transcriptMatch) {
           transcriptRequests.push(url);
-          if (transcriptMatch[1] === noTranscriptSessionId) {
-            return Response.json({
-              available: false,
-              reason: 'no stored transcript for this session',
-              opencode_session_id: null,
-              message_count: 0,
-              messages: [],
-            });
-          }
           return Response.json({
             available: true,
             reason: null,
@@ -314,7 +303,7 @@ describe('sessions new CLI flow', () => {
     );
 
     expect(code).toBe(0);
-    expect(transcriptRequests).toHaveLength(2);
+    expect(transcriptRequests).toHaveLength(1);
     expect(transcriptRequests[0]!.searchParams.get('limit')).toBe('5');
     expect(transcriptRequests[0]!.searchParams.get('chars')).toBe('120');
 
@@ -323,70 +312,13 @@ describe('sessions new CLI flow', () => {
     };
     expect(parsed.sessions).toHaveLength(2);
     expect(parsed.sessions[0]!.transcript.available).toBe(true);
+    expect(parsed.sessions[1]!.transcript.available).toBe(false);
     expect(JSON.stringify(parsed)).not.toContain('must not leak');
     expect(parsed.sessions[0]!.transcript.messages[1]!.tools).toEqual([
       { tool: 'bash', status: 'completed' },
     ]);
   });
-
-  test('digest asks for a stopped session transcript instead of short-circuiting on status', async () => {
-    const stoppedId = '22222222-2222-4222-8222-222222222222';
-    sessionList = [stoppedSessionRow(stoppedId)];
-
-    const { code, stdout } = await captureStdout(() => runSessions(['digest', '--all', '--json']));
-
-    expect(code).toBe(0);
-    expect(transcriptRequests.map((u) => u.pathname)).toEqual([
-      `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/transcript`,
-    ]);
-    const parsed = JSON.parse(stdout) as {
-      sessions: Array<{ transcript: { available: boolean } }>;
-    };
-    expect(parsed.sessions[0]!.transcript.available).toBe(true);
-    expect(stdout).not.toContain('requires a running sandbox');
-  });
-
-  test('digest relays the API verdict when no transcript is stored', async () => {
-    const stoppedId = '22222222-2222-4222-8222-222222222222';
-    sessionList = [stoppedSessionRow(stoppedId)];
-    noTranscriptSessionId = stoppedId;
-
-    const { code, stdout } = await captureStdout(() => runSessions(['digest', '--all', '--json']));
-
-    expect(code).toBe(0);
-    const parsed = JSON.parse(stdout) as {
-      sessions: Array<{ transcript: { available: boolean; reason: string | null } }>;
-    };
-    expect(parsed.sessions[0]!.transcript.available).toBe(false);
-    expect(parsed.sessions[0]!.transcript.reason).toBe('no stored transcript for this session');
-  });
 });
-
-function stoppedSessionRow(sessionId: string) {
-  return {
-    session_id: sessionId,
-    account_id: ACCOUNT_ID,
-    project_id: PROJECT_ID,
-    branch_name: sessionId,
-    base_ref: 'main',
-    sandbox_provider: 'daytona',
-    sandbox_id: sessionId,
-    sandbox_url: null,
-    opencode_session_id: null,
-    acp_server_id: sessionId,
-    acp_session_id: 'ses_native_stopped',
-    runtime_harness: 'opencode',
-    native_agent: null,
-    name: 'Stopped target',
-    custom_name: null,
-    agent_name: 'default',
-    status: 'stopped',
-    error: null,
-    metadata: {},
-    created_at: '2026-06-20T00:00:00.000Z',
-    updated_at: '2026-06-20T00:03:00.000Z',
-  };
-}
 
 async function captureStdout(fn: () => Promise<number>): Promise<{ code: number; stdout: string }> {
   const originalWrite = process.stdout.write;

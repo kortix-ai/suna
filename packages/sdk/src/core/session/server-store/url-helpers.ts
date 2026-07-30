@@ -17,9 +17,10 @@ export function getBackendUrl(): string {
 }
 
 export function getDefaultSandboxUrl(): string {
-  // Self-host override only; empty in cloud (the session runtime is the source
-  // of truth). No auto-default — an unconfigured id just yields an empty path.
-  const sandboxId = platformConfig().sandboxId || '';
+  // Self-host override only. Without an explicit id there is no valid target,
+  // so callers must wait for the active session to bind its runtime.
+  const sandboxId = platformConfig().sandboxId;
+  if (!sandboxId) return '';
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 

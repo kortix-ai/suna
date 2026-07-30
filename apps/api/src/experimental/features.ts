@@ -129,25 +129,6 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
   },
   {
-    key: 'acp_runtime',
-    name: 'ACP & Multi-Harness',
-    description:
-      'NOT READY — do not enable. An unfinished, unreleased runtime transport, kept behind this switch for internal development only. Turning it on can break sessions in this project. Every supported project runs OpenCode over its REST compatibility transport.',
-    stability: 'experimental',
-    // Always listable, and deliberately NOT gated on KORTIX_ACP_RUNTIME. The
-    // env var moves the fleet default; availability decides whether a project
-    // may hold an opinion at all. Tying the two together would silently drop
-    // every project that already opted into ACP back onto REST the moment the
-    // fleet default is off — including live v3-manifest projects, which cannot
-    // run on REST at all (createProjectSession answers 409
-    // ACP_RUNTIME_REQUIRED). ACP stays reachable per project; it is just not
-    // the default.
-    available: () => true,
-    // Fleet rollout switch — the ONE variable that decides what a project with
-    // no explicit choice gets. Off = REST for the whole deployment.
-    platformDefault: () => config.KORTIX_ACP_RUNTIME,
-  },
-  {
     key: 'review_center',
     name: 'Review Center',
     description:
@@ -208,18 +189,6 @@ export function resolveExperimentalFeatures(
   return Object.fromEntries(
     FEATURES.map((f) => [f.key, resolveExperimentalFeature(metadata, f.key)]),
   ) as Record<ExperimentalFeatureKey, boolean>;
-}
-
-/**
- * Select the SDK client transport for one project. There is exactly ONE input:
- * the `acp_runtime` experiment, which is the project's explicit choice over the
- * fleet default `KORTIX_ACP_RUNTIME` (off ⇒ REST). No second env var can
- * override a project here — an earlier `KORTIX_OPENCODE_TRANSPORT=acp` short
- * circuit did exactly that and made the effective default contradict the
- * documented one.
- */
-export function resolveProjectRuntimeTransport(metadata: unknown): 'acp' | 'rest' {
-  return resolveExperimentalFeature(metadata, 'acp_runtime') ? 'acp' : 'rest';
 }
 
 /** Serialized catalog entry for the client (drives the Customize UI). */

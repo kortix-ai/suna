@@ -33,25 +33,20 @@ export interface StarterFile {
   content: string;
 }
 
-// There is ONE USER-FACING starter kit: `general-knowledge-worker` — base
-// plumbing plus the full consolidated Kortix skill kit, on `kortix_version: 2`.
-// It runs the OpenCode harness and only the OpenCode harness. Every new project
-// is scaffolded with it; project creation offers no choice.
+// There is one USER-FACING starter kit:
+// - `general-knowledge-worker`: the full skill kit on the OpenCode REST runtime.
 //
-// `minimal` (base only, no domain skills) is kept purely as an INTERNAL building
-// block: the project-clone seed path (`buildProjectSeedFilesFromItem`) uses it to
-// lay down the OpenCode runtime floor and canonical skill source before a
-// `registry:project`'s own skills/agents are layered on top, so a specialized
-// project template isn't polluted with every general-knowledge skill. It is not
-// surfaced in the create-project UI, mobile, or the `kortix init` prompt.
+// `minimal` (base only, no domain skills) is kept purely as an INTERNAL
+// building block: the project-clone seed path (`buildProjectSeedFilesFromItem`)
+// uses it to lay down the OpenCode runtime floor and canonical skill source
+// before a `registry:project`'s own skills/agents are layered on top, so a
+// specialized project template isn't
+// polluted with every general-knowledge skill. It is not surfaced in the
+// create-project UI, mobile, or the `kortix init` prompt.
 //
-// `acp-multi-harness` is a deprecated compatibility alias for
-// `general-knowledge-worker`. Keep accepting it in API and SDK inputs; it
-// scaffolds exactly the same files.
 export const STARTER_TEMPLATE_IDS = [
   'minimal',
   'general-knowledge-worker',
-  'acp-multi-harness',
 ] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';

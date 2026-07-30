@@ -471,6 +471,7 @@ projectsApp.openapi(
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
+
   // Managed repo name = a readable slug from the display name + the project's
   // UUID, so managed repos under the shared org NEVER collide (two projects can
   // share a name). We generate the project id up front to bake it into the repo
@@ -530,7 +531,7 @@ projectsApp.openapi(
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
       // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 3) — record that as the canonical path so
+      // kortix.yaml (kortix_version 2) — record that as the canonical path so
       // a project created here is never labeled with a stale v1 filename. A
       // CLI `kortix ship` that pushes its own files instead of seeding still
       // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
@@ -566,10 +567,6 @@ projectsApp.openapi(
         // createProjectSession). Pre-existing projects (this flag absent/false)
         // keep the v1 adopt-to-govern behavior untouched.
         require_declared_agents: true,
-        // No `experimental` block. A new project states no opinion about ACP and
-        // inherits the platform default (KORTIX_ACP_RUNTIME, off ⇒ OpenCode
-        // REST). Stamping `acp_runtime: true` here is what made every new
-        // project ACP while both stated defaults said REST.
       },
       updatedAt: now,
     })

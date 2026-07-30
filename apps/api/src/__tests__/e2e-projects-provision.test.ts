@@ -11,9 +11,6 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
 
-import { config } from '../config';
-import { resolveProjectRuntimeTransport } from '../experimental/features';
-
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 process.env.MANAGED_GIT_PROVIDER = 'github';
 
@@ -428,9 +425,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
         },
       },
     });
-    // The stable starter scaffolds kortix_version 2 and runs OpenCode REST, so
-    // provision must NOT stamp an ACP opt-in — the project inherits the
-    // platform default (KORTIX_ACP_RUNTIME, off).
+    // Provisioning does not stamp hidden experimental runtime metadata.
     expect(insertedProject?.metadata).not.toHaveProperty('experimental');
     expect(grantedProjectRole).toMatchObject({
       accountId: ACCOUNT_ID,
@@ -603,32 +598,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
     expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
-  });
-
-
-
-  test('the stable starter provisions on v2 + REST and follows KORTIX_ACP_RUNTIME with no stamped override', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Rest Lab', seed_starter: true }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(seedFilesByPath.get('kortix.yaml')).toContain('kortix_version: 2');
-    expect(seedFilesByPath.get('kortix.yaml')).not.toContain('kortix_version: 3');
-    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
-
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = false;
-      expect(resolveProjectRuntimeTransport(insertedProject?.metadata)).toBe('rest');
-      config.KORTIX_ACP_RUNTIME = true;
-      expect(resolveProjectRuntimeTransport(insertedProject?.metadata)).toBe('acp');
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
   });
 
   test('returns 503 when managed git is not configured', async () => {

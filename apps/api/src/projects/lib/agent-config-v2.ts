@@ -198,11 +198,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion < 2) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to set a project default agent.',
+        'This project must use kortix_version 2 (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -278,11 +278,11 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
-  if (manifest.schemaVersion < 2) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to edit agent scope.',
+        'This project must use kortix_version 2 (kortix.yaml) to edit agent scope.',
     };
   }
   const rawAgents = manifest.raw.agents;

@@ -412,13 +412,8 @@ flow(
     domain: 'coverage',
     routes: [
       'GET /v1/projects/:projectId/connector-profiles/all',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId/acp',
-      'GET /v1/projects/:projectId/sessions/:sessionId/acp',
-      'GET /v1/projects/:projectId/sessions/:sessionId/acp/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/scope',
-      'POST /v1/projects/:projectId/sessions/:sessionId/acp',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/acp-identity',
       'PUT /v1/projects/:projectId/sessions/:sessionId/model',
       'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
     ],
@@ -451,16 +446,6 @@ flow(
         { params: sessionParams },
       );
       scopeRead.status(404);
-      const identity = await owner.put(
-        '/v1/projects/:projectId/sessions/:sessionId/acp-identity',
-        {
-          acp_server_id: ZERO_UUID,
-          runtime_harness: 'codex',
-          acp_session_id: 'codex-native-1',
-        },
-        { params: sessionParams },
-      );
-      identity.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
         { opencode_model: 'openai/gpt-5' },
@@ -473,28 +458,6 @@ flow(
         { params: sessionParams },
       );
       scope.status(404);
-    });
-
-    await ctx.step('unknown project hides managed ACP routes', async () => {
-      const stream = await owner.get('/v1/projects/:projectId/sessions/:sessionId/acp', {
-        params: sessionParams,
-      });
-      stream.status(404);
-      const transcript = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/acp/transcript',
-        { params: sessionParams },
-      );
-      transcript.status(404);
-      const prompt = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/acp',
-        { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: {} },
-        { params: sessionParams },
-      );
-      prompt.status(404);
-      const close = await owner.del('/v1/projects/:projectId/sessions/:sessionId/acp', {
-        params: sessionParams,
-      });
-      close.status(404);
     });
   },
 );

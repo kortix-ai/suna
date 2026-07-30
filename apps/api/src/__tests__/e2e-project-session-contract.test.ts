@@ -10,12 +10,10 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../config';
 import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
@@ -36,6 +34,8 @@ process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+
+const { config } = await import('../config');
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
@@ -72,7 +72,6 @@ let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
 let assertedIamActions: string[] = [];
 let deniedIamAction: string | null = null;
-let manifestFixture: { path: string; content: string } | null = null;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -165,7 +164,6 @@ function resetState() {
   gitCredentialRows = [];
   assertedIamActions = [];
   deniedIamAction = null;
-  manifestFixture = null;
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -214,6 +212,7 @@ mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
@@ -229,11 +228,9 @@ mock.module('../projects/git', () => ({
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
-  // A test that needs a real manifest sets `manifestFixture`.
-  readManifestFromRepo: async () => manifestFixture,
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
-  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -331,7 +328,10 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
-  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -653,96 +653,96 @@ mock.module('../shared/db', () => ({
         }) => {
           const conflictResult = {
             returning: async () => {
-            if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex(
-                (row) => row.projectId === values.projectId,
-              );
-              const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                connectionId:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.connectionId
-                    : '00000000-0000-4000-a000-000000000501',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                repoUrl: values.repoUrl,
-                repoOwner: values.repoOwner ?? null,
-                repoName: values.repoName ?? null,
-                externalRepoId: values.externalRepoId ?? null,
-                defaultBranch: values.defaultBranch,
-                authMethod: values.authMethod,
-                installationId: values.installationId ?? null,
-                credentialRef: values.credentialRef ?? null,
-                permissions: values.permissions ?? {},
-                visibility: values.visibility ?? null,
-                webhookId: values.webhookId ?? null,
-                status: values.status ?? 'connected',
-                lastValidatedAt: values.lastValidatedAt ?? now,
-                lastErrorCode: values.lastErrorCode ?? null,
-                lastErrorMessage: values.lastErrorMessage ?? null,
-                metadata: values.metadata ?? {},
+              if (table === projectGitConnections) {
+                const existingIndex = gitConnectionRows.findIndex(
+                  (row) => row.projectId === values.projectId,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  connectionId:
+                    existingIndex >= 0
+                      ? gitConnectionRows[existingIndex]!.connectionId
+                      : '00000000-0000-4000-a000-000000000501',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  repoUrl: values.repoUrl,
+                  repoOwner: values.repoOwner ?? null,
+                  repoName: values.repoName ?? null,
+                  externalRepoId: values.externalRepoId ?? null,
+                  defaultBranch: values.defaultBranch,
+                  authMethod: values.authMethod,
+                  installationId: values.installationId ?? null,
+                  credentialRef: values.credentialRef ?? null,
+                  permissions: values.permissions ?? {},
+                  visibility: values.visibility ?? null,
+                  webhookId: values.webhookId ?? null,
+                  status: values.status ?? 'connected',
+                  lastValidatedAt: values.lastValidatedAt ?? now,
+                  lastErrorCode: values.lastErrorCode ?? null,
+                  lastErrorMessage: values.lastErrorMessage ?? null,
+                  metadata: values.metadata ?? {},
                   createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitConnections.$inferSelect;
-              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-              else gitConnectionRows.push(row);
-              return [row];
-            }
-            if (table === projectGitCredentials) {
-              const existingIndex = gitCredentialRows.findIndex(
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitConnections.$inferSelect;
+                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+                else gitConnectionRows.push(row);
+                return [row];
+              }
+              if (table === projectGitCredentials) {
+                const existingIndex = gitCredentialRows.findIndex(
                   (row) => row.projectId === values.projectId && row.provider === values.provider,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  credentialId:
+                    existingIndex >= 0
+                      ? gitCredentialRows[existingIndex]!.credentialId
+                      : '00000000-0000-4000-a000-000000000601',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  authMethod: values.authMethod ?? 'token',
+                  valueEnc: values.valueEnc,
+                  createdBy: values.createdBy ?? null,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitCredentials.$inferSelect;
+                if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+                else gitCredentialRows.push(row);
+                return [row];
+              }
+              if (table !== projectSecrets) return [];
+              const existingIndex = secretRows.findIndex(
+                (row) => row.projectId === values.projectId && row.name === values.name,
               );
               const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                credentialId:
+              const row: typeof projectSecrets.$inferSelect = {
+                secretId:
                   existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.credentialId
-                    : '00000000-0000-4000-a000-000000000601',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                authMethod: values.authMethod ?? 'token',
-                valueEnc: values.valueEnc,
+                    ? secretRows[existingIndex]!.secretId
+                    : '00000000-0000-4000-a000-000000000401',
+                projectId: values.projectId!,
+                identifier: values.identifier ?? values.name!,
+                name: values.name!,
+                valueEnc: (set.valueEnc ?? values.valueEnc)!,
+                scope: values.scope ?? 'runtime',
+                ownerUserId: values.ownerUserId ?? null,
+                active: values.active ?? true,
                 createdBy: values.createdBy ?? null,
-                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitCredentials.$inferSelect;
-              if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
-              else gitCredentialRows.push(row);
+                description: values.description ?? null,
+                strategy: values.strategy ?? 'runtime',
+                egressPolicy: values.egressPolicy ?? null,
+                handlePrefix: values.handlePrefix ?? null,
+                rotatedAt: values.rotatedAt ?? null,
+                strategyLocked: values.strategyLocked ?? false,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
+              };
+              if (existingIndex >= 0) secretRows[existingIndex] = row;
+              else secretRows.push(row);
               return [row];
-            }
-            if (table !== projectSecrets) return [];
-            const existingIndex = secretRows.findIndex(
-                (row) => row.projectId === values.projectId && row.name === values.name,
-            );
-            const now = new Date('2026-01-02T00:00:00Z');
-            const row: typeof projectSecrets.$inferSelect = {
-              secretId:
-                existingIndex >= 0
-                  ? secretRows[existingIndex]!.secretId
-                  : '00000000-0000-4000-a000-000000000401',
-              projectId: values.projectId!,
-              identifier: values.identifier ?? values.name!,
-              name: values.name!,
-              valueEnc: (set.valueEnc ?? values.valueEnc)!,
-              scope: values.scope ?? 'runtime',
-              ownerUserId: values.ownerUserId ?? null,
-              active: values.active ?? true,
-              createdBy: values.createdBy ?? null,
-              description: values.description ?? null,
-              strategy: values.strategy ?? 'runtime',
-              egressPolicy: values.egressPolicy ?? null,
-              handlePrefix: values.handlePrefix ?? null,
-              rotatedAt: values.rotatedAt ?? null,
-              strategyLocked: values.strategyLocked ?? false,
-              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
-              updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
-            };
-            if (existingIndex >= 0) secretRows[existingIndex] = row;
-            else secretRows.push(row);
-            return [row];
-          },
+            },
             then: (
               resolve: (value: unknown[]) => unknown,
               reject?: (reason: unknown) => unknown,
@@ -880,33 +880,6 @@ function createApp() {
     return c.json({ error: true, message: (err as Error).message }, 500);
   });
   return app;
-}
-
-/**
- * A HAND-AUTHORED kortix_version 3 manifest — the only way a v3 project exists.
- *
- * No starter scaffolds v3 any more (one starter, kortix_version 2), but v3
- * PARSING is deliberately retained for a manifest a user writes themselves. That
- * is exactly the input the two tests below are about: a v3 manifest still has to
- * be refused `409 ACP_RUNTIME_REQUIRED` unless the project opted into the ACP
- * experiment, and must never be quietly downgraded onto REST. Authored inline
- * rather than scaffolded so the contract does not depend on a starter that no
- * longer emits it.
- */
-function v3Manifest(): string {
-  // `runtime:` is not optional here: without it compileRuntimeConfig logs
-  // `references unknown runtime profile "undefined"`, produces no v3 runtime
-  // binding, and session create answers 201 on REST — the gate under test would
-  // silently never run.
-  return `kortix_version: 3
-default_agent: opencode
-runtimes:
-  opencode:
-    harness: opencode
-agents:
-  opencode:
-    runtime: opencode
-`;
 }
 
 /** Poll until predicate holds (or timeout) — robustly flushes the
@@ -1054,7 +1027,7 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.optional)).toBe(true);
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
@@ -1076,9 +1049,9 @@ describe('project session API contract', () => {
     ).toBeUndefined();
 
     const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: 'gitlab-project-token' }),
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'gitlab-project-token' }),
     });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
@@ -1140,7 +1113,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1461,7 +1434,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1539,9 +1512,9 @@ describe('project session API contract', () => {
 
     for (const { body, message } of forbiddenBodies) {
       const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
@@ -1563,9 +1536,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const inventory = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
-    );
+    const inventory = await app.request(`/v1/projects/${PROJECT_ID}/sessions?scope=project`);
     expect(inventory.status).toBe(200);
     expect((await inventory.json())[0]).toMatchObject({
       session_id: SESSION_ID,
@@ -1667,55 +1638,6 @@ describe('project session API contract', () => {
     });
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
-  });
-
-  test('dashboard start returns ACP identity persisted while startSession runs', async () => {
-    const app = createApp();
-    sessionRow = {
-      ...sessionRow!,
-      sandboxProvider: 'platinum',
-      status: 'running',
-      metadata: {
-        runtime_transport: 'acp',
-        runtime_harness: 'codex',
-        acp_server_id: SESSION_ID,
-        native_agent: 'codex',
-      },
-    };
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'platinum',
-        externalId: 'box-acp-identity',
-        baseUrl: null,
-        status: 'active',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    providerStatus = 'running';
-    providerStatusSessionMetadataUpdate = {
-      acp_session_id: 'codex-native-created-during-start',
-    };
-
-    const response = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      runtime_transport: 'acp',
-      runtime_harness: 'codex',
-      acp_server_id: SESSION_ID,
-      acp_session_id: 'codex-native-created-during-start',
-    });
   });
 
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
@@ -1974,10 +1896,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
     runtimeInspectionHealth = {
-      runtime: 'opencode-rest',
       runtimeReady: true,
-      acpServerId: null,
-      runtimeHarness: null,
       bootError: null,
     };
 
@@ -2286,7 +2205,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-        opencodeSessionId: 'ses_root_existing',
+      opencodeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2533,7 +2452,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-missing-on-start',
+      externalId: 'box-missing-on-start',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-missing-on-start' },
     });
@@ -2565,10 +2484,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
     runtimeInspectionHealth = {
-      runtime: 'opencode-rest',
       runtimeReady: true,
-      acpServerId: null,
-      runtimeHarness: null,
       bootError: null,
     };
 
@@ -2620,7 +2536,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-accepted-start-then-removed',
+      externalId: 'box-accepted-start-then-removed',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
     });
@@ -2663,12 +2579,12 @@ describe('project session API contract', () => {
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Human name',
-          metadata: { custom: 'ok' },
-        }),
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Human name',
+        metadata: { custom: 'ok' },
+      }),
     });
 
     expect(res.status).toBe(200);
@@ -2888,11 +2804,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2915,11 +2831,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2963,7 +2879,7 @@ describe('project session API contract', () => {
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
 
     expect(res.status).toBe(200);
@@ -2973,7 +2889,7 @@ describe('project session API contract', () => {
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
@@ -2997,108 +2913,5 @@ describe('project session API contract', () => {
     });
     expect(branchCreateCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
-  });
-
-  test('a project with no ACP opt-in binds its session to the OpenCode REST transport', async () => {
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = false;
-      const app = createApp();
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      expect(res.status).toBe(201);
-      expect((sessionRow?.metadata as Record<string, unknown>).runtime_transport).toBe('rest');
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
-  });
-
-  test('KORTIX_ACP_RUNTIME=true binds new sessions to ACP with no per-project change', async () => {
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = true;
-      const app = createApp();
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      expect(res.status).toBe(201);
-      expect((sessionRow?.metadata as Record<string, unknown>).runtime_transport).toBe('acp');
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
-  });
-
-  test('an existing ACP project keeps ACP while the platform default is off', async () => {
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = false;
-      projectRow.metadata = {
-        ...(projectRow.metadata as Record<string, unknown>),
-        experimental: { acp_runtime: true },
-      };
-      const app = createApp();
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      expect(res.status).toBe(201);
-      expect((sessionRow?.metadata as Record<string, unknown>).runtime_transport).toBe('acp');
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
-  });
-
-  test('a kortix_version 3 manifest without the ACP experiment is refused, never run on REST', async () => {
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = false;
-      manifestFixture = { path: 'kortix.yaml', content: v3Manifest() };
-      sessionRow = null;
-      const app = createApp();
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      expect(res.status).toBe(409);
-      expect(await res.json()).toMatchObject({ code: 'ACP_RUNTIME_REQUIRED' });
-      expect(sessionRow).toBeNull();
-      expect(sandboxProvisionCalls).toBe(0);
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
-  });
-
-  test('a kortix_version 3 manifest runs once the project opts into the ACP experiment', async () => {
-    const previous = config.KORTIX_ACP_RUNTIME;
-    try {
-      config.KORTIX_ACP_RUNTIME = false;
-      manifestFixture = { path: 'kortix.yaml', content: v3Manifest() };
-      projectRow.metadata = {
-        ...(projectRow.metadata as Record<string, unknown>),
-        experimental: { acp_runtime: true },
-      };
-      const app = createApp();
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      expect(res.status).toBe(201);
-      expect((sessionRow?.metadata as Record<string, unknown>).runtime_transport).toBe('acp');
-    } finally {
-      config.KORTIX_ACP_RUNTIME = previous;
-    }
   });
 });

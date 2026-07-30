@@ -52,11 +52,11 @@ Arguments:
                        in. Prompted if omitted.
 
 Pick the local coding tools to wire up. The starter's canonical skill source is
-linked into each native discovery location.
+linked into each native discovery location. Local tool files remain in
+.claude, .codex, and .pi.
 Codex, Pi, and Cursor also get a root AGENTS.md pointer.
 
-This local tool selection does not change the cloud session runtime. Every
-new project runs OpenCode, declared as kortix_version 2 in kortix.yaml.
+This local tool selection does not change the cloud OpenCode REST runtime.
 
 Options:
   --name <project>     Alias for the positional project-name.
@@ -215,8 +215,7 @@ function printAgentPreamble(): void {
     `  Pick the local coding tools to wire into this Kortix project.`,
     '',
     `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
-    `  ${dim}Ask it to configure triggers, agents, or project settings.${reset}`,
-    `  ${dim}Cloud sessions run the OpenCode runtime declared in kortix.yaml.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or OpenCode settings.${reset}`,
     '',
     `  ${opts}`,
     '',

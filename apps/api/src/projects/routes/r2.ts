@@ -268,6 +268,7 @@ projectsApp.openapi(
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
+
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
 
@@ -378,11 +379,9 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-      managed: true,
-    // No `experimental` block: a new project states no opinion about ACP and
-    // inherits the platform default (KORTIX_ACP_RUNTIME, off ⇒ OpenCode REST).
-    // The starter just committed above (buildStarterFiles) ships kortix.yaml —
-    // record that path so it's never stale from birth.
+    managed: true,
+    // The starter just committed above (buildStarterFiles) ships kortix.yaml
+    // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',
   });
 

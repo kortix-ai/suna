@@ -434,9 +434,39 @@ describe('SessionSyncController', () => {
     expect(requests).toHaveLength(1);
 
     clock.advance(10_000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(2);
+    expect(statuses).toEqual([{ type: 'idle' }]);
+  });
+
+  test('starts transcript liveness reconciliation when a REST prompt is accepted', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const statuses: SessionStatus[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return messagePage([
+          { id: 'user-new', role: 'user' },
+          { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
+        ]);
+      },
+      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+      setStatus: (status) => statuses.push(status),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.beginPromptObservation();
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requests).toHaveLength(1);
+    expect(hydrated).toEqual([['user-new', 'assistant-new']]);
     expect(statuses).toEqual([{ type: 'idle' }]);
   });
 

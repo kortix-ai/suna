@@ -140,7 +140,7 @@ describe('session-title origins — create-time title source', () => {
 
   test('the clean source is PERSISTED, so a fallback hook cannot re-title from the envelope', () => {
     // Hook 1 is not guaranteed: its gateway call can 429. Seconds later the
-    // queued initial ACP prompt drains through continueSession, whose only text
+    // queued initial prompt drains through continueSession, whose only text
     // IS the rendered envelope — and `needsTitle` is still true. Storing the
     // clean source at create is what keeps that retry honest.
     const create = read('projects/lib/sessions.ts');
@@ -153,7 +153,7 @@ describe('session-title origins — create-time title source', () => {
 
   test('ui (web new-session): no create-time prompt → the proxy hook owns the title', () => {
     // apps/web never sets initial_prompt; it stashes the prompt client-side and
-    // sends it over the ACP/REST proxy once the session exists.
+    // sends it over the OpenCode REST proxy once the session exists.
     expect(titleSourceForCreate({ base_ref: 'main', agent_name: 'default' })).toBeNull();
   });
 

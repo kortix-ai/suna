@@ -89,8 +89,8 @@ export SESSION_ID="<session-id>"
 
 | Field                | Contract                                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_name`         | Selects a declared agent.                                                                                                                               |
-| `opencode_model`     | Selects the initial model. The wire name remains stable for every supported harness. An unavailable model returns `400 INVALID_SESSION_MODEL`.          |
+| `agent_name`         | Selects a declared OpenCode agent.                                                                                                                      |
+| `opencode_model`     | Selects the initial OpenCode model. An unavailable model returns `400 INVALID_SESSION_MODEL`.                                                          |
 | `runtime_context`    | Stores non-secret scalar context. The API rejects credential-like keys, more than 64 entries, or more than 16 KiB.                                      |
 | `connector_bindings` | Maps a connector-profile slug to one strategy-compatible `authorization_id`. The credential stays outside the sandbox.                                  |
 | `inherit_unbound`    | Keeps strategy-based default resolution for connector profiles omitted from an explicit binding map. The default is `false`.                            |
@@ -243,7 +243,7 @@ const sameDetail = await kortix.session(projectId, sessionId).cost();
 
 ## 6. Stream the answer
 
-Await runtime readiness before using the OpenCode REST compatibility methods:
+Await runtime readiness before using the OpenCode REST methods:
 
 ```ts
 const handle = kortix.session(projectId, session.session_id);

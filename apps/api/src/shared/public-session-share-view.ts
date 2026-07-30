@@ -12,26 +12,22 @@
  * remains the single 404/410/503 gate; this module only adds what happens
  * AFTER a token resolves.
  *
- * Sanitization is shared with `projects/lib/session-transcript.ts` (the
+ * Sanitization mirrors `projects/lib/session-transcript.ts` (the
  * authenticated per-session transcript digest used by
- * `GET /projects/:id/sessions/:sid/transcript`): both fold through
- * `shared/compact-transcript.ts`, so only message role, text, tool NAME +
- * status (no args/output), file NAME + mime (no content), and a
+ * `GET /projects/:id/sessions/:sid/transcript`): only message role, text,
+ * tool NAME + status (no args/output), file NAME + mime (no content), and a
  * `reasoning_omitted` flag are ever returned — raw tool call arguments,
- * command output, and file contents never leave the server. That module used
- * to be copied into this file; the copy drifted, so there is now exactly one
- * implementation. The only difference kept here is the response shape: an
- * anonymous viewer never sees the per-message `error` object.
+ * command output, and file contents never leave the sandbox. Kept as an
+ * independent (small) implementation rather than importing that module's
+ * private helpers, since this lives in a different ownership boundary
+ * (anonymous/public surface vs. the authenticated project routes).
  */
 
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from './db';
-import { type CompactMessage, compactAcpEnvelopes, compactOpencodeMessages } from './compact-transcript';
-import { loadAcpTranscript } from '../projects/lib/acp-transcript';
 import { isPlaceholderOpencodeTitle } from '../projects/lib/opencode-title';
 import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
-import { readManagedAcpSessionIdentity } from '../projects/runtime-inspection';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -112,11 +108,63 @@ export type PublicSessionMessagesResult =
   | { ok: true; transcript: PublicSessionTranscript }
   | { ok: false; status: number; error: string };
 
-/** Drops the per-message `error` object: it can carry provider/internal detail
- *  an anonymous viewer must never see. */
-function toPublicMessage(message: CompactMessage): CompactPublicMessage {
-  const { error: _error, ...rest } = message;
-  return rest;
+type RawMessage = {
+  info?: { role?: string; time?: { created?: number; completed?: number } };
+  role?: string;
+  time?: { created?: number; completed?: number };
+  parts?: RawPart[];
+};
+
+type RawPart = {
+  type?: string;
+  text?: string;
+  synthetic?: boolean;
+  tool?: string;
+  state?: { status?: string };
+  filename?: string;
+  mime?: string;
+};
+
+function normalizeMessageList(payload: unknown): RawMessage[] {
+  const list = Array.isArray(payload)
+    ? payload
+    : typeof payload === 'object' && payload && Array.isArray((payload as { messages?: unknown }).messages)
+      ? (payload as { messages: unknown[] }).messages
+      : [];
+  return list.filter((m): m is RawMessage => typeof m === 'object' && m !== null);
+}
+
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function compactMessage(msg: RawMessage): CompactPublicMessage {
+  const info = msg.info ?? msg;
+  const parts = Array.isArray(msg.parts) ? msg.parts : [];
+  const text = parts
+    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
+    .map((p) => p.text as string)
+    .filter(Boolean)
+    .join('\n');
+  const tools = parts
+    .filter((p) => p.type === 'tool')
+    .map((p) => ({ tool: p.tool ?? 'tool', status: p.state?.status ?? null }));
+  const files = parts
+    .filter((p) => p.type === 'file')
+    .map((p) => ({ filename: p.filename ?? null, mime: p.mime ?? null }));
+  return {
+    role: info.role ?? 'unknown',
+    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
+    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
+    text: truncate(normalizeWhitespace(text), MAX_MESSAGE_CHARS),
+    tools,
+    files,
+    reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
+  };
 }
 
 function unavailable(reason: string, opencodeSessionId: string | null = null): PublicSessionTranscript {
@@ -132,43 +180,19 @@ function unavailable(reason: string, opencodeSessionId: string | null = null): P
  * polling frontend can retry — mirrors `buildSessionTranscriptDigest`'s
  * behavior for the authenticated equivalent. Returns a hard error status only
  * for conditions the caller can't usefully retry past (sandbox not running).
- *
- * ACP sessions never reach the sandbox at all: their transcript lives in
- * `kortix.acp_session_envelopes`. Before this branch existed, every ACP share
- * link answered `503 Sandbox is not running` once the box stopped, and
- * `{available: false}` while it ran — a public share on an ACP session showed
- * nothing, because managed ACP mints no OpenCode pin and starts no in-sandbox
- * REST server for the pin to point at.
  */
 export async function getPublicSessionMessages(
   row: Pick<PublicShareRow, 'sessionId'> & { externalId: string; sandboxStatus: string | null },
 ): Promise<PublicSessionMessagesResult> {
-  const [sessionRow] = await db
-    .select({
-      opencodeSessionId: projectSessions.opencodeSessionId,
-      projectId: projectSessions.projectId,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, row.sessionId))
-    .limit(1);
-
-  const metadata = (sessionRow?.metadata ?? {}) as Record<string, unknown>;
-  if (sessionRow && readManagedAcpSessionIdentity(metadata)) {
-    return getPublicAcpSessionMessages({
-      projectId: sessionRow.projectId,
-      sessionId: row.sessionId,
-      acpSessionId:
-        typeof metadata.acp_session_id === 'string' && metadata.acp_session_id.trim()
-          ? metadata.acp_session_id
-          : null,
-    });
-  }
-
   if (row.sandboxStatus !== 'active') {
     return { ok: false, status: 503, error: 'Sandbox is not running' };
   }
 
+  const [sessionRow] = await db
+    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
   const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
 
   const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
@@ -227,18 +251,15 @@ export async function getPublicSessionMessages(
       return { ok: true, transcript: unavailable(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId) };
     }
     const payload = (await res.json().catch(() => null)) as unknown;
-    const messages = compactOpencodeMessages(payload, {
-      limit: MAX_MESSAGES,
-      maxChars: MAX_MESSAGE_CHARS,
-    }).map(toPublicMessage);
+    const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);
     return {
       ok: true,
       transcript: {
         available: true,
         reason: null,
         opencode_session_id: opencodeSessionId,
-        message_count: messages.length,
-        messages,
+        message_count: rawMessages.length,
+        messages: rawMessages.map(compactMessage),
       },
     };
   } catch (err) {
@@ -248,45 +269,6 @@ export async function getPublicSessionMessages(
     return {
       ok: true,
       transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
-    };
-  }
-}
-
-/**
- * ACP transcript for an anonymous viewer, folded from the durable envelope log.
- * `opencode_session_id` stays null: ACP has no OpenCode REST session to name.
- * Zero envelopes is an empty-but-available transcript, not an error.
- */
-async function getPublicAcpSessionMessages(input: {
-  projectId: string;
-  sessionId: string;
-  acpSessionId: string | null;
-}): Promise<PublicSessionMessagesResult> {
-  try {
-    const envelopes = await loadAcpTranscript({
-      projectId: input.projectId,
-      sessionId: input.sessionId,
-    });
-    const messages = compactAcpEnvelopes(envelopes, {
-      acpSessionId: input.acpSessionId,
-      limit: MAX_MESSAGES,
-      maxChars: MAX_MESSAGE_CHARS,
-    }).map(toPublicMessage);
-    return {
-      ok: true,
-      transcript: {
-        available: true,
-        reason: null,
-        opencode_session_id: null,
-        message_count: messages.length,
-        messages,
-      },
-    };
-  } catch (err) {
-    console.warn('[public-session-share-view] ACP transcript read failed:', err);
-    return {
-      ok: true,
-      transcript: unavailable('Could not read the shared session right now.'),
     };
   }
 }

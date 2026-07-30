@@ -120,7 +120,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
         description:
           'The Kortix platform REST API — typed schemas via @hono/zod-openapi. ' +
           'For application code, prefer the TypeScript SDK (`@kortix/sdk`), which wraps ' +
-          'this API, OpenCode REST compatibility, and ACP multi-harness sessions behind ' +
+          'this API and OpenCode REST sessions behind ' +
           'one session-scoped client — ' +
           'docs at https://kortix.com/docs/sdk.',
       },

@@ -251,36 +251,6 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // THE ACP SWITCH. One variable, default OFF: the whole platform runs the
-  // OpenCode REST compatibility transport (kortix_version 2, `opencode serve`'s
-  // HTTP surface inside the ACP process) unless an operator turns this on.
-  //
-  // It sets the FLEET DEFAULT for the `acp_runtime` project experiment
-  // (experimental/features.ts), so it decides what a project with no explicit
-  // choice gets — new projects included. It is not a kill switch: a project
-  // that explicitly opted in keeps ACP with this off, and a project that
-  // explicitly opted out keeps REST with this on. That is what lets ACP stay an
-  // experimental per-project feature while the default path is REST.
-  //
-  // It does NOT change the sandbox process: every session still launches
-  // `opencode acp` (KORTIX_OPENCODE_PROCESS_TRANSPORT, pinned to `acp` in
-  // projects/lib/sessions.ts) and both transports reach that one process.
-  //
-  // Orthogonal to KORTIX_ENABLED_HARNESSES below: this picks the TRANSPORT,
-  // that one gates WHICH harness a v3 manifest may launch. ACP on with the
-  // harness allowlist empty still runs OpenCode only.
-  KORTIX_ACP_RUNTIME: optBoolFalse,
-
-  // Which runtime harnesses this deployment will launch, comma-separated
-  // (`opencode,claude,codex,pi`). EMPTY = the stable set only, which
-  // `@kortix/shared/harnesses` defines as `opencode` alone — so claude, codex,
-  // and pi are off unless an operator names them. The allowlist only ADDS
-  // experimental harnesses; the stable set is never removable, so a typo here
-  // cannot take sessions down. A project's manifest DECLARES its harness
-  // (`runtimes.<name>.harness`); this is the operator gate that decides whether
-  // the platform honors that declaration — see projects/lib/harness-gate.ts.
-  KORTIX_ENABLED_HARNESSES: optStr,
-
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
   // added for a future per-agent executor-token auth model that isn't built yet,
@@ -978,8 +948,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_ACP_RUNTIME: env.KORTIX_ACP_RUNTIME,
-  KORTIX_ENABLED_HARNESSES: env.KORTIX_ENABLED_HARNESSES,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,

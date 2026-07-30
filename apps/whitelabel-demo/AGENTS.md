@@ -29,9 +29,7 @@ rules. Update its tests when a new same-origin application route is intentional.
 Application tests use `createTestKortix()` for Kortix product flows. Raw HTTP
 is limited to application-owned routes such as auth, mode, preview, and usage.
 
-## ACP experiment
-
-ACP selection remains a server-owned project experiment.
+## Project experiments
 
 The settings page must:
 
@@ -40,8 +38,7 @@ The settings page must:
 - Use each entry's server-provided label and description.
 - Call `updateExperimentalFeature(feature.key, enabled)`.
 
-Do not hard-code the ACP experiment key in client code. This rule preserves
-transport and runtime independence.
+Do not hard-code project experiment keys in client code.
 
 ## Server boundary
 

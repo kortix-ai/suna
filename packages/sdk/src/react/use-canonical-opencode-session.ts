@@ -44,9 +44,9 @@ export function useCanonicalOpenCodeSession(params: {
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
   pinFromStart?: string | null;
-  /** A server-authorized pin supplied by the host for pre-readiness cache hydration. */
+  /** A server-authorized pin used for pre-readiness cache hydration. */
   initialPin?: string | null;
-  /** Disable the legacy OpenCode REST session list for ACP sessions. */
+  /** Do not list runtime sessions before this session owns the runtime. */
   listRuntimeSessions?: boolean;
 }): CanonicalOpenCodeSession {
   const { projectId, sessionId, pinFromStart, initialPin, listRuntimeSessions = true } = params;

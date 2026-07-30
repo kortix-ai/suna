@@ -24,7 +24,8 @@ three ways a session can start.
 2. Kortix resolves a sandbox image: the default image, or your own
    `.kortix/Dockerfile` if the manifest declares one.
 3. The sandbox boots. Its daemon, `kortix-agent`, clones the repo to
-   `/workspace` and starts OpenCode. Session status becomes `running`.
+   `/workspace`. It starts OpenCode REST.
+   Session status becomes `running`.
 4. The agent works. It reads [secrets](/docs/project/secrets) as environment
    variables, then commits and pushes to the session branch.
 5. The agent opens a [change request](/docs/work/change-requests). You review

@@ -1,9 +1,8 @@
 import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
-
-import { withKortixScope } from '../api/sdk.ts';
+import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import { loadSessionForChat, type ResolvedSession } from './sessions-chat.ts';
+import { type ResolvedSession, loadSessionForChat } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -75,28 +74,28 @@ function parseTarget(argv: string[], help: string): ParsedTarget | null {
     process.stderr.write(`${status.err('Pass a session id.')}\n\n${help}`);
     return null;
   }
-  return { sessionId: positional[0], requestId: positional[1], opts: { projectArg, hostArg }, rest };
+  return {
+    sessionId: positional[0],
+    requestId: positional[1],
+    opts: { projectArg, hostArg },
+    rest,
+  };
 }
 
-/**
- * The blocking asks the agent is parked on, read off the ACP projection.
- *
- * Under managed ACP there is no OpenCode REST server to poll: permission and
- * question requests arrive as ACP envelopes and the SDK's projection holds the
- * open ones. Connecting also hydrates the stored transcript, so a request that
- * was raised before this CLI invocation is still visible.
- */
 async function pendingFor(resolved: ResolvedSession): Promise<{
   permissions: PermissionRequest[];
   questions: QuestionRequest[];
 } | null> {
   try {
-    const controller = await resolved.acp();
-    const { projection } = controller.getSnapshot();
-    return {
-      permissions: projection.permissions ?? [],
-      questions: projection.questions ?? [],
-    };
+    const [permissions, questions] = await Promise.all([
+      withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.permission.list()),
+      ),
+      withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.question.list()),
+      ),
+    ]);
+    return { permissions: permissions ?? [], questions: questions ?? [] };
   } catch (err) {
     surfaceApiError(err);
     return null;
@@ -202,18 +201,15 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
   }
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
-  if (message !== undefined) {
-    // ACP's session/request_permission response carries only the selected
-    // option id — there is no free-text field to put a note in. Say so rather
-    // than silently dropping what the operator typed.
-    process.stderr.write(
-      `${status.warn('--message is not forwarded: the ACP permission reply has no note field.')}\n`,
-    );
-  }
   try {
-    const controller = await resolved.acp();
     await withKortixScope(resolved.auth, async () =>
-      controller.answerPermission(requestId, reply),
+      unwrapRuntime(
+        await resolved.runtime.permission.reply({
+          requestID: requestId,
+          reply,
+          message,
+        }),
+      ),
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -293,9 +289,10 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
   }
 
   try {
-    const controller = await resolved.acp();
     if (reject) {
-      await withKortixScope(resolved.auth, async () => controller.rejectQuestion(requestId));
+      await withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.question.reject({ requestID: requestId })),
+      );
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
@@ -309,25 +306,21 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
         );
         return 2;
       }
-      // An ACP question option is `{ label, description }` — the label IS the
-      // answer, there is no separate canonical value. Match case-insensitively
-      // on the label (and on the description, so `--option` accepts either the
-      // short label or the longer explanation shown in `sessions pending`) and
-      // send the exact label the harness advertised.
+      // OpenCode accepts the displayed option labels as the canonical answers.
       const info = request?.questions[0];
       const mapped = options.map((o) => {
-        const needle = o.trim().toLowerCase();
-        const match = info?.options.find(
-          (opt) =>
-            opt.label.trim().toLowerCase() === needle ||
-            opt.description?.trim().toLowerCase() === needle,
-        );
+        const match = info?.options.find((opt) => opt.label === o);
         return match?.label ?? o;
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
     await withKortixScope(resolved.auth, async () =>
-      controller.answerQuestion(requestId, answers),
+      unwrapRuntime(
+        await resolved.runtime.question.reply({
+          requestID: requestId,
+          answers,
+        }),
+      ),
     );
   } catch (err) {
     return surfaceApiError(err);

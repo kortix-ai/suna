@@ -46,16 +46,15 @@ very file is one of its `references/`.)
 
 ## Where skills live in Kortix
 
-In a version 2 project, OpenCode skills use:
+OpenCode project skills use:
 
 ```
 .kortix/opencode/skills/<name>/SKILL.md
 ```
 
 The directory name **must equal** the `name` in the frontmatter. Kortix-managed
-system skills are sourced from `.kortix/opencode/skills`, and the sandbox
-force-writes their deployed copy there at boot. Optional project-owned skills
-are ordinary git files in the same directory.
+system skills and project-owned skills are sourced from
+`.kortix/opencode/skills`.
 
 OpenCode lists every discovered skill in the `skill` tool description and
 loads the body on demand when the agent calls it. Two consequences worth

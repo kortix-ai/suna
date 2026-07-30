@@ -35,10 +35,6 @@ describe('one starter', () => {
     expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
   });
 
-  test('the deprecated acp-multi-harness id scaffolds the default starter verbatim', () => {
-    expect(filesFor('acp-multi-harness')).toEqual(filesFor('general-knowledge-worker'));
-  });
-
   test('an absent or unrecognized id scaffolds the default starter verbatim', () => {
     expect(filesFor(undefined)).toEqual(filesFor('general-knowledge-worker'));
     expect(filesFor('bogus')).toEqual(filesFor('general-knowledge-worker'));
@@ -65,8 +61,12 @@ describe('the starter is OpenCode-native', () => {
     }
   });
 
-  test('pins the single opencode runtime', () => {
-    expect(manifestFor()).toContain('runtime: opencode');
+  test('configures OpenCode without a runtime selector', () => {
+    const manifest = manifestFor();
+
+    expect(manifest).toContain('opencode:');
+    expect(manifest).toContain('config_dir: .kortix/opencode');
+    expect(manifest).not.toContain('runtime:');
   });
 
   test('its default agent is the declared opencode agent', () => {

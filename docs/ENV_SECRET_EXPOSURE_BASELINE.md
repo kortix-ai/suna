@@ -4,11 +4,8 @@
 proposal here. This exists so the env-var refactor argues from measured facts
 rather than from what the architecture is assumed to do.
 
-**Harness scope:** The `KORTIX_OPENCODE_DENY_ENV` findings below apply to the
-OpenCode compatibility child. The experimental, unreleased ACP launch
-environments are resolved separately in `acp/harness-registry.ts`. All still
-run inside the same session sandbox, so sandbox-level secret exposure remains
-the shared boundary.
+**Runtime scope:** The `KORTIX_OPENCODE_DENY_ENV` findings below apply to the
+OpenCode child process inside the session sandbox.
 
 Every claim below is anchored to code I read on `main`. Where the codebase
 already documents its own intent, that comment is quoted rather than paraphrased

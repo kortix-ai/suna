@@ -342,7 +342,7 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold one general-purpose Kortix project. It writes a `kortix_version: 2` manifest, the canonical skill source, and the default agents. `--primary` / `--agents` wire the coding tools you run locally; they do not change the cloud runtime. |
+| `kortix init` | Scaffold one general-purpose v2 OpenCode REST project with the canonical skill source and default agent. |
 
 ```sh
 kortix init my-project --yes --no-git

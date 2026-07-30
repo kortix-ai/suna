@@ -90,17 +90,6 @@ RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
-
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
@@ -254,17 +243,6 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
 RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
-
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
@@ -420,17 +398,6 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
 RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
-
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup

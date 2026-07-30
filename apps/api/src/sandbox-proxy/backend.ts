@@ -20,7 +20,7 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, gt, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import {
@@ -113,28 +113,39 @@ function preferredSandboxOrder() {
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
-  const [row] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      externalId: sessionSandboxes.externalId,
-      sessionId: sessionSandboxes.sessionId,
-      agentName: sql<string | null>`(
-        select ${projectSessions.agentName}
-        from ${projectSessions}
-        where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-        limit 1
-      )`,
-      projectId: sessionSandboxes.projectId,
-      accountId: sessionSandboxes.accountId,
-      provider: sessionSandboxes.provider,
-      status: sessionSandboxes.status,
-      baseUrl: sessionSandboxes.baseUrl,
-      config: sessionSandboxes.config,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.externalId, externalId))
-    .orderBy(...preferredSandboxOrder())
-    .limit(1);
+  const columns = {
+    sandboxId: sessionSandboxes.sandboxId,
+    externalId: sessionSandboxes.externalId,
+    sessionId: sessionSandboxes.sessionId,
+    agentName: sql<string | null>`(
+      select ${projectSessions.agentName}
+      from ${projectSessions}
+      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
+      limit 1
+    )`,
+    projectId: sessionSandboxes.projectId,
+    accountId: sessionSandboxes.accountId,
+    provider: sessionSandboxes.provider,
+    status: sessionSandboxes.status,
+    baseUrl: sessionSandboxes.baseUrl,
+    config: sessionSandboxes.config,
+  };
+  const selectOne = async (condition: SQL) => {
+    const [match] = await db
+      .select(columns)
+      .from(sessionSandboxes)
+      .where(condition)
+      .orderBy(...preferredSandboxOrder())
+      .limit(1);
+    return match ?? null;
+  };
+
+  // The exact comparison is the indexed path used by REST proxy URLs. Preview
+  // subdomains need the fallback because browsers lowercase hostnames while
+  // Platinum external ids contain uppercase ULIDs.
+  const row =
+    (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
+    (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
   if (!row) return null;
 

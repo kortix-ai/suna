@@ -409,8 +409,8 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 
 ### Escape hatch
 
-`kortix.runtime()` returns the typed OpenCode REST compatibility client for the
-active sandbox.
+`kortix.runtime()` returns the typed OpenCode REST client for the active
+sandbox.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
@@ -444,7 +444,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | --- | --- |
 | Files | Workspace file operations: list, read, search, write |
 | Session runtime | Health probe and preview/proxy URL builders |
-| OpenCode client | The typed OpenCode v2 client and its full type surface |
+| OpenCode client | The typed OpenCode REST client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
 | Projects REST | The raw REST functions the facade wraps |
 | API client | `backendApi`, the low-level typed HTTP client |

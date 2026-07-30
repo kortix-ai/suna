@@ -96,7 +96,7 @@ To attach your local OpenCode client to the sandbox instead, run:
 kortix sessions connect
 ```
 
-This command attaches to the OpenCode REST compatibility process.
+This command attaches to the OpenCode REST process.
 
 To open a raw shell in the sandbox, with no agent involved, run:
 
@@ -188,14 +188,10 @@ A command resolves "the project" in this order:
 ### Project scaffold
 
 `kortix init [project-name] [options]` creates a new project directory. The
-starter writes a `kortix_version: 2` `kortix.yaml` and the canonical
-`.kortix/opencode` system-skill source.
-
-`--primary` and `--agents` wire the coding tools **you run on your own machine**
-— OpenCode, Claude Code, Codex, Pi, or Cursor — so each one discovers the
-starter's skills natively. This changes nothing about the cloud runtime: every
-cloud session runs OpenCode. The command does not write `.kortix/link.json`.
-`kortix ship` or `kortix projects link` create that file.
+starter writes a v2 `kortix.yaml` and the canonical `.kortix/opencode`
+system-skill source. The command can wire local coding-tool discovery without
+changing the cloud OpenCode runtime. The command does not write
+`.kortix/link.json`. `kortix ship` or `kortix projects link` create that file.
 
 | Flag | Meaning |
 | --- | --- |
@@ -207,8 +203,7 @@ cloud session runs OpenCode. The command does not write `.kortix/link.json`.
 | `--no-git` | Skip git init. |
 | `-y, --yes` | Don't prompt. |
 
-`--agents` wires up the coding agents you run on your own machine. It does not
-change what a cloud session runs; every cloud session runs OpenCode.
+The local coding-tool selection does not change the cloud OpenCode runtime.
 
 `kortix init` does not include a marketplace picker. Adding a marketplace skill is an agent import: start a session and ask the agent to bring one in.
 
@@ -377,8 +372,8 @@ Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`
 ### System skills
 
 The Kortix system skills are the platform's own documentation. They cover
-sessions, sandboxes, the executor, memory, and channels. The API serves them
-live, so they match the deployed host version.
+sessions, sandboxes, OpenCode, the executor, memory, and
+channels. The API serves them live, so they match the deployed host version.
 The binary and a token are enough for an agent to retrieve this context.
 
 | Command | Effect |

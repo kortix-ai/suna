@@ -50,6 +50,9 @@ describe('feature-flagged Discover connector marketplace', () => {
   test('collects an explicit profile before creating either integration type', () => {
     expect(discoverSource).toContain('<ConnectorProfileModal');
     expect(discoverSource).toContain('existingSlugs={existingSlugs}');
+    expect(discoverSource).toContain(
+      'proposeConnectorProfileSlug(profileDisplayName, existingSlugs)',
+    );
     expect(discoverSource).toContain('createOnlyConnectorDraft(draft)');
     expect(discoverSource).toContain('authorization_strategy: profile.authorizationStrategy');
   });

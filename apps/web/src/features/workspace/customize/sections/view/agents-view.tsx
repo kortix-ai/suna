@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { AgentHarnessIcon } from '@/features/session/composer/agent-harness-icon';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import {
@@ -70,12 +69,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderContext={(config) => (
         <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
       )}
-      renderTriggerLabel={(agent) => (
-        <span className="flex min-w-0 items-center gap-2">
-          <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
-          <span className="truncate">{agent.name}</span>
-        </span>
-      )}
+      renderTriggerLabel={(agent) => agent.name}
       className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
@@ -92,7 +86,6 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
-          <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -188,10 +181,7 @@ function DefaultAgentSelector({
           <SelectContent>
             {availableAgents.map((agent) => (
               <SelectItem key={agent.name} value={agent.name}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <AgentHarnessIcon projectId={projectId} harness={agent.harness} />
-                  <span className="truncate">{agent.name}</span>
-                </span>
+                {agent.name}
               </SelectItem>
             ))}
           </SelectContent>

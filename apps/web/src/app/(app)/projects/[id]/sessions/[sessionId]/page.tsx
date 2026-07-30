@@ -115,8 +115,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
-  const forceAcp = searchParams.has('acp');
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -168,7 +166,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
-    runtimeTransport: forceAcp ? 'acp' : undefined,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';

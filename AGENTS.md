@@ -194,14 +194,6 @@ exact dev command or interaction in the final response.
 
 ## Architecture: `@kortix/sdk` is the source of truth
 
-> **ACP and multi-harness are NOT shipped.** The ACP transport, the
-> `kortix_version: 3` manifest, and the Claude Code / Codex / Pi harnesses exist
-> in this tree behind `KORTIX_ACP_RUNTIME` (boolean, default `false`). They are
-> experimental, unreleased, and unsupported. OpenCode REST + `kortix_version: 2`
-> are the only shipped path. Do not document, advertise, or default anything to
-> ACP or v3, and do not add ACP/v3 copy to public docs, the `kortix-system`
-> skill, READMEs, or CLI help.
-
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
 session runtime, OpenCode REST compatibility, SSE streaming, model state,
@@ -237,8 +229,8 @@ these as standing rules whenever you touch the data/runtime layer:
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  The sandbox provider and the runtime are server-side concerns. Host code must
-  not branch on them.
+  The sandbox provider is a server-side concern. Every session uses the
+  OpenCode REST runtime. Host code must not implement a second transport.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/stores/server-store`, `lib/projects-client`, and
   `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).

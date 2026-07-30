@@ -46,25 +46,6 @@ name = "kortix"
 connectors = "all"
 `;
 
-const V3 = `
-kortix_version: 3
-default_agent: support
-runtimes:
-  opencode:
-    harness: opencode
-    config_dir: .kortix/opencode
-  codex:
-    harness: codex
-    config_dir: .codex
-agents:
-  support:
-    runtime: opencode
-    agent: kortix
-  reviewer:
-    runtime: codex
-    agent: reviewer
-`;
-
 function v2Manifest(body = V2) {
   return parseManifestString(body, 'yaml', 'kortix.yaml');
 }
@@ -258,16 +239,6 @@ agents:
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('kortix_version 2');
-  });
-
-  test('sets a declared version-3 logical agent', () => {
-    const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
-    const applied = applyDefaultAgentV2(manifest, 'reviewer');
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) return;
-    expect(applied.raw.default_agent).toBe('reviewer');
-    expect(applied.raw.runtimes).toEqual(manifest.raw.runtimes);
-    expect(applied.raw.agents).toEqual(manifest.raw.agents);
   });
 });
 

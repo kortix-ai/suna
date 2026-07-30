@@ -27,7 +27,7 @@ import {
 import { relayBootTimelineToApi } from './boot-timeline-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { ensureInjectedManagedSkills, managedSkillConfigDirs } from './injected-skills'
+import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
@@ -45,16 +45,6 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import {
-  createQuestionResponseHandler,
-  publishQuestionRequest,
-} from './acp/questions'
-import {
-  createAcpHarnessRegistry,
-  parseAcpHarnessId,
-} from './acp/harness-registry'
-import { AcpRuntime } from './acp/runtime'
-import { adoptManagedAcpRuntime } from './acp/adoption'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -68,33 +58,17 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'north-mini-code-free',
 ])
 
-export function usesManagedAcpRuntime(
-  harness: string | null,
-  serverId: string,
-): boolean {
-  return Boolean(harness && serverId.trim())
-}
-
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
-  const acpHarness = parseAcpHarnessId(process.env.KORTIX_RUNTIME_HARNESS)
-  const acpServerId =
-    (process.env.KORTIX_ACP_SERVER_ID ?? '').trim() ||
-    (acpHarness ? (process.env.KORTIX_SESSION_ID ?? '').trim() : '')
-  const managedAcp = usesManagedAcpRuntime(acpHarness, acpServerId)
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   const bootState: SandboxBootState = {
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: !managedAcp && (prompt.length > 0 || bootstrapSession),
+    initialOpenCodeSessionRequired: prompt.length > 0 || bootstrapSession,
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
-    acpHarness,
-    acpServerId: acpServerId || null,
-    acpRuntimeReady: false,
-    acpRuntimeError: null,
   }
   // In-container boot timeline (ms since process start). Surfaced via
   // /kortix/health so the dashboard can attribute post-create boot latency.
@@ -175,26 +149,10 @@ async function main() {
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
-    getCanonicalAcpSessionId: readPinnedOpencodeSessionId,
     onStartupMark: bootMark,
   })
-  const acpRuntime = new AcpRuntime({
-    registry: createAcpHarnessRegistry(process.env),
-    cwd: cfg.workspace,
-    projectEnv,
-    initializeOnCreate: true,
-    onStartupMark: bootMark,
-  })
-  const server = startProxy(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    projectEnv,
-    staticWeb.port,
-    acpRuntime,
-  )
-  installShutdownHandlers(opencode, server, staticWeb, acpRuntime)
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
@@ -217,36 +175,14 @@ async function main() {
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
 
-  const prepareOpenCodeConfig = !managedAcp || acpHarness === 'opencode'
-  const opencodeConfigDir = prepareOpenCodeConfig
-    ? await resolveOpencodeConfigDir(cfg)
-    : cfg.defaultOpencodeConfigDir
-  if (prepareOpenCodeConfig) {
-    logger.info('[boot] resolved opencode config dir', {
-      opencodeConfigDir,
-      usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
-    })
-    // Drop any macOS AppleDouble sidecar BEFORE OpenCode indexes the dir —
-    // its ToolRegistry cannot build them and memoizes the failure, which kills
-    // every prompt on the sandbox. See apple-double.ts.
-    await repairOpencodeConfigDir(opencodeConfigDir)
-    // Satisfy the config dir's npm deps offline before an OpenCode harness
-    // starts. Non-OpenCode harnesses do not pay this cost.
-    await ensureOpencodeConfigDeps(opencodeConfigDir)
-  }
-  // Overlay the always-latest managed Kortix skills into every native harness
-  // discovery directory. A managed session receives only its selected harness.
-  const runtimeConfigDir = process.env.KORTIX_RUNTIME_CONFIG_DIR?.trim() || null
-  for (const configDir of managedSkillConfigDirs({
-    workspace: cfg.workspace,
+  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
+  logger.info('[boot] resolved opencode config dir', {
     opencodeConfigDir,
-    harness: acpHarness,
-    runtimeConfigDir,
-    includeOpenCode: prepareOpenCodeConfig,
-  })) {
-    await ensureInjectedManagedSkills(configDir)
-  }
-  bootMark(managedAcp ? 'selected-harness-config-ready' : 'config-deps')
+    usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
+  })
+  await ensureOpencodeConfigDeps(opencodeConfigDir)
+  await ensureInjectedManagedSkills(opencodeConfigDir)
+  bootMark('config-deps')
 
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
@@ -259,35 +195,13 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
-    if (!managedAcp) {
-      // Bind the resolved project config before the legacy compatibility
-      // process starts. Managed ACP sessions start only the selected harness.
-      opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
-      await opencode.start().catch((err) => {
-        logger.warn('[boot] opencode.start() rejected', {
-          err: err instanceof Error ? err.message : String(err),
-        })
+    opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    await opencode.start().catch((err) => {
+      logger.warn('[boot] opencode.start() rejected', {
+        err: err instanceof Error ? err.message : String(err),
       })
-      bootMark('opencode-spawned')
-    } else {
-      bootMark('opencode-skipped')
-    }
-  }
-
-  if (!bootState.repoMaterializationError && acpHarness && acpServerId) {
-    try {
-      await acpRuntime.getOrCreate(acpServerId, acpHarness)
-      bootState.acpRuntimeReady = true
-      bootMark('acp-runtime-ready')
-      logger.info('[boot] selected ACP harness initialized', {
-        acpServerId,
-        acpHarness,
-      })
-    } catch (error) {
-      bootState.acpRuntimeError =
-        error instanceof Error ? error.message : String(error)
-      logger.error('[boot] selected ACP harness failed to spawn', error)
-    }
+    })
+    bootMark('opencode-spawned')
   }
 
   // If the image shipped without its baked catalog, opencode just booted on the
@@ -295,17 +209,12 @@ async function main() {
   // background so the next opencode start has the full picker — deliberately
   // AFTER the spawn and without a restart, because the whole point is that a
   // ~400KB cross-region catalog fetch never gates a session boot again.
-  if (
-    prepareOpenCodeConfig &&
-    catalogIsDegraded(process.env.KORTIX_LLM_CATALOG_FILE)
-  ) {
+  if (catalogIsDegraded(process.env.KORTIX_LLM_CATALOG_FILE)) {
     scheduleCatalogWarm(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
   }
 
   logger.info('[boot] proxy up; runtime bootstrap complete', {
     servicePort: cfg.servicePort,
-    managedAcp,
-    acpHarness,
   })
 
   if (bootState.repoMaterializationError) return
@@ -389,15 +298,11 @@ async function main() {
       }
       logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
     })()
-    armSeedAdoption(opencode, server, acpRuntime, bootState, bootMark)
+    armSeedAdoption(opencode, server, bootState, bootMark)
     return
   }
 
-  if (managedAcp) {
-    relayBootTimelineToApi(bootState.timeline)
-  } else {
-    void startSessionRuntime(opencode, cfg, bootState, bootMark)
-  }
+  void startSessionRuntime(opencode, cfg, bootState, bootMark)
 }
 
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
@@ -408,7 +313,6 @@ async function main() {
 function armSeedAdoption(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
   server: ReturnType<typeof startProxy>,
-  acpRuntime: AcpRuntime,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): void {
@@ -440,19 +344,7 @@ function armSeedAdoption(
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
         }
       }
-      const managedAcp = await adoptManagedAcpRuntime(bootState, acpRuntime)
-      if (managedAcp) {
-        await opencode.stop().catch((error) =>
-          logger.warn('[seed] legacy OpenCode stop failed', {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        )
-        bootMark('opencode-stopped')
-        if (bootState.acpRuntimeReady) bootMark('acp-runtime-ready')
-        relayBootTimelineToApi(bootState.timeline)
-      } else {
-        await startSessionRuntime(opencode, cfg2, bootState, bootMark)
-      }
+      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
       logger.info('[seed] adoption complete', { adoptMs: Date.now() - t0, timeline: bootState.timeline })
     })()
   }
@@ -475,7 +367,7 @@ async function startSessionRuntime(
   bootMark: (label: string) => void,
 ): Promise<void> {
   const onQuestionAsked = (req: QuestionRequest) => {
-    void relayQuestion(req, opencode, cfg).catch((err) =>
+    void relayQuestionToApi(req, cfg).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
@@ -665,28 +557,12 @@ async function runWarmSeedMode(
   }
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv, {
-    getCanonicalAcpSessionId: readPinnedOpencodeSessionId,
     onStartupMark: bootMark,
   })
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
-  const acpRuntime = new AcpRuntime({
-    registry: createAcpHarnessRegistry(process.env),
-    cwd: cfg.workspace,
-    projectEnv,
-    initializeOnCreate: true,
-    onStartupMark: bootMark,
-  })
-  const server = startProxy(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    projectEnv,
-    staticWeb.port,
-    acpRuntime,
-  )
-  installShutdownHandlers(opencode, server, staticWeb, acpRuntime)
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
   bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
@@ -757,25 +633,6 @@ async function runWarmSeedMode(
           scheduleHistoryBackfill(cfg2, cfg2.projectTarget)
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
         }
-      }
-
-      const managedAcp = await adoptManagedAcpRuntime(bootState, acpRuntime)
-      if (managedAcp) {
-        await opencode.stop().catch((error) =>
-          logger.warn('[seed] legacy OpenCode stop failed', {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        )
-        bootMark('opencode-stopped')
-        if (bootState.acpRuntimeReady) bootMark('acp-runtime-ready')
-        relayBootTimelineToApi(bootState.timeline)
-        logger.info('[seed] fork adoption complete', {
-          adoptMs: Date.now() - t0,
-          selectedHarness: bootState.acpHarness,
-          opencodeRestarted: false,
-          timeline: bootState.timeline,
-        })
-        return
       }
 
       // The seed opencode process is started before adoption, when it has no
@@ -941,7 +798,6 @@ async function maybeCreateInitialOpencodeSession(
     // so a client streaming this root sees the turn end instead of spinning.
     if (existing.lastTurnIncomplete) await abortOpencodeTurn(baseUrl, workspace, sessionId)
     bootMark('runtime-session-resume-requested')
-    await resumeInitialOpenCodeSession(opencode, sessionId, workspace)
   } else {
     logger.info('[boot] creating initial opencode session', {
       bytes: prompt.length,
@@ -1211,53 +1067,14 @@ async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> 
   }
 }
 
-function requireAcpConnection(opencode: Opencode) {
-  const connection = opencode.getAcpConnection()
-  if (!connection?.ready) {
-    throw new Error('OpenCode ACP connection is not ready')
-  }
-  return connection
-}
-
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
   workspace: string,
 ): Promise<{ id: string }> {
-  if (opencode.getTransport() === 'acp') {
-    // This mark separates ACP process initialization from the first canonical
-    // session. Cold-start attribution needs both values.
-    const result = await requireAcpConnection(opencode).request('session/new', {
-      cwd: workspace,
-      mcpServers: [],
-    })
-    const sessionId =
-      result &&
-      typeof result === 'object' &&
-      !Array.isArray(result) &&
-      typeof (result as Record<string, unknown>).sessionId === 'string'
-        ? ((result as Record<string, unknown>).sessionId as string)
-        : ''
-    if (!sessionId) throw new Error('OpenCode ACP session/new returned no sessionId')
-    return { id: sessionId }
-  }
-
   const response = await waitForInitialSessionCreate(opencode.getInternalUrl(), workspace)
   const session = (await response.json()) as { id?: string }
   if (!session.id) throw new Error('opencode session create returned no id')
   return { id: session.id }
-}
-
-export async function resumeInitialOpenCodeSession(
-  opencode: Opencode,
-  sessionId: string,
-  workspace: string,
-): Promise<void> {
-  if (opencode.getTransport() !== 'acp') return
-  await requireAcpConnection(opencode).request('session/resume', {
-    sessionId,
-    cwd: workspace,
-    mcpServers: [],
-  })
 }
 
 export async function deliverInitialOpenCodePrompt(
@@ -1266,34 +1083,6 @@ export async function deliverInitialOpenCodePrompt(
   workspace: string,
   prompt: ReturnType<typeof buildInitialPromptBody>,
 ): Promise<void> {
-  if (opencode.getTransport() === 'acp') {
-    const connection = requireAcpConnection(opencode)
-    if (prompt.model) {
-      await connection.request('session/set_config_option', {
-        sessionId,
-        configId: 'model',
-        value: `${prompt.model.providerID}/${prompt.model.modelID}`,
-      })
-    }
-    if (prompt.agent) {
-      await connection.request('session/set_config_option', {
-        sessionId,
-        configId: 'mode',
-        value: prompt.agent,
-      })
-    }
-    await connection.post({
-      jsonrpc: '2.0',
-      id: `kortix:initial-prompt:${Date.now()}`,
-      method: 'session/prompt',
-      params: {
-        sessionId,
-        prompt: prompt.parts,
-      },
-    })
-    return
-  }
-
   const response = await fetch(
     `${opencode.getInternalUrl()}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(workspace)}`,
     {
@@ -1413,31 +1202,6 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
 // dashboard answers `question.asked` interactively over opencode's own SSE, and
 // auto-answering it here was the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
-async function relayQuestion(
-  req: QuestionRequest,
-  opencode: Opencode,
-  cfg: Config,
-): Promise<void> {
-  if (slackRelayContext()) {
-    await relayQuestionToApi(req, cfg)
-    return
-  }
-  if (opencode.getTransport() !== 'acp') return
-  const connection = opencode.getAcpConnection()
-  if (!connection?.ready) {
-    throw new Error('OpenCode ACP connection is not ready for question relay')
-  }
-  publishQuestionRequest(
-    connection,
-    req,
-    createQuestionResponseHandler({
-      baseUrl: opencode.getInternalUrl(),
-      workspace: cfg.workspace,
-      requestId: req.id,
-    }),
-  )
-}
-
 async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
   const ctx = slackRelayContext()
   if (!ctx) return

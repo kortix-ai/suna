@@ -1,10 +1,7 @@
 # The final, enterprise-ready authorization model — plan
 
-> **Not shipped — reverted on 2026-07-30.** ACP and multi-harness
-> (`kortix_version: 3`, Claude Code / Codex / Pi) are experimental, unreleased,
-> and off by default (`KORTIX_ACP_RUNTIME=false`). OpenCode REST +
-> `kortix_version: 2` are the shipped default. Read this file as a historical
-> record, not as current product guidance.
+> This plan preserves the authorization design record. Session runtime uses
+> OpenCode REST and `kortix_version: 2`.
 
 Source: founder notes ("CLEAR ACCESS / AUTHORISATION MODEL IS NEEDED. THAT IS 100% FINAL &
 ENTERPRISE READY."). This doc maps every ask to the **current code state** and lays out a
@@ -198,26 +195,22 @@ give access to the appropriate allowed Kortix scopes."
 
 ---
 
-## 6. Harnesses (Codex/Claude/Eve) + server-side skills  *(epic)*
+## 6. Server-side skills  *(epic)*
 
-**Ask:** "Want Codex/Claude SUPPORT (besides Opencode) — how do we load all these as harnesses?" +
-"Skills we can move server-side for discovery (perplexity computer style) for authorization
-control (need to modify opencode?)."
+**Ask:** "Skills we can move server-side for discovery (perplexity computer style) for authorization
+control (need to modify OpenCode?)."
 
-**Current state.** The CLI scaffolds multi-harness symlinks (`.claude`/`.codex`/`.agents` →
-`.kortix/opencode`), but the **session runtime is hardcoded to opencode** (`createOpencodeSupervisor`
-always spawns `opencode serve`; token mint assumes an opencode "executor session"). Skills are
-**file-based** (cloned at boot, discovered for IAM grants at build time) — no server-side skill
-discovery API.
+**Current state.** The session runtime uses OpenCode. Skills are **file-based**
+(cloned at boot and discovered for IAM grants at build time). There is no
+server-side skill discovery API.
 
 **Plan (epic):**
-- **6a** Abstract the harness spawn into a pluggable interface (spawn cmd, config injection,
-  identity, token shape) with opencode as the first implementation; add Codex/Claude adapters.
-- **6b** Server-side skill discovery: a `/skills` API the harness pulls at runtime (needs an
-  opencode modification), enabling per-request authorization control over which skills load.
+- **6a** Server-side skill discovery: a `/skills` API OpenCode pulls at runtime
+  (needs an OpenCode modification). This enables per-request authorization
+  control over which skills load.
 
-**Risk:** large; touches the runtime + a fork of opencode. **Decision needed:** priority + which
-harness first.
+**Risk:** large; touches the runtime and an OpenCode fork. **Decision needed:**
+priority.
 
 ---
 
@@ -252,7 +245,7 @@ the SDK lacks full workspace file-I/O CRUD + some hooks; and **git is a hard dep
 3. **PR B:** §1a–1c approve/ask/block loop (decisions baked; defer 1d resume).
 4. **PR C:** §3a resource ownership / private triggers.
 5. **Founder-gated:** §3b remove per-user connectors (migration), §4 full agent-identity,
-   §5 token consolidation, §6 harnesses, §7b CMS decoupling — each its own planned PR.
+   §5 token consolidation, §6 server-side skills, §7b CMS decoupling — each its own planned PR.
 
 Everything above §3b is additive/safe and can ship without breaking existing projects. Everything
 from §3b down changes existing behavior and needs an explicit greenlight + migration.

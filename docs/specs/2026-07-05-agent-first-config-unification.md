@@ -1,10 +1,7 @@
 # Agent-First Configuration & Authorization Unification
 
-> **Current for version 2.** This document is the `kortix_version: 2`
-> governance record, which is the shipped schema. The `kortix_version: 3`
-> extension referenced below is experimental, unreleased, and off by default
-> (`KORTIX_ACP_RUNTIME=false`). Ignore it. See the historical
-> current runtime contract.
+> **Extended on 2026-07-28.** This document remains the version 2 governance
+> record. Version 2 remains the active OpenCode REST manifest contract.
 
 **Status:** Shipped — Marko + Fable, 2026-07-05. Phases 0–2 (hygiene, schema v2 +
 compiler, mandatory agents) are live, and `per_user` credential removal (part of

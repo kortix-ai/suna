@@ -8,23 +8,6 @@ const manifest = (agents: Record<string, unknown>) => ({
   raw: { kortix_version: 2, default_agent: 'support', agents },
 });
 
-const manifestV3 = (agents: Record<string, unknown>) => ({
-  schemaVersion: 3,
-  format: 'yaml' as const,
-  path: 'kortix.yaml',
-  raw: {
-    kortix_version: 3,
-    default_agent: 'support',
-    runtimes: {
-      opencode: {
-        harness: 'opencode',
-        config_dir: '.kortix/opencode',
-      },
-    },
-    agents,
-  },
-});
-
 const blockOf = (result: { ok: boolean; raw?: Record<string, unknown> }, name = 'support') =>
   (result as { raw: Record<string, unknown> }).raw.agents as Record<
     string,
@@ -111,32 +94,5 @@ describe('applyAgentScopeV2 — connectors_required', () => {
     expect(res.ok).toBe(true);
     expect(blockOf(res).support.secrets).toBe('all');
     expect(blockOf(res).support.kortix_cli).toEqual(['project.read']);
-  });
-
-  test('updates a version-3 logical agent without removing its runtime identity', () => {
-    const res = applyAgentScopeV2(
-      manifestV3({
-        support: {
-          runtime: 'opencode',
-          agent: 'kortix',
-          connectors: 'all',
-          secrets: 'all',
-        },
-      }),
-      'support',
-      {
-        connectors: ['gmail'],
-        connectorsRequired: ['gmail'],
-      },
-    );
-
-    expect(res.ok).toBe(true);
-    expect(blockOf(res).support).toMatchObject({
-      runtime: 'opencode',
-      agent: 'kortix',
-      connectors: ['gmail'],
-      connectors_required: ['gmail'],
-      secrets: 'all',
-    });
   });
 });

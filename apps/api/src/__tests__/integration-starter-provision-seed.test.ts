@@ -19,10 +19,9 @@ import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
 import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
-import { compileRuntimeConfig } from '../projects/lib/compile-runtime-config';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
-  test('seeds a stable v2 kortix.yaml, not a v1 kortix.toml', async () => {
+  test('seeds a v2 kortix.yaml, not a v1 kortix.toml', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -83,71 +82,4 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     });
   });
 
-  test('the seeded manifest compiles exactly one opencode launch plan', async () => {
-    const seed = await buildProjectSeedFiles({
-      projectName: 'Acme Co',
-      repoFullName: 'kortix/acme-co',
-      template: 'minimal',
-      marketplaceItems: [],
-      now: new Date('2026-07-05T00:00:00Z').toISOString(),
-    });
-    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
-    const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
-
-    const compiled = compileRuntimeConfig(manifest.raw);
-    expect(compiled).not.toBeNull();
-    expect(compiled?.version).toBe(2);
-    expect(compiled?.defaultAgent).toBe('kortix');
-    expect(
-      Object.values(compiled?.runtimes ?? {})
-        .map((runtime) => runtime.harness)
-        .sort(),
-    ).toEqual(['opencode']);
-    expect(compiled?.agents.kortix).toMatchObject({
-      runtime: 'opencode',
-      harness: 'opencode',
-      nativeAgent: 'kortix',
-    });
-  });
-
-  test('the experimental starter is the only seed that compiles four harnesses', async () => {
-    const seed = await buildProjectSeedFiles({
-      projectName: 'Acme Co',
-      repoFullName: 'kortix/acme-co',
-      template: 'acp-multi-harness',
-      marketplaceItems: [],
-      now: new Date('2026-07-05T00:00:00Z').toISOString(),
-    });
-    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml');
-    const manifest = parseManifestString(manifestFile?.content ?? '', 'yaml', 'kortix.yaml');
-
-    const compiled = compileRuntimeConfig(manifest.raw);
-    expect(compiled?.version).toBe(3);
-    expect(compiled?.defaultAgent).toBe('opencode');
-    expect(
-      Object.values(compiled?.runtimes ?? {})
-        .map((runtime) => runtime.harness)
-        .sort(),
-    ).toEqual(['claude', 'codex', 'opencode', 'pi']);
-    expect(compiled?.agents.opencode).toMatchObject({
-      runtime: 'opencode',
-      harness: 'opencode',
-      nativeAgent: 'kortix',
-    });
-  });
-
-  test('the default seed never scaffolds another harness native config', async () => {
-    const seed = await buildProjectSeedFiles({
-      projectName: 'Acme Co',
-      repoFullName: 'kortix/acme-co',
-      template: DEFAULT_STARTER_TEMPLATE_ID,
-      marketplaceItems: [],
-      now: new Date('2026-07-05T00:00:00Z').toISOString(),
-    });
-    const paths = seed.files.map((f) => f.path);
-
-    for (const path of ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md']) {
-      expect(paths).not.toContain(path);
-    }
-  });
 });

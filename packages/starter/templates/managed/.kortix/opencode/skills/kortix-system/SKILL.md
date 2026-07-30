@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, and system skills. Covers `kortix.yaml` versions 1 and 2, the OpenCode runtime every session runs, native config and credential boundaries, and the complete OpenCode-specific reference. Load when the user asks how Kortix works, what Kortix can do, how an agent discovers platform instructions, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -33,18 +33,15 @@ A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a s
 
 The repo has two configuration layers with strict ownership:
 
-- **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/` for the sandbox Dockerfile, memory, and the canonical managed-skill source. The platform reads project config, runtime routing, triggers, and Kortix-side governance.
-- **OpenCode native config** — `.kortix/opencode`. OpenCode owns its prompt, tools, permissions, extensions, and provider-specific settings.
+- **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/` for the
+  sandbox Dockerfile, memory, and managed skills.
+- **OpenCode config** — `.kortix/opencode`, or the v2
+  `opencode.config_dir`. OpenCode owns prompts, tools, permissions, extensions,
+  and provider settings.
 
-Kortix-specific settings go in `kortix.yaml`. OpenCode behavior stays in
-`.kortix/opencode`. Do not copy OpenCode behavior into the manifest.
-
-`kortix_version: 2` is the current schema. It runs OpenCode, and only OpenCode.
-It is what the one starter scaffolds, so it is what every new project gets.
-There is no other runtime to select and no runtime decision to make.
-
-Legacy v1 projects and v2 projects both keep OpenCode-native discovery. Their
-`.kortix/opencode/` directory can also drive a local `opencode` run.
+Kortix-specific settings go in `kortix.yaml`. OpenCode behavior stays in the
+OpenCode config directory. Legacy v1 and current v2 projects both use
+OpenCode REST.
 </overview>
 
 <capabilities>
@@ -97,6 +94,7 @@ Load this skill when the user asks any of:
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
 - "What's the difference between `kortix.yaml` and `opencode.jsonc`?"
+- "How do I use or test OpenCode?"
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
 - "How do I create an OpenCode agent or a reusable skill?"
@@ -380,20 +378,21 @@ The boundary between project config and runtime config:
 | Kortix config | Kortix | `kortix.yaml` + optional custom sandbox files | Kortix platform |
 | OpenCode native config | OpenCode | `.kortix/opencode/` | OpenCode |
 
-Version 2 declares OpenCode's config directory through `opencode.config_dir`.
+Version 2 declares OpenCode's config directory through
+`opencode.config_dir`.
 
 Do not duplicate OpenCode config in `kortix.yaml`. The manifest owns
 launchability, grants, triggers, and project settings. OpenCode owns its prompt,
-permissions, tools, extensions, and provider-specific settings. Dashboard edits
-to triggers and env round-trip through `kortix.yaml`.
+permissions, tools, extensions, and provider settings. Dashboard edits to
+triggers and env round-trip through `kortix.yaml`.
 </contract>
 
 <canonical-schema>
 ## The canonical manifest schema — one URL, always correct
 
-Check the top `# yaml-language-server: $schema=...` line in `kortix.yaml`.
-The one starter uses `kortix_version: 2`. That URL is the public,
-versioned JSON Schema, generated straight from `@kortix/manifest-schema` (the
+The starter uses `kortix_version: 2`. Check the top
+`# yaml-language-server: $schema=...` line in `kortix.yaml`. That URL is the
+public, versioned JSON Schema, generated from `@kortix/manifest-schema` (the
 same package that backs `kortix validate` and the CR-merge gate — one source
 of truth, no separate spec to keep in sync by hand):
 
@@ -433,8 +432,9 @@ to `none`, not `all`).
 <agent-authorization>
 ## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
 
-In v2, a logical agent maps by name to an OpenCode agent file. The manifest owns
-**launchability and authority**. OpenCode behavior stays outside the manifest.
+In v2, a logical agent maps by name to an OpenCode agent file. The manifest
+owns **launchability and authority**. OpenCode behavior stays outside the
+manifest.
 
 ```yaml
 agents:
@@ -448,7 +448,7 @@ agents:
 
 | Setting | Lives in |
 | --- | --- |
-| system prompt, `model`, `mode`, tools, and `permission` | `.kortix/opencode/agents/<name>.md` and `opencode.jsonc` |
+| v2 system prompt, `model`, `mode`, tools, and `permission` | `.kortix/opencode/agents/<name>.md` and `opencode.jsonc` |
 | connectors, secrets, skills, `kortix_cli`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
@@ -463,8 +463,8 @@ agents:
   launchable logical agents.
 - Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
 - Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
-- New projects use declarative discovery. The one starter uses v2. Older
-  `kortix.toml` (v1) projects stay in legacy mode until they migrate.
+- New projects use v2 declarative discovery. Older `kortix.toml` (v1)
+  projects stay in legacy mode until they migrate.
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
 like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
@@ -549,8 +549,8 @@ to see the full enum.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
-  In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical
-  agents; every shared top-level key (`project:`,
+  In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
+  every shared top-level key (`project:`,
   `env:`, `sandbox:`); every `triggers:` field (cron +
   webhook, incl. `session_mode` and the project-wide `triggers_paused`
   kill-switch), the prompt template variables, the secrets contract, the
@@ -681,12 +681,12 @@ Things that surprise people:
   `Dockerfile` and `opencode/` config dir sit under there to keep the
   root clean. Version 2 declares the OpenCode path through
   `opencode.config_dir`.
-- **Runtime behavior stays OpenCode-native.** Skills, commands, tools,
-  plugins, MCP, providers, and agent prompts are all OpenCode config. Declaring
-  a logical agent in `agents:` remains a separate Kortix decision.
+- **OpenCode behavior remains OpenCode-native.** Skills, commands, tools,
+  plugins, MCP, providers, and agent prompts remain OpenCode config. Declaring
+  a logical agent in `agents:` is a separate Kortix decision.
 - **Provider verification is a real prompt.** A generic key check cannot prove
-  a model, region, entitlement, and API dialect together. Test the exact model
-  through a session prompt.
+  a model, region, entitlement, and API dialect together. Test the exact
+  model through a session prompt.
 - **Manifest schema is versioned.** `kortix_version` lets the platform
   evolve safely. A manifest declaring a higher version than the platform
   knows about is rejected outright — better than silent misread.

@@ -36,8 +36,7 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← kortix_version: 2 manifest (OpenCode)
-├── .claude/ .codex/ .pi/              ← only for the LOCAL tools you wire up
+├── kortix.yaml                        ← v2 OpenCode manifest
 └── .kortix/
     ├── memory/MEMORY.md               ← project-wide memory for agents
     └── opencode/                      ← OpenCode native config dir
@@ -52,14 +51,15 @@ OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
 `.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
 `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
 
-This local tool choice does not change what a cloud session runs. The one public
-starter writes `kortix_version: 2`, and every cloud session runs OpenCode.
+The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
+
+Create a project with:
 
 ```sh
 kortix init my-project --yes --no-git
 ```
 
-Agents can retrieve the deployed platform manual from a session:
+Agents can retrieve the deployed platform manual from OpenCode:
 
 ```sh
 kortix system-skills

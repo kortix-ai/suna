@@ -286,6 +286,16 @@ mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
+mock.module('../platform/providers', () => ({
+  getProvider: () => ({ requiresPublicCallback: false }),
+}));
+
+mock.module('../llm-gateway/enablement', () => ({
+  projectLlmGatewayEnabled: (metadata: unknown) =>
+    (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
+      ?.llm_gateway === true,
+}));
+
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
@@ -1194,8 +1204,6 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
-    expect(lastProvisionEnv?.KORTIX_AGENT_NAME).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
       opencode_model: 'kortix/glm-5.2',

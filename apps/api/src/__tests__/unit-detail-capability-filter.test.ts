@@ -78,7 +78,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
     expect(out.config.manifest_version).toEqual({
       version: null,
-      latest_version: 3,
+      latest_version: 2,
       migration_offered: false,
       target_version: null,
       unknown_reason: 'restricted',
@@ -90,7 +90,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, ALL);
     expect(out.config.manifest_version).toEqual({
       version: 1,
-      latest_version: 3,
+      latest_version: 2,
       migration_offered: true,
       target_version: 2,
       unknown_reason: null,

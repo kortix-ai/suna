@@ -1,18 +1,31 @@
 ---
 title: Agents
-description: An agent is the logical name a project uses to start a session, plus what that agent may touch.
+description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
 ---
 
-An agent is the logical name a project uses to start a [session](/docs/work/sessions). Every agent runs OpenCode.
+An agent is a markdown file that defines how OpenCode acts in a
+[session](/docs/work/sessions). This page covers agent files, skills, and
+how a session picks an agent.
 
-## Two parts
+## OpenCode runs every session
 
-Each agent has two parts.
+OpenCode, the open-source coding-agent runtime, runs every session. The
+`kortix-agent` daemon starts it as `opencode serve`, with its config
+directory pointed at the project's `.kortix/opencode/` folder.
 
-- **Behavior** — `.kortix/opencode/agents/<name>.md`.
-- **Governance** — the matching `agents.<name>` block in `kortix.yaml`.
+## An agent is two files
 
-The Markdown frontmatter sets OpenCode behavior. The manifest sets connectors, secrets, skills, and CLI grants.
+Each agent has two parts:
+
+- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
+  frontmatter sets the model, mode, and tools. Its body is the system prompt.
+- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
+  name. It sets what the agent may access on Kortix: connectors, secrets,
+  skills, and CLI actions.
+
+The manifest never sets a prompt, mode, or tool. The `.md` file never sets
+platform access. See [the manifest reference](/docs/project/manifest) for
+every governance field.
 
 ## Governance is deny-by-default
 
@@ -27,19 +40,18 @@ grant full access by default. Set specific grants to restrict access. See
 
 ## Skills give an agent know-how
 
-A skill is a Markdown file at `.kortix/opencode/skills/<name>/SKILL.md`. The `skills` grant controls which skills the agent may load.
-
-Kortix injects managed system skills into `.kortix/opencode/skills`. An agent can
-also retrieve the deployed source through the CLI:
-
-```sh
-kortix system-skills
-kortix system-skills get kortix-system --full
-```
+A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
+OpenCode loads a skill on demand when the agent calls it — Kortix does not
+inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
+controls which skills it may load.
 
 ## How a session picks its agent
 
-Creating a session accepts `agent_name`. Kortix uses `default_agent` when the field is absent. The selected agent remains fixed for the session.
+Creating a session accepts an `agent_name`. Kortix starts that agent for the
+session. If you omit `agent_name`, Kortix uses the project's `default_agent`.
+Set the default agent from the dashboard, the API, or the SDK. Each writes
+`default_agent` to `kortix.yaml` and commits the change to the project's
+default branch.
 
 An agent never exceeds the access of the person or token that started the
 session.
@@ -48,18 +60,3 @@ New or changed agents and skills reach future sessions only after a
 [change request](/docs/work/change-requests) merges them into the default
 branch. Connect external tools before an agent can use them; see
 [Connectors](/docs/connect/connectors).
-
-## Test an agent
-
-Create one fresh session per agent. Use the same deterministic prompt.
-
-```sh
-kortix sessions new --agent kortix --prompt "Reply exactly: KORTIX_OK" --wait --json
-```
-
-Read the result with `kortix sessions info <session-id> --json` and
-`kortix sessions log <session-id> --json`. Confirm the exact reply and the
-persisted transcript.
-
-A generic provider-key check is not acceptance proof. Test the exact model with
-a real prompt.

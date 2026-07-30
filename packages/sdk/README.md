@@ -117,12 +117,11 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-### React runtime transport
+### React runtime
 
-`useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
-That is the OpenCode REST client. The hook keeps one return shape, and routes
-messages, message rewind and restore, cancellation, commands, permissions, and
-questions inside the SDK. A host never constructs a transport route itself.
+`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
+`POST /start`. The hook owns messages, rewind and restore, cancellation,
+commands, permissions, and questions. Hosts do not construct runtime routes.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -246,8 +245,7 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. Prefer `useSession()` in React —
-it owns the whole lifecycle.
+`session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -487,5 +485,5 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API and OpenCode REST compatibility. See **`CHANGELOG.md`** for
+REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.

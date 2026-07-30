@@ -21,7 +21,7 @@ beforeAll(async () => {
 
   const work = join(root, 'work');
   await run('git', ['init', '-b', 'main', work]);
-  await writeFile(join(work, 'kortix.yaml'), 'kortix_version: 3\n', 'utf8');
+  await writeFile(join(work, 'kortix.yaml'), 'kortix_version: 2\n', 'utf8');
   const env = {
     ...process.env,
     GIT_AUTHOR_NAME: 'Kortix',

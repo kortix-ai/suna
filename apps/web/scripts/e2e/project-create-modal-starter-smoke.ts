@@ -5,7 +5,7 @@ type ProvisionPayload = {
   account_id: string;
   name: string;
   seed_starter: boolean;
-  starter_template: 'minimal' | 'general-knowledge-worker' | 'acp-multi-harness';
+  starter_template: 'minimal' | 'general-knowledge-worker';
   marketplace_items?: string[];
 };
 

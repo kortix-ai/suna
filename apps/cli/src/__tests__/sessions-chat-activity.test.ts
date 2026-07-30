@@ -3,22 +3,23 @@
 // actively mid-turn (an in-flight assistant turn, or a running tool from a just-
 // dispatched subagent batch) must NOT be labelled "queued — agent picking up…".
 import { describe, expect, test } from 'bun:test';
+import type { MessageWithParts } from '@kortix/sdk';
 
-import type { AcpMessageWithParts } from '@kortix/sdk';
 import { deriveActivity } from '../commands/sessions-chat.ts';
 
-function userMsg(created: number, text = 'do the thing'): AcpMessageWithParts {
+function userMsg(created: number, text = 'do the thing'): MessageWithParts {
   return {
     info: { id: `u-${created}`, role: 'user', sessionID: 's', time: { created } },
     parts: [{ type: 'text', text }],
-  } as unknown as AcpMessageWithParts;
+  } as MessageWithParts;
 }
 function assistantMsg(
   created: number,
   opts: { completed?: number; tool?: { name: string; status: string }; text?: string } = {},
-): AcpMessageWithParts {
-  const parts: unknown[] = [];
-  if (opts.tool) parts.push({ type: 'tool', tool: opts.tool.name, state: { status: opts.tool.status } });
+): MessageWithParts {
+  const parts: Array<Record<string, unknown>> = [];
+  if (opts.tool)
+    parts.push({ type: 'tool', tool: opts.tool.name, state: { status: opts.tool.status } });
   if (opts.text) parts.push({ type: 'text', text: opts.text });
   return {
     info: {
@@ -28,7 +29,7 @@ function assistantMsg(
       time: { created, ...(opts.completed ? { completed: opts.completed } : {}) },
     },
     parts,
-  } as unknown as AcpMessageWithParts;
+  } as unknown as MessageWithParts;
 }
 
 describe('deriveActivity', () => {
@@ -59,7 +60,10 @@ describe('deriveActivity', () => {
   });
 
   test('running + a completed assistant reply → idle summary of the reply text', () => {
-    const a = deriveActivity([userMsg(1), assistantMsg(2, { completed: 3, text: 'all done' })], 'running');
+    const a = deriveActivity(
+      [userMsg(1), assistantMsg(2, { completed: 3, text: 'all done' })],
+      'running',
+    );
     expect(a.working).toBe(false);
     expect(a.summary).toBe('all done');
   });

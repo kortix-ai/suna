@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../stores/sync-store';
+import { setCurrentRuntime } from '../../core/session/current-runtime';
 import {
   ACTIVE_SESSION_PREFETCH_SOURCE,
   beginSessionPromptObservation,
@@ -17,6 +18,7 @@ import {
 beforeEach(() => {
   resetSessionSyncControllers();
   useSyncStore.getState().reset();
+  setCurrentRuntime(null);
 });
 
 describe('readSessionMessagePage', () => {
@@ -157,6 +159,29 @@ describe('session sync controller eviction', () => {
 });
 
 describe('REST prompt observation events', () => {
+  test('reuses the sole scoped controller while the current runtime is temporarily unbound', () => {
+    const sessionId = 'session-rest-prompt';
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+
+    beginSessionPromptObservation(sessionId);
+
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    noteSessionSyncEvent({
+      type: 'session.error',
+      properties: { sessionID: sessionId, error: { name: 'RuntimeError' } },
+    });
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+  });
+
+  test('ignores global events that do not contain session properties', () => {
+    expect(() =>
+      noteSessionSyncEvent({
+        type: 'server.connected',
+        properties: undefined,
+      }),
+    ).not.toThrow();
+  });
+
   test('ignores premature idle and ends observation on a terminal runtime error', () => {
     const sessionId = 'session-rest-prompt';
     const controller = getSessionSyncController(sessionId);

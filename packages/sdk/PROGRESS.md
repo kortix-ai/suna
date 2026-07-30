@@ -4034,9 +4034,95 @@ The required `tdd` skill is unavailable in this session.
 The implementation will use the same RED, GREEN, and REFACTOR sequence
 directly.
 
-**Status:** IN PROGRESS.
+The current CLI command router already used the SDK-backed runtime modules. The
+revert left two orphaned host-local transport files and three orphaned tests.
+Removing those files restores the enforced SDK boundary without changing the
+current command surface.
 
-**SDK package shippable to production: NOT YET.**
+```
+RED    pnpm --filter @kortix/cli lint:sdk-boundary
+       → 18 violations
+GREEN  pnpm --filter @kortix/cli lint:sdk-boundary
+       → 0 violations
+       pnpm --filter @kortix/cli test
+       → 636 pass, 0 fail, 2,068 assertions
+       exact packages-and-apps CI command
+       → exit 0
+       pnpm --filter @kortix/sdk typecheck
+       → exit 0
+       pnpm --filter @kortix/sdk test
+       → 1,412 pass, 2 skip, 0 fail, 6,128 assertions
+       pnpm --filter @kortix/sdk smoke:install
+       → packed tarball imports and constructs; exit 0
+```
+
+The separate API test bootstrap repair also passes:
+
+```
+bun test --isolate --env-file=scripts/test.env \
+  src/__tests__/e2e-project-session-contract.test.ts
+→ 52 pass, 0 fail, 367 assertions
+
+pnpm --filter kortix-api test
+→ 5,028 pass, 57 skip, 0 fail, 20,369 assertions
+```
+
+No SDK source, export, public type, snapshot, dependency, or version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-30 — session `opencode-rest-rollback` completion
+
+Removed the ACP SDK client, projection, controller, runtime transport selector,
+React runtime hook, public types, and package exports. `useSession` now owns one
+OpenCode REST lifecycle. The current session cache, transcript hydration,
+default-model resolution, reconnect, and session-switch behavior remain.
+
+Public-surface decision:
+
+- ACP exports are removed intentionally.
+- The user requested complete ACP removal.
+- The public value and type snapshots record the removal.
+- No compatibility alias remains.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1318 pass`, `0 fail`, `5781`
+  assertions across `113` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
+- Public value and type surface snapshots pass.
+- The framework-free import-graph checks pass.
+
+Related REST rollback gates:
+
+- Manifest schema: typecheck passed; V2 suite passed.
+- Starter: typecheck passed; `48 pass`, `0 fail`.
+- API contract: typecheck passed; `45 pass`, `0 fail`.
+- Shared runtime versions: typecheck passed; `269 pass`, `0 fail`.
+- Sandbox agent server: typecheck passed; `267 pass`, `0 fail`.
+- CLI: typecheck passed; `556 pass`, `0 fail`.
+- Web: `2424 pass`, `0 fail`; affected-file ESLint passed.
+- White-label demo: `335 pass`, `3 skip`, `0 fail`; production build passed.
+- Test-harness typecheck: exit `0`.
+- Authenticated local curl: `25 pass`, `0 fail`; V2 validation returned
+  `valid:true`; V3 returned `valid:false`; all five former ACP session routes
+  returned `404`; a real OpenCode REST prompt returned `PONG`.
+- Local Chromium OpenCode REST session chat: `2 pass`, `0 fail`. The browser
+  used `/prompt_async` and `/global/event`, rendered `PONG`, sent no ACP
+  requests, and completed Files navigation plus warm-session fallback.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** The branch merge,
+direct `main` push, Deploy Dev SHA proof, and deployed REST verification remain.
 
 ---
 
@@ -4105,130 +4191,157 @@ Repository delivery evidence:
 
 ---
 
-### 2026-07-30 — session `bugbash` ACP identity-conflict adoption
+### 2026-07-30 — session `opencode-rest-rollback` claim
 
-Backlog `B34`. Worktree `bugbash`, branch `bugbash`, base `31391b4bb`. Not
-committed — the user commits and delivers this change.
+Claimed the user-directed removal of ACP, multi-harness runtime support, and
+`kortix.yaml` version 3.
 
-Problem: a project created with `experimental.acp_runtime` showed "OpenCode
-failed to load / acp_session_id is immutable after the first successful
-session/new response". Two writers mint a harness-native session for one Kortix
-session row. The platform CAS guard `409`s the loser, and the SDK had no
-recovery path.
+The SDK session runtime will use OpenCode REST only. The rollback will restore
+the release-branch OpenCode REST client behavior without reverting unrelated
+client work. Existing published ACP names require an explicit compatibility
+decision during the public-surface audit.
 
-Scope (SDK only — `apps/api/**` and `apps/web/**` untouched):
+The required `tdd` skill is unavailable in this session. The implementation
+will use RED, GREEN, and REFACTOR directly.
 
-- Widen `AcpSessionControllerOptions.persistAcpSessionId` to
-  `Promise<string | void>`. Additive and non-breaking: a return type only
-  widens, and `Promise<void>` stays assignable to `Promise<string | void>`.
-- `loadCanonicalSession()` adopts the authoritative id — from a resolved claim
-  or from a `409` whose body carries `acp_session_id` — then
-  `resetCanonicalSessionState()` and `loadSession({ sessionId: winner })`.
-- `react/use-acp-session-runtime.ts` returns the stored
-  `identity.acp_session_id`; a `409` propagates unchanged so the controller
-  reads the winner off `ApiError.details`.
+Required gates are the focused SDK RED/GREEN tests, SDK typecheck, full SDK
+suite, packed-install smoke, API and sandbox-server tests, manifest version 2
+tests, real local curl verification, real local browser session-chat
+verification, branch merge, direct `main` push, Deploy Dev, deployed SHA proof,
+and deployed OpenCode REST verification.
 
-The `tdd` skill is unavailable in this session. The same RED, GREEN, REFACTOR
-sequence ran directly.
+**Status:** IN PROGRESS.
 
-TDD evidence (full-suite runs, never filtered):
-
-- RED: `1386 pass`, `3 fail`, `Ran 1391 tests across 121 files`. The three
-  failures were the new ACP-conflict adoption case, the new stored-id case, and
-  the new hook 200-body case.
-- GREEN: `1390 pass`, `0 fail`, `2 skip`, `Ran 1392 tests across 121 files`.
-
-Final SDK gates:
-
-- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
-- `pnpm --filter @kortix/sdk test`: `1390 pass`, `0 fail`, `2 skip`.
-- `pnpm --filter @kortix/sdk smoke:install`: packed tarball installed, imported,
-  and constructed.
-- The public export snapshot did not change; no export was added or renamed.
-- `packages/sdk/package.json` `version` untouched.
-
-Unverified: the deployed API contract. Adoption needs the API to add
-`acp_session_id` to the `409` body; that change is in flight in `apps/api/**` by
-another session. No browser or live-stack run happened in this session.
-
-**SDK package shippable to production: YES** (behaviour degrades to today's
-error surface until the API ships the conflict-body id).
+**SDK package shippable to production: NOT YET.**
 
 ---
 
-### 2026-07-30 — session `bugbash` ACP chat mount identity (B36 + B37)
+### 2026-07-30 — session `opencode-rest-title-preview-reliability` claim
 
-Claimed and completed B36 and B37 in worktree `bugbash` (uncommitted). Both are
-one defect seen from two sides: the SDK exposed no transport-agnostic chat mount
-id, and it never corrected the cached `/start` ACP identity after a mint.
+Claimed the OpenCode REST session-title reconciliation regression reported on
+PR #5901.
 
-SDK changes:
+Scope:
 
-- `react/session-runtime-identity.ts` — new `resolveSessionMountId({usesAcp,
-  sessionId, opencodeSessionId})`. REST resolves to the server-owned OpenCode
-  pin, managed ACP to the durable Kortix session id, and `null` until the runtime
-  has an identity. Built on the existing `hasSessionRuntimeIdentity`.
-- `react/use-session.ts` — returns it as `chatSessionId`, and corrects the cached
-  `/start` identity through `applyAcpIdentity` (exact `setQueryData` on a settled
-  id, `invalidateQueries` when a conflict proves the cache is behind).
-- `react/use-acp-session-runtime.ts` — new `nextAcpIdentity` fold plus an
-  `onAcpIdentitySettled` report. The write-once harness id is read through a ref
-  and is NOT a controller-memo dependency, so learning the id cannot close a live
-  stream; a genuine rebuild still reads the freshest id and calls `session/load`.
-  The fold drops the id whenever the Kortix session changes, so a reused hook
-  instance can never bind session B to session A's harness conversation.
-- `core/http/api-client.ts` — a typed `409 ACP_SESSION_ID_CONFLICT` is silent to
-  the global `onError` hook, exactly like the typed `501 feature_not_supported`.
-  The `ApiError` is still returned so the controller reads the winner off it. Any
-  other `409` still reports.
+- Reconcile a persisted server title when an existing session with messages is
+  opened after the original post-send refresh window ended.
+- Keep the bounded post-send refresh and the server-owned `metadata.name`
+  contract.
+- Fix the related API preview lookup separately without adding SDK transport
+  behavior.
 
-RED → GREEN, per file (full-suite counts at the end):
+The required `tdd` skill is unavailable in this session. The work used the same
+RED, GREEN, and REFACTOR sequence directly.
 
-- `react/session-runtime-identity.test.ts` RED: `SyntaxError: Export named
-  'resolveSessionMountId' not found`. GREEN after the implementation.
-- `react/use-session-runtime-gate.test.ts` RED: 2 fail / 1 pass. GREEN: 4 pass.
-- `react/use-acp-session-runtime.test.ts` RED: `SyntaxError: Export named
-  'nextAcpIdentity' not found`. GREEN: 12 pass.
-- `core/http/api-client.test.ts` RED: `expect(onErrorCalls).toBe(0)` got `1`.
-  GREEN: 22 pass.
+RED:
+
+- `bun test src/react/session-title-sync.test.ts`: failed because
+  `reconcileHydratedSessionTitle` was not exported.
+
+GREEN:
+
+- `bun test src/react/session-title-sync.test.ts`: `2 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1347 pass`, `0 fail`, `116 files`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarballs installed,
+  imported, and constructed successfully.
+
+Live browser proof loaded a titleless cached session with one hydrated user
+message. The sidebar changed from `New session` to `User Says Yo` without
+navigation. The browser observed four list reads and two detail reads.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-30 — session `opencode-rest-rollback` post-merge verification
+
+Re-ran the rollback gates after merging current `origin/main` into the worktree.
+The earlier completion entry records pre-merge counts and is retained as history.
 
 Final SDK gates:
 
 - `pnpm --filter @kortix/sdk typecheck`: exit `0`.
-- `pnpm --filter @kortix/sdk test`: `1407 pass`, `0 fail`, `121 files`.
-- Public export snapshot unchanged (`public-surface.test.ts` +
-  `public-type-surface.test.ts` pass). `resolveSessionMountId` and
-  `nextAcpIdentity` are additive and not reachable from the `./react` barrel.
-- `packages/sdk/package.json` `version` untouched.
+- `pnpm --filter @kortix/sdk test`: `1340 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
 
-Live proof (local stack, web `14100` / api `14108`), one managed-ACP session
-(`runtime_transport=acp`, `opencode_session_id=null`):
+Final repository gates:
 
-- Composer textarea exists and is enabled, `[data-testid=session-chat]` and
-  `[data-testid=session-layout]` present, boot loader gone, 3 transcript messages
-  rendered. Before the fix the same surface had 0 textareas and no
-  `session-chat`.
-- 6 controller opens on that session produced `session/new` **1** and
-  `session/load` **4** — zero orphan harness conversations, zero conflicts.
+- Manifest schema: `341 pass`, `0 fail`.
+- Database: `160 pass`, `3 skip`, `0 fail`.
+- API typecheck: exit `0`.
+- API: `4770 pass`, `57 skip`, `0 fail`.
+- Sandbox agent server: `267 pass`, `0 fail`.
+- Shared runtime versions: `269 pass`, `0 fail`.
+- CLI: `559 pass`, `0 fail`.
+- Starter: `48 pass`, `0 fail`.
+- Web: `2563 pass`, `0 fail`.
+- White-label demo: typecheck and production build passed; `281 pass`,
+  `3 skip`, `0 fail`.
+- Test-harness typecheck: exit `0`.
+- Migration lint: `109` files; Squawk reported `42` files and `0` issues.
+- Ke2e route coverage: `506/516` covered, `10` allowlisted, `0` uncovered.
+- Authenticated local curl: `25 pass`, `0 fail`.
+- Local REST contract smoke: `14 pass`, `0 fail`.
+- Local Chromium: `2 pass`, `0 fail`. The session rendered `PONG`, used one
+  `/prompt_async` request and `/global/event`, sent no `/kortix/acp/` request,
+  opened the current-main Files side panel, and passed warm-session fallback.
 
-Discovered while proving it, and fixed in the host (not the SDK):
-`apps/web`'s `SessionChat` gated its whole shell on `useRuntimeSession`, an
-OpenCode REST read that 503s for a session's whole life under ACP. That held the
-composer behind a permanent "Connecting" card even once the chat mounted. Fixed
-by `resolveSessionChatContentState` in
-`apps/web/src/features/session/session-load-state.ts`, which uses the SDK's
-`phase` when the mount id is not an OpenCode pin and is byte-identical to today
-otherwise.
-
-Unverified: assistant output never rendered, because this local stack cannot
-complete a turn — the web sends `kortix/claude-opus-4.8` while the sandbox's
-OpenCode only lists `anthropic/claude-opus-4-8`, and `session/prompt` through the
-platform bridge returns `Internal error: OpenCode service failure`. Both are
-environment/catalog faults, not this change. `pnpm --filter @kortix/sdk run smoke:install` passed: packed tarball
-installed and imported.
+**Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
 
+**Repository delivery shippable to production: NOT YET.** The direct `main`
+push, Deploy Dev SHA proof, and deployed REST verification remain.
+
+---
+
+### 2026-07-30 — session `opencode-rest-rollback` final worktree verification
+
+Verified the final rollback tree against `origin/main`
+`b2477b5c2f4849fdf2c8786d29ebd5ff3629630f`.
+
+Current SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1345 pass`, `0 fail`, `5894`
+  assertions across `115` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: the packed tarball installed,
+  imported, and constructed successfully.
+
+Current repository evidence:
+
+- API: `4844 pass`, `57 skip`, `0 fail`.
+- CLI typecheck: exit `0`.
+- CLI SDK boundary: `0` violations.
+- CLI: `608 pass`, `0 fail`.
+- Sandbox agent server typecheck: exit `0`.
+- Sandbox agent server: `271 pass`, `0 fail`.
+- Starter: `70 pass`, `0 fail`.
+- Migration lint: `109` files passed.
+- Squawk: `42` files, `0` issues.
+- Ke2e route coverage: `506/516` covered, `10` allowlisted, `0` uncovered.
+- Removal audit: no active ACP, multi-harness, runtime-harness, or manifest V3
+  reference remains outside the forward-only drop migration and regression
+  history.
+- Authenticated local curl: the runtime reported `runtime_transport: rest`,
+  OpenCode `1.17.11` returned healthy, `prompt_async` returned `204`, and the
+  assistant returned `OPENCODE_REST_OK`.
+- Authenticated local Chromium: `1 pass`, `0 fail`. The chat rendered
+  `UI_REST_OK_1785423144172`, sent one request to
+  `/v1/p/:externalId/8000/session/:id/prompt_async`, sent no
+  `/kortix/acp/` request, and received no failed Kortix response.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** The user explicitly
+withheld authorization to merge or push `main`. Delivery stops at the verified
+worktree merge commit.
 ---
 
 ### Session — bugbash: the model picker's entitlement rule disagreed with the server
@@ -4667,3 +4780,26 @@ faithful `u,a,u,a,u,a,u,a,u,a×9,u,u,u,u`); that call cannot distinguish this
 change from HEAD, because the ordering fix is a no-op on every session in this DB.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-30 — session `ci-runtime-gates` CLI SDK-boundary restoration claim
+
+Claimed the regression created when the runtime-default revert restored the
+host-local CLI transport after the earlier SDK-only rewrite.
+
+Scope:
+
+- Restore the CLI to the published `@kortix/sdk` surface.
+- Keep OpenCode REST as the default runtime.
+- Preserve existing CLI commands and output contracts.
+- Repair the current session API contract failures separately from SDK code.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**

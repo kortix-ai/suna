@@ -104,7 +104,7 @@ request. Do not use a process-global active runtime in a multi-tenant server.
 `runtime_context` accepts at most 64 scalar entries and 16 KiB. The API rejects
 credential-like keys.
 
-The wire field remains `opencode_model`.
+The wire field remains `opencode_model` for OpenCode compatibility.
 
 ## 3. Connector profiles
 
@@ -393,9 +393,8 @@ const stream = await handle.stream({
 await handle.send("Summarize the support queue.");
 ```
 
-`stream()` and `send()` use the OpenCode REST compatibility path. Use
-`useSession(projectId, sessionId)` for a React host. It owns the whole session
-runtime lifecycle without host-side transport branches.
+`stream()` and `send()` use OpenCode REST. Use
+`useSession(projectId, sessionId)` for a React host.
 
 ## 8. Idempotency
 
