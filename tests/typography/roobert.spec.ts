@@ -37,11 +37,20 @@ test.describe('Roobert Mono', () => {
         widths.push(Math.round(r.getBoundingClientRect().width * 100) / 100);
         s.remove();
       }
-      return { widths, fontFamily, ligatures };
+      // `getComputedStyle().fontFamily` returns the DECLARED list, so it says
+      // "Roobert, ui-monospace, …" whether or not Roobert actually loaded.
+      // Only document.fonts.check tells us the face is really available.
+      const roobertLoaded = document.fonts.check('32px Roobert');
+      return { widths, fontFamily, ligatures, roobertLoaded };
     }, LINES_17);
 
     // Guard: the system fallback mono would ALSO align, which would make this
-    // test pass while proving nothing. Assert the real font is in play first.
+    // test pass while proving nothing. Assert the real font actually loaded
+    // first — declared font-family alone is not enough (see roobertLoaded).
+    expect(
+      result.roobertLoaded,
+      'Roobert did not load — the alignment assertion below would pass on the system fallback and prove nothing',
+    ).toBe(true);
     // NOTE: Task 2 landed ONE @font-face family named 'Roobert' (globals.css:32),
     // not 'Roobert Mono' — mono-ness comes from the MONO=100 axis position via
     // --rb-mono, not from a separate family name. Assert on the family that
@@ -85,19 +94,30 @@ test.describe('Roobert Mono', () => {
     // The UA stylesheet sets font-family: monospace on pre/code/kbd/samp and
     // that beats inheritance. globals.css must target them explicitly.
     await page.goto('/design-system', { waitUntil: 'networkidle' });
-    const fams = await page.evaluate(() => {
-      const out: Record<string, string> = {};
+    const result = await page.evaluate(() => {
+      const fams: Record<string, string> = {};
       for (const tag of ['pre', 'code']) {
         const el = document.createElement(tag);
         el.style.cssText = 'position:absolute;left:-9999px';
         el.textContent = 'const x = 1;';
         document.body.appendChild(el);
-        out[tag] = getComputedStyle(el).fontFamily;
+        fams[tag] = getComputedStyle(el).fontFamily;
         el.remove();
       }
-      return out;
+      // `getComputedStyle().fontFamily` returns the DECLARED list, so it says
+      // "Roobert, ui-monospace, …" whether or not Roobert actually loaded.
+      // Only document.fonts.check tells us the face is really available.
+      const roobertLoaded = document.fonts.check('32px Roobert');
+      return { fams, roobertLoaded };
     });
-    expect(fams.pre).toContain('Roobert');
-    expect(fams.code).toContain('Roobert');
+    // Guard: the system mono (ui-monospace/Menlo/etc.) would satisfy the UA
+    // stylesheet just as well, which would make this test pass while proving
+    // nothing about which font actually renders.
+    expect(
+      result.roobertLoaded,
+      'Roobert did not load — the family assertions below would pass on the system mono and prove nothing',
+    ).toBe(true);
+    expect(result.fams.pre).toContain('Roobert');
+    expect(result.fams.code).toContain('Roobert');
   });
 });
