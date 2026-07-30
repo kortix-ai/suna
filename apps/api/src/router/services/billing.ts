@@ -65,7 +65,12 @@ export async function deductToolCredits(
 
   console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
 
-  const result = await deductCreditsDb(accountId, cost, deductDescription);
+  // 'usage' — deliberately NOT compute_debit or llm_debit. Kortix tool calls
+  // (web/image search, tool proxy) are neither, and usage-breakdown.ts has no
+  // third bucket to put them in. This keeps their classification byte-identical
+  // to what the pre-20260730012238065 overload produced; inventing a category
+  // here would move customer-visible numbers as a side effect of a DDL fix.
+  const result = await deductCreditsDb(accountId, cost, deductDescription, 'usage');
 
   if (!result.success) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };
@@ -108,7 +113,11 @@ export async function deductLLMCredits(
 
   console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);
 
-  const result = await deductCreditsDb(accountId, calculatedCost, description);
+  // 'llm_debit' so this spend lands in the usage breakdown's LLM bucket. It is
+  // real LLM spend and was already charged; before migration 20260730012238065
+  // it bound an overload that stamped no ledger_type, so the breakdown reported
+  // $0 LLM for every router-path request.
+  const result = await deductCreditsDb(accountId, calculatedCost, description, 'llm_debit');
 
   if (!result.success) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };

@@ -41,12 +41,36 @@ export type BillingState =
 
 /**
  * Stripe subscription statuses that mean the subscription is NOT providing
- * service any more. Anything else (`active`, `trialing`, `past_due`, …) still
- * entitles a per-seat account to run — `past_due` in particular must keep
- * working, since Stripe retries for days before giving up and cutting a paying
- * customer off mid-dunning would be worse than the unpaid margin.
+ * service any more. Used for the factual "does this account still have a
+ * subscription that exists and hasn't been terminated" question — NOT for
+ * deciding who may spend without a wallet floor (see
+ * PAYING_SUBSCRIPTION_STATUSES).
  */
 const DEAD_SUBSCRIPTION_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
+
+/**
+ * Statuses where Stripe is actually collecting money, and therefore the ONLY
+ * ones that let a per-seat account skip the wallet floor.
+ *
+ * This set is deliberately an ALLOW-list. It used to be the inverse — anything
+ * not in DEAD_SUBSCRIPTION_STATUSES bypassed the floor — and a deny-list in the
+ * spend path fails open: `past_due` and `incomplete` were never added to it, so
+ * subscriptions that had stopped paying kept spending with no floor at all and
+ * ran arbitrarily far negative (measured on production: dozens of accounts
+ * below zero, worst past -$600). An allow-list fails CLOSED: a Stripe status
+ * nobody has thought about yet gets the wallet floor rather than a blank cheque.
+ *
+ * `trialing` is included on purpose — a trial is a live, non-delinquent
+ * subscription and is supposed to work.
+ *
+ * A `past_due` account is NOT cut off by this: Stripe retries for days, and
+ * such an account keeps running for as long as its wallet has credit. It is
+ * simply metered against that wallet like everyone else instead of spending
+ * without limit. Only once the wallet is empty does it block — and then as
+ * `payment_failed` ("update your card"), never as `no_subscription`
+ * ("subscribe to a plan"), which is the mislabel PR #5141 fixed.
+ */
+const PAYING_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing']);
 
 /** Subscription statuses that mean Stripe is failing to collect. */
 const FAILING_SUBSCRIPTION_STATUSES = new Set([
@@ -89,11 +113,35 @@ export function hasSubscriptionRecord(snapshot: BillingSnapshot): boolean {
   return !!snapshot.subscriptionId;
 }
 
-/** Whether the subscription is currently providing service. */
+/**
+ * Whether the subscription exists and has not been terminated. This is a
+ * REPORTING predicate (it backs `account_state.has_active_subscription`), not a
+ * spending permission — `past_due` is "live" here. Use
+ * `subscriptionBypassesWalletFloor` for anything that decides who may spend.
+ */
 export function hasLiveSubscription(snapshot: BillingSnapshot): boolean {
   if (!snapshot.subscriptionId) return false;
   const status = snapshot.subscriptionStatus ?? '';
   return !DEAD_SUBSCRIPTION_STATUSES.has(status);
+}
+
+/** Whether Stripe is currently successfully collecting for this subscription. */
+export function hasPayingSubscription(snapshot: BillingSnapshot): boolean {
+  if (!snapshot.subscriptionId) return false;
+  return PAYING_SUBSCRIPTION_STATUSES.has(snapshot.subscriptionStatus ?? '');
+}
+
+/**
+ * THE single answer to "may this account spend without a wallet floor?".
+ *
+ * Both `resolveBillingState` (the read model) and the billing gate (the write
+ * path that takes the admission hold) call this — they cannot diverge on who is
+ * exempt from the floor, which is the whole reason this module exists. The gate
+ * previously asked `isPerSeatAccount && hasLiveSubscription` on its own; that
+ * second, subtly different answer is what let non-paying subscriptions spend.
+ */
+export function subscriptionBypassesWalletFloor(snapshot: BillingSnapshot): boolean {
+  return isPerSeatAccount(snapshot.billingModel) && hasPayingSubscription(snapshot);
 }
 
 /**
@@ -121,15 +169,19 @@ export function walletCoversRun(snapshot: BillingSnapshot): boolean {
 }
 
 /**
- * The account's billing state. Ordering matters: an active per-seat
+ * The account's billing state. Ordering matters: a PAYING per-seat
  * subscription short-circuits BEFORE the wallet floor, because a seat
  * subscription is not wallet-gated — that is exactly the case
  * (`per_seat` + `active` + $0.0099) that used to render "Subscribe to
  * start sessions" while the account was paying $40/mo.
+ *
+ * A per-seat subscription that is NOT paying falls through to the same wallet
+ * floor as everyone else, and then to `payment_failed` — it keeps running on
+ * whatever credit it has, and asks for a card update once that runs out.
  */
 export function resolveBillingState(snapshot: BillingSnapshot): BillingState {
   if (!snapshot.exists) return 'no_account';
-  if (isPerSeatAccount(snapshot.billingModel) && hasLiveSubscription(snapshot)) return 'active';
+  if (subscriptionBypassesWalletFloor(snapshot)) return 'active';
   if (walletCoversRun(snapshot)) return 'active';
   if (paymentIsFailing(snapshot)) return 'payment_failed';
   if (hasPlan(snapshot)) return 'out_of_credits';

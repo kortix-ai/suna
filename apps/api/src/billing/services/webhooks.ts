@@ -21,7 +21,7 @@ import {
   isRevenueCatAnonymous,
   isPerSeatAccount,
   resolvePerSeatPriceId,
-  PER_SEAT_PRICE_USD,
+  INCLUDED_CREDITS_PER_SEAT_USD,
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
@@ -376,10 +376,14 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       subscription.metadata?.billing_model === 'per_seat',
   );
   let perSeatDelta = 0;
+  let perSeatOldSeats = 0;
+  let perSeatNewSeats = 0;
   if (perSeatItem) {
     const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
     const oldSeats = account?.seatCount ?? 0;
     perSeatDelta = newSeats - oldSeats;
+    perSeatOldSeats = oldSeats;
+    perSeatNewSeats = newSeats;
     updates.billingModel = 'per_seat';
     updates.seatCount = newSeats;
     updates.seatSubscriptionItemId = perSeatItem.id;
@@ -399,27 +403,56 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     await updateCreditAccount(accountId, updates);
   }
 
+  // A per-seat recovery must be sized by SEATS. getMonthlyCredits('per_seat')
+  // returns the per-seat allowance for ONE seat ($25) and knows nothing about
+  // seat_count, so a recovering 6-seat team used to be reset to $25 instead of
+  // $150 — visible in production as 41 ledger rows reading exactly
+  // "Recovered Stripe subscription: 25 credits" regardless of team size.
+  const recoveryCredits = resolvedTier
+    ? perSeatItem
+      ? grantForSeats(perSeatNewSeats)
+      : getMonthlyCredits(resolvedTier)
+    : 0;
+
+  // This reset SETS expiring credit to the whole seat allowance, so it already
+  // funds every seat including the ones counted in perSeatDelta. Letting the
+  // delta grant below also run would stack a second full allowance on top
+  // (a brand-new N-seat team would land on 2 x $25N).
+  const recoveryCoveredEverySeat = shouldGrantRecoveryCredits && !!perSeatItem && recoveryCredits > 0;
+
   if (shouldGrantRecoveryCredits && resolvedTier) {
-    const credits = getMonthlyCredits(resolvedTier);
-    if (credits > 0) {
+    if (recoveryCredits > 0) {
       await resetExpiringCredits(
         accountId,
-        credits,
-        `Recovered Stripe subscription: ${credits} credits`,
+        recoveryCredits,
+        `Recovered Stripe subscription: ${recoveryCredits} credits`,
         `subscription_activation:${subscription.id}`,
       );
     }
   }
 
-  if (perSeatItem && perSeatDelta > 0) {
-    const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
+  if (perSeatItem && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
+    // INCLUDED_CREDITS_PER_SEAT_USD ($25 of wallet allowance), never
+    // PER_SEAT_PRICE_USD ($40, the price the customer pays). tiers.ts documents
+    // that the two are decoupled on purpose — the other $15 is platform margin.
+    // Using the price here over-granted every mid-cycle seat addition by 1.6x;
+    // all 7 seat_grant rows in production history are wrong by exactly that
+    // factor ($760 granted where $475 was owed).
+    const seatGrant = INCLUDED_CREDITS_PER_SEAT_USD * perSeatDelta;
     await grantCredits(
       accountId,
       seatGrant,
       'seat_grant',
       `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
       true,
-      `${subscription.id}:seats:${updates.seatCount}`,
+      // Keyed on the seat TRANSITION within the current billing period, not on
+      // the absolute seat count for all time. The old key
+      // (`${sub}:seats:${newSeats}`) meant a team that went 1→3, back to 1, then
+      // 3 again reused the key from the first change and was silently deduped —
+      // the re-added seats never got funded. Period-scoping keeps a repeat
+      // within one month deduped (those seats are already funded) while letting
+      // the same transition fund again in a later period.
+      `${subscription.id}:seats:${subscription.current_period_start}:${perSeatOldSeats}->${perSeatNewSeats}`,
     ).catch((err) =>
       console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
     );

@@ -176,3 +176,66 @@ describe('billingDialogArgs', () => {
     );
   });
 });
+
+describe('the client fallback cannot contradict the server on who bypasses the floor', () => {
+  test('a PAST_DUE per-seat account with an empty wallet is payment_failed, not active', () => {
+    const state = resolveBillingState(
+      accountState({
+        billing_model: 'per_seat',
+        has_active_subscription: true,
+        credits: { can_run: false, total: 0 },
+        subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
+      }),
+    );
+    expect(state).toBe('payment_failed');
+    expect(billingStateNeedsTopUp(state)).toBe(true);
+    expect(billingStateAllowsRun(state)).toBe(false);
+  });
+
+  test('an INCOMPLETE_EXPIRED per-seat account is payment_failed, not active', () => {
+    expect(
+      resolveBillingState(
+        accountState({
+          billing_model: 'per_seat',
+          has_active_subscription: true,
+          credits: { can_run: false, total: 0 },
+          subscription: { subscription_id: 'sub_never_paid', status: 'incomplete_expired' },
+        }),
+      ),
+    ).toBe('payment_failed');
+  });
+
+  test('a past_due per-seat account whose server says it can run is still active', () => {
+    expect(
+      resolveBillingState(
+        accountState({
+          billing_model: 'per_seat',
+          has_active_subscription: true,
+          credits: { can_run: true, total: 25 },
+          subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
+        }),
+      ),
+    ).toBe('active');
+  });
+
+  test('the server billing_state always wins over the fallback', () => {
+    expect(
+      resolveBillingState(
+        accountState({
+          billing_state: 'payment_failed',
+          billing_model: 'per_seat',
+          has_active_subscription: true,
+          credits: { can_run: false, total: 0 },
+          subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
+        }),
+      ),
+    ).toBe('payment_failed');
+  });
+
+  test('a past_due gate never shows the subscribe pitch', () => {
+    const copy = billingGateCopy('payment_failed');
+    expect(copy.dialogReason).toBe('insufficient_credits');
+    expect(copy.title).not.toContain('Subscribe');
+    expect(copy.ctaLabel).toBe('Fix payment');
+  });
+});
