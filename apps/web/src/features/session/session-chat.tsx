@@ -33,6 +33,7 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ThrottledMarkdown } from './turn/throttled-markdown';
 
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
@@ -1798,65 +1799,6 @@ function UserMessageRow({
   );
 }
 
-// ============================================================================
-// Throttled Markdown — limits re-renders during streaming (~30fps)
-// ============================================================================
-
-/**
- * Strip the incomplete trailing table row while streaming so the markdown
- * parser doesn't render broken borders / pipe characters.
- *
- * A markdown table row must start with `|` and end with `|` followed by a
- * newline. If the last line of the content looks like an incomplete row
- * (starts with `|` but doesn't end with `|`), we trim it. We also trim a
- * trailing separator row that is still being typed (e.g. `| --- | --`).
- */
-function trimIncompleteTableRow(text: string): string {
-  // Fast path: no pipe at all → nothing to trim
-  if (!text.includes('|')) return text;
-
-  const lines = text.split('\n');
-  // Walk backwards and remove incomplete table lines from the end.
-  // A table row must start AND end with `|` to be considered complete.
-  while (lines.length > 0) {
-    const last = lines[lines.length - 1];
-    const trimmed = last.trim();
-    // Empty trailing line — stop
-    if (trimmed === '') break;
-    // A complete table row/separator ends with `|`
-    if (trimmed.startsWith('|') && !trimmed.endsWith('|')) {
-      lines.pop();
-    } else {
-      break;
-    }
-  }
-  return lines.join('\n');
-}
-
-function closeUnterminatedCodeFence(text: string): string {
-  if (!text) return text;
-  const lines = text.split('\n');
-  let fenceCount = 0;
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      fenceCount++;
-    }
-  }
-  if (fenceCount % 2 === 0) return text;
-  return `${text}\n\n\`\`\``;
-}
-
-function ThrottledMarkdown({ content, isStreaming }: { content: string; isStreaming: boolean }) {
-  // During streaming, only close unterminated code fences (safe — just
-  // appends closing backticks). Do NOT trim table rows — that strips
-  // real content mid-stream and causes garbled text until completion.
-  // The reference (opencode PacedMarkdown) does zero content modification.
-  const displayContent = isStreaming
-    ? closeUnterminatedCodeFence(content)
-    : trimIncompleteTableRow(content);
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
-}
-
 /**
  * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
  */
@@ -2136,9 +2078,7 @@ function SameToolGroup({
               {durationLabel}
             </span>
           )}
-          {anyRunning && (
-            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-          )}
+          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
           <ChevronRight
             className={cn(
               'size-3 flex-shrink-0 transition-transform',
