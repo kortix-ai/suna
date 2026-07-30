@@ -82,4 +82,45 @@ describe('burstTitle', () => {
   test('an empty burst returns a neutral title rather than an empty string', () => {
     expect(burstTitle([], false)).toBe('Worked');
   });
+
+  test('the +N count sums hidden occurrences, not distinct verbs', () => {
+    const title = burstTitle(
+      [
+        tool('1', 'read'),
+        tool('2', 'bash'),
+        tool('3', 'web_search'),
+        tool('4', 'write'),
+        tool('5', 'write'),
+      ],
+      false,
+    );
+    expect(title).toBe('Read 1 file, ran 1 command, searched 1 time, +2 more');
+  });
+
+  test('running state uses present participles across all verb types', () => {
+    const cases: Array<[toolName: string, expectedParticiple: string, expectedNoun: string]> = [
+      ['read', 'Reading', 'file'],
+      ['write', 'Writing', 'file'],
+      ['edit', 'Editing', 'file'],
+      ['bash', 'Running', 'command'],
+      ['web_search', 'Searching', 'time'],
+      ['list', 'Listing', 'directory'],
+      ['webfetch', 'Fetching', 'page'],
+      ['scrape', 'Scraping', 'page'],
+      ['task', 'Delegating', 'task'],
+      ['unknown', 'Using', 'tool'],
+    ];
+
+    for (const [toolName, participle, noun] of cases) {
+      const title = burstTitle([tool('1', toolName)], true);
+      expect(title).toBe(`${participle} 1 ${noun}`);
+    }
+  });
+
+  test('reasoning headings over 80 characters are truncated with ellipsis', () => {
+    const longHeading =
+      'This is a very long reasoning heading that exceeds the maximum title character limit of eighty';
+    const title = burstTitle([reasoning('r', `**${longHeading}**`)], false);
+    expect(title).toBe(longHeading.slice(0, 77) + '...');
+  });
 });
