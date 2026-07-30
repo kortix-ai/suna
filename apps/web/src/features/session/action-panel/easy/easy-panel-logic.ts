@@ -211,6 +211,51 @@ export function resolveSideSize(input: {
   return fitted ?? input.panelSplit ?? 35;
 }
 
+/** How far apart two split percentages must be before the layout treats them
+ *  as different widths — the tolerance for {@link aspectChangedWidth}. Half a
+ *  percent of a 1400px layout is 7px: below that there is nothing to see, and
+ *  a drag lands on fractional percentages that must not read as a change. */
+export const PANEL_SIZE_EPSILON_PERCENT = 0.5;
+
+/**
+ * Whether a new `panelAspect` actually asks the panel to move.
+ *
+ * Two failures this exists to prevent, both invisible in a type checker:
+ *
+ * - A measurement that computes to the width the panel already has must not
+ *   start a transition. Nothing would move, but the layout would still swing
+ *   its panels' `minSize`/`maxSize`/`collapsible` for 320ms.
+ * - A measurement that DOES ask for a different width must always be treated
+ *   as a change, or the unconditional `resize()` that follows commits the new
+ *   width with no transition attached — a jump cut. This is why `currentSize`
+ *   must be the panel's REAL size (`ImperativePanelHandle.getSize()`) and not
+ *   the width the layout last commanded: a user dragging the divider moves the
+ *   panel without telling `SessionLayout` anything, so the two diverge exactly
+ *   when a hand-placed width is at stake.
+ */
+export function aspectChangedWidth(input: {
+  /** The ratio the layout last acted on. */
+  prevAspect: number | null;
+  /** The ratio it is acting on now. */
+  nextAspect: number | null;
+  /** The panel's real current width, percent — read from the panel handle. */
+  currentSize: number;
+  /** The width {@link resolveSideSize} now wants, percent. */
+  nextSize: number;
+  epsilon?: number;
+}): boolean {
+  if (input.prevAspect === input.nextAspect) return false;
+
+  // A width we cannot compare is a width we must not silently jump to: treat
+  // an unreadable size as a real change so the move keeps its transition.
+  if (!Number.isFinite(input.currentSize) || !Number.isFinite(input.nextSize)) return true;
+
+  const epsilon = Number.isFinite(input.epsilon)
+    ? (input.epsilon as number)
+    : PANEL_SIZE_EPSILON_PERCENT;
+  return Math.abs(input.currentSize - input.nextSize) > epsilon;
+}
+
 /**
  * Whether an output deliverable should grow the Easy-mode panel to its
  * widest split (70/30) instead of the default 35/65 — landscape-shaped

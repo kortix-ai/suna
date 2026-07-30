@@ -8,7 +8,10 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
-import { resolveSideSize } from '@/features/session/action-panel/easy/easy-panel-logic';
+import {
+  aspectChangedWidth,
+  resolveSideSize,
+} from '@/features/session/action-panel/easy/easy-panel-logic';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
@@ -228,7 +231,13 @@ export const SessionLayout = memo(function SessionLayout({
   // drawer and never mounts this element, and nothing there has a split to
   // observe for.
   useEffect(() => {
-    if (isMobile) return;
+    if (isMobile) {
+      // Drop the box with the observer. A desktop box left behind would let a
+      // measurement landing under the drawer compute a fit against a layout
+      // that is no longer on screen — and run the 320ms resize timer for it.
+      panelBoxRef.current = null;
+      return;
+    }
     const el = panelGroupRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
@@ -271,12 +280,17 @@ export const SessionLayout = memo(function SessionLayout({
     const splitChanged = prevSplitRef.current !== panelSplit;
     // A fit measurement joins the SAME change detection, so it rides the same
     // 300ms glide — a ratio arriving during the entrance coalesces into it
-    // rather than fighting it. Compared on the resulting width, not the raw
-    // ratio: a document whose fit lands on the width the panel already has has
-    // nothing to animate, and a transition that moves nothing is still a
-    // visible beat of panel churn.
-    const aspectChanged =
-      prevAspectRef.current !== panelAspect && prevSideSizeRef.current !== sideSize;
+    // rather than fighting it. Judged on the width it produces against the
+    // panel's REAL width, which is why `getSize()` and not `prevSideSizeRef`:
+    // a divider the user dragged moved the panel without telling us, so the
+    // width we last commanded is not the width on screen. See
+    // `aspectChangedWidth` for both failures this guards.
+    const aspectChanged = aspectChangedWidth({
+      prevAspect: prevAspectRef.current,
+      nextAspect: panelAspect,
+      currentSize: sidePanelRef.current?.getSize() ?? prevSideSizeRef.current,
+      nextSize: sideSize,
+    });
     prevExpandedRef.current = isExpanded;
     prevSplitRef.current = panelSplit;
     prevAspectRef.current = panelAspect;

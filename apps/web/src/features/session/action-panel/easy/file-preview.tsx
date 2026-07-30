@@ -45,7 +45,7 @@ import {
   ArrowsInSimpleIcon as Minimize2,
   PresentationIcon as Presentation,
 } from '@phosphor-icons/react';
-import { useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton, isSvg } from './file-viewer';
 import { type ShareContext, ShareFileButton } from './viewer-actions';
@@ -272,9 +272,51 @@ const RICH_CATEGORIES = new Set<FileCategory>([
  *
  * Exported for tests: which path a file takes decides whether its source is
  * ever fetched, and that is worth pinning without mounting the whole preview.
+ *
+ * Paired with `reportsIntrinsicSize` directly below — that predicate depends on
+ * this one to keep `.svg` out, so the two must be read together.
  */
 export function isRich(fileName: string): boolean {
   return RICH_CATEGORIES.has(getFileCategory(fileName)) && !isSvg(fileName);
+}
+
+/**
+ * The categories whose renderer actually calls `usePreviewFit().report()`, and
+ * therefore the files whose ratio the panel can expect to arrive: `PdfViewer`,
+ * `ImageRenderer`, `VideoRenderer`. That is the entire list today.
+ *
+ * This set is a MIRROR of which renderers hold a `usePreviewFit` call, and
+ * nothing in the type system ties the two together — a renderer that gains or
+ * loses the hook silently falsifies this. It lives here, one function below
+ * `isRich`, precisely so the two shape decisions about the same file are read
+ * and changed in one place. If you add a category, confirm the renderer
+ * reports; if you remove `usePreviewFit` from a renderer, remove it here.
+ */
+const MEASURING_CATEGORIES = new Set<FileCategory>(['pdf', 'image', 'video']);
+
+/**
+ * Whether opening this file will produce a measurement — what lets
+ * `openDetail` hold the outgoing ratio instead of clearing it (see `Detail`'s
+ * `measures`).
+ *
+ * Two exclusions carry the whole correctness of this:
+ *
+ * - **`audio` is rich but shapeless.** It renders a transport bar, not a
+ *   document, and reports nothing. Including it would strand the previous
+ *   document's width behind an audio player.
+ * - **`.svg` is category `image` and still excluded**, because `isRich` sends
+ *   it down the text path to `FileViewer`, whose `ImageRenderer` sits OUTSIDE
+ *   the `<PreviewFitProvider>` — so its `usePreviewFit()` is `null` and it
+ *   never reports. Delegating to `isRich` rather than re-testing the extension
+ *   means that stays true even if the SVG routing changes.
+ *
+ * The non-rich binary `<img>` fallback also reports, but nothing in a filename
+ * predicts that branch (it turns on the server's mime type), so it is
+ * deliberately not claimed here. Being wrong in that direction costs one extra
+ * glide; being wrong in the other leaves a stale width on screen.
+ */
+export function reportsIntrinsicSize(fileName: string): boolean {
+  return isRich(fileName) && MEASURING_CATEGORIES.has(getFileCategory(fileName));
 }
 
 export function FilePreview({
@@ -333,6 +375,27 @@ export function FilePreview({
   // pulling the whole file into a string here first would be wasted work.
   const { data, isLoading, isError } = useFileContent(path, { enabled: !rich });
 
+  // A file that cannot be opened has no shape, and `openDetail` no longer
+  // clears the ratio on the way in for anything that CAN measure (see
+  // `reportsIntrinsicSize`) — so a dead or renamed PDF would otherwise show
+  // "This file couldn't be opened" at the previous document's width. Both
+  // failure paths clear it: this one for the non-rich branch below, and
+  // `onStatusChange` for the rich branch, where a not-found is handled inside
+  // `FileContentRenderer` and never reaches this component's own error state.
+  const failedToOpen = !rich && !isLoading && (isError || !data);
+  useEffect(() => {
+    if (failedToOpen) setPanelAspect(null);
+  }, [failedToOpen, setPanelAspect]);
+
+  // Stable identity: `FileContentRenderer` keeps this in an effect's
+  // dependency array, and an inline arrow would re-run it on every render.
+  const handleStatusChange = useCallback(
+    (status: 'loading' | 'ready' | 'error') => {
+      if (status === 'error') setPanelAspect(null);
+    },
+    [setPanelAspect],
+  );
+
   if (rich) {
     return (
       <PreviewShell
@@ -354,6 +417,7 @@ export function FilePreview({
               showHeader={false}
               className="h-full"
               fitOnOpen={isPdf}
+              onStatusChange={handleStatusChange}
             />
           </PreviewFitProvider>
         </FileSourceProvider>

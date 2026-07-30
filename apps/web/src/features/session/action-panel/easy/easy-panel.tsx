@@ -73,7 +73,7 @@ import {
   shouldAutoOpenPayoff,
   stepForCallId,
 } from './easy-panel-logic';
-import { FilePreview } from './file-preview';
+import { FilePreview, reportsIntrinsicSize } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
@@ -176,8 +176,11 @@ export const EasyPanel = memo(function EasyPanel({
   // and the home cards (progress/outputs/context/apps) render full-bleed
   // instead of snapping back to the resizable split; worse, "Ask for changes"
   // targets the chat composer, which fullscreen has collapsed to zero width.
-  // Paging between siblings goes through `setDetail` directly and KEEPS
-  // fullscreen — only the exits route through here.
+  // Only the exits route through here. Paging between siblings does NOT: the
+  // prev/next closures call `handleOpenOutput` again, which reaches `setDetail`
+  // through `openDetail` — so fullscreen survives the move from one deliverable
+  // to the next, and so does the panel width when both sides measure (see
+  // `openDetail`'s `measures` check).
   const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
   // Split override: a presentation deliverable grows the panel to its widest
   // split (70/30, Marko's feedback) and the terminal layer to an even 50/50,
@@ -280,11 +283,14 @@ export const EasyPanel = memo(function EasyPanel({
       setTerminalOpen(false);
       setDetail({ ...next, swapIn: terminalOpen });
       setPanelSplit(null);
-      // The outgoing document's ratio dies with it. `handleOpenOutput` sets a
-      // split of its own right after this, but never an aspect — the incoming
-      // document publishes that itself once it has decoded something to
-      // measure, so there is nothing here to preserve.
-      setPanelAspect(null);
+      // The outgoing document's ratio dies with it — UNLESS the incoming one
+      // will report a ratio of its own (`measures`), in which case holding the
+      // old value is what keeps A4 → A4 paging perfectly still instead of
+      // gliding down to the default column and straight back up. The incoming
+      // measurement overwrites it; a file that fails to open clears it from
+      // `FilePreview`. `handleOpenOutput` sets a split of its own right after
+      // this, but never an aspect.
+      if (!next.measures) setPanelAspect(null);
     },
     [terminalOpen, setPanelSplit, setPanelAspect],
   );
@@ -426,6 +432,9 @@ export const EasyPanel = memo(function EasyPanel({
         hideHeader: true,
         padded: false,
         nav,
+        // `output.name` is the real filename — `displayName` may be a human
+        // title carrying no extension, which this predicate reads.
+        measures: reportsIntrinsicSize(output.name),
         body: (
           <FilePreview
             path={output.path}

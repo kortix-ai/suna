@@ -2,6 +2,7 @@ import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
+  aspectChangedWidth,
   deriveIsRunning,
   fitSplitPercent,
   isWideDeliverable,
@@ -224,6 +225,70 @@ describe('resolveSideSize (the panel-width precedence rule)', () => {
       resolveSideSize({ ...base, panelAspect: 1 }),
     ];
     for (const size of sizes) expect(Number.isFinite(size)).toBe(true);
+  });
+});
+
+describe('aspectChangedWidth (does a measurement ask the panel to move?)', () => {
+  const held = { prevAspect: 0.707, nextAspect: 0.707, currentSize: 44, nextSize: 44 };
+
+  it('is false when the ratio did not change at all', () => {
+    expect(aspectChangedWidth({ ...held, currentSize: 60, nextSize: 35 })).toBe(false);
+  });
+
+  it('is false when a new ratio lands on the width the panel already has', () => {
+    // The no-op guard: a transition here moves nothing and still swings the
+    // panels' min/max/collapsible for 320ms.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35, nextSize: 35 }),
+    ).toBe(false);
+  });
+
+  // ─── the regression this function was extracted for. The user drags the
+  // divider to 60%, which `react-resizable-panels` records internally and
+  // never reports back, then opens a tall document whose fit clamps to the
+  // 35 floor. Comparing against the LAST COMMANDED width (also 35) says
+  // "nothing changed", no transition is attached, and the unconditional
+  // resize(35) that follows jump-cuts a hand-placed 60% panel. Comparing
+  // against the panel's real width is what keeps the glide. ──
+  it('is true when the panel was dragged away from the width we last commanded', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 60, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('is true for an ordinary fit that genuinely widens the panel', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 1.41, currentSize: 35, nextSize: 70 }),
+    ).toBe(true);
+  });
+
+  it('is true when a held ratio is finally cleared into a different width', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: 0.707, nextAspect: null, currentSize: 44, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('ignores sub-pixel drift, which a hand-dragged divider produces constantly', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.4, nextSize: 35 }),
+    ).toBe(false);
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.6, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('honors a custom epsilon and falls back to the default for a junk one', () => {
+    const drift = { prevAspect: null, nextAspect: 0.4, currentSize: 38, nextSize: 35 };
+    expect(aspectChangedWidth({ ...drift, epsilon: 5 })).toBe(false);
+    expect(aspectChangedWidth({ ...drift, epsilon: NaN })).toBe(true);
+  });
+
+  it('treats an unreadable size as a real change rather than a silent jump', () => {
+    // `getSize()` should never return this, but a size we cannot compare must
+    // keep its transition instead of committing with none attached.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: NaN, nextSize: 35 }),
+    ).toBe(true);
   });
 });
 
