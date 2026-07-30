@@ -77,22 +77,32 @@ export function ActivityStep({
     );
   }
 
-  if (!isToolPart(part)) return null;
+  const header = (
+    <div className="flex min-w-0 items-center gap-2">
+      <Icon className="text-muted-foreground/60 size-3.5 flex-none" />
+      <span className="text-foreground/80 flex-none text-xs">{verb}</span>
+      {label.object && (
+        <span
+          className={cn('text-muted-foreground/70 min-w-0 truncate font-mono text-xs')}
+          title={label.object}
+        >
+          {label.object}
+        </span>
+      )}
+    </div>
+  );
+
+  if (!isToolPart(part)) {
+    // Genuinely unknown part types are neither tool nor reasoning, but the
+    // turn modules share a "never silently drop a part" policy (stepLabel
+    // falls back to a generic 'Used'/'Using' label rather than omitting it).
+    // There is no tool state to render, so this is the label row only.
+    return <StepsItem className="min-w-0">{header}</StepsItem>;
+  }
 
   return (
     <StepsItem className="min-w-0">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon className="text-muted-foreground/60 size-3.5 flex-none" />
-        <span className="text-foreground/80 flex-none text-xs">{verb}</span>
-        {label.object && (
-          <span
-            className={cn('text-muted-foreground/70 min-w-0 truncate font-mono text-xs')}
-            title={label.object}
-          >
-            {label.object}
-          </span>
-        )}
-      </div>
+      {header}
       {/* The tool's own renderer supplies results (sources, diffs, output). */}
       <div className="mt-1">
         <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />

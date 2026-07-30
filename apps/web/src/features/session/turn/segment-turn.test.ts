@@ -72,6 +72,21 @@ describe('segmentTurn', () => {
     expect((segments[0] as { parts: Part[] }).parts).toHaveLength(3);
   });
 
+  test('step-start and step-finish parts are dropped without splitting', () => {
+    const stepStart = { id: '2', type: 'step-start' } as unknown as Part;
+    const stepFinish = { id: '4', type: 'step-finish' } as unknown as Part;
+    const segments = segmentTurn([
+      tool('1', 'bash'),
+      stepStart,
+      tool('3', 'bash'),
+      stepFinish,
+      tool('5', 'bash'),
+    ]);
+
+    expect(segments).toHaveLength(1);
+    expect((segments[0] as { parts: Part[] }).parts).toHaveLength(3);
+  });
+
   test('show breaks out as standalone and splits the burst', () => {
     const segments = segmentTurn([tool('1', 'read'), tool('2', 'show'), tool('3', 'read')]);
 
