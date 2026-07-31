@@ -3355,6 +3355,10 @@ export default function BrandPage() {
                     <EntityAvatar label="Kortix" />
                     <EntityAvatar icon={FolderGit2} />
                     <EntityAvatar icon={Users} size="lg" />
+                    {/* `emoji` beats both the icon and the initial, and drops the
+                        chalk fill — the glyph is already the colour. */}
+                    <EntityAvatar label="Turtle Shop" emoji="🐢" />
+                    <EntityAvatar label="Turtle Shop" emoji="🐢" size="lg" />
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">

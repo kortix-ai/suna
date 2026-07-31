@@ -1,0 +1,236 @@
+import { RocketIcon } from '@phosphor-icons/react';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { EntityAvatar, type EntityAvatarSize } from './entity-avatar';
+
+const render = (props: Parameters<typeof EntityAvatar>[0]) =>
+  renderToStaticMarkup(<EntityAvatar {...props} />);
+
+/**
+ * The tile's visible text, markup stripped. An icon is an `<svg>` and a nested
+ * emoji span is a tag, so this is exactly "the characters a sighted user reads
+ * inside the square" — which is the thing precedence decides. Asserting on the
+ * WHOLE text with `toBe` (rather than `toContain`) is what makes a test fail
+ * when two faces render at once instead of one replacing the other.
+ */
+const textOf = (html: string) => html.replace(/<[^>]*>/g, '');
+
+/** The class list on the tile itself. The outer span is the first element in
+ *  the markup, so a non-global match cannot pick up the inner emoji span. */
+const classesOf = (html: string) => html.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? [];
+
+const SIZES: EntityAvatarSize[] = ['xs', 'sm', 'md', 'lg', 'xl'];
+
+/** The text size the tile has always used for the initial. Pinned so the emoji
+ *  work cannot silently resize the letter every other caller renders. */
+const INITIAL_TEXT: Record<EntityAvatarSize, string> = {
+  xs: 'text-xs',
+  sm: 'text-xs',
+  md: 'text-xs',
+  lg: 'text-sm',
+  xl: 'text-base',
+};
+
+/**
+ * The emoji's own size — its own step on the scale, not the initial's. Without
+ * it the emoji inherits the INITIAL's size and the 36.8px `lg` card tile
+ * renders a 14px emoji: legible, but visibly a letter-sized thing in an
+ * icon-sized hole. The values are measured painted extents; the rationale and
+ * the numbers live on SIZE_MAP in entity-avatar.tsx.
+ */
+const EMOJI_TEXT: Record<EntityAvatarSize, string> = {
+  xs: 'text-xs',
+  sm: 'text-sm',
+  md: 'text-base',
+  lg: 'text-xl',
+  xl: 'text-3xl',
+};
+
+describe('EntityAvatar — what the tile shows', () => {
+  test('renders the emoji, and only the emoji', () => {
+    expect(textOf(render({ label: 'Demo', emoji: '🚀' }))).toBe('🚀');
+  });
+
+  test('falls back to the label’s initial when no emoji is given', () => {
+    const html = render({ label: 'Demo' });
+
+    expect(textOf(html)).toBe('D');
+    expect(html).not.toContain('🚀');
+  });
+
+  test('precedence is emoji, then icon, then initial', () => {
+    // Three cases in one test on purpose: written as three separate ones it is
+    // easy for all three to pass while the component only ever renders the
+    // right thing by accident. Each row here fixes what the OTHER two inputs
+    // are, so the only thing that can satisfy it is the ordering itself.
+    const all = render({ label: 'Demo', emoji: '🚀', icon: RocketIcon });
+    expect(textOf(all)).toBe('🚀');
+    expect(all).not.toContain('<svg');
+
+    const iconAndInitial = render({ label: 'Demo', icon: RocketIcon });
+    expect(textOf(iconAndInitial)).toBe('');
+    expect(iconAndInitial).toContain('<svg');
+
+    const initialOnly = render({ label: 'Demo' });
+    expect(textOf(initialOnly)).toBe('D');
+    expect(initialOnly).not.toContain('<svg');
+  });
+
+  test('the emoji beats an icon component', () => {
+    // The icon branch is the one an `emoji ? … : IconComponent ? …` chain gets
+    // wrong when the two are swapped: with the icon checked first, every
+    // marketplace/account tile that passes BOTH would keep showing the icon
+    // and the project emoji would never appear.
+    const html = render({ label: 'Demo', icon: RocketIcon, emoji: '🚀' });
+
+    expect(html).toContain('🚀');
+    expect(html).not.toContain('<svg');
+  });
+
+  test('the emoji beats the initial', () => {
+    // `Demo` initials to `D`. The tile's whole text has to be the emoji: a
+    // component that renders both would still contain the emoji.
+    expect(textOf(render({ label: 'Demo', emoji: '🚀' }))).not.toContain('D');
+  });
+
+  test('null — what the SDK returns for "no icon" — falls through to the initial', () => {
+    // `KortixProject.icon` is `string | null | undefined`, so the prop takes
+    // null and the card passes it straight through. A truthiness check is what
+    // makes this work; `emoji !== undefined` would render an empty span here
+    // and the initial would vanish for every project that never set an icon.
+    expect(textOf(render({ label: 'Demo', emoji: null }))).toBe('D');
+  });
+
+  test('an empty string is not an emoji', () => {
+    expect(textOf(render({ label: 'Demo', emoji: '' }))).toBe('D');
+  });
+
+  test('keeps the glyph out of the accessibility tree', () => {
+    // The tile always sits beside the name it belongs to (project card, account
+    // row). Left announceable, a screen reader reads the emoji's CLDR name —
+    // "rocket" — immediately before the label that names the same thing. Same
+    // treatment as the picker trigger in features/projects/modal.
+    expect(render({ label: 'Demo', emoji: '🚀' })).toMatch(/aria-hidden="true"[^>]*>🚀/);
+  });
+});
+
+describe('EntityAvatar — the emoji tile’s surface', () => {
+  test('drops the hash-derived chalk fill when an emoji is set', () => {
+    // chalkColors() is applied as an inline style, so it beats any class a
+    // caller passes. An emoji is already the colour; sitting it on a saturated
+    // hash-derived pastel reads as noise, and in dark mode the pastel is a
+    // bright square in an otherwise dark grid.
+    expect(render({ label: 'Demo' })).toContain('background-color');
+    expect(render({ label: 'Demo', emoji: '🚀' })).not.toContain('background-color');
+  });
+
+  test('keeps the chalk fill for the icon tile', () => {
+    // The icon branch is monochrome and needs the chalk to read as an entity
+    // tile at all. Dropping the style for every branch is the obvious slip.
+    expect(render({ label: 'Demo', icon: RocketIcon })).toContain('background-color');
+  });
+
+  test('an emoji sits on a neutral tile with a softened border', () => {
+    const withEmoji = classesOf(render({ label: 'Demo', emoji: '🚀' }));
+    expect(withEmoji).toContain('bg-muted');
+    expect(withEmoji).toContain('border-border/60');
+
+    // …and the initial tile must not pick either of them up, or the chalk
+    // border it still sets inline would be fighting a class it never wanted.
+    const withInitial = classesOf(render({ label: 'Demo' }));
+    expect(withInitial).not.toContain('bg-muted');
+    expect(withInitial).not.toContain('border-border/60');
+  });
+
+  test('a caller’s own background still wins over the neutral tile', () => {
+    // The project card passes `bg-background` so the tile reads as a well in
+    // the card's `bg-secondary/80` surface. `className` is last into cn(), so
+    // tailwind-merge has to resolve it over the component's `bg-muted`.
+    const classes = classesOf(render({ label: 'Demo', emoji: '🚀', className: 'bg-background' }));
+
+    expect(classes).toContain('bg-background');
+    expect(classes).not.toContain('bg-muted');
+  });
+
+  test('the emoji tile is still an entity-avatar slot', () => {
+    expect(render({ label: 'Demo', emoji: '🚀' })).toContain('data-slot="entity-avatar"');
+  });
+});
+
+describe('EntityAvatar — sizing', () => {
+  test('the initial keeps the text size it has always had', () => {
+    for (const size of SIZES) {
+      expect(classesOf(render({ label: 'Demo', size }))).toContain(INITIAL_TEXT[size]);
+    }
+  });
+
+  test('the emoji is sized to the tile’s icon slot, not to the initial', () => {
+    for (const size of SIZES) {
+      const classes = classesOf(render({ label: 'Demo', emoji: '🚀', size }));
+
+      expect(classes).toContain(EMOJI_TEXT[size]);
+
+      // Where the two differ, the initial's size must be GONE — not merely
+      // followed. Both land in tailwind-merge's font-size group, so ordering
+      // inside cn() decides the winner: put the emoji size before `sizes.box`
+      // and the tile silently keeps the letter size while this class list still
+      // reads as if it had both.
+      if (EMOJI_TEXT[size] !== INITIAL_TEXT[size]) {
+        expect(classes).not.toContain(INITIAL_TEXT[size]);
+      }
+    }
+  });
+
+  test('every size renders a distinct emoji size — the map is not one value', () => {
+    // Guards the guard above: a map that collapsed to a single class would
+    // satisfy every row of it while making the tile's geometry wrong at four
+    // of the five sizes.
+    expect(new Set(Object.values(EMOJI_TEXT)).size).toBe(5);
+  });
+});
+
+describe('EntityAvatar — existing callers', () => {
+  /**
+   * Captured from the component as it stood BEFORE `emoji` existed
+   * (`git show HEAD:apps/web/src/components/ui/entity-avatar.tsx`, rendered
+   * under this same harness). All 30-odd call sites in apps/web omit `emoji`,
+   * so this exact string is what every one of them still has to produce —
+   * attribute order, class order, inline chalk and all.
+   */
+  const LEGACY_INITIAL_TILE =
+    '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md text-xs">D</span>';
+
+  /** The same, for the one call shape the project card uses today. */
+  const LEGACY_CARD_TILE =
+    '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md text-sm bg-background">D</span>';
+
+  test('an emoji-less tile is byte-identical to the pre-emoji component', () => {
+    expect(render({ label: 'Demo' })).toBe(LEGACY_INITIAL_TILE);
+  });
+
+  test('every falsy emoji is byte-identical too, chalk seed included', () => {
+    // `toBe` on the whole tile is what makes this bite. Seeding chalkColors()
+    // with the emoji — `chalkColors(emoji ?? label)` — is invisible for a SET
+    // emoji, because that tile drops the inline style altogether; it only shows
+    // up here, where `''` reaches the seed and re-colours a tile that is still
+    // rendering its initial. Caught as a surviving mutant with the text-only
+    // assertion below it.
+    for (const emoji of [null, undefined, '']) {
+      expect(render({ label: 'Demo', emoji })).toBe(LEGACY_INITIAL_TILE);
+    }
+  });
+
+  test('an emoji-less tile with a caller className is byte-identical too', () => {
+    expect(render({ label: 'Demo', size: 'lg', className: 'bg-background' })).toBe(
+      LEGACY_CARD_TILE,
+    );
+  });
+
+  test('a label-less tile still falls back the way it always has', () => {
+    // `label` is optional on this component and several call sites pass only an
+    // icon. The `?` fallback is the pre-existing behaviour for neither.
+    expect(textOf(render({}))).toBe('?');
+    expect(textOf(render({ emoji: '🚀' }))).toBe('🚀');
+  });
+});

@@ -48,7 +48,12 @@ const ProjectCard = ({
         className="cursor-pointer px-5 py-4 text-left"
       >
         <div className="flex w-full items-center gap-3">
-          <EntityAvatar label={project.name} size="lg" className="bg-background" />
+          <EntityAvatar
+            label={project.name}
+            emoji={project.icon}
+            size="lg"
+            className="bg-background"
+          />
           <div className="min-w-0 flex-1 space-y-1">
             <h3
               title={project.name}
