@@ -1088,7 +1088,7 @@ test('does NOT suppress a near-worded SecurityError from a different error type'
     assert.equal(
       isSafariGenericSecurityErrorNoise({ message: `Error: ${SAFARI_SECURITY_ERROR_MESSAGE}`, frames }),
 false,
-      `expected Sentry event "${message}" to keep reporting`,
+      `expected Sentry event "${SAFARI_SECURITY_ERROR_MESSAGE}" to keep reporting`,
     )
   }
 })
