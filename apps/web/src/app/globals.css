@@ -70,12 +70,7 @@
   --rb-mono: 0;
   --rb-ital: 0;
   --rb-ligatures: normal;
-  --rb-features:
-    'ss09' on,
-    'ss03' on,
-    'ss04' on,
-    'ss14' on,
-    'palt';
+  --rb-features: 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
 }
 
 /* Declared on `*` deliberately. `font-variation-settings`, `font-variant-
@@ -90,7 +85,9 @@
    `wght` is deliberately absent from font-variation-settings — `font-weight`
    still drives it. */
 * {
-  font-variation-settings: 'MONO' var(--rb-mono, 0), 'ital' var(--rb-ital, 0);
+  font-variation-settings:
+    'MONO' var(--rb-mono, 0),
+    'ital' var(--rb-ital, 0);
   font-variant-ligatures: var(--rb-ligatures, normal);
   font-feature-settings: var(--rb-features, normal);
 }
@@ -148,12 +145,7 @@ i,
 .font-sans {
   --rb-mono: 0;
   --rb-ligatures: normal;
-  --rb-features:
-    'ss09' on,
-    'ss03' on,
-    'ss04' on,
-    'ss14' on,
-    'palt';
+  --rb-features: 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
 }
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
@@ -324,8 +316,9 @@ i,
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Roobert', 'Roobert Fallback', ui-sans-serif, system-ui,
-    -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-sans:
+    'Roobert', 'Roobert Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    'Helvetica Neue', sans-serif;
   --font-mono: 'Roobert', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-semimono: 'Roobert', ui-sans-serif, system-ui, sans-serif;
   /* wght is a 300–900 axis; 100, 200 and 950 do not exist in this typeface and
@@ -380,6 +373,25 @@ i,
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
+     Six hues the picker rotates through so the hovered/keyboard-active cell is
+     never the same colour as the cell above it. They live here rather than as
+     raw hsl() in the component because raw palette values in app code are
+     against the design system, and because the light/dark pair belongs in one
+     place. light-dark() works because :root sets color-scheme: light and .dark
+     sets color-scheme: dark (see the base layer below) — so these need no
+     `dark:` variant at the call site.
+
+     Every value clears WCAG 1.4.11's 3:1 against --popover, measured: the
+     active tint is the only visible cue for which cell is selected, because
+     frimousse gives the emoji buttons tabIndex={-1} and no focus ring. That
+     floor is what sets the lightness; these are mid-tones, not pastels. */
+  --color-emoji-tint-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-tint-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-tint-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-tint-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-tint-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-tint-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
   --text-xs: 0.8125rem;
@@ -699,7 +711,7 @@ i,
     }
   }
 }
- 
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.1448 0 0);
@@ -1061,7 +1073,8 @@ i,
 
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
+.kortix-markdown.streaming-active
+  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
 }
 

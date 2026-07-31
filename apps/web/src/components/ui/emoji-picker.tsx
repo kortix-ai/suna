@@ -16,16 +16,19 @@ export interface EmojiSelection {
 /**
  * Emoji picker built on frimousse.
  *
- * The hover/keyboard-active background rotates through six low-chroma tints,
- * offset by three positions on alternating rows. Six rather than three:
- * frimousse lays out 10 columns, and a 3-tint rotation over 10 columns lines
- * the same tint up vertically every other row, which the row offset only half
- * breaks up. Six tints move the repeat to every 30 cells.
+ * The hovered/keyboard-active cell takes one of six tints, rotated by three on
+ * alternating rows so a tint never sits directly above itself. Rotation by
+ * three within a six-cycle guarantees that for ANY column count — frimousse
+ * defaults to 9 columns (its own JSDoc says 10, but the shipped default is
+ * `columns = 9`, and we pass no override), and the guarantee does not depend on
+ * that number. The repeating tile is 6 x 2 = 12 cells: the tint is a pure
+ * function of (nth-child mod 6, row parity).
  *
- * The tints are HSL in the same register as `chalkColors`
- * (packages/shared/src/utils/chalk-colors.ts) rather than Tailwind's red-100 /
- * green-100 / blue-100 from the frimousse docs: those wash out to invisible on
- * a dark background, and read as foreign next to the rest of apps/web.
+ * Colours come from `--color-emoji-tint-*` in globals.css. They are mid-tones
+ * rather than pastels because the tint is the ONLY visible cue for which cell
+ * is active — frimousse gives every emoji button tabIndex={-1} and no focus
+ * ring — so each one has to clear WCAG 1.4.11's 3:1 against --popover. The
+ * measured ratios are recorded next to the tokens.
  */
 
 /**
@@ -34,9 +37,8 @@ export interface EmojiSelection {
  * source text, so an interpolated class name produces no CSS at all and the
  * hover backgrounds silently never appear.
  *
- * `data-row=even` rows (the first, third, … logical row) run the six tints in
- * column order. `data-row=odd` rows start three along, so a tint never sits
- * directly above itself.
+ * There is no `dark:` set: each `--color-emoji-tint-*` token is a light-dark()
+ * pair, and :root / .dark set color-scheme, so one class covers both themes.
  *
  * VARIANT ORDER: `data-[active]` LAST, i.e.
  * `group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-…`. Verified against
@@ -65,35 +67,53 @@ const EMOJI_BUTTON = cn(
   'transition-[background-color,scale] duration-100 active:scale-[0.96]',
 
   // Even rows: 1→red, 2→amber, 3→green, 4→teal, 5→blue, 6→violet
-  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-[hsl(4_46%_88%)]',
-  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-[hsl(32_52%_87%)]',
-  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-[hsl(96_34%_87%)]',
-  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-[hsl(178_36%_86%)]',
-  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-[hsl(212_46%_88%)]',
-  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-[hsl(280_32%_88%)]',
+  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-emoji-tint-red',
+  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-emoji-tint-amber',
+  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-emoji-tint-green',
+  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-emoji-tint-teal',
+  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-emoji-tint-blue',
+  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-emoji-tint-violet',
 
   // Odd rows: same six, rotated by three
-  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-[hsl(178_36%_86%)]',
-  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-[hsl(212_46%_88%)]',
-  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-[hsl(280_32%_88%)]',
-  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-[hsl(4_46%_88%)]',
-  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-[hsl(32_52%_87%)]',
-  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-[hsl(96_34%_87%)]',
-
-  // Dark mode: same rotation, low-lightness variants
-  'dark:group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-[hsl(4_28%_26%)]',
-  'dark:group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-[hsl(32_30%_25%)]',
-  'dark:group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-[hsl(96_22%_24%)]',
-  'dark:group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-[hsl(178_26%_24%)]',
-  'dark:group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-[hsl(212_30%_27%)]',
-  'dark:group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-[hsl(280_22%_27%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-[hsl(178_26%_24%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-[hsl(212_30%_27%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-[hsl(280_22%_27%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-[hsl(4_28%_26%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-[hsl(32_30%_25%)]',
-  'dark:group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-[hsl(96_22%_24%)]',
+  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-emoji-tint-teal',
+  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-emoji-tint-blue',
+  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-emoji-tint-violet',
+  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-emoji-tint-red',
+  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-emoji-tint-amber',
+  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-emoji-tint-green',
 );
+
+let warnedMissingRowIndex = false;
+
+/**
+ * Row parity, from frimousse's `aria-rowindex`.
+ *
+ * The fallback is deliberately noisy rather than silent: if frimousse ever
+ * stopped emitting `aria-rowindex`, every row would fall back to `even`, the
+ * rotation would collapse to a single set, and nothing would fail. The hidden
+ * measurement row legitimately has neither `role` nor `aria-rowindex`, so only
+ * a real row (`role="row"`) missing the index is a regression worth warning on.
+ *
+ * Note frimousse's `aria-rowindex` is 0-based, which is against ARIA's 1-based
+ * convention. This code is correct against what it ships today; if frimousse
+ * ever conforms, every parity flips and the rotation shifts by three.
+ */
+function rowParity(props: { role?: string; 'aria-rowindex'?: number }): 'even' | 'odd' {
+  const rowIndex = props['aria-rowindex'];
+
+  if (typeof rowIndex !== 'number') {
+    if (process.env.NODE_ENV !== 'production' && props.role === 'row' && !warnedMissingRowIndex) {
+      warnedMissingRowIndex = true;
+      console.warn(
+        '[EmojiPicker] a frimousse row is missing aria-rowindex; the active-cell ' +
+          'tint rotation has collapsed to one set. Check the frimousse version.',
+      );
+    }
+    return 'even';
+  }
+
+  return rowIndex % 2 === 0 ? 'even' : 'odd';
+}
 
 export function EmojiPicker({
   onEmojiSelect,
@@ -113,11 +133,17 @@ export function EmojiPicker({
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <Frimousse.Search
+            aria-label="Search emoji"
             placeholder="Search emoji"
             className={cn(
               'border-border bg-popover text-foreground placeholder:text-muted-foreground/60',
               'h-9 w-full rounded-md border pr-3 pl-9 text-sm font-medium transition-[color] outline-none',
               'focus:border-kortix-blue focus:border focus:outline-none',
+              // frimousse hardcodes type="search". Tailwind's preflight resets
+              // ::-webkit-search-decoration but not ::-webkit-search-cancel-button,
+              // so without this WebKit paints its native clear X inside the field.
+              // Same reset input.tsx already carries for type="search".
+              '[&::-webkit-search-cancel-button]:appearance-none',
             )}
           />
         </InputGroupSearch>
@@ -133,27 +159,36 @@ export function EmojiPicker({
         </Frimousse.Empty>
 
         <Frimousse.List
+          aria-label="Emoji"
           className="pb-1.5 select-none"
           components={{
+            // In each of these, `className` comes AFTER `{...props}` and merges
+            // `props.className`. All three prop types extend ComponentProps, so
+            // className is in the type; frimousse does not pass one today, but
+            // if it ever did, a className before the spread would be replaced
+            // outright and the whole tint system would go dead silently.
             CategoryHeader: ({ category, ...props }) => (
               <div
-                className="bg-popover text-muted-foreground px-2 pt-3 pb-1.5 text-xs font-medium"
                 {...props}
+                className={cn(
+                  'bg-popover text-muted-foreground px-2 pt-3 pb-1.5 text-xs font-medium',
+                  props.className,
+                )}
               >
                 {category.label}
               </div>
             ),
             Row: ({ children, ...props }) => (
               <div
-                className="group/row flex px-1.5"
-                data-row={Number(props['aria-rowindex'] ?? 0) % 2 === 0 ? 'even' : 'odd'}
                 {...props}
+                data-row={rowParity(props)}
+                className={cn('group/row flex px-1.5', props.className)}
               >
                 {children}
               </div>
             ),
             Emoji: ({ emoji, ...props }) => (
-              <button type="button" className={EMOJI_BUTTON} {...props}>
+              <button type="button" {...props} className={cn(EMOJI_BUTTON, props.className)}>
                 {emoji.emoji}
               </button>
             ),
