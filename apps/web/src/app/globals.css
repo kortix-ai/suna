@@ -382,16 +382,26 @@ i,
      sets color-scheme: dark (see the base layer below) — so these need no
      `dark:` variant at the call site.
 
-     Every value clears WCAG 1.4.11's 3:1 against --popover, measured: the
-     active tint is the only visible cue for which cell is selected, because
-     frimousse gives the emoji buttons tabIndex={-1} and no focus ring. That
-     floor is what sets the lightness; these are mid-tones, not pastels. */
-  --color-emoji-tint-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
-  --color-emoji-tint-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
-  --color-emoji-tint-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
-  --color-emoji-tint-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
-  --color-emoji-tint-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
-  --color-emoji-tint-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
+     Two families, paired by hue. The fill stays pale so the grid reads calm;
+     the 1px inset ring carries the contrast. That split exists because the
+     active cell is the only visible cue for which emoji is selected —
+     frimousse gives the buttons tabIndex={-1} and no focus ring — so the state
+     indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
+     cannot reach 3:1 on white at any saturation (it needs relative luminance
+     <= 0.30, i.e. roughly L <= 63%), so the ring is what meets the bar and the
+     fill is free to stay quiet. Measured ring ratios are 3.03–3.19:1. */
+  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
+  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
+  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
+  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
+  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
   --text-xs: 0.8125rem;

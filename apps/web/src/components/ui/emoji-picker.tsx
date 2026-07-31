@@ -24,11 +24,13 @@ export interface EmojiSelection {
  * that number. The repeating tile is 6 x 2 = 12 cells: the tint is a pure
  * function of (nth-child mod 6, row parity).
  *
- * Colours come from `--color-emoji-tint-*` in globals.css. They are mid-tones
- * rather than pastels because the tint is the ONLY visible cue for which cell
- * is active — frimousse gives every emoji button tabIndex={-1} and no focus
- * ring — so each one has to clear WCAG 1.4.11's 3:1 against --popover. The
- * measured ratios are recorded next to the tokens.
+ * Colours come from two paired token families in globals.css: a pale
+ * `--color-emoji-fill-*` and a stronger `--color-emoji-ring-*` per hue. The
+ * active cell is the ONLY visible cue for which emoji is selected — frimousse
+ * gives every emoji button tabIndex={-1} and no focus ring — so the state
+ * indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
+ * cannot reach that on white at any saturation, so the 1px inset ring carries
+ * the contrast (measured 3.03–3.19:1) and the fill stays quiet.
  */
 
 /**
@@ -37,8 +39,12 @@ export interface EmojiSelection {
  * source text, so an interpolated class name produces no CSS at all and the
  * hover backgrounds silently never appear.
  *
- * There is no `dark:` set: each `--color-emoji-tint-*` token is a light-dark()
- * pair, and :root / .dark set color-scheme, so one class covers both themes.
+ * There is no `dark:` set: every token is a light-dark() pair, and :root /
+ * .dark set color-scheme, so one class covers both themes.
+ *
+ * The ring GEOMETRY is declared once, as a single `data-[active]:inset-ring-1`
+ * — only the colour is slot-specific. Repeating the width on all twelve slots
+ * would be twelve chances for one to drift.
  *
  * VARIANT ORDER: `data-[active]` LAST, i.e.
  * `group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-…`. Verified against
@@ -64,23 +70,41 @@ const EMOJI_BUTTON = cn(
   'cursor-pointer select-none',
   // `scale` not `transform`: Tailwind v4's scale-* utility sets the standalone
   // `scale` property, which `transition-property: transform` does not cover.
-  'transition-[background-color,scale] duration-100 active:scale-[0.96]',
+  // box-shadow is in the list because Tailwind draws inset-ring-* with it.
+  'transition-[background-color,box-shadow,scale] duration-100 active:scale-[0.96]',
 
-  // Even rows: 1→red, 2→amber, 3→green, 4→teal, 5→blue, 6→violet
-  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-emoji-tint-red',
-  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-emoji-tint-amber',
-  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-emoji-tint-green',
-  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-emoji-tint-teal',
-  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-emoji-tint-blue',
-  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-emoji-tint-violet',
+  // Ring geometry, declared once. Only the colour varies per slot below.
+  'data-[active]:inset-ring-1',
 
-  // Odd rows: same six, rotated by three
-  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-emoji-tint-teal',
-  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-emoji-tint-blue',
-  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-emoji-tint-violet',
-  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-emoji-tint-red',
-  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-emoji-tint-amber',
-  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-emoji-tint-green',
+  // Fill — even rows: 1→red, 2→amber, 3→green, 4→teal, 5→blue, 6→violet
+  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:bg-emoji-fill-red',
+  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:bg-emoji-fill-amber',
+  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:bg-emoji-fill-green',
+  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:bg-emoji-fill-teal',
+  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:bg-emoji-fill-blue',
+  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:bg-emoji-fill-violet',
+
+  // Fill — odd rows: same six, rotated by three
+  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:bg-emoji-fill-teal',
+  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:bg-emoji-fill-blue',
+  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:bg-emoji-fill-violet',
+  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:bg-emoji-fill-red',
+  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:bg-emoji-fill-amber',
+  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:bg-emoji-fill-green',
+
+  // Ring colour — same rotation, paired with the fill by hue
+  'group-data-[row=even]/row:nth-[6n+1]:data-[active]:inset-ring-emoji-ring-red',
+  'group-data-[row=even]/row:nth-[6n+2]:data-[active]:inset-ring-emoji-ring-amber',
+  'group-data-[row=even]/row:nth-[6n+3]:data-[active]:inset-ring-emoji-ring-green',
+  'group-data-[row=even]/row:nth-[6n+4]:data-[active]:inset-ring-emoji-ring-teal',
+  'group-data-[row=even]/row:nth-[6n+5]:data-[active]:inset-ring-emoji-ring-blue',
+  'group-data-[row=even]/row:nth-[6n+6]:data-[active]:inset-ring-emoji-ring-violet',
+  'group-data-[row=odd]/row:nth-[6n+1]:data-[active]:inset-ring-emoji-ring-teal',
+  'group-data-[row=odd]/row:nth-[6n+2]:data-[active]:inset-ring-emoji-ring-blue',
+  'group-data-[row=odd]/row:nth-[6n+3]:data-[active]:inset-ring-emoji-ring-violet',
+  'group-data-[row=odd]/row:nth-[6n+4]:data-[active]:inset-ring-emoji-ring-red',
+  'group-data-[row=odd]/row:nth-[6n+5]:data-[active]:inset-ring-emoji-ring-amber',
+  'group-data-[row=odd]/row:nth-[6n+6]:data-[active]:inset-ring-emoji-ring-green',
 );
 
 let warnedMissingRowIndex = false;
