@@ -148,9 +148,7 @@ export function ToolPartRenderer({
             }}
             badge="error"
           >
-            <div className="p-0">
-              <ToolError error={errorStr} toolName={part.tool} />
-            </div>
+            <ToolError error={errorStr} toolName={part.tool} />
           </BasicTool>
         </ToolDurationContext.Provider>
       </BoundActivateContext.Provider>
