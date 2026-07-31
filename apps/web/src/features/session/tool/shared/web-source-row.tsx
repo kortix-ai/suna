@@ -26,13 +26,21 @@ export function WebSourceRow({ url, title }: { url: string; title: string }) {
   );
 
   if (!safe) {
-    return <div className="flex items-center gap-2 rounded-sm px-2 py-1.5">{inner}</div>;
+    return (
+      <div
+        data-component="web-source-row"
+        className="flex items-center gap-2 rounded-sm px-2 py-1.5"
+      >
+        {inner}
+      </div>
+    );
   }
   return (
     <a
       href={safe}
       target="_blank"
       rel="noopener noreferrer"
+      data-component="web-source-row"
       className="hover:bg-muted flex items-center gap-2 rounded-sm px-2 py-1.5 transition-colors active:scale-[0.99]"
     >
       {inner}

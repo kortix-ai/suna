@@ -12,7 +12,6 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
 import {
@@ -32,7 +31,11 @@ function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[]
   let budget = showAll ? Number.POSITIVE_INFINITY : VISIBLE_SOURCES;
 
   return (
-    <div data-scrollable className="max-h-[400px] space-y-0.5 overflow-auto p-1">
+    <div
+      data-scrollable
+      data-component="web-source-list"
+      className="max-h-[400px] space-y-0.5 overflow-auto p-1"
+    >
       {queryResults.map((qr, qi) => {
         if (budget <= 0) return null;
         const take = qr.sources.slice(0, budget);
@@ -65,7 +68,6 @@ function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[]
 }
 
 export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -82,13 +84,21 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   );
   const isError = status === 'completed' && isErrorOutput(output);
 
+  // A non-technical reader doesn't need to be told this is "a web search" —
+  // the magnifying-glass icon already says that. The row is just what was
+  // searched for, so it reads the same way a search-results page would.
+  const triggerLabel =
+    queryResults.length === 1
+      ? queryResults[0].query || query
+      : queryResults.length > 1
+        ? `${queryResults.length} searches`
+        : query;
+
+  // "results", never "sources"/"queries" — one word, used consistently
+  // whether it's one query or several.
   const triggerBadge =
-    status === 'completed' && !isError && queryResults.length > 0
-      ? queryResults.length > 1
-        ? `${queryResults.length} queries`
-        : totalSources > 0
-          ? `${totalSources} ${totalSources === 1 ? 'source' : 'sources'}`
-          : undefined
+    status === 'completed' && !isError && totalSources > 0
+      ? `${totalSources} ${totalSources === 1 ? 'result' : 'results'}`
       : undefined;
 
   return (
@@ -96,12 +106,9 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
       icon={<Search className="size-3.5 flex-shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="text-foreground text-xs font-medium whitespace-nowrap">
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line3806JsxTextWebSearch')}
-          </span>
-          <span className="text-muted-foreground truncate text-xs font-medium">{query}</span>
+          <span className="text-foreground min-w-0 truncate text-sm">{triggerLabel}</span>
           {triggerBadge && (
-            <span className="text-primary/70 ml-auto flex-shrink-0 text-xs font-medium whitespace-nowrap">
+            <span className="text-muted-foreground/70 ml-auto flex-shrink-0 text-sm whitespace-nowrap">
               {triggerBadge}
             </span>
           )}
