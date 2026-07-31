@@ -20,6 +20,7 @@ import {
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
   GearSixIcon as Settings,
+  SmileyIcon as Smiley,
   StarIcon as Star,
   TrashIcon as Trash2,
   WarningIcon as TriangleAlert,
@@ -91,6 +92,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -584,6 +586,7 @@ const TOC_SECTIONS = [
       { id: 'comp-dropdown', label: 'Dropdown' },
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
+      { id: 'comp-emoji-picker', label: 'Emoji Picker' },
       { id: 'comp-alert', label: 'Alert' },
       { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },
@@ -792,6 +795,64 @@ function ComponentLabel({ children }: { children: React.ReactNode }) {
 
 function ComponentDesc({ children }: { children: React.ReactNode }) {
   return <p className="text-muted-foreground mb-4 text-sm leading-relaxed">{children}</p>;
+}
+
+/**
+ * EmojiPicker demo — the same composition the create-project modal ships
+ * (features/projects/modal/project-icon-field.tsx): an icon-button trigger and
+ * the picker in a popover sized to the grid's exact width.
+ *
+ * Behind a trigger rather than inline on the page, deliberately. The picker
+ * fetches ~782 KB of emoji data the first time it mounts, and this is a public
+ * marketing route — inline, every visitor would pay for it without opening it.
+ */
+function EmojiPickerDemo() {
+  const [open, setOpen] = useState(false);
+  const [selection, setSelection] = useState<EmojiSelection | null>(null);
+
+  return (
+    <div className="flex items-center gap-3">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={selection ? `Icon: ${selection.label}. Change it` : 'Choose an icon'}
+            className="hit-area-1 size-9 shrink-0 transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
+          >
+            {selection ? (
+              // Named by the button's aria-label, so the glyph itself stays out
+              // of the accessibility tree.
+              <span aria-hidden className="text-lg leading-none">
+                {selection.emoji}
+              </span>
+            ) : (
+              <Smiley className="text-muted-foreground size-4" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        {/* Exactly as wide as the 9-column grid inside it: 9 cells of size-8 in
+            a row padded px-1.5, plus 1px of border per side on a border-box
+            surface. p-0 because the picker owns its own padding. */}
+        <PopoverContent
+          align="start"
+          aria-label="Choose an icon"
+          className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+        >
+          <EmojiPicker
+            onEmojiSelect={(emoji) => {
+              setSelection(emoji);
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      <span className="text-muted-foreground text-sm">
+        {selection ? selection.label : 'Nothing picked yet'}
+      </span>
+    </div>
+  );
 }
 
 function MotionBar({
@@ -2336,6 +2397,19 @@ export default function BrandPage() {
                       </div>
                     </PopoverContent>
                   </Popover>
+                </DemoContainer>
+              </div>
+
+              <div id="comp-emoji-picker" className="mb-12">
+                <ComponentLabel>Emoji Picker</ComponentLabel>
+                <ComponentDesc>
+                  Emoji grid for picking a project icon — search, keyboard grid navigation, and a
+                  skin-tone selector. The hovered cell takes one of six tints, rotated by three on
+                  alternating rows. The dataset is self-hosted from <code>public/emojibase/</code>{' '}
+                  and fetched on first open, never from a CDN.
+                </ComponentDesc>
+                <DemoContainer>
+                  <EmojiPickerDemo />
                 </DemoContainer>
               </div>
 
