@@ -1,6 +1,5 @@
 'use client';
 
-import { ThemeToggle } from '@/components/home/theme-toggle';
 import { ReferralModal } from '@/components/referrals/referral-modal';
 import {
   AlertDialog,
@@ -18,6 +17,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -61,9 +62,11 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { Icon } from '../icon/icon';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
@@ -106,6 +109,18 @@ const LEGAL_LINKS: MenuLink[] = [
   { label: 'Terms and conditions', href: '/legal?tab=terms', Icon: ScrollIcon },
 ];
 
+/**
+ * The three theme values `next-themes` accepts, in the order the rest of the
+ * product lists them (see the Appearance tab in user settings — same words, same
+ * icons, same order). A person who learns the control in one place should not
+ * have to re-read it in the other.
+ */
+export const THEME_OPTIONS = [
+  { value: 'light', label: 'Light', Icon: Icon.Sun },
+  { value: 'dark', label: 'Dark', Icon: Icon.Moon },
+  { value: 'system', label: 'System', Icon: Icon.Monitor },
+] as const;
+
 export interface UserMenuUser {
   name: string;
   email: string;
@@ -124,6 +139,7 @@ export function UserMenu({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
@@ -311,6 +327,53 @@ export function UserMenu({
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
+        {isBillingEnabled() && canManageBilling && (
+          <DropdownMenuItem
+            onClick={() =>
+              deferAfterClose(() =>
+                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
+              )
+            }
+            size="sm"
+          >
+            <CreditCard />
+            Billing
+          </DropdownMenuItem>
+        )}
+
+        {/* Theme used to be a segmented control pinned below Log out — the one
+            row in the menu that was not a menu item, sitting under the one row
+            that ends your session. It is a choice between three values, so it is
+            a submenu of three rows like any other, and it sits with Help because
+            both are settings you visit rather than places you go.
+
+            The leading icon shows the theme currently in effect, not the value
+            stored: on `system` it tracks what the OS resolved to, which is the
+            only answer to "what am I looking at right now". */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            {resolvedTheme === 'dark' ? <Icon.Moon /> : <Icon.Sun />}
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
+              <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
+                {THEME_OPTIONS.map(({ value, label, Icon }) => (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    {/* RadioItem wraps its children in a single flex-1 span to
+                        push the check to the right edge, so the icon and label
+                        need their own flex row inside it to stay aligned. */}
+                    <span className="flex items-center gap-2">
+                      <Icon />
+                      {label}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+
         {/* Every reference and legal page collapses into one submenu, so the top
             level only carries things you act on rather than eight links. */}
         <DropdownMenuSub>
@@ -329,42 +392,15 @@ export function UserMenu({
           </DropdownMenuPortal>
         </DropdownMenuSub>
 
-        {isBillingEnabled() && canManageBilling && (
-          <DropdownMenuItem
-            onClick={() =>
-              deferAfterClose(() =>
-                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
-              )
-            }
-            size="sm"
-          >
-            <CreditCard />
-            Billing
-          </DropdownMenuItem>
-        )}
-
-        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm} size="sm">
-          <LogOut />
-
-          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-        </DropdownMenuItem>
-
+        {/* Log out is the only row that ends something, so it gets its own
+            group. Nothing sits below it — the last item in a menu is the one a
+            slipped pointer lands on. */}
         <DropdownMenuSeparator />
 
-        {/* Not a menu item: it hosts a toggle rather than being selectable. It
-            still has to sit in the same column as the items above it, hence the
-            shared row geometry. The focus: and data-disabled: rules it used to
-            carry were dead — this div is not focusable and Radix never marks it
-            disabled, so only the ThemeToggle inside ever takes focus. */}
-        <div
-          className={cn(
-            'text-foreground/80 flex cursor-default items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm font-normal select-none',
-            '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
-          )}
-        >
-          Theme
-          <ThemeToggle variant="compact" />
-        </div>
+        <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
+          <LogOut />
+          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -180,7 +180,6 @@ export function GatewayKeys({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
                           <DropdownMenuItem
-                            variant="destructive"
                             onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
                           >
                             <Trash2 className="size-3.5 shrink-0" />

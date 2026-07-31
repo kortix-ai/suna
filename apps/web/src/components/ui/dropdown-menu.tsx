@@ -2,12 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
-// import { CaretRightIcon as ChevronRight, CircleIcon as Circle } from '@phosphor-icons/react';
-import {
-  CheckIcon as Check,
-  CaretRightIcon as ChevronRight,
-  CircleIcon as Circle,
-} from '@phosphor-icons/react';
+import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
@@ -250,10 +245,19 @@ const DropdownMenuRadioItem = React.forwardRef<
     side?: 'left' | 'right';
   }
 >(({ className, children, size = 'sm', side = 'right', ...props }, ref) => {
+  /**
+   * A check, not a dot, and the same check `DropdownMenuCheckboxItem` uses.
+   *
+   * This was `<Circle className="h-2 w-2 fill-current" />`, which could not
+   * work: Phosphor's CircleIcon is a stroked outline, so `fill-current` painted
+   * nothing, and `MENU_ROW_BASE`'s `[&_svg]:size-4` — a descendant selector —
+   * outranked the `h-2 w-2` sitting on the icon itself. The mark rendered as a
+   * hollow ring. No consumer had ever rendered a RadioItem, so nobody saw it.
+   */
   const indicator = (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Circle className="h-2 w-2 fill-current" />
+        <Check className="text-muted-foreground size-3.5" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
   );
