@@ -11,12 +11,10 @@ export interface NewSessionCreateInput {
 /**
  * Build the session-create payload from the composer's send options.
  *
- * A project session's boot agent is IMMUTABLE and bound at creation. The API
- * preview proxy rejects any prompt whose `agent` differs from the session's
- * bound agent with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION — and the bound agent
- * defaults to "default" when none is set at create. So the agent the composer
- * will send on the very first prompt MUST be bound here, at session birth, or
- * the first message fails to start the task at all.
+ * A project session chooses its boot agent at creation. The first prompt uses
+ * the same agent so initial provisioning applies the intended grants. Later
+ * prompts can switch agents after server-side re-scoping. The boot agent
+ * defaults to "default" when none is set at create.
  *
  * `agent_name` therefore mirrors `options.agent` exactly: the create-time bind
  * and the first-prompt send read the same value, so they can never disagree.

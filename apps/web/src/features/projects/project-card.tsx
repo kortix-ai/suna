@@ -85,11 +85,7 @@ const ProjectCard = ({
               Rename
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={onArchive}
-              disabled={archiving || !canManageProject}
-            >
+            <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canManageProject}>
               {archiving ? (
                 <Loading className="size-4 shrink-0" />
               ) : (

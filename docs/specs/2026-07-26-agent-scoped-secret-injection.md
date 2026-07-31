@@ -116,16 +116,20 @@ so OpenCode resolves its own `default_agent`), so it maps to the session's agent
 rather than triggering a fresh sentinel lookup. Without that, every ordinary turn
 on a concretely-bound session would recompute its grant against `'default'`.
 
-### Refuse a grant-changing switch
+### Re-scope a grant-changing switch
 
 Re-scoping the env on a later turn **cannot undo the disclosure**. By the time a
 switch is observed, the previous agent's secrets are already in
 `/dev/shm/kortix/agent-env.sh`, exported into every shell it spawned, and in its
 own context. Narrowing the next push does not retract any of that.
 
-So a switch whose `secrets` grant differs from the session's is refused:
-`AgentSecretGrantMismatchError` → the existing
-`409 AGENT_SWITCH_REQUIRES_NEW_SESSION`.
+The default product behavior accepts the switch. Before forwarding the prompt,
+the proxy replaces OpenCode's environment with the running agent's grant and
+re-mints the session token's connector and Kortix CLI grant.
+
+An operator can enable `KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK`. In that strict
+mode, a switch whose `secrets` grant differs from the session's is refused:
+`AgentSecretGrantMismatchError` → `409 AGENT_SWITCH_REQUIRES_NEW_SESSION`.
 
 This is deliberately **narrower than `KORTIX_ENFORCE_SESSION_AGENT_LOCK`**, which
 409s on any name change and is gated off precisely because it false-positived on
@@ -140,18 +144,10 @@ actually active**: `SESSION_AGENT_LOCK_ENABLED` is hardcoded `false`
 always null and `agentSelectorLocked` is always false. Users *can* switch agents
 inside an open session today.
 
-So this does change behavior for one population: **projects that declare
-different `secrets` grants per agent**. A mid-session switch across that boundary
-now returns 409 where it previously succeeded. That is the boundary those
-projects declared, so enforcing it is the point — but the UI currently surfaces
-it as a generic error rather than a designed "start a new session" flow.
-
-Everyone else is unaffected: a project with no `agents:` map, or with uniform
-grants, never trips it (see the `undefined ≡ 'all'` note below).
-
-Making this a designed experience means flipping `SESSION_AGENT_LOCK_ENABLED` to
-true so the selector greys out inside a bound session. That is a product
-decision, not a security one, and is deliberately not bundled here.
+Projects can switch between agents with different grants. The switch changes
+future delivery only. It cannot erase a secret that an earlier agent already
+read or remove it from an existing shell process. Operators that require that
+stronger isolation must enable the strict lock or create a new session.
 
 ### `undefined` and `'all'` are one authority
 
@@ -167,12 +163,12 @@ prompting with a concrete agent that omits `secrets`. `grantEnvKey` collapses
 them. An explicit list stays distinct from both — that is a declared narrowing,
 and the project's secret set can change under it.
 
-### Kill switch
+### Strict lock
 
-`KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` (default **on**). Turning it off
-degrades to re-scoping onto the *running* agent's grant — it does **not** restore
-resolution from the stale create-time column. Enforcement off trades the hard
-refusal for a soft narrowing; the original widening is not reachable either way.
+`KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` defaults **off**. The normal path
+re-scopes onto the *running* agent's grant. It does **not** restore resolution
+from the stale create-time column. Set the flag to `true` to refuse switches
+whose secret grants differ.
 
 ## Files
 

@@ -376,7 +376,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|model-defaults",
   "GET|v1|projects|:projectId|model-defaults",
   "PUT|v1|projects|:projectId|model-defaults",
-  "PUT|v1|projects|:projectId|model-enablement",
   "GET|v1|projects|:projectId|model-picker",
   "GET|v1|projects|:projectId|oauth",
   "DELETE|v1|projects|:projectId|oauth|:provider",

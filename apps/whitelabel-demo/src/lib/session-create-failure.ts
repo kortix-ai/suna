@@ -1,4 +1,8 @@
 import { serverErrorBody } from './api-error-body';
+import {
+  connectorRequirement,
+  connectorRequirementSummary,
+} from './connector-required';
 
 /**
  * Why a session create was refused, in words a wrapper's END-USER can act on.
@@ -46,14 +50,29 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
           'The agent is not granted a connector this session needs.',
         retryable: false,
       };
-    case 'CONNECTOR_CONNECTION_REQUIRED':
+    // The connector PRE-FLIGHT. These are the two codes the API really sends —
+    // `CONNECTOR_CONNECTION_REQUIRED`, which used to sit here, exists nowhere in
+    // the platform, so this arm never once matched a real refusal. The wording
+    // comes from the same classifier the connect card uses, so the toast and the
+    // card cannot tell the user two different stories.
+    case 'CONNECTOR_AUTHORIZATION_REQUIRED':
+    case 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE': {
+      const requirement = connectorRequirement(err);
+      const summary = requirement
+        ? connectorRequirementSummary(requirement)
+        : null;
       return {
-        title: 'Connect your account first',
+        title: summary?.title ?? 'This session needs a connector',
         detail:
+          summary?.detail ??
           serverText ??
-          'This session needs an account you have not connected yet.',
+          'A connector this session declares has no usable connection.',
+        // Retrying changes nothing until somebody connects an account, and a
+        // retry button next to "connect this first" invites exactly the loop
+        // the pre-flight exists to prevent.
         retryable: false,
       };
+    }
     // These selections refuse identically until the create input changes.
     case 'SECRET_IDENTIFIER_NOT_FOUND':
       return {

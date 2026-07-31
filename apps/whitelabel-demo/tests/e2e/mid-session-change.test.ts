@@ -28,9 +28,9 @@ describe('what can change mid-session', () => {
 });
 
 describe('classifyAgentSwitch', () => {
-  test('a grant-crossing switch needs a NEW SESSION, not a retry', () => {
-    // Retrying with the same agent fails forever — re-scoping cannot un-read
-    // what the session's original agent already pulled into the sandbox.
+  test('an operator-enforced strict switch lock needs a NEW SESSION, not a retry', () => {
+    // Retrying with the same agent fails while the operator's strict policy is
+    // enabled for this session.
     const result = classifyAgentSwitch({
       code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
       error: 'agent switch requires a new session',

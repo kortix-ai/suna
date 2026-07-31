@@ -974,7 +974,7 @@ function TriggerDetailToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={onDelete} variant="destructive">
+          <DropdownMenuItem onClick={onDelete}>
             <TrashIcon className="shrink-0" />
             Delete trigger
           </DropdownMenuItem>

@@ -7,10 +7,10 @@
  *
  * - MODEL — changeable. `PUT /sessions/{id}/model` re-points the running runtime.
  *   Restarts it, so the in-flight turn ends.
- * - AGENT — changeable PER PROMPT: each message names the agent it runs. But a
- *   switch to an agent with a DIFFERENT secrets grant is refused
- *   (409 AGENT_SWITCH_REQUIRES_NEW_SESSION), because re-scoping now cannot
- *   un-read what the session's original agent already pulled into the box.
+ * - AGENT — changeable PER PROMPT: each message names the agent it runs. The
+ *   proxy re-scopes secret delivery and the server-side token grant before it
+ *   forwards the prompt. An optional strict operator lock can still return
+ *   409 AGENT_SWITCH_REQUIRES_NEW_SESSION for a secret-grant boundary.
  * - SECRETS and CONNECTOR BINDINGS — changeable, with SET semantics:
  *   `PUT /projects/{id}/sessions/{sid}/scope` REPLACES the list with the one
  *   sent, and it takes effect from the next prompt (the per-prompt env sync
@@ -99,9 +99,8 @@ interface UpstreamError {
 /**
  * Classify a prompt rejected because of the agent it asked to run.
  *
- * `AGENT_SWITCH_REQUIRES_NEW_SESSION` is not a failure to retry — retrying with
- * the same agent will always fail. The only resolution is a new session, so the
- * UI must offer that rather than a retry button.
+ * `AGENT_SWITCH_REQUIRES_NEW_SESSION` is only emitted when an operator enables
+ * the optional strict grant lock. Retrying with the same agent will always fail.
  *
  * `AGENT_SECRET_GRANT_UNRESOLVED` is the opposite: the sandbox is fine and only
  * our ability to VERIFY entitlement failed, so retrying IS correct (503).
@@ -126,9 +125,9 @@ export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutc
 /** A refused agent switch, with the agents the server named. */
 export interface AgentSwitchRefusal {
   message: string;
-  /** The agent the message asked for — the one that needs a new session. */
+  /** The agent the message asked for. */
   requestedAgent: string | null;
-  /** The agent this session's sandbox is provisioned for. */
+  /** The agent this session started with. */
   expectedAgent: string | null;
 }
 
@@ -155,8 +154,7 @@ function stringOrNull(value: unknown): string | null {
 }
 
 /**
- * Recognise a send that was refused because the message named an agent whose
- * secret grant differs from the one this session booted with.
+ * Recognise a send refused by an operator's strict immutable-grant policy.
  *
  * Returns null for every other failure: the caller offers "start a new session"
  * ONLY here, because that is the only resolution — retrying the same send fails

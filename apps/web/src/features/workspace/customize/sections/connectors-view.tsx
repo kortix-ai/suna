@@ -924,11 +924,7 @@ function ConnectionRow({
               Use by default{isProjectAuthorization ? ' for the project' : ''}
             </DropdownMenuItem>
           )}
-          {mayMutate && (
-            <DropdownMenuItem variant="destructive" onClick={onDisconnect}>
-              Disconnect
-            </DropdownMenuItem>
-          )}
+          {mayMutate && <DropdownMenuItem onClick={onDisconnect}>Disconnect</DropdownMenuItem>}
         </DropdownMenuContent>
       </DropdownMenu>
     </li>

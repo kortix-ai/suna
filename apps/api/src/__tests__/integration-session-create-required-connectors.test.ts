@@ -147,6 +147,12 @@ beforeAll(async () => {
       '  unavailable:',
       '    connectors: [unavailable_records]',
       '    connectors_required: [unavailable_records]',
+      '  two_unavailable:',
+      '    connectors: [ghost_one, ghost_two]',
+      '    connectors_required: [ghost_one, ghost_two]',
+      '  mixed_failures:',
+      '    connectors: [ghost_one, project_records]',
+      '    connectors_required: [ghost_one, project_records]',
       '',
     ].join('\n'),
     'utf8',
@@ -228,6 +234,7 @@ describe('createProjectSession required connector authorization gate', () => {
         body: {
           error: 'Required connector profile "unavailable_records" is unavailable',
           code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          connectors: ['unavailable_records'],
         },
       },
     });
@@ -262,6 +269,7 @@ describe('createProjectSession required connector authorization gate', () => {
     expect(await response.json()).toEqual({
       error: 'Required connector profile "unavailable_records" is unavailable',
       code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+      connectors: ['unavailable_records'],
     });
     const rows = await db
       .select({ sessionId: projectSessions.sessionId })
@@ -270,5 +278,84 @@ describe('createProjectSession required connector authorization gate', () => {
         and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, sessionId)),
       );
     expect(rows).toEqual([]);
+  });
+
+  test('names every unconfigured alias in one refusal', async () => {
+    // One alias per round trip would make a two-connector agent take two failed
+    // creates to diagnose, and the caller could never tell how many were left.
+    const result = await createProjectSession({
+      project,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: { session_id: crypto.randomUUID(), agent_name: 'two_unavailable' },
+      enforceAccountCap: false,
+      authType: 'supabase',
+    });
+
+    expect(result).toEqual({
+      error: {
+        status: 409,
+        body: {
+          error: 'Required connector profile "ghost_one", "ghost_two" is unavailable',
+          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          connectors: ['ghost_one', 'ghost_two'],
+        },
+      },
+    });
+  });
+
+  test('an unconfigured alias outranks a merely unauthorized one', async () => {
+    // `mixed_failures` requires ghost_one (no connector at all) and
+    // project_records (a connector with no authorization). Reporting
+    // CONNECTOR_AUTHORIZATION_REQUIRED here would send the end-user into a
+    // connect flow while the real blocker is a project the owner has to
+    // configure — so the unavailable code has to win.
+    const result = await createProjectSession({
+      project,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: { session_id: crypto.randomUUID(), agent_name: 'mixed_failures' },
+      enforceAccountCap: false,
+      authType: 'supabase',
+    });
+
+    expect(result).toEqual({
+      error: {
+        status: 409,
+        body: {
+          error: 'Required connector profile "ghost_one" is unavailable',
+          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          connectors: ['ghost_one'],
+        },
+      },
+    });
+  });
+
+  test('the refusal status is distinguishable from an unassigned connector', async () => {
+    // 403 CONNECTOR_NOT_ASSIGNED is a manifest fault that no amount of
+    // connecting fixes; 409 is the state conflict an authorization clears. A
+    // client that cannot tell them apart shows the wrong remedy.
+    const result = await createProjectSession({
+      project,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: {
+        session_id: crypto.randomUUID(),
+        agent_name: 'unavailable',
+        require_connectors: ['project_records'],
+      },
+      enforceAccountCap: false,
+      authType: 'supabase',
+    });
+
+    expect(result).toEqual({
+      error: {
+        status: 403,
+        body: {
+          error: 'Agent "unavailable" is not granted connector "project_records"',
+          code: 'CONNECTOR_NOT_ASSIGNED',
+        },
+      },
+    });
   });
 });

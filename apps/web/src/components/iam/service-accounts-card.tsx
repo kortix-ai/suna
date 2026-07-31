@@ -176,7 +176,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                             Disable
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem onClick={() => setDeleteTarget(sa)} variant="destructive">
+                        <DropdownMenuItem onClick={() => setDeleteTarget(sa)}>
                           <Trash2 className="size-3.5 shrink-0" />
                           Delete permanently
                         </DropdownMenuItem>

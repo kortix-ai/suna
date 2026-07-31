@@ -760,6 +760,53 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   };
 }
 
+export type ConnectLinkEligibility =
+  | { ok: true; connectorId: string; app: string; authorizationStrategy: string }
+  /** No connector with this slug on the project. The manifest really is missing it. */
+  | { ok: false; reason: 'no_such_connector' }
+  /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
+  | { ok: false; reason: 'not_pipedream'; providerType: string }
+  /** Pipedream-backed but its config names no app — a broken connector, not a missing one. */
+  | { ok: false; reason: 'no_app' };
+
+/**
+ * Why a connect link can or cannot be minted for this slug.
+ *
+ * `loadPipedreamConnector` answers all three failures with `null`, so the mint
+ * route told everyone to "add it to kortix.yaml first" — including the people
+ * whose connector is already in kortix.yaml and simply is not Pipedream-backed.
+ * That sends someone to edit a file that already has the entry they are being
+ * asked to add, and the connector they actually need is reachable by a route
+ * this one cannot offer.
+ */
+export async function connectLinkEligibility(
+  projectId: string,
+  slug: string,
+): Promise<ConnectLinkEligibility> {
+  const [row] = await db
+    .select({
+      connectorId: executorConnectors.connectorId,
+      providerType: executorConnectors.providerType,
+      config: executorConnectors.config,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!row) return { ok: false, reason: 'no_such_connector' };
+  if (row.providerType !== 'pipedream') {
+    return { ok: false, reason: 'not_pipedream', providerType: row.providerType };
+  }
+  const app = (row.config as any)?.app;
+  if (typeof app !== 'string' || !app) return { ok: false, reason: 'no_app' };
+  return {
+    ok: true,
+    connectorId: row.connectorId,
+    app,
+    authorizationStrategy: row.authorizationStrategy,
+  };
+}
+
 export function resolveTokenBoundSessionId(
   authenticatedSessionId: string | null,
   requestedSessionId: string | null,

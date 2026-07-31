@@ -49,7 +49,7 @@ const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   },
   agent: {
     badge: 'Per message',
-    note: 'Each message names the agent that runs it, and the composer above picks it. An agent whose SECRET access differs from the one this session booted with is refused — only a new session can run it.',
+    note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.',
   },
   secrets: {
     badge: 'Changeable',
