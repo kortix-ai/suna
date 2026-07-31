@@ -12,6 +12,7 @@ const read = (relative: string) =>
 const source = read('./project-icon-field.tsx');
 const pickerSource = read('../../../components/ui/emoji-picker.tsx');
 const popoverSource = read('../../../components/ui/popover.tsx');
+const buttonSource = read('../../../components/ui/button.tsx');
 
 /**
  * Source with comments stripped. Every "the code does X" check below reads
@@ -89,6 +90,18 @@ describe('ProjectIconField trigger', () => {
     expect(render({ value: null, onChange: noop })).not.toContain('disabled=""');
   });
 
+  test('the trigger stays clickable once an icon is picked', () => {
+    // THE behaviour of this control: nothing here clears an icon, so the only
+    // way to change your mind is to reopen the trigger and pick again. Anything
+    // that conditions `disabled` on `value` — `disabled || value !== null` is
+    // the obvious slip — makes the field a one-shot and is invisible to a test
+    // that only ever renders `value: null`.
+    expect(render({ value: '🚀', onChange: noop })).not.toContain('disabled=""');
+    expect(render({ value: '🚀', onChange: noop, disabled: true })).toContain('disabled=""');
+    expect(code).toMatch(/disabled=\{disabled\}/);
+    expect(code).not.toMatch(/disabled=\{[^}]*\bvalue\b/);
+  });
+
   test('the setter is narrower than the getter', () => {
     // The field can DISPLAY "no icon" — `value` is nullable — but it can never
     // PRODUCE one: the only onChange call site is the picker's onEmojiSelect,
@@ -105,10 +118,37 @@ describe('ProjectIconField trigger', () => {
     expect(code).not.toMatch(/onChange:\s*\(icon: string \| null\)/);
   });
 
-  test('disabling the field closes an open popover', () => {
-    // The modal disables the row while it submits. Left as plain `open={open}`
-    // the picker floats over a form that is already on its way out.
+  test('selecting an emoji reports THAT emoji, and closes the popover', () => {
+    // The two lines the whole component exists for, and the two nothing else
+    // here can reach: `renderToStaticMarkup` cannot click, and the handler is a
+    // closure inside a portalled child. Swapping `emoji.emoji` for `emoji.label`
+    // would ship the string "Rocket" as a project icon with every other gate
+    // green; dropping setOpen(false) leaves the picker up over the modal.
+    const handler = code.slice(code.indexOf('onEmojiSelect={'), code.indexOf('</PopoverContent>'));
+
+    expect(handler).toMatch(/onChange\(emoji\.emoji\)/);
+    expect(handler).not.toMatch(/onChange\(emoji\.label\)/);
+    expect(handler).toMatch(/setOpen\(false\)/);
+  });
+
+  test('the popover is controlled in both directions', () => {
+    // `open` is a controlled prop, so without onOpenChange nothing can ever set
+    // it: the trigger click, outside-click and Escape all route through it. The
+    // popover would simply never open.
+    expect(code).toMatch(/<Popover\s+open=\{[^}]*\}\s+onOpenChange=\{setOpen\}/);
+  });
+
+  test('disabling the field closes an open popover AND resets the state', () => {
+    // Radix drives `open` through useControllableState: a controlled prop that
+    // changes value on re-render is recomputed and fires nothing, because
+    // onOpenChange only runs from setValue. So the guard alone closes the
+    // popover when `disabled` goes true WITHOUT telling us, and local `open`
+    // stays true — then `disabled` going false re-evaluates the guard to true
+    // and the picker reopens on its own. Task 7 wires `disabled={submitting}`,
+    // and a failed create flips that back. The reset is what makes it safe; the
+    // guard alone is the bug.
     expect(code).toMatch(/<Popover\s+open=\{open && !disabled\}/);
+    expect(code).toMatch(/if \(disabled && open\) setOpen\(false\);/);
   });
 });
 
@@ -171,6 +211,19 @@ describe('ProjectIconField popover geometry', () => {
     // The width above is computed from the default. An explicit `columns` on
     // Frimousse.Root would silently make it wrong.
     expect(pickerSource).not.toMatch(/<Frimousse\.Root[\s\S]*?\bcolumns=/);
+  });
+
+  test('the popover hangs off the trigger’s leading edge', () => {
+    // align="start" is a layout decision, not a default: the trigger is the
+    // leftmost control in the modal row, so `center` or `end` would push a
+    // 278px popover out past the modal's edge.
+    expect(code).toMatch(/<PopoverContent[\s\S]*?align="start"/);
+  });
+
+  test('the popover dialog has an accessible name', () => {
+    // Radix gives PopoverContent role="dialog". Unlabelled, a screen reader
+    // announces "dialog" and nothing else.
+    expect(code).toMatch(/<PopoverContent[\s\S]*?aria-label="Choose project icon"/);
   });
 
   test('the popover cancels its own padding', () => {
@@ -258,16 +311,59 @@ describe('ProjectIconField conventions', () => {
     expect(code).toMatch(/relative inline-flex size-6 items-center justify-center/);
   });
 
-  test('names exact transition properties, never all', () => {
-    expect(code).not.toMatch(/transition-all|transition:\s*all/);
+  test('the RENDERED button names exact transition properties, never all', () => {
+    // This has to read the markup, not the source. Read from source it is
+    // trivially true — the component declares no transition of its own — while
+    // the button on screen carried Button's base `transition-all`
+    // (button.tsx:8) and ran active:scale-[0.96] on it. A test that cannot see
+    // the defect it is named after is worse than no test.
+    //
+    // Button composes through cn(), so tailwind-merge resolves the two into one
+    // transition-property utility and the winner is observable here.
+    const classes = render({ value: null, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '';
+
+    expect(classes).toContain('transition-[color,background-color,scale]');
+    expect(classes).not.toContain('transition-all');
+
+    // `scale`, not `transform`: Tailwind v4's scale-* utility sets the
+    // standalone `scale` property, which `transition-property: transform` does
+    // not cover, so listing transform would leave the press snapping.
+    expect(classes).not.toMatch(/transition-\[[^\]]*transform/);
   });
 
-  test('uses no icon as a spinner', () => {
-    expect(code).not.toMatch(/animate-spin\b/);
-    expect(code).not.toMatch(/CircleNotch|SpinnerGap|SpinnerIcon/);
+  test('the trigger has a real hover state', () => {
+    // secondary-outline's hover:bg-secondary is identical to its resting
+    // bg-secondary (button.tsx:27), so the trigger gave no hover feedback at
+    // all and press scale was the only pointer response. `outline` is what the
+    // design system prescribes for an icon-only button and carries a hover fill
+    // that differs from its rest.
+    const variants = buttonSource.match(/outline:\s*'([^']*)'/)?.[1] ?? '';
+
+    expect(code).toMatch(/variant="outline"/);
+    expect(variants).toContain('hover:bg-foreground/5');
+    expect(variants).toContain('bg-transparent');
   });
 
-  test('uses no raw palette colour', () => {
+  test('the trigger is sized as an icon button', () => {
+    // size decides whether the control lines up with the sibling Input at all.
+    // The className overrides it to size-9; without size="icon" the base
+    // `default` size brings h-9 px-4 and the button stops being square.
+    expect(code).toMatch(/size="icon"/);
+  });
+
+  test('the cross-fade pops the outgoing face out of layout', () => {
+    // mode="popLayout" is what lets the two absolutely-positioned faces
+    // overlap during the swap. Without it AnimatePresence keeps the outgoing
+    // child in flow and the shared box is no longer shared.
+    expect(code).toContain('mode="popLayout"');
+  });
+
+  test('the unset glyph reads as a placeholder, not as content', () => {
+    // A fallback smiley in the full foreground colour makes an empty field look
+    // filled. muted-foreground is the token that says "nothing chosen yet" —
+    // and keeping it a token is what the design system requires: nothing else
+    // in the toolchain rejects a raw palette class like text-blue-500 here.
+    expect(code).toMatch(/<SmileyIcon className="text-muted-foreground size-4" \/>/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-(?:red|blue|green|amber|slate|zinc|gray)-\d/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-\[(?:hsl|rgb|oklch|#)/);
   });
