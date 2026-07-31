@@ -19,7 +19,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
+import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext } from 'react';
@@ -38,7 +38,6 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     (streamingInput.target_filepath as string) ||
     undefined;
   const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
   const ext = filename.split('.').pop() || '';
   const diagnostics = getToolDiagnostics(part, filePath);
 
@@ -70,7 +69,6 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         subtitle: isStalePending
           ? undefined
           : filename || (isStalePending ? 'Working...' : undefined),
-        args: directory ? [directory] : undefined,
       }}
       onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
       defaultOpen={defaultOpen}

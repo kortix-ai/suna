@@ -20,7 +20,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
+import { getFilename } from '@/ui';
 import { FileIcon, FileTextIcon, FolderIcon as Folder } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
@@ -36,7 +36,6 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(part);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
   const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
   const { toDisplayPath } = useOcFileOpen();
@@ -66,7 +65,6 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           subtitle: isStalePending
             ? undefined
             : filename || (isStalePending ? 'Working...' : undefined),
-          args: directory ? [directory] : undefined,
         }}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
         defaultOpen={defaultOpen}
