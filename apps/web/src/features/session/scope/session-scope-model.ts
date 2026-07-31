@@ -96,19 +96,10 @@ export function createNewSessionScopeDraft(
 ): SessionScopeDraft {
   const draft: SessionScopeDraft = {};
   if (catalog.secrets.status === 'ready') {
-    draft.secrets = null;
+    draft.secrets = [];
   }
   if (catalog.connector_profiles.status === 'ready') {
-    draft.connector_bindings = Object.fromEntries(
-      catalog.connector_profiles.items.flatMap((connector) => {
-        const authorization =
-          connector.authorizations.find((candidate) => candidate.is_default) ??
-          connector.authorizations[0];
-        return authorization
-          ? [[connector.slug, { authorization_id: authorization.authorization_id }]]
-          : [];
-      }),
-    );
+    draft.connector_bindings = {};
   }
   return draft;
 }

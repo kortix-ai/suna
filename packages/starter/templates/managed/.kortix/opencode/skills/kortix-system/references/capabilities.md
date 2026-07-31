@@ -38,7 +38,7 @@ agents, skills, integrations, automations, and memory.
   isolated.
 
 Because it's all a repo, everything is versioned, diffable, portable, and
-self-hostable — on your laptop, your VPC, or fully air-gapped. Work runs
+self-hostable — on your laptop, your own VPC, or your own on-prem network. Work runs
 three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the
 agent works and checks in for the calls that matter), and **automated** (a
 schedule or trigger runs it end to end).
@@ -54,7 +54,7 @@ schedule or trigger runs it end to end).
 | Media | Generates images and video, narration/text-to-speech, and transcription |
 | Websites & apps | Builds sites and web apps in the repo and deploys them as live apps |
 | Integrations | 3,000+ connectors plus MCP, OpenAPI, GraphQL, and raw HTTP — brokered server-side |
-| Secrets | Encrypted, scoped credentials injected at runtime, never shown to the model or logs |
+| Secrets | Encrypted, scoped credentials injected at runtime, scoped to this agent's grant |
 | Memory | A living, file-based company brain that compounds what it learns across sessions |
 | Scheduling | Cron and webhook triggers that spawn sessions automatically — see the `<scheduling>` section |
 | Channels | Slack and chat surfaces that start sessions where the team already works |
@@ -113,10 +113,12 @@ connected, **mint a setup link and surface it in the same turn** rather
 than telling the user to dig through settings or paste a secret into chat
 (see the `credentials-and-setup-links.md` reference).
 
-**Secrets.** Credentials are encrypted, scoped per person and group, and
-injected into the sandbox at runtime — **never exposed to the model or
-written to logs**. The agent uses them through the broker; it never sees
-the raw value.
+**Secrets.** Credentials are encrypted at rest and scoped to the project, the
+agent's grant, and the session allowlist. A **connector** credential is brokered
+server-side and never enters the sandbox — the agent calls the connector through
+one scoped token. A **runtime** secret is injected into the sandbox as a real
+environment value, so any command the agent runs can read it. Grant runtime
+secrets deliberately.
 
 **Memory.** Kortix builds a living, file-based "company brain" — context
 that compounds across sessions: projects, the people and orgs that come

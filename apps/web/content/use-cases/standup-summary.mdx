@@ -88,8 +88,7 @@ cannot change an issue or touch a branch.
 
 The agent is **read-only** across Linear and GitHub by design: its only write is
 the Slack post. It doesn't move tickets, comment on PRs, or edit anyone's work.
-Credentials are encrypted in the Secrets Manager and injected at runtime, never
-shown to the model or written to logs.
+Credentials are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Post the standup and prompt the gaps">
@@ -115,12 +114,10 @@ rather than a blank line.
 The agent reads everyone's activity across two tools and posts to a shared
 channel, so the access is scoped and contained:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session reads
-  the day's activity, builds the summary, and only the Slack post leaves the
-  sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session reads
+  the day's activity, builds the summary, and only the Slack post is written back out.
 - **Scoped secrets.** The Linear, GitHub, and Slack credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only across the tools.** The Linear and GitHub connectors are scoped to
   read. The agent's only write is the standup post; it changes nothing in the
   source tools.

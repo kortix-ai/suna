@@ -15,7 +15,7 @@ import {
   EnvelopeIcon as Mail,
   DotsThreeIcon as MoreHorizontal,
   NetworkIcon as Network,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
@@ -123,7 +123,7 @@ import {
   type Icon as IconMynauiType,
   MagnifyingGlassIcon as Search,
   ShieldIcon as Shield,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
@@ -1554,7 +1554,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid weight="fill" className="size-3.5" />
+                                      <TrashIcon className="size-3.5" />
                                       Remove from team
                                     </DropdownMenuItem>
                                   </>
@@ -1567,7 +1567,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid weight="fill" className="size-3.5" />
+                                      <TrashIcon className="size-3.5" />
                                       Leave team
                                     </DropdownMenuItem>
                                   </>

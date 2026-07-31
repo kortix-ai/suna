@@ -84,7 +84,7 @@ export default function UseCasesIndexPage() {
         <div className="absolute inset-0 z-0 mask-y-to-95%">
           <KortixLetterField seed={7412} />
         </div>
-        <div className="relative z-10 mx-auto max-w-6xl">
+        <div className="relative z-10 mx-auto max-w-7xl">
           <Reveal>
             <Badge variant="kortix" className="rounded">
               {EYEBROW}
@@ -100,7 +100,7 @@ export default function UseCasesIndexPage() {
       </section>
 
       <section className="px-5 py-10 sm:py-14">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <UseCasesBrowser posts={useCases} />
         </div>
       </section>

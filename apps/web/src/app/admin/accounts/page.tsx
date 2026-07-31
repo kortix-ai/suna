@@ -17,7 +17,7 @@ import {
   KanbanIcon as FolderKanban,
   ClockCounterClockwiseIcon as History,
   EnvelopeIcon as Mail,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
   SlidersHorizontalIcon as SlidersHorizontal,
   UsersIcon as Users,

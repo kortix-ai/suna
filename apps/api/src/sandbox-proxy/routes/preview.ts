@@ -874,9 +874,9 @@ export async function forwardToSandbox(
             // projects/lib/secret-grant.ts.
             requestedAgent,
           });
-          // The env sync above already refused a secret-boundary switch, so
-          // reaching here means the switch is legal. Re-point the token's
-          // connector/CLI grant at the agent that will actually run — it was
+          // The env sync above applied the running agent's secret grant, or
+          // refused it when the optional strict lock is enabled. Re-point the
+          // token's connector/CLI grant at the agent that will actually run — it was
           // frozen at mint from the BOOT agent, and those gates read it at call
           // time. Only on a real switch: an ordinary turn resolves to the
           // session's own agent and skips the manifest read entirely.

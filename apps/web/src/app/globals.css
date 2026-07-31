@@ -8,146 +8,6 @@
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 
-/* ─── Roobert — one variable font, three axes ─────────────────────────────────
-   RoobertCollectionVF.woff2 is the foundry's three-axis master:
-     wght 300–900 · ital 0–11 · MONO 0–100 (0 sans · 60 SemiMono · 100 mono)
-
-   There is ONE family. The sans / SemiMono / mono / italic distinctions are
-   axis positions, not separate families, and they are pinned at ELEMENT level
-   via the custom properties below.
-
-   Why not the `font-variation-settings` @font-face descriptor (the obvious
-   approach)? WebKit ignores it outright — every family renders the default
-   instance, so Safari would show all code in a proportional face. Measured:
-   MONO=100 gives W 475.68 vs m 423.36 there. No `src` format() syntax fixes
-   it. Element-level settings work in Chromium, Firefox AND WebKit.
-
-   Do NOT convert this to next/font/local: it fingerprints per call, and the
-   four calls this replaced would emit the same binary four times (~1.2 MB),
-   worse than the four files it replaced. The explicit <link rel="preload"> in
-   layout.tsx only fixes DISCOVERY — the browser starts fetching sooner — it
-   does NOT restore the metric-matched fallback next/font/local generated
-   automatically (ascent/descent/size-adjust so a fallback face occupies the
-   same box as Roobert, avoiding swap-time layout shift). The 'Roobert
-   Fallback' @font-face below restores that for the sans axis: the override
-   values are computed from this binary's wght=400/ital=0/MONO=0 instance
-   (fontTools varLib.instancer, matching the '--font-weight-normal' most body
-   text renders at) against next/font's own Arial reference constants — see
-   get-fallback-metrics-from-font-file.js in @next/font/local for the exact
-   formula this mirrors. Mono and SemiMono are NOT metric-matched: MONO=100/60
-   have different average glyph widths than the sans instance measured here,
-   and there is no verified reference constant for a monospace substitute to
-   compute against — they still fall through to the generic system stack
-   un-adjusted.
-
-   The licence forbids modifying, subsetting, or renaming this binary. */
-@font-face {
-  font-family: 'Roobert';
-  font-style: normal;
-  font-weight: 300 900;
-  font-display: swap;
-  src: url('/fonts/roobert/RoobertCollectionVF.woff2') format('woff2');
-}
-
-/* Fallback metrics for the sans axis only (see the note above). Measured from
-   RoobertCollectionVF.ttf at wght=400/ital=0/MONO=0:
-   unitsPerEm=1000, hhea ascent=1018, descent=-246, lineGap=0, average
-   a-z-plus-space glyph width=470.88 — run against next/font/local's own
-   DEFAULT_SANS_SERIF_FONT (Arial, azAvgWidth=934.51, unitsPerEm=2048) using
-   its published formula. `local()` resolves to whatever the OS calls Arial
-   (or a metric-compatible clone); if that lookup fails this face defines no
-   glyphs and the stack simply continues to the next family. */
-@font-face {
-  font-family: 'Roobert Fallback';
-  src: local('Arial');
-  ascent-override: 98.65%;
-  descent-override: 23.84%;
-  line-gap-override: 0%;
-  size-adjust: 103.2%;
-}
-
-:root {
-  --rb-mono: 0;
-  --rb-ital: 0;
-  --rb-ligatures: normal;
-  --rb-features: 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
-}
-
-/* Declared on `*` deliberately. `font-variation-settings`, `font-variant-
-   ligatures` and `font-feature-settings` are all inherited properties, so an
-   element that only changes one of the `--rb-*` custom properties would
-   inherit its parent's ALREADY-SUBSTITUTED value and never re-resolve.
-   Declaring the real properties on every element makes each one recompute
-   from the custom properties, which do inherit — and lets a descendant (e.g.
-   `.font-sans` inside `.font-mono`, or `.not-italic` inside `.italic`) cancel
-   an ancestor's axis pin by only overriding the custom property, the same
-   mechanism that already let `font-mono` and `italic` compose.
-   `wght` is deliberately absent from font-variation-settings — `font-weight`
-   still drives it. */
-* {
-  font-variation-settings:
-    'MONO' var(--rb-mono, 0),
-    'ital' var(--rb-ital, 0);
-  font-variant-ligatures: var(--rb-ligatures, normal);
-  font-feature-settings: var(--rb-features, normal);
-}
-
-/* `ital` is a 0–11 axis, not 0–1. CSS `font-style: italic` alone would land on
-   ital=1 and render roughly 9% of the intended slant, so set the axis. */
-em,
-i,
-.italic {
-  --rb-ital: 11;
-  /* `font-style: italic` is requested here (Tailwind's `.italic` sets it
-     explicitly; the UA stylesheet sets it on <em>/<i>), but only one face is
-     registered (font-style: normal) — no face matches `italic`, so Chromium
-     and WebKit's default font-synthesis-style:auto draws a SYNTHETIC oblique
-     on top of the real `ital 11` axis slant already applied above. Measured
-     H-stem slant at 200px: 24.06° (synthesized + real) vs the intended
-     11.11° (real only) — both engines. Firefox does not synthesize here (it
-     already measures 11.11°), so this is a no-op there.
-     Fix: suppress synthesis so only the real axis position slants, rather
-     than adding a second `font-style: italic` @font-face for the same src —
-     the plan for this migration deliberately collapsed that split (see
-     docs/superpowers/plans/2026-07-30-roobert-single-file-font.md) and a
-     second face would still need this same reset for any other element that
-     requests italic without a matching `.italic`/`em`/`i` selector. */
-  font-synthesis-style: none;
-}
-
-/* Cancels `--rb-ital` on a descendant of `.italic` (Tailwind's `.not-italic`
-   itself only sets `font-style: normal`, which cannot override the inherited
-   axis position — see the `*` rule above). Real site: input.tsx's `type=
-   "file"` input pairs `italic` on the field with `file:not-italic` on the
-   generated `::file-selector-button`, so both the plain class and that
-   variant's pseudo-element selector need the reset. */
-.not-italic,
-.\!not-italic {
-  --rb-ital: 0;
-}
-
-.file\:not-italic::file-selector-button {
-  --rb-ital: 0;
-}
-
-/* `--rb-mono`/`--rb-ligatures`/`--rb-features` all inherit (see the `*` rule
-   above), so `.font-sans` used to be unable to escape a mono ancestor — it
-   only changed `font-family`, which is a no-op here since sans/SemiMono/mono
-   are one family. Real regressions this fixes: cli-demo.tsx (the marketing
-   landing page, two call sites) and bash-tool.tsx render `.font-sans` inside
-   a `.font-mono` container; checkpoint-detail-dialog.tsx puts `.font-sans`
-   directly on a `<pre>`, matched by the `pre` selector in `@layer base`
-   below. Reset all three custom properties — not just font-family — so
-   `.font-sans` restores proportional rendering, real ligatures and the
-   site's default stylistic sets anywhere it appears, including on a `<pre>`
-   itself. Unlayered (like the rest of this block) so it also wins over the
-   `pre, code, .font-mono` rule in `@layer base`, regardless of specificity. */
-.font-sans {
-  --rb-mono: 0;
-  --rb-ligatures: normal;
-  --rb-features: 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
-}
-
 /* ─── Fumadocs → Kortix brand overrides ─── */
 /* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
    automatically and color has a single source of truth. `--color-fd-card`
@@ -316,26 +176,8 @@ i,
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans:
-    'Roobert', 'Roobert Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    'Helvetica Neue', sans-serif;
-  --font-mono: 'Roobert', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-semimono: 'Roobert', ui-sans-serif, system-ui, sans-serif;
-  /* wght is a 300–900 axis; 100, 200 and 950 do not exist in this typeface and
-     the browser clamps to the ends. Spread Tailwind's ten names across the real
-     axis instead of declaring weights the font cannot draw. 400–800 are
-     unchanged, so no shipped UI shifts; only light and black move.
-     `font-heavy` is the tenth step — Roobert's own instance at 900 is "Heavy". */
-  --font-weight-thin: 300;
-  --font-weight-extralight: 335;
-  --font-weight-light: 368;
-  --font-weight-normal: 400;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --font-weight-extrabold: 800;
-  --font-weight-black: 870;
-  --font-weight-heavy: 900;
+  --font-sans: var(--font-roobert);
+  --font-mono: var(--font-roobert-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -352,6 +194,11 @@ i,
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  /* Interaction overlays — translucent ink, not solid surfaces, so a hover or
+     selection tint blends over whatever substrate is behind it (canvas,
+     surface-1, an image). Used by Card's proximity highlight + selected fill. */
+  --color-hover: var(--hover);
+  --color-active: var(--active);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
@@ -721,40 +568,63 @@ i,
     }
   }
 }
-
+ 
+/*
+ * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
+ * Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never
+ * from opacity on type. Blue is a signal only: hyperlinks, focus, selection —
+ * never a fill or a background.
+ *
+ * Dark is the doc's palette verbatim. The doc ships no light mode, so light
+ * mirrors each surface's lift distance from canvas, anchored on the doc's own
+ * inverse-canvas (#ffffff) and inverse-ink (#000000).
+ *
+ *   role           dark        light
+ *   canvas         #090909     #ffffff
+ *   surface-1      #141414     #f4f4f4
+ *   surface-2      #1c1c1c     #ececec
+ *   ink            #ffffff     #000000
+ *   ink-muted      #999999     #666666
+ *   hairline       #262626     #e2e2e2
+ *   hairline-soft  #1a1a1a     #eeeeee
+ *   accent-blue    #0099ff     #0099ff
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.1448 0 0);
-  --card: oklch(0.9651 0 0);
-  --card-foreground: oklch(0.1448 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.1448 0 0);
-  --primary: oklch(0.2046 0 0);
-  --primary-foreground: oklch(0.9851 0 0);
-  --secondary: oklch(0.9502 0 0);
-  --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9502 0 0);
-  --muted-foreground: oklch(0.5555 0 0);
-  --accent: oklch(0.9702 0 0);
-  --accent-foreground: oklch(0.2046 0 0);
+  --background: oklch(1 0 0); /* canvas */
+  --foreground: oklch(0 0 0); /* ink */
+  --card: oklch(0.9672 0 0); /* surface-1 */
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0 0 0); /* ink — black pill CTA */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9431 0 0); /* surface-2 */
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.9431 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.5103 0 0); /* ink-muted */
+  --accent: oklch(0.9672 0 0); /* surface-1 */
+  --accent-foreground: oklch(0 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.8819 0 0);
-  --input: oklch(0.9612 0 0);
-  --ring: oklch(0.709 0 0);
+  --border: oklch(0.9128 0 0); /* hairline */
+  --input: oklch(0.9431 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue — focus only */
+  --hover: oklch(0 0 0 / 0.045); /* ink @ 4.5% — transient hover tint */
+  --active: oklch(0 0 0 / 0.075); /* ink @ 7.5% — persistent selected fill */
+  --focus-ring: var(--ring);
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.9851 0 0);
-  --sidebar-foreground: oklch(0.1448 0 0);
-  --sidebar-primary: oklch(0.2046 0 0);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.9702 0 0);
-  --sidebar-accent-foreground: oklch(0.2046 0 0);
-  --sidebar-border: oklch(0.9219 0 0);
-  --sidebar-ring: oklch(0.709 0 0);
+  --sidebar: oklch(0.9672 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9431 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.9128 0 0); /* hairline */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 
@@ -782,38 +652,41 @@ i,
 }
 
 .dark {
-  --background: oklch(0.1448 0 0);
-  --foreground: oklch(0.9851 0 0);
-  --card: oklch(0.2046 0 0);
-  --card-foreground: oklch(0.9851 0 0);
-  --popover: oklch(0.2046 0 0);
-  --popover-foreground: oklch(0.9851 0 0);
-  --primary: oklch(0.9219 0 0);
-  --primary-foreground: oklch(0.2046 0 0);
-  --secondary: oklch(0.2686 0 0);
-  --secondary-foreground: oklch(0.9851 0 0);
-  --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.709 0 0);
-  --accent: oklch(0.2686 0 0);
-  --accent-foreground: oklch(0.9851 0 0);
+  --background: oklch(0.1398 0 0); /* canvas #090909 */
+  --foreground: oklch(1 0 0); /* ink #ffffff */
+  --card: oklch(0.1913 0 0); /* surface-1 #141414 */
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.1913 0 0); /* surface-1 */
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0); /* white pill CTA */
+  --primary-foreground: oklch(0.1398 0 0);
+  --secondary: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2264 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.683 0 0); /* ink-muted #999999 */
+  --accent: oklch(0.1913 0 0); /* surface-1 */
+  --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.2629 0 0);
-  --input: oklch(0.2686 0 0);
-  --ring: oklch(0.5555 0 0);
+  --border: oklch(0.2686 0 0); /* hairline #262626 */
+  --input: oklch(0.2264 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff — focus only */
+  --hover: oklch(1 0 0 / 0.06); /* ink @ 6% — transient hover tint */
+  --active: oklch(1 0 0 / 0.1); /* ink @ 10% — persistent selected fill */
+  --focus-ring: var(--ring);
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.17 0 0);
-  --sidebar-foreground: oklch(0.9851 0 0);
-  --sidebar-primary: oklch(0.4878 0.2432 264.4045);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.2686 0 0);
-  --sidebar-accent-foreground: oklch(0.9851 0 0);
-  --sidebar-border: oklch(1 0 0);
-  --sidebar-ring: oklch(0.5555 0 0);
+  --sidebar: oklch(0.1913 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2264 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.2178 0 0); /* hairline-soft #1a1a1a */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 
@@ -861,11 +734,13 @@ i,
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* font-feature-settings is no longer set here directly — it comes from
-       the unlayered `*` rule reading `--rb-features`, whose default (the same
-       stylistic sets this used to hardcode) lives on `:root` above. That
-       indirection is what lets `.font-mono`/`.font-sans` override the sets
-       per element instead of only being able to change font-family. */
+    font-feature-settings:
+      'ss10' on,
+      'ss09' on,
+      'ss03' on,
+      'ss04' on,
+      'ss14' on,
+      'palt';
   }
   :root {
     color-scheme: light;
@@ -878,6 +753,13 @@ i,
   body {
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
+    font-feature-settings:
+      'ss10' on,
+      'ss09' on,
+      'ss03' on,
+      'ss04' on,
+      'ss14' on,
+      'palt';
     min-height: 100dvh;
   }
 
@@ -907,30 +789,6 @@ i,
       var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
       'Liberation Mono', 'Courier New', monospace, 'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR',
       'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
-    /* THIS is what makes the text monospaced — the family name does not.
-       Roobert is one family; mono is the MONO=100 position on its axis. The `*`
-       rule in the @font-face block re-substitutes this per element. */
-    --rb-mono: 100;
-    /* `->` `<-` (calt) and `tt` `ff` `ffi` (liga) collapse monospace cells, so
-       `getAttribute->off` renders three cells short. Disabling `calt` alone
-       fixes only the arrows — this single property fixes all five.
-       Set via the custom property (not `font-variant-ligatures` directly) so
-       `.font-sans` can cancel it the same way it cancels `--rb-mono` — see
-       the `*` rule and `.font-sans` near the top of this file. */
-    --rb-ligatures: none;
-    /* Reset the display-only stylistic sets. `--rb-features` otherwise
-       inherits the site's default sets (declared on `:root`) and would apply
-       them to code. Those sets swap E F L y : ; ? — and `:` and `;` are
-       everywhere in TypeScript. `zero` stays so a slashed 0 remains
-       distinguishable from O. Set via the custom property for the same
-       reason as `--rb-ligatures` above. */
-    --rb-features: 'zero';
-  }
-
-  /* Roobert is one family; SemiMono is the MONO=60 position on its axis.
-     Without this the `font-semimono` utility would render plain sans. */
-  .font-semimono {
-    --rb-mono: 60;
   }
 }
 

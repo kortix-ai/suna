@@ -2,7 +2,11 @@ import type { SessionScope, SessionScopeInput } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import type { SessionScopeSelectionCatalog } from './session-scope-model';
-import { commitSessionScopeDraft, getSessionScopeAvailability } from './session-scope-toolbar';
+import {
+  commitSessionScopeDraft,
+  createNewSessionScopeInitialization,
+  getSessionScopeAvailability,
+} from './session-scope-toolbar';
 
 const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   secrets_allowlist: ['MAIL_TOKEN'],
@@ -55,6 +59,50 @@ describe('getSessionScopeAvailability', () => {
     ).toEqual({
       secrets: false,
       connector_bindings: true,
+    });
+  });
+});
+
+describe('createNewSessionScopeInitialization', () => {
+  test('commits default-deny scope before the first prompt', () => {
+    expect(createNewSessionScopeInitialization(catalog())).toEqual({
+      draft: {
+        secrets: [],
+        connector_bindings: {},
+      },
+      commit: {
+        draft: {
+          secrets: [],
+          connector_bindings: {},
+        },
+        availability: {
+          secrets: true,
+          connector_bindings: true,
+        },
+      },
+    });
+  });
+
+  test('commits only catalog axes that are available', () => {
+    expect(
+      createNewSessionScopeInitialization(
+        catalog({
+          secrets: { status: 'unavailable' },
+        }),
+      ),
+    ).toEqual({
+      draft: {
+        connector_bindings: {},
+      },
+      commit: {
+        draft: {
+          connector_bindings: {},
+        },
+        availability: {
+          secrets: false,
+          connector_bindings: true,
+        },
+      },
     });
   });
 });

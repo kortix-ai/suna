@@ -17,7 +17,7 @@ import {
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
   KeyIcon as KeyRound,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ArrowCounterClockwiseIcon as RotateCcw,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,

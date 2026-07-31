@@ -54,11 +54,20 @@ kortix.runtime(); // OpenCode REST compatibility client
 | `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
-`accounts.audit` is the enterprise audit log.
+`accounts.audit` is the enterprise reconstruction log. It combines authenticated
+API requests with semantic session, executor, approval, and computer events.
 
 | method | what |
 | --- | --- |
-| `audit.log(...)` · `audit.export(...)` · `audit.webhooks.list/create/update/remove(...)` | audit events · CSV/JSONL export · manage SIEM webhooks |
+| `audit.log(accountId, filters?)` | list events by project, session, actor, source, outcome, request, correlation, resource, action, or time |
+| `audit.export(accountId, filters?)` | export the same filtered event stream as CSV or JSONL |
+| `audit.webhooks.list/create/update/remove(...)` | manage signed SIEM webhooks for the centralized stream |
+
+Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
+`request_id`, `trace_id`, and `correlation_id` when the action supplies them.
+The API does not store request bodies, prompts, secrets, credentials, or raw
+connector arguments in the centralized event. Executor events can include a
+bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
 

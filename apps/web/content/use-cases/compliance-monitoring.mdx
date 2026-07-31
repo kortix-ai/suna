@@ -80,8 +80,7 @@ model, the agent can:
 The sweep's access to AWS is **read-only** — it inspects state, it doesn't change
 it. Remediation is proposed as a reviewed **change request** and stops at a
 **human approval gate**; nothing is applied automatically. Credentials are
-encrypted in the secrets manager and injected at runtime, never shown to the
-model or written to logs.
+encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each day surface the drift">
@@ -107,11 +106,11 @@ narrower policy held for review.
 Giving an agent a standing view of the infrastructure is a trust question. The
 relevant controls on Kortix:
 
-- **Isolation.** Every sweep runs in its own microVM sandbox on its own branch.
-  The session can reach only what it's scoped to read, and only the findings it
-  files leave the sandbox.
+- **Isolation.** Every sweep runs in its own isolated sandbox on its own branch.
+  The session is granted access only to what it's scoped to read, and only the findings it
+  files are written back out.
 - **Scoped secrets.** Each credential is encrypted in the secrets manager,
-  injected into the sandbox at runtime, and never exposed to the model or the
+  injected into the sandbox at runtime, and scoped to the agents you grant them to or the
   logs.
 - **Human approval gate.** Remediation is proposed, never auto-applied; a person
   reviews and applies each change.

@@ -15,15 +15,12 @@
  *       -> the token still carries A's grant
  *       -> B calls A's connectors, including ones its own manifest denies it
  *
- * Secrets are handled the opposite way, deliberately (see `secret-grant.ts`): a
- * secret-boundary switch is REFUSED, because by the time the switch is observed
- * the previous agent's secrets are already in the box's tmpfs env file, in every
- * shell it spawned, and in its own context — narrowing later cannot un-read
- * them. Connector and CLI grants have no such residue: they are checked against
- * this row at CALL time, so rewriting it genuinely re-scopes every subsequent
- * call. And refusing them instead would 409 the most ordinary manifest shape
- * there is — per-agent `connectors:` with no `secrets:` declared at all — on a
- * switch the dashboard's own UI offers.
+ * Secrets are replaced through the pre-prompt env sync (see `secret-grant.ts`).
+ * An operator can enable the strict secret-grant lock to refuse a boundary
+ * switch because narrowing later cannot un-read a value the previous agent
+ * already consumed. Connector and CLI grants have no such residue: they are
+ * checked against this row at CALL time, so rewriting it genuinely re-scopes
+ * every subsequent call.
  */
 
 import { and, eq, isNull } from 'drizzle-orm';

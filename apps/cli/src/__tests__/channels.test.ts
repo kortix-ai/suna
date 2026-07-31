@@ -50,6 +50,8 @@ interface MockState {
   installation: typeof INSTALLATION | null;
   /** Return `installation` from the Nth GET /installation onwards (0-based). */
   installedAfterPolls?: number;
+  /** The project's `teams` experimental feature, as GET /teams/mode reports it. */
+  teamsEnabled: boolean;
 }
 
 let state: MockState;
@@ -120,10 +122,14 @@ function mockApi() {
       return json(INSTALLATION);
     }
     // Teams endpoints
+    // Mirrors the real GET /channels/teams/mode payload: `enabled` is the
+    // project's `teams` experiment, `available` is whether bot credentials
+    // resolve. (There is no `oauth_available` field on this route.)
     if (url.includes('/channels/teams/mode')) {
       return json({
-        oauth_available: state.oauthAvailable,
-        orgConsentUrl: state.oauthAvailable ? TEAMS_CONSENT_URL : null,
+        enabled: state.teamsEnabled,
+        available: state.teamsEnabled && state.oauthAvailable,
+        orgConsentUrl: state.teamsEnabled && state.oauthAvailable ? TEAMS_CONSENT_URL : null,
         orgInstalled: Boolean(teamsInstall),
         deepLinkUrl: teamsInstall?.catalogAppId ?? null,
       });
@@ -146,7 +152,7 @@ beforeEach(() => {
   writeConfig();
   captureOutput();
   requests = [];
-  state = { oauthAvailable: true, installation: null };
+  state = { oauthAvailable: true, installation: null, teamsEnabled: true };
   teamsInstall = null;
   mockApi();
 });
@@ -305,6 +311,26 @@ describe('kortix channels --platform teams', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.orgConsentUrl).toBe(TEAMS_CONSENT_URL);
     expect(parsed.orgInstalled).toBe(false);
+  });
+
+  test('connect with the `teams` experiment off → points at Settings, not at server env vars', async () => {
+    state.teamsEnabled = false;
+    const code = await runChannels(['connect', '--platform', 'teams']);
+    expect(code).toBe(1);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('Customize → Settings → Experimental');
+    expect(out).not.toContain(TEAMS_CONSENT_URL);
+    expect(out).not.toContain('MICROSOFT_APP_ID');
+  });
+
+  test('connect with the experiment on but no bot credentials → points at the credentials', async () => {
+    state.oauthAvailable = false;
+    const code = await runChannels(['connect', '--platform', 'teams']);
+    expect(code).toBe(1);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('MICROSOFT_APP_ID');
+    expect(out).toContain('bring your own bot');
+    expect(out).not.toContain('Settings → Experimental');
   });
 
   test('invalid --platform value → exit 2', async () => {

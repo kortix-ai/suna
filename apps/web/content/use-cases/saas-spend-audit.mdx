@@ -99,7 +99,7 @@ The agent's only actions are reading two systems and posting to Slack. It
 cancels, pauses, downgrades, or otherwise modifies a subscription or a payment
 method itself. That decision, and the click that executes it, stays with a
 person. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Post the weekly digest">
@@ -125,12 +125,11 @@ finance team reads it and decides what to actually cancel or renegotiate.
 Reconciling spend means reading two financial records, so the boundaries are
 explicit:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Plaid and the register it's scoped to, and only the Slack digest
-  leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Plaid and the register it's scoped to, and only the Slack digest
+  is written back out.
 - **Scoped secrets.** The Plaid access token and Sheets credentials are
   encrypted in the Secrets Manager and injected into the sandbox at runtime,
-  never exposed to the model or the logs.
+  scoped to the agents you grant them to.
 - **Recommend-only.** The agent has no write access to Plaid, no billing API,
   and no way to cancel, downgrade, or pause a subscription. Its entire output
   is a Slack message with a suggested action; a human does anything that

@@ -124,7 +124,7 @@ prospect is contacted.
 - **Don't invent what isn't recorded.** A blank close reason or competitor
   field is reported as unrecorded, never guessed or filled in.
 - **Scoped secrets.** HubSpot access is brokered server-side through the
-  connector; no raw credential is ever shown to the model or written to logs.
+  connector; no raw credential is ever pasted into chat.
 </guardrails>
 
 </skill>

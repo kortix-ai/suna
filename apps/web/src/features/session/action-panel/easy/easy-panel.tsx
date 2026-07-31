@@ -73,7 +73,7 @@ import {
   shouldAutoOpenPayoff,
   stepForCallId,
 } from './easy-panel-logic';
-import { FilePreview } from './file-preview';
+import { FilePreview, reportsIntrinsicSize } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
@@ -176,8 +176,11 @@ export const EasyPanel = memo(function EasyPanel({
   // and the home cards (progress/outputs/context/apps) render full-bleed
   // instead of snapping back to the resizable split; worse, "Ask for changes"
   // targets the chat composer, which fullscreen has collapsed to zero width.
-  // Paging between siblings goes through `setDetail` directly and KEEPS
-  // fullscreen — only the exits route through here.
+  // Only the exits route through here. Paging between siblings does NOT: the
+  // prev/next closures call `handleOpenOutput` again, which reaches `setDetail`
+  // through `openDetail` — so fullscreen survives the move from one deliverable
+  // to the next, and so does the panel width when both sides measure (see
+  // `openDetail`'s `measures` check).
   const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
   // Split override: a presentation deliverable grows the panel to its widest
   // split (70/30, Marko's feedback) and the terminal layer to an even 50/50,
@@ -186,13 +189,20 @@ export const EasyPanel = memo(function EasyPanel({
   // (same store, same `animate` opt, same `skipNextExpandAnimation` flag) —
   // see the store's doc comment.
   const setPanelSplit = useKortixComputerStore((s) => s.setPanelSplit);
+  // The measured shape of whatever document is open, which outranks
+  // `panelSplit` once it lands (see `resolveSideSize`). Cleared in lockstep
+  // with every `panelSplit` write below — a ratio that outlives the document
+  // it was measured from would silently win over the split the new layer
+  // asked for, so the two states are never allowed to disagree.
+  const setPanelAspect = useKortixComputerStore((s) => s.setPanelAspect);
   const closeDetail = useCallback(() => {
     setDetail(null);
     // `animate: false` — the detail slides out on its own; snapping the panel
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
     setPanelSplit(null, { animate: false });
-  }, [setIsExpanded, setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setIsExpanded, setPanelSplit, setPanelAspect]);
 
   /**
    * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
@@ -248,12 +258,14 @@ export const EasyPanel = memo(function EasyPanel({
     closeDetail();
     setTerminalOpen(true);
     setPanelSplit(50);
-  }, [detail, closeDetail, setPanelSplit]);
+    setPanelAspect(null);
+  }, [detail, closeDetail, setPanelSplit, setPanelAspect]);
   const closeTerminal = useCallback(() => {
     setTerminalSwap(false);
     setTerminalOpen(false);
     setPanelSplit(null, { animate: false });
-  }, [setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setPanelSplit, setPanelAspect]);
 
   // Every `detail` open funnels through here (instead of raw `setDetail`) so
   // opening a file/app/step/Audit always closes the terminal — the other half
@@ -271,8 +283,16 @@ export const EasyPanel = memo(function EasyPanel({
       setTerminalOpen(false);
       setDetail({ ...next, swapIn: terminalOpen });
       setPanelSplit(null);
+      // The outgoing document's ratio dies with it — UNLESS the incoming one
+      // will report a ratio of its own (`measures`), in which case holding the
+      // old value is what keeps A4 → A4 paging perfectly still instead of
+      // gliding down to the default column and straight back up. The incoming
+      // measurement overwrites it; a file that fails to open clears it from
+      // `FilePreview`. `handleOpenOutput` sets a split of its own right after
+      // this, but never an aspect.
+      if (!next.measures) setPanelAspect(null);
     },
-    [terminalOpen, setPanelSplit],
+    [terminalOpen, setPanelSplit, setPanelAspect],
   );
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
@@ -412,6 +432,9 @@ export const EasyPanel = memo(function EasyPanel({
         hideHeader: true,
         padded: false,
         nav,
+        // `output.name` is the real filename — `displayName` may be a human
+        // title carrying no extension, which this predicate reads.
+        measures: reportsIntrinsicSize(output.name),
         body: (
           <FilePreview
             path={output.path}

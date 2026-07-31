@@ -205,6 +205,9 @@ export interface GatewayDeps {
    */
   executeComputerCall?(input: {
     accountId: string;
+    projectId: string;
+    sessionId: string | null;
+    actorUserId: string;
     selector: string | null;
     method: string;
     args: Record<string, unknown>;
@@ -646,6 +649,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
       const outcome = await deps.executeComputerCall({
         accountId: input.accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        actorUserId: input.subject.userId,
         selector,
         method: action.binding.method,
         args: rest,

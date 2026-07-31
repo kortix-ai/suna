@@ -25,7 +25,7 @@ import { useTransactions } from '@/hooks/billing/use-transactions';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
-import { CoinsIcon as Coins, ArrowsClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
+import { CoinsIcon as Coins, ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 interface Props {

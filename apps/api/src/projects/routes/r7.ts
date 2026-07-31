@@ -1,6 +1,7 @@
 import { isCallLive, readTurns } from '../../channels/voice/runtime';
 import { SessionScopeInputSchema, SessionScopeSchema } from '@kortix/api-contract';
 import { recordSessionToolApproval } from '../../executor/db-deps';
+import { approvalResolvedAuditEvent } from '../../executor/execution-audit';
 import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
   PROJECT_ACTIONS,
@@ -9,7 +10,10 @@ import {
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
-import { assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
+import {
+  assertAgentScope,
+  isProjectSessionPrincipal,
+} from '../../iam/agent-scope';
 import { approvalPageUrl } from '../../setup-links/token';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
@@ -17,6 +21,7 @@ import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } f
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
+import { inferAuditSource, recordAuditEvent } from '../../shared/audit';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes,
@@ -70,6 +75,7 @@ import {
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { publicConnectorAlias } from '../../shared/connector-alias';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
@@ -240,6 +246,11 @@ function unavailableRequiredConnectorError(
     body: {
       error: error.message,
       code: error.code,
+      // The docs tell clients to read `connectors` and never to parse `error`.
+      // This site emitted only the prose, so a caller obeying that instruction
+      // got `undefined` here while the create path worked. The shape has to be
+      // the same wherever the code appears, or the contract is a lie on one path.
+      connectors: error.aliases.map(publicConnectorAlias),
     },
   };
 }
@@ -295,7 +306,7 @@ projectsApp.openapi(
           metadata: { source: 'ui', ...metadata },
           authType: c.get('authType') as string | undefined,
           apiKeyType: c.get('apiKeyType') as string | undefined,
-          inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+          inSession: isProjectSessionPrincipal(c),
           request: requestAuditContext(c),
         });
         if (result.error) throw new WarmSessionCreateFailure(result.error);
@@ -723,7 +734,7 @@ projectsApp.openapi(
     // session-binding (`sessionId`) or an agent grant.
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
-    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+    inSession: isProjectSessionPrincipal(c),
     request: requestAuditContext(c),
     idempotencyKey,
     mayManageSystemConnectorProfiles,
@@ -1492,6 +1503,24 @@ projectsApp.openapi(
 
     if (resolved.length === 0) {
       return c.json({ error: 'Approval already resolved' }, 409);
+    }
+
+    try {
+      await recordAuditEvent(
+        approvalResolvedAuditEvent({
+          accountId: loaded.row.accountId,
+          projectId,
+          sessionId: row.sessionId,
+          executionId,
+          actorUserId: loaded.userId,
+          actionPath: row.actionPath,
+          connectorId: row.connectorId,
+          decision,
+          source: inferAuditSource(c, 'human'),
+        }),
+      );
+    } catch (error) {
+      console.error('[approvals] failed to record central audit event', error);
     }
 
     // Server-side resume — the reliability backstop. A LIVE gated call (the

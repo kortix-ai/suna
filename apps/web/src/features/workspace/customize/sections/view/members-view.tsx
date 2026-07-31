@@ -14,7 +14,7 @@ import {
   ChatIcon as MessageSquare,
   PlugIcon as Plug,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
   SparkleIcon as Sparkles,
   UserIcon as User,
@@ -527,7 +527,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                 onValueChange={(next) => setRole(next as ProjectRole)}
                 disabled={inviteMutation.isPending}
               >
-                <SelectTrigger id="invite-role" variant="popover">
+                <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

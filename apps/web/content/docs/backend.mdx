@@ -95,7 +95,7 @@ export SESSION_ID="<session-id>"
 | `connector_bindings` | Maps a connector-profile slug to one strategy-compatible `authorization_id`. The credential stays outside the sandbox.                                  |
 | `inherit_unbound`    | Keeps strategy-based default resolution for connector profiles omitted from an explicit binding map. The default is `false`.                            |
 | `secrets`            | Narrows the selected agent's project-secret grant. An empty list delivers no project secrets. Only backend-origin callers can set it.                   |
-| `require_connectors` | Adds mandatory connector profiles for this create request. Missing authorizations return `409 CONNECTOR_AUTHORIZATION_REQUIRED` before sandbox startup. |
+| `require_connectors` | Adds mandatory connector profiles for this create request. Missing authorizations return `409 CONNECTOR_AUTHORIZATION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
 
 ## 3. Configure connector profiles and authorizations
 
@@ -294,7 +294,10 @@ different secret allowlist, connector binding map, or runtime context returns
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector profile.                           |
 | `404` create / `403` rescope | `CONNECTOR_PROFILE_NOT_FOUND`                    | The authorization does not exist in this project or violates the profile strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
-| `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no valid active authorization.                   |
+| `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no valid active authorization. Every failing profile is listed in `connector_profiles`. |
+| `409`                        | `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`         | A required slug has no configured connector profile at all. Every failing alias is listed in `connectors`. |
+| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
+| `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_PROFILE_INACTIVE`                     | The selected authorization or connector profile is inactive.                       |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a different request body.                    |
 | `402`                        | `subscription_required` / `insufficient_credits` | The account cannot start a billed session.                                         |

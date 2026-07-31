@@ -59,7 +59,7 @@ sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 **documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
 transcription), **websites & apps** (build + deploy from the repo),
 **integrations** (3,000+ connectors + MCP/OpenAPI/GraphQL/HTTP, brokered
-server-side), **secrets** (encrypted, never shown to the model), **memory**
+server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
 (a compounding file-based company brain), **scheduling** (cron/webhook
 triggers — see `<scheduling>` below), **channels** (Slack and chat
 surfaces), and **subagents** (parallel isolated sessions).

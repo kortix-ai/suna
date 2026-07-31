@@ -37,7 +37,7 @@ import {
   PresentationIcon as Presentation,
   BroadcastIcon as Radar,
   ReceiptIcon as Receipt,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   RepeatIcon as Repeat,
   RocketIcon as Rocket,
   PathIcon as Route,

@@ -1,6 +1,6 @@
 # Kortix Sandbox
 
-This machine is a Linux microVM.
+This machine is an isolated Linux sandbox.
 
 ## General Env
 

@@ -11,6 +11,7 @@ import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
+import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isModelServableForAccount,
@@ -78,6 +79,7 @@ import {
   titleSourceForCreate,
 } from '../session-title-generate';
 import { canOverride, resolveSessionOrigin } from './session-origin';
+import { sessionCreatedAuditEvent } from './session-audit';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
@@ -810,8 +812,13 @@ export async function createProjectSession(input: {
           error: {
             status: 409,
             body: {
-              error: `Required connector profile "${required.alias}" is unavailable`,
+              error: `Required connector profile ${required.aliases
+                .map((alias) => `"${alias}"`)
+                .join(', ')} is unavailable`,
               code: required.code,
+              // The prose names the aliases too, but a client that wants to list
+              // them (or diff them across retries) must not have to parse it.
+              connectors: required.aliases,
             },
           },
         };
@@ -1083,6 +1090,33 @@ export async function createProjectSession(input: {
         body: { error: 'Session insert returned no row', retry: true },
       },
     };
+  }
+
+  setContextField('sessionId', sessionId);
+
+  try {
+    await recordAuditEvent(
+      sessionCreatedAuditEvent({
+        accountId,
+        projectId,
+        sessionId,
+        actorUserId: userId,
+        requestingPrincipalType: input.requestingPrincipalType,
+        inSession: input.inSession,
+        origin,
+        invocationSource:
+          typeof (input.metadata as Record<string, unknown> | undefined)?.source === 'string'
+            ? ((input.metadata as Record<string, unknown>).source as string)
+            : null,
+        agentName,
+        visibility,
+        sandboxProvider: providerName,
+        connectorBindingCount: validatedConnectorBindings.bindings.length,
+        secretAllowlistCount: secretsAllowlist?.length ?? 0,
+      }),
+    );
+  } catch (error) {
+    console.error('[projects] Failed to record session creation audit event:', error);
   }
 
   // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs

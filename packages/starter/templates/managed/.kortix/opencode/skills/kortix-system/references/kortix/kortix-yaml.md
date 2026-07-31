@@ -356,25 +356,26 @@ Variables available on every fire:
 
 | Variable             | Source                                                         |
 | -------------------- | -------------------------------------------------------------- |
-| `{{ fired_at }}`     | ISO-8601 timestamp of this fire.                               |
 | `{{ trigger.slug }}` | The trigger's slug.                                            |
 | `{{ trigger.type }}` | `"cron"` or `"webhook"`.                                       |
 | `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
 
-Cron-only additions:
+Cron-only additions. There is **no** `fired_at` on a cron fire — use
+`cron.scheduled_for`:
 
-| Variable                | Source                                  |
-| ----------------------- | ---------------------------------------- |
-| `{{ cron.schedule }}`   | The croner expression that just fired.  |
-| `{{ cron.timezone }}`   | Configured tz (defaults to `"UTC"`).    |
-| `{{ cron.fired_at }}`   | Same as top-level `fired_at`.           |
-| `{{ cron.last_fired_at }}` | Previous fire timestamp (or empty).  |
-| `{{ last_fired_at }}`   | Same as `cron.last_fired_at`.           |
+| Variable                        | Source                                        |
+| ------------------------------- | --------------------------------------------- |
+| `{{ cron.schedule }}`           | The croner expression that just fired.        |
+| `{{ cron.timezone }}`           | Configured tz (defaults to `"UTC"`).          |
+| `{{ cron.scheduled_for }}`      | The slot this fire is for (ISO-8601).         |
+| `{{ cron.claimed_at }}`         | When the scheduler picked the slot up.        |
+| `{{ cron.last_scheduled_for }}` | The previous slot; empty on the first fire.   |
 
 Webhook-only additions:
 
 | Variable          | Source                                                          |
 | ----------------- | ----------------------------------------------------------------- |
+| `{{ fired_at }}`  | ISO-8601 timestamp of this fire. Webhook and manual fires only.  |
 | `{{ body.* }}`    | JSON-parsed request body. Dotted access works.                  |
 | `{{ headers.* }}` | `content_type`, `user_agent`, `forwarded_for`.                  |
 

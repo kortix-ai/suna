@@ -98,7 +98,7 @@ The agent reconciles and flags; it does not close. It never writes a journal
 entry, never edits a recorded ledger amount, and never checks off the period
 as closed — that decision, and every action it implies, belongs to a person.
 Credentials are encrypted in the secrets manager and injected at runtime,
-never shown to the model or written to logs.
+scoped to the agents you grant them to.
 
 </Step>
 <Step title="Post the open items">
@@ -125,12 +125,10 @@ finance team reviews the list and closes the books themselves.
 Touching a company's close process is a trust question first, so the access
 is scoped tightly and one direction only:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the systems it's scoped to, and only the checklist flags and the
-  Slack post leave the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the systems it's scoped to, and only the checklist flags and the
+  Slack post are written back out.
 - **Scoped secrets.** The Stripe and Sheets credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **No journal entries, no closing the books.** The agent never writes a
   journal line, never edits a recorded ledger amount, and never marks a
   checklist item or period as closed. It flags; a human closes.

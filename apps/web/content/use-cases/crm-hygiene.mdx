@@ -83,8 +83,7 @@ model, the agent can:
 The agent merges duplicates and fills individual gaps on its own, but a **bulk
 field update over a threshold** stops at a **human approval gate** before it
 writes. A sweeping change across hundreds of records is reviewed first.
-Credentials are encrypted in the secrets manager and injected at runtime, never
-shown to the model or written to logs.
+Credentials are encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each run report">
@@ -108,12 +107,10 @@ When a bulk change is pending, the summary says what's waiting and why.
 Giving an agent write access to the CRM is a data-integrity question. The controls
 on Kortix:
 
-- **Isolation.** Each run executes in its own microVM sandbox, and only the
-  HubSpot and enrichment changes it's explicitly allowed to make leave the
-  sandbox.
+- **Isolation.** Each run executes in its own isolated sandbox, and only the
+  HubSpot and enrichment changes it's explicitly allowed to make are written back out.
 - **Scoped secrets.** The HubSpot and enrichment credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gates.** Bulk field updates over the threshold require a person
   to approve before they write.
 - **Everything is code.** The dedupe rules, required fields, and stale-deal

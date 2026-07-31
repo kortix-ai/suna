@@ -21,9 +21,12 @@ const getModelPricing = mock(
 );
 mock.module('../../router/config/model-pricing', () => ({ getModelPricing }));
 
-const { livePricing, managedCandidates, stripBedrockInferenceProfilePrefix } = await import(
-  './descriptors'
-);
+const {
+  livePricing,
+  managedCandidates,
+  stripBedrockInferenceProfilePrefix,
+  normalizeBedrockInferenceProfileRegion,
+} = await import('./descriptors');
 
 beforeEach(() => {
   getModelPricing.mockClear();
@@ -75,6 +78,65 @@ describe('stripBedrockInferenceProfilePrefix', () => {
 
   test('a bare prefix with nothing after the dot is left untouched (no empty result)', () => {
     expect(stripBedrockInferenceProfilePrefix('us.')).toBe('us.');
+  });
+});
+
+describe('normalizeBedrockInferenceProfileRegion', () => {
+  test('rewrites a wrong-geography profile to the endpoint region (the Essentia jp.→us. incident)', () => {
+    // 41 sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
+    // which Bedrock 400s "The provided model identifier is invalid."
+    expect(
+      normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'us-east-1'),
+    ).toBe('us.anthropic.claude-opus-5');
+  });
+
+  test('maps each endpoint geography from its region (us / eu / apac / us-gov)', () => {
+    expect(normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'us-west-2')).toBe(
+      'us.anthropic.claude-opus-5',
+    );
+    expect(normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'eu-west-1')).toBe(
+      'eu.anthropic.claude-opus-5',
+    );
+    expect(
+      normalizeBedrockInferenceProfileRegion('us.anthropic.claude-opus-5', 'ap-northeast-1'),
+    ).toBe('apac.anthropic.claude-opus-5');
+    expect(
+      normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'us-gov-east-1'),
+    ).toBe('us-gov.anthropic.claude-opus-5');
+  });
+
+  test('is a no-op when the geography already matches the endpoint region', () => {
+    expect(
+      normalizeBedrockInferenceProfileRegion('us.anthropic.claude-sonnet-5', 'us-east-1'),
+    ).toBe('us.anthropic.claude-sonnet-5');
+  });
+
+  test('leaves bare ids, global. profiles, and non-Anthropic families untouched', () => {
+    expect(normalizeBedrockInferenceProfileRegion('anthropic.claude-opus-5', 'us-east-1')).toBe(
+      'anthropic.claude-opus-5',
+    );
+    expect(
+      normalizeBedrockInferenceProfileRegion('global.anthropic.claude-sonnet-5', 'us-east-1'),
+    ).toBe('global.anthropic.claude-sonnet-5');
+    expect(normalizeBedrockInferenceProfileRegion('jp.amazon.nova-pro-v1:0', 'us-east-1')).toBe(
+      'jp.amazon.nova-pro-v1:0',
+    );
+  });
+
+  test('skips normalization for an unrecognized region rather than guessing a prefix', () => {
+    // ca-central-1 has no validated geography mapping → leave the id as-is.
+    expect(
+      normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'ca-central-1'),
+    ).toBe('jp.anthropic.claude-opus-5');
+  });
+
+  test('falls back to the default BYOK region (us-east-1) when region is unset', () => {
+    expect(normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', undefined)).toBe(
+      'us.anthropic.claude-opus-5',
+    );
+    expect(normalizeBedrockInferenceProfileRegion('eu.anthropic.claude-opus-5', '')).toBe(
+      'us.anthropic.claude-opus-5',
+    );
   });
 });
 

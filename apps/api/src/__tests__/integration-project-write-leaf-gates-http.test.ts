@@ -185,12 +185,19 @@ const CASES: WCase[] = [
   },
   {
     // Teams disconnect — twin of email installation DELETE; no feature-flag
-    // pre-gate, so the connector-write assert is directly exercised. (Teams
-    // CONNECT uses the identical assert but sits behind teamsChannelEnabled(),
-    // untestable here without the flag; DELETE covers the same code pattern.)
+    // pre-gate, so the connector-write assert is directly exercised.
     name: 'teams installation DELETE (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
+    // Teams connect — the capability assert runs BEFORE the per-project `teams`
+    // feature check, so the 403 fires whether or not the project enabled Teams.
+    // (While the gate was an operator env var this case was untestable here.)
+    name: 'teams connect (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/channels/teams/connect`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {

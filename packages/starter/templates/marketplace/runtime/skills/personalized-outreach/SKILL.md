@@ -114,7 +114,7 @@ drafted this run so the next sweep skips them.
   before researching or writing — a contact drafted once is never re-drafted,
   even across many sweeps.
 - **Scoped secrets.** HubSpot and enrichment credentials are injected by the
-  connector at runtime and never exposed to the model or written to logs.
+  connector at runtime, scoped to this agent's grant.
 </guardrails>
 
 </skill>

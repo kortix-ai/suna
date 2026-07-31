@@ -92,7 +92,7 @@ model, the agent reads:
 The agent is **read-only** on the survey sheet — it never edits a row, adds a
 column, or writes back a score. It never contacts a respondent. Its only output
 is the Slack post, and that post is a report, not an action. Credentials are
-encrypted in the Secrets Manager and injected at runtime, never shown to the model
+encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to
 or written to logs.
 
 </Step>
@@ -118,11 +118,9 @@ act on.
 
 The agent reads a live survey export, so its access is scoped and one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the sheet it's scoped to, and only the Slack post leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the sheet it's scoped to, and only the Slack post is written back out.
 - **Scoped secrets.** The Google Sheets and Slack credentials are encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only, report-only.** The connector into the survey sheet is read-only —
   the agent cannot edit a response, add a row, or write back a score — and it
   never reaches out to a respondent. It reports; it doesn't act.

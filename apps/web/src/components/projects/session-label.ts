@@ -61,8 +61,8 @@ export function sessionSource(session: ProjectSession): SessionSource {
 /**
  * Session-list filter. "All" (default) shows everything; chats split into
  * "mine" and "shared" (chats someone else owns that are visible to me);
- * automation sources match sessionSource(). Every option is always offered,
- * even at count 0.
+ * automation sources match sessionSource(). Which of these a project actually
+ * offers is decided by availableSessionFilterOptions().
  */
 export type SessionFilterValue =
   | 'all'
@@ -99,6 +99,37 @@ export function matchesSessionFilter(session: ProjectSession, filter: SessionFil
  * session.name (OpenCode auto-title mirrored during session reads) → legacy
  * metadata.session_name → branch slice → short id.
  */
+export interface SessionFilterOption {
+  value: SessionFilterValue;
+  label: string;
+  count: number;
+}
+
+/**
+ * Which filters a session set is worth offering, with their counts.
+ *
+ * A source filter earns a slot only when it matches at least one session — an
+ * "Email 0" row is a dead end. And the menu as a whole only earns its place
+ * when two or more sources are present: with a single source every option
+ * renders the exact same list as "All", so the control does nothing. Returns
+ * [] in that case, which is the signal to drop the dropdown entirely.
+ *
+ * "All" is prepended (never counted as a source) and counts every session,
+ * including kinds no filter covers (e.g. telegram).
+ */
+export function availableSessionFilterOptions(sessions: ProjectSession[]): SessionFilterOption[] {
+  const [allOption, ...sourceOptions] = SESSION_FILTER_OPTIONS;
+  const present = sourceOptions
+    .map((option) => ({
+      ...option,
+      count: sessions.filter((session) => matchesSessionFilter(session, option.value)).length,
+    }))
+    .filter((option) => option.count > 0);
+
+  if (present.length < 2) return [];
+  return [{ ...allOption, count: sessions.length }, ...present];
+}
+
 export function sessionDisplayLabel(session: ProjectSession): string {
   const metadataName =
     typeof session.metadata?.session_name === 'string'

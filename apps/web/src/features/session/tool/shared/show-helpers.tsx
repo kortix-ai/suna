@@ -30,7 +30,7 @@ import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
-  ArrowsClockwiseIcon as GrRefresh,
+  ArrowClockwiseIcon as GrRefresh,
   CodeSimpleIcon as Code2,
   ArrowSquareOutIcon as ExternalLink,
   FileIcon,

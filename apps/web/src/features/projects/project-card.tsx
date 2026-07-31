@@ -16,7 +16,7 @@ import {
   ArrowUpRightIcon as ArrowUpRight,
   DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
@@ -90,15 +90,11 @@ const ProjectCard = ({
               Rename
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={onArchive}
-              disabled={archiving || !canManageProject}
-            >
+            <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canManageProject}>
               {archiving ? (
                 <Loading className="size-4 shrink-0" />
               ) : (
-                <TrashSolid weight="fill" className="size-4" />
+                <TrashIcon className="size-4" />
               )}
               Archive
             </DropdownMenuItem>

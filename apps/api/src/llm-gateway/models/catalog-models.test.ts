@@ -9,8 +9,8 @@ import { catalogModelForWireModel, gatewayModelCatalog } from './catalog-models'
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
-  test('brands managed DeepSeek V4 Flash with the DeepSeek provider', () => {
-    expect(full['deepseek-v4-flash']?.provider).toBe('deepseek');
+  test('brands managed DeepSeek V4 Flash with the Kortix provider', () => {
+    expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
   });
 
   test('serves Aster GLM pricing instead of a models.dev provider price', () => {

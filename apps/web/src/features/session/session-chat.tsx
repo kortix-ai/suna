@@ -63,8 +63,14 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { SessionTurnMeta } from './session-turn-meta';
+import {
+  sessionTurnDurationMs,
+  sessionTurnEndedAt,
+  sessionTurnSpan,
+} from './session-turn-meta-rows';
 
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -136,9 +142,7 @@ import {
   type Turn,
   collectTurnParts,
   findLastTextPart,
-  formatCost,
   formatDuration,
-  formatTokens,
   getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
@@ -205,6 +209,7 @@ import {
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { resolveSessionContentState } from './session-load-state';
 import { shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
@@ -2136,9 +2141,7 @@ function SameToolGroup({
               {durationLabel}
             </span>
           )}
-          {anyRunning && (
-            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-          )}
+          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
           <ChevronRight
             className={cn(
               'size-3 flex-shrink-0 transition-transform',
@@ -2785,21 +2788,19 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  const [duration, setDuration] = useState('');
+  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
+  // where it called setDuration on mount and forced every completed turn in the
+  // transcript through a second render for a number that never changes. The
+  // early return below is what removes that pass. A settled turn's duration is
+  // now SessionTurnMeta's job, from turnDurationMs.
+  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
+  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
+  const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
-    const startTime = (turn.userMessage.info as any)?.time?.created;
-    if (!startTime) return;
-
-    if (!working) {
-      const lastMsg = turn.assistantMessages[turn.assistantMessages.length - 1];
-      const endTime =
-        (lastMsg?.info as any)?.time?.completed ||
-        (lastMsg?.info as any)?.time?.created ||
-        startTime;
-      setDuration(formatDuration(endTime - startTime));
-      return;
-    }
-    const update = () => setDuration(formatDuration(Date.now() - startTime));
+    if (!working) return;
+    const { startedAt } = sessionTurnSpan(turn);
+    if (startedAt == null) return;
+    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -3330,26 +3331,17 @@ function SessionTurn({
               secondsLeft={retrySecondsLeft}
             />
           )}
-          <div
-            className={cn(
-              'flex items-center gap-2 py-1 text-xs transition-colors',
-              'text-muted-foreground',
-            )}
-          >
-            <span className="relative flex size-3">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-            </span>
-            {retryInfo ? (
-              <span className="text-muted-foreground/70">
-                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
-              </span>
-            ) : (
-              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
-            )}
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </div>
+          <SessionBusyIndicator
+            statusText={throttledStatus || undefined}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+            elapsed={liveDuration}
+          />
         </div>
       )}
 
@@ -3358,22 +3350,18 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only) ── */}
+      {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-          {/* Duration & cost */}
-          {duration && (
-            <span className="text-muted-foreground/50 mr-1 text-xs">
-              {duration}
-              {costInfo && (
-                <>
-                  {' '}
-                  · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
-                </>
-              )}
-            </span>
-          )}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
+              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
+              different kinds on one dot-separated line, which reads as a list of
+              comparable things and is not one. They are a labelled list inside
+              `SessionTurnMeta` now. `focus-within` because a keyboard user could
+              otherwise tab into — and open — a control at `opacity-0`. The
+              `data-state=open` case is the pointer one: the popover is portalled
+              and takes focus, so without it the ⋯ would fade out from under its
+              own open panel the moment the pointer left the turn. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
@@ -3382,6 +3370,7 @@ function SessionTurn({
             </TooltipTrigger>
             <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
           </Tooltip>
+          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
         </div>
       )}
 
@@ -5340,20 +5329,24 @@ export function SessionChat({
   // This eliminates the loader for empty sessions entirely: instead of
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
-  const hasMessages = messages && messages.length > 0;
+  const hasMessages = Boolean(messages?.length);
   // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
   // the runtime is connected AND the session lookup has actually run and come
   // back empty. While the runtime is still connecting (the query is disabled and
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const sessionResolved = runtimeReady && sessionFetched;
   const composerReadiness = sessionComposerReadiness({ runtimeReady });
-  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  const { isNotFound, isDataLoading } = resolveSessionContentState({
+    runtimeReady,
+    sessionFetched,
+    hasRuntimeSession: Boolean(session),
+    hasMessages,
+    hasOptimisticPrompt: Boolean(optimisticPrompt),
+  });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const isDataLoading = !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.

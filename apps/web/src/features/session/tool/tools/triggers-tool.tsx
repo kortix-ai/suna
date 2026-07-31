@@ -18,7 +18,7 @@ import {
   TreeStructureIcon as ListTree,
   MonitorPlayIcon as MonitorPlay,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
 import { useMemo } from 'react';

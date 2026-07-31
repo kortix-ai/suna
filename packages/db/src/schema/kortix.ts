@@ -952,26 +952,16 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
     /**
-     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
-     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
-     * — the newest model per family is on, and this records only what an admin
-     * deliberately changed. The gateway refuses anything not effectively
-     * enabled everywhere (chat, Slack, triggers, API); the picker and "Manage
-     * models" render from the same answer.
-     *
-     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
-     * set freezes the moment it's written, so every later catalog addition (a
-     * newly connected provider, next month's Claude) lands OFF and needs a
-     * manual click. Overrides let the default keep tracking "the latest"
-     * forever while still honouring explicit choices. It also removes the
-     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
-     * opt-out list unable to express the default at all.
+     * @deprecated Server-side per-project model enablement was reverted. Nothing
+     * reads this column; every model is served. Retained INERT (not dropped) so
+     * a mixed-version rollout can't hit a missing column on the gateway's hot
+     * path — a later contract migration drops it. Do not add new readers.
      */
     modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
     /**
-     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
-     * release so a mixed-version rollout can't hit a missing column on the
-     * gateway's hot path; the contract migration drops it.
+     * @deprecated Server-side per-project model enablement was reverted. Nothing
+     * reads this column. Retained INERT (not dropped) for the same mixed-version
+     * reason as `modelOverrides`; a later contract migration drops it.
      */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
@@ -2363,10 +2353,20 @@ export const auditEvents = kortixSchema.table(
   {
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+    projectId: uuid('project_id'),
+    sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    actorType: text('actor_type'),
+    source: text('source'),
+    outcome: text('outcome'),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
+    httpStatus: integer('http_status'),
+    durationMs: integer('duration_ms'),
+    requestId: text('request_id'),
+    traceId: text('trace_id'),
+    correlationId: text('correlation_id'),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
     ip: text('ip'),
@@ -2378,6 +2378,18 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    index('idx_audit_events_account_project_time').on(
+      table.accountId,
+      table.projectId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_account_session_time').on(
+      table.accountId,
+      table.sessionId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_request').on(table.requestId),
+    index('idx_audit_events_correlation').on(table.correlationId),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full

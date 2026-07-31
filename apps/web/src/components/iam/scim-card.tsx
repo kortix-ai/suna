@@ -20,7 +20,7 @@ import {
   CopyIcon as Copy,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ShieldCheckIcon as ShieldCheck,
   TrashIcon as Trash2,
   UsersIcon as Users,

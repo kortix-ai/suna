@@ -103,7 +103,7 @@ HubSpot record so the next sweep skips this lead.
   before researching or writing — a lead handled once is never re-drafted,
   even across many sweeps.
 - **Scoped secrets.** HubSpot and Google Calendar credentials are injected by
-  the connector at runtime and never exposed to the model or written to logs.
+  the connector at runtime, scoped to this agent's grant.
 </guardrails>
 
 </skill>

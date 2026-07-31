@@ -4,11 +4,20 @@ import { IconContext } from '@phosphor-icons/react';
 
 import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 
+/**
+ * The size a class-less icon renders at. Tailwind size classes and an explicit
+ * `size` prop both still win, so this only reaches icons that ask for nothing.
+ *
+ * Exported because the provider's tests have to rebuild the exact markup this
+ * context produces. They previously hard-coded the number, so changing it here
+ * failed them from a file that never mentions icons — the failure named the
+ * weight, which was not what had moved.
+ */
+export const DEFAULT_ICON_SIZE = 32;
+
 /* Frozen at module scope: the value never changes at runtime, so the provider
-   never re-renders its subtree and the identity stays stable across renders.
-   size 24 replicates lucide's old default so class-less icons keep their size;
-   Tailwind size classes and explicit size props both still win. */
-const ICON_DEFAULTS = { weight: DEFAULT_ICON_WEIGHT, size: 24 } as const;
+   never re-renders its subtree and the identity stays stable across renders. */
+const ICON_DEFAULTS = { weight: DEFAULT_ICON_WEIGHT, size: DEFAULT_ICON_SIZE } as const;
 
 /**
  * Applies the app-wide icon weight (src/lib/icons/icon-config.ts) to every

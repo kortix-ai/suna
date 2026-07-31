@@ -1,6 +1,5 @@
 'use client';
 
-import { ThemeToggle } from '@/components/home/theme-toggle';
 import { ReferralModal } from '@/components/referrals/referral-modal';
 import {
   AlertDialog,
@@ -12,12 +11,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -28,8 +33,6 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { DownloadAppsModal } from '@/features/layout/download-apps-modal';
-import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
@@ -42,22 +45,81 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
-  BookOpenIcon as BookOpen,
+  ArticleIcon,
+  BookOpenIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
-  DownloadIcon as Download,
+  DownloadSimple,
+  HeadsetIcon,
   HouseIcon,
-  LifebuoyIcon as LifeBuoy,
+  LifebuoyIcon,
   SignOutIcon as LogOut,
-  StorefrontIcon as Store,
+  PaperPlaneTiltIcon,
+  QuestionIcon,
+  ScrollIcon,
+  ShieldCheckIcon,
+  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { Icon } from '../icon/icon';
 
 export type UserMenuVariant = 'header' | 'sidebar';
+
+type MenuLink = {
+  label: string;
+  href: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  /**
+   * Navigate in place instead of opening a new tab. Only Marketplace: it is
+   * somewhere you go and act — browse, install — so it belongs in the session
+   * you are already in. Everything else under Help is something you read, and
+   * losing your workspace to go read it is the wrong trade.
+   */
+  internal?: boolean;
+};
+
+/**
+ * Reference destinations, grouped under Help.
+ *
+ * Hoisted to module scope so the arrays and their objects are allocated once
+ * for the app instead of being rebuilt on every render — `UserMenu` mounts in
+ * both the sidebar and the header, so this render path is not rare.
+ *
+ * Every entry but Marketplace opens in a new tab. These are pages you read, and
+ * the person clicking them is mid-session in a workspace — sending them away
+ * from it to read the privacy policy costs more than the tab does.
+ */
+const HELP_LINKS: MenuLink[] = [
+  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
+  { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
+  { label: 'Blog', href: '/blog', Icon: ArticleIcon },
+  { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
+  { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
+  { label: 'Support', href: '/support', Icon: HeadsetIcon },
+];
+
+/** Kept separate so a divider can hold the legal pages apart from the rest. */
+const LEGAL_LINKS: MenuLink[] = [
+  { label: 'Privacy', href: '/legal?tab=privacy', Icon: ShieldCheckIcon },
+  { label: 'Terms and conditions', href: '/legal?tab=terms', Icon: ScrollIcon },
+];
+
+/**
+ * The three theme values `next-themes` accepts, in the order the rest of the
+ * product lists them (see the Appearance tab in user settings — same words, same
+ * icons, same order). A person who learns the control in one place should not
+ * have to re-read it in the other.
+ */
+export const THEME_OPTIONS = [
+  { value: 'light', label: 'Light', Icon: Icon.Sun },
+  { value: 'dark', label: 'Dark', Icon: Icon.Moon },
+  { value: 'system', label: 'System', Icon: Icon.Monitor },
+] as const;
 
 export interface UserMenuUser {
   name: string;
@@ -77,14 +139,13 @@ export function UserMenu({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const [supportOpen, setSupportOpen] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
@@ -126,6 +187,46 @@ export function UserMenu({
     });
 
   const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+
+  /**
+   * One Help row.
+   *
+   * External rows render a real `<a target="_blank">` rather than calling
+   * `window.open` from a handler. Three reasons: the browser opens the tab
+   * inside the click's own user-gesture window, so no popup blocker can eat it
+   * — `deferAfterClose` defers a frame, which is exactly the kind of gap that
+   * trips one; cmd-click and middle-click keep working; and it is a link, so it
+   * reads as one to a screen reader.
+   *
+   * In the desktop shell `openExternalRoute` fires first and returns true — it
+   * hands the URL to the system browser — so the anchor's own navigation is
+   * cancelled to avoid opening the page twice.
+   *
+   * This is a plain function, not a component, so the rows are not remounted on
+   * every render of the menu.
+   */
+  const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
+    internal ? (
+      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
+        <Icon />
+        {label}
+      </DropdownMenuItem>
+    ) : (
+      <DropdownMenuItem key={href} asChild>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => {
+            if (openExternalRoute(href)) event.preventDefault();
+            setMenuOpen(false);
+          }}
+        >
+          <Icon />
+          {label}
+        </a>
+      </DropdownMenuItem>
+    );
 
   const performLogout = async () => {
     const supabase = createClient();
@@ -190,18 +291,14 @@ export function UserMenu({
               onClick={() =>
                 deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
               }
+              size="sm"
             >
-              <UserAvatar
-                email={user.email}
-                name={user.name}
-                avatarUrl={user.avatar}
-                size="lg"
-                className="border-border border"
-              />
+              {/* No avatar: the trigger right below already shows it, and
+                  repeating it inside the menu it opened is decoration. The
+                  email is the identifier that actually disambiguates which
+                  account you are about to open. */}
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="text-foreground truncate text-sm font-medium">
-                  {currentAccount.name}
-                </div>
+                <div className="text-foreground truncate text-sm font-medium">{user.email}</div>
                 <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
                   {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
                 </div>
@@ -212,41 +309,22 @@ export function UserMenu({
           </>
         )}
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))} size="sm">
           <HouseIcon />
           Home
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/marketplace'))}>
-          <Store />
-          Marketplace
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          onClick={() =>
-            deferAfterClose(() => {
-              if (!openExternalRoute('/docs')) router.push('/docs');
-            })
-          }
-        >
-          <BookOpen />
-          Docs
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))}>
-          <Download />
-          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))}>
-          <LifeBuoy />
-          Support
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => openUserSettings('general')}>
+        {/* Personal settings sits high: it is the item people come here for. The
+            account row above goes to the account page — a different
+            destination, which is why this one is not also called "settings". */}
+        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
           <CogOne />
-
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/download'))} size="sm">
+          <DownloadSimple />
+          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
         {isBillingEnabled() && canManageBilling && (
@@ -256,24 +334,73 @@ export function UserMenu({
                 useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
               )
             }
+            size="sm"
           >
             <CreditCard />
             Billing
           </DropdownMenuItem>
         )}
 
-        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm}>
-          <LogOut />
+        {/* Theme used to be a segmented control pinned below Log out — the one
+            row in the menu that was not a menu item, sitting under the one row
+            that ends your session. It is a choice between three values, so it is
+            a submenu of three rows like any other, and it sits with Help because
+            both are settings you visit rather than places you go.
 
-          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-        </DropdownMenuItem>
+            The leading icon shows the theme currently in effect, not the value
+            stored: on `system` it tracks what the OS resolved to, which is the
+            only answer to "what am I looking at right now". */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            {resolvedTheme === 'dark' ? <Icon.Moon /> : <Icon.Sun />}
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
+              <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
+                {THEME_OPTIONS.map(({ value, label, Icon }) => (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    {/* RadioItem wraps its children in a single flex-1 span to
+                        push the check to the right edge, so the icon and label
+                        need their own flex row inside it to stay aligned. */}
+                    <span className="flex items-center gap-2">
+                      <Icon />
+                      {label}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
 
+        {/* Every reference and legal page collapses into one submenu, so the top
+            level only carries things you act on rather than eight links. */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <QuestionIcon />
+            Help
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
+              {HELP_LINKS.map(renderMenuLink)}
+
+              <DropdownMenuSeparator />
+
+              {LEGAL_LINKS.map(renderMenuLink)}
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+
+        {/* Log out is the only row that ends something, so it gets its own
+            group. Nothing sits below it — the last item in a menu is the one a
+            slipped pointer lands on. */}
         <DropdownMenuSeparator />
 
-        <div className="focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center justify-between gap-2 rounded-sm px-2 py-[0.3rem] text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
-          Theme
-          <ThemeToggle variant="compact" />
-        </div>
+        <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
+          <LogOut />
+          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -295,8 +422,6 @@ export function UserMenu({
         onOpenChange={setSettingsOpen}
         defaultTab={settingsTab}
       />
-      <SupportModal open={supportOpen} onOpenChange={setSupportOpen} />
-      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>
@@ -310,10 +435,7 @@ export function UserMenu({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: 'destructive' })}
-              onClick={performLogout}
-            >
+            <AlertDialogAction variant="destructive" onClick={performLogout}>
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             </AlertDialogAction>
           </AlertDialogFooter>

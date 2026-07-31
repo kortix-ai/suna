@@ -66,8 +66,9 @@ export function SoundsTab() {
                 min={0}
                 max={100}
                 value={[Math.round(preferences.volume * 100)]}
+                thumbLabel="Volume"
+                formatValue={(value) => `${value}%`}
                 onValueChange={(value) => setVolume(value[0] / 100)}
-                // className="accent-foreground h-1.5 flex-1 cursor-pointer"
               />
               <span className="text-muted-foreground w-8 text-right text-xs tabular-nums">
                 {Math.round(preferences.volume * 100)}%

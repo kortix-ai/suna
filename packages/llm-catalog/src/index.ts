@@ -569,7 +569,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
       outputPerMillion: 0.1876,
     },
     tier: 'balanced',
-    providerBrand: 'deepseek',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
     // 21 OpenRouter endpoints serve this slug and they are NOT interchangeable.

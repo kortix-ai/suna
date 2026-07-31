@@ -65,8 +65,7 @@ somewhere else.
   last run that hasn't already been QA'd at its current head SHA.
 - GitHub is the output channel: the check + comment on the PR. No chat posts
   unless asked.
-- Credentials (GitHub, test environment) are brokered and injected at runtime;
-  never surfaced to you or written to logs. The edge re-check is an
+- Credentials (GitHub, test environment) are brokered and injected at runtime; scoped to this agent's grant. The edge re-check is an
   unauthenticated public HTTPS request, so no credential is needed for it.
 - Tear down every ephemeral test deploy for the PR you just handled, and stop
   all long-running processes, before finishing a turn — the session itself

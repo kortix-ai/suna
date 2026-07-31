@@ -1,9 +1,9 @@
-import { describe, expect, test } from 'bun:test';
 import { PlusIcon } from '@phosphor-icons/react';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
-import { IconProvider } from './icon-provider';
+import { DEFAULT_ICON_SIZE, IconProvider } from './icon-provider';
 
 describe('IconProvider', () => {
   test('icons inherit the configured weight without a weight prop', () => {
@@ -14,7 +14,7 @@ describe('IconProvider', () => {
     );
 
     expect(inProvider).toContain(
-      renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />),
+      renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={DEFAULT_ICON_SIZE} />),
     );
   });
 
@@ -25,9 +25,11 @@ describe('IconProvider', () => {
       </IconProvider>,
     );
 
-    expect(inProvider).toContain(renderToStaticMarkup(<PlusIcon weight="fill" size={24} />));
+    expect(inProvider).toContain(
+      renderToStaticMarkup(<PlusIcon weight="fill" size={DEFAULT_ICON_SIZE} />),
+    );
     expect(inProvider).not.toContain(
-      renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />),
+      renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={DEFAULT_ICON_SIZE} />),
     );
   });
 

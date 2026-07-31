@@ -60,7 +60,7 @@ import {
   PlusIcon as Plus,
   ShareNetworkIcon as Share,
   SquareIcon as Square,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   WarningIcon as AlertTriangle,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
@@ -385,11 +385,8 @@ function SessionRow({
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => onDelete(session.session_id, title)}
-                      >
-                        <TrashSolid />
+                      <DropdownMenuItem onSelect={() => onDelete(session.session_id, title)}>
+                        <TrashIcon />
                         Delete
                       </DropdownMenuItem>
                     ) : null}

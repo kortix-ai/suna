@@ -38,10 +38,10 @@ import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   GlobeIcon as Globe,
-  ArrowsClockwiseIcon as GrRefresh,
+  ArrowClockwiseIcon as GrRefresh,
   LinkSimpleIcon as Link2,
   DotsThreeIcon as MoreHorizontal,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
   ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';

@@ -108,7 +108,7 @@ The agent tracks progress and drafts outreach; it never changes anything on
 the account itself and never contacts the customer directly. It cannot send
 the nudge email, and it cannot touch a plan, a seat, a billing setting, or any
 other account state. Credentials are encrypted in the Secrets Manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Hand off to the CSM">
@@ -143,9 +143,9 @@ and explicit:
 - **Scoped writes.** The only thing the agent writes back to HubSpot is which
   milestone a nudge was last drafted for — never the deal stage, the owner,
   or any account property a CSM relies on.
-- **Isolation.** Every run happens in its own microVM sandbox. Credentials for
+- **Isolation.** Every run happens in its own isolated sandbox. Credentials for
   Postgres and HubSpot are encrypted in the Secrets Manager and injected at
-  runtime, never exposed to the model or the logs.
+  runtime, scoped to the agents you grant them to.
 - **Everything is code.** The milestone framework, the stall thresholds, and
   the per-system permissions are files in the repo, versioned and changed
   through a reviewed **change request** rather than a dashboard setting.

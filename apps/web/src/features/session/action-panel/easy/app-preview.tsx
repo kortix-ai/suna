@@ -42,12 +42,12 @@ import {
   ArrowRightIcon as ArrowRight,
   CheckIcon as Check,
   GlobeIcon as Globe,
-  ArrowsClockwiseIcon as GrRefresh,
+  ArrowClockwiseIcon as GrRefresh,
   LinkIcon,
   ArrowsOutSimpleIcon as Maximize2,
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';

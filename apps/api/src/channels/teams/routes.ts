@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
-import { teamsChannelEnabled, teamsConfigured } from '../teams-auth';
+import { teamsConfigured } from '../teams-auth';
+import { projectFeatureEnabled } from '../../experimental/for-project';
 import { loadTeamsAppIdForProject } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
@@ -48,15 +49,21 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
   return c.body(null, 200);
 }
 
+// Shared multi-tenant endpoint: the project is unknown until the activity's
+// tenant + conversation resolve to an install, so the per-project `teams` flag
+// is enforced one level down in dispatch (handleTeamsActivity), not here.
 teamsWebhookApp.post('/messages', async (c) => {
-  if (!teamsChannelEnabled()) return c.json({ error: 'teams channel disabled' }, 404);
   if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
   return processActivity(c);
 });
 
+// Bring-your-own-bot endpoint: the project is in the path, so gate it here.
 teamsWebhookApp.post('/:projectId/messages', async (c) => {
-  if (!teamsChannelEnabled()) return c.json({ error: 'teams channel disabled' }, 404);
-  const appId = await loadTeamsAppIdForProject(c.req.param('projectId'));
+  const projectId = c.req.param('projectId');
+  if (!(await projectFeatureEnabled(projectId, 'teams'))) {
+    return c.json({ error: 'teams channel disabled' }, 404);
+  }
+  const appId = await loadTeamsAppIdForProject(projectId);
   if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);
   return processActivity(c, appId);
 });

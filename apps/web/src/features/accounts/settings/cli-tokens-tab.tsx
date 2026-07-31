@@ -38,7 +38,7 @@ import {
   CopyIcon as Copy,
   KeyIcon as KeyRound,
   ShieldIcon as ShieldSolid,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -185,7 +185,7 @@ function TokenRow({
               aria-label={`Revoke ${token.name}`}
               onClick={() => setConfirming(true)}
             >
-              <TrashSolid weight="fill" />
+              <TrashIcon />
             </Button>
           </div>
         )}

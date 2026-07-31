@@ -20,7 +20,7 @@ import {
   ClockIcon as Clock,
   DatabaseIcon as Database,
   GaugeIcon as Gauge,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 

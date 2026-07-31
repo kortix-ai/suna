@@ -1,10 +1,17 @@
 import { tunnelAuditLogs } from '@kortix/db';
 import { db } from '../../shared/db';
+import { getRequestContext } from '../../lib/request-context';
+import { recordAuditEvent, type AuditActorType } from '../../shared/audit';
 import type { TunnelCapability } from 'agent-tunnel';
+import { tunnelCentralAuditEvent } from './tunnel-audit-event';
 
 export interface AuditLogEntry {
   tunnelId: string;
   accountId: string;
+  projectId?: string | null;
+  sessionId?: string | null;
+  actorUserId?: string | null;
+  actorType?: AuditActorType | null;
   capability: TunnelCapability;
   operation: string;
   requestSummary: Record<string, unknown>;
@@ -17,17 +24,28 @@ export interface AuditLogEntry {
 
 export async function writeAuditLog(entry: AuditLogEntry): Promise<void> {
   try {
-    await db.insert(tunnelAuditLogs).values({
-      tunnelId: entry.tunnelId,
-      accountId: entry.accountId,
-      capability: entry.capability,
-      operation: entry.operation,
-      requestSummary: entry.requestSummary,
-      success: entry.success,
-      durationMs: entry.durationMs,
-      bytesTransferred: entry.bytesTransferred,
-      errorMessage: entry.errorMessage,
-    });
+    const request = getRequestContext();
+    await Promise.all([
+      db.insert(tunnelAuditLogs).values({
+        tunnelId: entry.tunnelId,
+        accountId: entry.accountId,
+        capability: entry.capability,
+        operation: entry.operation,
+        requestSummary: entry.requestSummary,
+        success: entry.success,
+        durationMs: entry.durationMs,
+        bytesTransferred: entry.bytesTransferred,
+        errorMessage: entry.errorMessage,
+      }),
+      recordAuditEvent(
+        tunnelCentralAuditEvent({
+          ...entry,
+          projectId: entry.projectId ?? request?.projectId ?? null,
+          sessionId: entry.sessionId ?? request?.sessionId ?? null,
+          actorUserId: entry.actorUserId ?? request?.userId ?? null,
+        }),
+      ),
+    ]);
   } catch (err) {
     console.error('[tunnel-audit] Failed to write audit log:', err);
   }

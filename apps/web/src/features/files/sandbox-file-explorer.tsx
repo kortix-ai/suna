@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import {
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   CloudSlashIcon as ServerOff,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';

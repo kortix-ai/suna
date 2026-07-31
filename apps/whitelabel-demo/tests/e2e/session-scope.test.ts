@@ -51,9 +51,9 @@ describe('sessionScopeRows', () => {
   test("the agent row names this session's agent, in both directions", () => {
     const scoped = row('agent', { agentName: 'support' });
     expect(scoped.value).toBe('support');
-    // The refusal is about SECRET access specifically — connector and CLI
-    // grants may differ freely — so the row has to say which.
-    expect(scoped.detail).toContain('SECRET access');
+    expect(scoped.detail).toContain('re-scopes future secret delivery');
+    expect(scoped.detail).toContain('connector access');
+    expect(scoped.detail).toContain('Kortix CLI access');
     expect(scoped.detail).toContain('support');
     expect(row('agent').value).toBe('The project default agent');
   });

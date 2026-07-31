@@ -49,7 +49,7 @@ import {
   FileCodeIcon as FileCode,
   PackageIcon as Package,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   SparkleIcon as SparklesSolid,
   TrashIcon as Trash2,
   WarningIcon as DangerTriangleSolid,

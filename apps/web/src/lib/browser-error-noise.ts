@@ -643,6 +643,7 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
+  /^app:\/\/\/injectedScript\.bundle\.js$/,
 ] as const;
 
 // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
@@ -1242,6 +1243,66 @@ export function isInpageJsNoErrorMessageNoise(input: {
   return sources.some(
     (filename) => isInpageWalletInjectedSource(filename) || isExtensionSource(filename),
   );
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the browser-extension
+ * injectedScript.bundle.js `sendMessage` noise class: a browser extension
+ * (commonly a wallet, adblocker, or privacy extension) injects a content script
+ * as `app:///injectedScript.bundle.js` that calls `chrome.runtime.sendMessage`
+ * / `browser.runtime.sendMessage` on a `runtime` object that is `undefined` in
+ * a non-extension context or after the tab's extension context is torn down.
+ * The throw is in the extension's own injected script, NEVER in first-party
+ * Kortix code. The `app:///injectedScript.bundle.js` source is a synthetic
+ * extension-injection frame (NOT an `app:///_next/…` bundle frame and NOT a
+ * de-minified `apps/web/src/…` source path), so it is never a first-party call
+ * site.
+ *
+ * Better Stack pattern
+ * `95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c`
+ * (Kortix Frontend prod, application_id 2346967): `Error`, message
+ * `Cannot read properties of undefined (reading 'sendMessage')`, 1 occurrence /
+ * 0 identified users, last 2026-07-30 14:07:17 UTC, stack frames:
+ *   - `app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_…`
+ *     function `u` (webpack runtime)
+ *   - `app:///injectedScript.bundle.js` function `n` colno 84147
+ *     (THROW SITE — the extension's injected script)
+ * request URL `https://kortix.com/auth?redirect=%2Fprojects%2F…`,
+ * mechanism `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT),
+ * Chrome 150 / Windows.
+ *
+ * The `sendMessage` wording is a GENERIC browser-extension API call — a
+ * first-party `chrome.runtime.sendMessage` / `browser.runtime.sendMessage`
+ * call in app code would throw the SAME wording, so matching on message alone
+ * would swallow real app extension-API bugs. Requires BOTH the `sendMessage`
+ * message anchor AND an `app:///injectedScript.bundle.js` injected-source
+ * frame (or any `INJECTED_APP_SOURCE_PATTERNS` source) so a real first-party
+ * `sendMessage` call keeps reporting. A negative guard preserves any event
+ * whose stack carries a resolved first-party `apps/web/src/…` frame (our own
+ * code called `sendMessage` → actionable). Returns false when there is no
+ * source anchor (can't confirm extension origin — keep reporting rather than
+ * swallow a possible app `sendMessage` bug). See PR #5914.
+ */
+export function isInjectedScriptSendMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!stripped.includes('sendMessage')) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code is the `sendMessage` caller → actionable; keep reporting so the
+  // call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return sources.some(isInjectedAppSource);
 }
 
 export function isKnownTestNoiseMessage(message: unknown): boolean {
@@ -2755,6 +2816,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
+  // browser extension injects `app:///injectedScript.bundle.js` that calls
+  // `chrome.runtime.sendMessage` / `browser.runtime.sendMessage` on a
+  // `runtime` object that is `undefined` in a non-extension context or after
+  // tab teardown. Requires BOTH the `sendMessage` message anchor AND an
+  // injected-app source, with a negative guard preserving any resolved
+  // first-party `apps/web/src/…` frame. See `isInjectedScriptSendMessageNoise`.
+  if (isInjectedScriptSendMessageNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // TronLink browser-extension injected-Proxy `set`-trap noise — the
   // extension's `injected.js` wraps a page object in a Proxy and a `set` on
   // `tronlinkParams` is declined. Requires BOTH the TronLink property name AND
@@ -3055,6 +3127,19 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `apps/web/src/…` frame) and is never matched. See
   // `isUserscriptManagerNoise` and the production pattern `2249441898…`.
   if (isUserscriptManagerNoise({ message, frames })) {
+    return true;
+  }
+
+  // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
+  // browser extension (wallet / adblocker / privacy) injects
+  // `app:///injectedScript.bundle.js` that calls `chrome.runtime.sendMessage`
+  // on a `runtime` object that is `undefined` in a non-extension context or
+  // after tab teardown. Requires BOTH the `sendMessage` message anchor AND
+  // an `injectedScript.bundle.js` injected-source frame (or any injected-app
+  // source), with a negative guard preserving any resolved first-party
+  // `apps/web/src/…` frame. See `isInjectedScriptSendMessageNoise` and the
+  // production pattern `95a70e66…`.
+  if (isInjectedScriptSendMessageNoise({ message, frames })) {
     return true;
   }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowsClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';

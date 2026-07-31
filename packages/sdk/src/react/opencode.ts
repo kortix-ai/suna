@@ -39,7 +39,6 @@ export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
 export * from './use-model-defaults';
-export * from './use-model-enablement';
 export * from './use-session-model-selection';
 export * from './use-opencode-mcp';
 export * from './use-opencode-pty';

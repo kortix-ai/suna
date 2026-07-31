@@ -1,17 +1,18 @@
+import { CareersPage as CareersPageContent } from '@/features/marketing/careers/careers-page';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
-import CareersPageClient from './careers-client';
+
+const DESCRIPTION =
+  'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.';
 
 export const metadata: Metadata = {
   title: 'Careers',
-  description:
-    'Join a small, tight-knit team building the operating system for autonomous companies. We hire founders, builders, and craftspeople who turn chaos into systems that run themselves. San Francisco and remote.',
+  description: DESCRIPTION,
   keywords:
-    'Kortix careers, Kortix jobs, AI startup jobs, autonomous company jobs, San Francisco AI jobs, agent engineering, startup hiring',
+    'Kortix careers, Kortix jobs, AI startup jobs, open AGI platform, agent engineering, San Francisco AI jobs, Belgrade AI jobs, startup hiring',
   openGraph: {
-    title: 'Careers at Kortix – Build the Autonomous Company OS',
-    description:
-      "An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you've built something real.",
+    title: 'Careers at Kortix – Open positions',
+    description: DESCRIPTION,
     url: `${CANONICAL_ORIGIN}/careers`,
     images: [
       {
@@ -24,9 +25,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Careers at Kortix – Build the Autonomous Company OS',
-    description:
-      "An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you've built something real.",
+    title: 'Careers at Kortix – Open positions',
+    description: DESCRIPTION,
     images: ['/images/careers/shackleton.png'],
   },
   alternates: {
@@ -35,5 +35,5 @@ export const metadata: Metadata = {
 };
 
 export default function CareersPage() {
-  return <CareersPageClient />;
+  return <CareersPageContent />;
 }

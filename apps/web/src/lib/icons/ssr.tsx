@@ -24,9 +24,10 @@ import { DEFAULT_ICON_WEIGHT } from './icon-config';
 import {
   ActivityIcon as ActivityBase,
   AlarmIcon as AlarmBase,
+  AppleLogoIcon as AppleLogoBase,
   ArrowLeftIcon as ArrowLeftBase,
   ArrowRightIcon as ArrowRightBase,
-  ArrowsClockwiseIcon as ArrowsClockwiseBase,
+  ArrowClockwiseIcon as ArrowsClockwiseBase,
   AtIcon as AtBase,
   BroadcastIcon as BroadcastBase,
   BugIcon as BugBase,
@@ -46,6 +47,7 @@ import {
   CreditCardIcon as CreditCardBase,
   CurrencyCircleDollarIcon as CurrencyCircleDollarBase,
   DatabaseIcon as DatabaseBase,
+  DeviceMobileIcon as DeviceMobileBase,
   EnvelopeIcon as EnvelopeBase,
   FileLockIcon as FileLockBase,
   FileSearchIcon as FileSearchBase,
@@ -57,8 +59,11 @@ import {
   GaugeIcon as GaugeBase,
   GitMergeIcon as GitMergeBase,
   GitPullRequestIcon as GitPullRequestBase,
+  GithubLogoIcon as GithubLogoBase,
+  GooglePlayLogoIcon as GooglePlayLogoBase,
   HandshakeIcon as HandshakeBase,
   KeyIcon as KeyBase,
+  LinuxLogoIcon as LinuxLogoBase,
   ListChecksIcon as ListChecksBase,
   MinusIcon as MinusBase,
   PaperPlaneTiltIcon as PaperPlaneTiltBase,
@@ -76,8 +81,10 @@ import {
   ShieldWarningIcon as ShieldWarningBase,
   SignatureIcon as SignatureBase,
   SirenIcon as SirenBase,
+  SparkleIcon as SparkleBase,
   TagIcon as TagBase,
   TargetIcon as TargetBase,
+  TerminalIcon as TerminalBase,
   TicketIcon as TicketBase,
   TrendDownIcon as TrendDownBase,
   TrendUpIcon as TrendUpBase,
@@ -86,6 +93,7 @@ import {
   UserPlusIcon as UserPlusBase,
   UsersIcon as UsersBase,
   WalletIcon as WalletBase,
+  WindowsLogoIcon as WindowsLogoBase,
   WarningIcon as WarningBase,
   WrenchIcon as WrenchBase,
 } from '@phosphor-icons/react/dist/ssr';
@@ -100,9 +108,10 @@ function withDefaultWeight(Base: Icon): SsrIcon {
 
 export const ActivityIcon = withDefaultWeight(ActivityBase);
 export const AlarmIcon = withDefaultWeight(AlarmBase);
+export const AppleLogoIcon = withDefaultWeight(AppleLogoBase);
 export const ArrowLeftIcon = withDefaultWeight(ArrowLeftBase);
 export const ArrowRightIcon = withDefaultWeight(ArrowRightBase);
-export const ArrowsClockwiseIcon = withDefaultWeight(ArrowsClockwiseBase);
+export const ArrowClockwiseIcon = withDefaultWeight(ArrowsClockwiseBase);
 export const AtIcon = withDefaultWeight(AtBase);
 export const BroadcastIcon = withDefaultWeight(BroadcastBase);
 export const BugIcon = withDefaultWeight(BugBase);
@@ -122,6 +131,7 @@ export const CoffeeIcon = withDefaultWeight(CoffeeBase);
 export const CreditCardIcon = withDefaultWeight(CreditCardBase);
 export const CurrencyCircleDollarIcon = withDefaultWeight(CurrencyCircleDollarBase);
 export const DatabaseIcon = withDefaultWeight(DatabaseBase);
+export const DeviceMobileIcon = withDefaultWeight(DeviceMobileBase);
 export const EnvelopeIcon = withDefaultWeight(EnvelopeBase);
 export const FileLockIcon = withDefaultWeight(FileLockBase);
 export const FileSearchIcon = withDefaultWeight(FileSearchBase);
@@ -133,8 +143,11 @@ export const FunnelIcon = withDefaultWeight(FunnelBase);
 export const GaugeIcon = withDefaultWeight(GaugeBase);
 export const GitMergeIcon = withDefaultWeight(GitMergeBase);
 export const GitPullRequestIcon = withDefaultWeight(GitPullRequestBase);
+export const GithubLogoIcon = withDefaultWeight(GithubLogoBase);
+export const GooglePlayLogoIcon = withDefaultWeight(GooglePlayLogoBase);
 export const HandshakeIcon = withDefaultWeight(HandshakeBase);
 export const KeyIcon = withDefaultWeight(KeyBase);
+export const LinuxLogoIcon = withDefaultWeight(LinuxLogoBase);
 export const ListChecksIcon = withDefaultWeight(ListChecksBase);
 export const MinusIcon = withDefaultWeight(MinusBase);
 export const PaperPlaneTiltIcon = withDefaultWeight(PaperPlaneTiltBase);
@@ -152,8 +165,10 @@ export const ShieldCheckIcon = withDefaultWeight(ShieldCheckBase);
 export const ShieldWarningIcon = withDefaultWeight(ShieldWarningBase);
 export const SignatureIcon = withDefaultWeight(SignatureBase);
 export const SirenIcon = withDefaultWeight(SirenBase);
+export const SparkleIcon = withDefaultWeight(SparkleBase);
 export const TagIcon = withDefaultWeight(TagBase);
 export const TargetIcon = withDefaultWeight(TargetBase);
+export const TerminalIcon = withDefaultWeight(TerminalBase);
 export const TicketIcon = withDefaultWeight(TicketBase);
 export const TrendDownIcon = withDefaultWeight(TrendDownBase);
 export const TrendUpIcon = withDefaultWeight(TrendUpBase);
@@ -162,5 +177,6 @@ export const UserMinusIcon = withDefaultWeight(UserMinusBase);
 export const UserPlusIcon = withDefaultWeight(UserPlusBase);
 export const UsersIcon = withDefaultWeight(UsersBase);
 export const WalletIcon = withDefaultWeight(WalletBase);
+export const WindowsLogoIcon = withDefaultWeight(WindowsLogoBase);
 export const WarningIcon = withDefaultWeight(WarningBase);
 export const WrenchIcon = withDefaultWeight(WrenchBase);

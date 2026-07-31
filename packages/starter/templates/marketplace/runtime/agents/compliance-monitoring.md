@@ -47,5 +47,5 @@ yourself.
   region.
 - Slack is the output channel: findings and proposed fixes go to
   {{alert_channel}}.
-- Credentials are brokered server-side; never surfaced to you or written to logs.
+- Credentials are brokered server-side; scoped to this agent's grant.
 - Stop all long-running processes before finishing a turn.

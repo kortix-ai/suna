@@ -28,6 +28,8 @@ interface PdfRendererProps {
    *  before the file menu — so a caller adds actions to the ONE header this
    *  viewer already has, instead of stacking a second one above it. */
   toolbarActions?: React.ReactNode;
+  /** Start the zoom plugin at fit-to-page instead of the numeric default. */
+  fitOnOpen?: boolean;
 }
 
 export function PdfRenderer({
@@ -37,6 +39,7 @@ export function PdfRenderer({
   compact = false,
   fileName,
   toolbarActions,
+  fitOnOpen,
 }: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -113,6 +116,7 @@ export function PdfRenderer({
       showUpload={false}
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}
+      fitOnOpen={fitOnOpen}
     />
   );
 }

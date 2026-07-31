@@ -44,20 +44,23 @@ const SAMPLE_ICONS: Icon[] = [
   PaperPlaneTiltIcon,
 ];
 
+/**
+ * Body of the Icons section. The heading, the `#icons` anchor, and the seam are
+ * owned by the `CollapsibleSection` wrapper on the design-system page, so this
+ * renders content only.
+ */
 export function IconsSection() {
   const [weight, setWeight] = useState<IconWeight>(DEFAULT_ICON_WEIGHT);
 
   return (
-    <section id="icons">
-      <div className="border-border/50 mt-14 border-t pt-8" />
-      <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">Icons</h2>
+    <div>
       <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-        @phosphor-icons/react only. The app-wide weight is one line in
-        src/lib/icons/icon-config.ts, applied by IconProvider; status/solid icons opt out with an
-        explicit weight=&quot;fill&quot;. This preview toggle is page-local.
+        @phosphor-icons/react only. The app-wide weight is one line in src/lib/icons/icon-config.ts,
+        applied by IconProvider; status/solid icons opt out with an explicit
+        weight=&quot;fill&quot;. This preview toggle is page-local.
       </p>
       <div className="space-y-4">
-        <div className="flex items-center gap-0.5 rounded-md border p-1 w-fit">
+        <div className="flex w-fit items-center gap-0.5 rounded-md border p-1">
           {ICON_WEIGHTS.map((w) => (
             <button
               key={w}
@@ -83,6 +86,6 @@ export function IconsSection() {
           ))}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

@@ -85,7 +85,7 @@ model, the agent can:
 The agent labels and drafts freely, but nothing sends on its own: every
 customer-facing reply stops at a **human approval gate** as a draft for a person
 to review and send. Credentials are encrypted in the secrets manager and injected
-at runtime, never shown to the model or written to logs.
+at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each email run">
@@ -109,12 +109,11 @@ becomes a ticket. A sales ping becomes a label the right person can pick up.
 Giving an agent access to the shared inbox is a trust question as much as a
 convenience one. The relevant controls on Kortix:
 
-- **Isolation.** Each email runs in its own microVM sandbox. The session can read
+- **Isolation.** Each email runs in its own isolated sandbox. The session can read
   the thread and the help doc it needs, and only the draft or ticket it produces
-  leaves the sandbox.
+  is written back out.
 - **Scoped secrets.** The Gmail and Linear credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** Nothing customer-facing sends without a person
   reviewing the draft first — replies land as drafts, not sent mail.
 - **Everything is code.** The agent's persona, skills, and permissions are files

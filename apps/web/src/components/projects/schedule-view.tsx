@@ -96,10 +96,10 @@ import {
   PencilSimpleIcon,
   PlayIcon as Play,
   PlayIcon as PlaySolid,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   MagnifyingGlassIcon as Search,
   TimerIcon as Timer,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -504,7 +504,7 @@ function FilterRowsEditor({
               disabled={disabled}
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
             >
-              <TrashSolid className="size-4 shrink-0" />
+              <TrashIcon className="size-4 shrink-0" />
             </Button>
           </div>
         ))
@@ -974,8 +974,8 @@ function TriggerDetailToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={onDelete} variant="destructive">
-            <TrashSolid weight="fill" className="shrink-0" />
+          <DropdownMenuItem onClick={onDelete}>
+            <TrashIcon className="shrink-0" />
             Delete trigger
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1076,7 +1076,6 @@ function AgentModelSection({
         <Label>Agent</Label>
         <div className="bg-card rounded-2xl border px-2 py-1">
           <AgentSelector
-            projectId={projectId}
             agents={agents}
             selectedAgent={trigger.agent}
             onSelect={(next) => next && saveAgent.mutate(next)}
@@ -2160,7 +2159,6 @@ function CreateTriggerModal({
               >
                 <div className="bg-card rounded-2xl border px-2 py-1">
                   <AgentSelector
-                    projectId={projectId}
                     agents={agents}
                     selectedAgent={agentName}
                     onSelect={setAgentName}

@@ -3,7 +3,7 @@ NPM := npm --prefix $(TESTS)
 
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
-        lint typecheck unit integration api api-coverage contract smoke e2e visual a11y typography \
+        lint typecheck unit integration api api-coverage contract smoke e2e visual a11y \
         performance security security-dast pentest strix migration infra chaos mutation \
         coverage gates report portal-up portal-down clean
 
@@ -19,7 +19,7 @@ install: ## Install all test dependencies (node deps + Playwright browsers)
 fast: lint typecheck unit contract api-coverage ## Fast local loop: no live services
 	@echo "fast suite complete"
 
-all: lint typecheck unit integration api contract smoke e2e visual a11y typography migration infra security pentest ## Broad suite for a configured local/staging target
+all: lint typecheck unit integration api contract smoke e2e visual a11y migration infra security pentest ## Broad suite for a configured local/staging target
 	@$(MAKE) gates
 
 ## ---- CI cadences ------------------------------------------------------------
@@ -28,13 +28,13 @@ ci-pr: ## On every PR
 	@$(MAKE) lint typecheck unit integration contract api-coverage gates
 ci-main: ## On merge to main (full regression + UI)
 	@$(MAKE) clean
-	@$(MAKE) e2e visual a11y typography migration
+	@$(MAKE) e2e visual a11y migration
 ci-nightly: ## Scheduled / nightly
 	@$(MAKE) clean
 	@$(MAKE) security pentest performance security-dast mutation chaos
 ci-release: ## Pre-release full gate
 	@$(MAKE) clean
-	@$(MAKE) lint typecheck unit integration api contract smoke e2e visual a11y typography migration infra security pentest performance security-dast mutation gates
+	@$(MAKE) lint typecheck unit integration api contract smoke e2e visual a11y migration infra security pentest performance security-dast mutation gates
 
 ## ---- per category -----------------------------------------------------------
 lint: ## Lint all workspaces (best-effort)
@@ -59,8 +59,6 @@ visual: ## Visual regression (Playwright snapshots)
 	$(NPM) run test:visual
 a11y: ## Accessibility tests (axe + Playwright)
 	$(NPM) run test:a11y
-typography: ## Typography regression — cross-browser slant/axis checks (Playwright: chromium, firefox, webkit)
-	$(NPM) run test:typography
 performance: ## Performance / load (k6, Docker)
 	$(NPM) run test:perf
 perf-regression: ## Fail if k6 p95/error-rate regressed >10% vs committed baseline

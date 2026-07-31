@@ -6,6 +6,7 @@ import {
   SquaresFourIcon as Blocks,
   BrainIcon as Brain,
   GitPullRequestIcon as GitPullRequest,
+  HardDrivesIcon,
   SparkleIcon as HiMiniSparkles,
   ShieldIcon as MdShield,
   ChatIcon as MessageSquare,
@@ -17,7 +18,7 @@ import {
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 
-type MarketingPanelTab = PageId | 'review' | 'memory';
+type MarketingPanelTab = PageId | 'review' | 'memory' | 'sandbox';
 
 const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNode }> = {
   home: { label: 'Home', icon: null },
@@ -32,6 +33,7 @@ const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNod
   security: { label: 'Security', icon: <MdShield weight="fill" className="size-4" /> },
   review: { label: 'Review', icon: <GitPullRequest className="size-4" /> },
   memory: { label: 'Memory', icon: <Brain className="size-4" /> },
+  sandbox: { label: 'Sandbox', icon: <HardDrivesIcon className="size-4" /> },
 };
 
 function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
@@ -92,7 +94,12 @@ export function WebPanelWrapper({
             // : 'rounded-t-xl sm:rounded-t-[calc(var(--radius-xl)-4px)]',
           )}
         >
-          <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
+          {/* `overflow-hidden`, never `auto`. These are illustrative product
+              surfaces inside a pinned scroll section: a scrollable region here
+              swallows the wheel the moment the pointer crosses it, and the
+              reader gets stuck on the page without knowing why. Content that
+              does not fit is clipped, and each panel is composed to fit. */}
+          <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">{children}</div>
         </div>
       </div>
     </div>

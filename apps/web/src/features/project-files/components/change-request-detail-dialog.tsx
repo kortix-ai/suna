@@ -35,7 +35,7 @@ import {
   GitDiffIcon as FileDiff,
   FilePlusIcon as FilePlus2,
   FileXIcon as FileX2,
-  ArrowsClockwiseIcon as RefreshCcw,
+  ArrowClockwiseIcon as RefreshCcw,
   ArrowCounterClockwiseIcon as RotateCcw,
   RowsIcon as Rows3,
   SparkleIcon as SparklesSolid,

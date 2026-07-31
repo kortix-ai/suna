@@ -179,6 +179,8 @@ export function GenerationControlsPanel({
             max={2}
             step={0.05}
             disabled={disabled}
+            thumbLabel="Temperature"
+            formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('temperature', next)}
           />
         </div>
@@ -212,6 +214,8 @@ export function GenerationControlsPanel({
             max={1}
             step={0.01}
             disabled={disabled}
+            thumbLabel="Top-p"
+            formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('topP', next)}
           />
         </div>

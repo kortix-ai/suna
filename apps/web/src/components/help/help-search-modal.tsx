@@ -11,7 +11,6 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { useIsMobile } from '@/hooks/utils';
 import { CoinsIcon as Coins } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
@@ -120,19 +119,17 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
                         onSelect={() => handleSelect(page.url)}
                         className="rounded-2xl p-0"
                       >
-                        <SpotlightCard className="w-full cursor-pointer">
-                          <div className="flex items-start gap-3 px-3 py-2.5">
-                            <div className="bg-muted border-border mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border">
-                              <Icon className="text-muted-foreground h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">{page.title}</div>
-                              <div className="text-muted-foreground line-clamp-1 text-xs">
-                                {page.description}
-                              </div>
+                        <div className="flex items-start gap-3 px-3 py-2.5">
+                          <div className="bg-muted border-border mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border">
+                            <Icon className="text-muted-foreground h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{page.title}</div>
+                            <div className="text-muted-foreground line-clamp-1 text-xs">
+                              {page.description}
                             </div>
                           </div>
-                        </SpotlightCard>
+                        </div>
                       </CommandItem>
                     );
                   })}

@@ -30,7 +30,7 @@ import {
   DotsThreeVerticalIcon as MoreVertical,
   PencilSimpleIcon,
   ScissorsIcon as Scissors,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
@@ -135,7 +135,7 @@ export function FolderDriveMenuItems({
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
-              <TrashSolid weight="fill" />
+              <TrashIcon />
               Remove
             </Item>
           )}
@@ -224,7 +224,7 @@ export function FileDriveMenuItems({
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
-              <TrashSolid weight="fill" />
+              <TrashIcon />
               Remove
             </Item>
           )}

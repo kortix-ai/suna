@@ -92,8 +92,7 @@ The agent **drafts only**: it fills the questionnaire and flags what it's unsure
 of, and it never sends. Anything it can't answer confidently from the vetted set
 is left for a person rather than guessed. The completed draft stops at a **human
 approval gate** — security reviews it before it goes back to the prospect.
-Credentials are encrypted in the Secrets Manager and injected at runtime, never
-shown to the model or written to logs.
+Credentials are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Return a filled draft for review">
@@ -119,12 +118,12 @@ with a person.
 The agent drafts a security document from our own vetted answers, so the access is
 scoped and contained:
 
-- **Isolation.** Every questionnaire runs in its own per-task microVM sandbox. The
+- **Isolation.** Every questionnaire runs in its own per-task isolated sandbox. The
   session reads the inbound document and the knowledge base it's scoped to, and
-  only the filled draft leaves the sandbox.
+  only the filled draft is written back out.
 - **Scoped secrets.** The credentials for the questionnaire source and the
   knowledge base are encrypted in the Secrets Manager and injected into the sandbox
-  at runtime, never exposed to the model or the logs.
+  at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The completed draft is reviewed by security before it
   goes back to the prospect, and any low-confidence question is left for a person
   rather than guessed.

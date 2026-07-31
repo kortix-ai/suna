@@ -22,6 +22,12 @@ const MARKETING_ROUTES = ['/', '/legal', '/support'];
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
+  '/agent-computer',
+  '/agents-and-skills',
+  '/automations',
+  '/channels',
+  '/self-hosted',
+  '/company-as-code',
   '/careers',
   '/blog',
   '/changelog',
@@ -58,6 +64,12 @@ const PUBLIC_ROUTES = [
   '/docs', // Product documentation (Fumadocs) should be public
   '/credits-explained', // Credits explained page should be public
   '/about', // About page should be public
+  '/agent-computer', // Agent computer marketing page should be public
+  '/agents-and-skills', // marketing page should be public
+  '/automations', // marketing page should be public
+  '/channels', // marketing page should be public
+  '/self-hosted', // marketing page should be public
+  '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/blog', // Public blog (MDX posts under content/blog) should be public
@@ -82,6 +94,7 @@ const PUBLIC_ROUTES = [
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
+  '/a1o', // "All in one" — WebGL stack-layer cube landing page, public, unauthenticated
   '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
   ...locales.flatMap((locale) =>
     MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),

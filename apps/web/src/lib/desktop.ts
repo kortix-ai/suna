@@ -12,19 +12,22 @@
 export const DESKTOP_UA_TOKEN = 'KortixDesktop';
 
 /**
- * Base path for desktop installer downloads. The `/download` route resolves the
- * latest installer for the visitor's OS (or `?platform=macos|windows|linux`)
- * and 302s to it — same pattern as the CLI's `/install`. Override with
+ * Base path for desktop downloads. `/download` is the public page; the
+ * `/download/<platform>` children 302 to the latest installer for that OS —
+ * same pattern as the CLI's `/install`. Override with
  * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
  */
 export const DESKTOP_DOWNLOAD_URL =
   process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
 
-/** Build a per-platform download URL, e.g. desktopDownloadUrl('macos'). */
+/**
+ * Build a per-platform download URL, e.g. desktopDownloadUrl('macos') →
+ * '/download/macos'. Without a platform this returns '/download', which is the
+ * public page — it lets the visitor choose, and highlights their OS.
+ */
 export function desktopDownloadUrl(platform?: 'macos' | 'windows' | 'linux'): string {
   if (!platform) return DESKTOP_DOWNLOAD_URL;
-  const sep = DESKTOP_DOWNLOAD_URL.includes('?') ? '&' : '?';
-  return `${DESKTOP_DOWNLOAD_URL}${sep}platform=${platform}`;
+  return `${DESKTOP_DOWNLOAD_URL.replace(/\/$/, '')}/${platform}`;
 }
 
 /**

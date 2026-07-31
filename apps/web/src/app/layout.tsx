@@ -15,12 +15,15 @@ import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Suspense, lazy } from 'react';
 import { Toaster } from 'sonner';
+import { roobert } from './(system)/fonts/roobert';
+import { roobertMono } from './(system)/fonts/roobert-mono';
 import './globals.css';
 import { ReactQueryProvider } from './react-query-provider';
 
@@ -170,7 +173,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       lang="en"
       translate="no"
       suppressHydrationWarning
-      className="notranslate"
+      className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
       <head>
         {/* Runtime config — evaluated at request time via connection() above.
@@ -184,18 +187,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
 
-        {/* Roobert is one variable font covering every weight, the mono and
-            SemiMono axis stops, and italics (see the @font-face block in
-            globals.css). next/font/local no longer manages it, so preload
-            explicitly — without this the browser only discovers the font after
-            CSS parses and text flashes in the fallback. */}
-        <link
-          rel="preload"
-          href="/fonts/roobert/RoobertCollectionVF.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
+        {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
 
         {/* Prevent browser auto-translate (Google Translate, Chrome, etc.) from
             mutating the DOM. When translators modify text nodes, React's reconciler

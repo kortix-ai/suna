@@ -39,7 +39,7 @@ import {
   ListIcon as List,
   PlayIcon as Play,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   FloppyDiskIcon as Save,
   MagnifyingGlassIcon as Search,
   TableIcon as Table2,

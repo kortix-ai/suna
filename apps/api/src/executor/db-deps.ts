@@ -52,6 +52,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
+import { recordAuditEvent } from '../shared/audit';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
@@ -109,6 +110,7 @@ import { resolveShareSubject } from './share';
 import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
+import { executionAuditEvent } from './execution-audit';
 
 /** Which policy scope decided an action — surfaced so the editor can say so. */
 type EffectiveSource = EffectiveResolveResult['source'];
@@ -575,7 +577,13 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
           resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
         })
         .returning({ id: executorExecutions.executionId });
-      return row?.id ?? null;
+      if (!row?.id) return null;
+      try {
+        await recordAuditEvent(executionAuditEvent(rec, row.id));
+      } catch (error) {
+        console.error('[executor] Failed to record central audit event:', error);
+      }
+      return row.id;
     },
     waitForApprovalDecision: waitForApprovalDecision,
     isSessionToolApproved: isSessionToolApproved,
@@ -588,8 +596,24 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     // Computer connectors relay through the shared tunnel RPC core (permission
     // check → relay → audit). The machine is resolved from the `computer`
     // selector, scoped to this account.
-    executeComputerCall: ({ accountId, selector, method, args }) =>
-      executeComputerCall({ accountId, selector, method, args }),
+    executeComputerCall: ({
+      accountId,
+      projectId,
+      sessionId,
+      actorUserId,
+      selector,
+      method,
+      args,
+    }) =>
+      executeComputerCall({
+        accountId,
+        projectId,
+        sessionId,
+        actorUserId,
+        selector,
+        method,
+        args,
+      }),
     // Voice channel: `spawn_room` creates the LiveKit room + human join token
     // (the same logic voice/routes.ts used to inline before it went through
     // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented
@@ -730,6 +754,53 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return null;
   return {
+    connectorId: row.connectorId,
+    app,
+    authorizationStrategy: row.authorizationStrategy,
+  };
+}
+
+export type ConnectLinkEligibility =
+  | { ok: true; connectorId: string; app: string; authorizationStrategy: string }
+  /** No connector with this slug on the project. The manifest really is missing it. */
+  | { ok: false; reason: 'no_such_connector' }
+  /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
+  | { ok: false; reason: 'not_pipedream'; providerType: string }
+  /** Pipedream-backed but its config names no app — a broken connector, not a missing one. */
+  | { ok: false; reason: 'no_app' };
+
+/**
+ * Why a connect link can or cannot be minted for this slug.
+ *
+ * `loadPipedreamConnector` answers all three failures with `null`, so the mint
+ * route told everyone to "add it to kortix.yaml first" — including the people
+ * whose connector is already in kortix.yaml and simply is not Pipedream-backed.
+ * That sends someone to edit a file that already has the entry they are being
+ * asked to add, and the connector they actually need is reachable by a route
+ * this one cannot offer.
+ */
+export async function connectLinkEligibility(
+  projectId: string,
+  slug: string,
+): Promise<ConnectLinkEligibility> {
+  const [row] = await db
+    .select({
+      connectorId: executorConnectors.connectorId,
+      providerType: executorConnectors.providerType,
+      config: executorConnectors.config,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!row) return { ok: false, reason: 'no_such_connector' };
+  if (row.providerType !== 'pipedream') {
+    return { ok: false, reason: 'not_pipedream', providerType: row.providerType };
+  }
+  const app = (row.config as any)?.app;
+  if (typeof app !== 'string' || !app) return { ok: false, reason: 'no_app' };
+  return {
+    ok: true,
     connectorId: row.connectorId,
     app,
     authorizationStrategy: row.authorizationStrategy,

@@ -4,7 +4,7 @@ import {
   ArrowsLeftRightIcon as ArrowRightLeft,
   CubeIcon as Boxes,
   DotsThreeIcon as MoreHorizontal,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';

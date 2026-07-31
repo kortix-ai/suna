@@ -61,6 +61,15 @@ interface KortixComputerState {
   // for the default. Ignored in Advanced (its 50/50 story is untouched) and
   // outranked by `isExpanded` (fullscreen wins over any split).
   panelSplit: number | null;
+  // Easy mode only — the open document's own aspect ratio (width / height),
+  // set once a renderer reports its intrinsic size. Not a split percentage
+  // itself: it is meant to be fed through `fitSplitPercent` (in
+  // `easy-panel-logic.ts`) to compute one, which is designed to outrank
+  // `panelSplit` — a document that knows its own shape should beat the fixed
+  // 35/70 guess. null before any measurement lands, or once one is no longer
+  // trustworthy (e.g. the detail closed). Ignored in Advanced mode, same as
+  // `panelSplit`.
+  panelAspect: number | null;
   // Whether the Easy panel is showing a DETAIL (a file/app/step/audit detail
   // or the terminal layer) rather than the card home. Synced by `EasyPanel`;
   // `session-layout` reads it to show the resize grip only while a detail is
@@ -152,6 +161,9 @@ interface KortixComputerState {
    *  needs to know THAT the next width change should snap, not which of the
    *  two states caused it. */
   setPanelSplit: (split: number | null, opts?: { animate?: boolean }) => void;
+  /** Mirrors `setPanelSplit` exactly — same `animate` contract, same shared
+   *  `skipNextExpandAnimation` flag. */
+  setPanelAspect: (aspect: number | null, opts?: { animate?: boolean }) => void;
   setDetailOpen: (open: boolean) => void;
 
   // Ready chip state management
@@ -191,6 +203,7 @@ const initialState = {
   _activeSessionId: null as string | null,
   isExpanded: false,
   panelSplit: null as number | null,
+  panelAspect: null as number | null,
   detailOpen: false,
   skipNextExpandAnimation: false,
   pendingToolNavIndex: null as number | null,
@@ -292,6 +305,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // and idempotent on top of this.
         if (!open) {
           update.panelSplit = null;
+          update.panelAspect = null;
           update.isExpanded = false;
           update.detailOpen = false;
           update.skipNextExpandAnimation = true;
@@ -327,6 +341,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           // Reset expanded/split/detail state when switching sessions
           isExpanded: false,
           panelSplit: null,
+          panelAspect: null,
           detailOpen: false,
         });
       },
@@ -349,6 +364,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           isSidePanelOpen: false,
           isExpanded: false,
           panelSplit: null,
+          panelAspect: null,
           detailOpen: false,
         };
         if (sessionId) {
@@ -368,6 +384,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       setPanelSplit: (split: number | null, opts?: { animate?: boolean }) => {
         set({ panelSplit: split, skipNextExpandAnimation: opts?.animate === false });
+      },
+
+      setPanelAspect: (aspect: number | null, opts?: { animate?: boolean }) => {
+        set({ panelAspect: aspect, skipNextExpandAnimation: opts?.animate === false });
       },
 
       setDetailOpen: (open: boolean) => {

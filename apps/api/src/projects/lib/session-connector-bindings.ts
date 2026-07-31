@@ -383,21 +383,46 @@ export type RequiredConnectorResolution =
   | {
       ok: false;
       code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE';
-      alias: string;
+      /** Every unconfigured alias, so one refusal is one round trip to fix. */
+      aliases: string[];
       connectorProfiles?: never;
     }
   | {
       ok: false;
       code: 'CONNECTOR_AUTHORIZATION_REQUIRED';
       connectorProfiles: ConnectorAuthorizationRequiredProfile[];
-      alias?: never;
+      aliases?: never;
     };
 
 export class RequiredConnectorProfileUnavailableError extends Error {
   readonly code = 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE';
 
-  constructor(readonly alias: string) {
-    super(`Required connector profile "${alias}" is unavailable`);
+  /** Every unconfigured alias, matching what create's pre-flight returns. */
+  readonly aliases: string[];
+
+  /**
+   * The first alias.
+   *
+   * Kept because callers read it, but the list is the contract: the docs tell
+   * integrators this refusal names every failing alias, and a single-alias
+   * throw made that false on the prompt path — a caller who fixed the one name
+   * they were given got refused again by the next, once per round trip.
+   */
+  get alias(): string {
+    return this.aliases[0] ?? '';
+  }
+
+  constructor(aliases: string | readonly string[]) {
+    const list = (typeof aliases === 'string' ? [aliases] : [...aliases]).filter(
+      (alias) => alias.length > 0,
+    );
+    const quoted = list.map((alias) => `"${alias}"`).join(', ');
+    super(
+      list.length === 1
+        ? `Required connector profile ${quoted} is unavailable`
+        : `Required connector profiles ${quoted} are unavailable`,
+    );
+    this.aliases = list;
     this.name = 'RequiredConnectorProfileUnavailableError';
   }
 }
@@ -412,6 +437,7 @@ export async function resolveRequiredConnectorProfiles(input: {
 }): Promise<RequiredConnectorResolution> {
   const bindings: ValidatedSessionConnectorBinding[] = [];
   const missing: ConnectorAuthorizationRequiredProfile[] = [];
+  const unavailable: string[] = [];
   const seen = new Set<string>();
   const explicitlyBound = new Set(input.explicitBindings?.map((binding) => binding.alias) ?? []);
   for (const requestedAlias of input.aliases) {
@@ -441,11 +467,11 @@ export async function resolveRequiredConnectorProfiles(input: {
       )
       .limit(1);
     if (!connectorRow) {
-      return {
-        ok: false,
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
-        alias: publicConnectorAlias(alias),
-      };
+      // Keep scanning. Returning on the first unconfigured alias would hand the
+      // caller one alias per round trip, and a caller that has to guess how many
+      // more refusals are queued cannot show the end-user a complete checklist.
+      unavailable.push(publicConnectorAlias(alias));
+      continue;
     }
     const connector: ConnectorAuthorizationRow = connectorRow;
     const profileRows = connector.enabled && connector.status === 'active'
@@ -506,6 +532,17 @@ export async function resolveRequiredConnectorProfiles(input: {
       authorizationStrategy: connector.authorizationStrategy,
     });
   }
+  // An unconfigured alias outranks a missing authorization. Only the project
+  // owner can add the connector, so sending the end-user into a connect flow for
+  // a connector that does not exist yet would strand them; the caller has to fix
+  // the manifest first and will re-hit the authorization gate on the retry.
+  if (unavailable.length > 0) {
+    return {
+      ok: false,
+      code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+      aliases: unavailable,
+    };
+  }
   if (missing.length > 0) {
     return {
       ok: false,
@@ -523,6 +560,11 @@ export async function missingRequiredConnectorAuthorizationsForSession(input: {
   aliases: readonly string[];
 }): Promise<ConnectorAuthorizationRequiredProfile[]> {
   const missing: ConnectorAuthorizationRequiredProfile[] = [];
+  // Collected, not thrown on sight. Create's pre-flight reports every
+  // unconfigured alias at once and the docs promise the same shape here; a
+  // throw inside the loop stopped at the first, so a project missing two
+  // connectors took two failed prompts to discover the second.
+  const unavailable: string[] = [];
   const seen = new Set<string>();
   for (const requestedAlias of input.aliases) {
     const alias = canonicalConnectorAlias(requestedAlias);
@@ -552,7 +594,8 @@ export async function missingRequiredConnectorAuthorizationsForSession(input: {
       )
       .limit(1);
     if (!connector) {
-      throw new RequiredConnectorProfileUnavailableError(publicConnectorAlias(alias));
+      unavailable.push(publicConnectorAlias(alias));
+      continue;
     }
     missing.push({
       id: connector.id,
@@ -560,6 +603,12 @@ export async function missingRequiredConnectorAuthorizationsForSession(input: {
       name: connector.name,
       authorization_strategy: connector.authorizationStrategy,
     });
+  }
+  // Same precedence as create's pre-flight: an alias with no connector at all
+  // outranks one that merely needs authorizing. Sending someone into a connect
+  // flow for a connector the project does not have would strand them there.
+  if (unavailable.length > 0) {
+    throw new RequiredConnectorProfileUnavailableError(unavailable);
   }
   return missing;
 }

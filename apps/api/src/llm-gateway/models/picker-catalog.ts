@@ -54,7 +54,7 @@ function catalogState(): PickerCatalogState {
 // (most recently released), so a wrong/renamed guess is dropped rather than
 // offered — the list can never drift into a lie.
 const FLAGSHIP_CANDIDATES: Record<string, string[]> = {
-  anthropic: ['claude-opus-4.8', 'claude-opus-4-8', 'claude-sonnet-4.6', 'claude-sonnet-4-6'],
+  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6'],
   openai: ['gpt-5.5', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
   google: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'],
   'x-ai': ['grok-4', 'grok-3'],

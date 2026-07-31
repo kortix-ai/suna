@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Slider } from '@/components/ui/slider';
+import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
   DownloadIcon as Download,
@@ -34,6 +35,20 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+/**
+ * The controls float on a black gradient over arbitrary video frames, so the
+ * theme tokens the slider normally uses do not apply. Repaint every part in
+ * white with a dark thumb outline, which stays legible on any footage.
+ */
+const VIDEO_SLIDER = cn(
+  'cursor-pointer',
+  '[&_[data-slot=slider-track]]:bg-white/30',
+  '[&_[data-slot=slider-range]]:bg-white',
+  '[&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-black/60 [&_[data-slot=slider-thumb]]:bg-white',
+  '[&_[data-slot=slider-thumb]]:hover:ring-white/25 [&_[data-slot=slider-thumb]]:active:ring-white/35',
+  '[&_[data-slot=slider-thumb]]:focus:ring-offset-black/60',
+);
+
 export function VideoRenderer({
   url,
   className,
@@ -43,6 +58,9 @@ export function VideoRenderer({
   onDownload,
 }: VideoRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // `null` outside a <PreviewFitProvider> — see image-renderer.tsx for why
+  // `report` below is then an inert no-op everywhere but the Easy panel.
+  const previewFit = usePreviewFit();
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -105,9 +123,18 @@ export function VideoRenderer({
         height: video.videoHeight,
         duration: video.duration,
       });
+      previewFit?.report({ width: video.videoWidth, height: video.videoHeight });
       setIsLoading(false);
     }
   };
+
+  // The browser refused the file, so `handleLoadedMetadata` will never run and
+  // no size is coming. Same "never, not not-yet" contract as the image and PDF
+  // renderers; inert outside a <PreviewFitProvider>.
+  useEffect(() => {
+    if (!previewFit || !hasError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, hasError]);
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
@@ -375,7 +402,9 @@ export function VideoRenderer({
                 max={duration || 100}
                 step={0.1}
                 onValueChange={handleSeek}
-                className="cursor-pointer [&_[data-slot=range]]:bg-white [&_[data-slot=thumb]]:h-3 [&_[data-slot=thumb]]:w-3 [&_[data-slot=thumb]]:border-0 [&_[data-slot=thumb]]:bg-white [&_[data-slot=track]]:bg-white/30"
+                thumbLabel="Seek"
+                formatValue={(value) => formatTime(value)}
+                className={VIDEO_SLIDER}
               />
             </div>
 
@@ -425,7 +454,9 @@ export function VideoRenderer({
                   max={1}
                   step={0.1}
                   onValueChange={handleVolumeChange}
-                  className="w-20 cursor-pointer [&_[data-slot=range]]:bg-white [&_[data-slot=thumb]]:h-3 [&_[data-slot=thumb]]:w-3 [&_[data-slot=thumb]]:border-0 [&_[data-slot=thumb]]:bg-white [&_[data-slot=track]]:bg-white/30"
+                  thumbLabel="Volume"
+                  formatValue={(value) => `${Math.round(value * 100)}%`}
+                  className={cn('w-20', VIDEO_SLIDER)}
                 />
               </div>
 

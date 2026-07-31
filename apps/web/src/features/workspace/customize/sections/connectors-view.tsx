@@ -18,7 +18,7 @@ import {
   PencilSimpleIcon,
   PlugIcon as Plug,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   MagnifyingGlassIcon as Search,
   ShieldWarningIcon as ShieldAlert,
   ShieldCheckIcon as ShieldCheck,
@@ -924,11 +924,7 @@ function ConnectionRow({
               Use by default{isProjectAuthorization ? ' for the project' : ''}
             </DropdownMenuItem>
           )}
-          {mayMutate && (
-            <DropdownMenuItem variant="destructive" onClick={onDisconnect}>
-              Disconnect
-            </DropdownMenuItem>
-          )}
+          {mayMutate && <DropdownMenuItem onClick={onDisconnect}>Disconnect</DropdownMenuItem>}
         </DropdownMenuContent>
       </DropdownMenu>
     </li>
@@ -1556,6 +1552,15 @@ function ConnectorDetail({
                 updateAuthorizationStrategy.mutate(next);
               }}
               disabled={!canWrite || !authorizationStrategyEditable}
+              // Settled once the connector exists. Switching owner after the
+              // fact silently changes WHOSE account every future session runs
+              // as, and orphans the profiles and permission rules already
+              // attached under the old owner — a change that looks like a
+              // toggle and behaves like a migration.
+              //
+              // UI-only: `updateAuthorizationStrategy` below and its route are
+              // left intact, so re-enabling is deleting this one prop.
+              lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
               pending={strategyUpdating}
             />
           </div>
@@ -4334,7 +4339,7 @@ function ConnectorConfigFields({
               });
             }}
           >
-            <SelectTrigger id="connector-provider" className="w-full" variant="popover">
+            <SelectTrigger id="connector-provider" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -4450,7 +4455,7 @@ function ConnectorConfigFields({
               disabled={readOnly}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
-              <SelectTrigger id="connector-transport" className="w-full" variant="popover">
+              <SelectTrigger id="connector-transport" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4514,7 +4519,7 @@ function ConnectorConfigFields({
                 else setAuth({ type: v as ConnectorRequestAuthType });
               }}
             >
-              <SelectTrigger id="connector-auth" className="w-full" variant="popover">
+              <SelectTrigger id="connector-auth" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4600,7 +4605,7 @@ function ConnectorConfigFields({
                     setAuth({ in: placement as 'header' | 'query' | 'cookie' })
                   }
                 >
-                  <SelectTrigger id="connector-auth-placement" variant="popover">
+                  <SelectTrigger id="connector-auth-placement">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -5107,7 +5112,7 @@ function SetCredentialModal({
                       });
                     }}
                   >
-                    <SelectTrigger id="connector-oauth2-grant" variant="popover">
+                    <SelectTrigger id="connector-oauth2-grant">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

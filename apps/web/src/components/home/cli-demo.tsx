@@ -146,7 +146,7 @@ const INIT_INTRO: Line[] = [
   [],
   [
     t('   '),
-    t('The operating system for AI workers', 'fg'),
+    t('The open-source AI Management System', 'fg'),
     t('   '),
     t('·  configure your Kortix project', 'faded'),
   ],
