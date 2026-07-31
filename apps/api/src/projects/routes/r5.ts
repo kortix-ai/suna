@@ -17,8 +17,10 @@ import {
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, type SQL } from 'drizzle-orm';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { metadataMerge } from '../lib/metadata-merge';
+import { normalizeProjectIcon } from '../lib/project-icon';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
@@ -688,9 +690,38 @@ projectsApp.openapi(
   if (defaultBranch) updates.defaultBranch = defaultBranch;
   if (manifestPath) updates.manifestPath = manifestPath;
 
+  // `icon` is the one field here where "absent" and "null" mean different
+  // things, so it cannot use the truthiness gate the three writers above use.
+  // `normalizeProjectIcon` answers "is this a storable emoji?" and returns
+  // `null` for a deliberate clear AND for garbage alike — so the REQUEST, not
+  // the normalizer's return value, is what separates them:
+  //
+  //   key absent    → no metadata write; the stored icon is untouched
+  //   icon: "🚀"    → merge { icon }
+  //   icon: null    → delete the `icon` key
+  //   icon: garbage → no metadata write; a malformed value must never be able
+  //                   to wipe an icon the user chose
+  //
+  // Both writes go through `metadataMerge`, which merges against the CURRENT
+  // row value inside the UPDATE's own row lock. A read-modify-write here would
+  // revert whatever a concurrent writer put in `projects.metadata` — the
+  // sandbox-provider routing pin above all (see lib/metadata-merge.ts).
+  let metadataExpr: SQL | undefined;
+  if ('icon' in body) {
+    const icon = normalizeProjectIcon(body.icon);
+    if (icon) metadataExpr = metadataMerge({ icon });
+    else if (body.icon === null) metadataExpr = metadataMerge({}, ['icon']);
+  }
+
   const [row] = await db
     .update(projects)
-    .set(updates)
+    .set({
+      ...updates,
+      // Spread rather than assigned into `updates`: that object is typed
+      // `Partial<$inferInsert>`, which has no room for a SQL expression, while
+      // Drizzle's own `.set()` input accepts one per column.
+      ...(metadataExpr ? { metadata: metadataExpr } : {}),
+    })
     .where(eq(projects.projectId, projectId))
     .returning();
 
