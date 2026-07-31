@@ -6,7 +6,9 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
+import { emojiTint, emojiTintHover } from '@/components/ui/emoji-tint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
  *  no bounce. See components/markdown/copy-button.tsx. */
@@ -144,8 +146,29 @@ export function ProjectIconField({
           // on `transition: all`. The primitive is shared, so it is overridden
           // here rather than changed. `scale`, not `transform`: Tailwind v4's
           // scale-* utility sets the standalone `scale` property, which
-          // `transition-property: transform` does not cover.
-          className="hit-area-1 size-9 shrink-0 transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
+          // `transition-property: transform` does not cover. `box-shadow` is
+          // there because Tailwind draws inset-ring-* with one, and the ring
+          // below thickens on hover — the same list the picker's cells carry.
+          //
+          // ONCE AN ICON IS PICKED the trigger stops being a neutral outline
+          // button and becomes the picker cell you just hovered: the same fill
+          // under the same 1px inset ring, at rest, in the hue the emoji earns
+          // (components/ui/emoji-tint.ts). That is what ties it to the same
+          // project's card tile and sidebar row.
+          //
+          // `emojiTintHover` is not decoration. `outline` carries
+          // `hover:bg-foreground/5`, and a :hover rule outranks the resting
+          // fill on specificity, so without it the pointer washes the tint out
+          // to neutral grey and back. Restating the fill at the same modifier
+          // makes tailwind-merge drop the variant's hover entirely — which then
+          // leaves the trigger with no pointer feedback at all, so
+          // `hover:inset-ring-2` firms the ring 1px -> 2px instead. The
+          // feedback stays inside the tint's own language rather than borrowing
+          // a neutral fill.
+          className={cn(
+            'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
+            value && [emojiTint(value), emojiTintHover(value), 'hover:inset-ring-2'],
+          )}
         >
           {/* Both faces share one fixed box and cross-fade in place. Picking an
               emoji closes the popover, so the eye is already on the trigger

@@ -98,19 +98,45 @@ describe('ProjectCard — the project’s own icon', () => {
     // — an inline `border-color` beats `border-border/60`. This golden is what
     // sees it: `style=` appears nowhere, so any surviving chalk fragment fails.
     expect(tileOf(render({ icon: '🐢' }))).toBe(
-      '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-foreground/25 shadow-2xs text-xl bg-background"><span aria-hidden="true" class="leading-none">🐢</span></span>',
+      '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-10 rounded-md border-0 bg-emoji-fill-green inset-ring-1 inset-ring-emoji-ring-green text-xl"><span aria-hidden="true" class="leading-none">🐢</span></span>',
     );
   });
 
-  test('the emoji tile keeps the card’s own well background', () => {
-    // The card passes `bg-background` so the tile reads as a well in the card's
-    // `bg-secondary/80` surface. Under the inline chalk that class was dead;
-    // with the emoji it is the tile's actual fill, so it has to survive
-    // tailwind-merge against the component's `bg-muted`.
+  test('the emoji tile wears the tint its emoji earns', () => {
+    // The card is the surface this whole treatment exists for: the tile stops
+    // being a neutral well and becomes the picker's hovered-cell look at rest.
+    // 🐢 is anchored to green (components/ui/emoji-tint.ts), so this also pins
+    // that the CARD reads the anchor table and not something of its own.
     const tile = tileOf(render({ icon: '🐢' }));
 
-    expect(tile).toContain('bg-background');
+    expect(tile).toContain('bg-emoji-fill-green');
+    expect(tile).toContain('inset-ring-emoji-ring-green');
+    expect(tile).toContain('inset-ring-1');
+  });
+
+  test('the card no longer passes a background that would kill the tint', () => {
+    // `className` is last into EntityAvatar's cn(), so ANY fill the card passes
+    // silently beats `bg-emoji-fill-*` and ships a ringed grey tile. The card
+    // used to pass `bg-background`; under the inline chalk it was dead CSS
+    // (an inline background-color wins), and under the tint it was the bug.
+    // Checked in the MARKUP, not the source: that is where tailwind-merge's
+    // answer is observable.
+    const tile = tileOf(render({ icon: '🐢' }));
+
+    expect(tile).not.toContain('bg-background');
     expect(tile).not.toContain('bg-muted');
+
+    // …and the icon-less tile keeps rendering exactly the colour it always did,
+    // which is the inline chalk and never that class.
+    expect(tileOf(render({ icon: null }))).toContain('background-color:hsl(');
+    expect(tileOf(render({ icon: null }))).not.toContain('bg-background');
+  });
+
+  test('two projects that picked different emoji do not share a tile', () => {
+    // Guards every "contains" above against a tint pinned to one hue.
+    expect(tileOf(render({ icon: '🐢' }))).toContain('bg-emoji-fill-green');
+    expect(tileOf(render({ icon: '🔥' }))).toContain('bg-emoji-fill-amber');
+    expect(tileOf(render({ icon: '💧' }))).toContain('bg-emoji-fill-blue');
   });
 
   test('the tile is still the large one, beside the name', () => {

@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+
 import { ProjectIconField } from './project-icon-field';
 
 const read = (relative: string) =>
@@ -407,7 +409,18 @@ describe('ProjectIconField conventions', () => {
     // The visible control is size-9 (33.11px) because it has to line up with
     // the sibling name Input. hit-area-1 pads the target to 40.47px without
     // moving a pixel, using the repo's own utility (see globals.css).
-    expect(code).toMatch(/className="[^"]*\bhit-area-1\b[^"]*\bsize-9\b/);
+    //
+    // Read from the MARKUP, in both states. It used to read the source, which
+    // stopped meaning anything the moment the className became a cn() call —
+    // and the tinted state is a second class list that could lose either one.
+    for (const value of [null, '🌿']) {
+      const classes = (render({ value, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '').split(
+        /\s+/,
+      );
+
+      expect(classes).toContain('hit-area-1');
+      expect(classes).toContain('size-9');
+    }
   });
 
   test('the two faces share a box the wider of them actually fits', () => {
@@ -427,9 +440,13 @@ describe('ProjectIconField conventions', () => {
     // transition-property utility and the winner is observable here.
     const classes = render({ value: null, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '';
 
-    expect(classes).toContain('transition-[color,background-color,scale]');
+    expect(classes).toContain('transition-[color,background-color,box-shadow,scale]');
     expect(classes).not.toContain('transition-all');
 
+    // `box-shadow` is in the list because Tailwind draws inset-ring-* with one,
+    // and the tinted trigger firms its ring from 1px to 2px on hover. Left out,
+    // the ring snaps. Same list the picker's own cells carry.
+    //
     // `scale`, not `transform`: Tailwind v4's scale-* utility sets the
     // standalone `scale` property, which `transition-property: transform` does
     // not cover, so listing transform would leave the press snapping.
@@ -441,12 +458,15 @@ describe('ProjectIconField conventions', () => {
     // bg-secondary (button.tsx:27), so the trigger gave no hover feedback at
     // all and press scale was the only pointer response. `outline` is what the
     // design system prescribes for an icon-only button and carries a hover fill
-    // that differs from its rest.
+    // that differs from its rest — which is what the UNSET trigger still uses.
     const variants = buttonSource.match(/outline:\s*'([^']*)'/)?.[1] ?? '';
 
     expect(code).toMatch(/variant="outline"/);
     expect(variants).toContain('hover:bg-foreground/5');
     expect(variants).toContain('bg-transparent');
+
+    const unset = render({ value: null, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '';
+    expect(unset).toContain('hover:bg-foreground/5');
   });
 
   test('the trigger is sized as an icon button', () => {
@@ -471,6 +491,115 @@ describe('ProjectIconField conventions', () => {
     expect(code).toMatch(/<SmileyIcon className="text-muted-foreground size-4" \/>/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-(?:red|blue|green|amber|slate|zinc|gray)-\d/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-\[(?:hsl|rgb|oklch|#)/);
+  });
+});
+
+/**
+ * The trigger's tint.
+ *
+ * Once an icon is picked, the trigger stops being a neutral outline button and
+ * becomes the picker cell you just hovered — the same pale fill under the same
+ * 1px inset ring, at rest. The hue comes from the emoji
+ * (components/ui/emoji-tint.ts), which is what makes it match the card and the
+ * sidebar row without anything being threaded between them.
+ */
+describe('ProjectIconField trigger tint', () => {
+  const classesOf = (props: Parameters<typeof ProjectIconField>[0]) =>
+    (render(props).match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
+
+  test('a picked emoji tints the trigger at rest', () => {
+    const classes = classesOf({ value: '🌿', onChange: noop });
+
+    expect(classes).toContain('bg-emoji-fill-green');
+    expect(classes).toContain('inset-ring-1');
+    expect(classes).toContain('inset-ring-emoji-ring-green');
+  });
+
+  test('the tint cancels the outline variant’s own border', () => {
+    // `outline` is `border border-border …`. That 1px neutral edge sits OUTSIDE
+    // the inset ring, so left standing the trigger reads as a grey box with a
+    // coloured line drawn inside it — two edges where the picker cell has one.
+    // tailwind-merge resolves the widths into one utility, so the winner shows
+    // up in the markup.
+    const classes = classesOf({ value: '🌿', onChange: noop });
+
+    expect(classes).toContain('border-0');
+    expect(classes).not.toContain('border');
+  });
+
+  test('an unset trigger stays the plain outline button', () => {
+    // There is no emoji to take a hue from, and a tinted "nothing chosen yet"
+    // control would read as filled. The unset face is a muted Smiley on the
+    // design system's icon-button chrome, exactly as before.
+    const classes = classesOf({ value: null, onChange: noop });
+
+    expect(classes.some((c) => c.startsWith('bg-emoji-fill-'))).toBe(false);
+    expect(classes.some((c) => c.startsWith('inset-ring-'))).toBe(false);
+    expect(classes).toContain('border');
+    expect(classes).not.toContain('border-0');
+  });
+
+  test('hovering holds the tint instead of washing it out', () => {
+    // THE defect this exists to prevent. `outline` carries
+    // `hover:bg-foreground/5`, and a :hover rule outranks the resting
+    // `bg-emoji-fill-*` on specificity — so without a hold, putting the pointer
+    // on a tinted trigger flips it to a neutral wash and back. Restating the
+    // fill under the same modifier makes tailwind-merge drop the variant's
+    // hover outright, which is observable here.
+    const classes = classesOf({ value: '🌿', onChange: noop });
+
+    expect(classes).toContain('hover:bg-emoji-fill-green');
+    expect(classes).not.toContain('hover:bg-foreground/5');
+  });
+
+  test('hover still says something — the ring firms from 1px to 2px', () => {
+    // The hold above removes the only pointer feedback the trigger had. The
+    // ring is the half of the treatment that carries the contrast, so
+    // thickening it is the feedback that stays inside the tint's own language
+    // rather than borrowing a neutral fill.
+    expect(classesOf({ value: '🌿', onChange: noop })).toContain('hover:inset-ring-2');
+    expect(classesOf({ value: null, onChange: noop })).not.toContain('hover:inset-ring-2');
+  });
+
+  test('a different emoji gives a different trigger', () => {
+    // Guards every check above against a tint pinned to one hue.
+    expect(classesOf({ value: '🔥', onChange: noop })).toContain('bg-emoji-fill-amber');
+    expect(classesOf({ value: '💧', onChange: noop })).toContain('bg-emoji-fill-blue');
+    expect(classesOf({ value: '🔥', onChange: noop })).not.toContain('bg-emoji-fill-green');
+  });
+
+  test('the trigger and the card tile wear the SAME tint for the same emoji', () => {
+    // The cross-surface promise, checked across the two components that have to
+    // agree — a modal trigger and a grid tile, rendered from different trees
+    // with no shared state. Two independent copies of the mapping would drift
+    // and nothing else in either file's tests would notice.
+    const tintOf = (classes: string[]) =>
+      classes.filter((c) => c.includes('emoji-fill-') || c.includes('emoji-ring-')).sort();
+
+    for (const emoji of ['🌿', '🔥', '💧', '🚀', '🤖']) {
+      const trigger = tintOf(classesOf({ value: emoji, onChange: noop })).filter(
+        (c) => !c.startsWith('hover:'),
+      );
+      const tile = tintOf(
+        (
+          renderToStaticMarkup(<EntityAvatar label="Demo" emoji={emoji} size="lg" />).match(
+            /class="([^"]*)"/,
+          )?.[1] ?? ''
+        ).split(/\s+/),
+      );
+
+      expect(trigger).toEqual(tile);
+      expect(trigger.length).toBe(2);
+    }
+  });
+
+  test('the trigger takes its tint from the shared module, not a local copy', () => {
+    expect(code).toContain("from '@/components/ui/emoji-tint'");
+    expect(code).toMatch(/emojiTint\(value\)/);
+    expect(code).toMatch(/emojiTintHover\(value\)/);
+
+    // Spelling the classes out here is the fork that makes the surfaces drift.
+    expect(code).not.toMatch(/'[^']*bg-emoji-fill-/);
   });
 });
 

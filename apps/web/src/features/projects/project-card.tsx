@@ -48,12 +48,12 @@ const ProjectCard = ({
         className="cursor-pointer px-5 py-4 text-left"
       >
         <div className="flex w-full items-center gap-3">
-          <EntityAvatar
-            label={project.name}
-            emoji={project.icon}
-            size="lg"
-            className="bg-background"
-          />
+          {/* No `className` fill. It is last into EntityAvatar's cn(), so any
+              background passed here beats the emoji tint and ships a ringed
+              grey tile. The `bg-background` this used to carry was already dead
+              CSS on the icon-less tile — chalkColors() writes an inline
+              background-color, which wins over any class. */}
+          <EntityAvatar label={project.name} emoji={project.icon} size="lg" />
           <div className="min-w-0 flex-1 space-y-1">
             <h3
               title={project.name}

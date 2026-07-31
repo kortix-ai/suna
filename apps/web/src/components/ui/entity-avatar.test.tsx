@@ -1,5 +1,7 @@
 import { RocketIcon } from '@phosphor-icons/react';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { EntityAvatar, type EntityAvatarSize } from './entity-avatar';
@@ -131,26 +133,100 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     expect(render({ label: 'Demo', icon: RocketIcon })).toContain('background-color');
   });
 
-  test('an emoji sits on a neutral fill', () => {
-    // The fill only. The tile's EDGE is a separate decision with its own test
-    // ('the emoji tile carries the hairline lift') — they were one assertion
-    // while the border was `border-border/60`, and merging them again would
-    // let a change to either hide behind the other.
-    expect(classesOf(render({ label: 'Demo', emoji: '🚀' }))).toContain('bg-muted');
+  test('an emoji sits on the tint its own glyph earns', () => {
+    // The picker's hovered-cell treatment, made this tile's RESTING look: a
+    // pale `--color-emoji-fill-*` with a stronger `--color-emoji-ring-*` inset
+    // ring. The hue comes from the emoji (emoji-tint.ts), so the same project
+    // is the same colour on the card, in the sidebar row and on the picker
+    // trigger — three separate trees with no shared state.
+    const classes = classesOf(render({ label: 'Demo', emoji: '🌿' }));
 
-    // …and the initial tile must not pick it up, or the chalk background it
-    // still sets inline would be fighting a class it never wanted.
-    expect(classesOf(render({ label: 'Demo' }))).not.toContain('bg-muted');
+    expect(classes).toContain('bg-emoji-fill-green');
+    expect(classes).toContain('inset-ring-emoji-ring-green');
+    expect(classes).toContain('inset-ring-1');
   });
 
-  test('a caller’s own background still wins over the neutral tile', () => {
-    // The project card passes `bg-background` so the tile reads as a well in
-    // the card's `bg-secondary/80` surface. `className` is last into cn(), so
-    // tailwind-merge has to resolve it over the component's `bg-muted`.
-    const classes = classesOf(render({ label: 'Demo', emoji: '🚀', className: 'bg-background' }));
+  test('a different-hued emoji gets a different tile', () => {
+    // The mutation every "contains" check above survives: a tint hard-coded to
+    // one hue. 🌿 and 🔥 are anchored to opposite ends of the six.
+    const leafy = classesOf(render({ label: 'Demo', emoji: '🌿' }));
+    const fiery = classesOf(render({ label: 'Demo', emoji: '🔥' }));
+
+    expect(leafy).toContain('bg-emoji-fill-green');
+    expect(fiery).toContain('bg-emoji-fill-amber');
+    expect(fiery).not.toContain('bg-emoji-fill-green');
+  });
+
+  test('the tint replaces the neutral fill and the hairline lift', () => {
+    // `bg-muted border-foreground/25 shadow-2xs` was a fix for a DIFFERENT
+    // problem: a neutral tile measured 1.07:1 against the card in dark, so it
+    // needed a borrowed edge and a shadow to read as a tile at all. A tinted
+    // fill under a coloured ring is not that tile, and keeping the old edge
+    // would draw a second, neutral line around the ring.
+    const classes = classesOf(render({ label: 'Demo', emoji: '🌿' }));
+
+    expect(classes).not.toContain('bg-muted');
+    expect(classes).not.toContain('border-foreground/25');
+    expect(classes).not.toContain('shadow-2xs');
+  });
+
+  test('the tint cancels the tile’s own 1px border', () => {
+    // The base class list is `… border font-semibold`, and that border sits
+    // OUTSIDE an inset ring — so without the cancel the tile reads as a grey
+    // hairline wrapped around a coloured ring, which is not the picker cell.
+    // tailwind-merge resolves `border` and `border-0` in one group, so the
+    // surviving one is observable here.
+    const classes = classesOf(render({ label: 'Demo', emoji: '🌿' }));
+
+    expect(classes).toContain('border-0');
+    expect(classes).not.toContain('border');
+  });
+
+  test('the tint does not leak onto the tiles that still carry chalk', () => {
+    // The initial and icon branches keep their inline hash-derived chalk. A
+    // tinted fill under it would fight a background the inline style wins
+    // anyway, and the inset ring would draw a coloured line no chalk asked for.
+    for (const plain of [render({ label: 'Demo' }), render({ label: 'Demo', icon: RocketIcon })]) {
+      const classes = classesOf(plain);
+
+      expect(classes.some((c) => c.startsWith('bg-emoji-fill-'))).toBe(false);
+      expect(classes.some((c) => c.startsWith('inset-ring-'))).toBe(false);
+      expect(classes).not.toContain('border-0');
+    }
+  });
+
+  test('one emoji keeps one tint at every size the app renders it at', () => {
+    // The cross-surface promise, from this component's side: `lg` is the
+    // project card, `sm` is the sidebar switcher row, `md` is the
+    // /design-system demo. A tint derived from anything but the emoji — the
+    // label, the size, a render counter — breaks here.
+    const tintOf = (html: string) =>
+      classesOf(html)
+        .filter((c) => c.includes('emoji-fill-') || c.includes('emoji-ring-'))
+        .sort();
+
+    const sizes = SIZES.map((size) => tintOf(render({ label: 'Demo', emoji: '🌿', size })));
+
+    expect(sizes[0]).toEqual(['bg-emoji-fill-green', 'inset-ring-emoji-ring-green']);
+    for (const classes of sizes) expect(classes).toEqual(sizes[0] ?? []);
+
+    // …and the label must not reach the hue, or two projects that picked the
+    // same emoji would not match.
+    expect(tintOf(render({ label: 'Something else entirely', emoji: '🌿' }))).toEqual(
+      sizes[0] ?? [],
+    );
+  });
+
+  test('a caller’s own background still overrides the tint', () => {
+    // Kept as a WARNING, not as a feature. `className` is last into cn(), so a
+    // caller that passes a fill silently wins over `bg-emoji-fill-*` and the
+    // tile loses its tint while keeping its ring. That is exactly what the
+    // project card used to do with `bg-background`, and why that prop had to
+    // go when the tint landed (features/projects/project-card.tsx).
+    const classes = classesOf(render({ label: 'Demo', emoji: '🌿', className: 'bg-background' }));
 
     expect(classes).toContain('bg-background');
-    expect(classes).not.toContain('bg-muted');
+    expect(classes).not.toContain('bg-emoji-fill-green');
   });
 
   test('the emoji tile is still an entity-avatar slot', () => {
@@ -175,46 +251,44 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
    * surviving fragment of the chalk object puts it back.
    */
   const EMOJI_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md bg-muted border-foreground/25 shadow-2xs text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-8 rounded-md border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
-  /** The same, for the exact call shape the project card uses. */
+  /**
+   * The same, for the exact call shape the project card uses — which no longer
+   * passes `bg-background`. That prop was inert under the inline chalk and
+   * became actively wrong under the tint: `className` is last into cn(), so it
+   * beat `bg-emoji-fill-*` and left the card's tile ringed but grey.
+   */
   const EMOJI_CARD_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-foreground/25 shadow-2xs text-xl bg-background"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-10 rounded-md border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red text-xl"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   test('the emoji tile drops the WHOLE chalk object, not just its background', () => {
+    // 🚀 is not in the anchor table, so `red` here is the HASH's answer — which
+    // makes this golden pin the fallback path end to end, not just the classes.
     expect(render({ label: 'Demo', emoji: '🚀' })).toBe(EMOJI_TILE);
     expect(render({ label: 'Demo', emoji: '🚀' })).not.toContain('style=');
   });
 
   test('the card’s emoji tile is byte-identical too', () => {
-    expect(render({ label: 'Demo', emoji: '🚀', size: 'lg', className: 'bg-background' })).toBe(
-      EMOJI_CARD_TILE,
-    );
+    expect(render({ label: 'Demo', emoji: '🚀', size: 'lg' })).toBe(EMOJI_CARD_TILE);
   });
 
-  test('the emoji tile carries the hairline lift, in one token pair', () => {
+  test('the tile takes its tint from the shared module, not a local copy', () => {
     // Named separately from the goldens so a future re-generation of those
-    // strings cannot quietly drop the lift and still look "regenerated".
-    //
-    // `border-foreground/25`, not `border-border/*`: dropping the chalk left
-    // the tile with a 1.07:1 edge against the card in dark (1.09:1 light), and
-    // full-strength `border-border` measures 1.06:1 there — that token is tuned
-    // to sit on `--background`, while the card is `bg-secondary/80`, LIGHTER
-    // than the tile's own fill in dark. `--foreground` inverts with the theme,
-    // so 25% gives 1.73:1 dark / 1.58:1 light off one value and no `dark:`
-    // variant.
-    const classes = classesOf(render({ label: 'Demo', emoji: '🚀' }));
+    // strings cannot quietly fork the class list and still look "regenerated".
+    // The picker trigger reads the same two functions; a second, local copy of
+    // the mapping is how the card and the trigger drift apart.
+    const source = readFileSync(
+      fileURLToPath(new URL('./entity-avatar.tsx', import.meta.url)),
+      'utf8',
+    );
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-    expect(classes).toContain('border-foreground/25');
-    expect(classes).toContain('shadow-2xs');
-    expect(classes).not.toContain('border-border/60');
+    expect(code).toContain("from '@/components/ui/emoji-tint'");
+    expect(code).toMatch(/emojiTint\(emoji\)/);
 
-    // …and none of it may leak onto the tiles that still carry inline chalk,
-    // where a shadow would sit under a saturated pastel and read as grime.
-    for (const plain of [render({ label: 'Demo' }), render({ label: 'Demo', icon: RocketIcon })]) {
-      expect(classesOf(plain)).not.toContain('shadow-2xs');
-      expect(classesOf(plain)).not.toContain('border-foreground/25');
-    }
+    // …and it must not spell the classes out itself, which is the fork.
+    expect(code).not.toMatch(/'[^']*bg-emoji-fill-/);
   });
 });
 

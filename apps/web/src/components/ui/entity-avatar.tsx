@@ -1,5 +1,6 @@
 'use client';
 
+import { emojiTint } from '@/components/ui/emoji-tint';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -69,8 +70,8 @@ export function EntityAvatar({
       // passes. An emoji is already the colour — sitting it on a saturated
       // hash-derived pastel reads as noise, and in dark mode that pastel is a
       // bright square in an otherwise dark grid. So the emoji tile drops the
-      // style entirely and rebuilds itself from tokens: a neutral fill, a
-      // hairline that survives both themes, and shadow-2xs. See the class list.
+      // style entirely and rebuilds itself from the emoji tint tokens. See the
+      // class list.
       style={
         emoji
           ? undefined
@@ -84,44 +85,29 @@ export function EntityAvatar({
         'inline-flex shrink-0 items-center justify-center border font-semibold',
         sizes.box,
         // After `sizes.box`, so tailwind-merge resolves `sizes.emoji` over the
-        // initial's text size; before `className`, so a caller's own fill
-        // (the project card's `bg-background`) still wins over `bg-muted`.
+        // initial's text size — and so `border-0` resolves over the base
+        // `border`, which is what stops a neutral hairline being drawn OUTSIDE
+        // the coloured inset ring.
         //
-        // WHICH FILL ACTUALLY SHIPS — both, at different call sites, so do not
-        // read the paragraphs below as "the emoji tile is bg-muted":
-        //   - project-card.tsx passes `bg-background`. cn() merges className
-        //     last, so tailwind-merge drops `bg-muted` there and the tile reads
-        //     as a well in the card's `bg-secondary/80` surface. `bg-muted`
-        //     never paints on a card.
-        //   - project-sidebar/project-switcher.tsx's list rows, and the
-        //     /design-system demo, pass no className. There `bg-muted` is the
-        //     fill.
-        // The hairline measurements below hold either way: they are
-        // border-against-card, and the border does not depend on the fill
-        // behind it.
+        // `emojiTint()` is the picker's hovered-cell treatment (a pale
+        // `--color-emoji-fill-*` under a 1px `--color-emoji-ring-*` inset ring)
+        // made this tile's RESTING look, with the hue derived from the emoji
+        // rather than from a grid position the tile does not have. See
+        // emoji-tint.ts for the mapping. Both the ring and the fill are
+        // light-dark() pairs, so there is no `dark:` variant here.
         //
-        // The hairline is `foreground`, not `border`. Dropping the chalk left
-        // the tile with almost no edge: measured on the real card composite,
-        // `border-border/60` is 1.07:1 against the card in dark and 1.09:1 in
-        // light, so the glyph floated with no tile around it while the chalk
-        // tile beside it sat at 6.20:1 — emoji'd projects read LIGHTER than
-        // lettered ones, the inverse of the intent. Raising `--border` to full
-        // strength does not help (1.06:1 in dark): that token is tuned to sit
-        // on `--background`, and the card is `bg-secondary/80`, which in dark
-        // is LIGHTER than the tile's own fill.
+        // It replaces `bg-muted border-foreground/25 shadow-2xs`, which existed
+        // to fix a different tile: a NEUTRAL fill measured 1.07:1 against the
+        // card in dark, so it had to borrow an edge from `--foreground` and a
+        // lift from a shadow to read as a tile at all. The tinted fill and its
+        // ring carry that on their own — measured against all three surfaces in
+        // both themes, the ring runs 2.30–3.55:1 and the fill 1.19–1.55:1
+        // (.superpowers/sdd/2026-07-31-project-emoji-icons/tint-report.md).
         //
-        // `--foreground` inverts with the theme, so one value gives a light
-        // hairline on dark and a dark one on light with no `dark:` variant.
-        // At 25% it measures 1.73:1 (dark) / 1.58:1 (light) against the card —
-        // clear of the ~1.5 legibility bar in both, and far short of the chalk
-        // tile's 6.20 / 2.33, so it reads as an edge rather than a shout.
-        //
-        // shadow-2xs is the codebase's hairline-lift step. Be aware it earns
-        // its place in LIGHT only: it resolves to stock `0 1px 0 rgb(0 0 0 /
-        // 0.05)`, whose ring measures 1.13:1 against the card in light and
-        // 1.02:1 in dark, where a black shadow under an already-darker tile has
-        // nothing to darken. The dark-mode lift is the border, not the shadow.
-        emoji && ['bg-muted border-foreground/25 shadow-2xs', sizes.emoji],
+        // STILL LAST-WINS: a caller className that sets a background silently
+        // beats `bg-emoji-fill-*` and leaves the tile ringed but untinted. That
+        // is why the project card no longer passes `bg-background`.
+        emoji && [emojiTint(emoji), sizes.emoji],
         className,
       )}
     >
