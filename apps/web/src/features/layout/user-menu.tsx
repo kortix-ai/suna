@@ -28,7 +28,6 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { DownloadAppsModal } from '@/features/layout/download-apps-modal';
 import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
@@ -45,7 +44,7 @@ import {
   BookOpenIcon as BookOpen,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
-  DownloadIcon as Download,
+  DownloadSimple,
   HouseIcon,
   LifebuoyIcon as LifeBuoy,
   SignOutIcon as LogOut,
@@ -84,7 +83,6 @@ export function UserMenu({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [supportOpen, setSupportOpen] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
@@ -238,8 +236,8 @@ export function UserMenu({
           Docs
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))} size="sm">
-          <Download />
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/download'))} size="sm">
+          <DownloadSimple />
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
@@ -302,7 +300,6 @@ export function UserMenu({
         defaultTab={settingsTab}
       />
       <SupportModal open={supportOpen} onOpenChange={setSupportOpen} />
-      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>

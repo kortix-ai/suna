@@ -1,15 +1,25 @@
 /**
- * Official brand logos.
- *  - Apple / macOS / Linux / Windows → @phosphor-icons/react, rendered in
- *    `currentColor` so they adapt to light/dark.
- *  - Chrome → the official multicolor logo from /public/brand/chrome.svg
- *    (Simple Icons only ships a flat single-color Chrome mark).
+ * Official brand logos — Apple / Windows / Linux / Google Play, from Phosphor,
+ * rendered in `currentColor` so they adapt to light and dark.
  *
- * App Store / Google Play use the official store badges in /public/stores
- * directly (they include the wordmark), so they're not wrapped here.
+ * All four marks the /download page needs live here, so its five rows draw from
+ * one source rather than mixing a local wrapper with a raw icon import. Apple
+ * covers two rows: macOS on the desktop card, iPhone and iPad on the mobile one.
+ *
+ * Icons come from `@/lib/icons/ssr`, not `@phosphor-icons/react`, so this
+ * module works in BOTH server and client trees. The main Phosphor entry calls
+ * createContext at module scope, which crashes any server component that
+ * reaches it — and these marks are used on the public /download page, which is
+ * server-rendered. The explicit weight="fill" below still wins over the bound
+ * default: logo glyphs stay solid regardless of DEFAULT_ICON_WEIGHT.
  */
 
-import { AppleLogoIcon, LinuxLogoIcon, WindowsLogoIcon } from '@phosphor-icons/react';
+import {
+  AppleLogoIcon,
+  GooglePlayLogoIcon,
+  LinuxLogoIcon,
+  WindowsLogoIcon,
+} from '@/lib/icons/ssr';
 
 type MarkProps = { className?: string };
 
@@ -25,17 +35,6 @@ export function LinuxMark({ className }: MarkProps) {
   return <LinuxLogoIcon weight="fill" className={className} />;
 }
 
-export function ChromeMark({ className }: MarkProps) {
-  // Official multicolor Chrome logo, inlined so it renders without depending on
-  // a deployed /public asset (a missing image is the usual "nothing renders" in
-  // the desktop webview before a deploy). Simple Icons only ships a flat mark.
-  return (
-    <svg viewBox="0 0 48 48" className={className} role="img" aria-hidden>
-      <path fill="#EA4335" d="M24 24 L4.95 13 A22 22 0 0 1 43.05 13 Z" />
-      <path fill="#34A853" d="M24 24 L24 46 A22 22 0 0 1 4.95 13 Z" />
-      <path fill="#FBBC04" d="M24 24 L43.05 13 A22 22 0 0 1 24 46 Z" />
-      <circle cx="24" cy="24" r="10" fill="#fff" />
-      <circle cx="24" cy="24" r="8" fill="#1A73E8" />
-    </svg>
-  );
+export function PlayStoreMark({ className }: MarkProps) {
+  return <GooglePlayLogoIcon weight="fill" className={className} />;
 }
