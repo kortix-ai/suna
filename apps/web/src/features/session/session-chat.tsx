@@ -18,7 +18,7 @@ import {
   PencilSimpleIcon,
   ArrowBendUpLeftIcon as Reply,
   ArrowCounterClockwiseIcon as RotateCcw,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
@@ -1377,18 +1377,6 @@ function SessionTurn({
               </Tooltip>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Kortix logo header */}
-      {(working || hasSteps || hasReasoning) && (
-        <div className="mt-3 flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/kortix-logomark-white.svg"
-            alt="Kortix"
-            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-          />
         </div>
       )}
 
