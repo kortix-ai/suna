@@ -9,19 +9,15 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import {
   WarningIcon as AlertTriangle,
   ArrowDownIcon as ArrowDown,
-  BrainIcon as Brain,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
   CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
-  GlobeIcon as Globe,
   StackIcon as Layers,
   PencilSimpleIcon,
   ArrowBendUpLeftIcon as Reply,
   ArrowCounterClockwiseIcon as RotateCcw,
-  MagnifyingGlassIcon as Search,
   TerminalIcon as Terminal,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -39,6 +35,9 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
+import { ActivityBurst } from './turn/activity-burst';
+import { PlanCard } from './turn/plan-card';
+import { segmentTurn } from './turn/segment-turn';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 
@@ -55,14 +54,6 @@ import {
 } from '@/features/session/question-prompt';
 import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  normalizeActivityToolName,
-  shellActivityGroupLabel,
-  writeActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
-import {
   type AttachedFile,
   SessionChatInput,
   type TrackedMention,
@@ -74,7 +65,6 @@ import { GridFileCard } from './grid-file-card';
 
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
@@ -88,7 +78,6 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
@@ -134,7 +123,6 @@ import {
   type Part,
   type PermissionRequest,
   type QuestionRequest,
-  type ReasoningPart,
   type TextPart,
   type ToolPart,
   type Turn,
@@ -143,7 +131,6 @@ import {
   formatCost,
   formatDuration,
   formatTokens,
-  getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
@@ -156,14 +143,10 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isCompactionPart,
   isLastUserMessage,
-  isPatchPart,
   isReasoningPart,
-  isSnapshotPart,
   isTextPart,
   isToolPart,
-  isToolPartHidden,
   shouldShowToolPart,
 } from '@/ui';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -629,357 +612,6 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 }
 
 // ============================================================================
-// Edit Part Dialog — inline editing for text parts
-// ============================================================================
-
-/**
- * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
- */
-function GroupedReasoningCard({
-  parts,
-  isStreaming,
-}: {
-  parts: ReasoningPart[];
-  isStreaming: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [streamSeconds, setStreamSeconds] = useState(0);
-
-  // Determine if the last part is still streaming
-  const lastPart = parts[parts.length - 1];
-  const lastEnd = (lastPart as any).time?.end;
-  const reasoningStreaming = isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
-
-  // Find the earliest start across all parts for the live timer
-  const earliestStart = useMemo(() => {
-    let earliest: number | undefined;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      if (typeof s === 'number' && (earliest === undefined || s < earliest)) earliest = s;
-    }
-    return earliest;
-  }, [parts]);
-
-  useEffect(() => {
-    if (!reasoningStreaming || typeof earliestStart !== 'number') {
-      setStreamSeconds(0);
-      return;
-    }
-    const update = () =>
-      setStreamSeconds(Math.max(0, Math.round((Date.now() - earliestStart) / 1000)));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [reasoningStreaming, earliestStart]);
-
-  // Aggregate total duration from all completed parts
-  const totalDuration = useMemo(() => {
-    let total = 0;
-    let any = false;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      const e = (p as any).time?.end;
-      if (typeof s === 'number' && typeof e === 'number' && e > s) {
-        total += e - s;
-        any = true;
-      }
-    }
-    return any ? total : undefined;
-  }, [parts]);
-
-  // Build a one-line preview from the first reasoning block
-  const preview = useMemo(() => {
-    for (const p of parts) {
-      const t = p.text?.trim();
-      if (t) {
-        // Extract the first bold heading or first sentence
-        const boldMatch = t.match(/\*\*(.+?)\*\*/);
-        if (boldMatch) return boldMatch[1];
-        const firstLine = t.split('\n')[0].replace(/^#+\s*/, '');
-        return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
-      }
-    }
-    return '';
-  }, [parts]);
-
-  const nonEmptyParts = useMemo(() => parts.filter((p) => p.text?.trim()), [parts]);
-
-  if (nonEmptyParts.length === 0) return null;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/reasoning max-w-full transition-colors',
-          )}
-        >
-          <Brain
-            className={cn(
-              'text-muted-foreground/50 size-3.5 flex-shrink-0',
-              reasoningStreaming && 'animate-pulse-heartbeat',
-            )}
-          />
-
-          <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
-          {reasoningStreaming && (
-            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-          )}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
-          <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
-            {nonEmptyParts.map((p, i) => (
-              <div key={p.id ?? i}>
-                <ThrottledMarkdown content={p.text!} isStreaming={false} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-/**
- * Unified "activity" card that collapses any run of agent-side work —
- * reasoning + tool calls, in original order — into a single compact shelf.
- * Text parts (and other user-facing dividers) break the run.
- *
- * Auto-opens while anything is still streaming/running; collapses once the
- * burst settles. Respects manual user toggles thereafter.
- */
-/**
- * Folded Tier-1 "exploration" card.
- *
- * Holds a run of reasoning + Tier-1 tool calls and renders:
- *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
- *     Verb comes from the run's categories (e.g. "Searched", "Read",
- *     "Explored"), not a generic "N actions".
- *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
- *     existing ToolPartRenderer, which itself is expandable for full output).
- *
- * Auto-opens while anything is streaming; collapses once settled. Respects
- * manual user toggles after the first click.
- */
-/**
- * Same-tool group: collapses 2+ consecutive calls of the same tool into
- * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
- * one-liners per call with individual durations.
- */
-function SameToolGroup({
-  toolName,
-  entries,
-  sessionId,
-  disableNavigation,
-  busy,
-}: {
-  toolName: string;
-  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
-  sessionId: string;
-  disableNavigation?: boolean;
-  busy?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const anyRunning = useMemo(
-    () =>
-      !!busy &&
-      entries.some(
-        ({ part }) =>
-          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
-      ),
-    [busy, entries],
-  );
-
-  const totalDurationMs = useMemo(() => {
-    let earliest = Number.POSITIVE_INFINITY;
-    let latest = 0;
-    for (const { part } of entries) {
-      const s = (part.state as any)?.time?.start;
-      const e = (part.state as any)?.time?.end;
-      if (typeof s === 'number' && s < earliest) earliest = s;
-      if (typeof e === 'number' && e > latest) latest = e;
-    }
-    return latest > earliest ? latest - earliest : 0;
-  }, [entries]);
-
-  const durationLabel =
-    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
-
-  const isContext = toolName === '__context__';
-  const isResearch = toolName === '__research__';
-  const isShell = useMemo(() => {
-    return isShellActivityTool(entries[0]?.part.tool);
-  }, [entries]);
-  const isWrite = useMemo(
-    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
-    [entries],
-  );
-
-  const headerLabel = useMemo(() => {
-    if (isContext) {
-      const s = contextToolSummary(entries.map((e) => e.part));
-      const items: string[] = [];
-      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
-      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
-      return summary ? `${prefix} · ${summary}` : prefix;
-    }
-
-    if (isResearch) {
-      let searches = 0;
-      let fetches = 0;
-      let scrapes = 0;
-      for (const { part } of entries) {
-        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
-        if (n === 'web_search' || n === 'websearch') searches++;
-        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
-        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
-      }
-      const items: string[] = [];
-      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
-      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
-      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Researching' : 'Researched';
-      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
-    }
-
-    if (isShell) {
-      return shellActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    if (isWrite) {
-      return writeActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    const t = contextToolTrigger(entries[0].part);
-    return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/grp max-w-full transition-colors',
-          )}
-        >
-          {isResearch ? (
-            <Globe
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : isShell ? (
-            <Terminal
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : (
-            <Search
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          )}
-          <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
-          {durationLabel && (
-            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-              {durationLabel}
-            </span>
-          )}
-          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
-          {isContext
-            ? entries.map(({ part }) => {
-                const t = contextToolTrigger(part);
-                const running =
-                  (part.state as any)?.status === 'pending' ||
-                  (part.state as any)?.status === 'running';
-                const s = (part.state as any)?.time?.start;
-                const e = (part.state as any)?.time?.end;
-                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
-                return (
-                  <div
-                    key={part.id}
-                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
-                  >
-                    <span className="flex-shrink-0">{t.title}</span>
-                    {!running && t.subtitle && (
-                      <span
-                        className="min-w-0 flex-1 truncate font-mono opacity-70"
-                        title={t.subtitle}
-                      >
-                        {t.subtitle}
-                      </span>
-                    )}
-                    {!running && dur >= 1000 && (
-                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
-                        {Math.round(dur / 1000)}s
-                      </span>
-                    )}
-                    {running && (
-                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
-                    )}
-                  </div>
-                );
-              })
-            : entries.map(({ part }) => (
-                // Same-tool, non-context groups (e.g. 3x web_search) render
-                // each call with its full ToolPartRenderer so users see real
-                // results — answers, sources, images — not just the input arg.
-                // Sits inside the rail's left padding (no negative margin) so
-                // each row aligns under the group header label, matching the
-                // reasoning block's nested treatment.
-                <div key={part.id}>
-                  <ToolPartRenderer
-                    part={part}
-                    sessionId={sessionId}
-                    disableNavigation={disableNavigation}
-                  />
-                </div>
-              ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-// ============================================================================
 // Session Turn — core turn component
 // ============================================================================
 
@@ -1226,23 +858,6 @@ function SessionTurn({
   const nextPermission = useMemo(
     () => permissions.filter((p) => p.sessionID === sessionId)[0],
     [permissions, sessionId],
-  );
-
-  // Question matching for this turn (used to pass to ToolPartRenderer for forceOpen/locked state)
-  const nextQuestion = useMemo(() => {
-    const sessionQuestions = questions.filter((q) => q.sessionID === sessionId);
-    if (sessionQuestions.length === 0) return undefined;
-    const turnMessageIds = new Set(turn.assistantMessages.map((m) => m.info.id));
-    const matched = sessionQuestions.find((q) => q.tool && turnMessageIds.has(q.tool.messageID));
-    if (matched) return matched;
-    if (isLast) return sessionQuestions[0];
-    return undefined;
-  }, [questions, sessionId, turn.assistantMessages, isLast]);
-
-  // Hidden tool parts (when permission/question is active)
-  const hidden = useMemo(
-    () => getHiddenToolParts(nextPermission, nextQuestion),
-    [nextPermission, nextQuestion],
   );
 
   // Answered question parts — shown inline alongside streamed text.
@@ -1594,6 +1209,25 @@ function SessionTurn({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Parts with a pending permission or an active question need a visible,
+  // actionable surface — they must never fold into a collapsed burst.
+  // Computed before the early-return branches below so this hook always
+  // runs in the same order, regardless of which branch this render takes.
+  const standaloneCallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const permission of permissions) {
+      if (permission.sessionID === sessionId && permission.tool?.callID) {
+        ids.add(permission.tool.callID);
+      }
+    }
+    for (const question of questions) {
+      if (question.sessionID === sessionId && question.tool?.callID) {
+        ids.add(question.tool.callID);
+      }
+    }
+    return ids;
+  }, [permissions, questions, sessionId]);
+
   // ============================================================================
   // Shell mode — short-circuit rendering
   // ============================================================================
@@ -1700,6 +1334,14 @@ function SessionTurn({
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
           />
+          {/* Only the latest turn shows the plan — repeating it on every
+              historical turn is noise. PlanCard itself renders null when the
+              session has no todos, so this also covers "no plan yet". */}
+          {isLast && (
+            <div className="mt-2">
+              <PlanCard sessionId={sessionId} />
+            </div>
+          )}
           {userMessageText && (
             <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
               <Hint label="Edit from here" side="top" align="center">
@@ -1740,251 +1382,70 @@ function SessionTurn({
       )}
 
       {/* ── Assistant parts content ──
-			  Renders ALL parts from all assistant messages,
-			  EXCEPT: the response part (last text) is hidden when not working
-			  (it renders separately below as the Response section). */}
+			  Segments the turn into bursts (collapsed activity), standalone
+			  parts (deliverables, sub-agents, and any part with a pending
+			  permission or an active question), and text (prose between
+			  bursts). Replaces the old same-tool / reasoning grouping — see
+			  features/session/turn/segment-turn.ts.
+			  Two part kinds are filtered out before segmentation:
+			    - `todowrite` — the plan card beneath the user message is now
+			      the single canonical todo surface; showing the same checklist
+			      again inside a burst would just duplicate it.
+			    - `question`, but ONLY while `shouldUseInlineContent` is active:
+			      that mode already renders text and answered questions itself,
+			      in original order, below — rendering it here too would double it. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-2">
-          {(() => {
-            // Same-tool grouping: consecutive calls of the SAME tool
-            // (e.g. 5 reads, 3 greps) fold into one collapsible.
-            // Singles stay individual. Reasoning groups separately.
-            // ALL tool rows get a left border rail for visual separation.
-            type ToolEntry = { part: ToolPart; message: MessageWithParts };
-            type RenderItem =
-              | { type: 'part'; part: Part; message: MessageWithParts }
-              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
-              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
-              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
-
-            const items: RenderItem[] = [];
-            let pendingReasoning: ReasoningPart[] = [];
-            let pendingTools: ToolEntry[] = [];
-            let pendingToolName: string | null = null;
-
-            const flushReasoning = () => {
-              if (pendingReasoning.length > 0) {
-                items.push({
-                  type: 'reasoning-group',
-                  parts: pendingReasoning,
-                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
-                });
-                pendingReasoning = [];
-              }
-            };
-
-            const flushTools = () => {
-              if (pendingTools.length >= 2 && pendingToolName) {
-                items.push({
-                  type: 'tool-group',
-                  toolName: pendingToolName,
-                  entries: pendingTools,
-                  key: `tg-${pendingTools[0].part.id}`,
-                });
-              } else if (pendingTools.length === 1) {
-                items.push({
-                  type: 'tool-single',
-                  part: pendingTools[0].part,
-                  message: pendingTools[0].message,
-                });
-              }
-              pendingTools = [];
-              pendingToolName = null;
-            };
-
-            // Normalize tool name for grouping.
-            //   __context__ — read/glob/grep/list collapse into one
-            //                "Gathered context" pile (compact one-liners).
-            //   __research__ — web_search / webfetch / scrape collapse into
-            //                  one "Research" pile (full results expanded).
-            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
-            // by their normalized tool name and render full per-call results.
-            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
-            const RESEARCH_SET = new Set([
-              'web_search',
-              'websearch',
-              'webfetch',
-              'web_fetch',
-              'scrape',
-              'scrape_webpage',
-            ]);
-            const norm = (t: string) => {
-              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-              if (CONTEXT_SET.has(n)) return '__context__';
-              if (RESEARCH_SET.has(n)) return '__research__';
-              return n;
-            };
-
-            for (const { part, message } of allParts) {
-              if (isReasoningPart(part)) {
-                if (part.text?.trim()) {
-                  flushTools();
-                  pendingReasoning.push(part);
+          {segmentTurn(
+            allParts
+              .map(({ part }) => part)
+              .filter((part) => {
+                if (isToolPart(part) && part.tool === 'todowrite') return false;
+                if (shouldUseInlineContent && isToolPart(part) && part.tool === 'question') {
+                  return false;
                 }
-                continue;
-              }
-              // Render-nothing parts (blank text, internal snapshot/patch
-              // bookkeeping) must not split a run of groupable tools — otherwise
-              // consecutive shells fragment into inconsistent singles instead of
-              // one "Ran N commands" group.
-              if (isInvisibleActivityPart(part)) continue;
-              flushReasoning();
-
-              if (isToolPart(part)) {
-                const tp = part as ToolPart;
-                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
-                const groupable =
-                  shouldShowToolPart(tp) &&
-                  tp.tool !== 'todowrite' &&
-                  tp.tool !== 'question' &&
-                  !isNoGroupActivityTool(tp.tool) &&
-                  !hasPermission &&
-                  !isToolPartHidden(tp, message.info.id, hidden);
-
-                if (groupable) {
-                  const n = norm(tp.tool);
-                  if (pendingToolName === n) {
-                    pendingTools.push({ part: tp, message });
-                  } else {
-                    flushTools();
-                    pendingToolName = n;
-                    pendingTools = [{ part: tp, message }];
-                  }
-                  continue;
-                }
-              }
-
-              flushTools();
-              items.push({ type: 'part', part, message });
+                return true;
+              }),
+            { standaloneCallIds },
+          ).map((segment, index) => {
+            if (segment.kind === 'burst') {
+              return (
+                <ActivityBurst
+                  key={`burst-${segment.parts[0]?.id ?? index}`}
+                  parts={segment.parts}
+                  sessionId={sessionId}
+                  working={working}
+                  disableNavigation={disableToolNavigation}
+                />
+              );
             }
-            flushReasoning();
-            flushTools();
 
-            const reasoningActive = working && permissions.length === 0 && questions.length === 0;
+            if (segment.kind === 'standalone') {
+              if (!shouldShowToolPart(segment.part)) return null;
+              return (
+                <ToolPartRenderer
+                  key={segment.part.id}
+                  part={segment.part}
+                  sessionId={sessionId}
+                  disableNavigation={disableToolNavigation}
+                  permission={getPermissionForTool(permissions, segment.part.callID)}
+                  onPermissionReply={onPermissionReply}
+                />
+              );
+            }
 
-            return items.map((item) => {
-              // Reasoning group
-              if (item.type === 'reasoning-group') {
-                return (
-                  <div key={item.key}>
-                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
-                  </div>
-                );
-              }
-
-              // Same-tool group (2+ consecutive)
-              if (item.type === 'tool-group') {
-                return (
-                  <div key={item.key}>
-                    <SameToolGroup
-                      toolName={item.toolName}
-                      entries={item.entries}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      busy={working}
-                    />
-                  </div>
-                );
-              }
-
-              // Single tool (with left rail)
-              if (item.type === 'tool-single') {
-                if (!shouldShowToolPart(item.part)) return null;
-                const perm = getPermissionForTool(permissions, item.part.callID);
-                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
-                return (
-                  <div key={item.part.id}>
-                    <ToolPartRenderer
-                      part={item.part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              const { part, message } = item;
-
-              // When inline content rendering is active (text + answered questions in order),
-              // hide ALL text parts from steps since they render in the inline section
-              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
-
-              // Text parts (intermediate + streaming response while working)
-              if (isTextPart(part)) {
-                if (!part.text?.trim()) return null;
-                // Text response rendering for no-step turns is handled below in
-                // the dedicated response section to avoid duplicate output.
-                if (!hasSteps) return null;
-                return (
-                  <div key={part.id} className="min-w-0 text-sm">
-                    <ThrottledMarkdown content={part.text} isStreaming={working} />
-                  </div>
-                );
-              }
-
-              // Compaction indicator
-              if (isCompactionPart(part)) {
-                return (
-                  <div key={part.id} className="flex items-center gap-2 py-2.5">
-                    <div className="bg-border h-px flex-1" />
-                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                      <Layers className="text-muted-foreground size-3" />
-                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                        Compaction
-                      </span>
-                    </div>
-                    <div className="bg-border h-px flex-1" />
-                  </div>
-                );
-              }
-
-              // Tool parts
-              if (isToolPart(part)) {
-                if (!shouldShowToolPart(part)) return null;
-                if (part.tool === 'todowrite') return null;
-                if (part.tool === 'question') {
-                  // When inline content rendering is active, answered questions
-                  // render in the inline content section — skip here to avoid duplicates.
-                  if (shouldUseInlineContent) return null;
-                  // Render answered questions inline at their natural position
-                  // so they appear exactly where the user answered them.
-                  const answeredPart = answeredQuestionPartsById.get(part.id);
-                  if (answeredPart) {
-                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
-                  }
-                  // Unanswered/dismissed questions: don't render in steps;
-                  // dismissed ones show via the turnError banner.
-                  return null;
-                }
-
-                const perm = getPermissionForTool(permissions, part.callID);
-
-                // Hide tool parts that have active permission
-                if (isToolPartHidden(part, message.info.id, hidden)) return null;
-
-                return (
-                  <div key={part.id}>
-                    <ToolPartRenderer
-                      part={part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
-              if (isSnapshotPart(part) || isPatchPart(part)) {
-                return null;
-              }
-
-              return null;
-            });
-          })()}
+            // Text segments render as prose between bursts. Text rendering
+            // for no-step turns is handled below in the dedicated response
+            // section, to avoid duplicate output.
+            if (!hasSteps) return null;
+            const text = segment.part.text?.trim();
+            if (!text) return null;
+            return (
+              <div key={segment.part.id} className="min-w-0 text-sm">
+                <ThrottledMarkdown content={text} isStreaming={working} />
+              </div>
+            );
+          })}
         </div>
       )}
 
