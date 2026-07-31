@@ -17,6 +17,7 @@ import {
   codexDescriptor,
   livePricing,
   managedCandidates,
+  normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
 
@@ -167,6 +168,15 @@ export async function resolveCandidates(
           ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
           : undefined;
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
+      // Bedrock invoke id: normalize a wrong-geography cross-region
+      // inference-profile prefix (e.g. a `jp.` pick that got stored as an
+      // account default / session pin on a us-east-1 box) to the endpoint's own
+      // region, so it stops 400ing "The provided model identifier is invalid."
+      // No-op for every other provider and for already-correct ids.
+      const invokeModelId =
+        byok.kind === 'bedrock'
+          ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion)
+          : resolvedModelId;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
@@ -177,17 +187,17 @@ export async function resolveCandidates(
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
-        resolvedModel: resolvedModelId,
+        resolvedModel: invokeModelId,
         // Bedrock-only: the id used to INVOKE stays the full cross-region
-        // inference-profile id (resolvedModel above) — only the id used to
-        // LOOK UP pricing gets the geography prefix stripped, since the
-        // models.dev catalog only knows the base model id. See
+        // inference-profile id (resolvedModel above, region-normalized) — only
+        // the id used to LOOK UP pricing gets the geography prefix stripped,
+        // since the models.dev catalog only knows the base model id. See
         // stripBedrockInferenceProfilePrefix's doc comment.
         pricing: livePricing(
           provider,
           byok.kind === 'bedrock'
-            ? stripBedrockInferenceProfilePrefix(resolvedModelId)
-            : resolvedModelId,
+            ? stripBedrockInferenceProfilePrefix(invokeModelId)
+            : invokeModelId,
         ),
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,

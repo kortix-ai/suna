@@ -604,27 +604,61 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     expect(args.maxOutputTokens).toBe(4096);
   });
 
-  it('bedrock: reasoning_effort maps to providerOptions.bedrock.reasoningConfig, never providerOptions.anthropic', () => {
+  it('bedrock: reasoning_effort maps to adaptive reasoningConfig + effort (never enabled/budgetTokens), never providerOptions.anthropic', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'medium' }, 'bedrock');
     expect(args.providerOptions).toMatchObject({
-      bedrock: { reasoningConfig: { type: 'enabled', budgetTokens: 8192 } },
+      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'medium' } },
     });
+    // Current-gen Bedrock Claude (Sonnet 5, Opus 4.5+) 400s on the legacy
+    // enabled/budgetTokens shape — it must NEVER be sent (verified against real
+    // Bedrock us-east-1). Adaptive carries no budget to clamp.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.type).not.toBe('enabled');
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.budgetTokens).toBeUndefined();
     expect(args.providerOptions).not.toHaveProperty('anthropic');
-    expect((args.providerOptions as any)?.bedrock?.reasoningEffort).toBeUndefined();
     expect(args.maxOutputTokens).toBe(32000);
   });
 
-  it('bedrock: clamps budgetTokens below an explicit small max_tokens (Converse rejects budget >= max)', () => {
+  it('bedrock: max effort maps to adaptive+max even with a small explicit max_tokens (no budget clamp, no enabled)', () => {
     const args = buildAiSdkArgs(
       { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
       'bedrock',
     );
     expect(args.maxOutputTokens).toBe(2000);
-    // max(1024, 2000-1024) = 1024 < the max-effort 32000 budget → clamped to 1024.
+    // Adaptive has no budget to clamp against max_tokens — the whole class of
+    // "budget >= max_tokens" Converse 400s disappears with adaptive.
     expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
-      type: 'enabled',
-      budgetTokens: 1024,
+      type: 'adaptive',
+      maxReasoningEffort: 'max',
     });
+  });
+
+  it('bedrock: every reasoning_effort level maps to an adaptive effort tier and NEVER emits type:"enabled" (minimal folds to low)', () => {
+    const cases: Array<[string, string]> = [
+      ['minimal', 'low'],
+      ['low', 'low'],
+      ['medium', 'medium'],
+      ['high', 'high'],
+      ['xhigh', 'xhigh'],
+      ['max', 'max'],
+    ];
+    for (const [effort, tier] of cases) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock');
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
+        type: 'adaptive',
+        maxReasoningEffort: tier,
+      });
+    }
+  });
+
+  it('bedrock: a raw body.thinking:{type:"enabled",budget_tokens} is normalized to adaptive (never forwarded verbatim)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
+      'bedrock',
+    );
+    // The old enabled/budgetTokens shape current-gen Bedrock Claude rejects must
+    // never reach the wire — even when the client itself sent it.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.type).toBe('adaptive');
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.budgetTokens).toBeUndefined();
   });
 
   it('does not set thinking/reasoningConfig or bump maxOutputTokens for openai/openai-compatible families', () => {
