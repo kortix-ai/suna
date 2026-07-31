@@ -89,6 +89,42 @@ export async function createDatabaseProject(
   return { id: projectId, name: input.name };
 }
 
+export async function createDatabaseSession(
+  env: Env,
+  input: {
+    projectId: string;
+    accountId: string;
+    userId: string;
+  },
+  open: OpenProjectDb = openProjectDb,
+): Promise<string> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, 'create a session for');
+  const sessionId = randomUUID();
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.project_sessions (
+         session_id,
+         account_id,
+         project_id,
+         branch_name,
+         created_by
+       )
+       VALUES (
+         $1,
+         $2::uuid,
+         $3::uuid,
+         'session/' || $1,
+         $4::uuid
+       )`,
+      [sessionId, input.accountId, input.projectId, input.userId],
+    );
+  } finally {
+    await client.end();
+  }
+  return sessionId;
+}
+
 export async function deleteDatabaseProject(
   env: Env,
   projectId: string,
