@@ -149,6 +149,29 @@ export function EmojiPicker({
   return (
     <Frimousse.Root
       onEmojiSelect={onEmojiSelect}
+      // Self-hosted, not frimousse's default CDN. Left unset, frimousse fetches
+      // the emojibase dataset from `https://cdn.jsdelivr.net/npm/emojibase-data`
+      // in the user's browser the first time the picker opens — the only
+      // external runtime CDN this app would have. Kortix ships self-hosted, so
+      // that is wrong here regardless; what makes it a defect is that it fails
+      // INVISIBLY. frimousse exposes `Loading` and `Empty` and no error slot,
+      // and its cold-cache path is a bare `await` (only the etag-revalidation
+      // branch catches), so an unreachable CDN leaves the popover on `Loading`
+      // forever with no message. Air-gapped installs, restricted networks and
+      // any future `connect-src` CSP all land there.
+      //
+      // frimousse appends `${locale}/data.json` and `${locale}/messages.json`
+      // to this. Both are copied into `public/emojibase/en/` at dev/build time
+      // by scripts/emojibase-data.mjs — one locale, ~782 KB on disk / ~94 KB
+      // gzipped, fetched on first open and never part of the JS bundle.
+      //
+      // These two literals are the same values the copy script spells out, and
+      // nothing but src/components/ui/emoji-picker-data.test.ts ties them
+      // together: a build script cannot import a client component's constants.
+      // `locale` is written out rather than left to frimousse's `en` default so
+      // the coupling is visible at the place someone would change it.
+      emojibaseUrl="/emojibase"
+      locale="en"
       className={cn('isolate flex h-[368px] w-full flex-col', className)}
     >
       <div className="p-2">
