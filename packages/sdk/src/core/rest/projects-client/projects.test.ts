@@ -6,6 +6,7 @@ import {
   type KortixProject,
   type ProjectInput,
   type ProvisionProjectInput,
+  getProject,
   getProjectDetail,
   provisionProject,
   provisionProjectWithToken,
@@ -39,6 +40,16 @@ test('CreateProjectRepoInput accepts an optional icon', () => {
   };
 
   expect(createInput.icon).toBe('🚀');
+});
+
+test('CreateProjectRepoInput accepts an optional icon_glyph', () => {
+  const createInput: CreateProjectRepoInput = {
+    account_id: 'acc-1',
+    name: 'support-agent',
+    icon_glyph: { name: 'Rocket', color: 'blue' },
+  };
+
+  expect(createInput.icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
 });
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {
@@ -344,4 +355,108 @@ test('a project response with a null icon reaches the caller as null', async () 
   const project = await updateProject('proj-1', { icon: null });
 
   expect(project.icon).toBeNull();
+});
+
+// ── B45: `icon_glyph` on the project types ───────────────────────────────────
+//
+// The second, named-glyph icon: `{name, color} | null`, additive alongside
+// the emoji `icon` B43/B44 already cover. Same tri-state contract on the
+// updateProject body — omit leaves the stored glyph alone, `null` removes it,
+// an object replaces it (and clears `icon` server-side; not this package's
+// concern to prove, only to type correctly).
+
+test('icon_glyph round-trips on a project read', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+  nextResponse = () =>
+    new Response(
+      JSON.stringify({
+        project_id: 'proj-1',
+        name: 'Glyphic',
+        icon_glyph: { name: 'Rocket', color: 'blue' },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const project = await getProject('proj-1');
+
+  expect(project.icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
+});
+
+test('icon_glyph is sent on provision', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await provisionProject({
+    account_id: 'acc-1',
+    name: 'x',
+    icon_glyph: { name: 'Star', color: 'red' },
+  });
+
+  expect(sentBody).toMatchObject({ icon_glyph: { name: 'Star', color: 'red' } });
+});
+
+test('updateProject distinguishes omitted icon_glyph from null', () => {
+  // Same three-way contract `icon` already documents: omit to leave alone,
+  // null to remove, an object to replace. `updateProject`'s real body type is
+  // `Partial<ProjectInput>` (see its signature below) — `ProjectInput` itself
+  // requires `repo_url`, so that's what a bare `{}` would fail against.
+  const omitted: Partial<ProjectInput> = {};
+  const cleared: Partial<ProjectInput> = { icon_glyph: null };
+  expect('icon_glyph' in omitted).toBe(false);
+  expect(cleared.icon_glyph).toBeNull();
+});
+
+test('updateProject puts an explicit null icon_glyph on the wire, not an absent key', async () => {
+  const sent = await captureUpdate({ icon_glyph: null });
+
+  expect('icon_glyph' in sent.parsed).toBe(true);
+  expect(sent.parsed.icon_glyph).toBeNull();
+  expect(sent.body).toContain('"icon_glyph":null');
+});
+
+test('updateProject sends a chosen glyph verbatim', async () => {
+  const sent = await captureUpdate({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+
+  expect(sent.parsed.icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
+});
+
+test('a name-only update sends NO icon_glyph key, so the stored glyph survives', async () => {
+  const sent = await captureUpdate({ name: 'Renamed only' });
+
+  expect(sent.parsed).toEqual({ name: 'Renamed only' });
+  expect('icon_glyph' in sent.parsed).toBe(false);
+});
+
+/**
+ * Compile-time pin on the RESPONSE half of the clear — same rationale as
+ * `projectIconAcceptsNull` above, found necessary during B44's mutation pass:
+ * narrowing `KortixProject.icon` to `string` left every runtime assertion
+ * green because `expect(x).toBeNull()` accepts any type. Assigning INTO the
+ * member is what pins it.
+ */
+const projectIconGlyphAcceptsNull: KortixProject['icon_glyph'] = null;
+
+test('a project response with a null icon_glyph reaches the caller as null', async () => {
+  expect(projectIconGlyphAcceptsNull).toBeNull();
+
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+  globalThis.fetch = mock(
+    async () =>
+      new Response(JSON.stringify({ project_id: 'proj-1', name: 'Glyphic', icon_glyph: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  ) as unknown as typeof fetch;
+
+  const project = await updateProject('proj-1', { icon_glyph: null });
+
+  expect(project.icon_glyph).toBeNull();
 });

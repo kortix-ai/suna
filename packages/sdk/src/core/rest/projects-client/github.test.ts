@@ -90,6 +90,33 @@ test('sends the icon in the request body when linking a repository', async () =>
   });
 });
 
+test('sends the icon_glyph in the request body when linking a repository', async () => {
+  let requestBody: unknown;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      project: {
+        project_id: 'proj-1',
+        name: 'Glyphic',
+        icon_glyph: { name: 'Rocket', color: 'blue' },
+      },
+      git_connection: null,
+    });
+  }) as unknown as typeof fetch;
+
+  await linkRepository({
+    account_id: 'acc-1',
+    repo_url: 'https://github.com/acme/repo',
+    icon_glyph: { name: 'Rocket', color: 'blue' },
+  });
+
+  expect(requestBody).toEqual({
+    account_id: 'acc-1',
+    repo_url: 'https://github.com/acme/repo',
+    icon_glyph: { name: 'Rocket', color: 'blue' },
+  });
+});
+
 test('lists only linkable GitHub App installations through the authenticated API', async () => {
   let requestBody: unknown;
   globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {

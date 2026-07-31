@@ -2,7 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import { unwrap, type ProjectGitConnection } from './shared';
-import type { KortixProject } from './projects';
+import type { KortixProject, ProjectGlyph } from './projects';
 
 export interface GitHubRepository {
   id: string;
@@ -48,6 +48,9 @@ export interface LinkRepositoryInput {
   /** Optional emoji icon for the new project. Invalid values are dropped
    *  server-side; they never fail the create. */
   icon?: string;
+  /** Optional glyph icon for the new project. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: ProjectGlyph;
 }
 
 export interface LinkRepositoryResponse {

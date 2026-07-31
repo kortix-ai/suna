@@ -37,6 +37,13 @@ export interface ExperimentalFeatureView {
   overridden: boolean;
 }
 
+/** A project's named-glyph icon. `name` is a Phosphor identifier from the
+ *  server's fixed catalogue; `color` is one of eight palette names. */
+export interface ProjectGlyph {
+  name: string;
+  color: string;
+}
+
 export interface KortixProject {
   project_id: string;
   account_id: string;
@@ -69,6 +76,11 @@ export interface KortixProject {
    *  emoji grapheme, or null. Stored in `metadata.icon`; surfaced top-level so
    *  clients never cast the metadata bag. */
   icon?: string | null;
+  /** A named glyph + colour, the alternative to `icon`. At most one of the two
+   *  is ever set — the API deletes the other whenever either is written.
+   *  Stored in `metadata.icon_glyph`; surfaced top-level so callers do not read
+   *  raw metadata. Server-validated against a fixed catalogue, or null. */
+  icon_glyph?: ProjectGlyph | null;
 }
 
 export interface ProjectConfigSummary {
@@ -179,6 +191,17 @@ export interface ProjectInput {
    * never removes the existing icon.
    */
   icon?: string | null;
+  /**
+   * The project's glyph icon. Nullable because `PATCH /projects/:id` reads
+   * present-and-null differently from absent:
+   *
+   * - omit the key → the stored glyph is left alone
+   * - `null`       → the stored glyph is removed
+   * - an object    → the stored glyph is replaced, and the emoji `icon` cleared
+   *
+   * A malformed value is ignored and never removes the existing glyph.
+   */
+  icon_glyph?: ProjectGlyph | null;
 }
 
 export interface CreateProjectRepoInput {
@@ -193,6 +216,9 @@ export interface CreateProjectRepoInput {
   /** Optional emoji icon for the new project. Invalid values are dropped
    *  server-side; they never fail the create. */
   icon?: string;
+  /** Optional glyph icon for the new project. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: ProjectGlyph;
 }
 
 export interface ProvisionProjectInput {
@@ -209,6 +235,9 @@ export interface ProvisionProjectInput {
   /** Optional emoji icon for the new project. Invalid values are dropped
    *  server-side; they never fail the create. */
   icon?: string;
+  /** Optional glyph icon for the new project. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: ProjectGlyph;
 }
 
 export interface RepoCollaboratorInvite {

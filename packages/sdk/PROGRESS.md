@@ -284,7 +284,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B42 | **A prompt that errors renders as an unanswered user bubble with no explanation.** `applyAcpEnvelope`'s response branch clears the pending prompt and drops `envelope.error` unless a `promptDrafts` entry survives. Dev session `ecc2d856-a08d-4cda-98bb-b76a7c892e69`: six `session/prompt` calls all answered `-32603 Internal error: OpenCode service failure`, and the projection is six user messages and zero assistants. `AcpProjection` has no per-turn error surface for a renderer to show. | OPEN |
 | B43 | **Expose the emoji project icon on the SDK's typed project contract.** Tasks 1–3 of the project-emoji-icons plan added `icon` to the API request/response bodies (`packages/api-contract/src/index.ts:120`, `icon: z.string().nullable()`); the SDK declares its own independent types and had no `icon` field anywhere. | `KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carried no `icon` member; plan `docs/superpowers/plans/2026-07-31-project-emoji-icons.md`; spec `docs/superpowers/specs/2026-07-31-project-emoji-icons-design.md`; task brief `.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`. | **DONE 2026-07-31** — session `sdk-project-emoji-icon`; implementation `8f8db0d4f1`; full SDK gates green (see session log) |
 | B44 | **`ProjectInput` — the `updateProject` body — carries no `icon`, so a project's emoji is write-once.** B43 added `icon` to the CREATE inputs and to the response type only. `updateProject(projectId, input: Partial<ProjectInput>)` is the sole SDK path to `PATCH /v1/projects/:projectId`, and its input type declares `account_id`/`name`/`repo_url`/`default_branch`/`manifest_path` — so a host cannot change or remove an icon without an `as any` cast. The API's tri-state semantics need `string \| null`, not `string`: an absent key leaves the icon alone, an explicit `null` clears it. | `ProjectInput` (`packages/sdk/src/core/rest/projects-client/projects.ts:163`) has no `icon` member; `updateProject` at `:427`; API handler `apps/api/src/projects/routes/r5.ts` (tri-state `icon` landed in `c76c6f962`). | **DONE 2026-07-31** — session `sdk-project-edit-icon`; implementation `cc5c36dbc4`; typecheck exit 0, full suite 1365 pass / 0 fail across 116 files, packed-install smoke pass |
-| B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | IN PROGRESS — session `sdk-project-glyph-icon`, claimed 2026-08-01 |
+| B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | **DONE 2026-08-01** — session `sdk-project-glyph-icon`; typecheck exit 0, full suite 1374 pass / 0 fail across 116 files, packed-install smoke pass, both brief mutations killed via typecheck (see session log) |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -5143,3 +5143,136 @@ nothing needs converting at the boundary. Task brief:
 `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-08-01 — session `sdk-project-glyph-icon` (B45 completion)
+
+Added `ProjectGlyph` (`{ name: string; color: string }`) and
+`icon_glyph?: ProjectGlyph | null` to `KortixProject` and `ProjectInput`, and
+`icon_glyph?: ProjectGlyph` (non-null — create bodies have no clear-the-glyph
+case) to `ProvisionProjectInput` and `CreateProjectRepoInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`), and the same
+`icon_glyph?: ProjectGlyph` to `LinkRepositoryInput`
+(`packages/sdk/src/core/rest/projects-client/github.ts`). All additive:
+one new exported interface, five new optional members on already-exported
+interfaces — no rename, no removal, `version` untouched.
+
+**Deliberately a SECOND `ProjectGlyph`.** `@kortix/shared` exports a
+same-named type with literal-union `name`/`color` fields for the server-side
+catalogue. The SDK does not import `@kortix/shared` — its dependencies stay
+exactly `@kortix/llm-catalog`, `@opencode-ai/sdk`, `zustand` — so this
+declares an independent, structurally-compatible `string`/`string` version.
+A literal union here would make every catalogue addition a breaking change
+for pinned consumers; the catalogue is a server-side concern that can grow
+without a package release.
+
+**Test conventions used.** The brief's snippet named `clientReturning` and
+`recordingClient` helpers that do not exist in this file. The real
+conventions (`projects.test.ts`/`github.test.ts`, both already used by
+B43/B44): `configureKortix` + a mocked `globalThis.fetch`, and the
+`captureUpdate(input: Partial<ProjectInput>)` helper B44 added for reading the
+literal wire body `updateProject` sent. Reused as-is, no new helpers invented.
+One correction to the brief's test snippet: `const omitted: ProjectInput = {}`
+does not typecheck — `ProjectInput.repo_url` is required — so the omitted/null
+pin test uses `Partial<ProjectInput>`, matching `updateProject`'s actual
+parameter type.
+
+Added 9 tests: `projects.test.ts` — a `CreateProjectRepoInput` type-pin, a
+read round-trip (`getProject`), a provision wire-body check, the
+omitted-vs-null type pin, three `captureUpdate`-based wire tests (explicit
+null on the wire, a glyph sent verbatim, a name-only update sends no
+`icon_glyph` key), and a compile-time response-nullability pin
+(`KortixProject['icon_glyph'] = null`) paired with its round-trip test, mirroring
+the `projectIconAcceptsNull` pin B44 added after finding that gap in `icon`.
+`github.test.ts` — one wire test for `LinkRepositoryInput.icon_glyph`.
+
+**RED, proven via typecheck, not `bun test`** — same shape as B43/B44: JSON
+object literals with an extra `icon_glyph` key are valid JS regardless of the
+TS interface, so the new tests already passed at runtime before the fields
+existed. Before the implementation:
+
+```
+pnpm --filter @kortix/sdk typecheck
+src/core/rest/projects-client/github.test.ts(110,5): error TS2353: 'icon_glyph' does not exist in type 'LinkRepositoryInput'.
+src/core/rest/projects-client/projects.test.ts(49,5): error TS2353: 'icon_glyph' does not exist in type 'CreateProjectRepoInput'.
+src/core/rest/projects-client/projects.test.ts(52,22): error TS2339: Property 'icon_glyph' does not exist on type 'CreateProjectRepoInput'.
+... (12 TS2353/TS2339 errors total, all "icon_glyph does not exist")
+Exit status 2
+
+bun test src/core/rest/projects-client/
+276 pass, 0 fail  (runtime — vacuously green, confirms the gap is type-only)
+```
+
+After implementation, `typecheck` exited 0.
+
+**Guardrail hit: the type-level public-surface snapshot.** `ProjectGlyph` is
+a brand-new exported interface (unlike B43/B44's plain field additions), so
+`src/public-type-surface.test.ts` — the TS-checker-based snapshot that sees
+`export interface`/`export type` bindings the runtime snapshot cannot — went
+red with a pure addition (`+ ProjectGlyph` on `.` and `./projects-client`,
+nothing removed or renamed). Regenerated deliberately:
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test src/public-type-surface.test.ts`.
+The runtime `public-surface.snapshot.json` is unchanged — `ProjectGlyph` is a
+pure interface, invisible at runtime, so it never reaches that snapshot. No
+new subpath was added, so `package.json` `exports`/`publishConfig.exports`
+and `SUBPATH_TIERS` needed no edits — `ProjectGlyph` reaches the root and
+`./projects-client` entry points through the existing `export * from
+'./projects'` wildcards, the same path every sibling type in this file uses.
+
+**Mutation table** (brief's table, both mutations confirmed applied by `grep`
+before reading a result, then reverted by `Edit` — never `git checkout`):
+
+| # | Mutation | Applied confirmed via | Result |
+|---|---|---|---|
+| M1 | Drop `\| null` from `ProjectInput.icon_glyph` | `grep -n "icon_glyph?:" projects.ts` showed line 240 as `ProjectGlyph` (no `\| null`) | **Killed — TYPECHECK**, not `bun test`. 3 × `TS2322: Type 'null' is not assignable to type 'ProjectGlyph \| undefined'` at the omitted/null pin, the `captureUpdate({icon_glyph:null})` wire test, and the null-response round-trip test. `bun test src/core/rest/projects-client/projects.test.ts` stayed **26 pass / 0 fail** — JS assigns `null` into any field regardless of the TS type, so only `tsc` catches this. |
+| M2 | Remove `icon_glyph` from `ProvisionProjectInput` | `grep -n "icon_glyph?:" projects.ts` showed only 3 matches (line 224 `ProvisionProjectInput` gone) | **Killed — TYPECHECK**, not `bun test`. `TS2353: Object literal may only specify known properties, and 'icon_glyph' does not exist in type 'ProvisionProjectInput'` at the provision wire test's call site. `bun test` stayed **26 pass / 0 fail** — `provisionProject` forwards `...input` verbatim regardless of its declared type, so the field still reaches the wire; only `tsc` catches the type-contract violation. |
+
+Both mutations are real kills, not survivors — but both are caught **only** by
+`typecheck`, never by the runtime test named in the brief's own table. This
+mirrors B44's M7/M8/M9 finding: for a pure additive-optional-field change,
+`bun test`'s JSON round-trip cannot distinguish "field exists on the type"
+from "field exists on the object", because JS erases the type before the test
+ever runs. `typecheck` is the gate that actually owns this contract; it is not
+optional here.
+
+**Final SDK gates:**
+
+```
+pnpm --filter @kortix/sdk typecheck        → exit 0
+pnpm --filter @kortix/sdk test             → 1374 pass, 0 fail, 5910 expect() calls, 116 files
+                                              (baseline before this change: 1365 pass / 0 fail / 116 files)
+pnpm --filter @kortix/sdk run smoke:install → ✔ install smoke test passed
+bun test src/index.isomorphic.test.ts      → tripwire green (included in the 1374/116 total above)
+bun test src/public-surface.test.ts src/package-exports.test.ts → 2 pass, 0 fail (runtime snapshot unchanged)
+bun test src/public-type-surface.test.ts   → 1 pass, 0 fail (type snapshot regenerated, additive-only diff)
+npx biome check <4 touched files>          → 2 NEW findings both fixed inline (an import-order
+                                              nit, a >100-char test line); remaining findings
+                                              (github.ts import order + 4 formatter suggestions,
+                                              projects.test.ts 2 × noNonNullAssertion) confirmed
+                                              pre-existing via `git diff HEAD~1` — none on a line
+                                              this change touched
+```
+
+**Cross-surface note:** `apps/web` was not touched — later tasks of this plan
+consume `project.icon_glyph` there. `packages/api-contract` and
+`@kortix/shared` were not imported or modified, per the task brief's
+constraint (decision 2: a second, independent `ProjectGlyph`).
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+- **Verified:** typecheck (exit 0), the full suite (1374/0/116, baseline
+  1365/0/116), the packed-install smoke test, both public-surface snapshots
+  (runtime unchanged, type-level regenerated additive-only), the isomorphic
+  tripwire, and both brief mutations killed (via typecheck).
+- **Unverified:** nothing here was exercised through the published CDN/IIFE
+  bundle or a real browser — this change adds no runtime code, only type
+  declarations, so the bundle's runtime behaviour is byte-identical to before.
+  `apps/web` consumption of `icon_glyph` (later tasks) is out of this task's
+  scope and unverified here.
+- **Risk:** none identified. This is a pure additive type change with no
+  runtime code path; the only way it could regress a consumer is if a future
+  edit narrows `icon_glyph` or removes it, both of which the type-surface
+  snapshot and `typecheck` will catch.
