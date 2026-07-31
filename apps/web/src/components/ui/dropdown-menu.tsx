@@ -5,79 +5,27 @@ import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
+import {
+  MENU_LABEL,
+  MENU_PANEL,
+  MENU_SEPARATOR,
+  MENU_SHORTCUT,
+  menuRow,
+  type MenuRowSize,
+} from './menu-recipe';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 /**
- * ONE recipe for every row in a dropdown.
+ * The row recipe, the panel and the label/separator/shortcut classes live in
+ * `./menu-recipe`, shared with `context-menu.tsx` — see that file for why the
+ * four row components here (Item, SubTrigger, CheckboxItem, RadioItem) are no
+ * longer allowed to style themselves.
  *
- * Four different components render a "row" here — Item, SubTrigger,
- * CheckboxItem and RadioItem — and each used to hardcode its own spacing,
- * radius, focus colour, type and transition. They had drifted, so which
- * component you reached for silently changed how the row looked:
- *
- *   Item          rounded-md  px-2.5 py-1.5  focus:bg-border/50   text-foreground/80
- *   SubTrigger    rounded-sm  px-2   py-1.5  focus:bg-accent      (inherited colour)
- *   CheckboxItem  rounded-sm  pl-8   py-1.5  focus:bg-accent      (inherited colour)
- *   RadioItem     rounded-sm  px-2   py-1.5  focus:bg-accent      (inherited colour)
- *
- * A submenu trigger therefore sat 2px left of its sibling items, with a
- * different corner and a different text colour — a menu mixing the two could
- * never line its icons up in one column.
- *
- * Two further bugs this closes:
- *
- * 1. The size prop's font-size was dead. `size="sm"` set `text-xs`, but the
- *    `variant === 'default'` clause that ran after it set `text-sm`, and
- *    tailwind-merge takes the last one. So default rows ignored their size's
- *    type while destructive rows — which set no font-size — honoured it. A
- *    `variant="destructive" size="sm"` row rendered 12px next to its 14px
- *    neighbours. That is why "Log out" looked smaller than every row above it.
- *
- * 2. `transition-all duration-500`. `transition-all` animates every animatable
- *    property on a state change instead of the one that actually moves, and
- *    half a second is far past the budget for a menu opened dozens of times a
- *    day — the hover highlight visibly trailed the cursor. Colour only, 150ms.
+ * A dropdown is anchored to a trigger, so its panel is at least as wide as a
+ * typical trigger. A right-click menu has no trigger width to match and floors
+ * itself lower.
  */
-type MenuRowSize = 'sm' | 'md' | 'lg';
-type MenuRowTone = 'default' | 'destructive';
-
-/** Padding and type per step. Radius and gap stay fixed so columns line up. */
-const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
-  sm: 'px-2.5 py-1.5 text-sm',
-  md: 'px-3 py-2 text-sm',
-  lg: 'px-3.5 py-2.5 text-base',
-};
-
-const MENU_ROW_BASE =
-  'relative flex w-full cursor-default items-center gap-2 rounded-md font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0';
-
-/**
- * Keyboard focus and pointer hover resolve to the same treatment on purpose —
- * Radix marks the keyboard-focused row `data-highlighted`, and a row you
- * arrowed onto should look exactly like a row you hovered.
- */
-const MENU_ROW_TONE: Record<MenuRowTone, string> = {
-  default:
-    'text-foreground/80 hover:bg-primary/10 hover:text-foreground focus:bg-primary/10 focus:text-foreground data-highlighted:bg-primary/10 data-highlighted:text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-foreground',
-  destructive:
-    'text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive',
-};
-
-/** `className` last so a caller can still override any of it. */
-function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string) {
-  return cn(MENU_ROW_BASE, MENU_ROW_SIZE[size], MENU_ROW_TONE[tone], className);
-}
-
-/**
- * Shared by Content and SubContent — a submenu panel should be indistinguishable
- * from the menu that opened it.
- *
- * `hover:text-foreground` used to sit here, on the panel. Hovering anywhere in
- * the menu recoloured every row at once, fighting the per-row hover the rows
- * define themselves. Removed; colour is a row concern.
- */
-const MENU_PANEL =
-  'bg-background text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-[calc(var(--radius)+0.2rem)] border p-1 shadow-lg ease-out';
+const DROPDOWN_PANEL = cn(MENU_PANEL, 'min-w-[14rem] overflow-hidden');
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
@@ -150,7 +98,7 @@ const DropdownMenuSubContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        MENU_PANEL,
+        DROPDOWN_PANEL,
         className,
         side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
         side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
@@ -178,7 +126,7 @@ const DropdownMenuContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
-        className={cn(MENU_PANEL, className)}
+        className={cn(DROPDOWN_PANEL, className)}
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
@@ -292,14 +240,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    // px-2.5 matches the sm row's horizontal padding, so a group label sits on
-    // the same left edge as the rows beneath it. `text-[13px]` was an arbitrary
-    // one-off; named steps only.
-    className={cn(
-      'text-muted-foreground px-2.5 py-1 text-xs font-medium tracking-normal',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn(MENU_LABEL, inset && 'pl-8', className)}
     {...props}
   />
 ));
@@ -309,18 +250,12 @@ const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Separator
-    ref={ref}
-    className={cn('bg-foreground/10 -mx-1 my-1 h-px', className)}
-    {...props}
-  />
+  <DropdownMenuPrimitive.Separator ref={ref} className={cn(MENU_SEPARATOR, className)} {...props} />
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
 const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
-  return (
-    <span className={cn('ml-auto text-xs tracking-widest opacity-60', className)} {...props} />
-  );
+  return <span className={cn(MENU_SHORTCUT, className)} {...props} />;
 };
 DropdownMenuShortcut.displayName = 'DropdownMenuShortcut';
 

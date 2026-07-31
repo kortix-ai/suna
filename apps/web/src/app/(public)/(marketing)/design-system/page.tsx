@@ -2178,6 +2178,35 @@ export default function BrandPage() {
                         </Tabs>
                       </div>
                       <div>
+                        <p className="text-muted-foreground mb-3 text-xs">Outline</p>
+                        <Tabs defaultValue="outline-account">
+                          <TabsList animate="none">
+                            <TabsTrigger variant="outline" value="outline-account">
+                              Account
+                            </TabsTrigger>
+                            <TabsTrigger variant="outline" value="outline-password">
+                              Password
+                            </TabsTrigger>
+                            <TabsTrigger variant="outline" value="outline-settings">
+                              Settings
+                            </TabsTrigger>
+                          </TabsList>
+                          <TabsContent value="outline-account">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              Account settings and preferences.
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="outline-password">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              Change your password.
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="outline-settings">
+                            <p className="text-muted-foreground mt-2 text-sm">General settings.</p>
+                          </TabsContent>
+                        </Tabs>
+                      </div>
+                      <div>
                         <p className="text-muted-foreground mb-3 text-xs">Underline</p>
                         <Tabs defaultValue="underline-account">
                           <TabsList type="underline">

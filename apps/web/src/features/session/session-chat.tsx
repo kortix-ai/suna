@@ -11,6 +11,7 @@ import {
   ArrowDownIcon as ArrowDown,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
+  CheckIcon,
   CaretDownIcon as ChevronDown,
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
@@ -191,6 +192,7 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
+import { Icon } from '../icon/icon';
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
@@ -1595,24 +1597,14 @@ function SessionTurn({
       {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
-          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
-              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
-              different kinds on one dot-separated line, which reads as a list of
-              comparable things and is not one. They are a labelled list inside
-              `SessionTurnMeta` now. `focus-within` because a keyboard user could
-              otherwise tab into — and open — a control at `opacity-0`. The
-              `data-state=open` case is the pointer one: the popover is portalled
-              and takes focus, so without it the ⋯ would fade out from under its
-              own open panel the moment the pointer left the turn. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
-          </Tooltip>
-          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
+          <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
+            {copied ? (
+              <CheckIcon className="size-4 shrink-0" />
+            ) : (
+              <Icon.Copy className="size-4 shrink-0" />
+            )}
+          </Button>
+          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} className='flex items-center justify-center' />
         </div>
       )}
 

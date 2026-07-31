@@ -31,6 +31,7 @@ import { useReadyChip, type QuickView } from '@/stores/kortix-computer-store';
 import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   CodeSimpleIcon as Code2,
+  DotsThreeOutlineIcon,
   FileArrowDownIcon as FileDown,
   FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
@@ -230,7 +231,7 @@ export function SessionSiteHeader({
                     )}
                     className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
-                    <MoreHorizontal />
+                    <DotsThreeOutlineIcon weight="fill" className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
