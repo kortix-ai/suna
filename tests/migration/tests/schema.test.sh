@@ -55,5 +55,24 @@ else
   junit_case "service_role has grants on kortix tables" fail "no grants found for service_role"
 fi
 
+# 5. Functions reached from triggers on service_role-written tables carry
+# explicit EXECUTE grants. Supabase revokes the default PUBLIC EXECUTE on
+# functions while plain Postgres keeps it, so a migration that forgets the
+# GRANT passes here and 42501s in every deployed environment (the
+# credit_ledger_lifetime_deltas incident, caught by ke2e BILL-3 in the
+# v0.12.0 release gate).
+TRIGGER_FNS=(
+  "credit_ledger_lifetime_deltas"
+  "apply_credit_ledger_lifetime_rollup"
+)
+for fn in "${TRIGGER_FNS[@]}"; do
+  fn_grant="$(psql_query "SELECT 1 FROM pg_proc p, LATERAL aclexplode(p.proacl) a WHERE p.pronamespace = 'kortix'::regnamespace AND p.proname = '${fn}' AND a.grantee::regrole::text = 'service_role' LIMIT 1")"
+  if [ "${fn_grant}" = "1" ]; then
+    junit_case "service_role can execute kortix.${fn}" pass
+  else
+    junit_case "service_role can execute kortix.${fn}" fail "no explicit EXECUTE grant for service_role on kortix.${fn}"
+  fi
+done
+
 junit_write "${RESULTS_DIR}/schema.xml"
 junit_exit_code
