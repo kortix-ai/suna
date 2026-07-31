@@ -26,7 +26,7 @@ import {
 } from '@/features/session/tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
-import { WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
+import { WarningIcon as DangerTriangleSolid, GlobeIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -108,6 +108,7 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
+      icon={<GlobeIcon className="size-3.5 flex-shrink-0" />}
       trigger={
         <>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

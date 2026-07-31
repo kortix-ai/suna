@@ -21,7 +21,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getDirectory, getFilename } from '@/ui';
-import { FileIcon, FolderIcon as Folder } from '@phosphor-icons/react';
+import { FileIcon, FileTextIcon, FolderIcon as Folder } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
@@ -60,6 +60,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   return (
     <>
       <BasicTool
+        icon={<FileTextIcon className="size-3.5 flex-shrink-0" />}
         trigger={{
           title: 'Read',
           subtitle: isStalePending

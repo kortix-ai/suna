@@ -28,6 +28,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { stripAnsi } from '@/ui';
+import { TerminalIcon } from '@phosphor-icons/react';
 import { Fragment, useContext, useMemo } from 'react';
 
 function terminalHost(sessionId: string | undefined): string {
@@ -160,6 +161,7 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
 
   return (
     <BasicTool
+      icon={<TerminalIcon className="size-3.5 flex-shrink-0" />}
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

@@ -20,6 +20,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getDirectory, getFilename } from '@/ui';
+import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext } from 'react';
 
@@ -63,6 +64,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
+      icon={<PencilSimpleIcon className="size-3.5 flex-shrink-0" />}
       trigger={{
         title: 'Edit',
         subtitle: isStalePending
