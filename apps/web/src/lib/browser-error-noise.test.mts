@@ -17,6 +17,7 @@ import {
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
   isInpageJsNoErrorMessageNoise,
+  isInjectedScriptSendMessageNoise,
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
@@ -1086,10 +1087,202 @@ test('does NOT suppress a near-worded SecurityError from a different error type'
   ]) {
     assert.equal(
       isSafariGenericSecurityErrorNoise({ message: `Error: ${SAFARI_SECURITY_ERROR_MESSAGE}`, frames }),
-      false,
-      `expected first-party "Error: The operation is insecure." to keep reporting`,
+false,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// injectedScript.bundle.js `sendMessage` noise
+// ---------------------------------------------------------------------------
+
+const INJECTED_SCRIPT_SENDMESSAGE_MESSAGES = [
+  // The exact raw exception value from the production event (V8/Chrome).
+  "Cannot read properties of undefined (reading 'sendMessage')",
+  // `TypeError:` prefixed (window.onerror / onunhandledrejection paths).
+  "TypeError: Cannot read properties of undefined (reading 'sendMessage')",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'sendMessage')",
+  // Old JSC (Safari) wording.
+  "Cannot read property 'sendMessage' of undefined",
+  "TypeError: Cannot read property 'sendMessage' of undefined",
+]
+
+const INJECTED_SCRIPT_BUNDLE_FRAME = { filename: 'app:///injectedScript.bundle.js', function: 'n' }
+const INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN = [
+  { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+  { filename: 'app:///injectedScript.bundle.js', function: 'n', lineno: 84147 },
+]
+const FIRST_PARTY_APPS_SRC_FRAME = { filename: 'apps/web/src/lib/desktop.ts', function: 'handleMessage' }
+
+test('classifies every injectedScript.bundle.js sendMessage variant as noise when sourced from the injected script', () => {
+  for (const message of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, filename: 'app:///injectedScript.bundle.js' }),
+      true,
+      `expected "${message}" from injectedScript.bundle.js to be sendMessage noise`,
+    )
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, frames: [INJECTED_SCRIPT_BUNDLE_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be sendMessage noise`,
+    )
+  }
+})
+
+test('classifies the sendMessage variant from the full production frame chain', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN,
+    }),
+    true,
+  )
+})
+
+test('classifies injectedScript.bundle.js sendMessage noise from another injected-app source', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [{ filename: 'app:///scripts/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT classify sendMessage as noise when NO injected source is present', () => {
+  for (const message of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, filename: 'https://kortix.com/app.js' }),
+      false,
+      `expected "${message}" from a non-injected source to keep reporting`,
+    )
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" with no frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT classify sendMessage as noise when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `chrome.runtime.sendMessage` / `browser.runtime.sendMessage` → actionable;
+  // the negative guard MUST preserve it.
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME, INJECTED_SCRIPT_BUNDLE_FRAME],
+    }),
+    false,
+    'expected first-party sendMessage to keep reporting despite the injected frame',
+  )
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME],
+    }),
+    false,
+    'expected first-party sendMessage without injected frame to keep reporting',
+  )
+})
+
+test('does NOT classify a non-sendMessage message from injectedScript.bundle.js as noise', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'addListener')",
+      frames: [INJECTED_SCRIPT_BUNDLE_FRAME],
+    }),
+    false,
+    'expected non-sendMessage message from injectedScript.bundle.js to keep reporting',
+  )
+})
+
+test('suppresses the injectedScript.bundle.js sendMessage Sentry event via the beforeSend gate', () => {
+  for (const value of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party sendMessage that throws from an apps/web/src frame', () => {
+  // Our own code throws `sendMessage` on an undefined runtime → actionable
+  // regression; the negative guard MUST preserve it so the call site can be fixed.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'sendMessage')",
+            stacktrace: {
+              frames: [
+                { filename: 'apps/web/src/features/desktop/bridge.ts', function: 'sendToExtension' },
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected first-party sendMessage Sentry event to keep reporting',
+  )
+})
+
+test('pins the production Better Stack pattern 95a70e66…', () => {
+  // The exact production event from Better Stack:
+  //   message: "Cannot read properties of undefined (reading 'sendMessage')"
+  //   stack:
+  //     app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy
+  //       function `u`
+  //     app:///injectedScript.bundle.js function `n` colno 84147
+  //   mechanism: auto.browser.global_handlers.onunhandledrejection
+  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
+  //   better-stack pattern: 95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+        { filename: 'app:///injectedScript.bundle.js' },
+      ],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'sendMessage')",
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+                { filename: 'app:///injectedScript.bundle.js' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
 })
 
 test('cross-matcher isolation: the new Safari generic matcher does NOT match the existing storage SecurityError message', () => {
