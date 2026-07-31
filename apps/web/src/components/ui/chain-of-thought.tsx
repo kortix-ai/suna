@@ -96,8 +96,11 @@ export function ChainOfThoughtStep({
   return (
     <Collapsible className={cn('group/step', className)} data-last={isLast} {...props}>
       {children}
+      {/* The connector doubles as the row gap: its height IS the breathing
+			    room between steps. Short enough and the chain reads as a cramped
+			    list; this is tuned so a run of rows scans as a sequence. */}
       <div className="flex justify-start group-data-[last=true]/step:hidden">
-        <div className="bg-border ml-[7px] h-3 w-px" />
+        <div className="bg-muted-foreground/60 ml-2 h-[0.9rem] w-px" />
       </div>
     </Collapsible>
   );
