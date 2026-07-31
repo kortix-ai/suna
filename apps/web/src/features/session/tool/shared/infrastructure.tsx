@@ -1,17 +1,20 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
+import { CopyButton } from '@/components/markdown/copy-button';
 import { HighlightedCode, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
@@ -34,6 +37,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
@@ -676,56 +680,120 @@ export function ToolOutputFallback({
   const parsedJsonFailure = !isStreaming ? parseJsonFailure(output) : null;
   if (parsedJsonFailure) {
     return (
-      <div className="p-0">
+      <ToolResultCard>
         <JsonFailureOutputCard failure={parsedJsonFailure} toolName={toolName} />
-      </div>
+      </ToolResultCard>
     );
   }
 
   const jsonFailure = !isStreaming ? formatJsonFailureOutput(output) : null;
   if (jsonFailure) {
-    return (
-      <div className="p-0">
-        <ToolError error={jsonFailure} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={jsonFailure} toolName={toolName} />;
   }
 
   if (!isStreaming && looksLikeError(output)) {
-    return (
-      <div className="p-0">
-        <ToolError error={output} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={output} toolName={toolName} />;
   }
 
   if (looksLikeJsonPayload(output) || output.length > 4000) {
     return <RawOutputBlock output={output} />;
   }
 
+  // Short, non-JSON output — a fetched page, a summary, an agent's prose. This
+  // branch used to return a bare scroll div: no edge, no copy button, and no
+  // indent, so a fetched article sat flush against the chain rail as loose text
+  // while the very same content over 4000 characters got the full card. Same
+  // shell either way now; only the length differs.
   return (
-    <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
-      <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    <ToolOutputCard copyText={output}>
+      <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+      </div>
+    </ToolOutputCard>
+  );
+}
+
+/**
+ * The shell every expanded tool output shares: hairlined card, copy button
+ * pinned top-right, scrollable body, aligned to the row's label.
+ *
+ * One shell rather than per-branch chrome, because the alternative is what this
+ * file already proved — the card gets added to whichever branch someone is
+ * looking at, and the other paths quietly keep rendering naked text.
+ */
+function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
+  const surface = useContext(ToolSurfaceContext);
+
+  return (
+    <div
+      className={cn(
+        'border-border bg-popover relative rounded-md border',
+        // An inline row leads with a 16px icon and a gap-3, so `ml-7` puts the
+        // card on the label's column. The panel surface has no such gutter and
+        // supplies its own padding, so the same indent would only push the
+        // content off-centre.
+        surface === 'inline' && 'ml-7',
+      )}
+    >
+      {/* Floated rather than in a header bar: a bar would cost a row of height
+		      on every output block, and the button reads clearly against the
+		      surface on its own. `pr-9` on the body keeps the first line from
+		      running under it. */}
+      {copyText && (
+        <CopyButton
+          code={copyText}
+          className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
+        />
+      )}
+      <div data-scrollable className="max-h-72 overflow-auto p-3 pr-9">
+        {children}
+      </div>
     </div>
   );
 }
 
+/**
+ * Raw tool output as its own object: a muted, hairlined card with a copy
+ * button pinned top-right.
+ *
+ * Bare `<pre>` on the page had no edge, so a wall of output bled into the step
+ * around it and there was no way to get the text out except selecting it by
+ * hand. The card gives it a boundary; the copy button gives it an exit.
+ *
+ * Markdown renders as markdown. Agents routinely answer in markdown, and
+ * showing a reader `## Heading` and `**bold**` as literal punctuation is
+ * showing them the transport instead of the message. Detection is conservative
+ * (`looksLikeMarkdown`) — anything short of unambiguous syntax stays in the
+ * monospace block, which is the right home for logs, stack traces, and JSON.
+ *
+ * Copy always sends the FULL original output, never the truncated or
+ * pretty-printed `text` — the copy button is how you get at the part the cap
+ * hid, so handing back the visible slice would defeat it.
+ */
 export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
   const { text, truncatedChars } = useMemo(
     () => formatRawOutput(output, maxChars),
     [output, maxChars],
   );
+  const isMarkdown = useMemo(() => looksLikeMarkdown(text), [text]);
+
   return (
-    <div data-scrollable className="max-h-72 overflow-auto p-2">
-      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-        {text}
-      </pre>
+    <ToolOutputCard copyText={output}>
+      {isMarkdown ? (
+        <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+          <UnifiedMarkdown content={text} />
+        </div>
+      ) : (
+        <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+          {text}
+        </pre>
+      )}
       {truncatedChars > 0 && (
-        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
-          +{truncatedChars.toLocaleString()} more characters
+        <div className="text-muted-foreground/40 mt-2 text-xs">
+          +{truncatedChars.toLocaleString()} more characters — copy for the full output
         </div>
       )}
-    </div>
+    </ToolOutputCard>
   );
 }
 
@@ -735,9 +803,7 @@ export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-export type ToolSurface = 'inline' | 'panel';
-
-export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+export { ToolSurfaceContext, type ToolSurface } from '@/features/session/tool/shared/surface';
 
 // Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -789,18 +855,18 @@ function InlineTriggerTitle({
 }) {
   return (
     <>
-      <span className="flex-shrink-0 text-xs whitespace-nowrap">{trigger.title}</span>
+      <span className="flex-shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
       {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
-              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
+              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-sm">
                 {trigger.subtitle}
               </TextShimmer>
             ) : (
               <span
                 className={cn(
-                  'text-muted-foreground min-w-0 truncate font-mono text-xs',
+                  'text-muted-foreground min-w-0 truncate font-mono text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
@@ -1049,18 +1115,18 @@ function CollapsibleToolRow({
   onOpenChange: (value: boolean) => void;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <CollapsibleTrigger asChild>
+    <Disclosure open={open} onOpenChange={onOpenChange}>
+      <DisclosureTrigger>
         <div
           data-component="tool-trigger"
           className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
         >
           {header}
         </div>
-      </CollapsibleTrigger>
+      </DisclosureTrigger>
 
       {children && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
-    </Collapsible>
+    </Disclosure>
   );
 }
 
