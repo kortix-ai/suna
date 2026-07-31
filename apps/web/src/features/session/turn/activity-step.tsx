@@ -95,13 +95,12 @@ export function ActivityStep({
   // which render the exact same tool components, are untouched — this is a
   // reading of the chain, not a change to the tool.
   //
-  // A nested source row (web search results, the web-fetch page-title link)
-  // carries a favicon, not a stroke icon — 20px by default, and indented by
-  // its own list/row padding. Left as-is it sits wider and further right than
-  // every other step's icon, so the chain's connector line reads as crooked
-  // instead of straight. Shrinking the favicon to the same 16px the stroke
-  // icons use, and zeroing just the left inset that offsets it, puts every
-  // icon's optical center on the one column the connector runs through.
+  // A trigger favicon (web fetch) is 20px where every other step leads with a
+  // 16px stroke icon, so left alone it sits wider than its neighbours and the
+  // connector line reads as crooked. Pull it to 16px — but only in the trigger.
+  // Source rows nested inside the results card are a separate surface with
+  // their own alignment, and shrinking their favicons to match the chain would
+  // make the card look starved.
   return (
     <div
       className={cn(
@@ -110,10 +109,8 @@ export function ActivityStep({
         "[&_[data-component='tool-trigger']>span:first-child>svg]:!size-4",
         "[&_[data-component='tool-trigger']_span]:!text-sm",
         "[&_[data-component='tool-trigger']_span]:!leading-[1.5]",
-        "[&_[data-slot='favicon-avatar']]:!size-4",
-        "[&_[data-slot='favicon-avatar']_svg]:!size-2.5",
-        "[&_[data-component='web-source-list']]:!pl-0",
-        "[&_[data-component='web-source-row']]:!pl-0",
+        "[&_[data-component='tool-trigger']_[data-slot='favicon-avatar']]:!size-4",
+        "[&_[data-component='tool-trigger']_[data-slot='favicon-avatar']_svg]:!size-2.5",
       )}
     >
       <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />

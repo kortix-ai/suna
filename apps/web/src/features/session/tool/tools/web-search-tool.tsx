@@ -9,61 +9,52 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import {
   parseWebSearchOutput,
   type WebSearchQueryResult,
 } from '@/features/session/tool/shared/web-helpers';
 
-const VISIBLE_SOURCES = 8;
-
-/** Every source, flat. Multi-query searches get a muted one-line query label
- *  between segments — a caption, not a control. No accordions. */
+/**
+ * Every source, flat, inside one bordered card.
+ *
+ * The card is the point: a run of sources reads as a single object the search
+ * returned, not as loose rows leaking into the step list around it. It borrows
+ * the popover surface because that is what this is — a panel of results
+ * hanging off the row above — even though it is rendered inline rather than
+ * floated, so expanding never moves the reader out of the conversation.
+ *
+ * Elevation is the hairline alone. The tool-view grammar forbids shadows
+ * (asserted in conformance.test.ts), and `--popover` already lifts off
+ * `--background` in dark mode; in light both are pure white, so the border is
+ * doing exactly the work it does in the reference.
+ *
+ * Long lists scroll inside the card (`max-h` + overflow). Multi-query searches
+ * get a muted one-line query caption between segments — a caption, not a
+ * control. No accordions, no "show more" button.
+ */
 function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[] }) {
-  const [showAll, setShowAll] = useState(false);
-  const total = queryResults.reduce((n, q) => n + q.sources.length, 0);
-  const hidden = Math.max(0, total - VISIBLE_SOURCES);
-
-  let budget = showAll ? Number.POSITIVE_INFINITY : VISIBLE_SOURCES;
-
   return (
-    <div
-      data-scrollable
-      data-component="web-source-list"
-      className="max-h-[400px] space-y-0.5 overflow-auto p-1"
-    >
-      {queryResults.map((qr, qi) => {
-        if (budget <= 0) return null;
-        const take = qr.sources.slice(0, budget);
-        budget -= take.length;
-        return (
-          <div key={qi}>
-            {queryResults.length > 1 && take.length > 0 && (
-              <div className="text-muted-foreground/70 flex items-center gap-1.5 px-2 pt-1.5 pb-0.5 text-xs">
-                <Search className="size-3 shrink-0" />
-                <span className="truncate">{qr.query}</span>
-              </div>
-            )}
-            {take.map((src) => (
-              <WebSourceRow key={src.url} url={src.url} title={src.title || src.url} />
-            ))}
-          </div>
-        );
-      })}
-      {hidden > 0 && !showAll && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center px-2 py-1.5 text-left text-xs transition-colors"
-        >
-          {hidden} more {hidden === 1 ? 'source' : 'sources'}
-        </button>
-      )}
-    </div>
+    <ToolResultCard>
+      {queryResults.map((qr, qi) => (
+        <div key={qi}>
+          {queryResults.length > 1 && qr.sources.length > 0 && (
+            <div className="text-muted-foreground/70 flex items-center gap-2 px-2 pt-2 pb-1 text-xs">
+              <Search className="size-3 shrink-0" />
+              <span className="truncate">{qr.query}</span>
+            </div>
+          )}
+          {qr.sources.map((src) => (
+            <WebSourceRow key={src.url} url={src.url} title={src.title || src.url} />
+          ))}
+        </div>
+      ))}
+    </ToolResultCard>
   );
 }
 
@@ -118,17 +109,19 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
       forceOpen={forceOpen}
       locked={locked}
     >
-      {isError ? (
-        <ToolOutputFallback output={output} toolName="web_search" />
-      ) : queryResults.length > 0 ? (
-        <FlatSourceList queryResults={queryResults} />
-      ) : output ? (
-        <ToolOutputFallback
-          output={output}
-          isStreaming={status === 'running'}
-          toolName="web_search"
-        />
-      ) : null}
+      <>
+        {isError ? (
+          <ToolOutputFallback output={output} toolName="web_search" />
+        ) : queryResults.length > 0 ? (
+          <FlatSourceList queryResults={queryResults} />
+        ) : output ? (
+          <ToolOutputFallback
+            output={output}
+            isStreaming={status === 'running'}
+            toolName="web_search"
+          />
+        ) : null}
+      </>
     </BasicTool>
   );
 }
