@@ -19,13 +19,15 @@ import {
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { AgentCreateModal } from '@/features/workspace/customize/sections/view/agent-create-modal';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
+  getProjectDetail,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
@@ -49,87 +51,132 @@ import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
+const AGENT_CREATE_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+  PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+] as const;
+
 export function AgentsView({ projectId }: { projectId: string }) {
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
+  const caps = useProjectCans(projectId, AGENT_CREATE_ACTIONS);
+  const canWrite = caps[PROJECT_ACTIONS.PROJECT_AGENT_WRITE]?.allowed === true;
+  const canPush = caps[PROJECT_ACTIONS.PROJECT_GITOPS_PUSH]?.allowed === true;
+  const canCreate = canWrite && canPush;
+  const detailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 10_000,
+  });
+  const skillOptions = useMemo(
+    () => toArray(detailQuery.data?.config?.skills).map((s) => ({ id: s.name, label: s.name })),
+    [detailQuery.data?.config?.skills],
+  );
+  const missingCreatePermissionReason = !canWrite
+    ? 'You need project.agent.write to create agents.'
+    : !canPush
+      ? 'You need project.gitops.push to open the change request.'
+      : null;
+  const [createOpen, setCreateOpen] = useState(false);
+
   return (
-    <ConfigEntityView<Agent>
-      projectId={projectId}
-      kind="agent"
-      noun="agent"
-      layout="split"
-      canWrite={canWrite}
-      title="Agents"
-      searchPlaceholder="Search agents"
-      emptyIcon={Bot}
-      emptyTitle="No agents yet"
-      emptyDescription="Create an agent to customize how sessions run."
-      emptyDocsHref="https://opencode.ai/docs/agents/"
-      emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
-      select={(config) => config.agents}
-      renderContext={(config) => (
-        <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
-      )}
-      renderTriggerLabel={(agent) => agent.name}
-      className="p-4 lg:py-0"
-      renderRowTrailing={(agent, config) => (
-        <>
-          {agent.mode ? (
-            <Badge variant="muted" size="xs">
-              {formatMode(agent.mode)}
-            </Badge>
-          ) : null}
-          {config.open_code_default_agent === agent.name ? (
-            <StarSolid weight="fill" className="text-kortix-orange size-4 shrink-0 fill-current" />
-          ) : null}
-        </>
-      )}
-      renderDetailTitle={(agent) => agent.name}
-      renderDetailMeta={(agent, config) => (
-        <>
-          {agent.mode ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
-              {formatMode(agent.mode)}
-            </Badge>
-          ) : null}
-          {agent.source ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
-              {agent.source === 'opencode'
-                ? 'OpenCode'
-                : detectManifestVersion(config.manifest_raw) === 2
-                  ? 'kortix.yaml'
-                  : 'kortix.toml'}
-            </Badge>
-          ) : null}
-          {config.open_code_default_agent === agent.name ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
-              <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
-              Default
-            </Badge>
-          ) : null}
-          {agent.enabled === false ? (
-            <Badge variant="muted" size="sm">
-              Disabled
-            </Badge>
-          ) : null}
-        </>
-      )}
-      renderDetailExtra={(agent, config) => (
-        <div className="space-y-3">
-          <AgentAssignments projectId={projectId} agentName={agent.name} />
-          <AgentConfigEditor
-            projectId={projectId}
-            agent={agent}
-            skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
-            fallback={
-              <>
-                <AgentModel projectId={projectId} agentName={agent.name} />
-                <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
-              </>
-            }
-          />
-        </div>
-      )}
-    />
+    <>
+      <ConfigEntityView<Agent>
+        projectId={projectId}
+        kind="agent"
+        noun="agent"
+        layout="split"
+        canWrite={canWrite}
+        onCreate={() => setCreateOpen(true)}
+        title="Agents"
+        searchPlaceholder="Search agents"
+        emptyIcon={Bot}
+        emptyTitle="No agents yet"
+        emptyDescription="Create an agent to customize how sessions run."
+        emptyDocsHref="https://opencode.ai/docs/agents/"
+        emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
+        select={(config) => config.agents}
+        renderContext={(config) => (
+          <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
+        )}
+        renderTriggerLabel={(agent) => agent.name}
+        className="p-4 lg:py-0"
+        renderRowTrailing={(agent, config) => (
+          <>
+            {agent.mode ? (
+              <Badge variant="muted" size="xs">
+                {formatMode(agent.mode)}
+              </Badge>
+            ) : null}
+            {config.open_code_default_agent === agent.name ? (
+              <StarSolid
+                weight="fill"
+                className="text-kortix-orange size-4 shrink-0 fill-current"
+              />
+            ) : null}
+          </>
+        )}
+        renderDetailTitle={(agent) => agent.name}
+        renderDetailMeta={(agent, config) => (
+          <>
+            {agent.mode ? (
+              <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
+                {formatMode(agent.mode)}
+              </Badge>
+            ) : null}
+            {agent.source ? (
+              <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
+                {agent.source === 'opencode'
+                  ? 'OpenCode'
+                  : detectManifestVersion(config.manifest_raw) === 2
+                    ? 'kortix.yaml'
+                    : 'kortix.toml'}
+              </Badge>
+            ) : null}
+            {config.open_code_default_agent === agent.name ? (
+              <Badge
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground gap-1 font-medium"
+              >
+                <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
+                Default
+              </Badge>
+            ) : null}
+            {agent.enabled === false ? (
+              <Badge variant="muted" size="sm">
+                Disabled
+              </Badge>
+            ) : null}
+          </>
+        )}
+        renderDetailExtra={(agent, config) => (
+          <div className="space-y-3">
+            <AgentAssignments projectId={projectId} agentName={agent.name} />
+            <AgentConfigEditor
+              projectId={projectId}
+              agent={agent}
+              skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
+              canRepair={canCreate}
+              missingRepairPermissionReason={missingCreatePermissionReason}
+              fallback={
+                <>
+                  <AgentModel projectId={projectId} agentName={agent.name} />
+                  <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+                </>
+              }
+            />
+          </div>
+        )}
+      />
+      <AgentCreateModal
+        projectId={projectId}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        skillsOptions={skillOptions}
+        canPreview={canWrite}
+        canCreate={canCreate}
+        missingPermissionReason={missingCreatePermissionReason}
+      />
+    </>
   );
 }
 

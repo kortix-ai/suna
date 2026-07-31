@@ -39,23 +39,19 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
-  listConnectors,
-  listProjectSecrets,
-  listProjectSandboxTemplates,
-  type RuntimeAgentConfig,
   type ProjectConfigSummary,
+  type RuntimeAgentConfig,
 } from '@kortix/sdk';
-import { RobotIcon as Bot, CpuIcon as Cpu, StackIcon as Layers } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { useAgentConfig, useAgentConfigMutations } from '@kortix/sdk/react';
+import { RobotIcon as Bot } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
-import { LayerHeader, SectionHeader } from './agent-editor-primitives';
-import { KortixLayerFields } from './kortix-layer-fields';
-import { RuntimeLayerFields } from './runtime-layer-fields';
+import { AgentConfigFormFields, useAgentConfigFormOptions } from './agent-config-form-fields';
+import { SectionHeader } from './agent-editor-primitives';
+import { AgentMissingBehavior } from './agent-missing-behavior';
 
 export {
   AGENT_MODE_HELP,
@@ -95,47 +91,11 @@ function AgentEditorModal({
     () => JSON.stringify(draft) !== JSON.stringify(baseline),
     [draft, baseline],
   );
-  const update = useUpdateAgentConfig(projectId, agentName);
-
-  const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
-    queryFn: () => listProjectSecrets(projectId),
-    staleTime: 30_000,
-  });
-  const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
-    queryFn: () => listConnectors(projectId),
-    staleTime: 30_000,
-  });
-  const sandboxesQuery = useQuery({
-    queryKey: ['project-sandbox-templates', projectId],
-    queryFn: () => listProjectSandboxTemplates(projectId),
-    staleTime: 30_000,
-  });
-  const secretOptions = useMemo(
-    () =>
-      [...new Set((secretsQuery.data?.items ?? []).map((s) => s.identifier))]
-        .sort()
-        .map((identifier) => ({ id: identifier, label: identifier })),
-    [secretsQuery.data],
+  const { update } = useAgentConfigMutations(projectId);
+  const { secretOptions, connectorOptions, sandboxOptions } = useAgentConfigFormOptions(
+    projectId,
+    initial.sandbox,
   );
-  const connectorOptions = useMemo(
-    () =>
-      (connectorsQuery.data?.connectors ?? [])
-        .map((c) => ({ id: c.slug, label: c.name || c.slug }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [connectorsQuery.data],
-  );
-  const sandboxOptions = useMemo(() => {
-    const options = new Map<string, string>([['default', 'Platform default']]);
-    for (const template of sandboxesQuery.data?.items ?? []) {
-      options.set(template.slug, template.is_default ? 'Platform default' : template.name);
-    }
-    if (initial.sandbox && !options.has(initial.sandbox)) {
-      options.set(initial.sandbox, initial.sandbox);
-    }
-    return [...options].map(([id, label]) => ({ id, label }));
-  }, [initial.sandbox, sandboxesQuery.data]);
 
   // No governance field is a plain string anymore (that was `description`/
   // `model`, both moved to the OpenCode layer) — clearing is undefined-only.
@@ -162,7 +122,7 @@ function AgentEditorModal({
 
   const onSave = async () => {
     try {
-      await update.mutateAsync(draft);
+      await update.mutateAsync({ agentName, block: draft });
       successToast(`${agentName} configuration saved`);
       onOpenChange(false);
     } catch (e) {
@@ -182,34 +142,16 @@ function AgentEditorModal({
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[70vh] space-y-8 overflow-y-auto">
-          {/* ─── KORTIX LAYER — identity + governance, runtime-agnostic ─── */}
-          <div className="space-y-6">
-            <LayerHeader
-              icon={Layers}
-              label="Kortix"
-              tone="kortix"
-              description="Identity, model, and platform-enforced governance. Works the same no matter what runtime executes this agent."
-            />
-            <KortixLayerFields
-              draft={draft}
-              set={set}
-              skillsOptions={skillsOptions}
-              connectorOptions={connectorOptions}
-              secretOptions={secretOptions}
-              sandboxOptions={sandboxOptions}
-            />
-          </div>
-
-          {/* ─── OPENCODE LAYER — nested, runtime-specific behavior ─── */}
-          <div className="space-y-6">
-            <LayerHeader
-              icon={Cpu}
-              label="OpenCode"
-              tone="outline"
-              description="Behavior this agent's runtime executes — mode, sampling, permission tree. Namespaced so a future runtime (Codex/Claude) gets its own block here."
-            />
-            <RuntimeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
-          </div>
+          <AgentConfigFormFields
+            agentName={agentName}
+            draft={draft}
+            set={set}
+            setOc={setOc}
+            skillsOptions={skillsOptions}
+            connectorOptions={connectorOptions}
+            secretOptions={secretOptions}
+            sandboxOptions={sandboxOptions}
+          />
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <div className="flex items-center gap-2.5">
@@ -259,6 +201,8 @@ export function AgentConfigEditor({
   agent,
   skillsOptions,
   fallback,
+  canRepair,
+  missingRepairPermissionReason,
 }: {
   projectId: string;
   agent: Agent;
@@ -266,6 +210,9 @@ export function AgentConfigEditor({
   skillsOptions: { id: string; label: string }[];
   /** Rendered for a v1 project (the legacy model + scope cards) — we degrade. */
   fallback: React.ReactNode;
+  /** True when the viewer can open the git-backed behavior repair CR. */
+  canRepair: boolean;
+  missingRepairPermissionReason?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const configQuery = useAgentConfig(projectId, agent.name);
@@ -299,6 +246,7 @@ export function AgentConfigEditor({
   }
 
   const block = data.block ?? {};
+  const behaviorState = data.behavior_file_state ?? 'exists';
   const summaries: { key: string; label: string; grant: AgentGrantSetV2 | undefined }[] = [
     { key: 'skills', label: 'Skills', grant: block.skills },
     { key: 'connectors', label: 'Connectors', grant: block.connectors },
@@ -307,80 +255,107 @@ export function AgentConfigEditor({
   ];
 
   return (
-    <div className="border-border/60 bg-muted/20 space-y-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <SectionHeader icon={Bot} title="Configuration" />
-        <Badge variant="muted" size="xs" className="font-mono">
-          yaml + .md
-        </Badge>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {block.opencode?.mode ? (
-          <Badge variant="outline" size="xs" className="capitalize">
-            {block.opencode.mode}
-          </Badge>
-        ) : null}
-        {block.opencode?.model ? (
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.opencode.model}
-          </Badge>
-        ) : null}
-        {block.opencode?.temperature !== undefined ? (
-          <Badge variant="outline" size="xs">
-            temp {block.opencode.temperature}
-          </Badge>
-        ) : null}
-        {block.opencode?.hidden ? (
-          <Badge variant="muted" size="xs">
-            hidden
-          </Badge>
-        ) : null}
-        {block.enabled === false ? (
-          <Badge variant="muted" size="xs">
-            disabled
-          </Badge>
-        ) : null}
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-            Environment
-          </span>
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.sandbox ?? 'Project default'}
-          </Badge>
-        </div>
-        {summaries.map((s) => {
-          const sum = grantSummary(s.grant);
-          return (
-            <div key={s.key} className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-                {s.label}
-              </span>
-              <Badge variant={sum.tone} size="xs">
-                {sum.label}
-              </Badge>
-            </div>
-          );
-        })}
-      </div>
-
-      <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
-        Edit configuration
-      </Button>
-
-      {open ? (
-        <AgentEditorModal
+    <div className="space-y-3">
+      {behaviorState === 'missing' ? (
+        <AgentMissingBehavior
           projectId={projectId}
           agentName={agent.name}
-          initial={block}
-          skillsOptions={skillsOptions}
-          open={open}
-          onOpenChange={setOpen}
+          block={block}
+          behaviorPath={data.behavior_path}
+          sourcePath={agent.path}
+          canRepair={canRepair}
+          missingPermissionReason={missingRepairPermissionReason}
         />
       ) : null}
+      {behaviorState === 'read_error' ? (
+        <InfoBanner
+          tone="destructive"
+          title="Behavior file read failed"
+          action={
+            <Button variant="outline" size="sm" onClick={() => configQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        >
+          {data.behavior_file_error ?? 'The backend could not read this agent behavior file.'}
+        </InfoBanner>
+      ) : null}
+
+      <div className="border-border/60 bg-muted/20 space-y-3 rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-2">
+          <SectionHeader icon={Bot} title="Configuration" />
+          <Badge variant="muted" size="xs" className="font-mono">
+            yaml + .md
+          </Badge>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {block.opencode?.mode ? (
+            <Badge variant="outline" size="xs" className="capitalize">
+              {block.opencode.mode}
+            </Badge>
+          ) : null}
+          {block.opencode?.model ? (
+            <Badge variant="outline" size="xs" className="font-mono">
+              {block.opencode.model}
+            </Badge>
+          ) : null}
+          {block.opencode?.temperature !== undefined ? (
+            <Badge variant="outline" size="xs">
+              temp {block.opencode.temperature}
+            </Badge>
+          ) : null}
+          {block.opencode?.hidden ? (
+            <Badge variant="muted" size="xs">
+              hidden
+            </Badge>
+          ) : null}
+          {block.enabled === false ? (
+            <Badge variant="muted" size="xs">
+              disabled
+            </Badge>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
+              Environment
+            </span>
+            <Badge variant="outline" size="xs" className="font-mono">
+              {block.sandbox ?? 'Project default'}
+            </Badge>
+          </div>
+          {summaries.map((s) => {
+            const sum = grantSummary(s.grant);
+            return (
+              <div key={s.key} className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
+                  {s.label}
+                </span>
+                <Badge variant={sum.tone} size="xs">
+                  {sum.label}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+
+        <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
+          Edit configuration
+        </Button>
+
+        {open ? (
+          <AgentEditorModal
+            projectId={projectId}
+            agentName={agent.name}
+            initial={block}
+            skillsOptions={skillsOptions}
+            open={open}
+            onOpenChange={setOpen}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

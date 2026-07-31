@@ -30,7 +30,7 @@ describe('useAgentConfig', () => {
 });
 
 describe('useAgentConfigMutations', () => {
-  test('invalidates config, project config, visible agents, and change requests after writes', () => {
+  test('invalidates config, project config, project detail, visible agents, and change requests after writes', () => {
     const result = useAgentConfigMutations('proj-1') as any;
 
     result.create.onSuccess({ agent_name: 'reliance-cto' });
@@ -39,10 +39,12 @@ describe('useAgentConfigMutations', () => {
     expect(invalidated).toEqual([
       ['project-agent-config', 'proj-1', 'reliance-cto'],
       ['project-config', 'proj-1'],
+      ['project-detail', 'proj-1'],
       ['project-detail', 'proj-1', 'agents'],
       ['project-change-requests', 'proj-1'],
       ['project-agent-config', 'proj-1', 'support'],
       ['project-config', 'proj-1'],
+      ['project-detail', 'proj-1'],
       ['project-detail', 'proj-1', 'agents'],
       ['project-change-requests', 'proj-1'],
     ]);

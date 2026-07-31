@@ -4261,9 +4261,21 @@ Required sequence:
 - `pnpm --filter @kortix/sdk test`
 - `pnpm --filter @kortix/sdk smoke:install`
 
-**Status:** IN PROGRESS.
+RED:
 
-**SDK package shippable to production: NOT YET.**
+- `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm --filter @kortix/sdk test -- src/core/rest/projects-client/agent-config.test.ts src/core/client/kortix.test.ts src/react/use-agent-config.test.ts`: failed with missing `previewAgentConfig`, missing `./use-agent-config`, and missing `project(id).agents`.
+- Cache invalidation regression RED after web integration: `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm --filter @kortix/sdk test -- src/react/use-agent-config.test.ts` failed because writes did not invalidate `['project-detail', projectId]`.
+
+GREEN:
+
+- `PATH=/opt/homebrew/opt/node@22/bin:$PATH bun test --isolate packages/sdk/src/react/use-agent-config.test.ts`: `2 pass`, `0 fail`, `6 expect() calls`.
+- `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm --filter @kortix/sdk smoke:install`: `OK: @kortix/sdk imports and constructs from a packed tarball`; `install smoke test passed`.
+- `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm --filter @kortix/sdk test`: `1354 pass`, `0 fail`, `5926 expect() calls`, `Ran 1354 tests across 117 files`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ---
 

@@ -9,9 +9,7 @@ import {
   updateAgentConfig,
   updateProjectDefaultAgent,
   type CreateAgentConfigInput,
-  type CreateAgentConfigResponse,
   type RepairAgentBehaviorInput,
-  type RepairAgentBehaviorResponse,
 } from '../core/rest/projects-client';
 import { changeRequestsKey } from './use-change-requests';
 
@@ -37,6 +35,7 @@ export function useAgentConfigMutations(projectId: string | null | undefined) {
   const invalidateAgentChange = (agentName: string) => {
     queryClient.invalidateQueries({ queryKey: agentConfigKey(projectId, agentName) });
     queryClient.invalidateQueries({ queryKey: ['project-config', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
     queryClient.invalidateQueries({ queryKey: ['project-detail', projectId, 'agents'] });
     queryClient.invalidateQueries({ queryKey: changeRequestsKey(projectId) });
   };
@@ -48,8 +47,7 @@ export function useAgentConfigMutations(projectId: string | null | undefined) {
 
   const create = useMutation({
     mutationFn: (input: CreateAgentConfigInput) => createAgentConfig(projectId as string, input),
-    onSuccess: (response: Pick<CreateAgentConfigResponse, 'agent_name'>) =>
-      invalidateAgentChange(response.agent_name),
+    onSuccess: (response) => invalidateAgentChange(response.agent_name),
   });
 
   const update = useMutation({
@@ -63,8 +61,7 @@ export function useAgentConfigMutations(projectId: string | null | undefined) {
   const repairBehavior = useMutation({
     mutationFn: (args: { agentName: string; input: RepairAgentBehaviorInput }) =>
       repairAgentBehavior(projectId as string, args.agentName, args.input),
-    onSuccess: (response: Pick<RepairAgentBehaviorResponse, 'agent_name'>) =>
-      invalidateAgentChange(response.agent_name),
+    onSuccess: (response) => invalidateAgentChange(response.agent_name),
   });
 
   const setDefault = useMutation({

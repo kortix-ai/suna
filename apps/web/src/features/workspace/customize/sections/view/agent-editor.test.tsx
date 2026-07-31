@@ -1,8 +1,8 @@
+import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   KORTIX_CLI_CATALOG,
@@ -14,16 +14,24 @@ import {
   grantSummary,
 } from './agent-editor';
 
-const editorSource = readFileSync(fileURLToPath(new URL('./agent-editor.tsx', import.meta.url)), 'utf8');
+const editorSource = readFileSync(
+  fileURLToPath(new URL('./agent-editor.tsx', import.meta.url)),
+  'utf8',
+);
 const kortixFieldsSource = readFileSync(
   fileURLToPath(new URL('./kortix-layer-fields.tsx', import.meta.url)),
+  'utf8',
+);
+const formSource = readFileSync(
+  fileURLToPath(new URL('./agent-config-form-fields.tsx', import.meta.url)),
   'utf8',
 );
 
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
-    expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
-    expect(editorSource).toContain('options.set(initial.sandbox, initial.sandbox)');
+    expect(editorSource).toContain('useAgentConfigFormOptions');
+    expect(formSource).toContain('listProjectSandboxTemplates(projectId)');
+    expect(formSource).toContain('options.set(initialSandbox, initialSandbox)');
     expect(kortixFieldsSource).toContain('label="Environment"');
     expect(kortixFieldsSource).toContain("set('sandbox'");
     expect(kortixFieldsSource).toContain('Project default');
