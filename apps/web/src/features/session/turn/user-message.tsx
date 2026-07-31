@@ -46,6 +46,7 @@ import {
   stripSystemPtyText,
   SystemNotificationCard,
 } from '../message-parsing';
+import { PlanCard } from './plan-card';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -372,11 +373,15 @@ export function UserMessage({
   agentNames,
   commandInfo,
   commands,
+  sessionId,
+  ownsPlan,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
   commandInfo?: { name: string; args?: string };
   commands?: Command[];
+  sessionId: string;
+  ownsPlan: boolean;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -736,148 +741,156 @@ export function UserMessage({
 
   return (
     <div className="flex flex-col gap-1">
-      <div
-        className={cn(
-          'bg-card/50 border-border/60 flex w-full flex-col overflow-hidden rounded-md border px-4 py-3',
-          canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
-        )}
-        role={canExpand ? 'button' : undefined}
-        tabIndex={canExpand ? 0 : undefined}
-        aria-expanded={canExpand ? expanded : undefined}
-        onClick={() => canExpand && setExpanded(!expanded)}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (!canExpand) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setExpanded(!expanded);
-          }
-        }}
-      >
-        {/* Attachment thumbnails (images/PDFs) */}
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {attachments.map((file) => (
-              <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
-                {file.mime?.startsWith('image/') && file.url ? (
-                  <SandboxImage
-                    src={file.url}
-                    alt={file.filename ?? 'Attachment'}
-                    className="max-h-32 max-w-48 object-cover"
-                    preview
-                  />
-                ) : file.mime === 'application/pdf' ? (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <FileText className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'PDF'}</span>
-                  </div>
+      <div className="bg-accent relative overflow-hidden rounded-lg border">
+        <div
+          className={cn(
+            'bg-accent flex w-full flex-col overflow-hidden rounded-[calc(var(--radius)-0.6px)] border px-4 py-3',
+            canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
+            ownsPlan && 'rounded-b-lg border-b-[1.5px]',
+          )}
+          role={canExpand ? 'button' : undefined}
+          tabIndex={canExpand ? 0 : undefined}
+          aria-expanded={canExpand ? expanded : undefined}
+          onClick={() => canExpand && setExpanded(!expanded)}
+          onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (!canExpand) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setExpanded(!expanded);
+            }
+          }}
+        >
+          {/* Attachment thumbnails (images/PDFs) */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-3 pb-0">
+              {attachments.map((file) => (
+                <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
+                  {file.mime?.startsWith('image/') && file.url ? (
+                    <SandboxImage
+                      src={file.url}
+                      alt={file.filename ?? 'Attachment'}
+                      className="max-h-32 max-w-48 object-cover"
+                      preview
+                    />
+                  ) : file.mime === 'application/pdf' ? (
+                    <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
+                      <FileText className="text-muted-foreground size-4" />
+                      <span className="text-muted-foreground text-xs">
+                        {file.filename || 'PDF'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
+                      <ImageIcon className="text-muted-foreground size-4" />
+                      <span className="text-muted-foreground text-xs">
+                        {file.filename || 'File'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reply context banner */}
+          {replyContext && (
+            <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+              <Reply className="text-primary/60 size-3 flex-shrink-0" />
+              <span className="text-muted-foreground truncate text-xs">
+                {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
+              </span>
+            </div>
+          )}
+
+          {/* Text content */}
+          {text && (
+            <div className="relative">
+              <div
+                ref={textRef}
+                className={cn(
+                  'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
+                  !expanded && 'max-h-[200px] overflow-hidden',
+                )}
+              >
+                {segments.length > 0 ? (
+                  segments.map((seg, i) => {
+                    const mentionClass =
+                      'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
+                    return seg.type === 'file' ? (
+                      <button
+                        key={i}
+                        type="button"
+                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openFileInComputer(seg.text.replace(/^@/, ''));
+                        }}
+                      >
+                        {seg.text}
+                      </button>
+                    ) : seg.type === 'session' ? (
+                      <button
+                        key={i}
+                        type="button"
+                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const raw = seg.text.replace(/^@/, '');
+                          // Direct session ID (ses_...) — navigate without title lookup
+                          if (raw.startsWith('ses_')) {
+                            openTabAndNavigate({
+                              id: raw,
+                              title: 'Session',
+                              type: 'session',
+                              href: `/sessions/${raw}`,
+                            });
+                            return;
+                          }
+                          const ref = sessionRefs.find((s) => s.title === raw);
+                          if (ref) {
+                            openTabAndNavigate({
+                              id: ref.id,
+                              title: ref.title || 'Session',
+                              type: 'session',
+                              href: `/sessions/${ref.id}`,
+                            });
+                          }
+                        }}
+                      >
+                        {seg.text}
+                      </button>
+                    ) : (
+                      <span
+                        key={i}
+                        className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
+                      >
+                        {seg.text}
+                      </span>
+                    );
+                  })
                 ) : (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <ImageIcon className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'File'}</span>
-                  </div>
+                  <span>{text}</span>
                 )}
               </div>
-            ))}
-          </div>
-        )}
 
-        {/* Reply context banner */}
-        {replyContext && (
-          <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-            <Reply className="text-primary/60 size-3 flex-shrink-0" />
-            <span className="text-muted-foreground truncate text-xs">
-              {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
-            </span>
-          </div>
-        )}
-
-        {/* Text content */}
-        {text && (
-          <div className="relative px-4 py-3">
-            <div
-              ref={textRef}
-              className={cn(
-                'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
-                !expanded && 'max-h-[200px] overflow-hidden',
+              {/* Gradient fade overlay for collapsed long messages */}
+              {canExpand && !expanded && (
+                <div className="from-card/50 pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
               )}
-            >
-              {segments.length > 0 ? (
-                segments.map((seg, i) => {
-                  const mentionClass =
-                    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-                  return seg.type === 'file' ? (
-                    <button
-                      key={i}
-                      type="button"
-                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFileInComputer(seg.text.replace(/^@/, ''));
-                      }}
-                    >
-                      {seg.text}
-                    </button>
-                  ) : seg.type === 'session' ? (
-                    <button
-                      key={i}
-                      type="button"
-                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const raw = seg.text.replace(/^@/, '');
-                        // Direct session ID (ses_...) — navigate without title lookup
-                        if (raw.startsWith('ses_')) {
-                          openTabAndNavigate({
-                            id: raw,
-                            title: 'Session',
-                            type: 'session',
-                            href: `/sessions/${raw}`,
-                          });
-                          return;
-                        }
-                        const ref = sessionRefs.find((s) => s.title === raw);
-                        if (ref) {
-                          openTabAndNavigate({
-                            id: ref.id,
-                            title: ref.title || 'Session',
-                            type: 'session',
-                            href: `/sessions/${ref.id}`,
-                          });
-                        }
-                      }}
-                    >
-                      {seg.text}
-                    </button>
-                  ) : (
-                    <span
-                      key={i}
-                      className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
-                    >
-                      {seg.text}
-                    </span>
-                  );
-                })
-              ) : (
-                <span>{text}</span>
+
+              {/* Expand/collapse indicator */}
+              {canExpand && (
+                <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
+                  <ChevronDown
+                    className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+                  />
+                </div>
               )}
             </div>
-
-            {/* Gradient fade overlay for collapsed long messages */}
-            {canExpand && !expanded && (
-              <div className="from-card/50 pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
-            )}
-
-            {/* Expand/collapse indicator */}
-            {canExpand && (
-              <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
-                />
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
+        {ownsPlan && <PlanCard sessionId={sessionId} />}
       </div>
       {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
 

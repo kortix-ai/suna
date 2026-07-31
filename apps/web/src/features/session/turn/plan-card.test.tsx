@@ -1,5 +1,35 @@
 import { describe, expect, test } from 'bun:test';
-import { planSummary } from './plan-card';
+import { planPieState, planSummary } from './plan-card';
+
+describe('planPieState', () => {
+  test('the wedge is the completed share of a full turn', () => {
+    expect(planPieState(3, 4, false).sweep).toBe(270); // the 75% cake
+    expect(planPieState(2, 5, true).sweep).toBe(144);
+    expect(planPieState(1, 4, false).sweep).toBe(90);
+  });
+
+  test('a finished plan sweeps the full circle and reports complete', () => {
+    expect(planPieState(4, 4, false)).toEqual({ sweep: 360, state: 'complete' });
+  });
+
+  test('complete wins over running — a plan cannot be both', () => {
+    expect(planPieState(4, 4, true).state).toBe('complete');
+  });
+
+  test('a running plan reports running', () => {
+    expect(planPieState(2, 5, true).state).toBe('running');
+  });
+
+  test('an untouched plan draws bare track', () => {
+    expect(planPieState(0, 5, false)).toEqual({ sweep: 0, state: 'idle' });
+  });
+
+  test('an empty plan does not divide by zero and is never "complete"', () => {
+    // 0 === 0 would read as complete without the `total > 0` guard.
+    expect(planPieState(0, 0, false)).toEqual({ sweep: 0, state: 'idle' });
+    expect(Number.isNaN(planPieState(0, 0, false).sweep)).toBe(false);
+  });
+});
 
 describe('planSummary', () => {
   test('counts completed todos and rounds the percentage', () => {

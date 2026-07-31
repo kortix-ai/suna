@@ -38,6 +38,7 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import { ActivityBurst } from './turn/activity-burst';
+import { planAnchorMessageId } from './turn/plan-anchor';
 import { PlanCard } from './turn/plan-card';
 import { segmentTurn } from './turn/segment-turn';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
@@ -766,6 +767,12 @@ function SessionTurn({
     () => isLastUserMessage(turn.userMessage.info.id, allMessages),
     [turn.userMessage.info.id, allMessages],
   );
+  // The plan belongs to the turn that WROTE it, not to whichever turn happens
+  // to be last — see turn/plan-anchor.ts.
+  const ownsPlan = useMemo(
+    () => planAnchorMessageId(allMessages) === turn.userMessage.info.id,
+    [turn.userMessage.info.id, allMessages],
+  );
   // A turn is "working" when:
   // 1. The session status says busy/retry (via getWorkingState), OR
   // 2. This is the last turn AND the parent component says isBusy (e.g. we
@@ -1348,15 +1355,16 @@ function SessionTurn({
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
+            sessionId={sessionId}
+            ownsPlan={ownsPlan}
           />
-          {/* Only the latest turn shows the plan — repeating it on every
-              historical turn is noise. PlanCard itself renders null when the
-              session has no todos, so this also covers "no plan yet". */}
-          {isLast && (
-            <div className="mt-2">
-              <PlanCard sessionId={sessionId} />
-            </div>
-          )}
+          {/* Only the turn that actually wrote the todos shows the plan.
+              Repeating it on every turn is noise, and pinning it to the LAST
+              turn made it migrate onto each new message the user sent — a
+              follow-up question would sprout the checklist it never created.
+              PlanCard itself renders null when the session has no todos, so
+              this also covers "no plan yet". */}
+     
           {userMessageText && (
             <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
               <Hint label="Edit from here" side="top" align="center">
