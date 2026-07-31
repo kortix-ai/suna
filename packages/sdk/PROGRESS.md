@@ -4216,6 +4216,28 @@ and deployed OpenCode REST verification.
 
 ---
 
+### 2026-07-31 — session `centralized-audit-log` claim
+
+Claimed the additive centralized audit-log contract.
+
+The SDK will expose account audit events with optional project, session, actor
+type, source, outcome, request, and correlation fields. Existing audit event
+fields and functions remain compatible.
+
+The account audit list and export inputs will accept project and session
+filters. The web host will consume this typed SDK contract.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-07-30 — session `opencode-rest-title-preview-reliability` claim
 
 Claimed the OpenCode REST session-title reconciliation regression reported on
@@ -4803,3 +4825,74 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 **Status:** IN PROGRESS.
 
 **SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-07-31 — session `centralized-audit-log` completion
+
+Completed the additive centralized audit-log contract.
+
+Scope:
+
+- Added typed project, session, actor type, source, outcome, request, trace, and
+  correlation fields to audit events.
+- Added the matching account audit list and export filters.
+- Derived request-event sources from authenticated server context. A caller
+  cannot override forensic attribution with a client header.
+- Kept all existing exports compatible. The package version remains `0.3.0`.
+- Kept request bodies, query values, prompts, credentials, and secrets out of
+  the centralized event envelope.
+
+RED:
+
+- The new SDK audit contract tests failed before the event fields and list
+  filters existed.
+- The executor privacy test failed while an access token remained in the result
+  summary. The redaction fix changed the value to `[redacted]`.
+
+GREEN:
+
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0
+
+pnpm --filter @kortix/sdk test
+→ 1355 pass, 2 skip, 0 fail, 5908 assertions, 117 files
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+
+pnpm --filter @kortix/db lint
+→ 115 migration files passed; Squawk reported 0 issues
+
+pnpm --filter @kortix/db typecheck
+→ exit 0
+
+pnpm --filter @kortix/db test
+→ 160 pass, 3 skip, 0 fail
+
+pnpm --filter kortix-api test
+→ 4873 pass, 57 skip, 0 fail, 19954 assertions, 480 files
+
+bun test apps/web/src/components/iam/audit-display-helpers.test.ts
+→ 39 pass, 0 fail
+
+cd tests && bun bin/ke2e.ts run --id AUD-FILTER --workers 1
+→ 1/1 passed, 0 failed
+```
+
+The local database migration status reported `No migrations to run! Up to date`.
+The local account audit page filtered one project and one session. The session
+query returned three linked events. The expanded request row showed one request
+ID, trace ID, correlation ID, project ID, session ID, HTTP `201`, and `790 ms`.
+The Agents quick filter returned only agent events. The Failures quick filter
+returned only failed events.
+
+The live local API filter returned one correlated CLI event for the exact
+project, human actor type, CLI source, and successful outcome. A linked human
+session event and agent action carried the same project and session identifiers.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**

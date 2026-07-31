@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import { runWithContext, setContextField } from '../lib/request-context';
 
 let auditRows: Array<Record<string, unknown>> = [];
 
@@ -28,55 +29,196 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditStateChangingRequest } = await import('../shared/audit');
+const { auditApiRequest } = await import('../shared/audit');
 
 describe('audit event middleware', () => {
   beforeEach(() => {
     auditRows = [];
   });
 
-  test('records successful state-changing /v1 requests with actor and account context', async () => {
+  test('records a successful API mutation with an authoritative source', async () => {
     const app = new Hono();
-    app.use('/v1/*', auditStateChangingRequest);
-    app.post('/v1/projects/:projectId/secrets', async (c) => {
+    app.use('/v1/*', auditApiRequest);
+    app.post('/v1/projects/:projectId/sessions/:sessionId/messages', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      (c as any).set('sessionId', c.req.param('sessionId'));
       return c.json({ ok: true });
     });
 
-    const res = await app.request('/v1/projects/project-1/secrets', {
+    const res = await app.request(
+      '/v1/projects/00000000-0000-4000-a000-000000000201/sessions/session-1/messages',
+      {
       method: 'POST',
-      headers: { 'User-Agent': 'audit-test' },
+      headers: { 'User-Agent': 'kortix-cli/dev', 'X-Kortix-Client': 'cli' },
       body: '{}',
-    });
+      },
+    );
 
     expect(res.status).toBe(200);
-    await Bun.sleep(0);
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       accountId: '00000000-0000-4000-a000-000000000101',
+      projectId: '00000000-0000-4000-a000-000000000201',
+      sessionId: 'session-1',
       actorUserId: '00000000-0000-4000-a000-000000000001',
-      action: 'POST /v1/projects/project-1/secrets',
-      resourceType: 'project',
-      resourceId: 'project-1',
-      userAgent: 'audit-test',
-      metadata: { status: 200 },
+      actorType: 'agent',
+      source: 'agent',
+      outcome: 'success',
+      httpStatus: 200,
+      action:
+        'POST /v1/projects/00000000-0000-4000-a000-000000000201/sessions/session-1/messages',
+      resourceType: 'project_session',
+      resourceId: 'session-1',
+      userAgent: 'kortix-cli/dev',
     });
+    expect(auditRows[0]?.durationMs).toBeNumber();
   });
 
-  test('does not record failed mutations', async () => {
+  test('records failed mutations with a failure outcome', async () => {
     const app = new Hono();
-    app.use('/v1/*', auditStateChangingRequest);
+    app.use('/v1/*', auditApiRequest);
     app.post('/v1/projects/:projectId/secrets', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'supabase');
       return c.json({ error: 'bad input' }, 400);
     });
 
     const res = await app.request('/v1/projects/project-1/secrets', { method: 'POST' });
 
     expect(res.status).toBe(400);
-    await Bun.sleep(0);
-    expect(auditRows).toHaveLength(0);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      actorType: 'human',
+      source: 'web',
+      outcome: 'failure',
+      httpStatus: 400,
+    });
+  });
+
+  test('records authenticated reads', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/accounts/:accountId/projects', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', c.req.param('accountId'));
+      (c as any).set('authType', 'supabase');
+      return c.json({ projects: [] });
+    });
+
+    const res = await app.request(
+      '/v1/accounts/00000000-0000-4000-a000-000000000101/projects',
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      action: 'GET /v1/accounts/00000000-0000-4000-a000-000000000101/projects',
+      outcome: 'success',
+      httpStatus: 200,
+    });
+  });
+
+  test('does not copy request bodies or query values into the central event', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.post('/v1/projects/:projectId/secrets', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'supabase');
+      return c.json({ ok: true });
+    });
+
+    const res = await app.request(
+      '/v1/projects/00000000-0000-4000-a000-000000000201/secrets?token=query-secret',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          secret: 'body-secret',
+          prompt: 'private prompt',
+          connector_args: { authorization: 'private credential' },
+        }),
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.metadata).toEqual({
+      method: 'POST',
+      path: '/v1/projects/00000000-0000-4000-a000-000000000201/secrets',
+    });
+    expect(JSON.stringify(auditRows[0])).not.toContain('query-secret');
+    expect(JSON.stringify(auditRows[0])).not.toContain('body-secret');
+    expect(JSON.stringify(auditRows[0])).not.toContain('private prompt');
+    expect(JSON.stringify(auditRows[0])).not.toContain('private credential');
+  });
+
+  test('records mounted project routes from the shared request context', async () => {
+    const app = new Hono();
+    app.use('/v1/*', async (c, next) => {
+      await runWithContext(c.req.method, c.req.path, next);
+    });
+    app.use('/v1/*', auditApiRequest);
+    app.post('/v1/projects/provision', (c) => {
+      setContextField('userId', '00000000-0000-4000-a000-000000000001');
+      setContextField('accountId', '00000000-0000-4000-a000-000000000101');
+      setContextField('projectId', '00000000-0000-4000-a000-000000000201');
+      return c.json({ ok: true }, 201);
+    });
+
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: {
+        'X-Kortix-Client': 'cli',
+        'X-Correlation-Id': 'project-create-1',
+      },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(201);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      accountId: '00000000-0000-4000-a000-000000000101',
+      projectId: '00000000-0000-4000-a000-000000000201',
+      actorUserId: '00000000-0000-4000-a000-000000000001',
+      actorType: 'human',
+      source: 'api',
+      outcome: 'success',
+      httpStatus: 201,
+      correlationId: 'project-create-1',
+    });
+  });
+
+  test('discards non-UUID request scope before the database write', async () => {
+    const app = new Hono();
+    app.use('/v1/*', async (c, next) => {
+      await runWithContext(c.req.method, c.req.path, async () => {
+        setContextField('userId', '00000000-0000-4000-a000-000000000001');
+        setContextField('accountId', '00000000-0000-4000-a000-000000000101');
+        setContextField('projectId', 'provision');
+        await next();
+      });
+    });
+    app.use('/v1/*', auditApiRequest);
+    app.post('/v1/projects/provision', (c) => c.json({ error: 'name is required' }, 400));
+
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'X-Correlation-Id': 'invalid-scope-1' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(400);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      accountId: '00000000-0000-4000-a000-000000000101',
+      projectId: null,
+      actorUserId: '00000000-0000-4000-a000-000000000001',
+      outcome: 'failure',
+      correlationId: 'invalid-scope-1',
+    });
   });
 });

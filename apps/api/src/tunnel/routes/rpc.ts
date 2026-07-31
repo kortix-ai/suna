@@ -57,7 +57,13 @@ export function createRpcRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      const outcome = await executeTunnelRpc({ tunnelId, accountId, method, params });
+      const outcome = await executeTunnelRpc({
+        tunnelId,
+        accountId,
+        actorUserId: c.get('userId') as string | undefined,
+        method,
+        params,
+      });
 
       if (outcome.ok) {
         return c.json({ result: outcome.result });

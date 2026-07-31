@@ -681,7 +681,7 @@ supplied scope field without restarting the session.
 `CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId` → `project.connector.write`; unknown bindingId → 404 before body validation; empty body on an existing binding → 400; non-member 403/404; ANON 401.
 `Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
 `Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
-`AUD-1` `GET /accounts/:id/audit` → 200; NONMEMBER → 403.
+`AUD-1` `GET /accounts/:id/audit` → 200 `{events,next_cursor}`. Each event exposes the centralized envelope: `project_id`, `session_id`, `actor_type`, `source`, `outcome`, `http_status`, `duration_ms`, `request_id`, `trace_id`, and `correlation_id`. The route filters by project, session, actor, actor type, source, outcome, request, correlation, resource, action, time, or free-text search. Request-event `source` is derived from authenticated server context; `X-Kortix-Client` cannot override it. A correlated project request can be reconstructed through one exact filtered query. NONMEMBER → 403.
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
 `AUD-3` `GET /accounts/:id/audit/webhooks` → 200; NONMEMBER → 403.
 `AUD-4` `POST`/`PATCH`/`DELETE /accounts/:id/audit/webhooks[/:id]` → 201 secret-once; bad url → 400; unknown → 404; delete 200.

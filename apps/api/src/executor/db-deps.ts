@@ -52,6 +52,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
+import { recordAuditEvent } from '../shared/audit';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
@@ -109,6 +110,7 @@ import { resolveShareSubject } from './share';
 import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
+import { executionAuditEvent } from './execution-audit';
 
 /** Which policy scope decided an action — surfaced so the editor can say so. */
 type EffectiveSource = EffectiveResolveResult['source'];
@@ -575,7 +577,13 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
           resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
         })
         .returning({ id: executorExecutions.executionId });
-      return row?.id ?? null;
+      if (!row?.id) return null;
+      try {
+        await recordAuditEvent(executionAuditEvent(rec, row.id));
+      } catch (error) {
+        console.error('[executor] Failed to record central audit event:', error);
+      }
+      return row.id;
     },
     waitForApprovalDecision: waitForApprovalDecision,
     isSessionToolApproved: isSessionToolApproved,
@@ -588,8 +596,24 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     // Computer connectors relay through the shared tunnel RPC core (permission
     // check → relay → audit). The machine is resolved from the `computer`
     // selector, scoped to this account.
-    executeComputerCall: ({ accountId, selector, method, args }) =>
-      executeComputerCall({ accountId, selector, method, args }),
+    executeComputerCall: ({
+      accountId,
+      projectId,
+      sessionId,
+      actorUserId,
+      selector,
+      method,
+      args,
+    }) =>
+      executeComputerCall({
+        accountId,
+        projectId,
+        sessionId,
+        actorUserId,
+        selector,
+        method,
+        args,
+      }),
     // Voice channel: `spawn_room` creates the LiveKit room + human join token
     // (the same logic voice/routes.ts used to inline before it went through
     // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented

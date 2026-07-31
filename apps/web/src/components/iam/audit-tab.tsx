@@ -1,34 +1,26 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import {
+  CaretRightIcon as CaretRight,
+  DownloadIcon as Download,
+  FunnelIcon as Funnel,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
-// Audit log tab on the account page. Reads from the global
-// kortix.audit_events table — combines the generic middleware-logged HTTP
-// audit rows with the detailed IAM mutation rows (iam.policy.*,
-// iam.group.*, iam.member.super_admin.*). Cursor-paginated, with a quick
-// filter chip set for the most common admin questions.
-
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
-import { getEnv } from '@/lib/env-config';
-import {
-  DownloadIcon as Download,
-  MagnifyingGlassIcon as Search,
-  XIcon as X,
-} from '@phosphor-icons/react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -46,29 +38,38 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
+import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
-import { downloadAccountAudit, listAccountMembers } from '@kortix/sdk';
+import {
+  downloadAccountAudit,
+  listAccountMembers,
+  listProjectSessions,
+  listProjectsForAccount,
+} from '@kortix/sdk';
 import {
   type HumanizedAuditAction,
   formatResourcePill,
   humanizeAuditAction,
 } from './audit-display-helpers';
 
-// ─── Filters ────────────────────────────────────────────────────────────────
+type ActorType = NonNullable<IamAuditEvent['actor_type']>;
+type Outcome = NonNullable<IamAuditEvent['outcome']>;
 
 interface AuditFilterState {
-  /** Action prefix sent to the API; '' = no action filter. */
   action: string;
-  /** actor user_id, or '' for everyone. */
   actor: string;
-  /** resource_type prefix, or '' for any. */
+  actorType: ActorType | '';
+  projectId: string;
+  sessionId: string;
+  source: string;
+  outcome: Outcome | '';
   resourceType: string;
-  /** Free-text search over action / resource_type / resource_id. */
   q: string;
-  /** ISO datetime, or '' for unbounded. */
   since: string;
   until: string;
 }
@@ -76,45 +77,63 @@ interface AuditFilterState {
 const EMPTY_FILTER: AuditFilterState = {
   action: '',
   actor: '',
+  actorType: '',
+  projectId: '',
+  sessionId: '',
+  source: '',
+  outcome: '',
   resourceType: '',
   q: '',
   since: '',
   until: '',
 };
 
-// Action-kind shortcuts. Clicking one presets `action` (and clears the
-// conflicting bits) — the structured filter row still lets you refine on
-// top. Kept as chips because they're the 80% "what kind of thing" question.
-interface QuickFilter {
+const QUICK_FILTERS: Array<{
   label: string;
-  action: string;
-}
-const QUICK_FILTERS: QuickFilter[] = [
-  { label: 'All events', action: '' },
-  { label: 'IAM only', action: 'iam.' },
-  { label: 'Group changes', action: 'iam.group' },
-  { label: 'Project access', action: 'iam.project.group' },
-  { label: 'Super-admin grants', action: 'iam.member.super_admin' },
-  { label: 'Sessions', action: 'POST /v1/projects' },
-  { label: 'Secrets', action: 'projects' },
+  action?: string;
+  actorType?: ActorType;
+  outcome?: Outcome;
+  resourceType?: string;
+}> = [
+  { label: 'All activity' },
+  { label: 'People', actorType: 'human' },
+  { label: 'Agents', actorType: 'agent' },
+  { label: 'Sessions', resourceType: 'project_session' },
+  { label: 'Connectors', action: 'executor.' },
+  { label: 'Computer', action: 'computer.' },
+  { label: 'Failures', outcome: 'failure' },
 ];
 
-// resource_type buckets the UI offers as a dropdown. '' = any. These are the
-// high-cardinality categories a reviewer actually slices by; the API accepts
-// any prefix so a caller could pass more.
-const RESOURCE_TYPES: { label: string; value: string }[] = [
+const RESOURCE_TYPES = [
   { label: 'Any resource', value: '' },
   { label: 'Project', value: 'project' },
   { label: 'Session', value: 'project_session' },
+  { label: 'Connector action', value: 'connector_action' },
+  { label: 'Connector approval', value: 'connector_approval' },
+  { label: 'Computer', value: 'computer_tunnel' },
   { label: 'Secret', value: 'project_secret' },
   { label: 'Group', value: 'group' },
   { label: 'Account', value: 'account' },
-  { label: 'Audit webhook', value: 'audit_webhook' },
   { label: 'Service account', value: 'service_account' },
   { label: 'Trigger', value: 'trigger' },
 ];
 
-// Leading kind-dot per action kind — kortix tokens only (no raw palette).
+const SOURCES = [
+  { label: 'Any source', value: '' },
+  { label: 'Web', value: 'web' },
+  { label: 'CLI', value: 'cli' },
+  { label: 'SDK', value: 'sdk' },
+  { label: 'Agent', value: 'agent' },
+  { label: 'Executor', value: 'executor' },
+  { label: 'Automation', value: 'automation' },
+  { label: 'Slack', value: 'slack' },
+  { label: 'Teams', value: 'teams' },
+  { label: 'Email', value: 'email' },
+  { label: 'Computer', value: 'computer' },
+  { label: 'API', value: 'api' },
+  { label: 'System', value: 'system' },
+];
+
 const KIND_DOT_TOKEN: Record<HumanizedAuditAction['kind'], string> = {
   create: 'bg-kortix-green',
   update: 'bg-kortix-yellow',
@@ -128,65 +147,119 @@ const KIND_DOT_TOKEN: Record<HumanizedAuditAction['kind'], string> = {
   other: 'bg-muted-foreground/30',
 };
 
-// Convert an ISO datetime (the API's filter format) to the value a
-// <input type="datetime-local"> expects (local time, no timezone suffix).
 function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  // datetime-local is "YYYY-MM-DDTHH:mm" in the USER's local zone; toISOString
-  // gives UTC, so we read the local components instead.
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// Reverse: a datetime-local value (local) → ISO string. '' → '' (no filter).
 function fromLocalInput(local: string): string {
   if (!local) return '';
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  const date = new Date(local);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
-// ─── Component ────────────────────────────────────────────────────────────
-
-interface AuditTabProps {
-  accountId: string;
-}
-
-export function AuditTab({ accountId }: AuditTabProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [filter, setFilter] = useState<AuditFilterState>(EMPTY_FILTER);
-  const [exporting, setExporting] = useState(false);
-  const [qInput, setQInput] = useState('');
-
-  const hasFilter = !!(
-    filter.action ||
-    filter.actor ||
-    filter.resourceType ||
-    filter.q ||
-    filter.since ||
-    filter.until
+function isQuickFilterActive(filter: AuditFilterState, preset: (typeof QUICK_FILTERS)[number]) {
+  return (
+    filter.action === (preset.action ?? '') &&
+    filter.actorType === (preset.actorType ?? '') &&
+    filter.outcome === (preset.outcome ?? '') &&
+    filter.resourceType === (preset.resourceType ?? '')
   );
+}
 
-  // Resolve actor user_ids → emails using the account-members query. Cached
-  // by other pages so this is free in practice. Falls back to the raw
-  // user_id for actors who aren't current members (deleted users, system).
+function applyQuickFilter(
+  filter: AuditFilterState,
+  preset: (typeof QUICK_FILTERS)[number],
+): AuditFilterState {
+  return {
+    ...filter,
+    action: preset.action ?? '',
+    actorType: preset.actorType ?? '',
+    outcome: preset.outcome ?? '',
+    resourceType: preset.resourceType ?? '',
+  };
+}
+
+export function AuditTab({ accountId }: { accountId: string }) {
+  const [filter, setFilter] = useState<AuditFilterState>(EMPTY_FILTER);
+  const [qInput, setQInput] = useState('');
+  const [exporting, setExporting] = useState(false);
+
   const membersQuery = useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId),
     staleTime: 30_000,
   });
-  const emailByUserId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of membersQuery.data ?? []) {
-      if (m.email) map.set(m.user_id, m.email);
-    }
-    return map;
-  }, [membersQuery.data]);
+  const projectsQuery = useQuery({
+    queryKey: ['audit-projects', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    staleTime: 30_000,
+  });
+  const sessionsQuery = useQuery({
+    queryKey: ['audit-project-sessions', filter.projectId],
+    queryFn: () => listProjectSessions(filter.projectId, { scope: 'project' }),
+    enabled: !!filter.projectId,
+    staleTime: 15_000,
+  });
 
-  // Streams the export with the active filter, triggers a browser download.
-  // We use raw fetch instead of backendApi because the response is a file
-  // (text/csv or application/x-ndjson), not the JSON wrapper the client
-  // helpers assume. Mirrors the list query's filter shape exactly.
+  const emailByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? [])
+          .filter((member) => !!member.email)
+          .map((member) => [member.user_id, member.email as string]),
+      ),
+    [membersQuery.data],
+  );
+  const projectNameById = useMemo(
+    () => new Map((projectsQuery.data ?? []).map((project) => [project.project_id, project.name])),
+    [projectsQuery.data],
+  );
+
+  const filterCount = [
+    filter.actor,
+    filter.actorType,
+    filter.projectId,
+    filter.sessionId,
+    filter.source,
+    filter.outcome,
+    filter.resourceType,
+    filter.q,
+    filter.since,
+    filter.until,
+    filter.action,
+  ].filter(Boolean).length;
+  const hasFilter = filterCount > 0;
+
+  const query = useInfiniteQuery({
+    queryKey: ['audit', accountId, filter],
+    queryFn: ({ pageParam }) =>
+      listAuditEvents(accountId, {
+        action: filter.action || undefined,
+        actor: filter.actor || undefined,
+        actor_type: filter.actorType || undefined,
+        project_id: filter.projectId || undefined,
+        session_id: filter.sessionId || undefined,
+        source: filter.source || undefined,
+        outcome: filter.outcome || undefined,
+        resource_type: filter.resourceType || undefined,
+        q: filter.q || undefined,
+        since: filter.since || undefined,
+        until: filter.until || undefined,
+        cursor: pageParam,
+        limit: 50,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+
+  const events = useMemo(
+    () => (query.data?.pages ?? []).flatMap((page) => page.events),
+    [query.data],
+  );
+
   async function exportEvents(format: 'csv' | 'jsonl') {
     setExporting(true);
     try {
@@ -201,6 +274,11 @@ export function AuditTab({ accountId }: AuditTabProps) {
           format,
           action: filter.action || undefined,
           actor: filter.actor || undefined,
+          actor_type: filter.actorType || undefined,
+          project_id: filter.projectId || undefined,
+          session_id: filter.sessionId || undefined,
+          source: filter.source || undefined,
+          outcome: filter.outcome || undefined,
           resource_type: filter.resourceType || undefined,
           q: filter.q || undefined,
           since: filter.since || undefined,
@@ -213,73 +291,44 @@ export function AuditTab({ accountId }: AuditTabProps) {
       );
 
       const downloadUrl = URL.createObjectURL(result.blob);
-      const filename =
-        result.filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = filename;
+      link.download = result.filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(downloadUrl);
-
-      const capped = result.capped;
-      const rowCount = result.rowCount ?? '?';
       successToast(
-        capped
-          ? `Exported ${rowCount} events (capped — narrow your filter for older data)`
-          : `Exported ${rowCount} events`,
+        result.capped
+          ? `Exported ${result.rowCount ?? '?'} events. Add filters to export older events.`
+          : `Exported ${result.rowCount ?? '?'} events`,
       );
-    } catch (err) {
-      errorToast((err as Error).message || 'Export failed');
+    } catch (error) {
+      errorToast((error as Error).message || 'Export failed');
     } finally {
       setExporting(false);
     }
   }
 
-  // Debounce the free-text search by only committing `qInput` into the query
-  // key on Enter / blur — keeps the infinite query from refiring per keystroke.
-  const query = useInfiniteQuery({
-    queryKey: ['audit', accountId, filter],
-    queryFn: ({ pageParam }) =>
-      listAuditEvents(accountId, {
-        action: filter.action || undefined,
-        actor: filter.actor || undefined,
-        resource_type: filter.resourceType || undefined,
-        q: filter.q || undefined,
-        since: filter.since || undefined,
-        until: filter.until || undefined,
-        cursor: pageParam,
-        limit: 50,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
-
-  const allEvents: IamAuditEvent[] = useMemo(
-    () => (query.data?.pages ?? []).flatMap((p) => p.events),
-    [query.data],
-  );
+  function clearFilters() {
+    setFilter(EMPTY_FILTER);
+    setQInput('');
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-0.5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
           <p className="text-foreground text-sm font-medium">Audit log</p>
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'componentsIamAuditTab.line91JsxAttrDescriptionEveryStateChangingApiHitPlusBeforeAfter',
-            )}
+          <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+            Reconstruct activity across people, agents, sessions, API requests, connectors, and
+            computers.
           </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="sm" disabled={exporting} className="gap-1.5">
-              {exporting ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <Download className="size-4" />
-              )}
+              {exporting ? <Loading className="size-4" /> : <Download className="size-4" />}
               Export
             </Button>
           </DropdownMenuTrigger>
@@ -292,103 +341,102 @@ export function AuditTab({ accountId }: AuditTabProps) {
         </DropdownMenu>
       </div>
 
-      {/* Quick chips — preset the action kind; the structured row below refines. */}
       <FilterBar className="h-auto flex-wrap justify-start">
-        {QUICK_FILTERS.map((f) => {
-          const activeChip = filter.action === f.action && (f.action !== '' || !hasFilter);
-          return (
-            <FilterBarItem
-              key={f.label}
-              onClick={() => setFilter((s) => ({ ...s, action: f.action }))}
-              data-state={activeChip ? 'active' : 'inactive'}
-            >
-              {f.label}
-            </FilterBarItem>
-          );
-        })}
+        {QUICK_FILTERS.map((preset) => (
+          <FilterBarItem
+            key={preset.label}
+            onClick={() => setFilter((current) => applyQuickFilter(current, preset))}
+            data-state={isQuickFilterActive(filter, preset) ? 'active' : 'inactive'}
+          >
+            {preset.label}
+          </FilterBarItem>
+        ))}
       </FilterBar>
 
-      {/* Structured filter row — actor, resource type, free-text, date range. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
           <Input
             value={qInput}
-            onChange={(e) => setQInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setFilter((s) => ({ ...s, q: qInput.trim() }));
+            onChange={(event) => setQInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                setFilter((current) => ({ ...current, q: qInput.trim() }));
+              }
             }}
-            onBlur={() => setFilter((s) => ({ ...s, q: qInput.trim() }))}
-            placeholder="Search actions, resources, IDs…"
+            onBlur={() => setFilter((current) => ({ ...current, q: qInput.trim() }))}
+            placeholder="Search action, project, session, request, or correlation ID"
+            aria-label="Search audit events"
             className="h-9 pl-8"
           />
         </div>
 
         <Select
-          value={filter.actor || 'all'}
-          onValueChange={(v) => setFilter((s) => ({ ...s, actor: v === 'all' ? '' : v }))}
+          value={filter.projectId || 'all'}
+          onValueChange={(value) =>
+            setFilter((current) => ({
+              ...current,
+              projectId: value === 'all' ? '' : value,
+              sessionId: '',
+            }))
+          }
         >
-          <SelectTrigger size="sm" className="h-9 w-[180px]">
-            <SelectValue placeholder="Actor" />
+          <SelectTrigger size="sm" className="h-9 w-[210px]">
+            <SelectValue placeholder="Project" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Everyone</SelectItem>
-            {(membersQuery.data ?? []).map((m) => (
-              <SelectItem key={m.user_id} value={m.user_id}>
-                {m.email ?? m.user_id.slice(0, 8)}
+            <SelectItem value="all">All projects</SelectItem>
+            {(projectsQuery.data ?? []).map((project) => (
+              <SelectItem key={project.project_id} value={project.project_id}>
+                {project.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
         <Select
-          value={filter.resourceType || 'any'}
-          onValueChange={(v) => setFilter((s) => ({ ...s, resourceType: v === 'any' ? '' : v }))}
+          value={filter.sessionId || 'all'}
+          disabled={!filter.projectId}
+          onValueChange={(value) =>
+            setFilter((current) => ({
+              ...current,
+              sessionId: value === 'all' ? '' : value,
+            }))
+          }
         >
-          <SelectTrigger size="sm" className="h-9 w-[160px]">
-            <SelectValue placeholder="Resource" />
+          <SelectTrigger size="sm" className="h-9 w-[220px]">
+            <SelectValue placeholder={filter.projectId ? 'All sessions' : 'Select project first'} />
           </SelectTrigger>
           <SelectContent>
-            {RESOURCE_TYPES.map((r) => (
-              <SelectItem key={r.value || 'any'} value={r.value || 'any'}>
-                {r.label}
+            <SelectItem value="all">All sessions</SelectItem>
+            {(sessionsQuery.data ?? []).map((session) => (
+              <SelectItem
+                key={session.session_id}
+                value={session.session_id}
+                description={session.session_id}
+              >
+                {session.name || `Session ${session.session_id.slice(0, 8)}`}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <Input
-          type="datetime-local"
-          value={filter.since ? toLocalInput(filter.since) : ''}
-          onChange={(e) => setFilter((s) => ({ ...s, since: fromLocalInput(e.target.value) }))}
-          aria-label="From"
-          className="h-9 w-[200px]"
-        />
-        <Input
-          type="datetime-local"
-          value={filter.until ? toLocalInput(filter.until) : ''}
-          onChange={(e) => setFilter((s) => ({ ...s, until: fromLocalInput(e.target.value) }))}
-          aria-label="To"
-          className="h-9 w-[200px]"
+        <AdvancedFilters
+          filter={filter}
+          members={membersQuery.data ?? []}
+          onChange={setFilter}
+          count={filterCount}
         />
 
-        {hasFilter && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 gap-1.5"
-            onClick={() => {
-              setFilter(EMPTY_FILTER);
-              setQInput('');
-            }}
-          >
+        {hasFilter ? (
+          <Button variant="ghost" size="sm" className="h-9 gap-1.5" onClick={clearFilters}>
             <X className="size-4" />
             Clear
           </Button>
-        )}
+        ) : null}
       </div>
 
-      {query.isError && (
+      {query.isError ? (
         <ErrorState
           size="sm"
           title="Failed to load audit events"
@@ -399,50 +447,56 @@ export function AuditTab({ accountId }: AuditTabProps) {
             </Button>
           }
         />
-      )}
+      ) : null}
 
-      {query.isLoading && (
+      {query.isLoading ? (
         <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-14 w-full rounded-md" />
           ))}
         </div>
-      )}
+      ) : null}
 
-      {!query.isLoading && !query.isError && allEvents.length === 0 && (
+      {!query.isLoading && !query.isError && events.length === 0 ? (
         <EmptyState
           icon={Search}
           size="sm"
-          title="No events match this filter"
-          description={tHardcodedUi.raw(
-            'componentsIamAuditTab.line142JsxTextTryABroaderFilterOrCheckBackAfter',
-          )}
+          title="No events match these filters"
+          description="Clear a filter or select a wider time range."
         />
-      )}
+      ) : null}
 
-      {!query.isLoading && !query.isError && allEvents.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Event</TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead>Occurred</TableHead>
-              <TableHead>Resource</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {allEvents.map((e) => (
-              <AuditRow
-                key={e.event_id}
-                event={e}
-                actorEmail={e.actor_user_id ? (emailByUserId.get(e.actor_user_id) ?? null) : null}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      {!query.isLoading && !query.isError && events.length > 0 ? (
+        <div className="border-border overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Event</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Principal</TableHead>
+                <TableHead>Outcome</TableHead>
+                <TableHead className="text-right">Occurred</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {events.map((event) => (
+                <AuditRow
+                  key={event.event_id}
+                  event={event}
+                  actorEmail={
+                    event.actor_user_id ? (emailByUserId.get(event.actor_user_id) ?? null) : null
+                  }
+                  projectName={
+                    event.project_id ? (projectNameById.get(event.project_id) ?? null) : null
+                  }
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
 
-      {query.hasNextPage && (
+      {query.hasNextPage ? (
         <div className="flex justify-center">
           <Button
             variant="outline"
@@ -451,131 +505,404 @@ export function AuditTab({ accountId }: AuditTabProps) {
             disabled={query.isFetchingNextPage}
             className="gap-1.5"
           >
-            {query.isFetchingNextPage && <Loading className="size-3.5 shrink-0" />}
+            {query.isFetchingNextPage ? <Loading className="size-3.5" /> : null}
             Load more
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-// ─── Row ──────────────────────────────────────────────────────────────────
+function AdvancedFilters({
+  filter,
+  members,
+  onChange,
+  count,
+}: {
+  filter: AuditFilterState;
+  members: Array<{ user_id: string; email?: string | null }>;
+  onChange: Dispatch<SetStateAction<AuditFilterState>>;
+  count: number;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5">
+          <Funnel className="size-4" />
+          Filters
+          {count > 0 ? (
+            <Badge variant="muted" size="xs" className="ml-0.5 tabular-nums">
+              {count}
+            </Badge>
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(44rem,calc(100vw-2rem))] space-y-4 p-4">
+        <div>
+          <p className="text-foreground text-sm font-medium">Filter activity</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            Combine fields to reconstruct one actor, session, or request path.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FilterField label="Principal type">
+            <Select
+              value={filter.actorType || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  actorType: value === 'all' ? '' : (value as ActorType),
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any principal</SelectItem>
+                <SelectItem value="human">Person</SelectItem>
+                <SelectItem value="agent">Agent</SelectItem>
+                <SelectItem value="service_account">Service account</SelectItem>
+                <SelectItem value="system">System</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
 
-function AuditRow({ event, actorEmail }: { event: IamAuditEvent; actorEmail: string | null }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+          <FilterField label="Person">
+            <Select
+              value={filter.actor || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  actor: value === 'all' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everyone</SelectItem>
+                {members.map((member) => (
+                  <SelectItem key={member.user_id} value={member.user_id}>
+                    {member.email ?? member.user_id.slice(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Source">
+            <Select
+              value={filter.source || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  source: value === 'all' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SOURCES.map((source) => (
+                  <SelectItem key={source.value || 'all'} value={source.value || 'all'}>
+                    {source.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Outcome">
+            <Select
+              value={filter.outcome || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  outcome: value === 'all' ? '' : (value as Outcome),
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any outcome</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="denied">Denied</SelectItem>
+                <SelectItem value="failure">Failure</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Resource">
+            <Select
+              value={filter.resourceType || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  resourceType: value === 'all' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RESOURCE_TYPES.map((resource) => (
+                  <SelectItem key={resource.value || 'all'} value={resource.value || 'all'}>
+                    {resource.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="From">
+            <Input
+              type="datetime-local"
+              value={filter.since ? toLocalInput(filter.since) : ''}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  since: fromLocalInput(event.target.value),
+                }))
+              }
+              className="h-9 w-full"
+            />
+          </FilterField>
+
+          <FilterField label="To">
+            <Input
+              type="datetime-local"
+              value={filter.until ? toLocalInput(filter.until) : ''}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  until: fromLocalInput(event.target.value),
+                }))
+              }
+              className="h-9 w-full"
+            />
+          </FilterField>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="space-y-1.5">
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function AuditRow({
+  event,
+  actorEmail,
+  projectName,
+}: {
+  event: IamAuditEvent;
+  actorEmail: string | null;
+  projectName: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const hasDiff = event.before !== null || event.after !== null;
-  const actorLabel = actorEmail ?? event.actor_user_id ?? 'system';
   const occurred = new Date(event.occurred_at);
   const human = humanizeAuditAction(event.action);
-  const resourcePill = formatResourcePill(event.resource_type, event.resource_id);
-  // Expandable when we have a before/after diff OR when the humanised
-  // title actually hides information (we'd want to surface the raw
-  // action code + IP + full timestamp on demand).
-  const canExpand = hasDiff || event.action !== human.title;
+  const resource = formatResourcePill(event.resource_type, event.resource_id);
+  const actorLabel =
+    actorEmail ?? event.actor_user_id ?? (event.actor_type === 'system' ? 'System' : 'Unknown');
+  const scopeLabel =
+    projectName ?? (event.project_id ? `Project ${event.project_id.slice(0, 8)}` : 'Account');
 
   return (
     <>
       <TableRow
-        className={cn(canExpand && 'cursor-pointer')}
-        onClick={() => canExpand && setExpanded((v) => !v)}
+        className="cursor-pointer"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        onKeyDown={(keyboardEvent) => {
+          if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+            keyboardEvent.preventDefault();
+            setExpanded((value) => !value);
+          }
+        }}
       >
-        <TableCell className="max-w-[320px] whitespace-normal">
-          <div className="flex items-center gap-2">
+        <TableCell className="max-w-[340px] whitespace-normal">
+          <div className="flex min-w-0 items-center gap-2">
+            <CaretRight
+              className={cn(
+                'text-muted-foreground size-3.5 shrink-0 transition-transform duration-150',
+                expanded && 'rotate-90',
+              )}
+            />
             <span
               className={cn('size-1.5 shrink-0 rounded-full', KIND_DOT_TOKEN[human.kind])}
               aria-hidden
             />
             <span className="text-foreground truncate text-sm font-medium">{human.title}</span>
-            {human.detail && (
-              <code className="bg-muted/40 text-foreground truncate rounded px-1.5 py-0.5 font-mono text-xs">
+            {human.detail ? (
+              <code className="bg-muted/50 text-muted-foreground truncate rounded px-1.5 py-0.5 font-mono text-[11px]">
                 {human.detail}
               </code>
-            )}
+            ) : null}
           </div>
         </TableCell>
-        <TableCell className="text-muted-foreground text-xs">{actorLabel}</TableCell>
-        <TableCell className="text-muted-foreground text-xs" title={occurred.toLocaleString()}>
+        <TableCell className="max-w-[220px] whitespace-normal">
+          <p className="text-foreground truncate text-xs">{scopeLabel}</p>
+          {event.session_id ? (
+            <p className="text-muted-foreground truncate font-mono text-[11px]">
+              Session {event.session_id.slice(0, 8)}
+            </p>
+          ) : null}
+        </TableCell>
+        <TableCell className="max-w-[220px] whitespace-normal">
+          <p className="text-foreground truncate text-xs">{actorLabel}</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {event.actor_type ? (
+              <Badge variant="muted" size="xs" className="capitalize">
+                {event.actor_type.replace('_', ' ')}
+              </Badge>
+            ) : null}
+            {event.source ? (
+              <Badge variant="outline" size="xs" className="capitalize">
+                {event.source.replace('_', ' ')}
+              </Badge>
+            ) : null}
+          </div>
+        </TableCell>
+        <TableCell>
+          <OutcomeBadge outcome={event.outcome} status={event.http_status} />
+        </TableCell>
+        <TableCell
+          className="text-muted-foreground text-right text-xs tabular-nums"
+          title={occurred.toLocaleString()}
+        >
           {formatRelative(occurred)}
         </TableCell>
-        <TableCell className="text-muted-foreground text-xs">
-          {resourcePill ? (
-            <Badge
-              variant="outline"
-              size="xs"
-              className="font-normal capitalize"
-              title={
-                event.resource_id
-                  ? `${event.resource_type} ${event.resource_id}`
-                  : (event.resource_type ?? undefined)
-              }
-            >
-              {resourcePill}
-            </Badge>
-          ) : (
-            '—'
-          )}
-        </TableCell>
       </TableRow>
-      {expanded && canExpand && (
+      {expanded ? (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={4} className="bg-muted/10 space-y-3 whitespace-normal">
-            {/* Raw action code — the one the humanizer hid. Visible on
-                expand so the dev side of the audit (filtering, support
-                tickets) stays one click away. */}
-            <div className="space-y-1">
-              <p className="text-muted-foreground text-xs font-medium">
-                {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextRawRequeste6f7c98c')}
-              </p>
-              <code className="border-border bg-background text-foreground block rounded border px-2 py-1.5 font-mono text-xs break-all">
-                {event.action}
-              </code>
+          <TableCell colSpan={5} className="bg-muted/10 space-y-4 p-4 whitespace-normal">
+            <div className="grid gap-3 md:grid-cols-2">
+              <DetailBlock label="Raw action" value={event.action} />
+              <DetailBlock
+                label="Resource"
+                value={
+                  resource
+                    ? `${resource}${event.resource_id ? ` · ${event.resource_id}` : ''}`
+                    : '—'
+                }
+              />
             </div>
-            {/* Full timestamp + event id — useful for cross-referencing
-                from server logs. */}
-            <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
-              <span>
-                {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextOccurredAteaaebdde')}
-                <span className="font-mono">{occurred.toISOString()}</span>
-              </span>
-              <span>
-                {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextEventIde196847b')}
-                <span className="font-mono">{event.event_id}</span>
-              </span>
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Detail label="Event ID" value={event.event_id} />
+              <Detail label="Request ID" value={event.request_id} />
+              <Detail label="Trace ID" value={event.trace_id} />
+              <Detail label="Correlation ID" value={event.correlation_id} />
+              <Detail label="Project ID" value={event.project_id} />
+              <Detail label="Session ID" value={event.session_id} />
+              <Detail
+                label="HTTP"
+                value={
+                  event.http_status != null
+                    ? `${event.http_status}${event.duration_ms != null ? ` · ${event.duration_ms} ms` : ''}`
+                    : null
+                }
+              />
+              <Detail label="Occurred at" value={occurred.toISOString()} />
             </div>
-            {hasDiff && (
+            {event.before !== null || event.after !== null ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <DiffPane label="Before" data={event.before} />
-                <DiffPane label="After" data={event.after} />
+                <JsonPane label="Before" data={event.before} />
+                <JsonPane label="After" data={event.after} />
               </div>
-            )}
+            ) : null}
+            {event.metadata && Object.keys(event.metadata).length > 0 ? (
+              <JsonPane label="Metadata" data={event.metadata} />
+            ) : null}
           </TableCell>
         </TableRow>
-      )}
+      ) : null}
     </>
   );
 }
 
-function DiffPane({ label, data }: { label: string; data: Record<string, unknown> | null }) {
+function OutcomeBadge({
+  outcome,
+  status,
+}: {
+  outcome: IamAuditEvent['outcome'];
+  status: number | null;
+}) {
+  if (!outcome) {
+    return status != null ? (
+      <Badge variant="muted" size="xs" className="tabular-nums">
+        {status}
+      </Badge>
+    ) : (
+      <span className="text-muted-foreground text-xs">—</span>
+    );
+  }
+  const variant: 'success' | 'warning' | 'destructive' | 'muted' =
+    outcome === 'success'
+      ? 'success'
+      : outcome === 'pending'
+        ? 'warning'
+        : outcome === 'denied' || outcome === 'failure'
+          ? 'destructive'
+          : 'muted';
   return (
-    <div>
-      <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
-      <pre className="border-border bg-background text-foreground max-h-48 overflow-auto rounded-md border px-2.5 py-2 text-xs leading-relaxed">
-        {data === null ? (
-          <span className="text-muted-foreground">None</span>
-        ) : (
-          JSON.stringify(data, null, 2)
-        )}
+    <Badge variant={variant} size="xs" className="capitalize">
+      {outcome}
+      {status != null ? ` · ${status}` : ''}
+    </Badge>
+  );
+}
+
+function DetailBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-muted-foreground text-xs font-medium">{label}</p>
+      <code className="border-border bg-background text-foreground block rounded-md border px-2.5 py-2 font-mono text-xs break-all">
+        {value}
+      </code>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-muted-foreground text-[11px] font-medium">{label}</p>
+      <p className="text-foreground truncate font-mono text-xs" title={value ?? undefined}>
+        {value ?? '—'}
+      </p>
+    </div>
+  );
+}
+
+function JsonPane({ label, data }: { label: string; data: unknown }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-muted-foreground text-xs font-medium">{label}</p>
+      <pre className="border-border bg-background text-foreground max-h-56 overflow-auto rounded-md border px-2.5 py-2 font-mono text-xs leading-relaxed">
+        {data === null ? 'None' : JSON.stringify(data, null, 2)}
       </pre>
     </div>
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
-
-function formatRelative(d: Date): string {
-  const diffMs = Date.now() - d.getTime();
+function formatRelative(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes}m ago`;
@@ -583,5 +910,5 @@ function formatRelative(d: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
+  return date.toLocaleDateString();
 }

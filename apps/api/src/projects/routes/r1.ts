@@ -1,5 +1,6 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -349,6 +350,7 @@ projectsApp.openapi(
     defaultBranch: imported.defaultBranch,
     manifestPath,
   });
+  setContextField('projectId', row.projectId);
 
   kickProjectTemplatePrebuilds(
     {
@@ -571,6 +573,7 @@ projectsApp.openapi(
       updatedAt: now,
     })
     .returning();
+  setContextField('projectId', row.projectId);
 
   await grantProjectRole({
     accountId: scope.accountId,

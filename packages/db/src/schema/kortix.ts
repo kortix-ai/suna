@@ -2363,10 +2363,20 @@ export const auditEvents = kortixSchema.table(
   {
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+    projectId: uuid('project_id'),
+    sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    actorType: text('actor_type'),
+    source: text('source'),
+    outcome: text('outcome'),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
+    httpStatus: integer('http_status'),
+    durationMs: integer('duration_ms'),
+    requestId: text('request_id'),
+    traceId: text('trace_id'),
+    correlationId: text('correlation_id'),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
     ip: text('ip'),
@@ -2378,6 +2388,18 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    index('idx_audit_events_account_project_time').on(
+      table.accountId,
+      table.projectId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_account_session_time').on(
+      table.accountId,
+      table.sessionId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_request').on(table.requestId),
+    index('idx_audit_events_correlation').on(table.correlationId),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full

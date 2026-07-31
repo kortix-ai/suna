@@ -1556,6 +1556,15 @@ function ConnectorDetail({
                 updateAuthorizationStrategy.mutate(next);
               }}
               disabled={!canWrite || !authorizationStrategyEditable}
+              // Settled once the connector exists. Switching owner after the
+              // fact silently changes WHOSE account every future session runs
+              // as, and orphans the profiles and permission rules already
+              // attached under the old owner — a change that looks like a
+              // toggle and behaves like a migration.
+              //
+              // UI-only: `updateAuthorizationStrategy` below and its route are
+              // left intact, so re-enabling is deleting this one prop.
+              lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
               pending={strategyUpdating}
             />
           </div>

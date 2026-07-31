@@ -1,7 +1,8 @@
-// Account audit log — the Enterprise "what changed" trail, backed by
-// `kortix.audit_events` (every mutation the global middleware + IAM helpers
-// record) plus per-account outbound webhooks that mirror it to a SIEM. Reads
-// are gated on `audit.read` + the account's `auditAccess` entitlement server-side.
+// Account audit log — the Enterprise reconstruction trail, backed by
+// `kortix.audit_events`. The API middleware records authenticated requests.
+// Domain writers add semantic session, executor, approval, and computer events.
+// Per-account webhooks mirror the same stream to a SIEM. Reads are gated on
+// `audit.read` + the account's `auditAccess` entitlement server-side.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -9,10 +10,20 @@ import { unwrap } from './shared';
 export interface AuditEvent {
   event_id: string;
   occurred_at: string;
+  project_id: string | null;
+  session_id: string | null;
   actor_user_id: string | null;
+  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
+  source: string | null;
+  outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
   action: string;
   resource_type: string | null;
   resource_id: string | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  request_id: string | null;
+  trace_id: string | null;
+  correlation_id: string | null;
   before: unknown;
   after: unknown;
   ip: string | null;
@@ -29,8 +40,21 @@ export interface AuditEventList {
 export interface ListAccountAuditOptions {
   /** Prefix match on `action` (e.g. `"iam.policy."`). */
   action?: string;
+  actor?: string;
+  actorType?: 'human' | 'agent' | 'service_account' | 'system';
+  projectId?: string;
+  sessionId?: string;
+  source?: string;
+  outcome?: 'success' | 'failure' | 'denied' | 'pending';
+  resourceType?: string;
+  requestId?: string;
+  correlationId?: string;
   /** Only events at or after this ISO-8601 instant. */
   since?: string;
+  /** Only events at or before this ISO-8601 instant. */
+  until?: string;
+  /** Case-insensitive action, resource, project, session, or correlation search. */
+  q?: string;
   /** Keyset cursor from a previous page's `next_cursor`. */
   cursor?: string;
   /** Default 50, max 200 (server-clamped). */
@@ -40,7 +64,18 @@ export interface ListAccountAuditOptions {
 export async function listAccountAudit(accountId: string, options?: ListAccountAuditOptions) {
   const search = new URLSearchParams();
   if (options?.action) search.set('action', options.action);
+  if (options?.actor) search.set('actor', options.actor);
+  if (options?.actorType) search.set('actor_type', options.actorType);
+  if (options?.projectId) search.set('project_id', options.projectId);
+  if (options?.sessionId) search.set('session_id', options.sessionId);
+  if (options?.source) search.set('source', options.source);
+  if (options?.outcome) search.set('outcome', options.outcome);
+  if (options?.resourceType) search.set('resource_type', options.resourceType);
+  if (options?.requestId) search.set('request_id', options.requestId);
+  if (options?.correlationId) search.set('correlation_id', options.correlationId);
   if (options?.since) search.set('since', options.since);
+  if (options?.until) search.set('until', options.until);
+  if (options?.q) search.set('q', options.q);
   if (options?.cursor) search.set('cursor', options.cursor);
   if (options?.limit != null) search.set('limit', String(options.limit));
   const qs = search.toString();
@@ -52,7 +87,18 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
 export interface ExportAccountAuditOptions {
   format?: 'csv' | 'jsonl';
   action?: string;
+  actor?: string;
+  actorType?: 'human' | 'agent' | 'service_account' | 'system';
+  projectId?: string;
+  sessionId?: string;
+  source?: string;
+  outcome?: 'success' | 'failure' | 'denied' | 'pending';
+  resourceType?: string;
+  requestId?: string;
+  correlationId?: string;
   since?: string;
+  until?: string;
+  q?: string;
 }
 
 /**
@@ -70,7 +116,18 @@ export async function exportAccountAudit(
   const search = new URLSearchParams();
   if (options?.format) search.set('format', options.format);
   if (options?.action) search.set('action', options.action);
+  if (options?.actor) search.set('actor', options.actor);
+  if (options?.actorType) search.set('actor_type', options.actorType);
+  if (options?.projectId) search.set('project_id', options.projectId);
+  if (options?.sessionId) search.set('session_id', options.sessionId);
+  if (options?.source) search.set('source', options.source);
+  if (options?.outcome) search.set('outcome', options.outcome);
+  if (options?.resourceType) search.set('resource_type', options.resourceType);
+  if (options?.requestId) search.set('request_id', options.requestId);
+  if (options?.correlationId) search.set('correlation_id', options.correlationId);
   if (options?.since) search.set('since', options.since);
+  if (options?.until) search.set('until', options.until);
+  if (options?.q) search.set('q', options.q);
   const qs = search.toString();
   return unwrap(
     await backendApi.get<string | Blob>(`/accounts/${accountId}/audit/export${qs ? `?${qs}` : ''}`),

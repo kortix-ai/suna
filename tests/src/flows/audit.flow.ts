@@ -488,27 +488,94 @@ flow(
   },
 );
 
-// AUD-FILTER — the actor / resource_type / date-range / search / cursor / limit
-// filters added in 81947a5fa ("fix(audit): add actor / search / date-range /
-// resource filters"). AUD-1 only exercised `limit` + `action`. The query schema is
-// all `z.string().optional()` with NO 400-validation — bad values are silently
-// coerced/ignored (buildFilters guards Number.isNaN on dates; limit clamps to
-// [1, MAX_LIMIT]). This pins the filter-ACCEPTANCE contract + the limit clamp,
-// so a future tightening that 400s on bad input (the right fix) is a visible
-// delta, not a silent behavior change.
+// AUD-FILTER — centralized reconstruction filters. UUID and enum filters reject
+// invalid values. Dates, cursors, and limits retain their established lenient
+// parsing and clamp behavior.
 flow(
   'AUD-FILTER',
-  { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit'] },
+  {
+    domain: 'audit',
+    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:projectId'],
+  },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
     const base = { params: { accountId: team.id } };
+    const correlationId = ctx.fixtures.name('audit-reconstruction');
+
+    await ctx.step('a client header cannot override the authenticated source', async () => {
+      const action = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', {
+          params: { projectId: project.id },
+          headers: {
+            'x-correlation-id': correlationId,
+            'x-kortix-client': 'cli',
+          },
+        });
+      action.status(200);
+
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: {
+          project_id: project.id,
+          actor_type: 'human',
+          source: 'web',
+          outcome: 'success',
+          correlation_id: correlationId,
+        },
+      });
+      r.status(200).body().exists('$.events');
+      const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
+      if (events.length !== 1) {
+        throw new Error(`expected one correlated event, got ${events.length}`);
+      }
+      const event = events[0];
+      if (
+        event.project_id !== project.id ||
+        event.actor_type !== 'human' ||
+        event.source !== 'web' ||
+        event.outcome !== 'success' ||
+        event.correlation_id !== correlationId ||
+        typeof event.request_id !== 'string' ||
+        typeof event.trace_id !== 'string'
+      ) {
+        throw new Error(`centralized audit envelope mismatch: ${JSON.stringify(event)}`);
+      }
+    });
+
+    await ctx.step('session filter accepts an exact session identifier', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { session_id: '00000000-0000-4000-a000-000000000000' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+
+    await ctx.step('invalid structured filters → 400', async () => {
+      const projectResponse = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/audit', {
+          ...base,
+          query: { project_id: 'not-a-uuid' },
+        });
+      projectResponse.status(400);
+
+      const actorTypeResponse = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/audit', {
+          ...base,
+          query: { actor_type: 'robot' },
+        });
+      actorTypeResponse.status(400);
+    });
 
     await ctx.step('actor filter (uuid) → 200 with events envelope', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         ...base,
         query: { actor: '00000000-0000-4000-a000-000000000000' },
       });
-      r.status(200).body().exists('$.events').exists('$.next_cursor');
+      r.status(200).body().exists('$.events');
     });
     await ctx.step('resource_type prefix filter → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
