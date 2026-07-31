@@ -635,7 +635,18 @@ export async function listSandboxTemplates(
   } = {},
 ): Promise<SandboxTemplateView[]> {
   const items = await listTemplatesForProject(project);
-  return Promise.all(items.map((t) => toView(project, t, opts)));
+  const results = await Promise.allSettled(items.map((t) => toView(project, t, opts)));
+  const views: SandboxTemplateView[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      views.push(r.value);
+    } else {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.warn(`[sandbox-templates] skipping template "${items[i]!.slug}": ${reason}`);
+    }
+  }
+  return views;
 }
 
 async function toView(
