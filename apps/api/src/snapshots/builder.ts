@@ -147,12 +147,6 @@ export async function ensureSandboxImage(
     accountId?: string;
     source?: SnapshotBuildSource;
     /**
-     * Reject the previous active snapshot when the runtime identity changed.
-     * ACP sessions set this because the daemon is part of the JSON-RPC
-     * transport contract.
-     */
-    requireCurrentRuntime?: boolean;
-    /**
      * The provider the SESSION will run on (its sandbox provider). Build there,
      * not on the template row's last-built provider — otherwise a template built
      * on one provider (e.g. Daytona) makes a session on another (e.g. Platinum)
@@ -311,7 +305,6 @@ export async function ensureSandboxImage(
   if (
     canServeLastKnownGoodRuntime({
       source: opts.source ?? 'session-start',
-      requireCurrentRuntime: opts.requireCurrentRuntime ?? false,
     }) &&
     template.providerSnapshotName &&
     template.providerSnapshotName !== identity.snapshotName
@@ -635,7 +628,18 @@ export async function listSandboxTemplates(
   } = {},
 ): Promise<SandboxTemplateView[]> {
   const items = await listTemplatesForProject(project);
-  return Promise.all(items.map((t) => toView(project, t, opts)));
+  const results = await Promise.allSettled(items.map((t) => toView(project, t, opts)));
+  const views: SandboxTemplateView[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      views.push(r.value);
+    } else {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.warn(`[sandbox-templates] skipping template "${items[i]!.slug}": ${reason}`);
+    }
+  }
+  return views;
 }
 
 async function toView(

@@ -105,8 +105,7 @@ over.
 - **One linked issue per engineering escalation.** Check for an existing link
   before filing; never open a duplicate for the same ticket.
 - **Scoped secrets.** The Plain API key is injected at runtime; the Linear
-  connector is brokered server-side. No raw credential is ever shown to the
-  model or written to logs.
+  connector is brokered server-side. No raw credential is ever pasted into chat.
 - **Fresh, no memory between runs.** Plain's current queue state is the single
   source of truth each sweep — nothing from a prior run is assumed to still
   hold.

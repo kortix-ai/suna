@@ -117,8 +117,7 @@ against; the whole scan is recomputed and reposted every day.
   drift, and underperformers from the current state of both platforms rather
   than assuming anything from the prior day's list.
 - **Scoped secrets.** Google Ads and Meta Ads access is brokered server-side
-  through connectors. No raw credential is ever shown to the model or written
-  to logs.
+  through connectors. No raw credential is ever pasted into chat.
 - **People decide, not the agent.** The list flags risk and suggests a next
   step; a human on the marketing team decides whether and how to act.
 </guardrails>

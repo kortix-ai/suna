@@ -20,7 +20,7 @@ import {
   DownloadIcon as Download,
   ClockCounterClockwiseIcon as History,
   PencilSimpleIcon,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ScissorsIcon as Scissors,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';

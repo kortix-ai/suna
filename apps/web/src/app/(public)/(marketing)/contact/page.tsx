@@ -31,7 +31,9 @@ const VALUE_PROPS = [
   {
     icon: <Server className="size-4" />,
     title: 'Deploy your way',
-    desc: 'Managed cloud, your private VPC, or fully on-prem / air-gapped.',
+    // ACCURACY: not "air-gapped" — `self-host start` pulls images from
+    // docker.io. Isolated topologies get scoped with us, not self-served.
+    desc: 'Managed cloud, your private VPC, or your own on-prem network.',
   },
   {
     icon: <Boxes className="size-4" />,

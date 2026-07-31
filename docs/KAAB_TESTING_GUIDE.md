@@ -2,6 +2,9 @@
 
 This guide verifies the current backend session contract.
 
+> **Runtime scope.** The OpenCode message and model steps below test the
+> `kortix_version: 2` REST compatibility path, which is the only runtime.
+
 It covers:
 
 - backend session creation

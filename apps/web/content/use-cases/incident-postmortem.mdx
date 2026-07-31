@@ -92,7 +92,7 @@ The agent produces a **draft, not a decision**. Its output is a doc PR that a
 human reviews, edits, and merges: root cause and action items are proposed, never
 finalized by the agent. It doesn't publish a postmortem or assign owners on its
 own. Credentials are encrypted in the Secrets Manager and injected at runtime,
-never shown to the model or written to logs.
+scoped to the agents you grant them to.
 
 </Step>
 <Step title="Open the draft for review">
@@ -118,12 +118,11 @@ only they have, and merges the version they stand behind.
 The agent reads an incident channel, logs, and deploy history and writes a
 document others will act on, so the access is scoped and contained:
 
-- **Isolation.** Every incident runs in its own microVM sandbox. The session
+- **Isolation.** Every incident runs in its own isolated sandbox. The session
   reads the timeline, correlates the deploys and logs, and only the drafted doc
-  PR leaves the sandbox.
+  PR is written back out.
 - **Scoped secrets.** The channel, logs, and GitHub credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **PR-gated.** The postmortem lands as a doc PR, not a published document. A
   human reviews the timeline, edits the root cause and action items, and owns the
   merge.

@@ -117,20 +117,11 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-### React runtime transport
+### React runtime
 
-`useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
-The default is the OpenCode REST client. A project with the `acp_runtime`
-experiment uses ACP through the authenticated sandbox bridge. A v3 session can
-select OpenCode, Claude Code, Codex, or Pi. The hook keeps one return shape
-across transports and harnesses. It routes messages, message rewind and restore,
-cancellation, commands, permissions, and questions inside the SDK. A host does
-not construct ACP routes or branch on `runtime_harness`.
-
-`POST /start` also returns the immutable runtime identity:
-`runtime_name`, `runtime_harness`, `native_agent`, `acp_server_id`, and
-`acp_session_id`. Restart and resume keep that identity. Disable `acp_runtime`
-to use OpenCode REST for new compatible sessions.
+`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
+`POST /start`. The hook owns messages, rewind and restore, cancellation,
+commands, permissions, and questions. Hosts do not construct runtime routes.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -155,7 +146,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (Enterprise audit trail) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
@@ -254,9 +245,7 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. It is not the harness-neutral ACP
-stream. Use `useSession()` in React. Framework-free ACP consumers can build an
-`AcpSessionController` through the public ACP exports.
+`session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -496,5 +485,5 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API, ACP, and OpenCode REST compatibility. See **`CHANGELOG.md`** for
+REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.

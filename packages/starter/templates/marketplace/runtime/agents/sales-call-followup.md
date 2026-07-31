@@ -8,7 +8,6 @@ description: >-
   the follow-up tasks in {{linear_team}} — holding the recap email at
   {{approval_channel}} for the rep to review and send.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

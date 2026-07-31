@@ -44,7 +44,7 @@ import {
   ShareIcon as Share,
   SquareIcon as Square,
   TerminalWindowIcon as SquareTerminal,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -90,13 +90,27 @@ export function SessionSiteHeader({
   // window's left edge, where the macOS traffic lights and the shell's
   // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
   // buttons past both and drop them onto the same center line (y≈26).
-  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const {
+    state: sidebarState,
+    toggleSidebar,
+    peek,
+    peekEnter,
+    peekLeave,
+    isMobile: isMobileViewport,
+  } = useSidebar();
   const [desktopShell] = useState<'macos' | 'other' | null>(() =>
     isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
   );
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
   const sidebarToggleLabel =
     sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
+  // Desktop: this toggle only exists to bring a hidden panel BACK — the
+  // collapse control now lives in the panel's own header (ProjectSidebar).
+  // Two toggles for one panel is one too many, so it self-hides while docked.
+  // Mobile is untouched: `sidebarState` there tracks the desktop cookie, not
+  // the Sheet, so gating on it would strand the only way to open the sheet.
+  const showSidebarToggle =
+    desktopShell === null && (isMobileViewport || sidebarState !== 'expanded');
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -157,7 +171,11 @@ export function SessionSiteHeader({
         <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
           <div
             className={cn(
-              'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
+              // No margin transition: this indent only changes when the
+              // sidebar docks/undocks, and gliding it made the row a fourth
+              // competing timeline in that toggle. Docking is one frame now,
+              // so the indent snaps with the panel and the gap.
+              'pointer-events-auto flex items-center gap-0.5',
               // Below md the shell floats an always-on sheet opener at this
               // row's left end (see ProjectSheelLayout) — indent past it.
               // 'max-md:ml-[34px]',
@@ -165,7 +183,7 @@ export function SessionSiteHeader({
               sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
             )}
           >
-            {desktopShell === null && (
+            {showSidebarToggle && (
               <Button
                 type="button"
                 aria-label={sidebarToggleLabel}
@@ -302,7 +320,7 @@ export function SessionSiteHeader({
                       onClick={() => setDeleteOpen(true)}
                       variant="destructive"
                     >
-                      <TrashSolid weight="fill" />
+                      <TrashIcon />
                       Delete
                     </DropdownMenuItem>
                   </>

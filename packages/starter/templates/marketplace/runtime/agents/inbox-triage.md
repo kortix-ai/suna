@@ -6,7 +6,6 @@ description: >-
   bugs and follow-ups. Every customer-facing reply is held as a draft for a
   human to review and send.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

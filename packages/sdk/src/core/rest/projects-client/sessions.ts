@@ -4,8 +4,6 @@ import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 
-type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
-
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
@@ -31,11 +29,6 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
-  runtime_transport?: 'acp' | 'rest';
-  runtime_harness?: SessionRuntimeHarness;
-  native_agent?: string | null;
-  acp_server_id?: string | null;
-  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.
@@ -298,7 +291,10 @@ export async function createProjectSession(projectId: string, input?: CreateProj
 
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
+    await backendApi.post<WarmProjectSessionResult>(
+      `/projects/${projectId}/sessions/warm`,
+      {},
+    ),
   );
   markSessionFresh(result.session.session_id);
   return result;
@@ -309,9 +305,11 @@ export async function claimWarmProjectSession(
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
-      showErrors: false,
-    }),
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions/warm/claim`,
+      input,
+      { showErrors: false },
+    ),
   );
   markSessionFresh(session.session_id);
   return session;
@@ -588,13 +586,31 @@ export async function setProjectSessionScope(
   );
 }
 
+export interface SessionModelChangeResult {
+  opencode_model: string;
+  /** True only when a LIVE sandbox took the new model. */
+  applied_live: boolean;
+  /**
+   * `true` when a live push was required and FAILED: the model is stored, but
+   * the running harness still answers from the OLD one.
+   *
+   * Check this, never `!applied_live`, before telling a user the change landed.
+   * `applied_live: false` is also the ordinary answer for a session with no live
+   * sandbox, where the stored value IS the mechanism and the next start reads
+   * it. Treating the two the same is how a `502` env-sync failure got reported
+   * as "saved — applies when this session next starts".
+   */
+  push_failed?: true;
+  detail?: string;
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
   opencodeModel: string,
-): Promise<{ opencode_model: string; applied_live: boolean; detail?: string }> {
+): Promise<SessionModelChangeResult> {
   return unwrap(
-    await backendApi.put<{ opencode_model: string; applied_live: boolean; detail?: string }>(
+    await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
     ),

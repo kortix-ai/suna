@@ -12,8 +12,6 @@ import { join, relative } from 'node:path';
 // id, i.e. which browser login this is. Handing that value to this function makes
 // every logged-in human look like the sandbox, which silently disables:
 //
-//   * the turn-start observation on the ACP prompt route — the ONLY extension an
-//     ACP session's box gets, since that route does not go through the proxy;
 //   * the at-cap refusal, so the box is handed work the reaper kills mid-turn;
 //   * the preview-use extension and `shouldAutoResumeStoppedSandbox` on the
 //     path-based proxy edge.
@@ -65,7 +63,6 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
     }
 
     expect(callers.sort()).toEqual([
-      'projects/routes/acp.ts',
       // definition + the re-export barrel, not decisions
       'projects/sandbox-deadline-policy.ts',
       'projects/sandbox-deadline.ts',

@@ -32,6 +32,7 @@ let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
 let managedPat: string | null;
 let provisionedInitialToken: string | null;
+let remoteBranchAfterSeed: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -145,6 +146,7 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
+  remoteBranchExists: async () => remoteBranchAfterSeed,
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
@@ -380,6 +382,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     backendConfigured = true;
     managedPat = null;
     provisionedInitialToken = PUSH_TOKEN;
+    remoteBranchAfterSeed = true;
   });
 
   test('provisions a managed repo + scoped token and registers the project', async () => {
@@ -420,9 +423,10 @@ describe('POST /v1/projects/provision (managed git)', () => {
           auth: { method: 'github_app', installation_id: INSTALL_ID },
           owner: REPO_OWNER,
         },
-        experimental: { acp_runtime: true },
       },
     });
+    // Provisioning does not stamp hidden experimental runtime metadata.
+    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
     expect(grantedProjectRole).toMatchObject({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
@@ -432,6 +436,64 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+
+    // An unseeded managed repo is a legitimate `kortix ship` state, but it must
+    // be RECORDED, not silently indistinguishable from a seeded one.
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: false,
+      reason: 'caller_opted_out',
+    });
+    expect(body.seeded).toBe(false);
+  });
+
+  test('does not report an active project when the seed pushed but left no default branch', async () => {
+    remoteBranchAfterSeed = false;
+
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Silently Empty',
+        seed_starter: true,
+        starter_template: 'minimal',
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toContain('main');
+    expect(body.code).toBe('seed_verification_failed');
+
+    // The orphan repo + project row are rolled back, so no user can land in a
+    // structurally empty project that claims to be active.
+    expect(backendCalls).toContain('deleteRepo');
+  });
+
+  test('records the completed seed on the project when the default branch is verified', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Verified Seed',
+        seed_starter: true,
+        starter_template: 'minimal',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.seeded).toBe(true);
+    expect(updatedProjectSets.length).toBeGreaterThan(0);
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: true,
+      reason: 'pending',
+    });
   });
 
   test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
@@ -536,29 +598,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
     expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
-  });
-
-  test('keeps the deprecated multi-harness starter id as an ACP-enabled alias', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'Harness Lab',
-        seed_starter: true,
-        starter_template: 'acp-multi-harness',
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(seedFilePaths).toContain('.claude/CLAUDE.md');
-    expect(seedFilePaths).toContain('.codex/AGENTS.md');
-    expect(seedFilePaths).toContain('.pi/README.md');
-    expect(seedFilesByPath.get('kortix.yaml')).toContain('kortix_version: 3');
-    expect(insertedProject?.metadata).toMatchObject({
-      experimental: { acp_runtime: true },
-    });
   });
 
   test('returns 503 when managed git is not configured', async () => {

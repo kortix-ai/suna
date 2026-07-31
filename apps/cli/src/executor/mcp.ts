@@ -130,7 +130,7 @@ const META_TOOLS = [
   {
     name: 'request_secret',
     description:
-      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. You never see the value; once they submit it, the secret becomes available to your session (check KORTIX_PROJECT_SECRET_NAMES). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
+      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat; once they submit it, the secret becomes available to your session (check KORTIX_PROJECT_SECRET_NAMES). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -359,7 +359,7 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
             url: link.url,
             expires_at: link.expires_at,
             instructions:
-              'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. You never see the value; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
+              'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The value is never pasted into chat; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
           }),
           isError: false,
         };

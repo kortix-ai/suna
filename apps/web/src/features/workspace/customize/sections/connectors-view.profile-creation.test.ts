@@ -10,6 +10,7 @@ describe('connector profile creation controls', () => {
     expect(source).toContain('buildEasyConnectProfileDraft(selectedApp,');
     expect(source).toContain('<ConnectorProfileModal');
     expect(source).toContain('idPrefix="easy-connect-profile"');
+    expect(source).toContain('proposeConnectorProfileSlug(selectedApp.name, existingSlugs)');
     expect(modalSource).toContain('id={`${idPrefix}-name`}');
     expect(modalSource).toContain('id={`${idPrefix}-slug`}');
     expect(modalSource).toContain('maxLength={255}');

@@ -30,7 +30,7 @@ kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
+kortix.runtime(); // OpenCode REST compatibility client
 ```
 
 ### Accounts — `kortix.accounts`
@@ -54,11 +54,20 @@ kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
 | `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
-`accounts.audit` is the enterprise audit log.
+`accounts.audit` is the enterprise reconstruction log. It combines authenticated
+API requests with semantic session, executor, approval, and computer events.
 
 | method | what |
 | --- | --- |
-| `audit.log(...)` · `audit.export(...)` · `audit.webhooks.list/create/update/remove(...)` | audit events · CSV/JSONL export · manage SIEM webhooks |
+| `audit.log(accountId, filters?)` | list events by project, session, actor, source, outcome, request, correlation, resource, action, or time |
+| `audit.export(accountId, filters?)` | export the same filtered event stream as CSV or JSONL |
+| `audit.webhooks.list/create/update/remove(...)` | manage signed SIEM webhooks for the centralized stream |
+
+Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
+`request_id`, `trace_id`, and `correlation_id` when the action supplies them.
+The API does not store request bodies, prompts, secrets, credentials, or raw
+connector arguments in the centralized event. Executor events can include a
+bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
 
@@ -409,8 +418,8 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 
 ### Escape hatch
 
-`kortix.runtime()` returns the typed OpenCode REST compatibility client for the
-active sandbox. It is not a harness-neutral ACP client.
+`kortix.runtime()` returns the typed OpenCode REST client for the active
+sandbox.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
@@ -444,8 +453,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | --- | --- |
 | Files | Workspace file operations: list, read, search, write |
 | Session runtime | Health probe and preview/proxy URL builders |
-| ACP | Harness-neutral client, projection, and session controller for OpenCode, Claude Code, Codex, and Pi |
-| OpenCode client | The typed OpenCode v2 client and its full type surface |
+| OpenCode client | The typed OpenCode REST client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
 | Projects REST | The raw REST functions the facade wraps |
 | API client | `backendApi`, the low-level typed HTTP client |

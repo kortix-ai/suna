@@ -8,7 +8,7 @@ import {
   DotsThreeIcon as MoreHorizontal,
   ScrollIcon as ScrollText,
   ShieldIcon as Shield,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -99,7 +99,7 @@ export function TunnelSettingsDialog({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem onClick={onDelete} variant="destructive">
-                    <TrashSolid weight="fill" className="shrink-0" />
+                    <TrashIcon className="shrink-0" />
                     Delete connection
                   </DropdownMenuItem>
                 </DropdownMenuContent>

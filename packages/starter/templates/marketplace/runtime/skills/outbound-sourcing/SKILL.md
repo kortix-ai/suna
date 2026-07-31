@@ -104,8 +104,7 @@ a candidate to the ATS, and whether and when to send.
   details from that candidate's LinkedIn background — no template with a
   name substituted in.
 - **Scoped secrets.** Greenhouse and LinkedIn access is brokered through
-  connectors; no raw credential is ever shown to the model or written to
-  logs.
+  connectors; no raw credential is ever pasted into chat.
 </guardrails>
 
 </skill>

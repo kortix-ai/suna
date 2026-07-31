@@ -69,6 +69,25 @@ function canonicalDraftFromReplacement(replacement: SessionScopeInput): SessionS
   return draft;
 }
 
+export function createNewSessionScopeInitialization(catalog: SessionScopeSelectionCatalog): {
+  draft: SessionScopeDraft;
+  commit: SessionScopeCommit | undefined;
+} {
+  const availability = getSessionScopeAvailability(catalog);
+  const draft = createNewSessionScopeDraft(catalog);
+  if (!hasAvailableScopeAxis(availability)) {
+    return { draft, commit: undefined };
+  }
+  const replacement = buildSessionScopeReplacement(draft, undefined, availability);
+  return {
+    draft,
+    commit: {
+      draft: canonicalDraftFromReplacement(replacement),
+      availability,
+    },
+  };
+}
+
 export async function commitSessionScopeDraft({
   sessionId,
   draft,
@@ -142,16 +161,21 @@ export function SessionScopeToolbar({
 
   useEffect(() => {
     if (!catalog || !initializationKey) return;
+    if (draftState.key === initializationKey) return;
+    const initialization =
+      sessionId && scope
+        ? {
+            draft: createSessionScopeDraft(scope, catalog),
+            commit: undefined,
+          }
+        : createNewSessionScopeInitialization(catalog);
     setDraftState({
       key: initializationKey,
-      draft:
-        sessionId && scope
-          ? createSessionScopeDraft(scope, catalog)
-          : createNewSessionScopeDraft(catalog),
+      draft: initialization.draft,
     });
     setRetroactive(sessionId ? scope?.retroactive : undefined);
-    if (!sessionId) committedDraftRef.current?.(undefined);
-  }, [catalog, initializationKey, scope, sessionId]);
+    if (!sessionId) committedDraftRef.current?.(initialization.commit);
+  }, [catalog, draftState.key, initializationKey, scope, sessionId]);
 
   const activeCatalog = catalog ?? unavailableCatalog;
   const availability = getSessionScopeAvailability(activeCatalog);

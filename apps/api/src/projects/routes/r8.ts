@@ -28,7 +28,6 @@ import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp }
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
-import { resolveProjectRuntimeTransport } from '../../experimental/features';
 import { refreshCrTips } from './shared';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
@@ -101,44 +100,10 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
-    const [freshSession] = await db
-      .select({ metadata: projectSessions.metadata })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, sessionId))
-      .limit(1);
-    const sessionMetadata =
-      freshSession?.metadata && typeof freshSession.metadata === 'object'
-        ? (freshSession.metadata as Record<string, unknown>)
-        : {};
-    const boundTransport =
-      sessionMetadata.runtime_transport === 'acp' || sessionMetadata.runtime_transport === 'rest'
-        ? sessionMetadata.runtime_transport
-        : resolveProjectRuntimeTransport(loaded.row.metadata);
-    const runtimeHarness = ['claude', 'codex', 'opencode', 'pi'].includes(
-      String(sessionMetadata.runtime_harness),
-    )
-      ? (sessionMetadata.runtime_harness as 'claude' | 'codex' | 'opencode' | 'pi')
-      : 'opencode';
-    const storedAcpServerId =
-      typeof sessionMetadata.acp_server_id === 'string' ? sessionMetadata.acp_server_id : null;
-    const legacyOpenCodeAcpId =
-      boundTransport === 'acp' && runtimeHarness === 'opencode'
-        ? result.start.opencode_session_id
-        : null;
     return c.json(
       {
         ...result.start,
-        runtime_transport: boundTransport,
-        runtime_harness: runtimeHarness,
-        native_agent:
-          typeof sessionMetadata.native_agent === 'string' ? sessionMetadata.native_agent : null,
-        acp_server_id: storedAcpServerId ?? legacyOpenCodeAcpId,
-        acp_session_id:
-          typeof sessionMetadata.acp_session_id === 'string'
-            ? sessionMetadata.acp_session_id
-            : storedAcpServerId
-              ? null
-              : legacyOpenCodeAcpId,
+        runtime_transport: 'rest' as const,
       },
       200,
     );

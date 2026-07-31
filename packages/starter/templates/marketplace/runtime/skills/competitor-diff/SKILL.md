@@ -122,8 +122,7 @@ no meaningful changes") and any fetch failures to retry next time.
   through the watch-list file and a reviewed change request, not an ad hoc
   edit mid-run.
 - **Secrets scoped.** If a future watch-list page needs auth, that credential
-  is encrypted in the secrets manager and injected at runtime — never shown
-  to the model or logged. (None are needed today.)
+  is encrypted in the secrets manager and injected at runtime — scoped to this agent's grant. (None are needed today.)
 </guardrails>
 
 </skill>

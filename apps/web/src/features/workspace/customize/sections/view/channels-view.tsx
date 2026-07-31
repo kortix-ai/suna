@@ -62,16 +62,17 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import {
-  type Agent,
-  useRuntimeProviders,
-  useVisibleAgents,
-} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk';
+import {
+  type Agent,
+  modelKeyToWire,
+  useRuntimeProviders,
+  useVisibleAgents,
+  wireToModelKey,
+} from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -104,6 +105,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     staleTime: 10_000,
   });
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const teamsChannelEnabled = projectQuery.data?.experimental?.teams === true;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
@@ -202,7 +204,9 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                     canWrite={canWrite}
                   />
                 ) : null}
-                <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+                {teamsChannelEnabled ? (
+                  <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+                ) : null}
               </TableBody>
             </Table>
 
@@ -227,9 +231,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            <div className="border-border/60 border-t pt-6">
-              <TeamsChannelPanel projectId={projectId} />
-            </div>
+            {teamsChannelEnabled ? (
+              <div className="border-border/60 border-t pt-6">
+                <TeamsChannelPanel projectId={projectId} />
+              </div>
+            ) : null}
 
             {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
           </>
@@ -467,7 +473,7 @@ function ChannelBindingTableRow({
           }
           disabled={!canManage || update.isPending}
         >
-          <SelectTrigger className="w-44" variant="popover">
+          <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -552,9 +558,7 @@ function SlackChannelRow({
                   })
                 }
               >
-                {disconnect.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : null}
+                {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
                 Disconnect
               </Button>
             </div>
@@ -586,8 +590,6 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
   const [confirming, setConfirming] = useState(false);
-
-  if (mode && !mode.enabled) return null;
 
   const connected = Boolean(install);
   const installUrl = mode?.orgConsentUrl ?? null;
@@ -637,9 +639,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
                   })
                 }
               >
-                {disconnect.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : null}
+                {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
                 Disconnect
               </Button>
             </div>
@@ -745,9 +745,7 @@ function EmailChannelRow({
                     )
                   }
                 >
-                  {disconnect.isPending ? (
-                    <Loading className="size-3.5 shrink-0" />
-                  ) : null}
+                  {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
                   Disconnect
                 </Button>
               </div>

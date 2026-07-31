@@ -7,11 +7,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
-import { getKortixCliInstallCommand } from '@/lib/kortix-cli';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ArrowSquareOutIcon as ExternalLink,
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -175,7 +175,7 @@ function SummaryRow({
 }
 
 export function GitView({ projectId }: { projectId: string }) {
-  const installCommand = getKortixCliInstallCommand(getEnv().VERSION);
+  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),

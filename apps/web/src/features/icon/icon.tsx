@@ -1,5 +1,6 @@
 'use client';
 
+import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/brand/brand-logos';
 import { cn } from '@/lib/utils';
 import { SmileyMeltingIcon, XIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -1190,10 +1191,10 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop stop-color="#a98aff" />
-            <stop offset=".14" stop-color="#8c75ff" />
-            <stop offset=".565" stop-color="#5f50e2" />
-            <stop offset=".9" stop-color="#3c2cb8" />
+            <stop stopColor="#a98aff" />
+            <stop offset=".14" stopColor="#8c75ff" />
+            <stop offset=".565" stopColor="#5f50e2" />
+            <stop offset=".9" stopColor="#3c2cb8" />
           </radialGradient>
           <radialGradient
             id="b"
@@ -1205,9 +1206,9 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop stop-color="#85c2ff" />
-            <stop offset=".69" stop-color="#7588ff" />
-            <stop offset="1" stop-color="#6459fe" />
+            <stop stopColor="#85c2ff" />
+            <stop offset=".69" stopColor="#7588ff" />
+            <stop offset="1" stopColor="#6459fe" />
           </radialGradient>
           <radialGradient
             id="d"
@@ -1219,8 +1220,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop stop-color="#bd96ff" />
-            <stop offset=".686685" stop-color="#bd96ff" stop-opacity="0" />
+            <stop stopColor="#bd96ff" />
+            <stop offset=".686685" stopColor="#bd96ff" stopOpacity="0" />
           </radialGradient>
           <radialGradient
             id="e"
@@ -1232,8 +1233,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".268201" stop-color="#6868f7" />
-            <stop offset="1" stop-color="#3923b1" />
+            <stop offset=".268201" stopColor="#6868f7" />
+            <stop offset="1" stopColor="#3923b1" />
           </radialGradient>
           <radialGradient
             id="f"
@@ -1245,8 +1246,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".270711" stop-color="#a1d3ff" />
-            <stop offset=".813393" stop-color="#a1d3ff" stop-opacity="0" />
+            <stop offset=".270711" stopColor="#a1d3ff" />
+            <stop offset=".813393" stopColor="#a1d3ff" stopOpacity="0" />
           </radialGradient>
           <radialGradient
             id="g"
@@ -1258,8 +1259,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop stop-color="#e3acfd" />
-            <stop offset=".816041" stop-color="#9fa2ff" stop-opacity="0" />
+            <stop stopColor="#e3acfd" />
+            <stop offset=".816041" stopColor="#9fa2ff" stopOpacity="0" />
           </radialGradient>
           <radialGradient
             id="h"
@@ -1271,8 +1272,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".268201" stop-color="#8282ff" />
-            <stop offset="1" stop-color="#3923b1" />
+            <stop offset=".268201" stopColor="#8282ff" />
+            <stop offset="1" stopColor="#3923b1" />
           </radialGradient>
           <radialGradient
             id="i"
@@ -1284,8 +1285,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".270711" stop-color="#a1d3ff" />
-            <stop offset=".813393" stop-color="#a1d3ff" stop-opacity="0" />
+            <stop offset=".270711" stopColor="#a1d3ff" />
+            <stop offset=".813393" stopColor="#a1d3ff" stopOpacity="0" />
           </radialGradient>
           <radialGradient
             id="j"
@@ -1297,8 +1298,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop stop-color="#e3acfd" />
-            <stop offset=".816041" stop-color="#9fa2ff" stop-opacity="0" />
+            <stop stopColor="#e3acfd" />
+            <stop offset=".816041" stopColor="#9fa2ff" stopOpacity="0" />
           </radialGradient>
           <radialGradient
             id="k"
@@ -1310,8 +1311,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".046875" stop-color="#688eff" />
-            <stop offset=".946875" stop-color="#230f94" />
+            <stop offset=".046875" stopColor="#688eff" />
+            <stop offset=".946875" stopColor="#230f94" />
           </radialGradient>
           <radialGradient
             id="l"
@@ -1323,8 +1324,8 @@ export const Icon = {
             )}
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".570647" stop-color="#6965f6" stop-opacity="0" />
-            <stop offset="1" stop-color="#8f8fff" />
+            <stop offset=".570647" stopColor="#6965f6" stopOpacity="0" />
+            <stop offset="1" stopColor="#8f8fff" />
           </radialGradient>
           <linearGradient
             id="c"
@@ -1334,8 +1335,8 @@ export const Icon = {
             y2="42"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset=".801159" stop-color="#6864f6" stop-opacity="0" />
-            <stop offset="1" stop-color="#5149de" />
+            <stop offset=".801159" stopColor="#6864f6" stopOpacity="0" />
+            <stop offset="1" stopColor="#5149de" />
           </linearGradient>
         </defs>
       </svg>
@@ -2374,8 +2375,8 @@ export const Icon = {
       >
         <defs>
           <linearGradient id="lobster-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#ff4d4d" />
-            <stop offset="100%" stop-color="#991b1b" />
+            <stop offset="0%" stopColor="#ff4d4d" />
+            <stop offset="100%" stopColor="#991b1b" />
           </linearGradient>
         </defs>
         <path
@@ -2510,25 +2511,11 @@ export const Icon = {
     );
   },
 
-  Apple: ({ className }: { className?: string }) => {
-    return (
-      <svg
-        viewBox="0 0 41.5 51"
-        className={className}
-        xmlns="http://www.w3.org/2000/svg"
-        aria-label="Apple logo"
-      >
-        <g>
-          <path
-            d="M40.2,17.4c-3.4,2.1-5.5,5.7-5.5,9.7c0,4.5,2.7,8.6,6.8,10.3c-0.8,2.6-2,5-3.5,7.2
-              c-2.2,3.1-4.5,6.3-7.9,6.3s-4.4-2-8.4-2c-3.9,0-5.3,2.1-8.5,2.1s-5.4-2.9-7.9-6.5C2,39.5,0.1,33.7,0,27.6
-              c0-9.9,6.4-15.2,12.8-15.2c3.4,0,6.2,2.2,8.3,2.2c2,0,5.2-2.3,9-2.3C34.1,12.2,37.9,14.1,40.2,17.4z
-              M28.3,8.1C30,6.1,30.9,3.6,31,1c0-0.3,0-0.7-0.1-1c-2.9,0.3-5.6,1.7-7.5,3.9c-1.7,1.9-2.7,4.3-2.8,6.9c0,0.3,0,0.6,0.1,0.9
-              c0.2,0,0.5,0.1,0.7,0.1C24.1,11.6,26.6,10.2,28.3,8.1z"
-            fill="currentColor"
-          />
-        </g>
-      </svg>
-    );
-  },
+  Apple: AppleMark,
+
+  GooglePlayStore: PlayStoreMark,
+
+  Windows: WindowsMark,
+
+  Linux: LinuxMark,
 };

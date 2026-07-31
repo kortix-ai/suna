@@ -2,6 +2,11 @@
 
 Use a Kortix API key to create and manage project sessions from your server.
 
+> **Runtime scope.** The public `opencode_model` name remains unchanged for
+> compatibility. Every session runs OpenCode over its REST compatibility
+> interface. Prefer `useSession()` in React over the framework-free
+> `session.stream()` / `session.send()` examples below.
+
 Each session has one Kortix owner. Each session also has one project and one
 unified cost record.
 
@@ -99,7 +104,7 @@ request. Do not use a process-global active runtime in a multi-tenant server.
 `runtime_context` accepts at most 64 scalar entries and 16 KiB. The API rejects
 credential-like keys.
 
-The wire field remains `opencode_model` for every runtime harness.
+The wire field remains `opencode_model` for OpenCode compatibility.
 
 ## 3. Connector profiles
 
@@ -388,9 +393,8 @@ const stream = await handle.stream({
 await handle.send("Summarize the support queue.");
 ```
 
-`stream()` and `send()` use the OpenCode REST compatibility path. Use
-`useSession(projectId, sessionId)` for a React host. It supports OpenCode,
-Claude Code, Codex, and Pi without host-side harness branches.
+`stream()` and `send()` use OpenCode REST. Use
+`useSession(projectId, sessionId)` for a React host.
 
 ## 8. Idempotency
 

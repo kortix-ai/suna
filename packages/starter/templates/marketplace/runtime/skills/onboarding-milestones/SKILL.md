@@ -152,8 +152,7 @@ never the deal stage, the owner, a plan, or a seat count.
   reappears every day the account remains stalled or overdue — it's meant to
   be seen until someone acts.
 - **Scoped secrets.** Postgres and HubSpot access is brokered server-side
-  through connectors; no raw credential is ever shown to the model or written
-  to logs.
+  through connectors; no raw credential is ever pasted into chat.
 </guardrails>
 
 </skill>

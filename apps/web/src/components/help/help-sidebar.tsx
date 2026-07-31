@@ -7,7 +7,6 @@ import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { cn } from '@/lib/utils';
 
 import {
@@ -108,7 +107,7 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
                   const active = isActive(item.url);
                   return (
                     <SidebarMenuItem key={item.title}>
-                      <SpotlightCard
+                      <div
                         className={cn(
                           'flex h-10 cursor-pointer items-center transition-colors',
                           active ? 'bg-muted' : 'bg-transparent',
@@ -137,7 +136,7 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
                             <span className="text-primary font-medium">{item.title}</span>
                           </Link>
                         )}
-                      </SpotlightCard>
+                      </div>
                     </SidebarMenuItem>
                   );
                 })}

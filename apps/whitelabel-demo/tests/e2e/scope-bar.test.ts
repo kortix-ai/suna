@@ -274,7 +274,7 @@ describe('scopeBarConnectors', () => {
     expect(row!.notice!.selfServiceAction).toBeNull();
   });
 
-  test('a revoked TEAM connection asks for a reconnect, not a first-time share', () => {
+  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
     const choices = selectConnectorBindingChoices([
       profile({ status: 'revoked' }),
     ]);

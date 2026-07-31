@@ -5,8 +5,7 @@
  *
  * There are exactly two such moments, and therefore exactly one set of hooks:
  *   - create-with-prompt  → projects/lib/sessions.ts
- *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts (REST + legacy ACP),
- *                           projects/routes/acp.ts (platform ACP bridge),
+ *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts,
  *                           projects/session-lifecycle/engine.ts (server-side
  *                           delivery, transport-independent)
  *
@@ -66,7 +65,6 @@ describe('session-title invariant', () => {
       offenders(/from '[^']*session-title-generate'/, [
         'projects/lib/sessions.ts',
         'projects/session-lifecycle/engine.ts',
-        'projects/routes/acp.ts',
         'sandbox-proxy/routes/preview.ts',
       ]),
     ).toEqual([]);

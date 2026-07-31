@@ -35,6 +35,8 @@ process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 
+const { config } = await import('../config');
+
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
@@ -210,6 +212,7 @@ mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
@@ -325,7 +328,10 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
-  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -647,96 +653,96 @@ mock.module('../shared/db', () => ({
         }) => {
           const conflictResult = {
             returning: async () => {
-            if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex(
-                (row) => row.projectId === values.projectId,
-              );
-              const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                connectionId:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.connectionId
-                    : '00000000-0000-4000-a000-000000000501',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                repoUrl: values.repoUrl,
-                repoOwner: values.repoOwner ?? null,
-                repoName: values.repoName ?? null,
-                externalRepoId: values.externalRepoId ?? null,
-                defaultBranch: values.defaultBranch,
-                authMethod: values.authMethod,
-                installationId: values.installationId ?? null,
-                credentialRef: values.credentialRef ?? null,
-                permissions: values.permissions ?? {},
-                visibility: values.visibility ?? null,
-                webhookId: values.webhookId ?? null,
-                status: values.status ?? 'connected',
-                lastValidatedAt: values.lastValidatedAt ?? now,
-                lastErrorCode: values.lastErrorCode ?? null,
-                lastErrorMessage: values.lastErrorMessage ?? null,
-                metadata: values.metadata ?? {},
+              if (table === projectGitConnections) {
+                const existingIndex = gitConnectionRows.findIndex(
+                  (row) => row.projectId === values.projectId,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  connectionId:
+                    existingIndex >= 0
+                      ? gitConnectionRows[existingIndex]!.connectionId
+                      : '00000000-0000-4000-a000-000000000501',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  repoUrl: values.repoUrl,
+                  repoOwner: values.repoOwner ?? null,
+                  repoName: values.repoName ?? null,
+                  externalRepoId: values.externalRepoId ?? null,
+                  defaultBranch: values.defaultBranch,
+                  authMethod: values.authMethod,
+                  installationId: values.installationId ?? null,
+                  credentialRef: values.credentialRef ?? null,
+                  permissions: values.permissions ?? {},
+                  visibility: values.visibility ?? null,
+                  webhookId: values.webhookId ?? null,
+                  status: values.status ?? 'connected',
+                  lastValidatedAt: values.lastValidatedAt ?? now,
+                  lastErrorCode: values.lastErrorCode ?? null,
+                  lastErrorMessage: values.lastErrorMessage ?? null,
+                  metadata: values.metadata ?? {},
                   createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitConnections.$inferSelect;
-              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-              else gitConnectionRows.push(row);
-              return [row];
-            }
-            if (table === projectGitCredentials) {
-              const existingIndex = gitCredentialRows.findIndex(
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitConnections.$inferSelect;
+                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+                else gitConnectionRows.push(row);
+                return [row];
+              }
+              if (table === projectGitCredentials) {
+                const existingIndex = gitCredentialRows.findIndex(
                   (row) => row.projectId === values.projectId && row.provider === values.provider,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  credentialId:
+                    existingIndex >= 0
+                      ? gitCredentialRows[existingIndex]!.credentialId
+                      : '00000000-0000-4000-a000-000000000601',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  authMethod: values.authMethod ?? 'token',
+                  valueEnc: values.valueEnc,
+                  createdBy: values.createdBy ?? null,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitCredentials.$inferSelect;
+                if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+                else gitCredentialRows.push(row);
+                return [row];
+              }
+              if (table !== projectSecrets) return [];
+              const existingIndex = secretRows.findIndex(
+                (row) => row.projectId === values.projectId && row.name === values.name,
               );
               const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                credentialId:
+              const row: typeof projectSecrets.$inferSelect = {
+                secretId:
                   existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.credentialId
-                    : '00000000-0000-4000-a000-000000000601',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                authMethod: values.authMethod ?? 'token',
-                valueEnc: values.valueEnc,
+                    ? secretRows[existingIndex]!.secretId
+                    : '00000000-0000-4000-a000-000000000401',
+                projectId: values.projectId!,
+                identifier: values.identifier ?? values.name!,
+                name: values.name!,
+                valueEnc: (set.valueEnc ?? values.valueEnc)!,
+                scope: values.scope ?? 'runtime',
+                ownerUserId: values.ownerUserId ?? null,
+                active: values.active ?? true,
                 createdBy: values.createdBy ?? null,
-                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitCredentials.$inferSelect;
-              if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
-              else gitCredentialRows.push(row);
+                description: values.description ?? null,
+                strategy: values.strategy ?? 'runtime',
+                egressPolicy: values.egressPolicy ?? null,
+                handlePrefix: values.handlePrefix ?? null,
+                rotatedAt: values.rotatedAt ?? null,
+                strategyLocked: values.strategyLocked ?? false,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
+              };
+              if (existingIndex >= 0) secretRows[existingIndex] = row;
+              else secretRows.push(row);
               return [row];
-            }
-            if (table !== projectSecrets) return [];
-            const existingIndex = secretRows.findIndex(
-                (row) => row.projectId === values.projectId && row.name === values.name,
-            );
-            const now = new Date('2026-01-02T00:00:00Z');
-            const row: typeof projectSecrets.$inferSelect = {
-              secretId:
-                existingIndex >= 0
-                  ? secretRows[existingIndex]!.secretId
-                  : '00000000-0000-4000-a000-000000000401',
-              projectId: values.projectId!,
-              identifier: values.identifier ?? values.name!,
-              name: values.name!,
-              valueEnc: (set.valueEnc ?? values.valueEnc)!,
-              scope: values.scope ?? 'runtime',
-              ownerUserId: values.ownerUserId ?? null,
-              active: values.active ?? true,
-              createdBy: values.createdBy ?? null,
-              description: values.description ?? null,
-              strategy: values.strategy ?? 'runtime',
-              egressPolicy: values.egressPolicy ?? null,
-              handlePrefix: values.handlePrefix ?? null,
-              rotatedAt: values.rotatedAt ?? null,
-              strategyLocked: values.strategyLocked ?? false,
-              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
-              updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
-            };
-            if (existingIndex >= 0) secretRows[existingIndex] = row;
-            else secretRows.push(row);
-            return [row];
-          },
+            },
             then: (
               resolve: (value: unknown[]) => unknown,
               reject?: (reason: unknown) => unknown,
@@ -1021,7 +1027,7 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.optional)).toBe(true);
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
@@ -1043,9 +1049,9 @@ describe('project session API contract', () => {
     ).toBeUndefined();
 
     const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: 'gitlab-project-token' }),
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'gitlab-project-token' }),
     });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
@@ -1107,7 +1113,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1428,7 +1434,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1506,9 +1512,9 @@ describe('project session API contract', () => {
 
     for (const { body, message } of forbiddenBodies) {
       const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
@@ -1530,9 +1536,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const inventory = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
-    );
+    const inventory = await app.request(`/v1/projects/${PROJECT_ID}/sessions?scope=project`);
     expect(inventory.status).toBe(200);
     expect((await inventory.json())[0]).toMatchObject({
       session_id: SESSION_ID,
@@ -1634,55 +1638,6 @@ describe('project session API contract', () => {
     });
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
-  });
-
-  test('dashboard start returns ACP identity persisted while startSession runs', async () => {
-    const app = createApp();
-    sessionRow = {
-      ...sessionRow!,
-      sandboxProvider: 'platinum',
-      status: 'running',
-      metadata: {
-        runtime_transport: 'acp',
-        runtime_harness: 'codex',
-        acp_server_id: SESSION_ID,
-        native_agent: 'codex',
-      },
-    };
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'platinum',
-        externalId: 'box-acp-identity',
-        baseUrl: null,
-        status: 'active',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    providerStatus = 'running';
-    providerStatusSessionMetadataUpdate = {
-      acp_session_id: 'codex-native-created-during-start',
-    };
-
-    const response = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      runtime_transport: 'acp',
-      runtime_harness: 'codex',
-      acp_server_id: SESSION_ID,
-      acp_session_id: 'codex-native-created-during-start',
-    });
   });
 
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
@@ -1941,10 +1896,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
     runtimeInspectionHealth = {
-      runtime: 'opencode-rest',
       runtimeReady: true,
-      acpServerId: null,
-      runtimeHarness: null,
       bootError: null,
     };
 
@@ -2253,7 +2205,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-        opencodeSessionId: 'ses_root_existing',
+      opencodeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2500,7 +2452,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-missing-on-start',
+      externalId: 'box-missing-on-start',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-missing-on-start' },
     });
@@ -2532,10 +2484,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
     runtimeInspectionHealth = {
-      runtime: 'opencode-rest',
       runtimeReady: true,
-      acpServerId: null,
-      runtimeHarness: null,
       bootError: null,
     };
 
@@ -2587,7 +2536,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-accepted-start-then-removed',
+      externalId: 'box-accepted-start-then-removed',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
     });
@@ -2630,12 +2579,12 @@ describe('project session API contract', () => {
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Human name',
-          metadata: { custom: 'ok' },
-        }),
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Human name',
+        metadata: { custom: 'ok' },
+      }),
     });
 
     expect(res.status).toBe(200);
@@ -2855,11 +2804,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2882,11 +2831,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2930,7 +2879,7 @@ describe('project session API contract', () => {
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
 
     expect(res.status).toBe(200);
@@ -2940,7 +2889,7 @@ describe('project session API contract', () => {
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });

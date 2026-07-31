@@ -7,7 +7,7 @@ Two layers, one client:
 | Layer | Reached via | Owns |
 |---|---|---|
 | **Kortix REST API** (`apps/api`, `/v1/*`) | `backendApi` (Supabase bearer) | control plane — projects, session lifecycle, sandbox provisioning, git/versions, secrets, billing |
-| **Session runtime** (in-sandbox daemon) | OpenCode REST compatibility through `/v1/p/{sandboxId}/8000/...`, or ACP through `/kortix/acp/{acp_server_id}` | agent runtime — messages, events, files, pty, permissions |
+| **Session runtime** (in-sandbox daemon) | OpenCode REST through `/v1/p/{sandboxId}/8000/...` | agent runtime — messages, events, files, pty, permissions |
 
 Legend: **✅ in SDK** · **🟡 partial** (client fn in SDK, hook not) · **❌ gap** (web-local / not wrapped)
 
@@ -83,16 +83,10 @@ try/catching every call.
 | list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅ |
 | list / create / revoke (project-scoped, `KORTIX_TOKEN`) | `GET/POST /v1/projects/:id/cli-token`, `DELETE .../cli-token/:tokenId` | ✅, facade `project(id).tokens.{list,create,revoke}` ✅ |
 
-### 6. Session runtime — ACP plus OpenCode REST compatibility  ✅
+### 6. Session runtime — OpenCode REST  ✅
 
-`useSession(projectId, sessionId)` selects the transport returned by
-`POST /start`. ACP supports OpenCode, Claude Code, Codex, and Pi. The selected
-runtime profile, harness, native agent, `acp_server_id`, and `acp_session_id`
-are immutable for one session.
-
-The table below is the exact OpenCode REST compatibility surface. Its names
-remain public for backward compatibility. ACP uses `core/acp/*` and projects
-harness events into the existing message and part model.
+`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
+`POST /start`. The table below is the exact runtime surface.
 | op | v2 client / daemon |
 |---|---|
 | create / list / get / delete / update | `client.session.{create,list,get,delete,update}` |

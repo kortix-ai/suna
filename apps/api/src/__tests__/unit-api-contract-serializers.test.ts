@@ -167,22 +167,11 @@ describe('serializeProject ⇄ ProjectSchema', () => {
 
 describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('owner view parses strictly and round-trips unchanged', () => {
-    const out = serializeSession(
-      sessionRow({
-        metadata: {
-          name: 'Fix the login bug',
-          runtime_transport: 'acp',
-          runtime_harness: 'codex',
-          native_agent: 'reviewer',
-        },
-      }),
-      {
+    const out = serializeSession(sessionRow(), {
       viewerId: USER_ID,
       canManageProject: false,
-      },
-    );
+    });
     expect(ProjectSessionSchema.strict().parse(out)).toEqual(out);
-    expect(out.native_agent).toBe('reviewer');
   });
 
   test('restricted shared view with grants parses', () => {
@@ -245,9 +234,7 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
       opencode_session_id: 'ses_abc',
-      runtime_transport: 'acp' as const,
-      runtime_harness: 'codex' as const,
-      native_agent: 'reviewer',
+      runtime_transport: 'rest' as const,
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };

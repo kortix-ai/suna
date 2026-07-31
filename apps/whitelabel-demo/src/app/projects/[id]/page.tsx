@@ -84,7 +84,7 @@ function ProjectHome() {
   // resolves to server-side anyway.
   const [bindings, setBindings] = useState<Record<string, string>>({});
 
-  // Only TEAM connections are offered: a wrapper has no personal identity
+  // Only project connections are offered: a wrapper has no personal identity
   // upstream, so a member's private connection cannot be bound at all. The
   // alias used to be hardcoded here, which meant exactly one connector could
   // ever be bound from this screen.

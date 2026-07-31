@@ -23,7 +23,6 @@ import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
-import { ClaudeSubscriptionConnect } from './claude-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
 
 // LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
@@ -116,9 +115,6 @@ export function ApiKeyConnectForm({
 
       {provider.id === 'openai' && (
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
-      )}
-      {provider.id === 'anthropic' && (
-        <ClaudeSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">

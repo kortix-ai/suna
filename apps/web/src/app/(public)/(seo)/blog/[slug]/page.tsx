@@ -1,5 +1,6 @@
 import { ArrowLeftIcon as ArrowLeft } from '@/lib/icons/ssr';
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -8,7 +9,52 @@ import { BlogCover } from '@/components/blog/blog-cover';
 import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
 import { getAllPosts, getPostEntry, resolveAuthor } from '@/lib/blog';
+import type { BlogPostEntry } from '@/lib/blog-posts';
 import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@/lib/utils';
+
+/**
+ * A post's lead visual when it has real product footage to lead with, in place
+ * of the generated `BlogCover` lockup. Same treatment as the landing hero:
+ * muted, looping, inline, poster-first — and under `prefers-reduced-motion` the
+ * video is hidden and the poster renders as a still instead.
+ */
+function PostLeadMedia({
+  media,
+  className,
+}: {
+  media: NonNullable<BlogPostEntry['leadMedia']>;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn('relative overflow-hidden', className)}
+      style={{ aspectRatio: media.aspectRatio }}
+    >
+      <video
+        className="h-full w-full object-cover motion-reduce:hidden"
+        poster={media.poster}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        aria-label={media.alt}
+      >
+        {media.sources.map((source) => (
+          <source key={source.src} src={source.src} type={source.type} />
+        ))}
+      </video>
+      <Image
+        src={media.poster}
+        alt={media.alt}
+        fill
+        sizes="(max-width: 768px) 100vw, 768px"
+        className="hidden object-cover motion-reduce:block"
+      />
+    </div>
+  );
+}
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -137,11 +183,18 @@ export default async function BlogPostPage(props: PageProps) {
           />
         </header>
 
-        <BlogCover
-          logos={entry.coverLogos ?? []}
-          withKortix={entry.coverKortix ?? true}
-          className="border-border/60 mt-10 aspect-[16/9] w-full rounded-2xl border"
-        />
+        {entry.leadMedia ? (
+          <PostLeadMedia
+            media={entry.leadMedia}
+            className="border-border/60 mt-10 w-full rounded-2xl border"
+          />
+        ) : (
+          <BlogCover
+            logos={entry.coverLogos ?? []}
+            withKortix={entry.coverKortix ?? true}
+            className="border-border/60 mt-10 aspect-[16/9] w-full rounded-2xl border"
+          />
+        )}
 
         <BlogContent blocks={entry.blocks} />
 

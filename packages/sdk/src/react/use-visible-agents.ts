@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { Agent } from '@opencode-ai/sdk/v2/client';
+import { useOpenCodeAgents } from './use-opencode-sessions';
 import { featureFlags } from '../core/http/feature-flags';
-import { type RuntimeAgent, useOpenCodeAgents } from './use-opencode-sessions';
 
 /**
  * Project-only agents — surfaced only when the project paradigm is on.
@@ -20,7 +21,7 @@ import { type RuntimeAgent, useOpenCodeAgents } from './use-opencode-sessions';
  */
 const PROJECT_ONLY_AGENTS = new Set(['project-manager']);
 
-function hideProjectOnly(a: RuntimeAgent): boolean {
+function hideProjectOnly(a: Agent): boolean {
   if (featureFlags.enableProjects) return false;
   return PROJECT_ONLY_AGENTS.has(a.name);
 }
@@ -36,11 +37,11 @@ function hideProjectOnly(a: RuntimeAgent): boolean {
 export function useVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
-}): RuntimeAgent[] {
+}): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && a.mode !== 'subagent' && !hideProjectOnly(a)),
-    [agents],
+    [agents]
   );
 }
 
@@ -51,7 +52,10 @@ export function useVisibleAgents(options?: {
 export function useAllVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
-}): RuntimeAgent[] {
+}): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
-  return useMemo(() => agents.filter((a) => !a.hidden && !hideProjectOnly(a)), [agents]);
+  return useMemo(
+    () => agents.filter((a) => !a.hidden && !hideProjectOnly(a)),
+    [agents]
+  );
 }

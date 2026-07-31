@@ -620,16 +620,24 @@ function applyAnthropicThinking(
   return { thinking: { type: 'adaptive' }, effort: resolved.effort };
 }
 
-// @ai-sdk/amazon-bedrock — Bedrock's Converse API still uses the
-// `reasoningConfig: {type:"enabled", budgetTokens}` shape (it has NOT adopted
-// Anthropic's adaptive/output_config surface). Converse rejects
-// budgetTokens >= max output tokens, so clamp below the answer headroom.
+// @ai-sdk/amazon-bedrock — current-gen Bedrock Claude (Sonnet 5, Opus 4.5+/4.8)
+// REJECTS the legacy `reasoningConfig:{type:"enabled", budgetTokens}` shape with
+// the SAME 400 as direct Anthropic ("`thinking.type.enabled` is not supported
+// for this model. Use `thinking.type.adaptive` and `output_config.effort`").
+// Bedrock's Converse API HAS adopted the adaptive surface: @ai-sdk/amazon-bedrock
+// serializes `reasoningConfig:{type:"adaptive", maxReasoningEffort}` to the wire's
+// `additionalModelRequestFields.thinking={type:"adaptive"}` + `output_config.effort`
+// — the exact pair the error demands. So mirror `applyAnthropicThinking`: drive
+// extended thinking through ADAPTIVE + an effort tier (the model manages its own
+// budget; the caller's maxOutputTokens bump gives thinking + answer headroom).
+// Verified against real Bedrock (us-east-1): `enabled` 400s on Sonnet 5 / Opus
+// 4.6 / 4.8; `adaptive` + effort returns 200 on all three. Every managed Bedrock
+// Claude is >= 4.6 (adaptive-capable) and pre-adaptive Claude (3.7) is EOL on
+// Bedrock, so no served model still needs the old `enabled` shape.
 function applyBedrockThinking(
   resolved: ResolvedThinking,
-  maxTokens: number,
 ): Pick<BedrockProviderOptions, 'reasoningConfig'> {
-  const budgetTokens = Math.min(resolved.budgetTokens, Math.max(1024, maxTokens - 1024));
-  return { reasoningConfig: { type: 'enabled', budgetTokens } };
+  return { reasoningConfig: { type: 'adaptive', maxReasoningEffort: resolved.effort } };
 }
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
@@ -931,16 +939,10 @@ const bedrockAdapter: ProviderAdapter = {
   buildProviderOptions(req) {
     const options: BedrockProviderOptions = {};
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
-    if (thinking) {
-      // Mirrors this adapter's own `defaultMaxTokens`: when a thinking budget
-      // is present, the EFFECTIVE max tokens for this request is always
-      // `explicitMaxTokens ?? DEFAULT_MAX_TOKENS_WITH_THINKING` (the plain
-      // 4096 default never applies once thinking is on) — needed here too so
-      // the budget clamp below matches the ceiling the orchestrator actually
-      // sends as `maxOutputTokens`.
-      const maxTokens = req.explicitMaxTokens ?? DEFAULT_MAX_TOKENS_WITH_THINKING;
-      Object.assign(options, applyBedrockThinking(thinking, maxTokens));
-    }
+    // Adaptive thinking carries no token budget to clamp — the model manages
+    // its own. `defaultMaxTokens` below still bumps maxOutputTokens so thinking
+    // + answer share enough headroom.
+    if (thinking) Object.assign(options, applyBedrockThinking(thinking));
     return options;
   },
   defaultMaxTokens(req) {
@@ -980,6 +982,16 @@ export function buildAiSdkArgs(
     // its real models.dev capabilities in `normalizeRequest`. OPTIONAL: absent
     // → no gating (permissive parity — every param passes through unchanged).
     model?: CatalogModel;
+    // `UpstreamDescriptor.bodyExtras` — upstream-specific WIRE fields that have
+    // no AI-SDK equivalent and must reach the upstream verbatim (today: only
+    // OpenRouter's `provider` routing preferences, which pin a managed model to
+    // endpoints that actually support prompt caching and the advertised context
+    // window). 'openai-compatible' ONLY, matching the descriptor field's own
+    // contract: that family's provider package spreads any key it does not
+    // recognize straight onto the wire, which is what makes this work without a
+    // schema. Merged LAST so an upstream pin always wins over a same-named
+    // client field, exactly as the retired native openai-compat transport did.
+    bodyExtras?: Record<string, unknown>;
   } = {},
 ): AiSdkCallArgs {
   const req = normalizeRequest(body, opts);
@@ -994,8 +1006,17 @@ export function buildAiSdkArgs(
   const providerOptions: Record<string, Record<string, unknown>> = {};
   const rawFields = adapter.buildProviderOptions(req, opts.providerName);
   const definedFields = Object.entries(rawFields).filter(([, value]) => value !== undefined);
-  if (definedFields.length) {
-    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries(definedFields);
+  // See `bodyExtras`'s doc comment on this function's options: openai-compatible
+  // only, and merged after the adapter's own fields so an upstream pin wins.
+  const wireExtras =
+    family === 'openai-compatible' && opts.bodyExtras
+      ? Object.entries(opts.bodyExtras).filter(([, value]) => value !== undefined)
+      : [];
+  if (definedFields.length || wireExtras.length) {
+    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries([
+      ...definedFields,
+      ...wireExtras,
+    ]);
   }
 
   // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)

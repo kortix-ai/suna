@@ -131,7 +131,7 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('createNewSessionScopeDraft', () => {
-  test('starts from unrestricted secrets and each strategy-compatible default authorization', () => {
+  test('starts with no secrets or connector authorizations selected', () => {
     const catalog = buildSessionScopeSelectionCatalog({
       secrets: ready([secret('MAIL_TOKEN')]),
       connectors: ready([connector('mail-read', 'project'), connector('issues', 'user')]),
@@ -145,11 +145,8 @@ describe('createNewSessionScopeDraft', () => {
     });
 
     expect(createNewSessionScopeDraft(catalog)).toEqual({
-      secrets: null,
-      connector_bindings: {
-        'mail-read': { authorization_id: 'authorization-mail-default' },
-        issues: { authorization_id: 'authorization-issues-only' },
-      },
+      secrets: [],
+      connector_bindings: {},
     });
   });
 

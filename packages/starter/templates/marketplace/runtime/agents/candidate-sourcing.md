@@ -8,7 +8,6 @@ description: >-
   capped at {{daily_cap}} candidates per run. Never sends outreach and never
   writes to Greenhouse; the recruiter reviews, sends, and owns the ATS.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

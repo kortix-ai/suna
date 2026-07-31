@@ -69,7 +69,7 @@ import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
   MagnifyingGlassIcon as Search,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
@@ -479,7 +479,7 @@ function SecretTableRow({
               </DropdownMenuItem>
               {row.configured && (
                 <DropdownMenuItem onClick={onDelete} variant="destructive">
-                  <TrashSolid weight="fill" className="size-3.5 shrink-0" />
+                  <TrashIcon className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',
                   )}

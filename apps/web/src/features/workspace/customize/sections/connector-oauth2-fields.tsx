@@ -58,7 +58,7 @@ export function OAuth2CredentialFields({
           value={value.authMethod}
           onValueChange={(next) => set('authMethod', next as OAuth2CredentialForm['authMethod'])}
         >
-          <SelectTrigger id={id('auth-method')} variant="popover">
+          <SelectTrigger id={id('auth-method')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

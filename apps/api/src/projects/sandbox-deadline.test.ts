@@ -308,7 +308,6 @@ describe('isTurnStartRequest — what the control plane counts as OBSERVING a ru
       // that admitted only prompt_async/message would kill a box mid-command.
       expect(isTurnStartRequest(port, 'POST', '/session/abc/command')).toBe(true);
       expect(isTurnStartRequest(port, 'POST', '/session/abc/summarize')).toBe(true);
-      expect(isTurnStartRequest(port, 'POST', '/kortix/acp')).toBe(true);
     }
   });
 
@@ -320,7 +319,6 @@ describe('isTurnStartRequest — what the control plane counts as OBSERVING a ru
     expect(
       isTurnStartRequest(AGENT, 'POST', '/session/abc/prompt_async?directory=/workspace'),
     ).toBe(true);
-    expect(isTurnStartRequest(AGENT, 'POST', '/kortix/acp?x=1')).toBe(true);
   });
 
   test('a GET never starts a turn — passive polling must not extend a box', () => {
@@ -335,7 +333,6 @@ describe('isTurnStartRequest — what the control plane counts as OBSERVING a ru
   test('read-only and lookalike paths are not turn starts', () => {
     expect(isTurnStartRequest(AGENT, 'POST', '/session/abc/status')).toBe(false);
     expect(isTurnStartRequest(AGENT, 'POST', '/session')).toBe(false);
-    expect(isTurnStartRequest(AGENT, 'POST', '/kortix/acpx')).toBe(false);
     expect(isTurnStartRequest(AGENT, 'POST', '/session/abc/prompt_asyncx')).toBe(false);
   });
 });

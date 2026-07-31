@@ -34,23 +34,19 @@ export interface StarterFile {
 }
 
 // There is one USER-FACING starter kit:
-// - `general-knowledge-worker`: the full skill kit plus v3 runtime profiles for
-//   OpenCode, Claude Code, Codex, and Pi.
+// - `general-knowledge-worker`: the full skill kit on the OpenCode REST runtime.
 //
 // `minimal` (base only, no domain skills) is kept purely as an INTERNAL
 // building block: the project-clone seed path (`buildProjectSeedFilesFromItem`)
-// uses it to lay down the v3 runtime floor and canonical skill source
+// uses it to lay down the OpenCode runtime floor and canonical skill source
 // before a `registry:project`'s own skills/agents are layered on top, so a
 // specialized project template isn't
 // polluted with every general-knowledge skill. It is not surfaced in the
 // create-project UI, mobile, or the `kortix init` prompt.
 //
-// `acp-multi-harness` is a deprecated compatibility alias for
-// `general-knowledge-worker`. Keep accepting it in API and SDK inputs.
 export const STARTER_TEMPLATE_IDS = [
   'minimal',
   'general-knowledge-worker',
-  'acp-multi-harness',
 ] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
@@ -165,6 +161,8 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
     template: normalizeStarterTemplateId(vars.template),
   };
 
+  // Later roots win (`byPath.set`), so the general-knowledge-worker layer may
+  // override a base file of the same path.
   const roots: { name: string; dir: string }[] = [{ name: 'base', dir: BASE_TEMPLATE_DIR }];
   if (resolvedVars.template !== 'minimal') {
     roots.push({

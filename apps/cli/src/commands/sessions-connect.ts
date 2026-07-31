@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import { type RunningOpenCodeProxy, startOpenCodeProxy } from '../api/sdk.ts';
 import { takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
@@ -63,7 +64,11 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to connect to');
+  const sessionId = await resolveRunningSessionId(
+    positional[0],
+    opts,
+    'Pick a session to connect to',
+  );
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
@@ -77,10 +82,8 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   let proxy: RunningOpenCodeProxy;
   try {
     proxy = startOpenCodeProxy({
-      apiBase: resolved.auth.api_base,
+      runtimeUrl: resolved.runtimeUrl,
       token: resolved.auth.token,
-      sandboxId: resolved.proxyId,
-      runtimePort: resolved.runtimePort,
       port: proxyPort,
     });
   } catch (err) {
@@ -112,152 +115,14 @@ function parseConnectPort(raw: string | undefined): number | null {
   return port;
 }
 
-interface RunningOpenCodeProxy {
-  url: string;
-  close(): void;
-}
-
-interface StartOpenCodeProxyOpts {
-  apiBase: string;
-  token: string;
-  sandboxId: string;
-  runtimePort: number;
-  port?: number;
-}
-
-interface ProxyWsData {
-  upstreamUrl: string;
-  upstream?: WebSocket;
-  ready?: boolean;
-  queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
-}
-
-/**
- * Expose the sandbox OpenCode API on localhost so `opencode attach` can use its
- * normal SDK client. The remote API requires Kortix Bearer auth and lives behind
- * `/v1/p/{sandbox}/{runtimePort}`; this proxy hides both details from OpenCode.
- */
-export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCodeProxy {
-  const baseHttp = buildProxyBase(opts.apiBase, opts.sandboxId, opts.runtimePort);
-  const baseWs = baseHttp.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-
-  const server = Bun.serve<ProxyWsData>({
-    hostname: '127.0.0.1',
-    port: opts.port ?? 0,
-    fetch: async (req, bunServer) => {
-      const incoming = new URL(req.url);
-      if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-        const upstream = new URL(`${baseWs}${incoming.pathname}${incoming.search}`);
-        upstream.searchParams.set('token', opts.token);
-        const upgraded = bunServer.upgrade(req, {
-          data: { upstreamUrl: upstream.toString() },
-        });
-        return upgraded
-          ? undefined
-          : new Response('WebSocket upgrade failed', { status: 500 });
-      }
-
-      const upstream = `${baseHttp}${incoming.pathname}${incoming.search}`;
-      return forwardOpenCodeHttp(req, upstream, opts.token);
-    },
-    websocket: {
-      open(ws) {
-        ws.data.queue = [];
-        ws.data.ready = false;
-        let upstream: WebSocket;
-        try {
-          upstream = new WebSocket(ws.data.upstreamUrl);
-        } catch {
-          try { ws.close(1011, 'upstream connect failed'); } catch {}
-          return;
-        }
-        upstream.binaryType = 'arraybuffer';
-        ws.data.upstream = upstream;
-
-        upstream.onopen = () => {
-          ws.data.ready = true;
-          const queued = ws.data.queue ?? [];
-          ws.data.queue = [];
-          for (const msg of queued) {
-            try { upstream.send(msg as any); } catch {}
-          }
-        };
-        upstream.onmessage = (event: MessageEvent) => {
-          try { ws.send(event.data as any); } catch {}
-        };
-        upstream.onclose = (event: CloseEvent) => {
-          try { ws.close(sanitizeCloseCode(event.code), (event.reason || '').slice(0, 120)); } catch {}
-        };
-        upstream.onerror = () => {
-          try { ws.close(1011, 'upstream error'); } catch {}
-        };
-      },
-      message(ws, message) {
-        const upstream = ws.data.upstream;
-        if (ws.data.ready && upstream?.readyState === WebSocket.OPEN) {
-          try { upstream.send(message as any); } catch {}
-        } else {
-          (ws.data.queue ??= []).push(message);
-        }
-      },
-      close(ws) {
-        try { ws.data.upstream?.close(); } catch {}
-      },
-    },
-  });
-
-  return {
-    url: `http://127.0.0.1:${server.port}`,
-    close: () => server.stop(true),
-  };
-}
-
-async function forwardOpenCodeHttp(
-  req: Request,
-  upstream: string,
-  token: string,
-): Promise<Response> {
-  const headers = new Headers(req.headers);
-  headers.set('Authorization', `Bearer ${token}`);
-  headers.delete('host');
-  headers.delete('connection');
-  headers.delete('content-length');
-
-  let res: Response;
-  try {
-    res = await fetch(upstream, {
-      method: req.method,
-      headers,
-      body: req.method === 'GET' || req.method === 'HEAD' ? undefined : req.body,
-    });
-  } catch (err) {
-    return new Response(`OpenCode proxy upstream error: ${(err as Error).message}`, {
-      status: 502,
-    });
-  }
-
-  const responseHeaders = new Headers(res.headers);
-  responseHeaders.delete('content-encoding');
-  responseHeaders.delete('content-length');
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: responseHeaders,
-  });
-}
-
-function buildProxyBase(apiBase: string, sandboxId: string, runtimePort: number): string {
-  const base = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
-  return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${runtimePort}`;
-}
-
-function buildAttachArgs(
-  url: string,
-  opencodeSessionId: string,
-  extraArgs: string[],
-): string[] {
+function buildAttachArgs(url: string, opencodeSessionId: string, extraArgs: string[]): string[] {
   const hasContinuation = extraArgs.some(
-    (arg) => arg === '--session' || arg === '-s' || arg.startsWith('--session=') || arg === '--continue' || arg === '-c',
+    (arg) =>
+      arg === '--session' ||
+      arg === '-s' ||
+      arg.startsWith('--session=') ||
+      arg === '--continue' ||
+      arg === '-c',
   );
   return [
     'attach',
@@ -283,11 +148,4 @@ function spawnOpenCodeAttach(args: string[]): Promise<number> {
       else resolve(signal ? 130 : 1);
     });
   });
-}
-
-function sanitizeCloseCode(code: number | undefined): number {
-  if (typeof code !== 'number') return 1000;
-  if (code === 1000) return 1000;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1000;
 }

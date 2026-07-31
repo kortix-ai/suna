@@ -272,6 +272,7 @@ export class SessionSyncController {
     this.clearPromptSettlementTimer();
     this.promptObservationPhase = 'awaiting-work';
     this.update({ isPromptObservedBusy: true });
+    this.setBusy(true);
   }
 
   /** Observe an authoritative runtime status from SSE or status reconciliation. */
@@ -296,6 +297,7 @@ export class SessionSyncController {
     this.clearPromptSettlementTimer();
     this.promptObservationPhase = 'idle';
     this.update({ isPromptObservedBusy: false });
+    this.setBusy(false);
   }
 
   setBusy(isBusy: boolean): void {
@@ -323,6 +325,9 @@ export class SessionSyncController {
       const firstPage = await this.loadPage('tail', reason);
       const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
       if (this.destroyed) return;
+      if (this.containsNewPromptReply(page.messages)) {
+        this.observePromptActivity();
+      }
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
       if (!this.olderHistoryStarted) {
@@ -430,8 +435,31 @@ export class SessionSyncController {
     if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
       return;
     }
-    await Promise.all([this.reconcile('poll'), this.reconcileStatus()]);
+    // Load the transcript before status. A completed async prompt can transition
+    // back to idle before the first poll. The tail proves that work occurred;
+    // the following idle status can then settle prompt observation correctly.
+    await this.reconcile('poll');
+    await this.reconcileStatus();
     this.lastActivityAt = this.scheduler.now();
+  }
+
+  private containsNewPromptReply(messages: SessionSyncMessage[]): boolean {
+    if (this.promptObservationPhase === 'idle') return false;
+    const newUserMessageIds = new Set(
+      messages
+        .filter(
+          (message) =>
+            message.info.role === 'user' && !this.knownUserMessageIds.has(message.info.id),
+        )
+        .map((message) => message.info.id),
+    );
+    if (newUserMessageIds.size === 0) return false;
+    return messages.some(
+      (message) =>
+        message.info.role === 'assistant' &&
+        Boolean(message.info.parentID) &&
+        newUserMessageIds.has(message.info.parentID!),
+    );
   }
 
   private async reconcileStatus(): Promise<void> {
@@ -468,6 +496,7 @@ export class SessionSyncController {
       if (this.destroyed || this.promptObservationPhase !== 'settling') return;
       this.promptObservationPhase = 'idle';
       this.update({ isPromptObservedBusy: false });
+      this.stopLivenessTimer();
     };
     this.promptSettlementTimer = this.scheduler.setTimeout
       ? this.scheduler.setTimeout(settle, PROMPT_IDLE_SETTLEMENT_MS)

@@ -15,7 +15,7 @@ import {
   InfoIcon as Info,
   EnvelopeIcon as Mail,
   ChatCircleIcon as MessageCircle,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import Link from 'next/link';

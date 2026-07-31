@@ -50,7 +50,7 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   ReceiptIcon as Receipt,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,

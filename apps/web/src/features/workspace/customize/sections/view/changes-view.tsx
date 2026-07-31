@@ -31,7 +31,7 @@ import {
   CaretRightIcon as ChevronRight,
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
-  ArrowsClockwiseIcon as Refresh,
+  ArrowClockwiseIcon as Refresh,
   XCircleIcon as XCircleSolid,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';

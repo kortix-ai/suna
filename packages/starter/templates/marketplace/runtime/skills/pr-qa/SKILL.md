@@ -174,8 +174,7 @@ PR in this sweep's batch, if any, with a clean checkout (Step 1).
   comment, and the landed ledger change request, ever leave the sandbox;
   ephemeral test deploys are always torn down per PR.
 - **Scoped, brokered secrets.** GitHub and test-environment credentials are
-  injected at runtime by the Secrets Manager — never visible to the model,
-  never written to a log or a comment. The edge re-check is an unauthenticated
+  injected at runtime by the Secrets Manager — scoped to this agent's grant. The edge re-check is an unauthenticated
   public HTTPS request; no separate credential is needed for it.
 - **Ledger changes only through a change request.** Updates to
   `.kortix/memory/qa-known-issues.md` land via a scoped `project.cr.open`

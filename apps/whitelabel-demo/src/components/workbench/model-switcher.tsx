@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
 import { getSessionToken } from '@/lib/session';
 import { useProjectModels } from '@kortix/sdk/react';
@@ -65,18 +66,28 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
           body: JSON.stringify({ model }),
         },
       );
-      const body = (await res.json()) as { model?: string; appliedLive?: boolean; error?: string };
+      const body = (await res.json()) as {
+        model?: string;
+        appliedLive?: boolean;
+        pushFailed?: boolean;
+        detail?: string;
+        error?: string;
+      };
       if (!res.ok) throw new Error(body.error ?? 'Could not change the model');
       return body;
     },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
       qc.invalidateQueries({ queryKey: ['session-model', projectId, sessionId] });
-      toast.success(
-        result.appliedLive
-          ? `Now running ${result.model}`
-          : `${result.model} saved — applies when this session next starts`,
-      );
+      // Three outcomes, not two — a stored-but-not-pushed change is NOT a
+      // success, and saying so is the whole point of this switcher's doc
+      // comment above. See classifyModelChange.
+      const outcome = classifyModelChange(result);
+      if (outcome.kind === 'half_applied') {
+        toast.error(outcome.message, { description: outcome.detail });
+        return;
+      }
+      toast.success(outcome.message);
     },
     onError: (err: Error) => toast.error(err.message || 'Could not change the model'),
   });

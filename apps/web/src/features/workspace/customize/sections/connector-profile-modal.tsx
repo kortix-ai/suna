@@ -3,6 +3,7 @@
 import type { ConnectorAuthorizationStrategy } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -24,8 +25,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { User, UsersThree } from '@phosphor-icons/react';
 
 import {
+  connectorProfileSlugAfterNameChange,
   type EasyConnectProfileInput,
   isConnectorProfileSlugAvailable,
   normalizeConnectorProfileSlug,
@@ -37,14 +40,64 @@ export function AuthorizationStrategyField({
   onChange,
   disabled = false,
   pending = false,
+  lockedReason,
 }: {
   idPrefix: string;
   value: ConnectorAuthorizationStrategy;
   onChange: (value: ConnectorAuthorizationStrategy) => void;
   disabled?: boolean;
   pending?: boolean;
+  /**
+   * Set on a connector that already exists, where the choice is settled.
+   *
+   * Forces the control off AND replaces the description, because a disabled
+   * select with unchanged help text reads as a bug: the user tries it, nothing
+   * happens, and nothing says why. The reason belongs where the control is.
+   */
+  lockedReason?: string;
 }) {
   const id = `${idPrefix}-authorization-strategy`;
+
+  // Settled connectors get a STATEMENT, not a dead input. A disabled select
+  // still looks operable — it keeps the chevron, the focus ring and the hover —
+  // so it invites a click that does nothing. Reading the value out plainly is
+  // both calmer and more honest about the fact that there is no decision left.
+  if (lockedReason) {
+    const isProject = value === 'project';
+    return (
+      <Field>
+        <FieldLabel>Authorization owner</FieldLabel>
+        <div className="bg-popover flex items-start gap-3 rounded-md border px-3 py-2.5">
+          <span
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-sm',
+              isProject ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+            )}
+          >
+            {isProject ? (
+              <UsersThree className="text-kortix-blue size-4" weight="duotone" />
+            ) : (
+              <User className="text-kortix-purple size-4" weight="duotone" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{isProject ? 'Project' : 'User'}</span>
+              <Badge variant="outline" size="xs">
+                Fixed
+              </Badge>
+            </div>
+            <p className="text-muted-foreground text-xs text-pretty">
+              {isProject
+                ? 'One project-managed account, shared with allowed sessions.'
+                : 'Each member authorizes their own account, private to their sessions.'}
+            </p>
+          </div>
+        </div>
+        <FieldDescription className="text-pretty">{lockedReason}</FieldDescription>
+      </Field>
+    );
+  }
   return (
     <Field>
       <div className="flex items-center justify-between gap-2">
@@ -56,7 +109,7 @@ export function AuthorizationStrategyField({
         disabled={disabled || pending}
         onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
       >
-        <SelectTrigger id={id} variant="popover">
+        <SelectTrigger id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -100,6 +153,7 @@ export function ConnectorProfileModal({
 }) {
   const [name, setName] = useState(initialName);
   const [slug, setSlug] = useState(initialSlug);
+  const [slugEdited, setSlugEdited] = useState(false);
   const [authorizationStrategy, setAuthorizationStrategy] =
     useState<ConnectorAuthorizationStrategy>('project');
 
@@ -107,6 +161,7 @@ export function ConnectorProfileModal({
     if (!open) return;
     setName(initialName);
     setSlug(initialSlug);
+    setSlugEdited(false);
     setAuthorizationStrategy('project');
   }, [initialName, initialSlug, open]);
 
@@ -134,7 +189,18 @@ export function ConnectorProfileModal({
                 <Input
                   id={`${idPrefix}-name`}
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    const displayName = event.target.value;
+                    setName(displayName);
+                    setSlug((currentSlug) =>
+                      connectorProfileSlugAfterNameChange({
+                        displayName,
+                        currentSlug,
+                        existingSlugs,
+                        slugEdited,
+                      }),
+                    );
+                  }}
                   placeholder={initialName}
                   variant="popover"
                   autoFocus
@@ -148,7 +214,10 @@ export function ConnectorProfileModal({
                 <Input
                   id={`${idPrefix}-slug`}
                   value={slug}
-                  onChange={(event) => setSlug(normalizeConnectorProfileSlug(event.target.value))}
+                  onChange={(event) => {
+                    setSlugEdited(true);
+                    setSlug(normalizeConnectorProfileSlug(event.target.value));
+                  }}
                   placeholder={initialSlug}
                   variant="popover"
                   className="font-mono text-xs"

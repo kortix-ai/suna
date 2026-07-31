@@ -4,15 +4,14 @@ Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 **Scope:**
 
-1. Process supervisor for the OpenCode REST compatibility process.
-2. Lazy ACP process runtime for OpenCode, Claude Code, Codex, and Pi.
-3. Reverse proxy that fronts opencode's HTTP + SSE surface on
+1. Process supervisor for `opencode serve`.
+2. Reverse proxy that fronts opencode's HTTP + SSE surface on
    `KORTIX_SERVICE_PORT` (default `8000`).
-4. Managed Kortix system-skill injection into each selected harness's native
-   discovery directory.
-5. Small Kortix-namespaced control surface: `GET /kortix/health` and
+3. Managed Kortix system-skill injection into OpenCode's native discovery
+   directory.
+4. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
-6. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+5. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
    always-on `core/services/static-web.js` s6 service; now runs in-process
@@ -38,17 +37,13 @@ in-process daemon.
 3. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
    `/workspace/.kortix` and check out the requested branch. Failures are
    logged but non-fatal — the daemon still serves `/kortix/health`.
-4. Resolve the immutable runtime harness and config directory from the injected
-   session plan.
-5. Inject managed system skills into `.kortix/opencode/skills` and the selected
-   harness's native skill directory.
-6. Resolve `OPENCODE_CONFIG_DIR` for the compatibility process.
-7. Start the OpenCode REST supervisor in the cloned project directory
+4. Inject managed system skills into `.kortix/opencode/skills`.
+5. Resolve `OPENCODE_CONFIG_DIR`.
+6. Start the OpenCode REST supervisor in the cloned project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
-8. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
-9. Start or reuse the selected ACP process on the first ACP request.
-10. Trap signals; on shutdown, drain proxy + static web + kill child processes.
+7. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+8. Trap signals; on shutdown, drain proxy + static web + kill child processes.
 
 ## Routes
 
@@ -56,19 +51,7 @@ in-process daemon.
 | ---------------- | ------------------------------------------------------------------------ |
 | `GET /kortix/health` | Daemon liveness + opencode state + repo info (always 200 from daemon) |
 | `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.     |
-| `GET /kortix/acp/` | List active ACP processes. |
-| `POST /kortix/acp/:serverId?agent=codex` | Start or reuse one OpenCode, Claude Code, Codex, or Pi ACP process and send one JSON-RPC envelope. |
-| `GET /kortix/acp/:serverId` | Stream ACP requests and notifications over SSE. |
-| `DELETE /kortix/acp/:serverId` | Stop one ACP process. The operation is idempotent. |
 | `/*`             | Reverse-proxied to opencode. 503 while `opencode !== 'ok'`.              |
-
-The first `POST` must select `agent=opencode`, `agent=claude`, `agent=codex`,
-or `agent=pi`. The same `serverId` cannot select a different harness later.
-The route returns `409` for that conflict.
-
-The sandbox image installs exact ACP adapter versions from
-`packages/shared/src/runtime-versions.json`. A runtime request never installs
-an npm package.
 
 ### `GET /kortix/health` response shape
 
@@ -127,20 +110,7 @@ KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
 KORTIX_GITHUB_TOKEN=
 KORTIX_TOKEN=
-KORTIX_RUNTIME_CONFIG_DIR=
-KORTIX_RUNTIME_MODEL=
-KORTIX_ACP_CLAUDE_PATH=
-KORTIX_ACP_CLAUDE_ARGS=
-KORTIX_ACP_CODEX_PATH=
-KORTIX_ACP_CODEX_ARGS=
-KORTIX_ACP_OPENCODE_PATH=
-KORTIX_ACP_OPENCODE_ARGS=
-KORTIX_ACP_PI_PATH=
-KORTIX_ACP_PI_ARGS=
 ```
-
-Each `KORTIX_ACP_*_ARGS` value is a JSON string array. The runtime does not
-parse shell syntax.
 
 ## Build
 

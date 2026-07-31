@@ -47,7 +47,7 @@ import {
   ViewportElementContext,
   ViewportPluginPackage,
 } from '@embedpdf/plugin-viewport/react';
-import { useZoom, ZoomPluginPackage } from '@embedpdf/plugin-zoom/react';
+import { useZoom, ZoomMode, ZoomPluginPackage, type ZoomLevel } from '@embedpdf/plugin-zoom/react';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -89,6 +89,10 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+// Imported directly (not via the `@/features/file-viewer` barrel) to avoid a
+// module cycle: that barrel re-exports FileContentRenderer, which lazy-loads
+// PdfRenderer, which renders this file.
+import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
@@ -114,6 +118,9 @@ export type PDFViewerHandle = {
 export type PDFViewerProps = {
   className?: string;
   defaultZoom?: number;
+  /** Start the zoom plugin at fit-to-page instead of `defaultZoom`. Off by
+   *  default, so every existing caller keeps today's numeric zoom. */
+  fitOnOpen?: boolean;
   fileName?: string;
   showDownload?: boolean;
   showToolbar?: boolean;
@@ -149,6 +156,20 @@ const PDF_SEARCH_DEBOUNCE_MS = 300;
 const TEXT_SELECTION_BACKGROUND = 'rgba(59, 130, 246, 0.14)';
 const THUMBNAIL_FOCUS_RING_CLASS =
   'group-focus-visible/pdf-thumbnail-sidebar:ring-2 group-focus-visible/pdf-thumbnail-sidebar:ring-ring group-focus-visible/pdf-thumbnail-sidebar:ring-offset-1 group-focus-visible/pdf-thumbnail-sidebar:ring-offset-background';
+
+/**
+ * Picks the zoom plugin's initial level. `fitOnOpen` is the one guarded
+ * global-default flip point in this file — keep this an explicit function
+ * (not inlined at the call site) so it stays independently testable: a
+ * regression here would silently change the zoom every existing caller opens
+ * at.
+ */
+export function selectPdfZoomLevel(
+  fitOnOpen: boolean | undefined,
+  defaultZoomLevel: number,
+): ZoomLevel {
+  return fitOnOpen ? ZoomMode.FitPage : defaultZoomLevel;
+}
 
 type PageRotationDeltas = Map<number, Rotation>;
 type ThumbnailSelectionMode = 'replace' | 'toggle' | 'range';
@@ -276,6 +297,23 @@ async function downloadPdfWithPageRotations({
     new Blob([nextPdfBuffer], { type: 'application/pdf' }),
     getRotatedPdfDownloadFileName(fileName),
   );
+}
+
+/**
+ * A page's on-screen size once its own rotation is applied — a quarter turn
+ * swaps width and height. Delegates to `getRotatedDimensions` further down
+ * this file (a hoisted function declaration, so the call is valid regardless
+ * of definition order) rather than re-deriving the swap — that helper is
+ * already this file's one convention for "does this rotation swap the
+ * axes", also used by `getRotatedPageDimensions` and the page-rotate
+ * transitions below. Exported so the page-1 size report (see
+ * `PDFViewerDocumentLoader`) is independently testable.
+ */
+export function getRotatedPageSize(
+  size: { width: number; height: number },
+  rotation: Rotation,
+): { width: number; height: number } {
+  return getRotatedDimensions({ width: size.width, height: size.height, rotation });
 }
 
 function getThumbnailMetaForPage({
@@ -2342,6 +2380,10 @@ function PDFViewerDocumentLoader({
   const [loadError, setLoadError] = React.useState(false);
   const openedFileRef = React.useRef<string | null>(null);
   const onDocumentLoadSuccessRef = React.useRef(onDocumentLoadSuccess);
+  // `null` outside a <PreviewFitProvider> — see image-renderer.tsx for why
+  // `report` below is then an inert no-op everywhere but the Easy panel.
+  const previewFit = usePreviewFit();
+  const reportedDocumentIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     onDocumentLoadSuccessRef.current = onDocumentLoadSuccess;
@@ -2382,6 +2424,28 @@ function PDFViewerDocumentLoader({
   const document = activeDocument?.status === 'loaded' ? activeDocument.document : null;
   const documentFailed = loadError || activeDocument?.status === 'error';
 
+  // Report page 1's intrinsic size once per loaded document — guarded on
+  // `activeDocumentId` so a re-render (zoom, scroll, rotation) never
+  // re-reports the same document.
+  React.useEffect(() => {
+    if (!previewFit || !activeDocumentId || !document) return;
+    if (reportedDocumentIdRef.current === activeDocumentId) return;
+    const firstPage = document.pages[0];
+    if (!firstPage) return;
+
+    reportedDocumentIdRef.current = activeDocumentId;
+    previewFit.report(getRotatedPageSize(firstPage.size, firstPage.rotation));
+  }, [previewFit, activeDocumentId, document]);
+
+  // A PDF that fetched fine and will not parse renders the fallback shell
+  // below and never reaches the report above. Saying so explicitly is what
+  // stops a consumer sizing itself to whatever it measured last — silence
+  // here would read as "still loading", which this is not.
+  React.useEffect(() => {
+    if (!previewFit || !documentFailed) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, documentFailed]);
+
   if (!activeDocumentId || documentFailed || !pdfFile) {
     return (
       <PDFViewerFallbackShell
@@ -2413,6 +2477,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
   {
     className,
     defaultZoom = DEFAULT_ZOOM,
+    fitOnOpen,
     fileName,
     showDownload = true,
     showRotateControls = true,
@@ -2490,7 +2555,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
       scrollBehavior: 'auto',
     }),
     createPluginRegistration(ZoomPluginPackage, {
-      defaultZoomLevel: defaultZoom,
+      defaultZoomLevel: selectPdfZoomLevel(fitOnOpen, defaultZoom),
       minZoom: ZOOM_OPTIONS[0],
       maxZoom: ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1],
     }),

@@ -251,7 +251,7 @@ function NewSessionForm({
             <Label>Connections</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Which shared account each connector acts as. Sessions started here
-              can only use connections shared with the team.
+              can only use project connections.
             </p>
           </div>
           <ConnectorBindingFields

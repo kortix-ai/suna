@@ -13,6 +13,29 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('peekEnter');
     expect(source).toContain('peekLeave');
   });
+
+  // The collapse control lives in the panel's own header now
+  // (ProjectSidebar), so this one exists purely to bring a hidden panel back.
+  // Rendering it while the panel is docked would put two toggles for one
+  // panel on screen at once.
+  test('the toggle self-hides while the sidebar is docked open', () => {
+    const gate = source.slice(
+      source.indexOf('const showSidebarToggle ='),
+      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
+    );
+    expect(gate).toContain("sidebarState !== 'expanded'");
+    expect(source).toContain('{showSidebarToggle && (');
+  });
+
+  // `sidebarState` tracks the desktop dock cookie, not the mobile Sheet — so
+  // an ungated `!== 'expanded'` would strand mobile with no way to open it.
+  test('mobile is exempt from that gate', () => {
+    const gate = source.slice(
+      source.indexOf('const showSidebarToggle ='),
+      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
+    );
+    expect(gate).toContain('isMobileViewport ||');
+  });
 });
 
 describe('SessionSiteHeader trailing cluster — non-technical resting state', () => {
@@ -74,7 +97,7 @@ describe('SessionSiteHeader "more actions" menu — destructive last, technical 
 
     // `Delete` also appears earlier as a substring of the `SessionDeleteModal`
     // import — anchor on the destructive button's own icon instead.
-    const deleteIndex = source.indexOf('<TrashSolid');
+    const deleteIndex = source.indexOf('<TrashIcon');
     const exportIndex = source.indexOf('Export conversation');
     const compactIndex = source.indexOf('Summarize conversation');
     const renameIndex = source.indexOf("'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'");

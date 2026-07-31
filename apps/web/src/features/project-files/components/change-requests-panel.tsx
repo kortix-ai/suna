@@ -16,7 +16,7 @@ import {
   GitDiffIcon as FileDiff,
   StackIcon as Layers,
   PlusIcon as Plus,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   XIcon as X,
   XCircleIcon as XCircle,
 } from '@phosphor-icons/react';

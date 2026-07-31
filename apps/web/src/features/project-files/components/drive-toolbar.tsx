@@ -24,7 +24,7 @@ import {
   EyeIcon as Eye,
   EyeSlashIcon as EyeOff,
   HouseIcon as HomeSolid,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';

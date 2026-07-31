@@ -18,7 +18,17 @@ const NeuroNoise = dynamic(() => import('@paper-design/shaders-react').then((m) 
 // engine behind the older presets. `maxPixelCount` caps GPU work on
 // large/high-DPR displays: the canvas renders at most ~2M pixels and
 // upscales in CSS, which is invisible on soft, organic compositions.
-const MAX_PIXEL_COUNT = 1920 * 1080;
+export const MAX_PIXEL_COUNT = 1920 * 1080;
+
+/**
+ * Shared props for the Paper Shader wallpapers. `maxPixelCount` exists so a
+ * still-image export can render the composition at its true pixel size
+ * (a 5K wallpaper must not be a 2 MP canvas upscaled by CSS). App surfaces
+ * never pass it and keep the 2 MP cap.
+ */
+interface PaperShaderProps {
+  maxPixelCount?: number;
+}
 
 const FILL_STYLE = {
   position: 'absolute',
@@ -40,7 +50,9 @@ function PaperRoot({ children, className }: { children: ReactNode; className?: s
 
 // Soft banded gradient with a fine film-grain finish — print texture in
 // page tones.
-export const GrainShader = memo(function GrainShader() {
+export const GrainShader = memo(function GrainShader({
+  maxPixelCount = MAX_PIXEL_COUNT,
+}: PaperShaderProps = {}) {
   const { isDark, bg, reduceMotion } = useWallpaperTheme();
 
   return (
@@ -49,7 +61,7 @@ export const GrainShader = memo(function GrainShader() {
         colorBack={bg}
         colors={isDark ? ['#191a1e', '#232429', '#2f3037'] : ['#f3f3f6', '#e6e6ea', '#d5d5dc']}
         intensity={0.15}
-        maxPixelCount={MAX_PIXEL_COUNT}
+        maxPixelCount={maxPixelCount}
         noise={0.3}
         shape="wave"
         softness={0.7}
@@ -61,7 +73,9 @@ export const GrainShader = memo(function GrainShader() {
 });
 
 // Living filament mesh drifting like a slow neural network.
-export const NeuroShader = memo(function NeuroShader() {
+export const NeuroShader = memo(function NeuroShader({
+  maxPixelCount = MAX_PIXEL_COUNT,
+}: PaperShaderProps = {}) {
   const { isDark, bg, reduceMotion } = useWallpaperTheme();
 
   return (
@@ -72,7 +86,7 @@ export const NeuroShader = memo(function NeuroShader() {
         colorFront={isDark ? '#7a7b85' : '#8f9099'}
         colorMid={isDark ? '#2a2b33' : '#eaeaee'}
         contrast={0.25}
-        maxPixelCount={MAX_PIXEL_COUNT}
+        maxPixelCount={maxPixelCount}
         scale={1.2}
         speed={reduceMotion ? 0 : 0.5}
         style={FILL_STYLE}

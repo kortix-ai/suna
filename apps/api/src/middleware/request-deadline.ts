@@ -101,12 +101,7 @@ const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
   { method: 'POST', path: '/v1/projects' },          // create + seed + provision
 ];
 
-const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
-  {
-    method: 'POST',
-    path: /^\/v1\/projects\/[^/]+\/sessions\/[^/]+\/acp$/,
-  }, // ACP JSON-RPC waits for the harness turn; cold harnesses can exceed 25s
-];
+const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [];
 
 export function isExempt(c: Context): boolean {
   // WebSocket upgrade (defensive — these are handled before app.fetch).

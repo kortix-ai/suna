@@ -73,8 +73,8 @@ import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import {
@@ -82,17 +82,13 @@ import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
-import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import {
-  getProjectRoutingPolicy,
-  setProjectModelOverrides,
-} from '../../repositories/project-routing-policies';
+import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import {
   assertProjectCapability,
@@ -1549,9 +1545,10 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
+    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl, enabled }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -1574,7 +1571,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    const mode = teamsMode(baseUrl, {
+      enabled: teamsChannelEnabled(loaded.row.metadata),
+      projectId,
+      byoAppId,
+    });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -1603,13 +1604,14 @@ projectsApp.openapi(
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
   }),
   async (c: any) => {
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
     // Slack (r4 slack/connect) and email connect twins.
+    // Authz before the feature-flag check so an unauthorized caller never gets a
+    // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -1617,6 +1619,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1752,7 +1755,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -2749,15 +2752,10 @@ projectsApp.openapi(
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
-    // What `auto` resolves to for this project. Served below so the client can
-    // LOCK its switch instead of offering a toggle that always 409s.
-    const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
-    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
-      config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefaultModelId(),
       routing?.visionModel,
       ...(routing?.defaultFallback?.models ?? []),
       ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
@@ -2767,103 +2765,7 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    // Server-owned per-project enablement, resolved HERE and stamped onto each
-    // model so every client renders the same answer the gateway enforces. The
-    // session picker shows the enabled ones; "Manage models" shows them all and
-    // switches on this flag. Neither re-derives it.
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
-    return c.json({
-      models: Object.fromEntries(
-        Object.entries(models).map(([id, model]) => [
-          id,
-          { ...model, enabled: enabled.get(id) ?? true },
-        ]),
-      ),
-      // The stored EXCEPTIONS, so a client toggling one model can PUT the
-      // merged map back without having to reconstruct it by diffing the
-      // resolved flags against a default it would have to recompute.
-      modelOverrides: routing?.modelOverrides ?? {},
-      // The model `auto` resolves to. It cannot be turned off (that would break
-      // every default request — the PUT refuses it with 409), so the client
-      // renders its switch as locked rather than letting the user click into an
-      // error.
-      defaultModel: effectiveDefault || undefined,
-      // True while the project has made no exceptions at all — the only thing
-      // "reset to defaults" has left to act on, and not derivable from the
-      // `enabled` flags alone (they look identical either way).
-      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
-    });
-  },
-);
-
-// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
-// Replace the project's EXCEPTIONS to the default model set (the newest model
-// per family). Authoritative: the gateway refuses anything not effectively
-// enabled on every surface. An empty object restores the pure default. Refuses
-// to turn off the project's own default model (that would break every `auto`
-// request).
-const modelEnablementBody = z.object({
-  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
-});
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/model-enablement',
-    tags: ['projects'],
-    summary: 'PUT /:projectId/model-enablement',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: modelEnablementBody } } },
-    },
-    responses: {
-      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const accountId = loaded.row.accountId as string;
-    const userId = c.get('userId') as string;
-
-    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) {
-      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    }
-    const modelOverrides: Record<string, boolean> = {};
-    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
-      const wire = toWireModel(model.trim());
-      if (wire) modelOverrides[wire] = enabled;
-    }
-
-    // A project must never turn off the model its own `auto` resolves to. Only
-    // an explicit `false` can do that — omitting it leaves the default in
-    // charge, which always offers the current one.
-    const defaults = await getAccountModelDefaults(accountId, projectId);
-    const effectiveDefault =
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
-    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
-      return c.json(
-        {
-          error: 'Cannot disable the project default model — change the default first.',
-          code: 'cannot_disable_default',
-        },
-        409,
-      );
-    }
-
-    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
-    return c.json({ ok: true, modelOverrides });
+    return c.json({ models });
   },
 );
 
@@ -2951,11 +2853,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefault: platformDefaultModelId(),
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
+      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
       resolvedSource: resolved.source,
       freeTier,
     });

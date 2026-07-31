@@ -22,7 +22,7 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 //   - create-with-prompt: `body.initial_prompt` (or `body.title_source`) is
 //     baked into the sandbox and runs in-guest, so create is its only chance;
 //   - first HTTP prompt: sessions created empty (the whole web UI, warm claim,
-//     CLI/SDK) carry their first prompt as a proxy/ACP request body.
+//     CLI/SDK) carry their first prompt as an OpenCode REST request body.
 // One short call to the internal LLM gateway over just that text. Nothing else
 // writes `metadata.name`.
 //
@@ -30,7 +30,10 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 // fails the request it hangs off.
 
 const MAX_TITLE_LENGTH = 64;
-const TITLE_MAX_TOKENS = 24;
+// OpenAI-compatible reasoning models count hidden reasoning and visible text
+// against the same output ceiling. A 24-token ceiling let the managed
+// DeepSeek fallback spend every token on reasoning and return empty content.
+const TITLE_MAX_TOKENS = 256;
 
 /** Upper bound on the prompt text a title is derived from — and therefore on
  *  the `title_source` a create stores for its own later fallback hooks. */
@@ -42,8 +45,8 @@ const TITLE_SYSTEM_PROMPT =
   'punctuation, and no preamble.';
 
 // Same-process mutual exclusion. Every double-fire the hook set can produce is
-// same-process by construction (the create hook racing the in-process ACP prompt
-// re-queue; `continueSession` racing the proxy hook it itself triggers), and
+// same-process by construction (`continueSession` racing the proxy hook it
+// triggers), and
 // callers invoke us with `void`, so the body up to the first `await` runs
 // synchronously — one entry wins and the rest are dropped before they cost a
 // minted key or a billed completion. Cross-process duplicates are left to the
@@ -88,8 +91,8 @@ export interface PromptInfo {
   model: string | null;
 }
 
-/** Wire form of a prompt-body `model` field — REST `body.model` or ACP
- *  `body.params.model`, shaped `{ providerID, modelID }` (opencode's per-send
+/** Wire form of a prompt-body `model` field, shaped
+ *  `{ providerID, modelID }` (opencode's per-send
  *  override) or a bare string. opencode's synthetic `kortix` provider already
  *  carries the full gateway wire id in `modelID` (e.g. `codex/gpt-5.6-sol`);
  *  any other provider is a BYOK `provider/model` pair. */
@@ -104,9 +107,7 @@ function wireModelFrom(raw: unknown): string | null {
   return providerId && providerId !== 'kortix' ? `${providerId}/${modelId}` : modelId;
 }
 
-/** Parse the prompt-proxy body ONCE and pull out both the first user prompt text
- *  and the live picked model. Handles REST (`{parts, model}`) and ACP
- *  (`{params:{prompt, model}}`) shapes. Both fields null when unreadable. */
+/** Parse the OpenCode prompt body once and read the text and selected model. */
 export function extractPromptInfo(
   body: ArrayBuffer | undefined,
   incomingHeaders: Headers,
@@ -116,34 +117,27 @@ export function extractPromptInfo(
   if (!(incomingHeaders.get('content-type') ?? '').toLowerCase().includes('application/json'))
     return none;
   try {
-    return promptInfoFromEnvelope(JSON.parse(new TextDecoder().decode(body)));
+    return promptInfoFromRestBody(JSON.parse(new TextDecoder().decode(body)));
   } catch {
     return none;
   }
 }
 
-/** Same extraction over an ALREADY-parsed envelope — the platform ACP bridge
- *  (`/projects/:pid/sessions/:sid/acp`) parses the JSON-RPC envelope itself. */
-export function promptInfoFromEnvelope(parsed: unknown): PromptInfo {
+function promptInfoFromRestBody(parsed: unknown): PromptInfo {
   const none: PromptInfo = { text: null, model: null };
   if (!parsed || typeof parsed !== 'object') return none;
   const envelope = parsed as {
     parts?: unknown;
     model?: unknown;
-    params?: { prompt?: unknown; model?: unknown };
   };
-  const blocks = Array.isArray(envelope.parts)
-    ? envelope.parts
-    : Array.isArray(envelope.params?.prompt)
-      ? (envelope.params?.prompt as unknown[])
-      : [];
+  const blocks = Array.isArray(envelope.parts) ? envelope.parts : [];
   const text =
     (blocks as Array<{ type?: unknown; text?: unknown }>)
       .filter((p) => p?.type === 'text' && typeof p.text === 'string')
       .map((p) => p.text as string)
       .join('\n')
       .trim() || null;
-  return { text, model: wireModelFrom(envelope.model ?? envelope.params?.model) };
+  return { text, model: wireModelFrom(envelope.model) };
 }
 
 /** The text a create-time title is derived from: an explicit clean
@@ -174,15 +168,7 @@ async function generateViaGateway(
   authorization: string,
   promptText: string,
 ): Promise<string | null> {
-  const rawBody = JSON.stringify({
-    model,
-    stream: false,
-    max_tokens: TITLE_MAX_TOKENS,
-    messages: [
-      { role: 'system', content: TITLE_SYSTEM_PROMPT },
-      { role: 'user', content: promptText.slice(0, TITLE_SOURCE_MAX_CHARS) },
-    ],
-  });
+  const rawBody = JSON.stringify(buildSessionTitleRequestBody(model, promptText));
   const gateway = await internalGateway();
   const res = await gateway.chatCompletions({ authorization, rawBody });
   if (!res.ok) {
@@ -193,6 +179,18 @@ async function generateViaGateway(
     choices?: Array<{ message?: { content?: unknown } }>;
   } | null;
   return contentToString(data?.choices?.[0]?.message?.content);
+}
+
+export function buildSessionTitleRequestBody(model: string, promptText: string) {
+  return {
+    model,
+    stream: false,
+    max_tokens: TITLE_MAX_TOKENS,
+    messages: [
+      { role: 'system', content: TITLE_SYSTEM_PROMPT },
+      { role: 'user', content: promptText.slice(0, TITLE_SOURCE_MAX_CHARS) },
+    ],
+  };
 }
 
 async function loadRow(sessionId: string, projectId: string): Promise<ProjectSessionRow | null> {
@@ -248,7 +246,7 @@ function platformDefaultModel(): string | null {
  * The model to title with when neither the turn nor the session names one —
  * create-with-prompt and every server-side delivery arrive that way, and
  * `metadata.opencode_model` is absent whenever session create resolved no
- * default (free tier, a gateway-disabled project, an ACP claude/codex session).
+ * default (free tier or a gateway-disabled project).
  *
  * The account's own default chain first, then the platform default — but ONLY
  * ever a model the gateway will actually serve for this account+project. The
@@ -257,10 +255,6 @@ function platformDefaultModel(): string | null {
  * every prompt pays a mint → doomed completion → revoke, forever, leaving the
  * session untitled anyway. Skipping cheaply is the honest outcome.
  *
- * The deliberate trade: an ACP claude/codex session runs on the user's own
- * subscription, so titling it here spends one ~24-token managed completion on
- * the account. That is the price of a Kortix-owned title; the alternative is
- * that those sessions are never titled at all.
  */
 async function resolveFallbackModel(input: GenerateSessionTitleInput): Promise<string | null> {
   const [{ getCachedAccountTier }, { tierGrantsAllModels }, resolution] = await Promise.all([
@@ -305,7 +299,7 @@ const trimmedCustomName = sql`btrim(${projectSessions.metadata}->>'custom_name',
  * is first-writer-wins: a loser is a no-op instead of stomping a user rename or
  * a better title that landed in between. The jsonb merge expression evaluates
  * AFTER PostgreSQL takes the row lock, so a title written here can never clobber
- * a concurrent `acp_session_id` / `remote_branch` / `session_start_timeline`
+ * a concurrent `remote_branch` / `session_start_timeline`
  * write (or be clobbered by one) the way a read-modify-write of the whole
  * metadata object would.
  *

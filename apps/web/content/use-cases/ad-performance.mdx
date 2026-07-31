@@ -98,7 +98,7 @@ The agent's only actions are reading two ad platforms and posting to Slack. It
 adding a negative keyword — it never pauses, edits, or reallocates spend
 itself. That decision, and the click that executes it, stays with the
 marketing team. Credentials are encrypted in the Secrets Manager and injected
-at runtime, never shown to the model or written to logs.
+at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Post the ranked findings">
@@ -125,12 +125,9 @@ decides what to actually change.
 The agent reads live spend data across two ad platforms, so its access is
 scoped and one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Google Ads and Meta Ads, and only the Slack post leaves the
-  sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Google Ads and Meta Ads, and only the Slack post is written back out.
 - **Scoped secrets.** The Google Ads and Meta Ads credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed
-  to the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Recommend-only.** The agent has no write access to either ad platform. It
   cannot change a budget, pause a campaign, or edit an ad — it can only
   report and suggest.

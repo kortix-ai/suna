@@ -6,7 +6,6 @@ description: >-
   suggested response draft — to {{slack_channel}}. Never replies, comments, or
   posts anywhere; only drafts for human review.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

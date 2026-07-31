@@ -7,7 +7,6 @@ description: >-
   risk, and posts the result to {{forecast_channel}}. Never changes a deal's
   amount, close date, stage, or owner.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

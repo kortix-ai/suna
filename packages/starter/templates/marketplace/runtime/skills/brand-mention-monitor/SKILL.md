@@ -129,8 +129,7 @@ breakdown, and which ones got a suggested response draft.
   terms file and a reviewed change request, not an ad hoc edit mid-run.
 - **Secrets scoped.** No credential is needed for public search and fetch
   today. If a future source requires auth, that credential is encrypted in the
-  secrets manager and injected at runtime — never shown to the model or
-  logged.
+  secrets manager and injected at runtime — scoped to this agent's grant.
 </guardrails>
 
 </skill>

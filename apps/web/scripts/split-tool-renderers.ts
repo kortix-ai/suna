@@ -481,7 +481,7 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   PresentationIcon as Presentation,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   ScissorsIcon as Scissors,
   MagnifyingGlassIcon as Search,
   KanbanIcon as SquareKanban,

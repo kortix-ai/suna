@@ -11,8 +11,7 @@ Make `apps/web` a thin consumer of `@kortix/sdk`.
 The web application must not implement Kortix API transport, OpenCode runtime
 transport, session lifecycle, runtime state synchronization, or sandbox routing.
 
-This change keeps OpenCode REST as the SDK's internal runtime transport. A later
-change can replace that transport with ACP without changing the web application.
+This change keeps OpenCode REST as the SDK's internal runtime transport.
 
 ## Required boundary
 
@@ -103,7 +102,6 @@ The migration must preserve these black-box behaviors:
 
 ## Non-goals
 
-- Replace OpenCode REST with ACP.
 - Add PI.
 - Remove deprecated SDK exports.
 - Change user-visible design.

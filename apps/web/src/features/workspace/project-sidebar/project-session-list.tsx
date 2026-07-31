@@ -52,7 +52,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -493,7 +493,7 @@ function ProjectSessionRow({
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
                   variant="destructive"
                 >
-                  <TrashSolid weight="fill" />
+                  <TrashIcon />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>

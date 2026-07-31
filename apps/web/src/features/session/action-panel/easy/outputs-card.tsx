@@ -101,7 +101,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
   if (output.kind === 'file') {
     return (
       <span className={tile}>
-        {getFileIcon(output.name, { className: 'size-3.5', variant: 'monochrome' })}
+        {getFileIcon(output.name, { className: 'size-4', variant: 'monochrome' })}
       </span>
     );
   }
@@ -117,7 +117,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
   const Ico = KIND_ICON[output.kind];
   return (
     <span className={tile}>
-      <Ico className="text-muted-foreground size-3.5" />
+      <Ico className="text-muted-foreground size-4" />
     </span>
   );
 }

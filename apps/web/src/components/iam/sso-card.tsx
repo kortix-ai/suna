@@ -882,7 +882,7 @@ function AddMappingDialog({
               onValueChange={setGroupId}
               disabled={mutation.isPending || groupsQuery.isLoading}
             >
-              <SelectTrigger variant="popover">
+              <SelectTrigger>
                 <SelectValue placeholder="Pick a group..." />
               </SelectTrigger>
               <SelectContent>

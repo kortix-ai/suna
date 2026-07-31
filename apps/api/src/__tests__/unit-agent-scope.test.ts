@@ -7,12 +7,37 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { agentMayPerform, agentMayUseConnector, agentMayUseEnv, assertAgentScope } from '../iam/agent-scope';
+import {
+  agentMayPerform,
+  agentMayUseConnector,
+  agentMayUseEnv,
+  assertAgentScope,
+  isProjectSessionPrincipal,
+} from '../iam/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
 }
+
+describe('isProjectSessionPrincipal', () => {
+  const context = (values: Record<string, unknown>) =>
+    ({ get: (key: string) => values[key] }) as never;
+
+  test('does not treat a Supabase auth session as a project session', () => {
+    expect(
+      isProjectSessionPrincipal(
+        context({ authType: 'supabase', sessionId: 'supabase-auth-session' }),
+      ),
+    ).toBe(false);
+  });
+
+  test('recognizes a project-scoped token session', () => {
+    expect(
+      isProjectSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
+    ).toBe(true);
+  });
+});
 
 describe('grantFromLoadedAgents — resolution rule', () => {
   test('no [[agents]] section → null (no restriction, backward-compatible)', () => {

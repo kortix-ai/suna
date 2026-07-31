@@ -176,7 +176,7 @@ export default async function UseCasePage(props: PageProps) {
         <div className="absolute inset-0 z-0 mask-y-to-90% opacity-60">
           <KortixLetterField seed={5190} />
         </div>
-        <div className="relative z-10 mx-auto grid max-w-6xl gap-x-12 lg:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-x-12 lg:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="min-w-0">
             <Link
               href="/use-cases"
@@ -227,7 +227,7 @@ export default async function UseCasePage(props: PageProps) {
       </section>
 
       <div className="px-5 pb-16 sm:pb-20">
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="min-w-0">
             {post && (
               <UseCaseCover
@@ -293,7 +293,7 @@ export default async function UseCasePage(props: PageProps) {
 
       {more.length > 0 && (
         <section className="border-border/60 border-t px-5">
-          <div className="mx-auto max-w-6xl py-16 sm:py-20">
+          <div className="mx-auto max-w-7xl py-16 sm:py-20">
             <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight">Read more</h2>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {more.map((item) => (

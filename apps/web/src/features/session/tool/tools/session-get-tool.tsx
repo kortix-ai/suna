@@ -23,7 +23,7 @@ import {
   ListChecksIcon as ListTodo,
   ChatCircleIcon as MessageCircle,
   ArrowsInSimpleIcon as Minimize2,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import React, { useMemo } from 'react';

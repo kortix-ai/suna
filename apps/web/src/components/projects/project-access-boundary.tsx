@@ -5,7 +5,7 @@ import {
   ArrowLeftIcon as ArrowLeft,
   CheckCircleIcon as CheckCircle2,
   LockIcon as LockKeyhole,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   PaperPlaneTiltIcon as Send,
   ShieldWarningIcon as ShieldAlert,
   UserCircleIcon as UserRound,

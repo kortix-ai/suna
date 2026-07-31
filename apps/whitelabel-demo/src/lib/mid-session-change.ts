@@ -46,6 +46,45 @@ export const MID_SESSION_CAPABILITIES = {
   runtime_context: 'fixed_at_create',
 } as const satisfies Record<string, MidSessionCapability>;
 
+export type ModelChangeOutcome =
+  | { kind: 'applied'; message: string; detail?: string }
+  | { kind: 'stored'; message: string; detail?: string }
+  | { kind: 'half_applied'; message: string; detail?: string };
+
+/**
+ * Classify what a model change actually achieved.
+ *
+ * THREE outcomes, not two. `PUT .../model` writes the row first, then pushes to
+ * the live sandbox — so `appliedLive: false` covers two opposite situations:
+ *
+ * - no live sandbox to push to: the stored value IS the mechanism, and the next
+ *   start reads it. A success.
+ * - a push that was required and FAILED (`pushFailed`): the row is written but
+ *   the RUNNING harness still answers from the old model.
+ *
+ * This UI reported both as `toast.success('… saved — applies when this session
+ * next starts')`. For the second case that is false on two counts: the session
+ * is running now, and it is running the OLD model. A user told the model changed
+ * whose next answer comes from the previous one has been lied to.
+ */
+export function classifyModelChange(result: {
+  model?: string | null;
+  appliedLive?: boolean;
+  pushFailed?: boolean;
+  detail?: string;
+}): ModelChangeOutcome {
+  const model = stringOrNull(result.model) ?? 'The model';
+  if (result.pushFailed) {
+    return {
+      kind: 'half_applied',
+      message: `${model} was saved, but this session is still running the previous model. Restart it to pick up the change.`,
+      ...(result.detail ? { detail: result.detail } : {}),
+    };
+  }
+  if (result.appliedLive) return { kind: 'applied', message: `Now running ${model}` };
+  return { kind: 'stored', message: `${model} saved — applies when this session next starts` };
+}
+
 export type AgentSwitchOutcome =
   | { kind: 'ok' }
   | { kind: 'needs_new_session'; message: string }

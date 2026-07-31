@@ -14,9 +14,8 @@ import {
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
-import type { RuntimeAgent } from '@kortix/sdk/react';
+import type { Agent } from '@kortix/sdk/react';
 import { CaretDownIcon, Check } from '@phosphor-icons/react';
-import { AgentHarnessIcon } from './agent-harness-icon';
 
 // ============================================================================
 // Agent Selector
@@ -28,7 +27,7 @@ export function AgentSelector({
   onSelect,
   disabled = false,
 }: {
-  agents: RuntimeAgent[];
+  agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
@@ -154,7 +153,6 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <AgentHarnessIcon harness={agent.harness} />
                     <div className="min-w-0 flex-1 py-0.5">
                       <div
                         className={cn(

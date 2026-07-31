@@ -98,7 +98,7 @@ the model, the agent can:
 The agent's job stops at the draft. It never sends an outreach email itself
 and never adds, moves, or tags anyone in Greenhouse — sourcing and drafting
 only. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Hand the batch to the recruiter">
@@ -107,7 +107,7 @@ With that in place, each morning brings a small batch of new candidates for
 the open role, each with a drafted email that references their real
 background and a note on why they matched. The recruiter reads each one,
 edits where they want, and sends it themselves — or adds the candidate to
-Greenhouse themselves, if they choose to. Nothing leaves the sandbox except
+Greenhouse themselves, if they choose to. Nothing is written back out except
 the drafts.
 
 </Step>
@@ -126,11 +126,10 @@ the drafts.
 The agent can search for and contact real people, so the boundary between
 "draft" and "send" is the control that matters:
 
-- **Isolation.** Every run happens in its own microVM sandbox, scoped to one
-  open role. Only the drafted emails leave the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox, scoped to one
+  open role. Only the drafted emails are written back out.
 - **Scoped secrets.** The Greenhouse and LinkedIn credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed
-  to the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The agent never sends outreach itself and never
   adds a candidate to Greenhouse. Every draft is held for the recruiter to
   review, edit, and send — and the ATS is theirs to update.

@@ -16,7 +16,7 @@ import {
   ArrowUpRightIcon as ArrowUpRight,
   DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
-  TrashIcon as TrashSolid,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
@@ -93,7 +93,7 @@ const ProjectCard = ({
               {archiving ? (
                 <Loading className="size-4 shrink-0" />
               ) : (
-                <TrashSolid weight="fill" className="size-4" />
+                <TrashIcon className="size-4" />
               )}
               Archive
             </DropdownMenuItem>

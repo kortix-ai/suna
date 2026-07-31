@@ -40,6 +40,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -299,6 +300,9 @@ export interface FileContentRendererProps {
    * "file does not exist" state. No effect on the default viewer chrome.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
+   *  default. No effect on any other file category. */
+  fitOnOpen?: boolean;
 }
 
 export function FileContentRenderer({
@@ -314,11 +318,18 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
+  fitOnOpen = false,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
+
+  // `null` outside a <PreviewFitProvider>. Used for one thing only: telling a
+  // ratio-fitting surface that an `image` produced nothing to render, in which
+  // case no ImageRenderer is ever mounted and no renderer is left to say so
+  // itself. Every other failure is reported by the renderer that hit it.
+  const previewFit = usePreviewFit();
 
   // Data access is supplied by the surface (live workspace vs. project git-ref)
   // via <FileSourceProvider>, so this renderer stays presentation-only.
@@ -645,6 +656,43 @@ export function FileContentRenderer({
     else onStatusChange('ready');
   }, [onStatusChange, isNotFound, showLoadingState]);
 
+  // An `image` that settled without an image to show: bytes whose mime is not
+  // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
+  // instead), or a HEIC whose blob never arrived. No ImageRenderer is mounted
+  // on those paths, so nothing downstream can report the failure — this is the
+  // case the surface itself has to speak for.
+  //
+  // A HEIC whose CONVERSION fails is deliberately not one of them:
+  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
+  // URL over the raw bytes, which a browser with native HEIC support then
+  // renders correctly. So `heicImageUrl` is set, this predicate is false, and
+  // ImageRenderer mounts. Where the browser also cannot decode it, the release
+  // comes from ImageRenderer exhausting its own retries ~5s later — a known,
+  // accepted window during which a ratio-fitting consumer still holds the
+  // previous document's width. Widening this predicate to pre-empt it would
+  // break the browsers the fallback exists for.
+  //
+  // A HEIC whose blob just resolved is ALSO not one of them, for one render:
+  // `useHeicBlob` flips `isConverting` to true inside its effect
+  // (`use-heic-url.ts:29`), which runs after this render commits. On the
+  // render where `blobLoading` first goes false, `heicConverting` is still
+  // `false` and `heicImageUrl` is still `null` even though conversion is
+  // about to start — not because it failed. Only a HEIC whose blob never
+  // arrived (`rawBlob` still null/absent) counts as producing nothing.
+  const heicAboutToConvert = isHeicImage && !!rawBlob;
+  const imageProducedNothing =
+    fileCategory === 'image' &&
+    !showLoadingState &&
+    !heicConverting &&
+    !imageDataUrl &&
+    !heicImageUrl &&
+    !heicAboutToConvert;
+
+  useEffect(() => {
+    if (!previewFit || !imageProducedNothing) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imageProducedNothing]);
+
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
   // ---------------------------------------------------------------------------
@@ -887,6 +935,7 @@ export function FileContentRenderer({
                 fileContent={fileContent.content}
                 fileName={fileName}
                 className="h-full"
+                fitOnOpen={fitOnOpen}
               />
             </Suspense>
           )}

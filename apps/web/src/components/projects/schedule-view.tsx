@@ -96,10 +96,10 @@ import {
   PencilSimpleIcon,
   PlayIcon as Play,
   PlayIcon as PlaySolid,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   MagnifyingGlassIcon as Search,
   TimerIcon as Timer,
-  TrashIcon as TrashSolid,
+  TrashIcon,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -504,7 +504,7 @@ function FilterRowsEditor({
               disabled={disabled}
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
             >
-              <TrashSolid className="size-4 shrink-0" />
+              <TrashIcon className="size-4 shrink-0" />
             </Button>
           </div>
         ))
@@ -975,7 +975,7 @@ function TriggerDetailToolbar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={onDelete} variant="destructive">
-            <TrashSolid weight="fill" className="shrink-0" />
+            <TrashIcon className="shrink-0" />
             Delete trigger
           </DropdownMenuItem>
         </DropdownMenuContent>

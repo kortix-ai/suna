@@ -5,7 +5,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import {
   FileXlsIcon as FileSpreadsheet,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useState } from 'react';

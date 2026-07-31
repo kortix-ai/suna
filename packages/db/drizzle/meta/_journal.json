@@ -211,6 +211,20 @@
       "when": 1785387189606,
       "tag": "20260730045309_connector_authorization_strategy_and_session_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785416744610,
+      "tag": "20260730130544_drop_acp_session_envelopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785486954869,
+      "tag": "20260731083554_centralized_audit_envelope",
+      "breakpoints": true
     }
   ]
 }

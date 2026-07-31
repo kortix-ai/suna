@@ -15,7 +15,7 @@ import {
   CaretDownIcon as ChevronDown,
   ClockCounterClockwiseIcon as History,
   StackIcon as Layers,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';

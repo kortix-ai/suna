@@ -121,7 +121,7 @@ export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
   /**
-   * The manifest's own top-level `default_agent` (v2 and v3; v1 has no such
+   * The manifest's own top-level `default_agent` (v2; v1 has no such
    * field, so this is always `null` for a v1 manifest). Lets grant resolution
    * make the non-binding `"default"` sentinel resolve to a concrete declared
    * agent's grant for a governed project,
@@ -138,7 +138,7 @@ export interface LoadedAgents {
  * write `agents` as an object still gets the v1 "must be an array" error
  * instead of silently routing into the v2 reader:
  *   - v1: `[[agents]]` — an array of tables (existing behavior, unchanged).
- *   - v2/v3: `agents:` — a name → block map (spec §2.1/§2.2); see
+ *   - v2: `agents:` — a name → block map (spec §2.1/§2.2); see
  *     `extractAgentsV2`.
  */
 export function extractAgents(manifest: ParsedManifest): LoadedAgents {
@@ -148,7 +148,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
     return { specs: [], errors: [], defaultAgent: null };
   }
 
-  if (manifest.schemaVersion >= 2) {
+  if (manifest.schemaVersion === 2) {
     return extractAgentsV2(raw, manifest, filename);
   }
 
@@ -350,10 +350,10 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // still capped at the launching user's role; identical to a project that
   // never adopted [[agents]]).
   //
-  // v2 and v3 change this: the manifest declares a top-level `default_agent` that
+  // v2 changes this: the manifest declares a top-level `default_agent` that
   // MUST always resolve to a concrete declared agent (spec §2.1 — "closes
   // trigger seam 7(a) structurally"). `loaded.defaultAgent` is only ever
-  // non-null for a v2 or v3 manifest (see `extractAgentsV2`), so this branch is
+  // non-null for a v2 manifest (see `extractAgentsV2`), so this branch is
   // absent from v1 behavior — a v1 project (defaultAgent always null) falls
   // through to the unchanged `return null` below.
   if (agentName === DEFAULT_AGENT_SENTINEL) {
@@ -376,7 +376,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // CONCRETE declared agent, which reaches us by that name and gets its
     // (possibly narrow) grant — so this never weakens an intentionally-
     // restricted default. Falling through here means either v1 (no
-    // manifest-level default_agent to honor) or a v2/v3 manifest whose declared
+    // manifest-level default_agent to honor) or a v2 manifest whose declared
     // default_agent doesn't resolve to an enabled spec (a validation-time
     // error the CR-merge gate should already have caught).
     //
@@ -467,7 +467,7 @@ export type GovernedAgentGrantResult = { ok: true; grant: AgentGrant | null } | 
  *     that doesn't name a declared/enabled agent, is rejected the same way —
  *     this is what closes trigger/spec seam 7(a) structurally (§2.1).
  *     `opts.projectDefaultAgent` (the DB `project.metadata.default_agent`
- *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2/v3
+ *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2
  *     manifest's own top-level `default_agent` — always null for v1) is the
  *     fallback, so a project that never separately configured the DB-side
  *     field still resolves the sentinel to what it actually declared in git.

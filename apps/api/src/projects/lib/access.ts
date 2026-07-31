@@ -9,6 +9,7 @@ import {
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -385,6 +386,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
   (c as any).set('accountId', membership.accountId);
+  setContextField('accountId', membership.accountId);
 
   return {
     userId,
@@ -531,6 +533,8 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!row || row.status === 'archived') return null;
+  setContextField('accountId', row.accountId);
+  setContextField('projectId', row.projectId);
 
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as

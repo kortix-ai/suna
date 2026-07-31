@@ -150,10 +150,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // Per-project model enablement: when on, the gateway rejects a model a project
-  // has disabled and the picker hides it. On by default (empty disabled-set =
-  // no behavior change); kill-switch drops back to catalog-only gating.
-  MODEL_ENABLEMENT_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -251,10 +247,6 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // OpenCode client transport. REST remains the default until the project
-  // experimental flag enables ACP after parity verification.
-  KORTIX_OPENCODE_TRANSPORT: z.enum(['acp', 'rest']).default('rest'),
-
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
   // added for a future per-agent executor-token auth model that isn't built yet,
@@ -335,7 +327,8 @@ const envSchema = z.object({
     'https://login.botframework.com/v1/.well-known/openidconfiguration',
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
-  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  // Whether the Teams channel is offered is NOT an operator env var — it is the
+  // per-project `teams` experimental feature (experimental/features.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -902,7 +895,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  MODEL_ENABLEMENT_ENABLED: env.MODEL_ENABLEMENT_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
@@ -952,7 +944,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
@@ -982,7 +973,6 @@ export const config = {
   MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
   MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
   TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
-  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
   TEAMS_APP_NAME: env.TEAMS_APP_NAME,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────

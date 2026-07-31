@@ -25,7 +25,7 @@ import {
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
   MonitorPlayIcon as MonitorPlay,
-  ArrowsClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

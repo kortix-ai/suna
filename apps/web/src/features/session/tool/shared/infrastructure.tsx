@@ -27,7 +27,7 @@ import {
   CaretRightIcon as ChevronRight,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
-  ArrowsClockwiseIcon as GrRefresh,
+  ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
   ArrowSquareOutIcon as TbExternalLink,

@@ -92,8 +92,7 @@ The agent only searches and reads public pages, and it only ever writes to one
 Slack channel. It never replies to a post, comments, or publishes anywhere on
 the open web — for anything flagged as notable, it drafts a suggested response
 and clearly marks it as a draft awaiting human approval. Any credential it needs
-is encrypted in the secrets manager and injected at runtime, never shown to the
-model or written to logs.
+is encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Post the digest">
@@ -119,10 +118,10 @@ decides what, if anything, to say back.
 The agent watches public conversation about the brand, so its access is scoped
 to searching and reading, with a single, narrow output:
 
-- **Isolation.** Every run happens in its own microVM sandbox, and only the
-  Slack digest it's explicitly allowed to send leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox, and only the
+  Slack digest it's explicitly allowed to send is written back out.
 - **Scoped secrets.** Any credential the agent uses is encrypted in the secrets
-  manager and injected into the sandbox at runtime, never exposed to the model
+  manager and injected into the sandbox at runtime, scoped to the agents you grant them to
   or the logs.
 - **Draft, never post.** The agent's only external action is one Slack digest
   per run. It never replies, comments, or posts on the platform where a mention
