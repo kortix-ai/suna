@@ -166,6 +166,19 @@ export interface ProjectInput {
   repo_url: string;
   default_branch?: string;
   manifest_path?: string;
+  /**
+   * The project's emoji icon. Nullable because `PATCH /projects/:id` reads
+   * THREE states off this member and only the request body can tell them
+   * apart — see {@link updateProject}:
+   *
+   * - omit the key   → the stored icon is left alone
+   * - `null`         → the stored icon is removed
+   * - `'🚀'`         → the stored icon is replaced
+   *
+   * An invalid value is dropped server-side; it never fails the update, and it
+   * never removes the existing icon.
+   */
+  icon?: string | null;
 }
 
 export interface CreateProjectRepoInput {
@@ -424,6 +437,14 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
   }
 }
 
+/**
+ * Patch a project's editable fields. Only the members present in `input` are
+ * touched — this is a real PATCH, not a replace.
+ *
+ * `icon` is the one member where present-and-null differs from absent: pass
+ * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
+ * Everything else ignores an empty value.
+ */
 export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
   return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }

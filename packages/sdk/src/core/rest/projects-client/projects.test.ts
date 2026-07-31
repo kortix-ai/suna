@@ -3,10 +3,13 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
+  type KortixProject,
+  type ProjectInput,
   type ProvisionProjectInput,
   getProjectDetail,
   provisionProject,
   provisionProjectWithToken,
+  updateProject,
 } from './projects';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
@@ -229,4 +232,116 @@ test('a project response carries the icon through to KortixProject', async () =>
 
   expect(result.ok).toBe(true);
   expect(result.ok && result.project.icon).toBe('🚀');
+});
+
+// ── B44: `icon` on the updateProject body ────────────────────────────────────
+//
+// `PATCH /v1/projects/:projectId` reads THREE states off `icon`, and only the
+// request body can tell them apart (apps/api/src/projects/routes/r5.ts):
+//
+//   key absent  → the stored icon is left alone
+//   icon: null  → the stored icon is removed
+//   icon: "🚀"  → the stored icon is replaced
+//
+// So the type has to carry `null`, and — more importantly — the `null` has to
+// SURVIVE serialization all the way onto the wire. `JSON.stringify` drops
+// `undefined` members silently; any layer that normalised nullish the same way
+// would turn "remove the icon" into "leave it alone" with every type check
+// still green. These tests read the body the mocked `fetch` was actually
+// handed, not the object handed to `updateProject`.
+
+/** Runs `updateProject` against a mocked fetch and returns what it sent. */
+async function captureUpdate(input: Partial<ProjectInput>) {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let request: { url: string; method?: string; body: string } | undefined;
+  globalThis.fetch = mock(async (target: RequestInfo | URL, init?: RequestInit) => {
+    request = { url: String(target), method: init?.method, body: String(init?.body ?? '') };
+    return new Response(JSON.stringify({ project_id: 'proj-1', name: 'Iconic', icon: null }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await updateProject('proj-1', input);
+
+  // Guard the guard: every assertion below is vacuous if fetch was never
+  // called, and `undefined.body` would read as a confusing TypeError.
+  expect(request).toBeDefined();
+  return {
+    ...request!,
+    // The RAW string, parsed here — not the input object echoed back.
+    parsed: JSON.parse(request!.body || '{}') as Record<string, unknown>,
+  };
+}
+
+test('updateProject PATCHes the project route', async () => {
+  const sent = await captureUpdate({ name: 'Iconic' });
+
+  expect(sent.method).toBe('PATCH');
+  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1');
+});
+
+test('updateProject puts an explicit null icon on the wire, not an absent key', async () => {
+  const sent = await captureUpdate({ icon: null });
+
+  // Both halves matter. `parsed.icon === null` alone passes when the key was
+  // dropped (missing reads as undefined only under `!=`), and `'icon' in
+  // parsed` alone passes when the value was rewritten to something else.
+  expect('icon' in sent.parsed).toBe(true);
+  expect(sent.parsed.icon).toBeNull();
+  // The literal wire bytes. A serializer that emitted `"icon":{}` or omitted
+  // the member entirely would still satisfy a lenient object comparison.
+  expect(sent.body).toContain('"icon":null');
+});
+
+test('updateProject sends a chosen emoji verbatim', async () => {
+  const sent = await captureUpdate({ icon: '👨‍👩‍👧‍👦' });
+
+  expect(sent.parsed.icon).toBe('👨‍👩‍👧‍👦');
+});
+
+test('a name-only update sends NO icon key, so the stored icon survives', async () => {
+  const sent = await captureUpdate({ name: 'Renamed only' });
+
+  expect(sent.parsed).toEqual({ name: 'Renamed only' });
+  expect('icon' in sent.parsed).toBe(false);
+});
+
+test('updateProject can send a name and an icon in one body', async () => {
+  const sent = await captureUpdate({ name: 'Renamed', icon: '🎯' });
+
+  expect(sent.parsed).toEqual({ name: 'Renamed', icon: '🎯' });
+});
+
+/**
+ * Compile-time pin on the RESPONSE half of the clear, checked by `tsc --noEmit`
+ * and not by `bun test`. Assigning INTO the member is what pins it: reading it
+ * out into a `string | null | undefined` compiles either way, so only this
+ * direction fails if `KortixProject['icon']` is ever narrowed to `string`.
+ *
+ * A clear is only useful if the caller can SEE that it happened — the project
+ * card re-renders its lettered fallback from exactly this field. Found while
+ * mutation-testing B44: narrowing `KortixProject.icon` to `string` left every
+ * runtime assertion here green, because `expect(x).toBeNull()` accepts any type.
+ */
+const projectIconAcceptsNull: KortixProject['icon'] = null;
+
+test('a project response with a null icon reaches the caller as null', async () => {
+  expect(projectIconAcceptsNull).toBeNull();
+
+  // The clear round-trips: the row this PATCH returns has no icon, and the
+  // caller re-renders the lettered fallback from exactly this field.
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+  globalThis.fetch = mock(
+    async () =>
+      new Response(JSON.stringify({ project_id: 'proj-1', name: 'Iconic', icon: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  ) as unknown as typeof fetch;
+
+  const project = await updateProject('proj-1', { icon: null });
+
+  expect(project.icon).toBeNull();
 });
