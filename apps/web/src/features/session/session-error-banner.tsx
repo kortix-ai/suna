@@ -189,6 +189,11 @@ export function TurnErrorDisplay({
   // (turn-level path) — only one is ever populated for a given render.
   const gateway = error?.gateway ?? errorDetails ?? undefined;
 
+  // A connector refusal is owned by `ConnectorRequiredNotice`, which renders a
+  // card with the connect button on it. Rendering the one-line pill here too
+  // would say the same thing twice, once without the remedy.
+  if (error?.kind === 'connector') return null;
+
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(text)) {
     return <p className={cn('text-muted-foreground/50 text-xs italic', className)}>Interrupted</p>;

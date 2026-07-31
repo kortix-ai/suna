@@ -14,7 +14,6 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
-import { useConnectorGateOnSend } from '@/features/session/use-connector-gate-on-send';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
@@ -167,14 +166,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
-  });
-  // A turn refused because a required connector has no usable connection opens
-  // the connect gate here, in the session, rather than dying as a generic error.
-  useConnectorGateOnSend({
-    projectId,
-    pending: session.pending,
-    sendError: session.sendError,
-    resend: (text) => session.send(text),
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
