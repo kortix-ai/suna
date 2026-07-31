@@ -855,12 +855,12 @@ function InlineTriggerTitle({
 }) {
   return (
     <>
-      <span className="flex-shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
+      <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
       {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
-              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-sm">
+              <TextShimmer className="min-w-0 truncate font-mono text-sm">
                 {trigger.subtitle}
               </TextShimmer>
             ) : (
@@ -881,18 +881,6 @@ function InlineTriggerTitle({
                 }
               >
                 {trigger.subtitle}
-              </span>
-            ))}
-          {!running &&
-            trigger.args &&
-            trigger.args.length > 0 &&
-            trigger.args.map((arg, i) => (
-              <span
-                key={i}
-                title={arg}
-                className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
-              >
-                {arg}
               </span>
             ))}
         </div>

@@ -43,7 +43,7 @@ export function CopyButton({ code, className }: { code: string; className?: stri
             className="absolute inset-0 inline-flex items-center justify-center"
           >
             {copied ? (
-              <CheckIcon className="text-foreground size-4 stroke-2" />
+              <CheckIcon className="text-foreground size-4" />
             ) : (
               <Icon.Copy className="size-4" />
             )}

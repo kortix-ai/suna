@@ -14,7 +14,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Loading from '@/components/ui/loading';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import { isReasoningPart, type Part } from '@/ui';
@@ -94,7 +93,6 @@ export function ActivityBurst({
               'transition-transform group-data-[state=open]/burst:rotate-90',
             )}
           />
-          {running && <Loading className="text-muted-foreground/50 size-3 flex-none" />}
         </div>
       </DisclosureTrigger>
 

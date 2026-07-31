@@ -753,7 +753,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
       >
         <Streamdown
           isAnimating={isStreaming}
-          mode="static"
+          mode="streaming"
           components={components as any}
           remarkPlugins={katexRemarkPlugins}
           rehypePlugins={allowHtml ? buildKatexRehypePlugins(true) : buildKatexRehypePlugins(false)}

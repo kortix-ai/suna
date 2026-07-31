@@ -1,5 +1,7 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
@@ -8,7 +10,6 @@ import {
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
-  BasicTool,
   InlineServicePreview,
   partInput,
   ServicePreviewActions,
@@ -33,9 +34,17 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { GlobeIcon as Globe } from '@phosphor-icons/react';
+import { CaretRightIcon as CaretRight, GlobeIcon as Globe } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.
@@ -49,12 +58,29 @@ function CarouselServicePreview({ url, label }: { url: string; label?: string })
   return <InlineServicePreview url={url} label={label} />;
 }
 
-export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
+export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
 
   const fill = useContext(ToolSurfaceContext) === 'panel';
+
+  // Inline disclosure state. `BasicTool` used to own this; the two behaviours
+  // it enforced are kept verbatim — `forceOpen` pins the body open, and
+  // `locked` refuses the collapse half of a toggle.
+  const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+
+  const handleOpenChange = useCallback(
+    (value: boolean) => {
+      if (locked && !value) return;
+      setOpen(value);
+    },
+    [locked],
+  );
 
   const title = (input.title as string) || '';
   const description = (input.description as string) || '';
@@ -141,10 +167,9 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   let body: ReactNode;
 
   if (running && !type && !items) {
-    // Only the panel surface (no shell header) still needs the bespoke
-    // loading card. Inline, the BasicTool header already shows the standard
-    // running chrome (spinner + shimmering subtitle) — rendering the card too
-    // would double up the loading indicators.
+    // Only the panel surface (no trigger button) still needs the bespoke
+    // loading card. Inline, the trigger button already carries the running
+    // spinner — rendering the card too would double up the indicators.
     body = fill ? (
       <div className="bg-card flex h-full items-center justify-center overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
@@ -260,20 +285,44 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   // filling the pane with no shell wrapper.
   if (fill) return body;
 
-  // Inline (chat) surface: join the shared shell. The row's own title is
-  // always "Show" — the payload's resolved title is the subtitle, never a
-  // raw path/URL. Expanded by default: a collapsed row would hide the exact
-  // thing the agent wanted to show, defeating the tool's purpose.
+  // Inline (chat) surface: a `w-fit` outline button reveals the payload in
+  // place. Its label is the payload's RESOLVED title (`displayTitle`) — never a
+  // raw path or URL, which is what the `safeHttpUrl` gate above guarantees. The
+  // button hugs its content instead of spanning the column: `show` is one action
+  // in the transcript, and a full-bleed row reads as a section header for
+  // everything under it.
   return (
-    <BasicTool
-      icon={showTypeIcon(headerIcon)}
-      trigger={{ title: 'Show', subtitle: displayTitle }}
-      defaultOpen
-      forceOpen={forceOpen}
-      locked={locked}
-    >
-      {body}
-    </BasicTool>
+    <Disclosure open={open} onOpenChange={handleOpenChange} className="group/show">
+      <DisclosureTrigger>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-component="tool-trigger"
+          className="w-fit max-w-full justify-start gap-2 font-normal"
+        >
+          {/* `Loading`'s base sets `in-data-[slot=button]:text-background`, which
+              is invisible on a transparent outline button — the same trailing-`!`
+              override the auth buttons use puts the color back. */}
+          {running ? (
+            <Loading className="text-muted-foreground! size-4 shrink-0" />
+          ) : (
+            showTypeIcon(headerIcon)
+          )}
+          <span className="min-w-0 truncate" title={displayTitle}>
+            {displayTitle}
+          </span>
+          <CaretRight
+            className={cn(
+              'text-muted-foreground/50 size-3 shrink-0 transition-transform',
+              'group-data-[state=open]/show:rotate-90',
+            )}
+          />
+        </Button>
+      </DisclosureTrigger>
+
+      <DisclosureContent contentClassName="pt-2 text-xs">{body}</DisclosureContent>
+    </Disclosure>
   );
 }
 ToolRegistry.register('show', ShowTool);

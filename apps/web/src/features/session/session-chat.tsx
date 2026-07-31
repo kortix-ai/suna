@@ -21,6 +21,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1460,21 +1461,6 @@ function SessionTurn({
         </div>
       )}
 
-      {/* Kortix logo — shown when there are no steps and not working (otherwise logo is already above the steps trigger) */}
-      {!hasSteps &&
-        !hasReasoning &&
-        !working &&
-        (response || answeredQuestionParts.length > 0 || turnError) && (
-          <div className="mt-3 mb-3 flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/kortix-logomark-white.svg"
-              alt="Kortix"
-              className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-            />
-          </div>
-        )}
-
       {/* ── Screen reader ── */}
       <div className="sr-only" aria-live="polite">
         {!working && response ? response : ''}
@@ -1597,14 +1583,37 @@ function SessionTurn({
       {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
-          <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
-            {copied ? (
-              <CheckIcon className="size-4 shrink-0" />
-            ) : (
-              <Icon.Copy className="size-4 shrink-0" />
-            )}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleCopy}
+            aria-label={copied ? 'Copied' : 'Copy response'}
+          >
+            <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={copied ? 'check' : 'copy'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {copied ? (
+                    <CheckIcon className="text-foreground size-4" />
+                  ) : (
+                    <Icon.Copy className="size-4" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
           </Button>
-          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} className='flex items-center justify-center' />
+          <SessionTurnMeta
+            endedAt={turnEndedAt}
+            durationMs={turnDurationMs}
+            cost={costInfo}
+            className="flex items-center justify-center"
+          />
         </div>
       )}
 

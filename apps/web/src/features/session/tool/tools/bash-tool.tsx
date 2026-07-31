@@ -69,10 +69,14 @@ function CommandBlock({
 
         {hasOutput && (
           <div className="border-border/60 border-t">
+            {/* `richOutput` is an already-rendered tree (a session list, a
+                message list, a structured-output block) — NOT source text. It
+                must never reach `HighlightedCode`: that prop is typed `string`
+                and Shiki's cache key calls `.slice` on it, so passing an
+                element threw `code.slice is not a function` during render and
+                took the whole tool part down. Each component styles itself. */}
             {richOutput ? (
-              <HighlightedCode language="bash" code={richOutput as unknown as string}>
-                {richOutput}
-              </HighlightedCode>
+              richOutput
             ) : (
               <div className="text-muted-foreground px-3 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
                 {output}
@@ -136,10 +140,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="text-muted-foreground/60 shrink-0 font-mono text-xs select-none">
-              $
-            </span>
-            <TextShimmer duration={1} spread={2} className="text-xs italic">
+            <TextShimmer duration={1} spread={2}>
               Working...
             </TextShimmer>
           </div>
