@@ -283,6 +283,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B41 | **The two ACP folds disagree on message boundaries for harnesses that emit no `messageId`.** `bun /tmp` harness-agnostic check over 241 sessions: SDK `projection.ts` and API `compact-transcript.ts` agree on role sequence + tool count for 218, disagree for 23, unchanged by B38/B39. All disagreements are ±1 assistant message on Pi-style logs where every chunk is unnamed, so boundaries come from open-message heuristics that differ across an attach. Pre-existing at HEAD (23 there too). | OPEN |
 | B42 | **A prompt that errors renders as an unanswered user bubble with no explanation.** `applyAcpEnvelope`'s response branch clears the pending prompt and drops `envelope.error` unless a `promptDrafts` entry survives. Dev session `ecc2d856-a08d-4cda-98bb-b76a7c892e69`: six `session/prompt` calls all answered `-32603 Internal error: OpenCode service failure`, and the projection is six user messages and zero assistants. `AcpProjection` has no per-turn error surface for a renderer to show. | OPEN |
 | B43 | **Expose the emoji project icon on the SDK's typed project contract.** Tasks 1–3 of the project-emoji-icons plan added `icon` to the API request/response bodies (`packages/api-contract/src/index.ts:120`, `icon: z.string().nullable()`); the SDK declares its own independent types and had no `icon` field anywhere. | `KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carried no `icon` member; plan `docs/superpowers/plans/2026-07-31-project-emoji-icons.md`; spec `docs/superpowers/specs/2026-07-31-project-emoji-icons-design.md`; task brief `.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`. | **DONE 2026-07-31** — session `sdk-project-emoji-icon`; implementation `8f8db0d4f1`; full SDK gates green (see session log) |
+| B44 | **`ProjectInput` — the `updateProject` body — carries no `icon`, so a project's emoji is write-once.** B43 added `icon` to the CREATE inputs and to the response type only. `updateProject(projectId, input: Partial<ProjectInput>)` is the sole SDK path to `PATCH /v1/projects/:projectId`, and its input type declares `account_id`/`name`/`repo_url`/`default_branch`/`manifest_path` — so a host cannot change or remove an icon without an `as any` cast. The API's tri-state semantics need `string \| null`, not `string`: an absent key leaves the icon alone, an explicit `null` clears it. | `ProjectInput` (`packages/sdk/src/core/rest/projects-client/projects.ts:163`) has no `icon` member; `updateProject` at `:427`; API handler `apps/api/src/projects/routes/r5.ts` (tri-state `icon` landed in `c76c6f962`). | **IN PROGRESS 2026-07-31** — session `sdk-project-edit-icon` |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -5022,3 +5023,26 @@ session event and agent action carried the same project and session identifiers.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-31 — session `sdk-project-edit-icon` (B44 claim)
+
+Claimed `icon?: string | null` on `ProjectInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`) — the body type for
+`updateProject`, and therefore the only SDK path to `PATCH
+/v1/projects/:projectId`.
+
+B43 covered the CREATE inputs and the response type. It did not cover the
+UPDATE input, so a project's emoji was write-once from the SDK's point of view:
+a host could send one at create time and never change or remove it.
+
+`string | null`, not `string`. The API handler (`apps/api/src/projects/routes/r5.ts`,
+landed in `c76c6f962`) reads three states off the request body — key absent
+leaves the stored icon untouched, an explicit `null` clears it, a valid emoji
+sets it — so the type has to be able to express the clear.
+
+Additive optional member on an already-exported interface: no new export, no
+rename, no `version` edit, public-surface snapshot unchanged.
+
+**Status:** IN PROGRESS.
