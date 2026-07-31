@@ -156,6 +156,41 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
   test('the emoji tile is still an entity-avatar slot', () => {
     expect(render({ label: 'Demo', emoji: '🚀' })).toContain('data-slot="entity-avatar"');
   });
+
+  /**
+   * The whole emoji tile, byte for byte.
+   *
+   * `not.toContain('background-color')` above is a substring check on ONE of
+   * the three declarations chalkColors() writes. A mutant that drops only
+   * `backgroundColor` and keeps `color` and `borderColor` satisfies it — and
+   * satisfied all 27 tests in this task when it was tried. What it ships is a
+   * saturated chalk BORDER on the emoji tile, because an inline `border-color`
+   * beats the `border-border/60` class: measured `rgb(132, 210, 208)` where
+   * `oklab(0.262899 … / 0.6)` was intended. That is precisely the noise the
+   * style-drop exists to prevent, so the substring check cannot be the only
+   * guard.
+   *
+   * A golden has no such blind spot. React omits the attribute entirely for a
+   * `style` of `undefined`, so `style=` appears nowhere below — and ANY
+   * surviving fragment of the chalk object puts it back.
+   */
+  const EMOJI_TILE =
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md bg-muted border-border/60 text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+
+  /** The same, for the exact call shape the project card uses. */
+  const EMOJI_CARD_TILE =
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-border/60 text-xl bg-background"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+
+  test('the emoji tile drops the WHOLE chalk object, not just its background', () => {
+    expect(render({ label: 'Demo', emoji: '🚀' })).toBe(EMOJI_TILE);
+    expect(render({ label: 'Demo', emoji: '🚀' })).not.toContain('style=');
+  });
+
+  test('the card’s emoji tile is byte-identical too', () => {
+    expect(render({ label: 'Demo', emoji: '🚀', size: 'lg', className: 'bg-background' })).toBe(
+      EMOJI_CARD_TILE,
+    );
+  });
 });
 
 describe('EntityAvatar — sizing', () => {
@@ -194,9 +229,16 @@ describe('EntityAvatar — existing callers', () => {
   /**
    * Captured from the component as it stood BEFORE `emoji` existed
    * (`git show HEAD:apps/web/src/components/ui/entity-avatar.tsx`, rendered
-   * under this same harness). All 30-odd call sites in apps/web omit `emoji`,
-   * so this exact string is what every one of them still has to produce —
-   * attribute order, class order, inline chalk and all.
+   * under this same harness) — attribute order, class order, inline chalk and
+   * all.
+   *
+   * SCOPE: these two goldens pin the INITIAL branch, at the default size and at
+   * the card's `lg` + className shape. They do not cover the ICON branch, which
+   * is roughly 18–21 of the ~30 call sites: changing `sizes.icon`, or swapping
+   * it for a text class, leaves every test in this file green. That code is
+   * untouched by the emoji work, so it is a coverage gap rather than a
+   * regression risk here — but do not read these as a byte-guarantee for every
+   * caller.
    */
   const LEGACY_INITIAL_TILE =
     '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md text-xs">D</span>';

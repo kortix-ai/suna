@@ -91,6 +91,17 @@ describe('ProjectCard — the project’s own icon', () => {
     expect(tileOf(render({ icon: '🐢' }))).not.toContain('background-color');
   });
 
+  test('the emoji tile that ships is byte-for-byte this', () => {
+    // The line above only checks the BACKGROUND declaration. Dropping just
+    // `backgroundColor` from the emoji tile while keeping chalk's `color` and
+    // `borderColor` passes it, and ships a saturated chalk border on the card
+    // — an inline `border-color` beats `border-border/60`. This golden is what
+    // sees it: `style=` appears nowhere, so any surviving chalk fragment fails.
+    expect(tileOf(render({ icon: '🐢' }))).toBe(
+      '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-border/60 text-xl bg-background"><span aria-hidden="true" class="leading-none">🐢</span></span>',
+    );
+  });
+
   test('the emoji tile keeps the card’s own well background', () => {
     // The card passes `bg-background` so the tile reads as a well in the card's
     // `bg-secondary/80` surface. Under the inline chalk that class was dead;
