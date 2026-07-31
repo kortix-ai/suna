@@ -126,6 +126,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   // mock.
   bedrockByokBaseUrl: (region: string | null | undefined) =>
     `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
+  normalizeBedrockInferenceProfileRegion: (model: string) => model,
   stripBedrockInferenceProfilePrefix: (model: string) => model,
 }));
 

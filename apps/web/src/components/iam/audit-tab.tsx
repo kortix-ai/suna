@@ -10,7 +10,9 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
+import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -52,9 +54,10 @@ import {
   listProjectsForAccount,
 } from '@kortix/sdk';
 import {
+  type AuditActionDescription,
   type HumanizedAuditAction,
+  describeAuditAction,
   formatResourcePill,
-  humanizeAuditAction,
 } from './audit-display-helpers';
 
 type ActorType = NonNullable<IamAuditEvent['actor_type']>;
@@ -467,15 +470,15 @@ export function AuditTab({ accountId }: { accountId: string }) {
       ) : null}
 
       {!query.isLoading && !query.isError && events.length > 0 ? (
-        <div className="border-border overflow-hidden rounded-lg border">
+        <div className="border-border overflow-hidden rounded-md border">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Event</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead>Principal</TableHead>
-                <TableHead>Outcome</TableHead>
-                <TableHead className="text-right">Occurred</TableHead>
+                <TableHead>Result</TableHead>
+                <TableHead className="hidden text-right 2xl:table-cell">Time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -715,7 +718,7 @@ function AuditRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const occurred = new Date(event.occurred_at);
-  const human = humanizeAuditAction(event.action);
+  const action = describeAuditAction(event.action);
   const resource = formatResourcePill(event.resource_type, event.resource_id);
   const actorLabel =
     actorEmail ?? event.actor_user_id ?? (event.actor_type === 'system' ? 'System' : 'Unknown');
@@ -736,24 +739,40 @@ function AuditRow({
           }
         }}
       >
-        <TableCell className="max-w-[340px] whitespace-normal">
-          <div className="flex min-w-0 items-center gap-2">
+        <TableCell className="max-w-[360px] py-3 whitespace-normal">
+          <div className="flex min-w-0 items-start gap-2">
             <CaretRight
               className={cn(
-                'text-muted-foreground size-3.5 shrink-0 transition-transform duration-150',
+                'text-muted-foreground mt-0.5 size-3.5 shrink-0 transition-transform duration-150',
                 expanded && 'rotate-90',
               )}
             />
             <span
-              className={cn('size-1.5 shrink-0 rounded-full', KIND_DOT_TOKEN[human.kind])}
+              className={cn('mt-1.5 size-1.5 shrink-0 rounded-full', KIND_DOT_TOKEN[action.kind])}
               aria-hidden
             />
-            <span className="text-foreground truncate text-sm font-medium">{human.title}</span>
-            {human.detail ? (
-              <code className="bg-muted/50 text-muted-foreground truncate rounded px-1.5 py-0.5 font-mono text-[11px]">
-                {human.detail}
-              </code>
-            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-foreground truncate text-sm font-medium">{action.title}</span>
+                {action.detail ? (
+                  <code className="bg-muted/50 text-muted-foreground truncate rounded px-1.5 py-0.5 font-mono text-[11px]">
+                    {action.detail}
+                  </code>
+                ) : null}
+              </div>
+              {action.method || action.area ? (
+                <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                  {action.method && action.mapped ? (
+                    <Badge variant="outline" size="xs" className="font-mono font-medium">
+                      {action.method}
+                    </Badge>
+                  ) : null}
+                  <span className="text-muted-foreground truncate text-[11px]">
+                    {action.mapped ? action.area : 'Unmapped API route'}
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
         </TableCell>
         <TableCell className="max-w-[220px] whitespace-normal">
@@ -783,7 +802,7 @@ function AuditRow({
           <OutcomeBadge outcome={event.outcome} status={event.http_status} />
         </TableCell>
         <TableCell
-          className="text-muted-foreground text-right text-xs tabular-nums"
+          className="text-muted-foreground hidden text-right text-xs tabular-nums 2xl:table-cell"
           title={occurred.toLocaleString()}
         >
           {formatRelative(occurred)}
@@ -791,44 +810,55 @@ function AuditRow({
       </TableRow>
       {expanded ? (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={5} className="bg-muted/10 space-y-4 p-4 whitespace-normal">
-            <div className="grid gap-3 md:grid-cols-2">
-              <DetailBlock label="Raw action" value={event.action} />
-              <DetailBlock
-                label="Resource"
-                value={
-                  resource
-                    ? `${resource}${event.resource_id ? ` · ${event.resource_id}` : ''}`
-                    : '—'
-                }
-              />
-            </div>
-            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Detail label="Event ID" value={event.event_id} />
-              <Detail label="Request ID" value={event.request_id} />
-              <Detail label="Trace ID" value={event.trace_id} />
-              <Detail label="Correlation ID" value={event.correlation_id} />
-              <Detail label="Project ID" value={event.project_id} />
-              <Detail label="Session ID" value={event.session_id} />
-              <Detail
-                label="HTTP"
-                value={
-                  event.http_status != null
-                    ? `${event.http_status}${event.duration_ms != null ? ` · ${event.duration_ms} ms` : ''}`
-                    : null
-                }
-              />
-              <Detail label="Occurred at" value={occurred.toISOString()} />
-            </div>
-            {event.before !== null || event.after !== null ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <JsonPane label="Before" data={event.before} />
-                <JsonPane label="After" data={event.after} />
+          <TableCell colSpan={5} className="bg-muted/10 p-0 whitespace-normal">
+            <div className="space-y-4 p-4 md:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+                    Event detail
+                  </p>
+                  <p className="text-foreground text-sm font-medium">{action.title}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {occurred.toLocaleString()} · {actorLabel}
+                  </p>
+                </div>
+                <OutcomeBadge outcome={event.outcome} status={event.http_status} />
               </div>
-            ) : null}
-            {event.metadata && Object.keys(event.metadata).length > 0 ? (
-              <JsonPane label="Metadata" data={event.metadata} />
-            ) : null}
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <RequestPanel action={action} rawAction={event.action} />
+                <ResourcePanel
+                  resource={resource}
+                  resourceId={event.resource_id}
+                  projectName={projectName}
+                  sessionId={event.session_id}
+                />
+              </div>
+
+              <div className="border-border bg-background grid overflow-hidden rounded-md border sm:grid-cols-2 lg:grid-cols-4">
+                <Detail label="Event ID" value={event.event_id} />
+                <Detail label="Request ID" value={event.request_id} />
+                <Detail label="Trace ID" value={event.trace_id} />
+                <Detail label="Correlation ID" value={event.correlation_id} />
+                <Detail label="Project ID" value={event.project_id} />
+                <Detail label="Session ID" value={event.session_id} />
+                <Detail
+                  label="Duration"
+                  value={event.duration_ms != null ? `${event.duration_ms} ms` : null}
+                />
+                <Detail label="Occurred at" value={occurred.toISOString()} />
+              </div>
+
+              {event.before !== null || event.after !== null ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <JsonPane label="Before" data={event.before} />
+                  <JsonPane label="After" data={event.after} />
+                </div>
+              ) : null}
+              {event.metadata && Object.keys(event.metadata).length > 0 ? (
+                <JsonPane label="Metadata" data={event.metadata} />
+              ) : null}
+            </div>
           </TableCell>
         </TableRow>
       ) : null}
@@ -868,22 +898,101 @@ function OutcomeBadge({
   );
 }
 
-function DetailBlock({ label, value }: { label: string; value: string }) {
+function RequestPanel({
+  action,
+  rawAction,
+}: {
+  action: AuditActionDescription;
+  rawAction: string;
+}) {
   return (
-    <div className="space-y-1">
-      <p className="text-muted-foreground text-xs font-medium">{label}</p>
-      <code className="border-border bg-background text-foreground block rounded-md border px-2.5 py-2 font-mono text-xs break-all">
-        {value}
-      </code>
+    <div className="border-border bg-background overflow-hidden rounded-md border">
+      <div className="border-border flex min-h-10 items-center justify-between gap-3 border-b px-3 py-2">
+        <p className="text-muted-foreground text-xs font-medium">Request</p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {action.method ? (
+            <Badge variant="outline" size="xs" className="font-mono font-medium">
+              {action.method}
+            </Badge>
+          ) : null}
+          {action.area ? (
+            <span className="text-muted-foreground truncate text-[11px]">{action.area}</span>
+          ) : null}
+        </div>
+      </div>
+      <div className="space-y-2 p-3">
+        {action.route ? (
+          <code className="text-foreground block font-mono text-xs break-all">{action.route}</code>
+        ) : null}
+        <div className="bg-muted/30 flex min-h-10 items-center gap-2 rounded-md px-2.5">
+          <code className="text-muted-foreground min-w-0 flex-1 font-mono text-[11px] break-all">
+            {rawAction}
+          </code>
+          <CopyButton code={rawAction} className="size-10 shrink-0" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResourcePanel({
+  resource,
+  resourceId,
+  projectName,
+  sessionId,
+}: {
+  resource: string | null;
+  resourceId: string | null;
+  projectName: string | null;
+  sessionId: string | null;
+}) {
+  return (
+    <div className="border-border bg-background overflow-hidden rounded-md border">
+      <div className="border-border flex min-h-10 items-center border-b px-3 py-2">
+        <p className="text-muted-foreground text-xs font-medium">Scope and resource</p>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-3">
+        <SummaryValue label="Resource" value={resource} />
+        <SummaryValue label="Project" value={projectName} />
+        <SummaryValue label="Resource ID" value={resourceId} mono />
+        <SummaryValue label="Session ID" value={sessionId} mono />
+      </div>
+    </div>
+  );
+}
+
+function SummaryValue({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | null;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-muted-foreground text-[11px] font-medium">{label}</p>
+      <p
+        className={cn(
+          'text-foreground text-xs break-all',
+          mono && 'font-mono text-[11px] tabular-nums',
+        )}
+      >
+        {value ?? '—'}
+      </p>
     </div>
   );
 }
 
 function Detail({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="border-border min-w-0 space-y-1 border-b p-3 last:border-b-0 sm:border-r sm:nth-[2n]:border-r-0 sm:nth-last-[-n+2]:border-b-0 lg:nth-[2n]:border-r lg:nth-[4n]:border-r-0 lg:nth-last-[-n+4]:border-b-0">
       <p className="text-muted-foreground text-[11px] font-medium">{label}</p>
-      <p className="text-foreground truncate font-mono text-xs" title={value ?? undefined}>
+      <p
+        className="text-foreground font-mono text-[11px] break-all tabular-nums"
+        title={value ?? undefined}
+      >
         {value ?? '—'}
       </p>
     </div>
@@ -891,12 +1000,23 @@ function Detail({ label, value }: { label: string; value: string | null }) {
 }
 
 function JsonPane({ label, data }: { label: string; data: unknown }) {
+  const code = data === null ? 'null' : JSON.stringify(data, null, 2);
   return (
-    <div className="space-y-1">
-      <p className="text-muted-foreground text-xs font-medium">{label}</p>
-      <pre className="border-border bg-background text-foreground max-h-56 overflow-auto rounded-md border px-2.5 py-2 font-mono text-xs leading-relaxed">
-        {data === null ? 'None' : JSON.stringify(data, null, 2)}
-      </pre>
+    <div className="border-border bg-background overflow-hidden rounded-md border">
+      <div className="border-border flex min-h-10 items-center justify-between border-b px-3 py-2">
+        <p className="text-muted-foreground text-xs font-medium">{label}</p>
+        <Badge variant="muted" size="xs" className="font-mono">
+          JSON
+        </Badge>
+      </div>
+      <BetterCodeBlock
+        code={code}
+        language="json"
+        showBackgroundColors={false}
+        border={false}
+        padding="p-3 [&>pre]:p-3"
+        className="max-h-64 rounded-none font-mono text-xs leading-relaxed"
+      />
     </div>
   );
 }

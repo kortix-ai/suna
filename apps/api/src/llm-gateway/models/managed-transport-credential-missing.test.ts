@@ -17,7 +17,6 @@ mock.module('../../config', () => ({
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return true;
-        if (key === 'MODEL_ENABLEMENT_ENABLED') return true;
         if (key === 'LLM_GATEWAY_MANAGED_MODELS') return undefined;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return '';
@@ -55,7 +54,6 @@ mock.module('../../projects/secrets', () => ({
 
 mock.module('../../repositories/project-routing-policies', () => ({
   getProjectRoutingPolicy: async () => null,
-  setProjectModelOverrides: async () => undefined,
 }));
 
 mock.module('../credentials/codex', () => ({

@@ -1,3 +1,7 @@
+import { AUDIT_HTTP_ROUTES } from './audit-http-routes.generated';
+
+export { AUDIT_HTTP_ROUTES } from './audit-http-routes.generated';
+
 // Humanise audit-event actions into "Set personal secret TEST" / "Granted
 // super-admin to ino.gtav@…" style sentences. The audit_events table
 // holds two flavours of action codes:
@@ -33,12 +37,267 @@ export interface HumanizedAuditAction {
     | 'other';
 }
 
+export interface AuditActionDescription extends HumanizedAuditAction {
+  /** True when a named action or API route produced the label. */
+  mapped: boolean;
+  /** HTTP method for request actions. */
+  method: string | null;
+  /** Manifest route template for request actions. */
+  route: string | null;
+  /** Short product area for the row subtitle. */
+  area: string | null;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (s: string): boolean => UUID_RE.test(s);
+
+interface RouteMatcher {
+  method: string;
+  path: string;
+  pattern: RegExp;
+  specificity: number;
+}
+
+const HTTP_ROUTE_MATCHERS: RouteMatcher[] = AUDIT_HTTP_ROUTES.map((signature) => {
+  const separator = signature.indexOf(' ');
+  const method = signature.slice(0, separator);
+  const path = signature.slice(separator + 1);
+  const parts = path.split('/');
+  const specificity = parts.filter((part) => part && !part.startsWith(':')).length;
+  const source = parts
+    .map((part) => (part.startsWith(':') ? '[^/]+' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('/');
+  return { method, path, pattern: new RegExp(`^${source}/?$`), specificity };
+}).sort(
+  (left, right) => right.specificity - left.specificity || right.path.length - left.path.length,
+);
+
+const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
+  'GET /health': 'Checked API health',
+  'GET /health/live': 'Checked API liveness',
+  'GET /metrics': 'Viewed system metrics',
+  'GET /v1/accounts/:accountId/audit': 'Viewed audit log',
+  'GET /v1/accounts/:accountId/audit/export': 'Exported audit log',
+  'GET /v1/accounts/:accountId/audit/webhooks': 'Listed audit webhooks',
+  'POST /v1/accounts/:accountId/audit/webhooks': 'Created audit webhook',
+  'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Updated audit webhook',
+  'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Deleted audit webhook',
+  'GET /v1/accounts/:accountId/iam/mfa-required': 'Viewed MFA requirement',
+  'GET /v1/accounts/:accountId/iam/mfa-required/preview': 'Previewed MFA enforcement',
+  'POST /v1/accounts/:accountId/iam/policies:bulk-import': 'Bulk imported IAM policies',
+  'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata':
+    'Configured SSO provider from metadata',
+  'POST /v1/accounts/:accountId/leave': 'Left account',
+  'GET /v1/accounts/me': 'Viewed current account',
+  'GET /v1/accounts/:accountId/iam/enterprise-demo': 'Viewed Enterprise preview',
+  'PUT /v1/accounts/:accountId/iam/enterprise-demo': 'Updated Enterprise preview',
+  'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
+  'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
+  'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
+  'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
+    'Committed and pushed session changes',
+  'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
+  'POST /v1/projects/:projectId/turn-question': 'Submitted session question',
+  'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
+  'POST /v1/projects/:projectId/sessions/warm/claim': 'Claimed warm session sandbox',
+  'GET /v1/projects/:projectId/files/content': 'Viewed file content',
+  'GET /v1/projects/:projectId/files/search': 'Searched project files',
+  'GET /v1/projects/:projectId/files/archive': 'Downloaded project files',
+  'GET /v1/projects/:projectId/detail': 'Viewed project details',
+  'POST /v1/projects/:projectId/access-requests': 'Requested project access',
+  'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
+  'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
+  'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
+  'PUT /v1/projects/:projectId/connector-profiles/:profileId/activate':
+    'Activated connector profile',
+  'PUT /v1/projects/:projectId/connector-profiles/:profileId/default':
+    'Set default connector profile',
+  'PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke': 'Revoked connector profile',
+  'POST /v1/projects/:projectId/connector-profiles/me': 'Created personal connector profile',
+  'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
+  'POST /v1/projects/:projectId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
+  'POST /v1/projects/:projectId/git/collaborators': 'Added Git collaborator',
+  'POST /v1/projects/:projectId/marketplace/install-session': 'Started marketplace install',
+  'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
+  'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
+  'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
+  'POST /v1/projects/suna-migration/start': 'Started project migration',
+  'POST /v1/executor/call': 'Ran connector action',
+  'POST /v1/executor/projects/:projectId/call': 'Ran project connector action',
+  'GET /v1/executor/projects/:projectId/catalog': 'Viewed connector catalog',
+  'POST /v1/router/web-search': 'Searched the web',
+  'POST /v1/router/image-search': 'Searched images',
+  'POST /v1/router/chat/completions': 'Generated chat completion',
+  'POST /v1/auth/logout': 'Signed out',
+  'GET /v1/openapi.json': 'Viewed OpenAPI specification',
+  'GET /v1/billing/account-state': 'Viewed billing status',
+  'GET /v1/billing/account-state/minimal': 'Viewed billing summary',
+  'POST /internal/gateway/billing': 'Processed gateway billing',
+  'POST /internal/gateway/budget-check': 'Checked gateway budget',
+  'POST /internal/gateway/models': 'Resolved gateway models',
+  'POST /internal/gateway/trace': 'Recorded gateway trace',
+  'POST /internal/gateway/usage': 'Recorded gateway usage',
+  'GET /scim/v2/accounts/:accountId/ResourceTypes': 'Listed SCIM resource types',
+  'GET /scim/v2/accounts/:accountId/ResourceTypes/:id': 'Viewed SCIM resource type',
+  'POST /v1/account-invites/:inviteId/accept': 'Accepted account invitation',
+  'POST /v1/account-invites/:inviteId/decline': 'Declined account invitation',
+  'DELETE /v1/account/delete-immediately': 'Deleted account immediately',
+  'DELETE /v1/billing/account/delete-immediately': 'Deleted billing account immediately',
+  'POST /v1/billing/cron/free-tier-rotation': 'Ran free-tier billing rotation',
+  'POST /v1/billing/cron/yearly-rotation': 'Ran yearly billing rotation',
+  'POST /v1/billing/webhook/revenuecat': 'Received RevenueCat billing webhook',
+  'POST /v1/billing/webhook/stripe': 'Received Stripe billing webhook',
+  'POST /v1/billing/webhooks/revenuecat': 'Received RevenueCat billing webhook',
+  'POST /v1/billing/webhooks/stripe': 'Received Stripe billing webhook',
+  'GET /v1/marketplace/marketplaces/featured': 'Listed featured marketplaces',
+  'GET /v1/oauth/authorize': 'Started OAuth authorization',
+  'POST /v1/oauth/authorize/consent': 'Submitted OAuth consent',
+  'GET /v1/oauth/userinfo': 'Viewed OAuth user information',
+  'POST /v1/platform/boot-timeline': 'Recorded platform boot timeline',
+  'POST /v1/platform/github-app/manifest-start': 'Started GitHub App setup',
+  'POST /v1/prewarm': 'Prewarmed sandbox capacity',
+};
+
+const ACRONYMS: Record<string, string> = {
+  api: 'API',
+  cli: 'CLI',
+  github: 'GitHub',
+  iam: 'IAM',
+  id: 'ID',
+  llm: 'LLM',
+  mcp: 'MCP',
+  mfa: 'MFA',
+  oauth: 'OAuth',
+  oauth2: 'OAuth',
+  pat: 'PAT',
+  rpc: 'RPC',
+  scim: 'SCIM',
+  sdk: 'SDK',
+  sso: 'SSO',
+};
+
+const IRREGULAR_SINGULARS: Record<string, string> = {
+  actions: 'action',
+  accounts: 'account',
+  approvals: 'approval',
+  bindings: 'binding',
+  branches: 'branch',
+  budgets: 'budget',
+  commits: 'commit',
+  completions: 'completion',
+  connections: 'connection',
+  connectors: 'connector',
+  errors: 'error',
+  files: 'file',
+  groups: 'group',
+  identities: 'identity',
+  installations: 'installation',
+  integrations: 'integration',
+  invites: 'invitation',
+  items: 'item',
+  keys: 'key',
+  logs: 'log',
+  mappings: 'mapping',
+  marketplaces: 'marketplace',
+  members: 'member',
+  messages: 'message',
+  models: 'model',
+  permissions: 'permission',
+  policies: 'policy',
+  previews: 'preview',
+  profiles: 'profile',
+  projects: 'project',
+  providers: 'provider',
+  repositories: 'repository',
+  requests: 'request',
+  roles: 'role',
+  sandboxes: 'sandbox',
+  schemas: 'schema',
+  secrets: 'secret',
+  sessions: 'session',
+  snapshots: 'snapshot',
+  skills: 'skill',
+  sources: 'source',
+  templates: 'template',
+  tokens: 'token',
+  transactions: 'transaction',
+  triggers: 'trigger',
+  users: 'user',
+  webhooks: 'webhook',
+};
+
+const PAST_TENSE: Record<string, string> = {
+  accept: 'Accepted',
+  act: 'Resolved',
+  activate: 'Activated',
+  approve: 'Approved',
+  authenticate: 'Authenticated',
+  authorize: 'Authorized',
+  bind: 'Bound',
+  build: 'Built',
+  cancel: 'Canceled',
+  check: 'Checked',
+  claim: 'Claimed',
+  close: 'Closed',
+  configure: 'Configured',
+  confirm: 'Confirmed',
+  connect: 'Connected',
+  create: 'Created',
+  debit: 'Debited',
+  decline: 'Declined',
+  deduct: 'Deducted',
+  delete: 'Deleted',
+  deny: 'Denied',
+  disable: 'Disabled',
+  discover: 'Discovered',
+  export: 'Exported',
+  finalize: 'Finalized',
+  fire: 'Fired',
+  link: 'Linked',
+  leave: 'Left',
+  logout: 'Signed out',
+  merge: 'Merged',
+  migrate: 'Migrated',
+  poll: 'Polled',
+  provision: 'Provisioned',
+  purchase: 'Purchased',
+  reactivate: 'Reactivated',
+  rebuild: 'Rebuilt',
+  reject: 'Rejected',
+  reopen: 'Reopened',
+  request: 'Requested',
+  resend: 'Resent',
+  resolve: 'Resolved',
+  restart: 'Restarted',
+  revoke: 'Revoked',
+  rotate: 'Rotated',
+  schedule: 'Scheduled',
+  search: 'Searched',
+  start: 'Started',
+  stop: 'Stopped',
+  sync: 'Synchronized',
+  update: 'Updated',
+  upload: 'Uploaded',
+  validate: 'Validated',
+  verify: 'Verified',
+};
+
+const COLLECTION_SEGMENTS = new Set(Object.keys(IRREGULAR_SINGULARS));
 
 // ─── IAM action-code map ─────────────────────────────────────────────────
 
 const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction['kind'] }> = {
+  'admin.account.session_limit.set': { title: 'Updated account session limit', kind: 'update' },
+  'admin.account.tier.set': { title: 'Updated account tier', kind: 'update' },
+  'auth.login.fail': { title: 'Failed to sign in', kind: 'other' },
+  'auth.login.success': { title: 'Signed in', kind: 'read' },
+  'auth.logout': { title: 'Signed out', kind: 'read' },
+  'auth.session.first_sight': { title: 'Started authenticated session', kind: 'create' },
+  'enterprise_demo.disable': { title: 'Disabled Enterprise preview', kind: 'update' },
+  'enterprise_demo.enable': { title: 'Enabled Enterprise preview', kind: 'update' },
+  'iam.audit.webhook.create': { title: 'Created audit webhook', kind: 'create' },
+  'iam.audit.webhook.delete': { title: 'Deleted audit webhook', kind: 'delete' },
+  'iam.audit.webhook.update': { title: 'Updated audit webhook', kind: 'update' },
   'iam.group.create': { title: 'Created group', kind: 'create' },
   'iam.group.update': { title: 'Updated group', kind: 'update' },
   'iam.group.delete': { title: 'Deleted group', kind: 'delete' },
@@ -49,7 +308,9 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.member.role.change': { title: 'Changed member role', kind: 'update' },
   'iam.project.group.attach': { title: 'Attached group to project', kind: 'attach' },
   'iam.project.group.detach': { title: 'Detached group from project', kind: 'detach' },
+  'iam.project.group.expired': { title: 'Expired project group access', kind: 'revoke' },
   'iam.project.group.update': { title: 'Changed group role on project', kind: 'update' },
+  'iam.project.member.expired': { title: 'Expired project member access', kind: 'revoke' },
   'iam.member.invite': { title: 'Invited member', kind: 'create' },
   'iam.member.remove': { title: 'Removed member', kind: 'delete' },
   'iam.mfa_required.enable': { title: 'Required MFA for the account', kind: 'update' },
@@ -57,6 +318,7 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.session_policy.update': { title: 'Updated session policy', kind: 'update' },
   'iam.pat_policy.update': { title: 'Updated PAT policy', kind: 'update' },
   'iam.sso.provider.update': { title: 'Updated SSO provider', kind: 'update' },
+  'iam.sso.provider.create': { title: 'Created SSO provider', kind: 'create' },
   'iam.sso.provider.delete': { title: 'Removed SSO provider', kind: 'delete' },
   'iam.sso.mapping.create': { title: 'Added SSO group mapping', kind: 'create' },
   'iam.sso.mapping.delete': { title: 'Removed SSO group mapping', kind: 'delete' },
@@ -74,6 +336,25 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.policy.create': { title: 'Created IAM policy', kind: 'create' },
   'iam.policy.update': { title: 'Updated IAM policy', kind: 'update' },
   'iam.policy.delete': { title: 'Deleted IAM policy', kind: 'delete' },
+  'iam.policy.bulk_import': { title: 'Bulk imported IAM policies', kind: 'create' },
+  'iam.role.create': { title: 'Created IAM role', kind: 'create' },
+  'iam.role.delete': { title: 'Deleted IAM role', kind: 'delete' },
+  'iam.role.permissions.set': { title: 'Updated IAM role permissions', kind: 'update' },
+  'iam.session.revoke': { title: 'Revoked account session', kind: 'revoke' },
+  'project.admin_bypass_read': { title: 'Used admin bypass to view project', kind: 'read' },
+  'project.admin_bypass_session_read': {
+    title: 'Used admin bypass to view session',
+    kind: 'read',
+  },
+  'project.connector.read': { title: 'Read project connector', kind: 'read' },
+  'scim.group.create': { title: 'Provisioned SCIM group', kind: 'create' },
+  'scim.group.delete': { title: 'Deleted SCIM group', kind: 'delete' },
+  'scim.group.update': { title: 'Updated SCIM group', kind: 'update' },
+  'scim.user.deactivate': { title: 'Deactivated SCIM user', kind: 'revoke' },
+  'scim.user.delete': { title: 'Deleted SCIM user', kind: 'delete' },
+  'scim.user.invite': { title: 'Invited SCIM user', kind: 'create' },
+  'scim.user.invite_revoke': { title: 'Revoked SCIM user invitation', kind: 'revoke' },
+  'webhook.test': { title: 'Sent audit webhook test', kind: 'update' },
 };
 
 // ─── HTTP path patterns ──────────────────────────────────────────────────
@@ -313,13 +594,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
-/**
- * Take an audit event's `action` field and produce a humanised display
- * shape. Returns a generic descriptor for anything we don't recognise so
- * the UI never has to special-case "unknown action".
- */
-export function humanizeAuditAction(action: string): HumanizedAuditAction {
-  // 1) IAM detail rows ("iam.<resource>.<verb>")
+function describeNamedAction(action: string): HumanizedAuditAction | null {
   const iam = IAM_ACTION_MAP[action];
   if (iam) return { title: iam.title, kind: iam.kind };
 
@@ -346,33 +621,237 @@ export function humanizeAuditAction(action: string): HumanizedAuditAction {
       kind: 'update',
     };
   }
+  return null;
+}
 
-  // 2) HTTP-style rows ("METHOD /v1/<path>")
-  const httpMatch = action.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/\S+)$/);
+function matchHttpRoute(method: string, path: string): RouteMatcher | null {
+  return (
+    HTTP_ROUTE_MATCHERS.find(
+      (candidate) => candidate.method === method && candidate.pattern.test(path),
+    ) ?? null
+  );
+}
+
+function routeArea(path: string): string {
+  if (path.startsWith('/internal/gateway/')) return 'Gateway';
+  if (path.startsWith('/scim/')) return 'SCIM';
+  if (path === '/health' || path === '/health/live' || path === '/metrics') return 'System';
+  if (path.includes('/accounts/:accountId/audit')) return 'Account audit';
+  if (path.includes('/accounts/:accountId/iam')) return 'Identity and access';
+  if (path.includes('/projects/:projectId/sessions') || path.includes('/turn-')) return 'Sessions';
+  if (path.includes('/projects/:projectId/gateway')) return 'AI gateway';
+  if (path.includes('/connector') || path.startsWith('/v1/executor/')) return 'Connectors';
+  if (path.startsWith('/v1/billing/')) return 'Billing';
+  if (path.startsWith('/v1/tunnel/')) return 'Computer';
+  if (path.startsWith('/v1/admin/')) return 'Administration';
+  if (path.startsWith('/v1/marketplace/')) return 'Marketplace';
+  if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
+  if (path.includes('/channels/')) return 'Channels';
+  if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';
+  if (path.startsWith('/v1/projects')) return 'Projects';
+  if (path.startsWith('/v1/accounts') || path.startsWith('/v1/account')) return 'Accounts';
+  return 'API';
+}
+
+function routeSegments(path: string): string[] {
+  const segments = path.split('/').filter(Boolean);
+  if (segments[0] === 'v1') return segments.slice(1);
+  if (segments[0] === 'scim' && segments[1] === 'v2') return segments.slice(2);
+  if (segments[0] === 'internal') return segments.slice(1);
+  return segments;
+}
+
+function words(value: string): string {
+  return value
+    .replace(/\.json$/i, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[-_: ]+/)
+    .filter(Boolean)
+    .map((word) => ACRONYMS[word.toLowerCase()] ?? word.toLowerCase())
+    .join(' ');
+}
+
+function singular(value: string): string {
+  const normalized = value.toLowerCase();
+  const direct = IRREGULAR_SINGULARS[normalized];
+  if (direct) return direct;
+  const parts = normalized.split('-');
+  if (parts.length > 1) {
+    const last = parts.at(-1) as string;
+    parts[parts.length - 1] = IRREGULAR_SINGULARS[last] ?? last;
+    return parts.join('-');
+  }
+  if (normalized === 'resourcetypes') return 'resource-type';
+  return normalized;
+}
+
+function isCollectionSegment(segment: string): boolean {
+  const normalized = segment.split(':')[0].toLowerCase();
+  if (COLLECTION_SEGMENTS.has(normalized)) return true;
+  const last = normalized.split('-').at(-1) ?? normalized;
+  return COLLECTION_SEGMENTS.has(last) || normalized === 'resourcetypes';
+}
+
+function contextualResource(path: string, segment: string): string {
+  const normalized = segment.split(':')[0];
+  if (normalized === 'webhooks' && path.includes('/audit/')) return 'audit webhooks';
+  if (normalized === 'provider' && path.includes('/sso/')) return 'SSO provider';
+  if (normalized === 'mappings' && path.includes('/sso/')) return 'SSO mappings';
+  if (normalized === 'tokens' && path.includes('/scim/')) return 'SCIM tokens';
+  if (normalized === 'sessions' && path.includes('/iam/')) return 'account sessions';
+  if (normalized === 'policies' && path.includes('/iam/')) return 'IAM policies';
+  if (normalized === 'installation') {
+    const provider = routeSegments(path)
+      .filter((part) => !part.startsWith(':'))
+      .at(-2);
+    return provider ? `${words(provider)} installation` : 'channel installation';
+  }
+  return words(normalized);
+}
+
+function actionTarget(path: string, actionIndex: number): string {
+  const segments = routeSegments(path);
+  for (let index = actionIndex - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    if (!segment.startsWith(':')) {
+      return words(singular(segment.split(':')[0]));
+    }
+  }
+  return 'request';
+}
+
+function imperativeLabel(path: string, terminal: string, terminalIndex: number): string | null {
+  const [resource, colonAction] = terminal.split(':');
+  if (colonAction?.startsWith('bulk-')) {
+    const verb = colonAction.slice('bulk-'.length);
+    const past = PAST_TENSE[verb];
+    return past ? `Bulk ${past.toLowerCase()} ${words(resource)}` : null;
+  }
+
+  const parts = terminal.split('-');
+  const past = PAST_TENSE[parts[0]];
+  if (!past) return null;
+  if (parts.length > 1) return `${past} ${words(parts.slice(1).join('-'))}`;
+  return `${past} ${actionTarget(path, terminalIndex)}`;
+}
+
+function genericRouteLabel(method: string, path: string): string {
+  const segments = routeSegments(path);
+  const terminalIndex = segments.length - 1;
+  const terminal = segments[terminalIndex] ?? 'API';
+
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !terminal.startsWith(':')) {
+    const imperative = imperativeLabel(path, terminal, terminalIndex);
+    if (imperative) return imperative;
+  }
+
+  if (method === 'POST' && path.startsWith('/v1/webhooks/')) {
+    const provider = segments.find((part) =>
+      ['email', 'sandbox', 'slack', 'teams', 'telegram'].includes(part),
+    );
+    return `Received ${provider ? `${words(provider)} ` : ''}webhook`;
+  }
+
+  const endsWithParameter = terminal.startsWith(':');
+  const resourceSegment = endsWithParameter
+    ? ([...segments].reverse().find((part) => !part.startsWith(':')) ?? 'resource')
+    : terminal;
+  const resource = contextualResource(path, resourceSegment);
+  const singularResource = contextualResource(path, singular(resourceSegment.split(':')[0]));
+  const isCollection = isCollectionSegment(resourceSegment);
+
+  switch (method) {
+    case 'GET':
+      return endsWithParameter || !isCollection
+        ? `Viewed ${endsWithParameter ? singularResource : resource}`
+        : `Listed ${resource}`;
+    case 'POST':
+      return isCollection ? `Created ${singularResource}` : `Ran ${resource}`;
+    case 'PUT':
+    case 'PATCH':
+      return `Updated ${endsWithParameter ? singularResource : resource}`;
+    case 'DELETE':
+      return `Deleted ${singularResource}`;
+    case 'OPTIONS':
+      return `Checked ${resource} options`;
+    default:
+      return `Accessed ${resource}`;
+  }
+}
+
+function compactHttpAction(method: string, path: string): string {
+  return `${method} ${path.replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/…')}`;
+}
+
+/**
+ * Describe an audit action with a readable title and its matched route.
+ * Unknown actions keep the compact raw value as their title.
+ */
+export function describeAuditAction(action: string): AuditActionDescription {
+  const named = describeNamedAction(action);
+  if (named) {
+    return { ...named, mapped: true, method: null, route: null, area: null };
+  }
+
+  const httpMatch = action.match(/^([A-Z]+)\s+(\/\S+)$/);
   if (httpMatch) {
     const method = httpMatch[1];
     const rawPath = httpMatch[2];
-    // Strip query string if any.
-    const path = rawPath.split('?')[0];
-    // Drop leading "/v1/" or "/v1".
+    const path = rawPath.split('?')[0].replace(/\/$/, '') || '/';
+    const route = matchHttpRoute(method, path);
     const tail = path.replace(/^\/v1\/?/, '');
-    if (!tail) {
-      return { title: `${method} /v1`, kind: 'other' };
-    }
-    const segments = tail.split('/').map((seg) => (isUuid(seg) ? ':id' : seg));
+    const segments = tail ? tail.split('/').map((seg) => (isUuid(seg) ? ':id' : seg)) : [];
     for (const handler of HTTP_PATTERNS) {
       const out = handler(method, segments, path);
-      if (out) return out;
+      if (out) {
+        return {
+          ...out,
+          mapped: true,
+          method,
+          route: route?.path ?? null,
+          area: routeArea(route?.path ?? path),
+        };
+      }
     }
-    // 3) Fallback: humanise generic HTTP request.
+
+    if (!route) {
+      return {
+        title: compactHttpAction(method, path),
+        kind: kindFromMethod(method),
+        mapped: false,
+        method,
+        route: null,
+        area: 'API',
+      };
+    }
+
     return {
-      title: `${method} ${path.replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/…')}`,
+      title:
+        ROUTE_LABEL_OVERRIDES[`${method} ${route.path}`] ?? genericRouteLabel(method, route.path),
       kind: kindFromMethod(method),
+      mapped: true,
+      method,
+      route: route.path,
+      area: routeArea(route.path),
     };
   }
 
-  // 4) Last-ditch fallback for completely unknown action codes.
-  return { title: action, kind: 'other' };
+  return {
+    title: action,
+    kind: 'other',
+    mapped: false,
+    method: null,
+    route: null,
+    area: null,
+  };
+}
+
+/**
+ * Return the compact shape used by existing audit consumers.
+ */
+export function humanizeAuditAction(action: string): HumanizedAuditAction {
+  const { title, detail, kind } = describeAuditAction(action);
+  return detail ? { title, detail, kind } : { title, kind };
 }
 
 function kindFromMethod(method: string): HumanizedAuditAction['kind'] {

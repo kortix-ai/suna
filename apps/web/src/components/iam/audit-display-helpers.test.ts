@@ -1,10 +1,136 @@
 import { describe, expect, test } from 'bun:test';
-import { formatResourcePill, humanizeAuditAction } from './audit-display-helpers';
+import { readFileSync } from 'node:fs';
+import {
+  AUDIT_HTTP_ROUTES,
+  describeAuditAction,
+  formatResourcePill,
+  humanizeAuditAction,
+} from './audit-display-helpers';
 
 const UID = '8fb490fe-4765-480e-9e83-08b4b41a3f06';
 const UID2 = '47dd83e0-c532-4643-a0c1-112abab26d5e';
 
+interface RouteManifest {
+  routes: Array<{ method: string; path: string }>;
+}
+
+const routeManifest = JSON.parse(
+  readFileSync(new URL('../../../../../tests/spec/routes.generated.json', import.meta.url), 'utf8'),
+) as RouteManifest;
+
+function materializeRoute(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => (segment.startsWith(':') ? `sample-${segment.slice(1)}` : segment))
+    .join('/');
+}
+
+describe('audit HTTP route registry', () => {
+  test('contains every route in the authoritative API manifest', () => {
+    const expected = routeManifest.routes.map(({ method, path }) => `${method} ${path}`).sort();
+    expect([...AUDIT_HTTP_ROUTES].sort()).toEqual(expected);
+  });
+
+  test('maps every API route to a readable label', () => {
+    for (const route of routeManifest.routes) {
+      const display = describeAuditAction(`${route.method} ${materializeRoute(route.path)}`);
+      expect(display.mapped, `${route.method} ${route.path}`).toBe(true);
+      expect(display.route, `${route.method} ${route.path}`).toBe(route.path);
+      expect(display.title, `${route.method} ${route.path}`).not.toMatch(
+        /^(GET|POST|PUT|PATCH|DELETE|OPTIONS) \/?/,
+      );
+    }
+  });
+
+  test('uses specific labels for common audit routes', () => {
+    expect(describeAuditAction(`GET /v1/accounts/${UID}/audit/webhooks`).title).toBe(
+      'Listed audit webhooks',
+    );
+    expect(describeAuditAction(`POST /v1/accounts/${UID}/audit/webhooks`).title).toBe(
+      'Created audit webhook',
+    );
+    expect(describeAuditAction(`PATCH /v1/accounts/${UID}/audit/webhooks/${UID2}`).title).toBe(
+      'Updated audit webhook',
+    );
+    expect(describeAuditAction(`GET /v1/projects/${UID}/sessions/${UID2}/audit`).title).toBe(
+      'Viewed session audit log',
+    );
+    expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
+      'Streamed session turn',
+    );
+  });
+
+  test('preserves the compact raw route fallback for an unknown route', () => {
+    expect(describeAuditAction(`POST /v1/widgets/${UID}/refresh`)).toMatchObject({
+      title: 'POST /v1/widgets/…/refresh',
+      mapped: false,
+      method: 'POST',
+      route: null,
+    });
+  });
+});
+
 describe('humanizeAuditAction — IAM action codes', () => {
+  test('maps every named action emitted by the audit writers', () => {
+    const actions = [
+      'admin.account.session_limit.set',
+      'admin.account.tier.set',
+      'auth.login.fail',
+      'auth.login.success',
+      'auth.logout',
+      'auth.session.first_sight',
+      'enterprise_demo.disable',
+      'enterprise_demo.enable',
+      'iam.audit.webhook.create',
+      'iam.audit.webhook.delete',
+      'iam.audit.webhook.update',
+      'iam.group.create',
+      'iam.group.delete',
+      'iam.group.members.add',
+      'iam.group.members.remove',
+      'iam.group.update',
+      'iam.pat_policy.update',
+      'iam.policy.bulk_import',
+      'iam.policy.create',
+      'iam.policy.delete',
+      'iam.policy.update',
+      'iam.project.group.expired',
+      'iam.project.member.expired',
+      'iam.role.create',
+      'iam.role.delete',
+      'iam.role.permissions.set',
+      'iam.scim.token.create',
+      'iam.scim.token.revoke',
+      'iam.service_account.create',
+      'iam.service_account.delete',
+      'iam.service_account.disable',
+      'iam.session.revoke',
+      'iam.session_policy.update',
+      'iam.sso.mapping.create',
+      'iam.sso.mapping.delete',
+      'iam.sso.provider.create',
+      'iam.sso.provider.delete',
+      'project.admin_bypass_read',
+      'project.admin_bypass_session_read',
+      'project.connector.read',
+      'scim.group.create',
+      'scim.group.delete',
+      'scim.group.update',
+      'scim.user.deactivate',
+      'scim.user.delete',
+      'scim.user.invite',
+      'scim.user.invite_revoke',
+      'session.created',
+      'webhook.test',
+    ];
+
+    for (const action of actions) {
+      const description = describeAuditAction(action);
+      expect(description.mapped, action).toBe(true);
+      expect(description.title, action).not.toBe(action);
+    }
+  });
+
   test('iam.group.create → Created group', () => {
     expect(humanizeAuditAction('iam.group.create')).toEqual({
       title: 'Created group',
