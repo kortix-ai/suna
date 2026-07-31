@@ -75,6 +75,7 @@ import {
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { publicConnectorAlias } from '../../shared/connector-alias';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
@@ -245,6 +246,11 @@ function unavailableRequiredConnectorError(
     body: {
       error: error.message,
       code: error.code,
+      // The docs tell clients to read `connectors` and never to parse `error`.
+      // This site emitted only the prose, so a caller obeying that instruction
+      // got `undefined` here while the create path worked. The shape has to be
+      // the same wherever the code appears, or the contract is a lie on one path.
+      connectors: error.aliases.map(publicConnectorAlias),
     },
   };
 }

@@ -21,9 +21,15 @@ export function resolveCreateFailure(
 ): 'upgrade' | 'silent' | 'connect' | 'toast' {
   if (code === 'subscription_required' || code === 'no_account') return 'upgrade';
   if (code === 'concurrent_session_limit') return 'silent';
-  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED' || code === 'CONNECTOR_CONNECTION_REQUIRED') {
-    return 'connect';
-  }
+  // One code, not two. `CONNECTOR_CONNECTION_REQUIRED` was also listed here and
+  // the API has never emitted it — a dead branch that cost nothing only because
+  // the live code sits beside it.
+  //
+  // `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` deliberately does NOT open the gate.
+  // It means the project has no such connector at all, so the gate would ask
+  // someone to connect an account to something that does not exist; the toast is
+  // the honest outcome until a project owner adds it.
+  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED') return 'connect';
   return 'toast';
 }
 

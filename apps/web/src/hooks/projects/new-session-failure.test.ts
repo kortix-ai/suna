@@ -32,7 +32,20 @@ describe('resolveCreateFailure', () => {
 
   test('a missing connector authorization opens the connect-to-start gate', () => {
     expect(resolveCreateFailure('CONNECTOR_AUTHORIZATION_REQUIRED')).toBe('connect');
-    expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('connect');
+  });
+
+  test('an unconfigured connector does NOT open the gate — nothing to connect to', () => {
+    // REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE means the project has no such
+    // connector. Opening the gate would ask the user to connect an account to
+    // a connector that does not exist, and no amount of connecting clears it.
+    expect(resolveCreateFailure('REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE')).toBe('toast');
+  });
+
+  test('CONNECTOR_CONNECTION_REQUIRED is not a code the API emits', () => {
+    // It was routed to the gate for as long as it was written down, and the API
+    // has never sent it. A branch on a code that cannot arrive is dead forever;
+    // this pins that it stays out rather than being re-added by resemblance.
+    expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('toast');
   });
 
   test('everything else — including codeless network failures — surfaces a toast, never a redirect', () => {
@@ -84,10 +97,15 @@ describe('getConnectorAuthorizationRequiredProfiles', () => {
         },
       }),
     ).toBeNull();
+    // A real adjacent refusal that carries `connectors`, never
+    // `connector_profiles` — reading a gate roster out of it would be inventing
+    // one. (This case used to be written with the phantom
+    // CONNECTOR_CONNECTION_REQUIRED, which proved nothing: an unreachable code
+    // is rejected whatever the reader does.)
     expect(
       getConnectorAuthorizationRequiredProfiles({
-        code: 'CONNECTOR_CONNECTION_REQUIRED',
-        data: { connector: 'gmail-read' },
+        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+        data: { connectors: ['gmail-read'] },
       }),
     ).toBeNull();
   });

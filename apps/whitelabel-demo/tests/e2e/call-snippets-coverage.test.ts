@@ -245,6 +245,7 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().approvals.resolve()': 'approval.resolve',
   'kortix.project().secrets.upsert()': 'secret.upsert',
   'kortix.project().secrets.remove()': 'secret.delete',
+  'kortix.project().setupLinks.requestConnector()': 'connector.connect-link',
 
   // ── Account administration ────────────────────────────────────────────────
   'kortix.accounts.create()': 'account-admin',

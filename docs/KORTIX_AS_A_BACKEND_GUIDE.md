@@ -233,15 +233,39 @@ Missing authorizations return:
 }
 ```
 
+Both refusals are returned before the session row is inserted and before any
+sandbox is provisioned, so a session blocked on a connector costs no tokens.
+
 If a required slug has no configured connector profile, session creation
 returns:
 
 ```json
 {
   "error": "Required connector profile \"gmail-read\" is unavailable",
-  "code": "REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE"
+  "code": "REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE",
+  "connectors": ["gmail-read"]
 }
 ```
+
+Each refusal lists every failing alias, so one retry can follow one round of
+fixes. `connectors` and `connector_profiles` are the machine-readable lists;
+never parse `error` or `message`.
+
+The two codes have different remedies. `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`
+means the connector profile does not exist in the project — the project owner
+adds it, and no end-user action can substitute.
+`CONNECTOR_AUTHORIZATION_REQUIRED` means the connector profile exists but has no
+authorization this caller may run as; each entry carries the connector `id` to
+start a connect flow with. When the strategy is `user`, that flow belongs to the
+end-user's own account, which is why a service-account credential cannot clear
+it on their behalf — mint a setup link and send them through it.
+
+`REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` outranks
+`CONNECTOR_AUTHORIZATION_REQUIRED` when both apply in one request.
+
+Both are distinct from `403 CONNECTOR_NOT_ASSIGNED`, which means the agent is
+not granted the connector at all. That is a manifest fault, and connecting an
+account never clears it.
 
 Create or reconnect the required authorization. Then retry session creation.
 
@@ -420,8 +444,10 @@ An idempotency key longer than 255 characters returns
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector profile.                |
 | `404` create / `403` rescope | `CONNECTOR_PROFILE_NOT_FOUND`                    | The authorization is absent or violates the connector profile strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist names an unknown identifier.                       |
-| `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no active valid authorization.        |
-| `409`                        | `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`         | A required slug has no configured connector profile.                    |
+| `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no active valid authorization. Lists every failing profile in `connector_profiles`. |
+| `409`                        | `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`         | A required slug has no configured connector profile. Lists every failing alias in `connectors`. |
+| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
+| `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_PROFILE_INACTIVE`                     | The connector profile or authorization is inactive.                     |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a changed request body.           |
 | `402`                        | `subscription_required` / `insufficient_credits` | The account cannot start a billed session.                              |

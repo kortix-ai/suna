@@ -812,8 +812,13 @@ export async function createProjectSession(input: {
           error: {
             status: 409,
             body: {
-              error: `Required connector profile "${required.alias}" is unavailable`,
+              error: `Required connector profile ${required.aliases
+                .map((alias) => `"${alias}"`)
+                .join(', ')} is unavailable`,
               code: required.code,
+              // The prose names the aliases too, but a client that wants to list
+              // them (or diff them across retries) must not have to parse it.
+              connectors: required.aliases,
             },
           },
         };
