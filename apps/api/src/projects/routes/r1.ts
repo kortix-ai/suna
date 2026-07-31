@@ -41,6 +41,7 @@ import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../li
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { normalizeProjectIcon } from '../lib/project-icon';
+import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
@@ -466,6 +467,12 @@ projectsApp.openapi(
   // the decoration does not.
   const icon = normalizeProjectIcon(body.icon);
 
+  // Same degrade-don't-fail rule as the icon above. If both arrive, the glyph
+  // wins and the emoji is dropped — a project shows one icon, and picking the
+  // winner here keeps the INSERT free of the delete-the-other logic that the
+  // PATCH path needs.
+  const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+
   // "Clone project" — seed the new repo from a `registry:project` marketplace
   // item instead of the blank starter. Resolved + type-checked BEFORE any
   // upstream repo/DB row is created, same as the name checks above.
@@ -575,7 +582,7 @@ projectsApp.openapi(
         // createProjectSession). Pre-existing projects (this flag absent/false)
         // keep the v1 adopt-to-govern behavior untouched.
         require_declared_agents: true,
-        ...(icon ? { icon } : {}),
+        ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
       },
       updatedAt: now,
     })
