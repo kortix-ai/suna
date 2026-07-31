@@ -1,6 +1,6 @@
 'use client';
 
-import { SmileyIcon } from '@phosphor-icons/react';
+import { SmileyIcon, XIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
@@ -36,24 +36,37 @@ const SWAP_REDUCED = {
   exit: { ...SWAP.animate, opacity: 0 },
 } as const;
 
-/** Emoji trigger for the create-project modal. Sits beside the name input and
- *  opens the picker in a popover. Controlled: the modal owns the icon so it can
- *  send it with the create payload and clear it on close. */
+/** Emoji trigger for the project create and edit modals. Sits beside the name
+ *  input and opens the picker in a popover. Controlled: the modal owns the icon
+ *  so it can send it with its payload and reset it on close. */
 export function ProjectIconField({
   value,
   onChange,
+  onClear,
   disabled,
 }: {
   /** `null` renders the unset face. The field can DISPLAY "no icon". */
   value: string | null;
   /**
-   * ...but it can never PRODUCE one, so the setter is narrower than the getter.
-   * The only call site is the picker's `onEmojiSelect`, which always has an
-   * emoji. Nothing here clears: the trigger stays live so you reopen and switch,
-   * and resetting to `null` on close is the modal's own state, not this field's.
-   * Declaring `string | null` here would be a promise this component never keeps.
+   * ...and `onChange` still cannot PRODUCE one, so the setter stays narrower
+   * than the getter. Its only call site is the picker's `onEmojiSelect`, which
+   * always has an emoji. Widening it to `string | null` would overload one
+   * callback with two different events — "the user picked 🚀" and "the user
+   * removed the icon" — and force every host to re-derive which one happened
+   * from the argument. Removing gets its own name instead: see `onClear`.
    */
   onChange: (icon: string) => void;
+  /**
+   * Remove the icon. OPTIONAL, and its presence is what decides whether the
+   * field offers a remove control at all — so "can this field clear?" is a host
+   * decision expressed in the type, not a runtime flag.
+   *
+   * The create modal deliberately does not pass it: there is nothing saved to
+   * undo there, and the trigger already stays live so you reopen it and switch.
+   * The edit modal does, because an existing project's emoji IS saved, and
+   * without this there would be no way to ever take one back off.
+   */
+  onClear?: () => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -217,6 +230,43 @@ export function ProjectIconField({
             setOpen(false);
           }}
         />
+        {/*
+          Gated on BOTH: `onClear` because only a host that can accept a removal
+          may offer one, and `value` because a control that removes nothing is
+          noise — and, worse, a control whose click is a no-op.
+
+          It sits under the picker rather than above it because the primary path
+          through this popover is search-then-pick; a removal row at the top
+          would displace the search field every time an icon happens to be set.
+          Bottom is also where this app already puts a secondary action in a
+          menu-shaped surface (DropdownMenuSeparator + trailing item).
+
+          `XIcon`, not `TrashIcon`. Nothing is deleted here: the icon is a draft
+          value until the modal saves, and Cancel puts it back. In this codebase
+          X is the glyph for taking a selection off (members-view's invite
+          chips, the composer's attachment previews) while Trash is for removing
+          a persisted row.
+        */}
+        {onClear && value ? (
+          <div className="border-border/60 border-t p-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onClear();
+                setOpen(false);
+              }}
+              // Same shape as the trigger: an explicit transition list in place
+              // of Button's base `transition-all` (button.tsx:8), so
+              // active:scale-[0.96] does not animate on `all`.
+              className="h-9 w-full justify-start gap-2 px-2 font-normal transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
+            >
+              <XIcon className="text-muted-foreground size-3.5 shrink-0" />
+              Remove icon
+            </Button>
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

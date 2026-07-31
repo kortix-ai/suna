@@ -23,13 +23,13 @@ import { useTranslations } from 'next-intl';
 const ProjectCard = ({
   project,
   onOpen,
-  onRename,
+  onEdit,
   onArchive,
   archiving,
 }: {
   project: KortixProject;
   onOpen: () => void;
-  onRename: () => void;
+  onEdit: () => void;
   onArchive: () => void;
   archiving: boolean;
 }) => {
@@ -85,9 +85,12 @@ const ProjectCard = ({
               <ArrowUpRight className="size-4" />
               {tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onRename} disabled={!canManageProject}>
+            {/* "Edit project", not "Rename": the modal behind it edits the
+                name AND the emoji, and the label was the only thing telling
+                anyone the icon could be changed at all. */}
+            <DropdownMenuItem onSelect={onEdit} disabled={!canManageProject}>
               <PencilSimpleIcon className="size-4" />
-              Rename
+              {tHardcodedUi.raw('autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canManageProject}>

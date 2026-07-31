@@ -33,13 +33,41 @@ const noop = () => {};
  * here and the typecheck fails. The signature carried `| null` through a whole
  * round of review with 25 tests passing, so the source assertions in
  * 'the setter is narrower than the getter' carry the same rule for `bun test`.
+ *
+ * `onClear` was added when the edit modal needed a way to take an existing
+ * project's emoji back off, and it did NOT weaken the rule above — that is the
+ * point of it being a second prop rather than a wider `onChange`. Removing and
+ * picking are two different events; one nullable setter would have made every
+ * host re-derive which one happened from the argument, and would have handed
+ * the create modal a clear channel it has no use for.
+ *
+ * The pin is declared with `onClear` present, not omitted. An optional member
+ * left out of `PinnedProps` would still be assignable — the pin would simply
+ * stop describing the real contract, and a later change to `onClear`'s shape
+ * would go unnoticed here.
  */
 type PinnedProps = {
   value: string | null;
   onChange: (icon: string) => void;
+  onClear?: () => void;
   disabled?: boolean;
 };
 const signaturePin: (props: PinnedProps) => unknown = ProjectIconField;
+
+/**
+ * The popover's contents, split at the picker.
+ *
+ * There are now two `setOpen(false)` call sites inside `<PopoverContent>` — the
+ * picker's and the remove control's — so a slice that spans both would let
+ * either one satisfy an assertion meant for the other. These three slices keep
+ * each test pointed at exactly one of them.
+ */
+const popoverBody = code.slice(code.indexOf('<PopoverContent'), code.indexOf('</PopoverContent>'));
+const pickerEnd = popoverBody.indexOf('/>', popoverBody.indexOf('<EmojiPicker')) + 2;
+/** The `<EmojiPicker … />` element alone. */
+const pickerElement = popoverBody.slice(popoverBody.indexOf('<EmojiPicker'), pickerEnd);
+/** Everything after the picker — the remove control. */
+const removeBranch = popoverBody.slice(pickerEnd);
 
 describe('ProjectIconField trigger', () => {
   test('renders the selected emoji, and only it', () => {
@@ -103,12 +131,11 @@ describe('ProjectIconField trigger', () => {
   });
 
   test('the setter is narrower than the getter', () => {
-    // The field can DISPLAY "no icon" — `value` is nullable — but it can never
-    // PRODUCE one: the only onChange call site is the picker's onEmojiSelect,
-    // which always has an emoji, and nothing here clears. `string | null` was a
-    // promise the component never kept. Nothing clears because nothing needs to:
-    // the trigger stays live, so you reopen it and switch. Resetting to `null`
-    // on close is the modal's own state, not this field's.
+    // The field can DISPLAY "no icon" — `value` is nullable — but `onChange`
+    // can never PRODUCE one: its only call site is the picker's onEmojiSelect,
+    // which always has an emoji. `string | null` was a promise the component
+    // never kept, and it still is: removing travels on `onClear`, so a `null`
+    // arriving through `onChange` would be a state nothing here can reach.
     //
     // `signaturePin` is the real guard and only `tsc` can fail it; referencing
     // it here is not the assertion. These two are what `bun test` can see.
@@ -118,13 +145,25 @@ describe('ProjectIconField trigger', () => {
     expect(code).not.toMatch(/onChange:\s*\(icon: string \| null\)/);
   });
 
+  test('removing has its own callback, and it is optional', () => {
+    // Optional is the load-bearing half: the presence of `onClear` is what
+    // gates the remove control below, so a required prop would put a "Remove
+    // icon" row in the CREATE modal, where there is nothing saved to undo.
+    expect(code).toContain('onClear?: () => void;');
+    expect(code).not.toMatch(/onClear:\s*\(\) => void;/);
+  });
+
   test('selecting an emoji reports THAT emoji, and closes the popover', () => {
     // The two lines the whole component exists for, and the two nothing else
     // here can reach: `renderToStaticMarkup` cannot click, and the handler is a
     // closure inside a portalled child. Swapping `emoji.emoji` for `emoji.label`
     // would ship the string "Rocket" as a project icon with every other gate
     // green; dropping setOpen(false) leaves the picker up over the modal.
-    const handler = code.slice(code.indexOf('onEmojiSelect={'), code.indexOf('</PopoverContent>'));
+    //
+    // Sliced to the picker ELEMENT, not to `</PopoverContent>`: the remove
+    // control that now follows carries its own `setOpen(false)`, so the wider
+    // slice would keep this green with the picker's own close deleted.
+    const handler = pickerElement.slice(pickerElement.indexOf('onEmojiSelect={'));
 
     expect(handler).toMatch(/onChange\(emoji\.emoji\)/);
     expect(handler).not.toMatch(/onChange\(emoji\.label\)/);
@@ -432,5 +471,76 @@ describe('ProjectIconField conventions', () => {
     expect(code).toMatch(/<SmileyIcon className="text-muted-foreground size-4" \/>/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-(?:red|blue|green|amber|slate|zinc|gray)-\d/);
     expect(code).not.toMatch(/\b(?:bg|text|border)-\[(?:hsl|rgb|oklch|#)/);
+  });
+});
+
+/**
+ * The remove control.
+ *
+ * Everything here reads source rather than markup, for the same reason the
+ * `onEmojiSelect` handler test does: the control lives inside `PopoverContent`,
+ * which renders nothing until the popover is open, and `renderToStaticMarkup`
+ * cannot open it. `apps/web` has no DOM harness (no jsdom, no
+ * testing-library) — see the note at the top of `features/layout/user-menu.test.tsx`.
+ * The clicked behaviour is verified by driving the real edit modal in a browser
+ * and reading the PATCH it sends.
+ */
+describe('ProjectIconField remove control', () => {
+  test('the three popover slices were all found', () => {
+    // Guard the guards: every assertion in this file that reads a slice is
+    // vacuous against an empty one, and `.toContain` on '' fails in a way that
+    // reads like a real defect rather than a stale pattern.
+    expect(popoverBody).toContain('<EmojiPicker');
+    expect(pickerElement).toContain('onEmojiSelect={');
+    expect(pickerElement).not.toContain('Remove icon');
+    expect(removeBranch).toContain('Remove icon');
+  });
+
+  test('it renders only when the host accepts a clear AND there is one to make', () => {
+    // Both halves. Without `onClear` the create modal would grow a control its
+    // host cannot honour; without `value` an already-empty field would offer a
+    // button whose click does nothing.
+    expect(removeBranch).toMatch(/\{onClear && value \?/);
+  });
+
+  test('clicking it reports the removal and closes the popover', () => {
+    // The two lines this control exists for. Calling `onChange` here instead
+    // would not even typecheck, but dropping `setOpen(false)` leaves the picker
+    // hanging over the modal with nothing left to remove.
+    const handler = removeBranch.slice(removeBranch.indexOf('onClick={'));
+
+    expect(handler).toMatch(/onClear\(\)/);
+    expect(handler).toMatch(/setOpen\(false\)/);
+  });
+
+  test('it is type="button", so it cannot submit a host form', () => {
+    // Same trap the trigger carries: the create modal renders this field inside
+    // a <form>, and a <button> with no type submits it.
+    expect(removeBranch).toMatch(/<Button[\s\S]*?type="button"/);
+  });
+
+  test('it names exact transition properties, never all', () => {
+    // Button's base class list is `transition-all` (button.tsx:8). Left alone,
+    // the press scale below animates on `all`.
+    expect(removeBranch).toContain('transition-[color,background-color,scale]');
+    expect(removeBranch).not.toContain('transition-all');
+    expect(removeBranch).toContain('active:scale-[0.96]');
+  });
+
+  test('it is an X, not a trash can', () => {
+    // Nothing is deleted here — the icon is a draft value until the modal
+    // saves, and Cancel puts it back. Trash is this codebase's glyph for
+    // removing a PERSISTED row (gateway-routing fallbacks, the project card's
+    // Archive); X is for taking a selection off (members-view invite chips,
+    // the composer's attachment previews).
+    expect(removeBranch).toMatch(/<XIcon\b/);
+    expect(removeBranch).not.toMatch(/<Trash/);
+  });
+
+  test('it stays a neutral action, not a destructive-variant button', () => {
+    // `variant="destructive"` in this design system is a promise that a
+    // ConfirmDialog stands behind it. Nothing is mutated until Save.
+    expect(removeBranch).toMatch(/variant="ghost"/);
+    expect(removeBranch).not.toMatch(/variant="(?:destructive|danger|error)"/);
   });
 });

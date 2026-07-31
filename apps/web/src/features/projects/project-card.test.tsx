@@ -30,7 +30,7 @@ const render = (project: Partial<KortixProject>) =>
       <ProjectCard
         project={{ ...BASE, ...project }}
         onOpen={noop}
-        onRename={noop}
+        onEdit={noop}
         onArchive={noop}
         archiving={false}
       />
