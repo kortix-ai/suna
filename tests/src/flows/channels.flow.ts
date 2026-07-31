@@ -637,7 +637,9 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL); a bad tenant id is rejected with 400.
+// CHN-T3 — Teams connect (manage ACL). Teams is a per-project experimental
+// feature (#5908): disabled projects 404 before any validation, and once the
+// `teams` experiment is on, a bad tenant id is rejected with 400.
 flow(
   "CHN-T3",
   {
@@ -646,10 +648,21 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER with invalid tenant_id → 400", async () => {
+    await ctx.step("OWNER, teams experiment off (default) → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    const own = await ctx.fixtures.project();
+    await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {
+      const enabled = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: own.id } });
+      enabled.status(200);
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
