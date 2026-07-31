@@ -69,7 +69,8 @@ export function EntityAvatar({
       // passes. An emoji is already the colour — sitting it on a saturated
       // hash-derived pastel reads as noise, and in dark mode that pastel is a
       // bright square in an otherwise dark grid. So the emoji tile drops the
-      // style entirely and takes a neutral fill from the class list below.
+      // style entirely and rebuilds itself from tokens: a neutral fill, a
+      // hairline that survives both themes, and shadow-2xs. See the class list.
       style={
         emoji
           ? undefined
@@ -85,7 +86,29 @@ export function EntityAvatar({
         // After `sizes.box`, so tailwind-merge resolves `sizes.emoji` over the
         // initial's text size; before `className`, so a caller's own fill
         // (the project card's `bg-background`) still wins over `bg-muted`.
-        emoji && ['bg-muted border-border/60', sizes.emoji],
+        //
+        // The hairline is `foreground`, not `border`. Dropping the chalk left
+        // the tile with almost no edge: measured on the real card composite,
+        // `border-border/60` is 1.07:1 against the card in dark and 1.09:1 in
+        // light, so the glyph floated with no tile around it while the chalk
+        // tile beside it sat at 6.20:1 — emoji'd projects read LIGHTER than
+        // lettered ones, the inverse of the intent. Raising `--border` to full
+        // strength does not help (1.06:1 in dark): that token is tuned to sit
+        // on `--background`, and the card is `bg-secondary/80`, which in dark
+        // is LIGHTER than the tile's own fill.
+        //
+        // `--foreground` inverts with the theme, so one value gives a light
+        // hairline on dark and a dark one on light with no `dark:` variant.
+        // At 25% it measures 1.73:1 (dark) / 1.58:1 (light) against the card —
+        // clear of the ~1.5 legibility bar in both, and far short of the chalk
+        // tile's 6.20 / 2.33, so it reads as an edge rather than a shout.
+        //
+        // shadow-2xs is the codebase's hairline-lift step. Be aware it earns
+        // its place in LIGHT only: it resolves to stock `0 1px 0 rgb(0 0 0 /
+        // 0.05)`, whose ring measures 1.13:1 against the card in light and
+        // 1.02:1 in dark, where a black shadow under an already-darker tile has
+        // nothing to darken. The dark-mode lift is the border, not the shadow.
+        emoji && ['bg-muted border-foreground/25 shadow-2xs', sizes.emoji],
         className,
       )}
     >

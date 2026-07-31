@@ -98,7 +98,7 @@ describe('ProjectCard — the project’s own icon', () => {
     // — an inline `border-color` beats `border-border/60`. This golden is what
     // sees it: `style=` appears nowhere, so any surviving chalk fragment fails.
     expect(tileOf(render({ icon: '🐢' }))).toBe(
-      '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-border/60 text-xl bg-background"><span aria-hidden="true" class="leading-none">🐢</span></span>',
+      '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-foreground/25 shadow-2xs text-xl bg-background"><span aria-hidden="true" class="leading-none">🐢</span></span>',
     );
   });
 

@@ -131,16 +131,16 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     expect(render({ label: 'Demo', icon: RocketIcon })).toContain('background-color');
   });
 
-  test('an emoji sits on a neutral tile with a softened border', () => {
-    const withEmoji = classesOf(render({ label: 'Demo', emoji: '🚀' }));
-    expect(withEmoji).toContain('bg-muted');
-    expect(withEmoji).toContain('border-border/60');
+  test('an emoji sits on a neutral fill', () => {
+    // The fill only. The tile's EDGE is a separate decision with its own test
+    // ('the emoji tile carries the hairline lift') — they were one assertion
+    // while the border was `border-border/60`, and merging them again would
+    // let a change to either hide behind the other.
+    expect(classesOf(render({ label: 'Demo', emoji: '🚀' }))).toContain('bg-muted');
 
-    // …and the initial tile must not pick either of them up, or the chalk
-    // border it still sets inline would be fighting a class it never wanted.
-    const withInitial = classesOf(render({ label: 'Demo' }));
-    expect(withInitial).not.toContain('bg-muted');
-    expect(withInitial).not.toContain('border-border/60');
+    // …and the initial tile must not pick it up, or the chalk background it
+    // still sets inline would be fighting a class it never wanted.
+    expect(classesOf(render({ label: 'Demo' }))).not.toContain('bg-muted');
   });
 
   test('a caller’s own background still wins over the neutral tile', () => {
@@ -175,11 +175,11 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
    * surviving fragment of the chalk object puts it back.
    */
   const EMOJI_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md bg-muted border-border/60 text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md bg-muted border-foreground/25 shadow-2xs text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   /** The same, for the exact call shape the project card uses. */
   const EMOJI_CARD_TILE =
-    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-border/60 text-xl bg-background"><span aria-hidden="true" class="leading-none">🚀</span></span>';
+    '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md border-foreground/25 shadow-2xs text-xl bg-background"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   test('the emoji tile drops the WHOLE chalk object, not just its background', () => {
     expect(render({ label: 'Demo', emoji: '🚀' })).toBe(EMOJI_TILE);
@@ -190,6 +190,31 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     expect(render({ label: 'Demo', emoji: '🚀', size: 'lg', className: 'bg-background' })).toBe(
       EMOJI_CARD_TILE,
     );
+  });
+
+  test('the emoji tile carries the hairline lift, in one token pair', () => {
+    // Named separately from the goldens so a future re-generation of those
+    // strings cannot quietly drop the lift and still look "regenerated".
+    //
+    // `border-foreground/25`, not `border-border/*`: dropping the chalk left
+    // the tile with a 1.07:1 edge against the card in dark (1.09:1 light), and
+    // full-strength `border-border` measures 1.06:1 there — that token is tuned
+    // to sit on `--background`, while the card is `bg-secondary/80`, LIGHTER
+    // than the tile's own fill in dark. `--foreground` inverts with the theme,
+    // so 25% gives 1.73:1 dark / 1.58:1 light off one value and no `dark:`
+    // variant.
+    const classes = classesOf(render({ label: 'Demo', emoji: '🚀' }));
+
+    expect(classes).toContain('border-foreground/25');
+    expect(classes).toContain('shadow-2xs');
+    expect(classes).not.toContain('border-border/60');
+
+    // …and none of it may leak onto the tiles that still carry inline chalk,
+    // where a shadow would sit under a saturated pastel and read as grime.
+    for (const plain of [render({ label: 'Demo' }), render({ label: 'Demo', icon: RocketIcon })]) {
+      expect(classesOf(plain)).not.toContain('shadow-2xs');
+      expect(classesOf(plain)).not.toContain('border-foreground/25');
+    }
   });
 });
 
@@ -267,6 +292,44 @@ describe('EntityAvatar — existing callers', () => {
     expect(render({ label: 'Demo', size: 'lg', className: 'bg-background' })).toBe(
       LEGACY_CARD_TILE,
     );
+  });
+
+  /**
+   * The ICON branch, which the two goldens above do not reach and which is
+   * roughly 18–21 of the ~30 call sites. Before this, changing `sizes.icon` —
+   * or swapping it for a text class — left the whole suite green.
+   *
+   * Path data is stripped: it belongs to Phosphor, and a version bump would
+   * break a full-byte golden for a reason that has nothing to do with this
+   * component. Everything this file actually owns — the tile's classes, the
+   * inline chalk, and the size class handed to the icon — is still pinned.
+   */
+  const withoutPathData = (html: string) => html.replace(/<path\b[^>]*><\/path>/g, '<path/>');
+
+  const LEGACY_ICON_TILE =
+    '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md text-xs"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="size-4"><path/></svg></span>';
+
+  /** The icon slot per tile size — the other half of SIZE_MAP's geometry. */
+  const ICON_SIZE: Record<EntityAvatarSize, string> = {
+    xs: 'size-3',
+    sm: 'size-3.5',
+    md: 'size-4',
+    lg: 'size-5',
+    xl: 'size-7',
+  };
+
+  test('an icon tile is byte-identical, chalk and icon size included', () => {
+    expect(withoutPathData(render({ label: 'Demo', icon: RocketIcon }))).toBe(LEGACY_ICON_TILE);
+  });
+
+  test('every size hands the icon its own dimension', () => {
+    for (const size of SIZES) {
+      const svg = render({ label: 'Demo', icon: RocketIcon, size }).match(/<svg[^>]*>/)?.[0] ?? '';
+      expect(svg).toContain(`class="${ICON_SIZE[size]}"`);
+    }
+    // A map collapsed to one value would satisfy the loop at exactly one size
+    // and silently mis-size the other four.
+    expect(new Set(Object.values(ICON_SIZE)).size).toBe(5);
   });
 
   test('a label-less tile still falls back the way it always has', () => {
