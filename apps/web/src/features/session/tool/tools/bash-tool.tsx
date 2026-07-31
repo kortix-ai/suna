@@ -1,6 +1,6 @@
 'use client';
 
-import { Separator } from '@/components/ui/separator';
+import { HighlightedCode } from '@/components/markdown/unified-markdown';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -15,6 +15,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import {
   formatBashOutput,
   InlineSessionMessagesList,
@@ -29,87 +30,62 @@ import {
 } from '@/lib/utils/structured-output';
 import { stripAnsi } from '@/ui';
 import { TerminalWindowIcon } from '@phosphor-icons/react';
-import { Fragment, useContext, useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 
-function terminalHost(sessionId: string | undefined): string {
-  if (!sessionId) return 'computer';
-  const cleaned = sessionId.replace(/^ses[_-]/i, '');
-  return cleaned.slice(0, 8).toLowerCase() || 'computer';
-}
-
-function TerminalPrompt({ host }: { host: string }) {
-  return (
-    <span className="select-none">
-      <span className="text-kortix-green">kortix@{host}</span>
-      <span className="text-muted-foreground/50">:</span>
-      <span className="text-kortix-blue">~</span>
-      <span className="text-muted-foreground/50">$ </span>
-    </span>
-  );
-}
-
-function TerminalCommand({
+/**
+ * The command, syntax-highlighted, with its output beneath a hairline.
+ *
+ * Replaces a simulated `kortix@host:~$` prompt. The prompt dressed the command
+ * up as a live shell it never was, spent the first third of every line on a
+ * hostname the reader cannot act on, and — being plain text — gave a
+ * multi-line pipeline no structure at all. Highlighting spends that space on
+ * the command instead, so a `curl … | python3 -c "…"` reads as the two stages
+ * it is.
+ */
+function CommandBlock({
   command,
-  host,
-  showCaret,
-}: {
-  command: string;
-  host: string;
-  showCaret: boolean;
-}) {
-  const lines = command.split('\n');
-  return (
-    <div className="text-foreground leading-relaxed break-all whitespace-pre-wrap">
-      {lines.map((line, i) => (
-        <div key={i}>
-          {i === 0 ? (
-            <TerminalPrompt host={host} />
-          ) : (
-            <span className="text-muted-foreground/50 select-none">{'> '}</span>
-          )}
-          {line}
-          {showCaret && i === lines.length - 1 && (
-            <span className="bg-foreground/70 ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 animate-pulse" />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TerminalEntry({
-  command,
-  host,
   output,
   richOutput,
-  running,
 }: {
   command: string;
-  host: string;
   output: string;
   richOutput: React.ReactNode;
-  running: boolean;
 }) {
-  return (
-    <div>
-      <TerminalCommand
-        command={command}
-        host={host}
-        showCaret={running && !output && !richOutput}
-      />
+  const hasOutput = Boolean(richOutput || output);
 
-      {richOutput ? (
-        <div className="mt-1 font-sans">{richOutput}</div>
-      ) : output ? (
-        <div className="text-muted-foreground mt-0.5 leading-relaxed break-words whitespace-pre-wrap">
-          {output}
+  return (
+    <div className="border-border bg-popover relative rounded-md border">
+      <div data-scrollable className="max-h-96 overflow-auto">
+        <div className="flex w-full items-center justify-between">
+          <pre className="text-foreground/90 px-0 py-2.5 pr-9 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
+            <HighlightedCode code={command} language="bash">
+              {command}
+            </HighlightedCode>
+          </pre>
+          <span className="mr-3">
+            <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
+          </span>
         </div>
-      ) : null}
+
+        {hasOutput && (
+          <div className="border-border/60 border-t">
+            {richOutput ? (
+              <HighlightedCode language="bash" code={richOutput as unknown as string}>
+                {richOutput}
+              </HighlightedCode>
+            ) : (
+              <div className="text-muted-foreground px-3 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+                {output}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: ToolProps) {
+export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -121,7 +97,6 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
     (metadata.command as string) ||
     (streamingInput.command as string) ||
     '';
-  const description = (input.description as string) || (streamingInput.description as string) || '';
   const strippedOutput = output ? stripAnsi(output) : '';
 
   const sessionMeta = useMemo(() => parseSessionMetadataOutput(strippedOutput), [strippedOutput]);
@@ -153,10 +128,6 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
 
   const isStalePending = !command && !running && (status === 'pending' || status === 'running');
 
-  const host = terminalHost(sessionId || part.sessionID);
-
-  const entries = useMemo(() => [{ command, output: plainOutput }], [command, plainOutput]);
-
   const commandPreview = command.split('\n')[0] || '';
 
   return (
@@ -173,10 +144,11 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
             </TextShimmer>
           </div>
         ) : commandPreview ? (
+          // The `$` that used to lead this row is gone: the terminal icon in
+          // the gutter already says "shell", so the sigil spent horizontal
+          // space repeating it and pushed the command — the only part worth
+          // reading — further from the eye.
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-            <span className="text-muted-foreground/60 shrink-0 font-mono text-xs select-none">
-              $
-            </span>
             {running && status !== 'completed' && status !== 'error' ? (
               <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
                 {commandPreview}
@@ -196,22 +168,13 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="overflow-hidden pt-2">
-        <div data-scrollable className="max-h-96 overflow-auto font-mono text-xs">
-          {entries.map((entry, i) => (
-            <Fragment key={i}>
-              {i > 0 && <Separator className="my-3" />}
-              <TerminalEntry
-                command={entry.command}
-                host={host}
-                output={entry.output}
-                richOutput={richOutput}
-                running={running && status !== 'completed' && status !== 'error'}
-              />
-            </Fragment>
-          ))}
+      {/* 28px = the trigger's icon column (`size-4`) plus its `gap-3`, so the
+			    block starts exactly where the command in the row above does. */}
+      {command && (
+        <div className="mt-1.5 ml-7">
+          <CommandBlock command={command} output={plainOutput} richOutput={richOutput} />
         </div>
-      </div>
+      )}
     </BasicTool>
   );
 }
