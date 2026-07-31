@@ -65,9 +65,8 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  */
 /**
  * Options for a new-session start.
- * `agent_name` binds the session's immutable boot agent at birth. It MUST match
- * the agent the composer sends on the first prompt — the API proxy rejects any
- * prompt whose `agent` differs with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.
+ * `agent_name` chooses the session's boot agent. Later prompts can name another
+ * agent; the API re-scopes its grants before forwarding the prompt.
  * `connector_bindings` binds specific connection profiles; `inherit_unbound`
  * keeps the project-default fallback for every OTHER connector so binding one
  * doesn't null the rest. `require_connectors` names connectors that must resolve

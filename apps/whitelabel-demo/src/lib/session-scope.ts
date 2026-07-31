@@ -118,8 +118,8 @@ export function sessionScopeRows(
       badge: 'Per message',
       value: agentLabel,
       detail: agent
-        ? `Messages run as ${agent} unless another agent is picked in the composer. An agent whose SECRET access differs from ${agent}'s is refused — re-scoping now cannot un-read what ${agent} already loaded — and only a new session can run it.`
-        : "Messages run as the project's default agent unless another is picked in the composer. An agent with different SECRET access is refused and needs a new session; different connector or CLI access is fine.",
+        ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
+        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
       control: null,
     },
     {
