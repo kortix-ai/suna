@@ -93,6 +93,7 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
 
   return (
     <BasicTool
+      icon={<Search className="size-3.5 flex-shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">

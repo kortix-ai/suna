@@ -3,17 +3,19 @@
 /**
  * One burst — a maximal run of non-text parts.
  *
+ * Renders as a chain of thought: a muted summary line that expands into a
+ * connected vertical chain of steps, each joined to the next by a short rule.
  * Open while it streams, auto-collapsed the moment it settles, and manual
  * after the user's first click. Collapsed height is always one row, whatever
  * the burst contains.
  */
 
-import { CaretRightIcon, SparkleIcon } from '@phosphor-icons/react';
+import { CaretRightIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Loading from '@/components/ui/loading';
-import { Steps, StepsContent, StepsTrigger } from '@/components/ui/steps';
 import { cn } from '@/lib/utils';
 import { isReasoningPart, type Part } from '@/ui';
 import { ActivityStep } from './activity-step';
@@ -86,75 +88,101 @@ export function ActivityBurst({
   if (parts.length === 0) return null;
 
   return (
-    <Steps
+    <Collapsible
       open={open}
       onOpenChange={(next) => {
         userToggled.current = true;
         setOpen(next);
       }}
+      className="group/burst"
     >
-      <StepsTrigger
-        leftIcon={<SparkleIcon className="size-3.5" />}
-        trailing={
-          <>
-            {duration && (
-              <span className="text-muted-foreground/50 font-mono text-xs tabular-nums">
-                {duration}
-              </span>
-            )}
-            {running && <Loading className="text-muted-foreground/50 size-3" />}
-          </>
-        }
+      {/* Summary line. Muted against the primary-weight step text below it, so
+			    the eye lands on the work rather than the label for the work. The
+			    caret trails the title instead of leading it — a leading glyph would
+			    sit in the same gutter the step icons occupy and read as a step. */}
+      <CollapsibleTrigger
+        className={cn(
+          'text-muted-foreground hover:text-foreground',
+          'flex w-full cursor-pointer items-center gap-1.5 text-left text-sm transition-colors',
+        )}
       >
-        {title}
-      </StepsTrigger>
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {duration && (
+          <span className="text-muted-foreground/50 flex-none font-mono text-xs tabular-nums">
+            {duration}
+          </span>
+        )}
+        {running && <Loading className="text-muted-foreground/50 size-3 flex-none" />}
+        <CaretRightIcon
+          className={cn(
+            'text-muted-foreground/40 size-3.5 flex-none',
+            'transition-transform group-data-[state=open]/burst:rotate-90',
+          )}
+        />
+      </CollapsibleTrigger>
 
-      <StepsContent>
-        {primary.map((part) => (
-          <ActivityStep
-            key={part.id}
-            part={part}
-            sessionId={sessionId}
-            running={running}
-            disableNavigation={disableNavigation}
-          />
-        ))}
-
-        {/*
-          Plumbing rows are never hidden — the spec is "demote everything, hide
-          nothing" — but they sit behind their own disclosure so six compaction
-          rows cannot drown four real ones.
-        */}
-        {plumbing.length > 0 && (
-          <Collapsible open={plumbingOpen} onOpenChange={setPlumbingOpen}>
-            <CollapsibleTrigger
-              className={cn(
-                'text-muted-foreground/50 hover:text-muted-foreground',
-                'flex cursor-pointer items-center gap-1.5 text-xs transition-colors',
-              )}
-            >
-              <CaretRightIcon
-                className={cn('size-3 transition-transform', plumbingOpen && 'rotate-90')}
-              />
-              <span>Behind the scenes</span>
-              <span className="tabular-nums">{plumbing.length}</span>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-1.5 space-y-1.5 opacity-70">
-                {plumbing.map((part) => (
+      <CollapsibleContent>
+        <div className="mt-2">
+          <ChainOfThought>
+            {[
+              ...primary.map((part) => (
+                <ChainOfThoughtStep key={part.id}>
                   <ActivityStep
-                    key={part.id}
                     part={part}
                     sessionId={sessionId}
                     running={running}
                     disableNavigation={disableNavigation}
                   />
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-      </StepsContent>
-    </Steps>
+                </ChainOfThoughtStep>
+              )),
+
+              /*
+							  Plumbing is never hidden — the rule is "demote everything, hide
+							  nothing" — but it sits behind its own disclosure as the final
+							  link in the chain, so six compaction rows cannot drown four real
+							  ones. It is last because it is the least interesting thing that
+							  happened, not because it happened last.
+							*/
+              ...(plumbing.length > 0
+                ? [
+                    <ChainOfThoughtStep key="__plumbing__">
+                      <Collapsible open={plumbingOpen} onOpenChange={setPlumbingOpen}>
+                        <CollapsibleTrigger
+                          className={cn(
+                            'group/plumbing text-muted-foreground/50 hover:text-muted-foreground',
+                            'flex cursor-pointer items-center gap-1.5 text-xs transition-colors',
+                          )}
+                        >
+                          <CaretRightIcon
+                            className={cn(
+                              'size-3 flex-none transition-transform',
+                              'group-data-[state=open]/plumbing:rotate-90',
+                            )}
+                          />
+                          <span>Behind the scenes</span>
+                          <span className="tabular-nums">{plumbing.length}</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="mt-1.5 space-y-1.5 opacity-70">
+                            {plumbing.map((part) => (
+                              <ActivityStep
+                                key={part.id}
+                                part={part}
+                                sessionId={sessionId}
+                                running={running}
+                                disableNavigation={disableNavigation}
+                              />
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </ChainOfThoughtStep>,
+                  ]
+                : []),
+            ]}
+          </ChainOfThought>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
