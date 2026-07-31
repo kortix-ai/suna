@@ -2,14 +2,15 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
 import {
-  linkGitHubInstallation,
-  listLinkableGitHubInstallations,
-  listGitHubRepositories,
-  listGitHubRepositoryBranches,
-  saveGitHubInstallation,
-  type LinkableGitHubInstallationsResponse,
   type GitHubRepositoriesResponse,
   type GitHubRepositoryBranchesResponse,
+  type LinkableGitHubInstallationsResponse,
+  linkGitHubInstallation,
+  linkRepository,
+  listGitHubRepositories,
+  listGitHubRepositoryBranches,
+  listLinkableGitHubInstallations,
+  saveGitHubInstallation,
 } from './github';
 
 let calls: string[] = [];
@@ -63,6 +64,29 @@ test('sends the GitHub user proof when saving an installation', async () => {
     state: 'signed-state',
     installation_id: '84',
     github_user_token: 'github-user-token',
+  });
+});
+
+test('sends the icon in the request body when linking a repository', async () => {
+  let requestBody: unknown;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
+      git_connection: null,
+    });
+  }) as unknown as typeof fetch;
+
+  await linkRepository({
+    account_id: 'acc-1',
+    repo_url: 'https://github.com/acme/repo',
+    icon: '🚀',
+  });
+
+  expect(requestBody).toEqual({
+    account_id: 'acc-1',
+    repo_url: 'https://github.com/acme/repo',
+    icon: '🚀',
   });
 });
 

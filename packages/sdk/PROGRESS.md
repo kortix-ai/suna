@@ -4868,4 +4868,66 @@ modified, per the task brief's constraint.
 
 **SDK package shippable to production: YES.**
 
-**SDK package shippable to production: NOT YET.**
+---
+
+### 2026-07-31 — session `sdk-project-emoji-icon` (B43 fix round 1)
+
+Review findings, both accepted:
+
+1. **`PROGRESS.md` tail read as one contradictory entry.** My B43 completion
+   entry (ending `YES`) was immediately followed, with no separator, by the
+   orphaned `NOT YET` line that was already the file's last line at
+   `d8b07337ff` — the incomplete tail of the `ci-runtime-gates` claim entry
+   above. Added a `---` separator plus an attribution note on the stale line
+   (see below); did not edit or delete the stale line itself.
+2. **`LinkRepositoryInput` type-pin test had no runtime teeth and lived in the
+   wrong file.** `projects.test.ts` type-pinned a type declared in `github.ts`
+   via a fresh cross-file `import type` — it could only fail if the field
+   declaration itself were reverted, never from a regression in
+   `linkRepository`'s body construction. Moved to `github.test.ts` as a real
+   wire test (`sends the icon in the request body when linking a repository`),
+   mocking `fetch` and asserting the real `JSON.parse(init.body)`, matching the
+   existing pattern at `sends the GitHub user proof when saving an
+   installation`. Dropped the cross-file type-pin and its import from
+   `projects.test.ts`. Kept the `CreateProjectRepoInput` type-pin as-is — it
+   lives in the same file already exercised at the wire level by the
+   `provisionProject` test.
+3. **Added, per the reviewer's request:** a test proving `icon` survives the
+   `backendApi`/`unwrap` parsing path (`getProjectDetail`) — the path
+   `getProject`, `createProject`, and `updateProject` also share.
+   `provisionProjectWithToken` (already covered) bypasses `backendApi` with its
+   own explicit-token `fetch`, so it does not exercise this path.
+
+```
+pnpm --filter @kortix/sdk exec bun test src/core/rest/projects-client/projects.test.ts \
+  src/core/rest/projects-client/github.test.ts
+  → 18 pass, 0 fail (projects.test.ts: 12 pass; github.test.ts: 6 pass)
+
+pnpm --filter @kortix/sdk typecheck    → exit 0
+pnpm --filter @kortix/sdk test         → 1357 pass, 0 fail, 116 files
+pnpm --filter @kortix/sdk run smoke:install → ✔ install smoke test passed
+
+npx biome check <4 touched files>      → projects.ts, projects.test.ts,
+                                          github.test.ts clean; github.ts
+                                          carries the same 2 pre-existing
+                                          findings as HEAD (confirmed via
+                                          git diff -U0 and a biome run
+                                          against the unmodified blob) —
+                                          none introduced by this round
+```
+
+Full-suite delta from the prior evidence (1354 pass / 2 skip / 0 fail / 116
+files): net +1 test (−1 cross-file type-pin, +1 backendApi/unwrap test in
+`projects.test.ts`, +1 wire test in `github.test.ts`) and 0 skips instead of 2
+on a re-run — reproduced twice at 1357/0/0-skip; the 2-skip count from the
+prior round was not reproduced and is not attributable to this change (no
+skip-related code touched).
+
+**SDK package shippable to production: YES.**
+
+---
+
+**SDK package shippable to production: NOT YET.** (pre-existing, not B43 —
+this is the orphaned tail of the 2026-07-30 `ci-runtime-gates` CLI
+SDK-boundary restoration claim entry above the B43 claim; that session ended
+mid-work with no completion entry. Left as-is; not this session's to resolve.)

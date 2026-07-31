@@ -1,7 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import type { LinkRepositoryInput } from './github';
 import {
   type CreateProjectRepoInput,
   type ProvisionProjectInput,
@@ -37,16 +36,6 @@ test('CreateProjectRepoInput accepts an optional icon', () => {
   };
 
   expect(createInput.icon).toBe('🚀');
-});
-
-test('LinkRepositoryInput accepts an optional icon', () => {
-  const linkInput: LinkRepositoryInput = {
-    account_id: 'acc-1',
-    repo_url: 'https://github.com/acme/repo',
-    icon: '🚀',
-  };
-
-  expect(linkInput.icon).toBe('🚀');
 });
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {
@@ -176,6 +165,40 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   expect(detail.config.default_agent).toBe('kortix');
   expect(detail.config.open_code_default_agent).toBe('kortix');
+});
+
+// getProjectDetail goes through backendApi/unwrap — the same parsing path
+// createProject, getProject, and updateProject use to return a KortixProject.
+// provisionProjectWithToken (covered above) bypasses backendApi entirely with
+// its own explicit-token fetch, so it does not exercise this path.
+test('a project response carries the icon through the backendApi/unwrap parsing path', async () => {
+  configureKortix({
+    backendUrl: 'http://backend.test/v1',
+    getToken: async () => 'tok',
+  });
+  nextResponse = () =>
+    new Response(
+      JSON.stringify({
+        project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
+        config: {
+          open_code_default_agent: null,
+          agents: [],
+          commands: [],
+          skills: [],
+          env: { required: [], optional: [] },
+        },
+        file_count: 0,
+        files: [],
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
+
+  const detail = await getProjectDetail('proj-1');
+
+  expect(detail.project.icon).toBe('🚀');
 });
 
 test('provisionProject sends the icon in the request body', async () => {
