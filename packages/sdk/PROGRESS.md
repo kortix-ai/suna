@@ -284,6 +284,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B42 | **A prompt that errors renders as an unanswered user bubble with no explanation.** `applyAcpEnvelope`'s response branch clears the pending prompt and drops `envelope.error` unless a `promptDrafts` entry survives. Dev session `ecc2d856-a08d-4cda-98bb-b76a7c892e69`: six `session/prompt` calls all answered `-32603 Internal error: OpenCode service failure`, and the projection is six user messages and zero assistants. `AcpProjection` has no per-turn error surface for a renderer to show. | OPEN |
 | B43 | **Expose the emoji project icon on the SDK's typed project contract.** Tasks 1–3 of the project-emoji-icons plan added `icon` to the API request/response bodies (`packages/api-contract/src/index.ts:120`, `icon: z.string().nullable()`); the SDK declares its own independent types and had no `icon` field anywhere. | `KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carried no `icon` member; plan `docs/superpowers/plans/2026-07-31-project-emoji-icons.md`; spec `docs/superpowers/specs/2026-07-31-project-emoji-icons-design.md`; task brief `.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`. | **DONE 2026-07-31** — session `sdk-project-emoji-icon`; implementation `8f8db0d4f1`; full SDK gates green (see session log) |
 | B44 | **`ProjectInput` — the `updateProject` body — carries no `icon`, so a project's emoji is write-once.** B43 added `icon` to the CREATE inputs and to the response type only. `updateProject(projectId, input: Partial<ProjectInput>)` is the sole SDK path to `PATCH /v1/projects/:projectId`, and its input type declares `account_id`/`name`/`repo_url`/`default_branch`/`manifest_path` — so a host cannot change or remove an icon without an `as any` cast. The API's tri-state semantics need `string \| null`, not `string`: an absent key leaves the icon alone, an explicit `null` clears it. | `ProjectInput` (`packages/sdk/src/core/rest/projects-client/projects.ts:163`) has no `icon` member; `updateProject` at `:427`; API handler `apps/api/src/projects/routes/r5.ts` (tri-state `icon` landed in `c76c6f962`). | **DONE 2026-07-31** — session `sdk-project-edit-icon`; implementation `cc5c36dbc4`; typecheck exit 0, full suite 1365 pass / 0 fail across 116 files, packed-install smoke pass |
+| B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | IN PROGRESS — session `sdk-project-glyph-icon`, claimed 2026-08-01 |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -5118,3 +5119,27 @@ against the real API handler by that handler's own suite. Unverified: nothing
 here was exercised through the published CDN/IIFE bundle — this change adds no
 runtime code, only an optional interface member, so the bundle's behaviour is
 byte-identical.
+
+---
+
+### 2026-08-01 — session `sdk-project-glyph-icon` (B45 claim)
+
+Claimed the additive `icon_glyph?: ProjectGlyph | null` field across the SDK's
+typed project contract: `KortixProject`, `ProjectInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`),
+`ProvisionProjectInput`, `CreateProjectRepoInput` (same file), and
+`LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`).
+
+This is Task 6 of `docs/superpowers/plans/2026-08-01-project-glyph-icons.md` —
+the SDK-types twin of B43/B44, extended to the second glyph-icon shape
+(`{name, color}`) landed server-side by Tasks 1–5. `ProjectGlyph` is declared
+independently in the SDK — deliberately NOT imported from `@kortix/shared`,
+which exports a same-named type with literal-union `name`/`color` fields for
+the server-side catalogue. The SDK's dependencies stay exactly
+`@kortix/llm-catalog`, `@opencode-ai/sdk`, and `zustand`; adding a workspace
+dependency on `@kortix/shared` for a two-field interface would cost every
+downstream consumer for nothing. The two types are structurally compatible, so
+nothing needs converting at the boundary. Task brief:
+`.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`.
+
+**Status:** IN PROGRESS.
