@@ -24,7 +24,6 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
   CheckIcon as Check,
-  CaretRightIcon as ChevronRight,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
@@ -775,7 +774,7 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
   'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-  '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+  '[&>span:first-child>svg]:size-4 [&>span:first-child>svg]:text-muted-foreground',
 );
 
 // Title + subtitle + args, rendered for the compact inline row layout.
@@ -836,65 +835,23 @@ function InlineTriggerTitle({
   );
 }
 
-// Right-aligned metadata for the inline row: duration, badge, spinner, accessory.
-function ToolRightCluster({
-  running,
-  durationMs,
-  badge,
-  rightAccessory,
-}: {
-  running: boolean;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
-}) {
-  return (
-    <>
-      {!running && durationMs !== undefined && durationMs >= 1000 && (
-        <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-          {Math.round(durationMs / 1000)}s
-        </span>
-      )}
-      {badge && (
-        <span className="text-muted-foreground/60 flex-shrink-0 font-mono text-xs whitespace-nowrap">
-          {badge}
-        </span>
-      )}
-      {running && (
-        <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-      )}
-      {!running && rightAccessory && (
-        <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">
-          {rightAccessory}
-        </span>
-      )}
-    </>
-  );
-}
-
 // The full inline header line: icon, trigger content (or streaming skeleton), right cluster.
 function ToolHeaderRow({
   icon,
   trigger,
   running,
   onSubtitleClick,
-  durationMs,
-  badge,
-  rightAccessory,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
   return (
     <>
-      {icon && <span className="shrink-0">{icon}</span>}
+      {icon && <span className="text-muted-foreground size-4 shrink-0">{icon}</span>}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         {isTriggerTitle(trigger) ? (
           <InlineTriggerTitle
@@ -905,19 +862,7 @@ function ToolHeaderRow({
         ) : (
           trigger
         )}
-        {running && triggerIsEmpty && (
-          <>
-            <span className="bg-muted-foreground/10 h-3 w-16 flex-shrink-0 animate-pulse rounded" />
-            <span className="bg-muted-foreground/10 h-3 w-28 min-w-0 animate-pulse rounded" />
-          </>
-        )}
       </div>
-      <ToolRightCluster
-        running={running}
-        durationMs={durationMs}
-        badge={badge}
-        rightAccessory={rightAccessory}
-      />
     </>
   );
 }
@@ -1111,13 +1056,6 @@ function CollapsibleToolRow({
           className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
         >
           {header}
-          <ChevronRight
-            className={cn(
-              'text-muted-foreground/30 size-3 flex-shrink-0 transition-all',
-              children && !locked ? 'opacity-40 group-hover:opacity-80' : 'opacity-0',
-              open && children && 'rotate-90 !opacity-100',
-            )}
-          />
         </div>
       </CollapsibleTrigger>
 
@@ -1180,9 +1118,6 @@ export function BasicTool({
       trigger={trigger}
       running={running}
       onSubtitleClick={onSubtitleClick}
-      durationMs={durationMs}
-      badge={badge}
-      rightAccessory={rightAccessory}
     />
   );
 
