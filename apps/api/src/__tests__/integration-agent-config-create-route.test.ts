@@ -234,6 +234,54 @@ describe('agent config create HTTP route', () => {
     expect(duplicateBody.code).toBe('pending_duplicate_agent_create');
     expect(duplicateBody.change_request.cr_id).toBe(first.change_request.cr_id);
   });
+
+  test('allows a different agent create while another open agent CR touches the manifest', async () => {
+    const { projectId, token } = await seedRepo('agent-create-sibling-open-cr', {
+      'kortix.yaml': MANIFEST,
+      '.kortix/opencode/agents/support.md': 'Support prompt.',
+    });
+    const firstPreview = await request(
+      'POST',
+      `/v1/projects/${projectId}/agents/preview`,
+      token,
+      CREATE_BODY,
+    );
+    const firstPreviewBody = await firstPreview.json();
+    const firstCreate = await request('POST', `/v1/projects/${projectId}/agents`, token, {
+      ...CREATE_BODY,
+      preview_revision: firstPreviewBody.preview_revision,
+    });
+    expect(firstCreate.status).toBe(201);
+
+    const secondBody = {
+      agentName: 'ops-cfo',
+      block: {
+        ...CREATE_BODY.block,
+        opencode: {
+          description: 'Ops CFO',
+          mode: 'primary',
+          prompt: 'You are the Ops CFO. Review operating plans.',
+        },
+      },
+    };
+    const secondPreview = await request(
+      'POST',
+      `/v1/projects/${projectId}/agents/preview`,
+      token,
+      secondBody,
+    );
+    expect(secondPreview.status).toBe(200);
+    const secondPreviewBody = await secondPreview.json();
+
+    const secondCreate = await request('POST', `/v1/projects/${projectId}/agents`, token, {
+      ...secondBody,
+      preview_revision: secondPreviewBody.preview_revision,
+    });
+    expect(secondCreate.status).toBe(201);
+    const secondCreateBody = await secondCreate.json();
+    expect(secondCreateBody.change_request.number).toBe(2);
+    expect(secondCreateBody.behavior_path).toBe('.kortix/opencode/agents/ops-cfo.md');
+  });
 });
 
 describe('agent behavior repair HTTP route', () => {

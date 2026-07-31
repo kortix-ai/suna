@@ -172,13 +172,19 @@ export async function findOpenAgentConfigChangeRequest(
     .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.status, 'open')))
     .orderBy(desc(changeRequests.updatedAt));
   const pathSet = new Set(paths);
+  const legacyConflictPaths = new Set(
+    paths.filter((path) => !/(^|\/)kortix\.(yaml|toml)$/.test(path)),
+  );
   for (const row of candidates) {
     const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
     const agentConfig = metadata.agent_config as Record<string, unknown> | undefined;
     if (agentConfig?.agent_name === agentName) return row;
+    const behaviorPath = agentConfig?.behavior_path;
+    if (typeof behaviorPath === 'string' && pathSet.has(behaviorPath)) return row;
 
+    if (agentConfig) continue;
     const diff = await getBranchDiff(projectForGit, row.baseRef, row.headRef);
-    if (diff.files.some((file) => pathSet.has(file.path))) return row;
+    if (diff.files.some((file) => legacyConflictPaths.has(file.path))) return row;
   }
   return null;
 }
