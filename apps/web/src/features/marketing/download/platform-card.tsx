@@ -61,7 +61,9 @@ export function PlatformCard({
       <ul className="mt-auto">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center gap-3 border-t px-6 py-4">
-            <row.Mark className="text-foreground size-5 shrink-0" />
+            <span className="flex size-5 shrink-0 items-center justify-center overflow-visible">
+              <row.Mark className="text-foreground size-5 shrink-0" />
+            </span>
 
             <div className="min-w-0 flex-1">
               <p className="text-foreground truncate text-sm font-medium">{row.label}</p>
@@ -72,7 +74,7 @@ export function PlatformCard({
 
             <Button
               asChild
-              size="sm"
+              size="magic-sm"
               variant={row.id === filled ? 'default' : 'outline'}
               className="shrink-0 active:scale-[0.97]"
             >

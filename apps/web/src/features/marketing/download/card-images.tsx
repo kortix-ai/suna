@@ -1,45 +1,32 @@
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
-/**
- * Card header artwork. Both images already ship in `public/` — nothing here is
- * captured or generated.
- *
- * `next/image` rather than a raw <img>, because the source files are far larger
- * than the slot they land in: the three phone shots are 1.9 MB, 1.6 MB and
- * 1.8 MB of PNG for a box about 490px wide. Next resizes and re-encodes to
- * AVIF/WebP per `next.config.ts`, which turns 5.3 MB of PNG into tens of KB.
- * `sizes` is what tells it which width to actually generate; without it every
- * visitor is served the largest candidate and the optimisation is wasted.
- *
- * `alt=""` on every image: each sits directly under its own card heading, so
- * announcing it again is duplication, not information.
- */
-
 const SLOT = 'aspect-[16/10] w-full overflow-hidden border-b bg-muted';
 
-/**
- * The desktop poster is a THEME PAIR toggled by `dark:hidden` / `hidden
- * dark:block` — deliberately not `<picture media="(prefers-color-scheme: dark)">`.
- *
- * A `media` attribute resolves once, when the browser picks a source. It is
- * therefore correct on first paint and permanently wrong the moment the visitor
- * uses the app's own theme toggle, because the element never re-runs resource
- * selection. (`hero-surfaces.tsx` hits exactly this with its <video>, and pays
- * for it with a `useTheme()` hook and a keyed remount.)
- *
- * Class toggling costs both files and follows the toggle forever — and needs no
- * hook, which is what keeps this page a Server Component.
- */
+const MESH = [
+  'radial-gradient(100% 225% at 100% 0%, #FF0000 0%, #000000 100%)',
+  'linear-gradient(236deg, #00C2FF 0%, #000000 100%)',
+  'linear-gradient(135deg, #CDFFEB 0%, #CDFFEB 36%, #009F9D 36%, #009F9D 60%, #07456F 60%, #07456F 67%, #0F0A3C 67%, #0F0A3C 100%)',
+].join(', ');
+
 export function DesktopCardImage() {
   return (
     <div className={cn(SLOT, 'relative')}>
+      <div
+        style={{
+          background: MESH,
+          backgroundBlendMode: 'overlay, hard-light, normal',
+        }}
+        className="absolute -inset-12 z-0 blur-xl"
+        aria-hidden="true"
+      />
+
       <Image
         src="/media/showcase/kortix-showcase-poster.jpg"
         alt=""
         fill
         sizes="(min-width: 768px) 50vw, 100vw"
-        className="object-cover dark:hidden"
+        className="m-[1.1rem] rounded-tl-[calc(var(--radius)-0.2rem)] border object-cover shadow dark:hidden"
         priority
       />
       <Image
@@ -47,7 +34,7 @@ export function DesktopCardImage() {
         alt=""
         fill
         sizes="(min-width: 768px) 50vw, 100vw"
-        className="hidden object-cover dark:block"
+        className="m-[1.1rem] hidden rounded-tl-[calc(var(--radius)-0.2rem)] border object-cover dark:block"
         priority
       />
     </div>
@@ -89,7 +76,13 @@ export function MobileCardImage() {
             i === 1 ? '-translate-y-2' : 'translate-y-2',
           )}
         >
-          <Image src={src} alt="" fill sizes="(min-width: 768px) 12vw, 25vw" className="object-cover" />
+          <Image
+            src={src}
+            alt=""
+            fill
+            sizes="(min-width: 768px) 12vw, 25vw"
+            className="object-cover"
+          />
         </div>
       ))}
     </div>

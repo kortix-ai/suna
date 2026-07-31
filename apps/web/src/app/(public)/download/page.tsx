@@ -42,29 +42,6 @@ const MOBILE_MARKS: Record<MobileOs, CardRow['Mark']> = {
   ios: AppleMark,
   android: PlayStoreMark,
 };
-
-/**
- * Public download page — the download section alone, no site chrome.
- *
- * It lives in `(public)/` rather than `(public)/(marketing)/` for exactly that
- * reason. App Router layouts NEST: a child cannot remove a parent's UI, so as
- * long as this page sat inside the `(marketing)` group it inherited that
- * layout's `Navbar` and `Footer` and no amount of styling here could drop them.
- * Route groups do not affect the URL, so the path is still `/download`.
- *
- * `ConsentGate` is re-mounted here because it came from that same marketing
- * layout. It adds `.consent-enabled` to <html>, and `globals.css` hides every
- * CookieYes surface without it — leaving it behind would have silently killed
- * the cookie banner on a public page.
- *
- * A Server Component on purpose: it reads the request user-agent and paints the
- * correct card order and the correct filled button immediately. Reading
- * `headers()` opts the route into dynamic rendering, which it needs anyway for
- * live release data.
- *
- * `?platform=` is honoured so links written against the old query-string
- * redirector still land on the right selection instead of silently defaulting.
- */
 export default async function DownloadPage({
   searchParams,
 }: {
@@ -137,9 +114,6 @@ export default async function DownloadPage({
       </header>
 
       <div className="space-y-4">
-        {/* A phone visitor gets the Mobile card first. `filled` is non-null on
-            exactly one card, so exactly one solid button renders in all five
-            detection cases — that single black button IS the recommendation. */}
         <div className="grid gap-4 md:grid-cols-2">
           {onPhone ? [mobileCard, desktopCard] : [desktopCard, mobileCard]}
         </div>

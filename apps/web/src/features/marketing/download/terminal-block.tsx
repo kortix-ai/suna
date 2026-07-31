@@ -43,7 +43,9 @@ export function TerminalBlock() {
       </div>
 
       <div className="bg-muted/50 flex items-center gap-2 border-t px-5 py-3">
-        <code className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">{command}</code>
+        <code className="text-foreground min-w-0 flex-1 truncate font-mono text-xs select-all">
+          {command}
+        </code>
         <CopyButton code={command} className="shrink-0" />
       </div>
     </section>

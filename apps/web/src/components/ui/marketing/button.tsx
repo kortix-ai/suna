@@ -57,7 +57,7 @@ const marketingButtonVariants = cva(
         'icon-sm': 'size-7 ',
         'icon-lg': 'size-10 ',
         'magic-sm':
-          'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:rounded-sm sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
+          'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 rounded-md sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
         toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
 
         fit: 'h-auto w-auto items-start justify-start px-3 py-1.5',
