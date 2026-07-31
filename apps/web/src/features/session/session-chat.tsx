@@ -1209,8 +1209,18 @@ function SessionTurn({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Parts with a pending permission or an active question need a visible,
-  // actionable surface — they must never fold into a collapsed burst.
+  // Parts with a pending permission need a visible, actionable surface — they
+  // must never fold into a collapsed burst. Answered questions get the same
+  // standalone treatment for a different reason: they record a decision the
+  // USER made, not agent activity, so the "collapse the agent's work into one
+  // row" goal doesn't apply to them (they render via AnsweredQuestionCard, not
+  // ToolPartRenderer — see the standalone branch below). Pending/dismissed
+  // questions are deliberately NOT standalone: the real, actionable prompt for
+  // a pending question lives in the composer (SessionChatInput's questionSlot),
+  // which has the answer-reply plumbing this component doesn't; surfacing an
+  // inert, answer-less card here would only be a confusing duplicate. Those
+  // are filtered out of the turn body entirely below, matching the old
+  // behaviour of rendering nothing for them in the steps list.
   // Computed before the early-return branches below so this hook always
   // runs in the same order, regardless of which branch this render takes.
   const standaloneCallIds = useMemo(() => {
@@ -1220,13 +1230,11 @@ function SessionTurn({
         ids.add(permission.tool.callID);
       }
     }
-    for (const question of questions) {
-      if (question.sessionID === sessionId && question.tool?.callID) {
-        ids.add(question.tool.callID);
-      }
+    for (const { part } of answeredQuestionParts) {
+      ids.add(part.callID);
     }
     return ids;
-  }, [permissions, questions, sessionId]);
+  }, [permissions, answeredQuestionParts, sessionId]);
 
   // ============================================================================
   // Shell mode — short-circuit rendering
@@ -1391,9 +1399,10 @@ function SessionTurn({
 			    - `todowrite` — the plan card beneath the user message is now
 			      the single canonical todo surface; showing the same checklist
 			      again inside a burst would just duplicate it.
-			    - `question`, but ONLY while `shouldUseInlineContent` is active:
-			      that mode already renders text and answered questions itself,
-			      in original order, below — rendering it here too would double it. */}
+			    - `question`: only answered questions are kept. Pending and
+			      dismissed questions are dropped entirely. Additionally,
+			      answered questions are dropped when rendering inline content
+			      (below), since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-2">
           {segmentTurn(
@@ -1401,8 +1410,9 @@ function SessionTurn({
               .map(({ part }) => part)
               .filter((part) => {
                 if (isToolPart(part) && part.tool === 'todowrite') return false;
-                if (shouldUseInlineContent && isToolPart(part) && part.tool === 'question') {
-                  return false;
+                if (isToolPart(part) && part.tool === 'question') {
+                  // Keep only answered questions, and only if not rendering inline
+                  return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
                 }
                 return true;
               }),
@@ -1422,6 +1432,14 @@ function SessionTurn({
 
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
+              // Render answered questions via AnsweredQuestionCard instead of
+              // ToolPartRenderer to avoid the "Question(s)" label and badge
+              // from QuestionTool; answered cards show "Questions · N answered" instead.
+              // Use the part from the map (may contain optimistically-cached answers).
+              if (answeredQuestionPartsById.has(segment.part.id)) {
+                const part = answeredQuestionPartsById.get(segment.part.id)!;
+                return <AnsweredQuestionCard key={segment.part.id} part={part} />;
+              }
               return (
                 <ToolPartRenderer
                   key={segment.part.id}
