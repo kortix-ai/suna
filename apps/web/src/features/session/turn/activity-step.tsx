@@ -100,13 +100,12 @@ export function ActivityStep({
     return <StepsItem className="min-w-0">{header}</StepsItem>;
   }
 
+  // The tool's own renderer is the row: it draws its own icon, title, subtitle,
+  // and duration, and is itself expandable for the full output. A label row on
+  // top of it would just repeat the same step in different words.
   return (
     <StepsItem className="min-w-0">
-      {header}
-      {/* The tool's own renderer supplies results (sources, diffs, output). */}
-      <div className="mt-1">
-        <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />
-      </div>
+      <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />
     </StepsItem>
   );
 }
