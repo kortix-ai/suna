@@ -87,6 +87,19 @@ export function EntityAvatar({
         // initial's text size; before `className`, so a caller's own fill
         // (the project card's `bg-background`) still wins over `bg-muted`.
         //
+        // WHICH FILL ACTUALLY SHIPS — both, at different call sites, so do not
+        // read the paragraphs below as "the emoji tile is bg-muted":
+        //   - project-card.tsx passes `bg-background`. cn() merges className
+        //     last, so tailwind-merge drops `bg-muted` there and the tile reads
+        //     as a well in the card's `bg-secondary/80` surface. `bg-muted`
+        //     never paints on a card.
+        //   - project-sidebar/project-switcher.tsx's list rows, and the
+        //     /design-system demo, pass no className. There `bg-muted` is the
+        //     fill.
+        // The hairline measurements below hold either way: they are
+        // border-against-card, and the border does not depend on the fill
+        // behind it.
+        //
         // The hairline is `foreground`, not `border`. Dropping the chalk left
         // the tile with almost no edge: measured on the real card composite,
         // `border-border/60` is 1.07:1 against the card in dark and 1.09:1 in
