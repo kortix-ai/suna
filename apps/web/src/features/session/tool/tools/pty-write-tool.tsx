@@ -2,7 +2,7 @@
 import { BasicTool, partInput, partOutput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

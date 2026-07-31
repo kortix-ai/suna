@@ -4,7 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { CaretRightIcon as ChevronRight, TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { CaretRightIcon as ChevronRight, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 // ============================================================================

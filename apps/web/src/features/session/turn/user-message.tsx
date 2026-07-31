@@ -13,7 +13,7 @@ import {
   ImageIcon,
   ArrowBendUpLeftIcon as Reply,
   ScissorsIcon as Scissors,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   TimerIcon as Timer,
 } from '@phosphor-icons/react';
 

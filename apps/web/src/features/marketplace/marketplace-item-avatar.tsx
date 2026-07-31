@@ -16,7 +16,7 @@ import {
   PuzzlePieceIcon as Puzzle,
   RocketIcon as Rocket,
   SparkleIcon as Sparkles,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   MagicWandIcon as Wand2,
   WrenchIcon as Wrench,
   LightningIcon as Zap,

@@ -12,7 +12,7 @@ import {
   CheckIcon as Check,
   CopyIcon as Copy,
   ArrowRightIcon as HiArrowRight,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';

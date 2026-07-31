@@ -10,7 +10,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { stripMarkupForToolOutput } from '@/features/session/tool/tool-renderers-sanitization';
-import { TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

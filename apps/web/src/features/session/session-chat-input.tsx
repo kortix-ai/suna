@@ -20,7 +20,7 @@ import {
   ArrowUpLeftIcon as ArrowUpLeft,
   ClockIcon as Clock,
   ArrowBendUpLeftIcon as Reply,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';

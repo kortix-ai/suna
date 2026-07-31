@@ -13,7 +13,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { stripAnsi } from '@/ui';
-import { TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
