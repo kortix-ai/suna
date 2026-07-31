@@ -17,6 +17,7 @@ import {
 import { successToast } from '@/components/ui/toast';
 import {
   type AgentConfigBlock,
+  ApiError,
   type CreateAgentConfigResponse,
   type PreviewAgentConfigResponse,
   type RuntimeAgentConfig,
@@ -70,7 +71,31 @@ export function isAgentPreviewStale(
   previewFingerprint: string | null,
   currentFingerprint: string,
 ): boolean {
-  return previewFingerprint !== null && previewFingerprint !== currentFingerprint;
+  return previewFingerprint !== currentFingerprint;
+}
+
+export function isStalePreviewRevisionError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'stale_preview_revision';
+}
+
+export function canSubmitAgentCreateDraft(input: {
+  valid: boolean;
+  hasPreview: boolean;
+  previewStale: boolean;
+  createPending: boolean;
+  previewPending: boolean;
+  canCreate: boolean;
+  hasResult: boolean;
+}): boolean {
+  return (
+    input.valid &&
+    input.hasPreview &&
+    !input.previewStale &&
+    !input.createPending &&
+    !input.previewPending &&
+    input.canCreate &&
+    !input.hasResult
+  );
 }
 
 function hasErrors(errors: Record<string, string | undefined>): boolean {
@@ -115,16 +140,17 @@ export function AgentCreateModal({
     () => agentCreateFingerprint(agentName, draft),
     [agentName, draft],
   );
-  const previewStale = isAgentPreviewStale(previewFingerprint, currentFingerprint);
+  const previewStale = preview ? isAgentPreviewStale(previewFingerprint, currentFingerprint) : false;
   const valid = !hasErrors(errors);
-  const submitDisabled =
-    !valid ||
-    !preview ||
-    previewStale ||
-    create.isPending ||
-    previewMutation.isPending ||
-    !canCreate ||
-    !!result;
+  const submitDisabled = !canSubmitAgentCreateDraft({
+    valid,
+    hasPreview: !!preview,
+    previewStale,
+    createPending: create.isPending,
+    previewPending: previewMutation.isPending,
+    canCreate,
+    hasResult: !!result,
+  });
 
   const reset = () => {
     setAgentName('');
@@ -198,6 +224,9 @@ export function AgentCreateModal({
       setResult(response);
       successToast(`Change request #${response.change_request.number} opened`);
     } catch (error) {
+      if (isStalePreviewRevisionError(error)) {
+        setPreviewFingerprint(null);
+      }
       setRequestError(mutationMessage(error));
     }
   };

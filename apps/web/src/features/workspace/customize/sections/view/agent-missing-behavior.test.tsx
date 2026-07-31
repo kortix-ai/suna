@@ -46,6 +46,8 @@ describe('missing behavior UI source contract', () => {
     expect(editorSource).toContain("behavior_file_state ?? 'exists'");
     expect(editorSource).toContain("behaviorState === 'missing'");
     expect(editorSource).toContain("behaviorState === 'read_error'");
+    expect(editorSource).toContain('editBlockedByBehaviorState');
+    expect(editorSource).toContain('Repair behavior file first');
     expect(editorSource).toContain('configQuery.refetch()');
   });
 

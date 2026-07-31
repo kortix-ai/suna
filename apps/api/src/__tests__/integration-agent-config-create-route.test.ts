@@ -25,6 +25,16 @@ beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
+  await db.execute(sql`
+    create unique index if not exists idx_change_requests_open_agent_config_agent
+      on kortix.change_requests (
+        project_id,
+        ((metadata->'agent_config'->>'agent_name'))
+      )
+      where status = 'open'
+        and metadata ? 'agent_config'
+        and metadata->'agent_config'->>'agent_name' is not null
+  `);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'agent-create-route-test' });
   await db.insert(accountMembers).values({
     userId: OWNER,
@@ -154,6 +164,8 @@ describe('agent config create HTTP route', () => {
     expect(previewBody.behavior_path).toBe('.kortix/opencode/agents/reliance-cto.md');
     expect(previewBody.behavior_markdown).toContain('Reliance CTO');
     expect(previewBody.preview_revision).toMatch(/^[a-f0-9]{64}$/);
+    expect(previewBody.manifest_content).toBeUndefined();
+    expect(previewBody.files).toBeUndefined();
 
     const create = await request('POST', `/v1/projects/${projectId}/agents`, token, {
       ...CREATE_BODY,
@@ -348,6 +360,29 @@ describe('agent behavior repair HTTP route', () => {
     expect(repair.status).toBe(400);
     const body = await repair.json();
     expect(body.code).toBe('missing_behavior_markdown');
+  });
+
+  test('rejects default-branch edit when the behavior file is missing', async () => {
+    const { projectId, token } = await seedRepo('agent-repair-edit-bypass', {
+      'kortix.yaml': MANIFEST,
+    });
+
+    const edit = await request(
+      'PUT',
+      `/v1/projects/${projectId}/agents/support/config`,
+      token,
+      {
+        enabled: true,
+        opencode: {
+          mode: 'primary',
+          prompt: 'This must go through behavior repair.',
+        },
+      },
+    );
+
+    expect(edit.status).toBe(409);
+    const body = await edit.json();
+    expect(body.code).toBe('behavior_file_missing');
   });
 });
 

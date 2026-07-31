@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 515,
+  "count": 518,
   "routes": [
     {
       "method": "GET",
@@ -1075,6 +1075,14 @@
       "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/behavior-repair"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
@@ -1085,6 +1093,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/agents/:agentName/scope"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/preview"
     },
     {
       "method": "GET",

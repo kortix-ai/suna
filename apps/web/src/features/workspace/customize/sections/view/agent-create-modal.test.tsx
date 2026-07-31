@@ -1,26 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { ApiError } from '@kortix/sdk';
 
 import {
   agentCreateFingerprint,
+  canSubmitAgentCreateDraft,
   initialCreateAgentBlock,
   isAgentPreviewStale,
+  isStalePreviewRevisionError,
   validateAgentCreateDraft,
 } from './agent-create-modal';
-
-const modalSource = readFileSync(
-  fileURLToPath(new URL('./agent-create-modal.tsx', import.meta.url)),
-  'utf8',
-);
-const agentsSource = readFileSync(
-  fileURLToPath(new URL('./agents-view.tsx', import.meta.url)),
-  'utf8',
-);
-const configEntitySource = readFileSync(
-  fileURLToPath(new URL('../component/config-entity-view.tsx', import.meta.url)),
-  'utf8',
-);
 
 describe('agent create validation', () => {
   test('requires a valid lowercase agent name and a prompt body', () => {
@@ -52,27 +40,37 @@ describe('agent create validation', () => {
       opencode: { mode: 'primary', prompt: 'You are the CTO. Review releases.' },
     });
 
-    expect(isAgentPreviewStale(null, ready)).toBe(false);
+    expect(isAgentPreviewStale(null, ready)).toBe(true);
     expect(isAgentPreviewStale(ready, ready)).toBe(false);
     expect(isAgentPreviewStale(ready, changed)).toBe(true);
   });
 });
 
-describe('agent create modal source contract', () => {
-  test('previews markdown before create and submits the reviewed preview revision', () => {
-    expect(modalSource).toContain('previewMutation.mutateAsync');
-    expect(modalSource).toContain('create.mutateAsync');
-    expect(modalSource).toContain('preview_revision: preview.preview_revision');
-    expect(modalSource).toContain('preview.behavior_markdown');
-    expect(modalSource).toContain('previewStale');
-    expect(modalSource).toContain('project.gitops.push');
+describe('agent create submit state', () => {
+  test('requires a fresh reviewed preview before create can submit', () => {
+    const ready = {
+      valid: true,
+      hasPreview: true,
+      previewStale: false,
+      createPending: false,
+      previewPending: false,
+      canCreate: true,
+      hasResult: false,
+    };
+
+    expect(canSubmitAgentCreateDraft(ready)).toBe(true);
+    expect(canSubmitAgentCreateDraft({ ...ready, hasPreview: false })).toBe(false);
+    expect(canSubmitAgentCreateDraft({ ...ready, previewStale: true })).toBe(false);
+    expect(canSubmitAgentCreateDraft({ ...ready, canCreate: false })).toBe(false);
+    expect(canSubmitAgentCreateDraft({ ...ready, hasResult: true })).toBe(false);
   });
 
-  test('Agents New uses the direct modal while generic sections keep configure-thread create', () => {
-    expect(agentsSource).toContain('onCreate={() => setCreateOpen(true)}');
-    expect(agentsSource).toContain('<AgentCreateModal');
-    expect(agentsSource).not.toContain('configure.start(newConfigPrompt');
-    expect(configEntitySource).toContain('onCreate?: () => void');
-    expect(configEntitySource).toContain('configure.start(newConfigPrompt(kind))');
+  test('stale preview API errors are detected by code', () => {
+    expect(
+      isStalePreviewRevisionError(
+        new ApiError('Preview is stale', { status: 409, code: 'stale_preview_revision' }),
+      ),
+    ).toBe(true);
+    expect(isStalePreviewRevisionError(new Error('Preview is stale'))).toBe(false);
   });
 });

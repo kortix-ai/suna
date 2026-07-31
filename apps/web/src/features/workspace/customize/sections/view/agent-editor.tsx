@@ -247,6 +247,8 @@ export function AgentConfigEditor({
 
   const block = data.block ?? {};
   const behaviorState = data.behavior_file_state ?? 'exists';
+  const editBlockedByBehaviorState =
+    behaviorState === 'missing' || behaviorState === 'read_error';
   const summaries: { key: string; label: string; grant: AgentGrantSetV2 | undefined }[] = [
     { key: 'skills', label: 'Skills', grant: block.skills },
     { key: 'connectors', label: 'Connectors', grant: block.connectors },
@@ -341,11 +343,20 @@ export function AgentConfigEditor({
           })}
         </div>
 
-        <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
-          Edit configuration
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => setOpen(true)}
+          disabled={editBlockedByBehaviorState}
+        >
+          {behaviorState === 'missing'
+            ? 'Repair behavior file first'
+            : behaviorState === 'read_error'
+              ? 'Retry behavior file read'
+              : 'Edit configuration'}
         </Button>
 
-        {open ? (
+        {open && !editBlockedByBehaviorState ? (
           <AgentEditorModal
             projectId={projectId}
             agentName={agent.name}

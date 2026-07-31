@@ -92,19 +92,12 @@ export interface PreviewAgentConfigInput {
   block: AgentConfigBlock;
 }
 
-export interface AgentConfigFilePreview {
-  path: string;
-  content: string;
-}
-
 export interface PreviewAgentConfigResponse {
   agent_name: string;
   manifest_path: string;
   behavior_path: string;
-  manifest_content: string;
   behavior_markdown: string;
   preview_revision: string;
-  files: AgentConfigFilePreview[];
 }
 
 export interface CreateAgentConfigInput extends PreviewAgentConfigInput {

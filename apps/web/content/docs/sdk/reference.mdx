@@ -172,6 +172,34 @@ await p.llmCatalog();
 | `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
 | `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
 
+#### `p.agents` — agent config and reviewed creation
+
+Agent config uses two repo homes. `kortix.yaml` stores Kortix governance.
+`.kortix/opencode/agents/<name>.md` stores OpenCode behavior and the prompt.
+
+| method | what |
+| --- | --- |
+| `getConfig(agentName)` | read the merged governance + behavior block |
+| `preview(input)` | validate a draft and return behavior markdown plus `preview_revision` |
+| `create(input)` | write `kortix.yaml` and behavior markdown to a branch, then open a change request |
+| `repairBehaviorFile(agentName, input)` | create a missing behavior markdown file through a change request |
+
+```ts
+const preview = await p.agents.preview({
+  agentName: 'reliance-cto',
+  block: { opencode: { mode: 'primary', prompt: 'Review releases.' } },
+});
+
+await p.agents.create({
+  agentName: 'reliance-cto',
+  block: { opencode: { mode: 'primary', prompt: 'Review releases.' } },
+  preview_revision: preview.preview_revision,
+});
+```
+
+`preview` does not return the full manifest content. Use the change request
+diff after `create` or `repairBehaviorFile` to review the manifest change.
+
 #### `p.tokens` — project-scoped API keys
 
 Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.

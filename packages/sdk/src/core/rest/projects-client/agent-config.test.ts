@@ -141,13 +141,8 @@ describe('previewAgentConfig', () => {
       agent_name: 'reliance-cto',
       manifest_path: 'kortix.yaml',
       behavior_path: '.kortix/opencode/agents/reliance-cto.md',
-      manifest_content: 'kortix_version: 2\n',
       behavior_markdown: 'You are the CTO.',
       preview_revision: 'a'.repeat(64),
-      files: [
-        { path: 'kortix.yaml', content: 'kortix_version: 2\n' },
-        { path: '.kortix/opencode/agents/reliance-cto.md', content: 'You are the CTO.' },
-      ],
     };
 
     const response = await previewAgentConfig('project-1', {

@@ -13,10 +13,10 @@
  * what.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
-import { getBranchDiff, resolveBranchAheadState, type GitBackedProject } from './git';
+import { resolveBranchAheadState, type GitBackedProject } from './git';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
@@ -72,7 +72,21 @@ export async function getCrById(crId: string, projectId: string) {
 
 export type CreateChangeRequestForBranchResult =
   | { ok: true; row: ChangeRequestRow }
-  | { ok: false; status: 400 | 422 | 500; body: Record<string, unknown> };
+  | { ok: false; status: 400 | 409 | 422 | 500; body: Record<string, unknown> };
+
+function isDuplicateKey(error: unknown): boolean {
+  if ((error as { code?: unknown })?.code === '23505') return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate key/.test(message);
+}
+
+function isAgentConfigOpenDuplicate(error: unknown): boolean {
+  if ((error as { constraint?: unknown })?.constraint === 'idx_change_requests_open_agent_config_agent') {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('idx_change_requests_open_agent_config_agent');
+}
 
 export async function createChangeRequestForBranch(input: {
   accountId: string;
@@ -150,43 +164,23 @@ export async function createChangeRequestForBranch(input: {
       inserted = row;
       break;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate key/.test(message)) throw error;
+      if (isAgentConfigOpenDuplicate(error)) {
+        return {
+          ok: false,
+          status: 409,
+          body: {
+            error: 'An open change request already exists for this agent.',
+            code: 'pending_agent_config_change',
+          },
+        };
+      }
+      if (!isDuplicateKey(error)) throw error;
     }
   }
   if (!inserted) {
     return { ok: false, status: 500, body: { error: 'Failed to allocate CR number' } };
   }
   return { ok: true, row: inserted };
-}
-
-export async function findOpenAgentConfigChangeRequest(
-  projectForGit: GitBackedProject,
-  projectId: string,
-  agentName: string,
-  paths: readonly string[],
-): Promise<ChangeRequestRow | null> {
-  const candidates = await db
-    .select()
-    .from(changeRequests)
-    .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.status, 'open')))
-    .orderBy(desc(changeRequests.updatedAt));
-  const pathSet = new Set(paths);
-  const legacyConflictPaths = new Set(
-    paths.filter((path) => !/(^|\/)kortix\.(yaml|toml)$/.test(path)),
-  );
-  for (const row of candidates) {
-    const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
-    const agentConfig = metadata.agent_config as Record<string, unknown> | undefined;
-    if (agentConfig?.agent_name === agentName) return row;
-    const behaviorPath = agentConfig?.behavior_path;
-    if (typeof behaviorPath === 'string' && pathSet.has(behaviorPath)) return row;
-
-    if (agentConfig) continue;
-    const diff = await getBranchDiff(projectForGit, row.baseRef, row.headRef);
-    if (diff.files.some((file) => legacyConflictPaths.has(file.path))) return row;
-  }
-  return null;
 }
 
 /** One human "please change this" note recorded against a CR. */

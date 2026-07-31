@@ -9,8 +9,9 @@
  * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
  * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
  * editor route (`../routes/agent-config.ts`) is what merges this governance
- * half with the `.md` behavior half into one wire response/request — this
- * module only ever touches kortix.yaml.
+ * half with the `.md` behavior half into one wire response/request. The pure
+ * create/repair composers below return both the next `kortix.yaml` content and
+ * the companion behavior markdown write; callers still own all I/O.
  *
  * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
  * resolves the platform GRANT the session token carries (a narrower view —

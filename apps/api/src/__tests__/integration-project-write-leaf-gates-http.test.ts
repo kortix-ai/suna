@@ -348,4 +348,30 @@ describe('HTTP enforcement — project write/lifecycle leaf gates (every checkbo
       }
     });
   }
+
+  test('direct agent create requires a CR/gitops grant beyond project.agent.write', async () => {
+    const secret = await mint(EDITOR, [A.PROJECT_AGENT_WRITE]);
+    const res = await req('POST', `/v1/projects/${PROJECT}/agents`, secret, {
+      ...DIRECT_AGENT_BODY,
+      preview_revision: '0'.repeat(64),
+    });
+
+    expect(res.status).toBe(403);
+    const text = JSON.stringify(await res.json().catch(() => ({})));
+    expect(text).toContain(A.PROJECT_GITOPS_PUSH);
+  });
+
+  test('direct agent repair requires a CR/gitops grant beyond project.agent.write', async () => {
+    const secret = await mint(EDITOR, [A.PROJECT_AGENT_WRITE]);
+    const res = await req(
+      'POST',
+      `/v1/projects/${PROJECT}/agents/scoped-bot/behavior-repair`,
+      secret,
+      { behavior_markdown: 'You are a repaired agent.' },
+    );
+
+    expect(res.status).toBe(403);
+    const text = JSON.stringify(await res.json().catch(() => ({})));
+    expect(text).toContain(A.PROJECT_GITOPS_PUSH);
+  });
 });

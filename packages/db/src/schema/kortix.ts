@@ -3258,6 +3258,11 @@ export const changeRequests = kortixSchema.table(
     index('idx_change_requests_project').on(table.projectId),
     index('idx_change_requests_project_status').on(table.projectId, table.status),
     uniqueIndex('idx_change_requests_project_number').on(table.projectId, table.number),
+    // NOTE: a partial expression index
+    // `idx_change_requests_open_agent_config_agent` ALSO exists, created by
+    // 20260731131000000_open_agent_config_cr_unique.concurrent.ts. It is
+    // intentionally not declared here so `db:generate` will not emit a plain
+    // CREATE INDEX against the concurrently built one.
   ],
 );
 
