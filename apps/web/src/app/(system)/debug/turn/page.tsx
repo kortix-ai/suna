@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { PlanCard } from '@/features/session/turn/plan-card';
 import { UserMessage } from '@/features/session/turn/user-message';
@@ -27,7 +28,7 @@ import type { MessageWithParts, Part } from '@/ui';
 let n = 0;
 const nextId = () => `prt_dbg_${(n += 1)}`;
 
-function tool(name: string, input: Record<string, unknown>, ms = 1200): Part {
+function tool(name: string, input: Record<string, unknown>, ms = 1200, output = ''): Part {
   const id = nextId();
   return {
     id,
@@ -39,11 +40,39 @@ function tool(name: string, input: Record<string, unknown>, ms = 1200): Part {
     state: {
       status: 'completed',
       input,
-      output: '',
+      output,
       time: { start: 1_000_000, end: 1_000_000 + ms },
     },
   } as unknown as Part;
 }
+
+/**
+ * Real shape `parseWebSearchOutput` expects — one query, real sources.
+ * Stringified: tool output always arrives from the server as a string, and
+ * `partOutput`/`isErrorOutput` assume that (a raw object here breaks with
+ * "raw.replace is not a function").
+ */
+const SEARCH_OUTPUT = JSON.stringify({
+  results: [
+    {
+      query: 'postgres advisory lock leader election',
+      results: [
+        {
+          title: 'PostgreSQL: Documentation: Advisory Locks',
+          url: 'https://www.postgresql.org/docs/current/explicit-locking.html',
+        },
+        {
+          title: 'Leader election with Postgres advisory locks',
+          url: 'https://leontrolski.github.io/pg-leader.html',
+        },
+        {
+          title: 'Distributed locks with Postgres',
+          url: 'https://www.citusdata.com/blog/2019/08/09/postgres-advisory-locks/',
+        },
+      ],
+    },
+  ],
+});
 
 function runningTool(name: string, input: Record<string, unknown>): Part {
   const id = nextId();
@@ -74,14 +103,22 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
     label: 'settled · reasoning supplies the title',
     working: false,
     parts: [
-      reasoning(
-        '**Audited worker registration and quota limits**\n\nChecked how workers register.',
-      ),
+      // Three consecutive fragments plus a memory write wedged between two of
+      // them — must collapse to ONE thinking row, and the memory must not
+      // split the run or appear at all.
+      reasoning('**Audited worker registration and quota limits.**'),
+      tool('memory', {}),
+      reasoning('Checked how workers register and whether leader election races.'),
+      reasoning('Quota enforcement looked fine under the current ceiling.'),
       tool('read', { filePath: '/workspace/src/jobs-queue.ts' }),
       tool('read', { filePath: '/workspace/src/enrichment-worker.ts' }),
-      tool('web_search', { query: 'postgres advisory lock leader election' }),
+      tool('web_search', { query: 'postgres advisory lock leader election' }, 1400, SEARCH_OUTPUT),
+      tool(
+        'web_fetch',
+        { url: 'https://www.postgresql.org/docs/current/explicit-locking.html' },
+        900,
+      ),
       tool('bash', { command: 'bun test enrichment' }, 3400),
-      tool('memory', {}),
       tool('dcp_compress', {}),
       tool('get_mem', {}),
     ],
@@ -171,6 +208,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 export default function DebugTurnPage() {
   const [dark, setDark] = useState(true);
+  const [activateCount, setActivateCount] = useState(0);
   const [qc] = useState(() => {
     const c = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // PlanCard reads this exact key; the todo.updated SSE handler writes it.
@@ -196,6 +234,10 @@ export default function DebugTurnPage() {
             theme: {dark ? 'dark' : 'light'}
           </button>
 
+          <p id="activate-count" className="text-muted-foreground/60 mb-6 font-mono text-xs">
+            side-panel activations: {activateCount}
+          </p>
+
           <Section label="user message · full width, no reference chips">
             <UserMessage message={userMessage} />
           </Section>
@@ -204,16 +246,25 @@ export default function DebugTurnPage() {
             <PlanCard sessionId="ses_dbg" />
           </Section>
 
-          {BURSTS.map((b) => (
-            <Section key={b.label} label={b.label}>
-              <ActivityBurst
-                parts={b.parts}
-                sessionId="ses_dbg"
-                working={b.working}
-                disableNavigation
-              />
-            </Section>
-          ))}
+          {/*
+            Every burst below is rendered under a REAL, non-null
+            ToolActivateContext — exactly the condition session-chat.tsx
+            creates in production. If ActivityBurst's local override didn't
+            work, every click on a tool row would increment this counter
+            instead of expanding the row inline.
+          */}
+          <ToolActivateContext.Provider value={() => setActivateCount((n) => n + 1)}>
+            {BURSTS.map((b) => (
+              <Section key={b.label} label={b.label}>
+                <ActivityBurst
+                  parts={b.parts}
+                  sessionId="ses_dbg"
+                  working={b.working}
+                  disableNavigation
+                />
+              </Section>
+            ))}
+          </ToolActivateContext.Provider>
         </div>
       </div>
     </QueryClientProvider>
