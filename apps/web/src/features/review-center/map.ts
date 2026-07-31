@@ -6,7 +6,7 @@
  */
 
 import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
-import { looksLikeMarkdown } from './review-markdown';
+import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import type {
   ApprovalAction,
   ApprovalActionIcon,
