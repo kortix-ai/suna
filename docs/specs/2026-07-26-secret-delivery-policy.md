@@ -152,21 +152,20 @@ time. A running box that already received a secret in `env` mode still holds it 
 same residue problem as agent-scope switching. Changing a secret's policy should
 be treated as requiring a new sandbox.
 
-## Related open gap: the executor token
+## Executor token resolution
 
-Agent identity has two halves, and #5514 only fixed one.
+Agent identity has two halves: secret delivery and the executor token grant.
 
 `mintExecutorToken` (`apps/api/src/platform/services/session-sandbox.ts:129`) has
 exactly **one** call site — at sandbox provision. It stamps the token with
-`agentGrant` from the session's create-time agent, carrying that agent's
-`connectors` and `kortix_cli` grants; the grant is persisted on the token row and
-read back by auth middleware to gate routes. **It is never re-minted.**
+`agentGrant` from the session's create-time agent. The proxy rewrites the
+persisted grant when a later prompt switches agents.
 
-So re-scoping *env* per prompt is not sufficient on its own: a switched-to agent
-would still hold the original agent's powers. This is why
-`KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` ships **on** — the 409 is currently the
-only thing preventing that escalation. Once identity is re-resolved per prompt,
-the lock can relax to plain re-scoping.
+Re-scoping *env* per prompt is not sufficient on its own. The proxy now also
+re-mints every active session token's `agent_grant` before it forwards a switched
+prompt. Connector and Kortix CLI authorization therefore follow the running
+agent. `KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` defaults off; operators can set
+it to true when they require immutable secret grants per sandbox.
 
 There is also a live fail-open on that path: `session-sandbox.ts:143` does
 `resolveAgentGrant(...).catch(() => null)`, and `null` means unrestricted. It
@@ -175,26 +174,23 @@ failure synthesizes a manifest granting `connectors: 'all'` + `kortix_cli: 'all'
 This is the same bug class #5514 fixed for env, still open for the token — and
 the plumbing to fix it (`rethrowReadErrors`) is already on main.
 
-*Design question to settle first:* re-mint a new token and push it into a live
-sandbox, vs. keep one token and re-resolve its grant server-side at auth time.
-The latter avoids rotating a credential into a running box and is likely the
-right call.
+The implementation keeps the token value stable and rewrites its server-side
+grant row. The sandbox does not receive a replacement credential.
 
-## Suggested sequencing
+## Delivery-policy sequencing
 
-1. **Token grant fail-closed** — apply `rethrowReadErrors` to
-   `resolveAgentGrant`. Small, contained, closes a live fail-open with machinery
-   already on main.
+1. **Token grant fail-closed** — remove the remaining boot-time
+   `resolveAgentGrant(...).catch(() => null)` fallback.
 2. **Delivery policy, `env` + `gateway` only** — one migration, no egress work,
    no TLS interception. Models what is already true and closes the BYOK-key-in-env
    hole: a key connected through the LLM Providers modal stops being readable as
    `$ANTHROPIC_API_KEY` inside the box.
-3. **Identity re-resolved per prompt** — token grant follows the running agent;
-   the grant lock relaxes.
+3. **Identity re-resolved per prompt** — complete. The env and token grant follow
+   the running agent. The strict grant lock defaults off.
 4. **`proxy` mode** — CA provisioning, forced egress, per-provider network
    config. The real project, and the marketable one.
 
-Steps 1–2 are days. Steps 3–4 each deserve their own spec.
+Steps 1–2 and 4 remain delivery-policy work. Step 3 is complete.
 
 ## Sources
 

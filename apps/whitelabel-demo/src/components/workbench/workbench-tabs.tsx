@@ -257,10 +257,8 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               a typed sendError — read it, and name the KaaB refusals the
               generic message would otherwise swallow. */}
           {agentSwitch ? (
-            // The one refusal where retrying is guaranteed to fail: this
-            // sandbox's env is provisioned for the agent it booted with, and
-            // re-scoping now cannot un-read what that agent already loaded.
-            // Offer the only thing that works instead of an error.
+            // Operators can opt into an immutable secret-grant boundary. When
+            // they do, retrying the same switch cannot succeed in this session.
             <div className="mx-4 mb-2 rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
               <div className="text-sm font-medium">
                 {agentSwitch.requestedAgent

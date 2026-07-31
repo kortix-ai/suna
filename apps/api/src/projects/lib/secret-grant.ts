@@ -19,12 +19,10 @@
  *      (`preview.ts`: a prompt's `agent` field is forwarded untouched), so a
  *      session born under a broad agent could run a narrow one and still be
  *      handed the broad agent's full env. The grant is now resolved from the
- *      agent the prompt actually RUNS (`effectiveRunningAgent`), and a switch
- *      that would cross a secret boundary is refused outright
- *      (`AgentSecretGrantMismatchError` → 409) because narrowing the env on a
- *      later turn cannot un-read what the previous agent already read: the
- *      secrets are in the box's tmpfs env file, in every shell it spawned, and
- *      in its own context.
+ *      agent the prompt actually RUNS (`effectiveRunningAgent`). The default
+ *      path replaces future secret delivery with that agent's grant. Operators
+ *      can enable the strict grant lock to refuse a boundary switch because a
+ *      later narrowing cannot un-read what the previous agent already read.
  *
  * The pure helpers below carry the policy; `resolveSessionSecretGrant` is the
  * single I/O entry point both call sites use.
