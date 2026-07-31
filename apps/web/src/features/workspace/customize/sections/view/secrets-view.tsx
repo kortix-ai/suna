@@ -478,7 +478,7 @@ function SecretTableRow({
                 {row.configured ? 'Edit secret' : 'Set value'}
               </DropdownMenuItem>
               {row.configured && (
-                <DropdownMenuItem onClick={onDelete} variant="destructive">
+                <DropdownMenuItem onClick={onDelete}>
                   <TrashIcon className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',

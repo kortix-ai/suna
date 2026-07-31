@@ -318,7 +318,6 @@ export function SessionSiteHeader({
                     <DropdownMenuItem
                       className="cursor-pointer"
                       onClick={() => setDeleteOpen(true)}
-                      variant="destructive"
                     >
                       <TrashIcon />
                       Delete

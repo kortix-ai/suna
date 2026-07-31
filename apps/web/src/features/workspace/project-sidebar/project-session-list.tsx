@@ -491,7 +491,6 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-                  variant="destructive"
                 >
                   <TrashIcon />
                   Delete

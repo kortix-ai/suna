@@ -385,10 +385,7 @@ function SessionRow({
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => onDelete(session.session_id, title)}
-                      >
+                      <DropdownMenuItem onSelect={() => onDelete(session.session_id, title)}>
                         <TrashIcon />
                         Delete
                       </DropdownMenuItem>

@@ -90,10 +90,14 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
   });
 });
 
-describe('SessionSiteHeader "more actions" menu — destructive last, technical items subordinate', () => {
-  test('Delete is the last item and the only variant="destructive" entry', () => {
+describe('SessionSiteHeader "more actions" menu — Delete last, technical items subordinate', () => {
+  test('Delete is the last item and no row is styled destructive', () => {
+    // Delete opens SessionDeleteModal; the click itself destroys nothing, so
+    // the red belongs on the dialog's confirm button, not on a menu row that
+    // only asks a question. Position still carries the weight here — Delete
+    // sits last, where a slipped pointer lands on nothing worse.
     const destructiveMatches = source.match(/variant="destructive"/g) ?? [];
-    expect(destructiveMatches.length).toBe(1);
+    expect(destructiveMatches.length).toBe(0);
 
     // `Delete` also appears earlier as a substring of the `SessionDeleteModal`
     // import — anchor on the destructive button's own icon instead.
