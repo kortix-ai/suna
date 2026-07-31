@@ -12,6 +12,78 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
+/**
+ * ONE recipe for every row in a dropdown.
+ *
+ * Four different components render a "row" here — Item, SubTrigger,
+ * CheckboxItem and RadioItem — and each used to hardcode its own spacing,
+ * radius, focus colour, type and transition. They had drifted, so which
+ * component you reached for silently changed how the row looked:
+ *
+ *   Item          rounded-md  px-2.5 py-1.5  focus:bg-border/50   text-foreground/80
+ *   SubTrigger    rounded-sm  px-2   py-1.5  focus:bg-accent      (inherited colour)
+ *   CheckboxItem  rounded-sm  pl-8   py-1.5  focus:bg-accent      (inherited colour)
+ *   RadioItem     rounded-sm  px-2   py-1.5  focus:bg-accent      (inherited colour)
+ *
+ * A submenu trigger therefore sat 2px left of its sibling items, with a
+ * different corner and a different text colour — a menu mixing the two could
+ * never line its icons up in one column.
+ *
+ * Two further bugs this closes:
+ *
+ * 1. The size prop's font-size was dead. `size="sm"` set `text-xs`, but the
+ *    `variant === 'default'` clause that ran after it set `text-sm`, and
+ *    tailwind-merge takes the last one. So default rows ignored their size's
+ *    type while destructive rows — which set no font-size — honoured it. A
+ *    `variant="destructive" size="sm"` row rendered 12px next to its 14px
+ *    neighbours. That is why "Log out" looked smaller than every row above it.
+ *
+ * 2. `transition-all duration-500`. `transition-all` animates every animatable
+ *    property on a state change instead of the one that actually moves, and
+ *    half a second is far past the budget for a menu opened dozens of times a
+ *    day — the hover highlight visibly trailed the cursor. Colour only, 150ms.
+ */
+type MenuRowSize = 'sm' | 'md' | 'lg';
+type MenuRowTone = 'default' | 'destructive';
+
+/** Padding and type per step. Radius and gap stay fixed so columns line up. */
+const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
+  sm: 'px-2.5 py-1.5 text-sm',
+  md: 'px-3 py-2 text-sm',
+  lg: 'px-3.5 py-2.5 text-base',
+};
+
+const MENU_ROW_BASE =
+  'relative flex w-full cursor-default items-center gap-2 rounded-md font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0';
+
+/**
+ * Keyboard focus and pointer hover resolve to the same treatment on purpose —
+ * Radix marks the keyboard-focused row `data-highlighted`, and a row you
+ * arrowed onto should look exactly like a row you hovered.
+ */
+const MENU_ROW_TONE: Record<MenuRowTone, string> = {
+  default:
+    'text-foreground/80 hover:bg-primary/10 hover:text-foreground focus:bg-primary/10 focus:text-foreground data-highlighted:bg-primary/10 data-highlighted:text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-foreground',
+  destructive:
+    'text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive',
+};
+
+/** `className` last so a caller can still override any of it. */
+function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string) {
+  return cn(MENU_ROW_BASE, MENU_ROW_SIZE[size], MENU_ROW_TONE[tone], className);
+}
+
+/**
+ * Shared by Content and SubContent — a submenu panel should be indistinguishable
+ * from the menu that opened it.
+ *
+ * `hover:text-foreground` used to sit here, on the panel. Hovering anywhere in
+ * the menu recoloured every row at once, fighting the per-row hover the rows
+ * define themselves. Removed; colour is a row concern.
+ */
+const MENU_PANEL =
+  'bg-background text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-[calc(var(--radius)+0.2rem)] border p-1 shadow-lg ease-out';
+
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = React.forwardRef<
@@ -43,25 +115,28 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+/**
+ * Takes the same `size` and `inset` props as `DropdownMenuItem`, because a
+ * submenu trigger is a row like any other and has to line up with its siblings.
+ *
+ * The caret is `size-3.5` against the leading icon's `size-4`: it is an
+ * affordance, not content, and matching the icon's weight makes it compete with
+ * the label. `text-muted-foreground` for the same reason.
+ */
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
     inset?: boolean;
+    size?: MenuRowSize;
   }
->(({ className, inset, children, ...props }, ref) => (
+>(({ className, inset, size = 'sm', children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn(
-      'group focus:bg-accent data-[state=open]:bg-accent flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn('group', menuRow(size, 'default'), inset && 'pl-8', className)}
     {...props}
   >
     {children}
-    <span className="ml-auto flex items-center">
-      <ChevronRight className="block group-data-[state=open]:block" />
-    </span>
+    <ChevronRight className="text-muted-foreground ml-auto size-3.5" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
@@ -72,14 +147,15 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, style, ...props }, ref) => {
+>(({ className, side, align, sideOffset = 4, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
     <DropdownMenuPrimitive.SubContent
       ref={ref}
+      sideOffset={sideOffset}
       className={cn(
-        'bg-sidebar text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 mb-10 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-lg',
+        MENU_PANEL,
         className,
         side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
         side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
@@ -107,10 +183,7 @@ const DropdownMenuContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
-        className={cn(
-          'bg-background text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-[calc(var(--radius)+0.2rem)] border p-1 shadow-lg ease-out',
-          className,
-        )}
+        className={cn(MENU_PANEL, className)}
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
@@ -129,18 +202,7 @@ const DropdownMenuItem = React.forwardRef<
 >(({ className, inset, variant = 'default', size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(
-      'focus:bg-border/50 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-md text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
-      size === 'sm' && 'px-2.5 py-1.5 text-xs',
-      size === 'md' && 'px-3 py-1.5 text-sm',
-      size === 'lg' && 'px-3.5 py-2 text-base',
-      variant === 'default' &&
-        'text-foreground/80 hover:bg-primary/10 hover:text-foreground w-full items-center justify-start gap-2 text-sm font-normal transition-all duration-500',
-      variant === 'destructive' &&
-        'text-destructive hover:bg-destructive/10 hover:text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive focus:text-destructive',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn(menuRow(size, variant), inset && 'pl-8', className)}
     {...props}
   />
 ));
@@ -150,22 +212,22 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem> & {
     reverse?: boolean;
+    size?: MenuRowSize;
   }
->(({ className, children, checked, reverse, ...props }, ref) => (
+>(({ className, children, checked, reverse, size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(
-      'focus:bg-accent focus:text-foreground relative flex cursor-default items-center rounded-sm py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      className,
-      reverse ? 'pr-8 pl-2' : 'pr-2 pl-8',
-    )}
+    // The check sits in the row's own padding rather than pushing the label
+    // across, so a checkbox row's text starts on the same line as a plain
+    // item's — `pl-8` on top of `px-2.5` would indent it past every neighbour.
+    className={cn(menuRow(size, 'default'), reverse ? 'pr-7' : 'pl-7', 'relative', className)}
     checked={checked}
     {...props}
   >
     <span
       className={cn(
-        'absolute flex h-3.5 w-3.5 items-center justify-center',
-        reverse ? 'right-2' : 'left-2',
+        'absolute flex size-3.5 items-center justify-center',
+        reverse ? 'right-2.5' : 'left-2.5',
       )}
     >
       <DropdownMenuPrimitive.ItemIndicator>
@@ -179,11 +241,15 @@ DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displa
 
 const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
+  // `size` used to be 'default' | 'sm' | 'lg' here while every sibling row used
+  // 'sm' | 'md' | 'lg' — the same prop name meaning two different scales, where
+  // RadioItem's "sm" meant denser-than-normal and Item's "sm" meant normal. No
+  // consumer passed it, so it is now the one shared scale.
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem> & {
-    size?: 'default' | 'sm' | 'lg';
+    size?: MenuRowSize;
     side?: 'left' | 'right';
   }
->(({ className, children, size = 'default', side = 'right', ...props }, ref) => {
+>(({ className, children, size = 'sm', side = 'right', ...props }, ref) => {
   const indicator = (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
@@ -195,16 +261,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   return (
     <DropdownMenuPrimitive.RadioItem
       ref={ref}
-      className={cn(
-        'focus:bg-accent focus:text-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        size === 'sm' && 'gap-1.5 py-1',
-        size === 'sm' && side === 'left' && 'pl-1.5',
-        size === 'sm' && side === 'right' && 'pr-1.5',
-        size === 'lg' && 'py-2 text-base',
-        size === 'lg' && side === 'left' && 'pl-2.5',
-        size === 'lg' && side === 'right' && 'pr-2.5',
-        className,
-      )}
+      className={cn(menuRow(size, 'default'), className)}
       {...props}
     >
       {side === 'left' ? (
@@ -231,8 +288,11 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
+    // px-2.5 matches the sm row's horizontal padding, so a group label sits on
+    // the same left edge as the rows beneath it. `text-[13px]` was an arbitrary
+    // one-off; named steps only.
     className={cn(
-      'text-muted-foreground px-2.5 py-0.5 text-[13px] font-medium tracking-normal',
+      'text-muted-foreground px-2.5 py-1 text-xs font-medium tracking-normal',
       inset && 'pl-8',
       className,
     )}
