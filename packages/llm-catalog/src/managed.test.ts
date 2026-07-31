@@ -129,7 +129,7 @@ describe('managed resolution + back-compat aliases', () => {
       cacheWritePerMillion: 1,
       outputPerMillion: 4,
     });
-    expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBe('deepseek');
+    expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBeUndefined();
     expect(getManagedModel('deepseek-v4-flash')?.pricing).toEqual({
       inputPerMillion: 0.0938,
       cachedInputPerMillion: 0.01876,
