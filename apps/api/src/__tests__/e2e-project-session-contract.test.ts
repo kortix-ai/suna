@@ -2777,6 +2777,8 @@ describe('project session API contract', () => {
         body: JSON.stringify({ runtime_context: runtimeContext }),
       });
       expect(res.status).toBe(400);
+      const body = (await res.json()) as { code?: string };
+      expect(body.code).toBe('INVALID_SESSION_RUNTIME_CONTEXT');
       expect(sessionRow).toBeNull();
       expect(runtimeContextRows).toHaveLength(0);
       expect(sandboxProvisionCalls).toBe(0);

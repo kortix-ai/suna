@@ -762,6 +762,29 @@ projectsApp.openapi(
     201,
   );
 },
+// The KaaB contract (backend.mdx, KORTIX_AS_A_BACKEND_GUIDE.md) promises coded
+// 400s for the three structured create fields. Schema validation runs before
+// the handler, so without this hook zod failures collapse into the generic
+// defaultHook envelope and the documented codes never reach HTTP callers.
+(result: any, c: any) => {
+  if (result.success) return;
+  const codes: Record<string, string> = {
+    runtime_context: 'INVALID_SESSION_RUNTIME_CONTEXT',
+    connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
+    secrets: 'INVALID_SESSION_SECRETS',
+  };
+  const issues: Array<{ path?: Array<string | number>; message?: string }> =
+    result.error?.issues ?? [];
+  const coded = issues.filter((issue) => codes[String(issue.path?.[0] ?? '')]);
+  if (coded.length === 0) return;
+  return c.json(
+    {
+      error: coded.map((issue) => issue.message).join('; '),
+      code: codes[String(coded[0]!.path![0])],
+    },
+    400,
+  );
+},
 );
 
 // GET /v1/projects/:projectId/sessions
