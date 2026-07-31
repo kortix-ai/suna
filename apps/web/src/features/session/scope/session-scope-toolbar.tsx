@@ -66,6 +66,12 @@ function canonicalDraftFromReplacement(replacement: SessionScopeInput): SessionS
       }),
     );
   }
+  if (Object.hasOwn(replacement, 'require_connectors')) {
+    // Carried through, or the canonical draft silently forgets every connector
+    // the user required without connecting — the toolbar would re-render with
+    // the box unchecked right after they checked it.
+    draft.require_connectors = [...(replacement.require_connectors ?? [])];
+  }
   return draft;
 }
 

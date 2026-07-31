@@ -5,6 +5,7 @@ import { createScopedSession } from './create-scoped-session';
 
 const scope: SessionScope = {
   secrets_allowlist: null,
+  required_connectors: null,
   connector_bindings: {
     mail: { authorization_id: 'authorization-mail-default' },
   },
@@ -47,6 +48,7 @@ describe('createScopedSession', () => {
       connector_bindings: {
         mail: { authorization_id: 'authorization-mail-default' },
       },
+      require_connectors: [],
     });
   });
 

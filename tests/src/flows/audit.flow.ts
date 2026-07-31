@@ -218,6 +218,10 @@ flow(
       'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId',
       'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
     ],
+    // 26 steps over an enterprise-team fixture, and every audit list/export
+    // query scans a table that now grows with each API request (centralized
+    // audit log) — measured 242s on staging against the 120s default.
+    timeoutMs: 360_000,
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });

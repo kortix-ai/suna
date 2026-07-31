@@ -149,7 +149,25 @@ export const SESSION_START_POLL_OPTIONS = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Discriminant for `KortixSendError` — what kind of failure interrupted a send. */
-export type KortixSendErrorKind = 'billing' | 'runtime-not-ready' | 'runtime-error';
+export type KortixSendErrorKind =
+  | 'billing'
+  | 'connector'
+  | 'runtime-not-ready'
+  | 'runtime-error';
+
+/** One connector the session needs and has no usable connection for. */
+export interface KortixSendErrorConnector {
+  id: string;
+  slug: string;
+  name: string;
+  /**
+   * `project` — one shared connection serves everyone, so anyone who can mint a
+   * setup link fixes it once. `user` — the connection must belong to the account
+   * the session RUNS AS, which in a wrapper is the operator, not the end-user.
+   * The distinction decides whether a connect button can help at all.
+   */
+  authorization_strategy: 'project' | 'user';
+}
 
 /** Typed failure surfaced by `send` (via `sendError`) and thrown by
  * `answerQuestion`/`rejectQuestion`/`answerPermission`. */
@@ -159,6 +177,16 @@ export interface KortixSendError {
   message: string;
   /** Present when `kind === 'billing'` — the parsed 402 detail. */
   billing?: BillingError;
+  /**
+   * Present when `kind === 'connector'` — the connectors this session requires
+   * and has no usable connection for.
+   *
+   * The platform refuses these turns BEFORE the sandbox sees them, so nothing
+   * streamed and nothing was spent. Without this field the refusal collapsed
+   * into a generic `runtime-error`, and the host could only show "something went
+   * wrong" for the one failure that has an obvious remedy.
+   */
+  connectors?: KortixSendErrorConnector[];
   /**
    * Present when `kind === 'runtime-error'` and the failure carries the LLM
    * gateway's structured error envelope (provider/code/suggestion/...) — see
@@ -183,6 +211,58 @@ export interface KortixSendError {
 // `instanceof` chain) but still preserve its message.
 const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
 
+
+/** The error body, wherever the transport parked it. */
+function errorBody(error: unknown): Record<string, unknown> | null {
+  if (!error || typeof error !== 'object') return null;
+  const holder = error as Record<string, unknown>;
+  for (const key of ['data', 'details', 'body']) {
+    const candidate = holder[key];
+    if (candidate && typeof candidate === 'object') return candidate as Record<string, unknown>;
+  }
+  return holder;
+}
+
+function errorBodyMessage(error: unknown): string | null {
+  const body = errorBody(error);
+  for (const key of ['message', 'error']) {
+    const value = body?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * The connector profiles a `CONNECTOR_AUTHORIZATION_REQUIRED` refusal names, or
+ * null when this is not that refusal.
+ *
+ * Keyed on the CODE, never on the message: the prose is for humans and changes.
+ * A refusal that names no profile still returns null — a connector prompt that
+ * cannot say which connector is worse than the generic error it replaced.
+ */
+function connectorRefusalProfiles(error: unknown): KortixSendErrorConnector[] | null {
+  const body = errorBody(error);
+  if (body?.code !== 'CONNECTOR_AUTHORIZATION_REQUIRED') return null;
+  const listed = [body.connector_profiles, body.connectorProfiles].find(Array.isArray) as
+    | unknown[]
+    | undefined;
+  const profiles: KortixSendErrorConnector[] = [];
+  for (const entry of listed ?? []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const profile = entry as Record<string, unknown>;
+    const strategy = profile.authorization_strategy ?? profile.authorizationStrategy;
+    if (typeof profile.id !== 'string' || typeof profile.slug !== 'string') continue;
+    if (strategy !== 'project' && strategy !== 'user') continue;
+    profiles.push({
+      id: profile.id,
+      slug: profile.slug,
+      name: typeof profile.name === 'string' && profile.name ? profile.name : profile.slug,
+      authorization_strategy: strategy,
+    });
+  }
+  return profiles.length > 0 ? profiles : null;
+}
+
 /** Classify a thrown/rejected error from a send or a permission/question reply
  * into a `KortixSendError`. Pure — safe to unit test without a runtime. */
 export function classifySendError(error: unknown): KortixSendError {
@@ -201,6 +281,17 @@ export function classifySendError(error: unknown): KortixSendError {
     const parsed = parseBillingError(error);
     if (parsed instanceof BillingError) {
       return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
+    }
+    const connectors = connectorRefusalProfiles(error);
+    if (connectors) {
+      return {
+        kind: 'connector',
+        message:
+          errorBodyMessage(error) ??
+          'Connect the required connector profiles before continuing this session.',
+        connectors,
+        cause: error,
+      };
     }
   }
 

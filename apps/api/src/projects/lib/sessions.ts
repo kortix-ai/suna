@@ -1033,6 +1033,13 @@ export async function createProjectSession(input: {
         visibility,
         origin,
         secretsAllowlist,
+        // What the CALLER declared for this session, stored so every later check
+        // can see it. It used to be read once at create and dropped, which left
+        // both the warm-claim re-check and every subsequent prompt blind to it —
+        // and left an unconnected connector with nowhere to be recorded at all.
+        // Only the caller's own list: the agent's manifest half is re-derived per
+        // prompt so a manifest change takes effect without a new session.
+        requiredConnectors: requireConnectors.length > 0 ? requireConnectors : null,
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
