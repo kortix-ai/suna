@@ -45,7 +45,7 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
   SystemNotificationCard,
-} from '../session-chat';
+} from '../message-parsing';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -794,7 +794,7 @@ export function UserMessage({
 
         {/* Text content */}
         {text && (
-          <div className="group relative px-4 py-3">
+          <div className="relative px-4 py-3">
             <div
               ref={textRef}
               className={cn(
