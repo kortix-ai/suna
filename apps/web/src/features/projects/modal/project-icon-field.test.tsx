@@ -24,6 +24,22 @@ const render = (props: Parameters<typeof ProjectIconField>[0]) =>
 
 const noop = () => {};
 
+/**
+ * Compile-time pin on the props contract, checked by `tsc --noEmit` and not by
+ * `bun test`. `strict` is on repo-wide, so `strictFunctionTypes` makes a prop
+ * callback contravariant: widening `onChange` back to
+ * `(icon: string | null) => void` makes the component NO LONGER assignable
+ * here and the typecheck fails. The signature carried `| null` through a whole
+ * round of review with 25 tests passing, so the source assertions in
+ * 'the setter is narrower than the getter' carry the same rule for `bun test`.
+ */
+type PinnedProps = {
+  value: string | null;
+  onChange: (icon: string) => void;
+  disabled?: boolean;
+};
+const signaturePin: (props: PinnedProps) => unknown = ProjectIconField;
+
 describe('ProjectIconField trigger', () => {
   test('renders the selected emoji, and only it', () => {
     const html = render({ value: '🚀', onChange: noop });
@@ -71,6 +87,22 @@ describe('ProjectIconField trigger', () => {
   test('disabled reaches the button element, not just the styling', () => {
     expect(render({ value: null, onChange: noop, disabled: true })).toContain('disabled=""');
     expect(render({ value: null, onChange: noop })).not.toContain('disabled=""');
+  });
+
+  test('the setter is narrower than the getter', () => {
+    // The field can DISPLAY "no icon" — `value` is nullable — but it can never
+    // PRODUCE one: the only onChange call site is the picker's onEmojiSelect,
+    // which always has an emoji, and nothing here clears. `string | null` was a
+    // promise the component never kept. Nothing clears because nothing needs to:
+    // the trigger stays live, so you reopen it and switch. Resetting to `null`
+    // on close is the modal's own state, not this field's.
+    //
+    // `signaturePin` is the real guard and only `tsc` can fail it; referencing
+    // it here is not the assertion. These two are what `bun test` can see.
+    expect(signaturePin).toBe(ProjectIconField);
+    expect(code).toContain('onChange: (icon: string) => void;');
+    expect(code).toContain('value: string | null;');
+    expect(code).not.toMatch(/onChange:\s*\(icon: string \| null\)/);
   });
 
   test('disabling the field closes an open popover', () => {

@@ -44,8 +44,16 @@ export function ProjectIconField({
   onChange,
   disabled,
 }: {
+  /** `null` renders the unset face. The field can DISPLAY "no icon". */
   value: string | null;
-  onChange: (icon: string | null) => void;
+  /**
+   * ...but it can never PRODUCE one, so the setter is narrower than the getter.
+   * The only call site is the picker's `onEmojiSelect`, which always has an
+   * emoji. Nothing here clears: the trigger stays live so you reopen and switch,
+   * and resetting to `null` on close is the modal's own state, not this field's.
+   * Declaring `string | null` here would be a promise this component never keeps.
+   */
+  onChange: (icon: string) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
