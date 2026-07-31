@@ -74,7 +74,36 @@ export function ProjectIconField({
     // The guard is belt-and-braces on top of the reset above: `disabled` on the
     // Button already stops a click reaching us (a disabled button fires none,
     // and button.tsx adds disabled:pointer-events-none).
-    <Popover open={open && !disabled} onOpenChange={setOpen}>
+    //
+    // `modal` is what makes the picker scrollable with a wheel or trackpad.
+    // This field renders inside the create-project Modal, which is a Radix
+    // Dialog, and Radix wraps the dialog's OVERLAY in react-remove-scroll with
+    // `shards: [contentRef]` (react-dialog dist/index.mjs:110). That side-car
+    // installs a non-passive `wheel` listener on `document` and calls
+    // preventDefault() on every wheel whose target is neither inside the
+    // overlay's React subtree nor inside the content shard. A popover portals
+    // to document.body, so it is in neither: the picker's own overflow-y-auto
+    // viewport never received the scroll. Dragging its scrollbar still worked,
+    // which is what made the bug read as "only the scrollbar responds" — a
+    // scrollbar drag is a pointer gesture, not a wheel event.
+    //
+    // `modal` makes Radix wrap THIS popover's content in its own RemoveScroll
+    // (react-popover dist/index.mjs:134). react-remove-scroll keeps one
+    // module-level `lockStack`, and its `shouldPrevent` returns early for any
+    // lock that is not the last one pushed — so while the picker is open the
+    // dialog's lock stands down and the picker's own lock takes over, with the
+    // popover content as its container. Its boundary logic then walks into the
+    // emoji viewport, finds scroll left to give, and lets the wheel through.
+    //
+    // Rejected alternative: portalling the popover into the dialog's content
+    // element (PopoverContent already accepts `container`). ModalContent is
+    // `overflow-y-auto` — and because neither axis is `visible`, that clips
+    // BOTH — with `translate: -50% -50%` making it the containing block for
+    // fixed descendants. Measured in Chromium at 1440x900: the popover is
+    // 370px tall against a 253px content box, so portalling inside severed
+    // 240.31px of the picker, including the point the wheel was aimed at.
+    // `modal` leaves the popover's geometry byte-identical to before.
+    <Popover open={open && !disabled} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           // The field renders inside the create modal's <form>. Without this a
