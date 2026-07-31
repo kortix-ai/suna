@@ -98,7 +98,175 @@ function reasoning(text: string, done = true): Part {
   } as unknown as Part;
 }
 
+/** Long enough (>4000 chars) to route through RawOutputBlock rather than the
+ *  inline markdown fallback, and unambiguously markdown so it renders as
+ *  markdown rather than as monospace punctuation. */
+const MARKDOWN_OUTPUT = [
+  '## Advisory lock audit',
+  '',
+  'Checked every `pg_advisory_lock` call site against the worker pool.',
+  '',
+  '1. `jobs-queue.ts` takes a **session-scoped** lock and releases on finally.',
+  '2. `enrichment-worker.ts` takes a transaction lock — released on commit.',
+  '3. No call site holds a lock across an `await` on a network call.',
+  '',
+  'See [the Postgres docs](https://www.postgresql.org/docs/current/explicit-locking.html).',
+  '',
+  '```sql',
+  'SELECT pg_try_advisory_lock(hashtext($1));',
+  '```',
+  '',
+  'Remaining risk: a worker killed between `lock` and `commit` holds the lock',
+  'until its backend disconnects.',
+  '',
+  `<!-- padding to push past the 4000-char RawOutputBlock threshold -->\n${'Verified against the live pool. '.repeat(140)}`,
+].join('\n');
+
+/** Not markdown — a stack trace must stay in the monospace block. */
+const RAW_LOG_OUTPUT = `Traceback (most recent call last):
+  File "/workspace/src/enrichment-worker.py", line 88, in run
+    lock = acquire(conn, key)
+  File "/workspace/src/locks.py", line 31, in acquire
+    raise LockTimeout(f"timed out after {timeout}s")
+LockTimeout: timed out after 30s
+${'  at worker.tick (/workspace/src/enrichment-worker.py:120)\n'.repeat(90)}`;
+
+/**
+ * A fetched page, markdown, comfortably UNDER 4000 chars — the case that fell
+ * through to a bare div before the shared output card existed.
+ */
+const SHORT_PAGE_OUTPUT = [
+  '# Jay Suthar',
+  '',
+  'Mumbai, IN',
+  '',
+  '[tools](https://sutharjay.com/tools)',
+  '',
+  'I design and engineer exceptional interfaces with a focus on usability,',
+  'clarity, and purposeful interaction.',
+  '',
+  'Building [actrun.ai](https://actrun.ai) — AI agents that run your workflows.',
+].join('\n');
+
+/** parseFilePaths only accepts lines starting `/`, `./` or `~`. */
+const GLOB_OUTPUT = [
+  '/workspace/src/features/session/turn/activity-burst.tsx',
+  '/workspace/src/features/session/turn/activity-step.tsx',
+  '/workspace/src/features/session/turn/merge-steps.ts',
+  '/workspace/src/features/session/tool/shared/result-card.tsx',
+  '/workspace/src/components/ui/chain-of-thought.tsx',
+].join('\n');
+
+/** apply_patch reads its files off metadata, not output. */
+const PATCH_FILES = [
+  {
+    relativePath: 'src/features/session/tool/shared/result-card.tsx',
+    type: 'add',
+    additions: 52,
+    deletions: 0,
+    patch: '+ export function ToolResultCard() {}',
+  },
+  {
+    relativePath: 'src/features/session/tool/tools/glob-tool.tsx',
+    type: 'update',
+    additions: 6,
+    deletions: 4,
+    patch: '- <div data-scrollable>\n+ <ToolResultCard>',
+  },
+  {
+    relativePath: 'src/features/session/tool/tools/legacy-file-list.tsx',
+    type: 'delete',
+    additions: 0,
+    deletions: 31,
+  },
+];
+
+function patchTool(): Part {
+  const id = nextId();
+  return {
+    id,
+    messageID: 'msg_dbg',
+    sessionID: 'ses_dbg',
+    type: 'tool',
+    tool: 'apply_patch',
+    callID: `call_${id}`,
+    state: {
+      status: 'completed',
+      input: {},
+      output: '',
+      metadata: { files: PATCH_FILES },
+      time: { start: 1_000_000, end: 1_000_900 },
+    },
+  } as unknown as Part;
+}
+
+/** Plain error + stack trace → the summary/disclosure branch of ToolError. */
+const ERROR_WITH_TRACE = `Error: ENOENT: no such file or directory, open '/workspace/src/missing.ts'
+Traceback (most recent call last):
+  File "/workspace/src/loader.py", line 42, in load
+    return open(path).read()
+  File "/workspace/src/loader.py", line 51, in read
+    raise FileNotFoundError(path)
+FileNotFoundError: /workspace/src/missing.ts`;
+
 const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
+  {
+    label: 'errors · summary + stack trace, inside the same card',
+    working: false,
+    parts: [tool('file_probe', { path: '/workspace/src/missing.ts' }, 200, ERROR_WITH_TRACE)],
+  },
+  {
+    label: 'result cards · glob + apply_patch share the search list shape',
+    working: false,
+    parts: [
+      // 1. Specific pattern → the pattern is the label.
+      tool('glob', { pattern: '**/*.tsx', path: '/workspace/src' }, 400, GLOB_OUTPUT),
+      // 2. Catch-all pattern → falls back to the searched path, NOT `*`.
+      //    Also proves the path is reported as-is, not via getDirectory, which
+      //    would have named `/workspace` here.
+      tool('glob', { pattern: '*', path: '/workspace/src' }, 300, GLOB_OUTPUT),
+      // 3. Catch-all with no path at all → the prose fallback.
+      tool('glob', { pattern: '**/*' }, 300, GLOB_OUTPUT),
+      patchTool(),
+    ],
+  },
+  {
+    label: 'raw output · markdown renders, stack trace stays monospace',
+    working: false,
+    // Unregistered tool names on purpose: they fall through to GenericTool →
+    // ToolOutputFallback → RawOutputBlock, which is the block under test. A
+    // tool with its own renderer (bash, read) never reaches it.
+    parts: [
+      tool('audit_report', { scope: 'locks' }, 2100, MARKDOWN_OUTPUT),
+      tool('worker_probe', { target: 'enrich' }, 1200, RAW_LOG_OUTPUT),
+      // SHORT and non-JSON: under the 4000-char bar, so it takes the branch
+      // that used to skip RawOutputBlock entirely and render naked text. This
+      // is the exact shape a web_fetch of a page returns.
+      tool('page_fetch', { url: 'sutharjay.com', format: 'markdown' }, 700, SHORT_PAGE_OUTPUT),
+    ],
+  },
+  {
+    label: 'bash · multi-line pipeline, highlighted, output under a hairline',
+    working: false,
+    parts: [
+      tool(
+        'bash',
+        {
+          command: [
+            'curl -s "https://api.github.com/users/sutharjay1/repos?per_page=100&sort=pushed" |',
+            'python3 -c "',
+            'import json,sys',
+            'd=json.load(sys.stdin)',
+            'for r in d:',
+            "    print(f\\\"{r['name']} | {r['language']} | {r['pushed_at'][:10]}\\\")\"",
+          ].join('\n'),
+        },
+        2400,
+        'suna | TypeScript | 2026-07-31\nkortix-sdk | TypeScript | 2026-07-29\ndotfiles | Shell | 2026-06-02',
+      ),
+      tool('bash', { command: 'pnpm build' }, 8200),
+    ],
+  },
   {
     label: 'settled · reasoning supplies the title',
     working: false,
