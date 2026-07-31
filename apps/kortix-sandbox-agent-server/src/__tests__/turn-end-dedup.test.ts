@@ -55,6 +55,7 @@ beforeEach(() => {
   __resetRelayedTurnSignatures()
   saved = {
     SLACK_CHANNEL_ID: process.env.SLACK_CHANNEL_ID,
+    SLACK_THREAD_TS: process.env.SLACK_THREAD_TS,
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
     KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
@@ -86,6 +87,25 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     try {
       // Natural session.idle AND reconcile-on-subscribe observe the same turn.
       await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('relays WITHOUT Slack context — turn end drives the idle auto-stop for every session', async () => {
+    const completedAt = 1000
+    const m = startMocks(() => completedAt)
+    delete process.env.SLACK_CHANNEL_ID
+    delete process.env.SLACK_THREAD_TS
+    process.env.KORTIX_PROJECT_ID = 'proj_1'
+    process.env.KORTIX_SESSION_ID = 'sess_1'
+    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_API_URL = m.baseUrl
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
       await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
       expect(m.calls()).toBe(1)
     } finally {

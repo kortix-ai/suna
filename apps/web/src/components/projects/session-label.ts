@@ -41,6 +41,18 @@ export interface SessionSource {
   triggerSlug: string | null;
 }
 
+/** The platform meta coordinator — drives other sessions from its own sandbox. */
+export function isMetaCoordinatorSession(session: ProjectSession): boolean {
+  return session.agent_name === 'meta';
+}
+
+/** The coordinator session that spawned this one (stamped at create from the
+ *  caller's session-bound token), or null for sessions users started. */
+export function spawnedBySessionId(session: ProjectSession): string | null {
+  const meta = (session.metadata ?? {}) as Record<string, unknown>;
+  return typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
+}
+
 export function sessionSource(session: ProjectSession): SessionSource {
   const meta = (session.metadata ?? {}) as Record<string, unknown>;
   const source = typeof meta.source === 'string' ? meta.source : null;

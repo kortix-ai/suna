@@ -425,7 +425,12 @@ export function SessionSiteHeader({
         </div>
       </div>
 
-      <ExportTranscriptModal sessionId={sessionId} open={exportOpen} onOpenChange={setExportOpen} />
+      <ExportTranscriptModal
+        sessionId={sessionId}
+        kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
       <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
 
       {isProjectSession && (

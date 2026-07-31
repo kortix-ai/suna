@@ -48,6 +48,24 @@ kortix executor call <connector> <action> '…'   # run a configured connector a
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 ```
 
+## Coordinating sessions (spawn → wait → collect)
+
+```bash
+kortix sessions new --json --wait --with-file data.csv --prompt "…"   # files land in /workspace/incoming/ BEFORE the prompt
+kortix sessions wait-for <id> --timeout 300     # block until the agent finishes (0=done, 3=blocked on an ask, 124=timeout) — never sleep-poll
+kortix sessions pending <id>                    # see what a blocked agent is asking; answer with approve/answer
+kortix sessions cp <id>:out/result.pdf .        # pull deliverables; also local→session and session→session, -r for dirs
+```
+
+- A finished session's sandbox **stops automatically** to save compute.
+  `stopped` means *parked*, not failed — `sessions cp`, `sessions chat`, and
+  `sessions wait-for` wake it on demand.
+- Session ids abbreviate: any unambiguous prefix (the 8-char ids `sessions ls`
+  prints) works.
+- Session sandboxes have Python via **uv** (`uv run` / `uvx` / `uv pip` —
+  prefer these over bare `pip`), Node, browsers, and document tooling
+  preinstalled — spawn the task, not an environment-setup plan.
+
 Every read command takes `--json` (clean payload on stdout), so the CLI is a
 100% scriptable surface. For anything beyond the above — flags, the token-scope
 model, host switching, orchestration patterns — read

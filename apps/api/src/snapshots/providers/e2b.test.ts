@@ -47,6 +47,10 @@ mock.module('../build-context', () => ({
     contextDir: '/tmp/kortix-e2b-adapter-test',
     composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
   }),
+  stageMetaBuildContext: async () => ({
+    contextDir: '/tmp/kortix-e2b-adapter-test',
+    composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
+  }),
 }));
 
 const originalFetch = globalThis.fetch;

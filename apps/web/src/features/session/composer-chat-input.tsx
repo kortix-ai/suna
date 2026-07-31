@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
@@ -18,6 +18,7 @@ import {
   useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
+import { isMetaAgentName } from '@kortix/shared';
 
 export interface ComposerOptions {
   agent?: string;
@@ -55,6 +56,7 @@ export function ComposerChatInput({
   queuedMessages,
   onQueueMessage,
   onRemoveQueuedMessage,
+  onAgentSelectionChange,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -87,6 +89,8 @@ export function ComposerChatInput({
   queuedMessages?: { id: string; text: string }[];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
+  /** Reports the effective agent to parent controls such as the sandbox picker. */
+  onAgentSelectionChange?: (agentName: string | null) => void;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -104,8 +108,16 @@ export function ComposerChatInput({
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
-  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  const lockedAgentName =
+    isMetaAgentName(boundAgentName) || SESSION_AGENT_LOCK_ENABLED
+      ? boundAgentName?.trim() || null
+      : null;
   const selectedAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
+
+  useEffect(() => {
+    onAgentSelectionChange?.(selectedAgentName);
+  }, [onAgentSelectionChange, selectedAgentName]);
+
   const [newSessionScope, setNewSessionScope] = useState<{
     agentName: string | null;
     commit: SessionScopeCommit;
@@ -175,7 +187,10 @@ export function ComposerChatInput({
       providers={providers}
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
-      onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+      onAgentChange={
+        // The selectedAgentName effect above notifies the parent; no inline call.
+        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
+      }
       agentSelectorLocked={!!lockedAgentName}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}

@@ -7,6 +7,7 @@ import {
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   stageBuildContext,
+  stageMetaBuildContext,
 } from '../build-context';
 import { normalizeExistingProviderState } from './state';
 import type {
@@ -60,7 +61,9 @@ class E2BAdapter implements SandboxProviderAdapter {
       throw new Error('E2BAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
+    const context = input.runtimeProfile === 'meta'
+      ? await stageMetaBuildContext()
+      : await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     observeTemplates.invalidate();
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start

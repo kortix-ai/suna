@@ -12,25 +12,17 @@ import {
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { warmProjectSessionKey } from '@/hooks/projects/use-warm-project-session';
 import {
   NEW_SESSION_GUARD_MAX_MS,
   hasLandedOnNewSession,
   useNewSessionGuardStore,
 } from '@/hooks/projects/new-session-guard';
-import {
-  buildWarmSessionClaimInput,
-  resolveWarmSessionForSend,
-  shouldFallbackFromWarmClaim,
-} from '@/hooks/projects/warm-session-create';
 import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
-  claimWarmProjectSession,
   createProjectSession,
   getProjectSessionScope,
-  type ProjectSession,
   type SessionConnectorBindings,
   setProjectSessionScope,
 } from '@kortix/sdk';
@@ -38,12 +30,11 @@ import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
- * The ONE "new empty session" path, shared by every entry point (project shell
- * button, ⌘T/⌘J shortcuts, project sidebar, command palette, home composer).
+ * The shared project-session entry path. Calls without options only open the
+ * composer. Calls with options create a session for an explicit task.
  *
- * The project index supplies its server-owned warm session. Other entry points
- * mint the session id client-side and persist it before navigation. Both paths
- * prefetch the route bundle and `/start` before navigation.
+ * Opening the composer does not create a session. A send or another explicit
+ * start action mints the session id and persists it before navigation.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -85,11 +76,7 @@ export type NewProjectSessionOpts = {
   };
 };
 
-export function useNewProjectSession(
-  projectId: string | undefined,
-  warmSession?: Pick<ProjectSession, 'session_id'>,
-  resolveWarmSession?: () => Promise<Pick<ProjectSession, 'session_id'> | undefined>,
-) {
+export function useNewProjectSession(projectId: string | undefined) {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -128,6 +115,11 @@ export function useNewProjectSession(
         return;
       }
 
+      if (!opts) {
+        router.push(`/projects/${projectId}`);
+        return;
+      }
+
       if (isBillingEnabled() && billingLoading) {
         opts?.onError?.();
         return;
@@ -147,7 +139,7 @@ export function useNewProjectSession(
       }
       releaseTimerRef.current = setTimeout(release, NEW_SESSION_GUARD_MAX_MS);
 
-      const createNormalSession = async () => {
+      const createSession = async () => {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
@@ -162,35 +154,8 @@ export function useNewProjectSession(
         return sessionId;
       };
 
-      const claimOrCreate = async () => {
-        const selectedWarmSession = await resolveWarmSessionForSend(
-          warmSession,
-          resolveWarmSession,
-        );
-        if (!selectedWarmSession) return createNormalSession();
-
-        router.prefetch(`/projects/${projectId}/sessions/${selectedWarmSession.session_id}`);
-        try {
-          const claimed = await claimWarmProjectSession(
-            projectId,
-            buildWarmSessionClaimInput(selectedWarmSession, opts?.create),
-          );
-          // A claimed warm session is every bit as new to the user as a minted
-          // one — mark it, so the session page opens the instant typeable shell
-          // on the strength of THIS signal rather than inferring newness from a
-          // stashed prompt (which outlives the hand-off it describes).
-          markSessionFresh(claimed.session_id);
-          return claimed.session_id;
-        } catch (error) {
-          if (shouldFallbackFromWarmClaim(error)) {
-            return createNormalSession();
-          }
-          throw error;
-        }
-      };
-
       createScopedSession({
-        create: claimOrCreate,
+        create: createSession,
         draft: opts?.scope?.draft,
         availability: opts?.scope?.availability,
         readScope: (sessionId) => getProjectSessionScope(projectId, sessionId),
@@ -205,10 +170,6 @@ export function useNewProjectSession(
           queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
-          queryClient.removeQueries({
-            queryKey: warmProjectSessionKey(projectId),
-            exact: true,
-          });
         },
       })
         .catch((err) => {
@@ -246,8 +207,6 @@ export function useNewProjectSession(
       accountId,
       openUpgradeDialog,
       openConnectorGate,
-      warmSession,
-      resolveWarmSession,
       release,
     ],
   );

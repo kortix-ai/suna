@@ -14,6 +14,7 @@
 
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
@@ -37,6 +38,7 @@ import {
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
+  ensureMetaSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -57,6 +59,7 @@ import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
+import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -134,25 +137,36 @@ async function mintExecutorToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string | null> {
-  // Resolve the per-session grant AND the agent's standing-identity service
-  // account in parallel. The SA resolution is FAIL-SAFE: on error we mint
-  // without a service_account_id, which is the legacy behavior (authorize as the
-  // user ∩ grant) — it never WIDENS, so a provisioning hiccup degrades to the
-  // previous secure model rather than breaking session start.
-  const [agentGrant, serviceAccountId] = await Promise.all([
-    resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-      console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
-      return null;
-    }),
-    ensureAgentServiceAccount({
-      accountId: opts.accountId,
-      projectId: opts.projectId,
-      agentName: opts.agentName,
-    }).catch((err) => {
-      console.warn(`[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`, err);
-      return null;
-    }),
-  ]);
+  const platformMetaAgent = isMetaAgentName(opts.agentName);
+  // The reserved coordinator uses a platform-owned full project grant. It acts
+  // as the launching user and never resolves through a project-declared agent
+  // or standing service account.
+  const [agentGrant, serviceAccountId] = platformMetaAgent
+    ? [platformMetaAgentGrant(), null]
+    : await Promise.all([
+        // Resolve the per-session grant AND the agent's standing-identity
+        // service account in parallel. The SA resolution is FAIL-SAFE: on error
+        // we mint without a service_account_id, which is the legacy behavior
+        // (authorize as the user ∩ grant). It never widens authority.
+        resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`,
+            err,
+          );
+          return null;
+        }),
+        ensureAgentServiceAccount({
+          accountId: opts.accountId,
+          projectId: opts.projectId,
+          agentName: opts.agentName,
+        }).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`,
+            err,
+          );
+          return null;
+        }),
+      ]);
   try {
     const tok = await createAccountToken({
       accountId: opts.accountId,
@@ -286,6 +300,18 @@ export async function provisionSessionSandbox(opts: {
     if (!opts.resolveGitProject) return opts.gitProject;
     return opts.resolveGitProject();
   };
+  const resolveImage = (
+    gitProject: GitBackedProject,
+    targetProvider: string,
+  ): Promise<EnsureSandboxImageResult> =>
+    slug === META_SANDBOX_SLUG
+      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
+      : ensureSandboxImage(gitProject, {
+          slug,
+          accountId,
+          source: 'session-start',
+          provider: targetProvider,
+        });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
   // The snapshot identity + provider cache-check depend only on the repo
@@ -300,12 +326,7 @@ export async function provisionSessionSandbox(opts: {
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
     const gitProject = await resolveGitProject();
-    const image = await ensureSandboxImage(gitProject, {
-      slug,
-      accountId,
-      source: 'session-start',
-      provider: providerName,
-    });
+    const image = await resolveImage(gitProject, providerName);
     return { ...image, gitProject };
   })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
@@ -529,12 +550,7 @@ export async function provisionSessionSandbox(opts: {
         firstImagePromise = null;
       } else {
         const gitProject = await resolveGitProject();
-        image = await ensureSandboxImage(gitProject, {
-          slug,
-          accountId,
-          source: 'session-start',
-          provider: providerName,
-        });
+        image = await resolveImage(gitProject, providerName);
       }
       imageInfo = {
         snapshotName: image.snapshotName,

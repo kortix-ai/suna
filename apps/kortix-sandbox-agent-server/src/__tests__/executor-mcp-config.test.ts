@@ -31,6 +31,35 @@ afterEach(() => {
   globalThis.fetch = realFetch
 })
 
+describe('buildOpencodeConfigContent — injected managed skills', () => {
+  test('declares the injected skills dir via skills.paths', async () => {
+    const dir = join(tmpdir(), `kortix-skills-test-${process.pid}`)
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(dir, { recursive: true })
+    const content = await buildOpencodeConfigContent({}, { injectedSkillsDir: dir })
+    const parsed = JSON.parse(content!)
+    expect(parsed.skills.paths).toContain(dir)
+  })
+
+  test('merges with skills paths already declared by the compiled config', async () => {
+    const dir = join(tmpdir(), `kortix-skills-test-${process.pid}`)
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(dir, { recursive: true })
+    const content = await buildOpencodeConfigContent(
+      { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ skills: { paths: ['/repo/skills'] } }) },
+      { injectedSkillsDir: dir },
+    )
+    const parsed = JSON.parse(content!)
+    expect(parsed.skills.paths).toEqual(['/repo/skills', dir])
+  })
+
+  test('a missing injected dir contributes nothing', async () => {
+    expect(
+      await buildOpencodeConfigContent({}, { injectedSkillsDir: '/nonexistent-skills-dir' }),
+    ).toBeUndefined()
+  })
+})
+
 describe('buildOpencodeConfigContent — optional executor MCP server', () => {
   test('does not register executor MCP by default; CLI is the primary Executor path', async () => {
     expect(await buildOpencodeConfigContent(ENV)).toBeUndefined()

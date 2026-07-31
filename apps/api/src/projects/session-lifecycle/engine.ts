@@ -649,6 +649,7 @@ async function executeQueuedCreate(
     authType: payload.authType,
     apiKeyType: payload.apiKeyType,
     inSession: payload.inSession,
+    callerSessionId: payload.callerSessionId,
   });
 }
 
@@ -672,6 +673,7 @@ async function executeCreateSession(
     authType: command.authType,
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
+    callerSessionId: command.callerSessionId,
     mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 

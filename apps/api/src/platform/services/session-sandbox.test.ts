@@ -75,6 +75,8 @@ let providerFallbackEnabled = false;
 let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
 let imageRequests: Array<Record<string, unknown>> = [];
+let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
+let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -224,6 +226,16 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
+  ensureMetaSandboxImage: async (opts: Record<string, unknown>) => {
+    imageRequests.push(opts);
+    return {
+      snapshotName: 'snap-meta-1',
+      slug: 'meta',
+      contentHash: 'meta-hash-1',
+      isDefault: false,
+      built: false,
+    };
+  },
   deleteSandboxImage: async () => {},
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
 }));
@@ -248,11 +260,17 @@ mock.module('../../repositories/api-keys', () => ({
 }));
 
 mock.module('../../repositories/account-tokens', () => ({
-  createAccountToken: async (_opts: unknown) => ({ secretKey: 'exec-tok-1' }),
+  createAccountToken: async (opts: Record<string, unknown>) => {
+    accountTokenCreateCalls.push(opts);
+    return { secretKey: 'exec-tok-1' };
+  },
 }));
 
 mock.module('../../repositories/service-accounts', () => ({
-  ensureAgentServiceAccount: async (_opts: unknown) => null,
+  ensureAgentServiceAccount: async (opts: Record<string, unknown>) => {
+    serviceAccountCreateCalls.push(opts);
+    return null;
+  },
 }));
 
 mock.module('../../shared/account-limits', () => ({
@@ -308,6 +326,8 @@ beforeEach(() => {
   providerNamesRequested = [];
   providerCreateErrors = {};
   imageRequests = [];
+  accountTokenCreateCalls = [];
+  serviceAccountCreateCalls = [];
 });
 
 function baseOpts() {
@@ -325,6 +345,30 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+
+    expect(accountTokenCreateCalls).toHaveLength(1);
+    expect(accountTokenCreateCalls[0]).toMatchObject({
+      accountId: ACCOUNT_ID,
+      userId: USER_ID,
+      projectId: PROJECT_ID,
+      sessionId: SANDBOX_ID,
+      agentGrant: {
+        agent: 'meta',
+        kortixCli: 'all',
+        connectors: [],
+        env: [],
+      },
+      serviceAccountId: null,
+    });
+    expect(serviceAccountCreateCalls).toHaveLength(0);
+  });
+
   test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;

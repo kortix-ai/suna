@@ -26,6 +26,14 @@ mock.module('../build-context', () => ({
       dockerfileName: '.kortix-snapshot.Dockerfile',
     };
   },
+  stageMetaBuildContext: async () => ({
+    contextDir: '/tmp/kortix-local-docker-adapter-test-does-not-exist',
+    composedPath: '/tmp/kortix-local-docker-adapter-test-does-not-exist/.kortix-snapshot.Dockerfile',
+    dockerfileName: '.kortix-snapshot.Dockerfile',
+  }),
+  stageWarmFromBaseContext: async () => {
+    throw new Error('stageWarmFromBaseContext is not used by the local-docker adapter test');
+  },
   stageAgentBinaryGz: async () => {
     throw new Error('stageAgentBinaryGz is not used by the local-docker adapter test');
   },

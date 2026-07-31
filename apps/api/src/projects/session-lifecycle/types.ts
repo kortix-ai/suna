@@ -67,6 +67,7 @@ export interface CreateSessionCommand {
   authType?: string | null;
   apiKeyType?: string | null;
   inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -85,6 +86,7 @@ export interface QueuedCreateSessionPayload {
   authType?: string | null;
   apiKeyType?: string | null;
   inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface ContinueSessionCommand {

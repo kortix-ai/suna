@@ -29,6 +29,7 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
+import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -112,7 +113,8 @@ projectsApp.openapi(
     projectId,
     actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
   };
-  const config = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  const config = addPlatformMetaAgent(filteredConfig);
   // …and hide the raw FILES of those resources from the file list (visibility
   // isolation). Reuses the config already loaded — no extra git round-trip.
   const denier = await denierFromConfig(rawConfig, denierCtx);

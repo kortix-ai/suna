@@ -310,6 +310,7 @@ projectsApp.openapi(
           authType: c.get('authType') as string | undefined,
           apiKeyType: c.get('apiKeyType') as string | undefined,
           inSession: isProjectSessionPrincipal(c),
+          callerSessionId: callerKortixSessionId(c),
           request: requestAuditContext(c),
         });
         if (result.error) throw new WarmSessionCreateFailure(result.error);
@@ -738,6 +739,7 @@ projectsApp.openapi(
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
     inSession: isProjectSessionPrincipal(c),
+    callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
     idempotencyKey,
     mayManageSystemConnectorProfiles,

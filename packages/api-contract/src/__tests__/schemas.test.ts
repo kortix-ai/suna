@@ -494,6 +494,8 @@ describe('SessionCreateInputSchema runtime_context', () => {
       agent_name: 'veyris',
       provider: 'daytona',
       branch_already_created: true,
+      initial_prompt: 'Do the task.\n\n--- session contract ---\n…',
+      title_source: 'Do the task.',
       runtime_context: {
         workspace_id: 'org_123',
         'wrapper.locale': 'de',

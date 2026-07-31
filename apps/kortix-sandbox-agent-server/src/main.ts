@@ -1166,6 +1166,16 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
 // this gate, which auto-answered the `question` tool in non-Slack sessions.
 function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
   if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+  return apiRelayContext()
+}
+
+/**
+ * Generic sandbox→API relay identity — project, session, token, api root from
+ * the injected env. Unlike {@link slackRelayContext} this does NOT require
+ * Slack context: turn-end reporting drives the idle auto-stop deadline for
+ * EVERY session, not just Slack-originated ones.
+ */
+function apiRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
@@ -1288,7 +1298,10 @@ export async function relayTurnEndToApi(
   cfg: Config,
   eventError?: OpencodeTurnError,
 ): Promise<void> {
-  const ctx = slackRelayContext()
+  // Generic context, NOT Slack-gated: the API's turn-stream handler shortens
+  // the sandbox deadline on every reported turn end (the idle auto-stop), and
+  // no-ops the Slack finalize for sessions without Slack context.
+  const ctx = apiRelayContext()
   if (!ctx) return
   // Only the ROOT turn closes the Slack stream — a subagent going idle mid-task
   // must NOT finalize the user-facing stream. Detected by parentID (objective),
