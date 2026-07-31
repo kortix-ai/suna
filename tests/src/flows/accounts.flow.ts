@@ -509,7 +509,11 @@ flow(
     ],
   },
   async (ctx) => {
-    const projA = await ctx.fixtures.project();
+    // Trigger create commits the manifest to the project repo, which can never
+    // succeed against a database-only fixture's ke2e.invalid remote — the 502
+    // gets laundered into 503 MAINTENANCE_MODE at the edge. Project A needs
+    // managed git; project B only absorbs pre-handler cross-project 403s.
+    const projA = await ctx.fixtures.project({ managedGit: true });
     const projB = await ctx.fixtures.project();
     let secret = '';
     let tokenId = '';

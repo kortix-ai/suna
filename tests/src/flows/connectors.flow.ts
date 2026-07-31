@@ -612,14 +612,16 @@ flow(
 
     let profileId = '';
     await ctx.step('create (reconcile) a connection profile → 201 with a real shape', async () => {
+      // Connectors default to the 'project' authorization strategy (#74a804d14);
+      // any other owner_type on this route now 409s with
+      // CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH.
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/connector-profiles',
           {
             connector_alias: slug,
-            owner_type: 'external',
-            owner_id: 'ke2e-external-owner-1',
+            owner_type: 'project',
             label: 'KE2E connection',
           },
           { params: { projectId: p.id } },
@@ -627,7 +629,7 @@ flow(
       r.status(201)
         .body()
         .has('$.connector_alias', slug)
-        .has('$.owner_type', 'external')
+        .has('$.owner_type', 'project')
         .has('$.status', 'active')
         .exists('$.profile_id');
       profileId = r.json<any>().profile_id;
@@ -644,18 +646,38 @@ flow(
       r.status(400);
     });
 
+    // /me reconciles a caller-owned member profile, which the strategy gate
+    // only allows on a 'user'-strategy connector — seed a second connector and
+    // flip it before reconciling.
+    const userSlug = `${slug}-user`;
     let memberProfileId = '';
     await ctx.step('reconcile the caller-owned member profile → 201', async () => {
+      const seeded = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/executor/projects/:projectId/connectors',
+          { slug: userSlug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+          { params: { projectId: p.id } },
+        );
+      seeded.status(200).body().has('$.ok', true);
+      const flipped = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/executor/projects/:projectId/connectors/:slug/authorization-strategy',
+          { authorization_strategy: 'user' },
+          { params: { projectId: p.id, slug: userSlug } },
+        );
+      flipped.status(200).body().has('$.ok', true);
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/connector-profiles/me',
-          { connector_alias: slug, label: 'KE2E member connection' },
+          { connector_alias: userSlug, label: 'KE2E member connection' },
           { params: { projectId: p.id } },
         );
       r.status(201)
         .body()
-        .has('$.connector_alias', slug)
+        .has('$.connector_alias', userSlug)
         .has('$.owner_type', 'member')
         .has('$.is_default', false)
         .exists('$.owner_id')
@@ -781,12 +803,13 @@ flow(
       { params: { projectId: p.id, slug } },
     );
     defaultProfile.status(200).body().exists('$.profile_id');
+    // 'project' owner_type: connectors default to the project authorization
+    // strategy, and any other owner_type now 409s on this route (#74a804d14).
     const created = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/projects/:projectId/connector-profiles',
       {
         connector_alias: slug,
-        owner_type: 'external',
-        owner_id: 'ke2e-oauth2-owner',
+        owner_type: 'project',
         label: 'KE2E OAuth2',
       },
       { params: { projectId: p.id } },

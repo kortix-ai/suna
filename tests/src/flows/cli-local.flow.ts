@@ -126,11 +126,14 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('wired/.opencode/opencode.jsonc'),
         );
+        // kortix-cli is the canonical scaffolded skill (agents.ts CANONICAL_SKILL);
+        // the other kortix-* skills are injected at sandbox boot, not scaffolded
+        // (starter 10-skill floor, #5770).
         check(
           '.claude → .kortix/opencode resolves to shared skills',
-          sb.exists('wired/.claude/skills/kortix-system/SKILL.md'),
+          sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
           true,
-          sb.exists('wired/.claude/skills/kortix-system/SKILL.md'),
+          sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
         );
         // cursor was selected → AGENTS.md pointer (read natively); no .cursor rule file.
         check(
