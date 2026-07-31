@@ -4652,10 +4652,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "Votre menu",
-      "line213JsxAttrLabelUserSettings": "Paramètres utilisateur",
+      "line213JsxAttrLabelUserSettings": "Préférences",
       "line253JsxAttrLabelLogOut": "Se déconnecter",
       "line142JsxAttrAriaLabelYourMenu": "Votre menu",
-      "line209JsxAttrLabelUserSettings": "Paramètres utilisateur",
+      "line209JsxAttrLabelUserSettings": "Préférences",
       "line248JsxAttrLabelLogOut": "Se déconnecter"
     },
     "componentsMaintenanceMaintenancePage": {

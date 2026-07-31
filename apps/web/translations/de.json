@@ -4649,10 +4649,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "Dein Menü",
-      "line213JsxAttrLabelUserSettings": "Benutzereinstellungen",
+      "line213JsxAttrLabelUserSettings": "Einstellungen",
       "line253JsxAttrLabelLogOut": "Abmelden",
       "line142JsxAttrAriaLabelYourMenu": "Dein Menü",
-      "line209JsxAttrLabelUserSettings": "Benutzereinstellungen",
+      "line209JsxAttrLabelUserSettings": "Einstellungen",
       "line248JsxAttrLabelLogOut": "Abmelden"
     },
     "componentsMaintenanceMaintenancePage": {

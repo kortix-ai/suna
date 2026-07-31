@@ -17,7 +17,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuPortal,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -28,7 +32,6 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
@@ -41,14 +44,20 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
-  BookOpenIcon as BookOpen,
+  ArticleIcon,
+  BookOpenIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
+  HeadsetIcon,
   HouseIcon,
-  LifebuoyIcon as LifeBuoy,
+  LifebuoyIcon,
   SignOutIcon as LogOut,
-  StorefrontIcon as Store,
+  PaperPlaneTiltIcon,
+  QuestionIcon,
+  ScrollIcon,
+  ShieldCheckIcon,
+  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -57,6 +66,45 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 
 export type UserMenuVariant = 'header' | 'sidebar';
+
+type MenuLink = {
+  label: string;
+  href: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  /**
+   * Navigate in place instead of opening a new tab. Only Marketplace: it is
+   * somewhere you go and act — browse, install — so it belongs in the session
+   * you are already in. Everything else under Help is something you read, and
+   * losing your workspace to go read it is the wrong trade.
+   */
+  internal?: boolean;
+};
+
+/**
+ * Reference destinations, grouped under Help.
+ *
+ * Hoisted to module scope so the arrays and their objects are allocated once
+ * for the app instead of being rebuilt on every render — `UserMenu` mounts in
+ * both the sidebar and the header, so this render path is not rare.
+ *
+ * Every entry but Marketplace opens in a new tab. These are pages you read, and
+ * the person clicking them is mid-session in a workspace — sending them away
+ * from it to read the privacy policy costs more than the tab does.
+ */
+const HELP_LINKS: MenuLink[] = [
+  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
+  { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
+  { label: 'Blog', href: '/blog', Icon: ArticleIcon },
+  { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
+  { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
+  { label: 'Support', href: '/support', Icon: HeadsetIcon },
+];
+
+/** Kept separate so a divider can hold the legal pages apart from the rest. */
+const LEGAL_LINKS: MenuLink[] = [
+  { label: 'Privacy', href: '/legal?tab=privacy', Icon: ShieldCheckIcon },
+  { label: 'Terms and conditions', href: '/legal?tab=terms', Icon: ScrollIcon },
+];
 
 export interface UserMenuUser {
   name: string;
@@ -82,7 +130,6 @@ export function UserMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const [supportOpen, setSupportOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
@@ -124,6 +171,46 @@ export function UserMenu({
     });
 
   const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+
+  /**
+   * One Help row.
+   *
+   * External rows render a real `<a target="_blank">` rather than calling
+   * `window.open` from a handler. Three reasons: the browser opens the tab
+   * inside the click's own user-gesture window, so no popup blocker can eat it
+   * — `deferAfterClose` defers a frame, which is exactly the kind of gap that
+   * trips one; cmd-click and middle-click keep working; and it is a link, so it
+   * reads as one to a screen reader.
+   *
+   * In the desktop shell `openExternalRoute` fires first and returns true — it
+   * hands the URL to the system browser — so the anchor's own navigation is
+   * cancelled to avoid opening the page twice.
+   *
+   * This is a plain function, not a component, so the rows are not remounted on
+   * every render of the menu.
+   */
+  const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
+    internal ? (
+      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
+        <Icon />
+        {label}
+      </DropdownMenuItem>
+    ) : (
+      <DropdownMenuItem key={href} asChild>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => {
+            if (openExternalRoute(href)) event.preventDefault();
+            setMenuOpen(false);
+          }}
+        >
+          <Icon />
+          {label}
+        </a>
+      </DropdownMenuItem>
+    );
 
   const performLogout = async () => {
     const supabase = createClient();
@@ -190,17 +277,12 @@ export function UserMenu({
               }
               size="sm"
             >
-              <UserAvatar
-                email={user.email}
-                name={user.name}
-                avatarUrl={user.avatar}
-                size="lg"
-                className="border-border border"
-              />
+              {/* No avatar: the trigger right below already shows it, and
+                  repeating it inside the menu it opened is decoration. The
+                  email is the identifier that actually disambiguates which
+                  account you are about to open. */}
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="text-foreground truncate text-sm font-medium">
-                  {currentAccount.name}
-                </div>
+                <div className="text-foreground truncate text-sm font-medium">{user.email}</div>
                 <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
                   {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
                 </div>
@@ -216,24 +298,12 @@ export function UserMenu({
           Home
         </DropdownMenuItem>
 
-        <DropdownMenuItem
-          onClick={() => deferAfterClose(() => router.push('/marketplace'))}
-          size="sm"
-        >
-          <Store />
-          Marketplace
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          onClick={() =>
-            deferAfterClose(() => {
-              if (!openExternalRoute('/docs')) router.push('/docs');
-            })
-          }
-          size="sm"
-        >
-          <BookOpen />
-          Docs
+        {/* Personal settings sits high: it is the item people come here for. The
+            account row above goes to the account page — a different
+            destination, which is why this one is not also called "settings". */}
+        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
+          <CogOne />
+          {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
 
         <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/download'))} size="sm">
@@ -241,16 +311,23 @@ export function UserMenu({
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))} size="sm">
-          <LifeBuoy />
-          Support
-        </DropdownMenuItem>
+        {/* Every reference and legal page collapses into one submenu, so the top
+            level only carries things you act on rather than eight links. */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <QuestionIcon />
+            Help
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
+              {HELP_LINKS.map(renderMenuLink)}
 
-        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
-          <CogOne />
+              <DropdownMenuSeparator />
 
-          {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
-        </DropdownMenuItem>
+              {LEGAL_LINKS.map(renderMenuLink)}
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
 
         {isBillingEnabled() && canManageBilling && (
           <DropdownMenuItem
@@ -274,7 +351,17 @@ export function UserMenu({
 
         <DropdownMenuSeparator />
 
-        <div className="focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center justify-between gap-2 rounded-sm px-2 py-[0.3rem] text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
+        {/* Not a menu item: it hosts a toggle rather than being selectable. It
+            still has to sit in the same column as the items above it, hence the
+            shared row geometry. The focus: and data-disabled: rules it used to
+            carry were dead — this div is not focusable and Radix never marks it
+            disabled, so only the ThemeToggle inside ever takes focus. */}
+        <div
+          className={cn(
+            'text-foreground/80 flex cursor-default items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm font-normal select-none',
+            '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+          )}
+        >
           Theme
           <ThemeToggle variant="compact" />
         </div>
@@ -299,7 +386,6 @@ export function UserMenu({
         onOpenChange={setSettingsOpen}
         defaultTab={settingsTab}
       />
-      <SupportModal open={supportOpen} onOpenChange={setSupportOpen} />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>

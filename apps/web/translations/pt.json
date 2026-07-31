@@ -4649,10 +4649,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "Seu menu",
-      "line213JsxAttrLabelUserSettings": "Configurações do usuário",
+      "line213JsxAttrLabelUserSettings": "Preferências",
       "line253JsxAttrLabelLogOut": "Sair",
       "line142JsxAttrAriaLabelYourMenu": "Seu menu",
-      "line209JsxAttrLabelUserSettings": "Configurações do usuário",
+      "line209JsxAttrLabelUserSettings": "Preferências",
       "line248JsxAttrLabelLogOut": "Sair"
     },
     "componentsMaintenanceMaintenancePage": {

@@ -4645,10 +4645,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "你的菜单",
-      "line213JsxAttrLabelUserSettings": "用户设置",
+      "line213JsxAttrLabelUserSettings": "偏好设置",
       "line253JsxAttrLabelLogOut": "退出登录",
       "line142JsxAttrAriaLabelYourMenu": "你的菜单",
-      "line209JsxAttrLabelUserSettings": "用户设置",
+      "line209JsxAttrLabelUserSettings": "偏好设置",
       "line248JsxAttrLabelLogOut": "退出登录"
     },
     "componentsMaintenanceMaintenancePage": {
