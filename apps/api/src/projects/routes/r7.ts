@@ -75,7 +75,10 @@ import {
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { publicConnectorAlias } from '../../shared/connector-alias';
+import {
+  canonicalConnectorAlias,
+  publicConnectorAlias,
+} from '../../shared/connector-alias';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
@@ -2141,6 +2144,7 @@ projectsApp.openapi(
     });
     return c.json({
       secrets_allowlist: visible.row.secretsAllowlist ?? null,
+      required_connectors: visible.row.requiredConnectors ?? null,
       connector_bindings: bindings,
       dropped_secrets: [],
       added_secrets: [],
@@ -2212,6 +2216,7 @@ projectsApp.openapi(
     const body = parsedBody.data;
     const wantsSecrets = Object.hasOwn(body, 'secrets');
     const wantsBindings = Object.hasOwn(body, 'connector_bindings');
+    const wantsRequired = Object.hasOwn(body, 'require_connectors');
 
     // The agent grant is the ceiling for both axes. Resolved from the agent this
     // session actually runs, and fail-closed: if it cannot be established, the
@@ -2327,6 +2332,35 @@ projectsApp.openapi(
       nextBindings = decided.bindings;
     }
 
+    // `require_connectors` is the one axis that can name an alias with NOTHING
+    // connected to it — that is the whole point of it existing separately from
+    // bindings, which must carry a profile id. So it is checked against the
+    // agent's grant (may this agent use the alias at all?) and never against
+    // whether a connection exists: not-yet-connected is the state the caller is
+    // deliberately declaring, and the pre-flight turns it into a connect prompt
+    // on the next turn.
+    let nextRequired = visible.row.requiredConnectors ?? null;
+    if (wantsRequired) {
+      const requested = (body.require_connectors ?? [])
+        .map((alias) => canonicalConnectorAlias(String(alias).trim()))
+        .filter((alias) => alias.length > 0);
+      const deduped = [...new Set(requested)];
+      if (Array.isArray(grant?.connectors)) {
+        const granted = new Set(grant.connectors.map(canonicalConnectorAlias));
+        const offending = deduped.filter((alias) => !granted.has(alias));
+        if (offending.length > 0) {
+          return c.json(
+            {
+              error: `not granted to this agent: ${offending.map(publicConnectorAlias).join(', ')}`,
+              code: 'CONNECTOR_NOT_ASSIGNED',
+            },
+            403,
+          );
+        }
+      }
+      nextRequired = deduped.length > 0 ? deduped : null;
+    }
+
     let bindingRows: Array<{
       sessionId: string;
       projectId: string;
@@ -2394,13 +2428,20 @@ projectsApp.openapi(
       const sessionUpdates: {
         updatedAt: Date;
         secretsAllowlist?: string[] | null;
+        requiredConnectors?: string[] | null;
         connectorBindingsConfigured?: boolean;
         connectorBindingsInheritUnbound?: boolean;
       } = { updatedAt: new Date() };
       if (wantsSecrets) sessionUpdates.secretsAllowlist = nextAllowlist;
+      if (wantsRequired) sessionUpdates.requiredConnectors = nextRequired;
       if (wantsBindings) {
         sessionUpdates.connectorBindingsConfigured = true;
-        sessionUpdates.connectorBindingsInheritUnbound = false;
+        // Deliberately NOT touching connectorBindingsInheritUnbound. Forcing it
+        // false here meant a single scope save silently cut off project-default
+        // fallback for every alias the caller did not re-bind — a session that had
+        // been resolving Gmail from the project default simply stopped, with
+        // nothing in the request having asked for that. The schema comment still
+        // called the flag immutable while this line mutated it.
       }
       await tx
         .update(projectSessions)
@@ -2445,6 +2486,7 @@ projectsApp.openapi(
     // resolved server-side at call time. Pushing here would race that.
     return c.json({
       secrets_allowlist: nextAllowlist,
+      required_connectors: nextRequired,
       connector_bindings: effectiveBindings,
       dropped_secrets: droppedSecrets,
       added_secrets: addedSecrets,

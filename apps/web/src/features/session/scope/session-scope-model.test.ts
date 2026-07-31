@@ -16,6 +16,7 @@ import {
 
 const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   secrets_allowlist: ['MAIL_TOKEN', 'ISSUE_TOKEN'],
+  required_connectors: null,
   connector_bindings: {
     'mail-read': { authorization_id: 'authorization-mail-1' },
     issues: { authorization_id: 'authorization-issues-1' },
@@ -126,6 +127,7 @@ describe('createSessionScopeDraft', () => {
         'mail-read': { authorization_id: 'authorization-mail-1' },
         issues: { authorization_id: 'authorization-issues-1' },
       },
+      require_connectors: [],
     });
   });
 });
@@ -147,6 +149,7 @@ describe('createNewSessionScopeDraft', () => {
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: [],
       connector_bindings: {},
+      require_connectors: [],
     });
   });
 
@@ -168,12 +171,14 @@ describe('buildSessionScopeReplacement', () => {
         connector_bindings: {
           issues: { authorization_id: 'authorization-issues-2' },
         },
+        require_connectors: [],
       }),
     ).toEqual({
       secrets: ['ISSUE_TOKEN'],
       connector_bindings: {
         issues: { authorization_id: 'authorization-issues-2' },
       },
+      require_connectors: [],
     });
   });
 
@@ -182,6 +187,7 @@ describe('buildSessionScopeReplacement', () => {
       connector_bindings: {
         'mail-read': { authorization_id: 'authorization-mail-2' },
       },
+      require_connectors: [],
     });
 
     expect(replacement.connector_bindings).toEqual({
@@ -192,6 +198,10 @@ describe('buildSessionScopeReplacement', () => {
 
   test('preserves omitted axes', () => {
     expect(buildSessionScopeReplacement({ secrets: null })).toEqual({ secrets: null });
+    // `require_connectors` is absent from BOTH the draft and any previous scope,
+    // so it stays out of the replacement — sending `[]` would be an instruction
+    // to clear every requirement the session has, off a request that said nothing
+    // about them. Omitted and empty are opposite here, exactly as for secrets.
     expect(buildSessionScopeReplacement({ connector_bindings: {} })).toEqual({
       connector_bindings: {},
     });
@@ -209,6 +219,7 @@ describe('buildSessionScopeReplacement', () => {
         'mail-read': { authorization_id: 'authorization-mail-1' },
         issues: { authorization_id: 'authorization-issues-1' },
       },
+      require_connectors: [],
     });
   });
 

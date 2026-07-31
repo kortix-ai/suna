@@ -389,3 +389,72 @@ describe('SESSION_START_POLL_OPTIONS', () => {
     expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
   });
 });
+
+describe('classifySendError — connector refusals', () => {
+  const profile = {
+    id: '11111111-1111-4111-a111-111111111111',
+    slug: 'gmail',
+    name: 'Gmail',
+    authorization_strategy: 'project' as const,
+  };
+  const refusal = (data: Record<string, unknown>) =>
+    Object.assign(new Error('Failed to send message'), { status: 409, data });
+
+  test('a required-connector 409 is its own kind, not a generic runtime error', () => {
+    // It used to collapse into `runtime-error`, so a host could only say
+    // "something went wrong" for the one failure with an obvious remedy — and the
+    // platform had already refused the turn before the sandbox saw it.
+    const result = classifySendError(
+      refusal({
+        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+        message: 'Connect the required connector profiles before continuing this session.',
+        connector_profiles: [profile],
+      }),
+    );
+
+    expect(result.kind).toBe('connector');
+    expect(result.connectors).toEqual([profile]);
+    expect(result.message).toBe(
+      'Connect the required connector profiles before continuing this session.',
+    );
+  });
+
+  test('classification keys on the CODE, never the prose', () => {
+    // The message is written for humans and will be reworded.
+    expect(
+      classifySendError(refusal({ message: 'Connect the required connector profiles.' })).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('a refusal naming no usable profile stays generic', () => {
+    // A connect prompt that cannot say WHICH connector is worse than the generic
+    // error it replaced.
+    expect(
+      classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind,
+    ).toBe('runtime-error');
+    expect(
+      classifySendError(
+        refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED', connector_profiles: [{ id: 'x' }] }),
+      ).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('an unknown authorization strategy is dropped rather than guessed', () => {
+    // The strategy decides whether a connect button can help at all; inventing
+    // one would offer a button that 409s.
+    expect(
+      classifySendError(
+        refusal({
+          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+          connector_profiles: [{ ...profile, authorization_strategy: 'workspace' }],
+        }),
+      ).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('billing still wins — a 402 is not a connector problem', () => {
+    expect(classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind).not.toBe(
+      'billing',
+    );
+  });
+});

@@ -536,10 +536,24 @@ export interface SessionScopeInput {
   secrets?: string[] | null;
   /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
   connector_bindings?: SessionConnectorBindingsInput;
+  /**
+   * FULL new list of connector aliases this session REQUIRES — REPLACES the
+   * previous one. Omit to leave untouched.
+   *
+   * Unlike `connector_bindings`, an alias here needs nothing connected to it:
+   * that is the point. A binding says "use THIS connection" and must carry an
+   * authorization id, so it cannot express "this session needs Gmail and has
+   * none". Naming an alias here makes the next turn stop with
+   * `CONNECTOR_AUTHORIZATION_REQUIRED` and a connect prompt instead of letting
+   * the agent discover the gap mid-answer.
+   */
+  require_connectors?: string[] | null;
 }
 
 export interface SessionScope {
   secrets_allowlist: string[] | null;
+  /** Aliases this session requires, connected or not. See `require_connectors`. */
+  required_connectors: string[] | null;
   connector_bindings: SessionConnectorBindings;
   dropped_secrets: string[];
   added_secrets: string[];

@@ -225,6 +225,13 @@
       "when": 1785486954869,
       "tag": "20260731083554_centralized_audit_envelope",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785514015171,
+      "tag": "20260731160655_session_required_connectors",
+      "breakpoints": true
     }
   ]
 }

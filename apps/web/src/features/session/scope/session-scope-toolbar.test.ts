@@ -10,6 +10,7 @@ import {
 
 const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   secrets_allowlist: ['MAIL_TOKEN'],
+  required_connectors: null,
   connector_bindings: {
     mail: { authorization_id: 'authorization-mail' },
   },
@@ -69,11 +70,13 @@ describe('createNewSessionScopeInitialization', () => {
       draft: {
         secrets: [],
         connector_bindings: {},
+        require_connectors: [],
       },
       commit: {
         draft: {
           secrets: [],
           connector_bindings: {},
+          require_connectors: [],
         },
         availability: {
           secrets: true,
@@ -93,10 +96,12 @@ describe('createNewSessionScopeInitialization', () => {
     ).toEqual({
       draft: {
         connector_bindings: {},
+        require_connectors: [],
       },
       commit: {
         draft: {
           connector_bindings: {},
+          require_connectors: [],
         },
         availability: {
           secrets: false,
@@ -131,6 +136,7 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { authorization_id: 'authorization-mail' },
       },
+      require_connectors: [],
     });
     expect(result?.retroactive).toBeFalse();
   });
@@ -144,6 +150,7 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { authorization_id: 'authorization-mail-2' },
         },
+        require_connectors: [],
       },
       catalog: catalog({
         secrets: { status: 'unavailable' },
@@ -159,6 +166,7 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { authorization_id: 'authorization-mail-2' },
       },
+      require_connectors: [],
     });
   });
 
@@ -172,6 +180,7 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { authorization_id: 'authorization-mail' },
         },
+        require_connectors: [],
       },
       catalog: catalog(),
       replaceScope: async () => {
@@ -189,6 +198,7 @@ describe('commitSessionScopeDraft', () => {
           connector_bindings: {
             mail: { authorization_id: 'authorization-mail' },
           },
+          require_connectors: [],
         },
         availability: {
           secrets: true,

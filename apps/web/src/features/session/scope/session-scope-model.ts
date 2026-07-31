@@ -10,6 +10,19 @@ import type {
 export interface SessionScopeDraft {
   secrets?: string[] | null;
   connector_bindings?: SessionConnectorBindings;
+  /**
+   * Connectors this session REQUIRES but has no authorization for yet.
+   *
+   * A binding is "use THIS connection", so a connector with nothing connected
+   * had nowhere to be recorded and the checkbox was simply greyed out — you
+   * could not say "this session needs Gmail" until Gmail already worked. Naming
+   * it here makes the next turn stop at a connect prompt instead of letting the
+   * agent find out mid-answer.
+   *
+   * Only ever holds aliases with no binding: once one is chosen the binding
+   * carries the requirement, and the two must not disagree about the same alias.
+   */
+  require_connectors?: string[];
 }
 
 export type SessionScopeGrant = 'all' | 'none' | readonly string[] | null | undefined;
@@ -87,6 +100,7 @@ export function createSessionScopeDraft(
   }
   if (!catalog || catalog.connector_profiles.status === 'ready') {
     draft.connector_bindings = cloneBindings(scope.connector_bindings);
+    draft.require_connectors = [...(scope.required_connectors ?? [])];
   }
   return draft;
 }
@@ -100,6 +114,7 @@ export function createNewSessionScopeDraft(
   }
   if (catalog.connector_profiles.status === 'ready') {
     draft.connector_bindings = {};
+    draft.require_connectors = [];
   }
   return draft;
 }
@@ -124,6 +139,16 @@ export function buildSessionScopeReplacement(
     : previousScope?.connector_bindings;
   if (availability.connector_bindings && connectorBindings !== undefined) {
     replacement.connector_bindings = cloneBindings(connectorBindings);
+  }
+  const required = Object.hasOwn(draft, 'require_connectors')
+    ? draft.require_connectors
+    : previousScope?.required_connectors;
+  if (availability.connector_bindings && required !== undefined) {
+    // An alias that ended up with a binding is already required by that binding.
+    // Sending it in both would have the server hold the same requirement twice
+    // and, worse, keep requiring it after the binding is later removed.
+    const bound = new Set(Object.keys(connectorBindings ?? {}));
+    replacement.require_connectors = (required ?? []).filter((alias) => !bound.has(alias));
   }
   return replacement;
 }
