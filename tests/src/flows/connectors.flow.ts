@@ -660,13 +660,26 @@ flow(
           { params: { projectId: p.id } },
         );
       seeded.status(200).body().has('$.ok', true);
-      const flipped = await ctx.client
+      // The strategy route re-reads the manifest from the repo; the connector
+      // create's commit is not always visible immediately (manifest push
+      // races), so retry the 404 briefly instead of failing on read lag.
+      let flipped = await ctx.client
         .as(ctx.P.OWNER)
         .put(
           '/v1/executor/projects/:projectId/connectors/:slug/authorization-strategy',
           { authorization_strategy: 'user' },
           { params: { projectId: p.id, slug: userSlug } },
         );
+      for (let attempt = 0; attempt < 5 && flipped.statusCode === 404; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        flipped = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            '/v1/executor/projects/:projectId/connectors/:slug/authorization-strategy',
+            { authorization_strategy: 'user' },
+            { params: { projectId: p.id, slug: userSlug } },
+          );
+      }
       flipped.status(200).body().has('$.ok', true);
       const r = await ctx.client
         .as(ctx.P.OWNER)
