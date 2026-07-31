@@ -24,6 +24,7 @@ import type { ProjectRole } from '../access';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle } from './opencode-title';
+import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
 
@@ -184,6 +185,9 @@ export function serializeProject(
     // Re-validated on read so a value written before the validator existed, or
     // written directly to the DB, can never reach the UI unchecked.
     icon: normalizeProjectIcon((row.metadata as Record<string, unknown> | null | undefined)?.icon),
+    icon_glyph: normalizeProjectGlyph(
+      (row.metadata as Record<string, unknown> | null | undefined)?.icon_glyph,
+    ),
     last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),

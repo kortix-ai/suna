@@ -48,3 +48,34 @@ describe('serializeProject icon', () => {
     expect(serializeProject(projectRow(null)).metadata).toEqual({});
   });
 });
+
+describe('serializeProject — icon_glyph', () => {
+  test('a stored glyph is exposed as a top-level field', () => {
+    const row = projectRow({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+    expect(serializeProject(row).icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
+  });
+
+  test('no glyph is null, not undefined', () => {
+    // The contract declares it `.nullable()`, matching `icon` and
+    // `last_opened_at`. Returning undefined would drop the key from the JSON
+    // and break a client that destructures it.
+    expect(serializeProject(projectRow({})).icon_glyph).toBeNull();
+    expect(serializeProject(projectRow(null)).icon_glyph).toBeNull();
+  });
+
+  test('a malformed stored glyph normalizes to null on READ', () => {
+    // This is the read-path guarantee: a row hand-edited in the database
+    // cannot put an unrenderable value in front of the UI.
+    const row = projectRow({ icon_glyph: { name: 'Skull', color: 'red' } });
+    expect(serializeProject(row).icon_glyph).toBeNull();
+  });
+
+  test('a glyph and an emoji on the same row both serialize', () => {
+    // The write paths make this state unreachable, but the serializer must not
+    // assume that — a row predating the invariant would otherwise throw.
+    const row = projectRow({ icon: '🚀', icon_glyph: { name: 'Star', color: 'red' } });
+    const out = serializeProject(row);
+    expect(out.icon).toBe('🚀');
+    expect(out.icon_glyph).toEqual({ name: 'Star', color: 'red' });
+  });
+});
