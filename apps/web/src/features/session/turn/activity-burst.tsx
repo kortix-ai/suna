@@ -13,7 +13,7 @@ import { CaretRightIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
@@ -65,36 +65,40 @@ export function ActivityBurst({
   if (parts.length === 0) return null;
 
   return (
-    <Collapsible
+    <Disclosure
       open={open}
       onOpenChange={(next) => {
         userToggled.current = true;
         setOpen(next);
       }}
-      className="group/burst"
+      className="group/burst flex-row"
     >
       {/* Summary line. Muted against the primary-weight step text below it, so
 			    the eye lands on the work rather than the label for the work. The
 			    caret trails the title instead of leading it — a leading glyph would
 			    sit in the same gutter the step icons occupy and read as a step. */}
-      <CollapsibleTrigger
-        className={cn(
-          'text-muted-foreground hover:text-foreground',
-          'flex w-full cursor-pointer items-center justify-start gap-1.5',
-          'text-left text-sm transition-colors',
-        )}
-      >
-        <span className="min-w-0 truncate">{title}</span>
-        <CaretRightIcon
+      {/* One child only: DisclosureTrigger clones each child into its own
+			    clickable node, so title + caret as siblings stack as separate rows. */}
+      <DisclosureTrigger>
+        <div
           className={cn(
-            'text-muted-foreground/40 size-3.5 flex-none',
-            'transition-transform group-data-[state=open]/burst:rotate-90',
+            'text-muted-foreground hover:text-foreground',
+            'flex w-full cursor-pointer items-center gap-1.5',
+            'text-left text-sm transition-colors',
           )}
-        />
-        {running && <Loading className="text-muted-foreground/50 size-3 flex-none" />}
-      </CollapsibleTrigger>
+        >
+          <span className="min-w-0 truncate">{title}</span>
+          <CaretRightIcon
+            className={cn(
+              'text-muted-foreground/40 size-3.5 flex-none',
+              'transition-transform group-data-[state=open]/burst:rotate-90',
+            )}
+          />
+          {running && <Loading className="text-muted-foreground/50 size-3 flex-none" />}
+        </div>
+      </DisclosureTrigger>
 
-      <CollapsibleContent>
+      <DisclosureContent>
         {/*
 				  A step in a burst is a sub-step of the turn, not a doorway to the
 				  side panel. `ToolActivateContext` is bound ambient-wide by the chat
@@ -132,7 +136,7 @@ export function ActivityBurst({
             </ChainOfThought>
           </div>
         </ToolActivateContext.Provider>
-      </CollapsibleContent>
-    </Collapsible>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
