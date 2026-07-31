@@ -22,6 +22,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -83,6 +84,7 @@ export {
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -961,6 +963,16 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     } else {
       seenSlugs.add(slug);
     }
+    if (
+      entry.name !== undefined &&
+      (typeof entry.name !== 'string' || entry.name.trim().length === 0)
+    ) {
+      issues.push({
+        path: `${where}.name`,
+        message: 'name must be a non-empty string when provided.',
+        severity: 'error',
+      });
+    }
     // Runtime parser lowercases provider/auth.type/policy.action/platform before
     // matching — mirror that so a manifest using "MCP" or "Slack" isn't blocked.
     const provider = typeof entry.provider === 'string' ? entry.provider.trim().toLowerCase() : '';
@@ -1085,6 +1097,19 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
           severity: version === 2 ? 'error' : 'warning',
+        });
+      }
+    }
+    if (entry.authorization_strategy !== undefined) {
+      const strategy =
+        typeof entry.authorization_strategy === 'string'
+          ? entry.authorization_strategy.trim().toLowerCase()
+          : '';
+      if (!(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategy)) {
+        issues.push({
+          path: `${where}.authorization_strategy`,
+          message: `authorization_strategy must be one of: ${CONNECTOR_AUTHORIZATION_STRATEGIES.join(', ')} (got "${strategy || 'unset'}").`,
+          severity: 'error',
         });
       }
     }

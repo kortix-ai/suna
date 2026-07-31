@@ -1,10 +1,14 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -87,6 +91,10 @@ function SessionActions({
   const router = useRouter();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
+  // Delete used to fire straight off the menu item. It now confirms, because
+  // the sandbox does not come back and because a menu item has nowhere to show
+  // the call it makes — the same reason the secrets tab confirms a delete.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const rename = useMutation({
     mutationFn: () => kortix.session(projectId, sessionId).update({ name: name.trim() }),
@@ -110,6 +118,7 @@ function SessionActions({
     mutationFn: () => kortix.session(projectId, sessionId).delete(),
     onSuccess: () => {
       invalidateSessions(qc, projectId);
+      setConfirmingDelete(false);
       toast.success('Session deleted');
       router.push(`/projects/${projectId}`);
     },
@@ -139,7 +148,7 @@ function SessionActions({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => remove.mutate()}
+            onClick={() => setConfirmingDelete(true)}
             disabled={remove.isPending}
           >
             <Trash2 className="size-4" /> Delete
@@ -161,6 +170,35 @@ function SessionActions({
           <DialogFooter>
             <Button disabled={!name.trim() || rename.isPending} onClick={() => rename.mutate()}>
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this session?</DialogTitle>
+            <DialogDescription>
+              The session and the sandbox behind it are destroyed. Restart instead if the runtime
+              is just misbehaving — that keeps the sandbox and the transcript.
+            </DialogDescription>
+          </DialogHeader>
+          {/* Both lifecycle calls, on the step where one of them is about to
+              happen: the restart this dialog is recommending, and the delete
+              the button performs. */}
+          <CallSnippet id="session.delete" context={{ projectId, sessionId }} />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate()}
+            >
+              {remove.isPending && <Loading className="size-4" />}
+              Delete session
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,7 +16,13 @@ import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
-import { ArrowUpLeft, Clock, Reply, Terminal, X } from 'lucide-react';
+import {
+  ArrowUpLeftIcon as ArrowUpLeft,
+  ClockIcon as Clock,
+  ArrowBendUpLeftIcon as Reply,
+  TerminalIcon as Terminal,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';

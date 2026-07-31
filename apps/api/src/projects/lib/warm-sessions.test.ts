@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  createWarmProjectSessionCoordinator,
   type WarmProjectSessionRecord,
+  createWarmProjectSessionCoordinator,
 } from './warm-sessions';
 
 function record(overrides: Partial<WarmProjectSessionRecord> = {}): WarmProjectSessionRecord {
@@ -135,6 +135,51 @@ describe('warm project session coordinator', () => {
     });
 
     expect(result).toEqual({ session: winner, reused: true });
+  });
+
+  test('serializes simultaneous ensure requests before either request creates a session', async () => {
+    let available: WarmProjectSessionRecord | null = null;
+    let createCalls = 0;
+    let lockTail = Promise.resolve();
+    const winner = record({ sessionId: 'session-winner' });
+    const coordinator = createWarmProjectSessionCoordinator({
+      exclusive: async <T>(operation: () => Promise<T>) => {
+        const previous = lockTail;
+        let release!: () => void;
+        lockTail = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        try {
+          return await operation();
+        } finally {
+          release();
+        }
+      },
+      findAvailable: async () => available,
+      create: async () => {
+        createCalls += 1;
+        await Promise.resolve();
+        available = winner;
+        return winner;
+      },
+      discard: async () => undefined,
+      claim: async () => null,
+    });
+
+    const configuration = {
+      baseRef: 'main',
+      agentName: 'kortix',
+      sandboxSlug: 'default',
+    };
+    const [first, second] = await Promise.all([
+      coordinator.ensure(configuration),
+      coordinator.ensure(configuration),
+    ]);
+
+    expect(createCalls).toBe(1);
+    expect(first).toEqual({ session: winner, reused: false });
+    expect(second).toEqual({ session: winner, reused: true });
   });
 
   test('claims one compatible available session exactly once', async () => {

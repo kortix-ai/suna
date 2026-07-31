@@ -6,7 +6,7 @@ import {
 } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { SquareSlash } from 'lucide-react';
+import { ProhibitIcon as SquareSlash } from '@phosphor-icons/react';
 
 type Command = ConfigEntity;
 

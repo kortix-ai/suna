@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { Block } from '@/components/blog/blog-content';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
+import { ROLES } from '@/features/marketing/solutions/registry';
 import { BLOG_POSTS } from '@/lib/blog-posts';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
@@ -49,16 +50,25 @@ function loadContentTimestamps(): Record<string, string> {
 export const STATIC_PUBLIC_ROUTES = [
   '/',
   '/about',
+  '/agent-computer',
+  '/agents-and-skills',
+  '/automations',
   '/blog',
   '/careers',
   '/changelog',
+  '/channels',
+  '/company-as-code',
   '/contact',
   '/developers',
   '/docs',
   '/enterprise',
+  '/integrations',
   '/legal',
   '/marketplace',
   '/pricing',
+  '/security',
+  '/self-hosted',
+  '/solutions',
   '/support',
   '/use-cases',
 ] as const;
@@ -134,6 +144,113 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description: 'Support resources and contact information for Kortix.',
     htmlPath: '/support',
   },
+  // The product pages. Each one's layout.tsx reads its title/description back
+  // through `marketingMetadata(htmlPath)`, so this record is the single place
+  // the copy lives. Adding a record here is only half the change: the slug also
+  // needs an entry in `MARKETING_SOURCES` in
+  // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
+  // a `lastModified` and public-content.test.ts fails.
+  {
+    kind: 'marketing',
+    slug: 'agent-computer',
+    title: 'Kortix Agent Computer',
+    description:
+      'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
+    htmlPath: '/agent-computer',
+    markdownPath: '/markdown/agent-computer.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'agents-and-skills',
+    title: 'Kortix Agents & Skills',
+    description:
+      'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.',
+    htmlPath: '/agents-and-skills',
+    markdownPath: '/markdown/agents-and-skills.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'automations',
+    title: 'Kortix Automations',
+    description:
+      'Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.',
+    htmlPath: '/automations',
+    markdownPath: '/markdown/automations.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'channels',
+    title: 'Kortix Channels',
+    description:
+      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email and voice are in preview.',
+    htmlPath: '/channels',
+    markdownPath: '/markdown/channels.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'company-as-code',
+    title: 'Company as Code',
+    description:
+      'A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
+    htmlPath: '/company-as-code',
+    markdownPath: '/markdown/company-as-code.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'integrations',
+    title: 'Kortix connectors',
+    description:
+      'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
+    htmlPath: '/integrations',
+    markdownPath: '/markdown/integrations.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'security',
+    // ACCURACY: do NOT write "credentials the model never sees" or "microVM
+    // isolation per session" here. A granted runtime secret is a real env value
+    // inside the session, readable by any command the agent runs
+    // (docs/ENV_SECRET_EXPOSURE_BASELINE.md), and the default sandbox provider
+    // is not a microVM. The narrower claims below are the true ones.
+    title: 'Kortix Security',
+    description:
+      'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
+    htmlPath: '/security',
+    markdownPath: '/markdown/security.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'self-hosted',
+    title: 'Self-host Kortix',
+    description:
+      'Run the same Kortix on your own box. One Docker Compose stack, the same images the managed cloud runs, your database and your files on disk you control. kortix self-host start, then kortix hosts use selfhost.',
+    htmlPath: '/self-hosted',
+    markdownPath: '/markdown/self-hosted.md',
+  },
+  // The Solutions section: one hub plus one page per role. The role records are
+  // derived from the role registry so the page copy and the SEO record cannot
+  // drift apart — `marketingMetadata()` throws for a path with no record, so a
+  // role added to the registry without a record here would 500 its own page.
+  // Each slug also needs an entry in `MARKETING_SOURCES` in
+  // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
+  // a `lastModified` and public-content.test.ts fails.
+  {
+    kind: 'marketing',
+    slug: 'solutions',
+    title: 'Kortix Solutions by role',
+    description:
+      'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.',
+    htmlPath: '/solutions',
+    markdownPath: '/markdown/solutions.md',
+  },
+  ...ROLES.map((role) => ({
+    kind: 'marketing' as const,
+    slug: `solutions/${role.slug}`,
+    title: role.seoTitle,
+    description: role.seoDescription,
+    htmlPath: `/solutions/${role.slug}`,
+    markdownPath: `/markdown/solutions/${role.slug}.md`,
+  })),
 ];
 
 // Stamps each marketing record with a `lastModified` timestamp sourced from

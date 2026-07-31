@@ -15,6 +15,7 @@ export {
   projectAccessRequestStatusEnum,
   apiKeyStatusEnum,
   apiKeyTypeEnum,
+  executorConnectorAuthorizationStrategyEnum,
   // Kortix tables — accounts
   accounts,
   accountMembers,

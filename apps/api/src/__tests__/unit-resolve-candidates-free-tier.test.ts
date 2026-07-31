@@ -86,6 +86,22 @@ mock.module('../llm-gateway/credentials/codex', () => ({
   }),
 }));
 
+// One managed transport is always reachable in this file, so the two entries
+// below are derived from the same stub — `managedTransportAvailable` is
+// `managedCandidates(...).length > 0` in the real module and the mock must not
+// be able to contradict itself.
+const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }) => [
+  {
+    provider: 'openrouter',
+    kind: 'openai-chat',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKey: 'managed-key',
+    billingMode: 'credits',
+    markup: 1.2,
+    resolvedModel: managed.upstreamModelId ?? managed.id,
+  },
+];
+
 mock.module('../llm-gateway/resolution/descriptors', () => ({
   codexDescriptor: (_credential: unknown, model: string) => ({
     provider: 'openai-codex',
@@ -97,23 +113,20 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
     resolvedModel: model.replace(/^codex\//, ''),
   }),
   livePricing: () => undefined,
-  managedCandidates: (managed: { id: string; upstreamModelId?: string }) => [
-    {
-      provider: 'openrouter',
-      kind: 'openai-chat',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      apiKey: 'managed-key',
-      billingMode: 'credits',
-      markup: 1.2,
-      resolvedModel: managed.upstreamModelId ?? managed.id,
-    },
-  ],
+  managedCandidates: mockManagedCandidates,
+  // `served-managed-models.ts` imports this to build SERVED_MANAGED_MODELS, and
+  // `catalog-models.ts` (which resolve-candidates.ts imports) imports that — so
+  // omitting it makes the whole file fail to link with
+  // `SyntaxError: Export named 'managedTransportAvailable' not found`.
+  managedTransportAvailable: (managed: { id: string; upstreamModelId?: string }) =>
+    mockManagedCandidates(managed).length > 0,
   // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
   // (only CALLS it for kind:'bedrock' candidates, which this file never
   // exercises) — stub it so the static import binding resolves against this
   // mock.
   bedrockByokBaseUrl: (region: string | null | undefined) =>
     `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
+  normalizeBedrockInferenceProfileRegion: (model: string) => model,
   stripBedrockInferenceProfilePrefix: (model: string) => model,
 }));
 

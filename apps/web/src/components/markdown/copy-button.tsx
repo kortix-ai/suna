@@ -1,7 +1,8 @@
 'use client';
 
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
+import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 
@@ -27,11 +28,11 @@ export function CopyButton({ code, className }: { code: string; className?: stri
         'inline-flex size-7 items-center justify-center rounded-md',
         'text-foreground hover:text-foreground hover:bg-muted-foreground/10',
         'cursor-pointer transition-colors active:scale-[0.97]',
-        'outline-none focus-visible:outline-none',
+        'hit-area-3 outline-none focus-visible:outline-none',
         className,
       )}
     >
-      <span className="relative inline-flex size-3.5 items-center justify-center">
+      <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
         <AnimatePresence initial={false} mode="popLayout">
           <motion.span
             key={copied ? 'check' : 'copy'}
@@ -42,9 +43,9 @@ export function CopyButton({ code, className }: { code: string; className?: stri
             className="absolute inset-0 inline-flex items-center justify-center"
           >
             {copied ? (
-              <Check className="text-kortix-green size-3.5" />
+              <CheckIcon className="text-foreground size-4 stroke-2" />
             ) : (
-              <Copy className="size-3.5" />
+              <Icon.Copy className="size-4" />
             )}
           </motion.span>
         </AnimatePresence>

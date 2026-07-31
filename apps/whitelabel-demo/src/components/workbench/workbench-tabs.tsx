@@ -7,6 +7,7 @@ import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
+import { ScopeBar } from '@/components/chat/scope-bar';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
@@ -256,10 +257,8 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               a typed sendError — read it, and name the KaaB refusals the
               generic message would otherwise swallow. */}
           {agentSwitch ? (
-            // The one refusal where retrying is guaranteed to fail: this
-            // sandbox's env is provisioned for the agent it booted with, and
-            // re-scoping now cannot un-read what that agent already loaded.
-            // Offer the only thing that works instead of an error.
+            // Operators can opt into an immutable secret-grant boundary. When
+            // they do, retrying the same switch cannot succeed in this session.
             <div className="mx-4 mb-2 rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
               <div className="text-sm font-medium">
                 {agentSwitch.requestedAgent
@@ -299,6 +298,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             }
             commands={c.commands}
             onCommand={c.runCommand}
+            footer={<ScopeBar projectId={c.projectId} sessionId={c.sessionId} />}
             toolbar={
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />

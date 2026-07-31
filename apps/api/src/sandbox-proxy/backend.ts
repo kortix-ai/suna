@@ -20,7 +20,7 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import {
@@ -113,28 +113,39 @@ function preferredSandboxOrder() {
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
-  const [row] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      externalId: sessionSandboxes.externalId,
-      sessionId: sessionSandboxes.sessionId,
-      agentName: sql<string | null>`(
-        select ${projectSessions.agentName}
-        from ${projectSessions}
-        where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-        limit 1
-      )`,
-      projectId: sessionSandboxes.projectId,
-      accountId: sessionSandboxes.accountId,
-      provider: sessionSandboxes.provider,
-      status: sessionSandboxes.status,
-      baseUrl: sessionSandboxes.baseUrl,
-      config: sessionSandboxes.config,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.externalId, externalId))
-    .orderBy(...preferredSandboxOrder())
-    .limit(1);
+  const columns = {
+    sandboxId: sessionSandboxes.sandboxId,
+    externalId: sessionSandboxes.externalId,
+    sessionId: sessionSandboxes.sessionId,
+    agentName: sql<string | null>`(
+      select ${projectSessions.agentName}
+      from ${projectSessions}
+      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
+      limit 1
+    )`,
+    projectId: sessionSandboxes.projectId,
+    accountId: sessionSandboxes.accountId,
+    provider: sessionSandboxes.provider,
+    status: sessionSandboxes.status,
+    baseUrl: sessionSandboxes.baseUrl,
+    config: sessionSandboxes.config,
+  };
+  const selectOne = async (condition: SQL) => {
+    const [match] = await db
+      .select(columns)
+      .from(sessionSandboxes)
+      .where(condition)
+      .orderBy(...preferredSandboxOrder())
+      .limit(1);
+    return match ?? null;
+  };
+
+  // The exact comparison is the indexed path used by REST proxy URLs. Preview
+  // subdomains need the fallback because browsers lowercase hostnames while
+  // Platinum external ids contain uppercase ULIDs.
+  const row =
+    (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
+    (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
   if (!row) return null;
 
@@ -263,32 +274,25 @@ export async function wakeSandbox(externalId: string): Promise<void> {
   try {
     const record = await loadSandbox(externalId);
     if (!record) return;
-    // Don't let passive preview/share traffic resurrect a box the reaper
-    // deliberately idle-stopped (quiesced) — that endless resurrection is what
-    // kept boxes alive past the auto-stop window. A quiesced box returns only on
-    // an explicit open / a real new turn (which clears the flag).
-    if (await isSandboxQuiesced(record.sandboxId)) {
-      console.log(`[PREVIEW] Skipping wake for quiesced (idle-stopped) sandbox ${externalId}`);
+    // Same gate as the markSandboxUsed heal, applied to the PROVIDER start. A
+    // reaper-stopped box has an EXPIRED deadline by construction, so starting
+    // it here would resurrect it at the provider while the heal below refuses
+    // to return the row to 'active' — and the reaper only ever examines active
+    // rows. That leaves a box RUNNING, unreapable and unbilled: strictly worse
+    // than the zombie this design deletes.
+    const [live] = await db
+      .select({ deadlineAt: sessionSandboxes.deadlineAt })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, record.sandboxId))
+      .limit(1);
+    if (!live || live.deadlineAt.getTime() <= Date.now()) {
+      console.log(`[PREVIEW] Wake refused for expired sandbox ${externalId}`);
       return;
     }
     await getProvider(record.provider as ProviderName).ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
   } catch (e) {
     console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
-  }
-}
-
-/** True when the sandbox row carries the reaper's idle-quiesce marker. */
-async function isSandboxQuiesced(sandboxId: string): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ metadata: sessionSandboxes.metadata })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, sandboxId))
-      .limit(1);
-    return !!(row?.metadata as Record<string, unknown> | null)?.idleQuiesced;
-  } catch {
-    return false;
   }
 }
 
@@ -323,18 +327,24 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
 
-    // A box the reaper idle-stopped is QUIESCED: passive proxy traffic (an open
-    // tab polling opencode, a background stream reconnect) must NOT heal it back
-    // to active — that resurrection is exactly what kept boxes alive forever.
-    // Only an explicit open / a real new turn (which clears the flag in
-    // resumeStoppedSandbox) brings it back.
-    if ((row.metadata as Record<string, unknown> | null)?.idleQuiesced) return;
-
+    // Passive proxy traffic (an open tab polling opencode, a background stream
+    // reconnect) must NOT heal a deliberately-stopped box back to active —
+    // that resurrection is what produced 1,597 phantom-active compute rows.
+    // `deadline_at > now()` is the gate, and it strictly beats the
+    // `idleQuiesced` boolean it replaces: a reaper-stopped box has an EXPIRED
+    // deadline BY CONSTRUCTION so the heal is refused for exactly the same
+    // rows, and additionally a box stopped by a transient provider blip while
+    // its deadline is still live IS healed — which the flag got wrong.
     if (['error', 'stopped'].includes(row.status)) {
       await db
         .update(sessionSandboxes)
         .set({ status: 'active', lastUsedAt: now, updatedAt: now })
-        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            gt(sessionSandboxes.deadlineAt, now),
+          ),
+        );
     }
 
     await db

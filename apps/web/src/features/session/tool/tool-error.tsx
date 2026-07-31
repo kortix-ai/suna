@@ -1,16 +1,20 @@
 'use client';
 
-import { StructuredOutput } from '@/features/session/tool/shared/structured-output';
 import { parseErrorContent } from '@/features/session/tool/shared/error-and-executor';
+import { StructuredOutput } from '@/features/session/tool/shared/structured-output';
+import { cn } from '@/lib/utils';
 import {
   hasStructuredContent,
   normalizeToolOutput,
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
-import { Ban, ChevronRight, CircleAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  ProhibitIcon as Ban,
+  CaretRightIcon as ChevronRight,
+  WarningCircleIcon as CircleAlert,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
+import { useMemo, useState } from 'react';
 
 export function ToolError({ error, toolName }: { error: string; toolName?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -117,4 +121,3 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
     </div>
   );
 }
-

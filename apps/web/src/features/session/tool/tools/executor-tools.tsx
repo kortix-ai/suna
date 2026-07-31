@@ -1,26 +1,31 @@
 'use client';
 
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  ToolEmptyState,
-  isErrorOutput,
-  ToolOutputFallback,
-  ToolRunningContext,
-  partInput,
-  partOutput,
-  partStatus,
-} from '@/features/session/tool/shared/infrastructure';
+import { STATUS_TEXT } from '@/components/ui/status';
 import {
   ExecutorJson,
   ExecutorRiskBadge,
   parseExecutorOutput,
 } from '@/features/session/tool/shared/error-and-executor';
+import {
+  BasicTool,
+  ToolEmptyState,
+  ToolOutputFallback,
+  ToolRunningContext,
+  isErrorOutput,
+  partInput,
+  partOutput,
+  partStatus,
+} from '@/features/session/tool/shared/infrastructure';
 import { ToolSection } from '@/features/session/tool/shared/output-block';
-import { STATUS_TEXT } from '@/components/ui/status';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { Code2, Plug, Search, Terminal } from 'lucide-react';
+import {
+  CodeSimpleIcon as Code2,
+  PlugIcon as Plug,
+  MagnifyingGlassIcon as Search,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 

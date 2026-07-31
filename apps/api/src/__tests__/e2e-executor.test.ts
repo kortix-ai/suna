@@ -46,7 +46,9 @@ interface World {
   upstreamStatus: number;
   upstreamBody: string;
   connectorDrafts: Record<string, unknown>[];
+  connectorCreateError: { error: string; status: number } | null;
   credentialInputs: unknown[];
+  authorizationStrategyInputs: Array<{ slug: string; strategy: 'project' | 'user' }>;
   credentialError: Error | null;
 }
 
@@ -88,7 +90,9 @@ function freshWorld(): World {
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
     connectorDrafts: [],
+    connectorCreateError: null,
     credentialInputs: [],
+    authorizationStrategyInputs: [],
     credentialError: null,
   };
 }
@@ -210,6 +214,8 @@ const deps: ExecutorRouterDeps = {
       provider: conn.provider,
       status: 'active',
       credentialMode: conn.credentialMode,
+      authorizationStrategy: 'project',
+      requestAuthType: 'bearer',
       sensitive: false,
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
@@ -227,10 +233,20 @@ const deps: ExecutorRouterDeps = {
   discoverConnectorAuth: async () => detectedBearer,
   createConnector: async (_projectId, _accountId, draft) => {
     world.connectorDrafts.push(draft);
+    if (world.connectorCreateError) {
+      return { ok: false, ...world.connectorCreateError };
+    }
     return { ok: true, sync: { synced: 1, errors: [] } };
   },
   setConnectorCredential: async (_projectId, _slug, input) => {
     world.credentialInputs.push(input);
+    return { ok: true };
+  },
+  setAuthorizationStrategy: async (_projectId, _accountId, slug, strategy) => {
+    if (!world.connectors.has(slug)) {
+      return { ok: false, error: 'connector not found', status: 404 };
+    }
+    world.authorizationStrategyInputs.push({ slug, strategy });
     return { ok: true };
   },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
@@ -475,13 +491,78 @@ describe('admin routes', () => {
     expect((await res.json()).authDiscovery).toBeUndefined();
   });
 
+  test('returns a create-only slug conflict without changing the response envelope', async () => {
+    world.connectorCreateError = {
+      error: 'Connector profile slug "hubspot" already exists',
+      status: 409,
+    };
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: true,
+      }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Connector profile slug "hubspot" already exists',
+    });
+    expect(world.connectorDrafts).toHaveLength(1);
+    expect(world.connectorDrafts[0]?.create_only).toBe(true);
+  });
+
+  test('returns a manifest provider failure with its 502 status', async () => {
+    world.connectorCreateError = {
+      error: 'Failed to commit kortix.yaml',
+      status: 502,
+    };
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: true,
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'Failed to commit kortix.yaml' });
+  });
+
+  test('rejects a non-boolean create-only flag before connector creation', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'hubspot',
+        provider: 'pipedream',
+        app: 'hubspot',
+        create_only: 'true',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'create_only must be a boolean' });
+    expect(world.connectorDrafts).toHaveLength(0);
+  });
+
   test('a read-tier member can LIST connectors (project.connector.read is member-baseline)', async () => {
     const res = await req(`/projects/${PROJECT}/connectors`, {
       headers: { 'x-test-reader': ALICE },
     });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', secretSet: true });
+    expect(json.connectors[0]).toMatchObject({
+      slug: 'stripe',
+      requestAuthType: 'bearer',
+      secretSet: true,
+    });
   });
 
   test('a read-tier member still cannot administer connectors (sync stays write-gated)', async () => {
@@ -490,6 +571,49 @@ describe('admin routes', () => {
       headers: { 'x-test-reader': ALICE },
     });
     expect(res.status).toBe(403);
+  });
+
+  test('updates a connector profile authorization strategy', async () => {
+    for (const strategy of ['project', 'user'] as const) {
+      const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+        method: 'PUT',
+        headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+        body: JSON.stringify({ authorization_strategy: strategy }),
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(world.authorizationStrategyInputs).toEqual([
+      { slug: 'stripe', strategy: 'project' },
+      { slug: 'stripe', strategy: 'user' },
+    ]);
+  });
+
+  test('rejects an unsupported connector profile authorization strategy', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'both' }),
+    });
+    expect(response.status).toBe(400);
+    expect(world.authorizationStrategyInputs).toHaveLength(0);
+  });
+
+  test('authorization strategy updates require connector administration', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'project' }),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  test('authorization strategy updates return 404 for an unknown connector profile', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/missing/authorization-strategy`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ authorization_strategy: 'project' }),
+    });
+    expect(response.status).toBe(404);
   });
 
   test('the old connector sharing route is gone (404)', async () => {

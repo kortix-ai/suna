@@ -67,7 +67,8 @@ non-obvious: `git log "$PREV..origin/staging" --no-merges`. Also useful for scop
   e.g. `"Warm pool, billing fixes, and a faster session boot"`.
 - **notes** — a readable, grouped summary of what's in the log. Lead with user-facing
   changes; fold internal/infra commits into plain outcomes. Markdown bullets. Follow
-  **kortix-voice**: plain language, no hype/banned words, "open / source-available".
+  **kortix-voice**: plain language, no hype/banned words, say "open source" and never
+  name a license (see the `comms` skill).
   Group loosely (e.g. new / improved / fixed) when there's enough to group.
 
 Quality bar: a non-technical reader understands what changed; a teammate can map every

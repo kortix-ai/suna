@@ -1,22 +1,16 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
+  ToolOutputFallback,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  ChevronRight,
-  Folder,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { CaretRightIcon as ChevronRight, FolderIcon as Folder } from '@phosphor-icons/react';
+import { useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
@@ -62,4 +56,3 @@ ToolRegistry.register('project_select', ProjectSelectTool);
 ToolRegistry.register('project-select', ProjectSelectTool);
 ToolRegistry.register('oc-project_select', ProjectSelectTool);
 ToolRegistry.register('oc-project-select', ProjectSelectTool);
-

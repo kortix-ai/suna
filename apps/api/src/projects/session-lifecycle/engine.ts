@@ -8,12 +8,12 @@ import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import {
-  endUserRefConflicts,
   requireConnectorsConflicts,
   runtimeContextConflicts,
 } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
@@ -22,6 +22,7 @@ import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,
@@ -140,26 +141,6 @@ export async function createSession(
         },
       };
     }
-    // Attribution/identity conflict. Within one backend account origin_ref is how
-    // a wrapper distinguishes its end-users, so replaying a key with a different
-    // origin_ref (or runtime_context) must NOT return the first end-user's
-    // session — that would land end-user B's prompts in A's conversation and
-    // misattribute usage. Refuse it, mirroring the guards above. (Cross-ACCOUNT
-    // key collision is a separate concern — see the account-scope fix.)
-    if (endUserRefConflicts(existingBody, command.body)) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used for a different origin_ref',
-            code: 'IDEMPOTENCY_ORIGIN_CONFLICT',
-          },
-        },
-      };
-    }
     if (runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context)) {
       return {
         status: 'failed',
@@ -177,7 +158,9 @@ export async function createSession(
     // require_connectors resolves to member bindings at create; a replay with a
     // different required set would otherwise return the first session, which was
     // resolved against a different set of the user's own connections.
-    if (requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)) {
+    if (
+      requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)
+    ) {
       return {
         status: 'failed',
         commandId: claimed.row.commandId,
@@ -278,7 +261,7 @@ export async function createSession(
   // about to be handed to a waiting caller. Marking it retryable would leave the
   // command row queued for the drainer as well, and the caller (told by the
   // guide that a 429/503 is worth retrying) retries with a fresh key: two billed
-  // sandboxes for one intent, same end_user_ref, both running initial_prompt.
+  // sandboxes for one intent, both running initial_prompt.
   await markCommandFailed(claimed.row.commandId, message, {
     retryable: mayRequeueFailedCreate({
       answeredSynchronously: true,
@@ -358,12 +341,20 @@ export async function continueSession(
   // the user explicitly deleted.
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
-
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
   }
+
+  // Server-side delivery is the first prompt for sessions created without one.
+  void generateSessionTitleFromFirstPrompt({
+    sessionId,
+    projectId: session.projectId,
+    accountId: session.accountId,
+    userId,
+    firstPromptText: text,
+  });
 
   const [project] = await db
     .select()
@@ -438,8 +429,8 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId, sessionId),
+    send: (externalId, runtimeId) =>
+      postPrompt(externalId, runtimeId, text, userId, sessionId),
   });
 }
 
@@ -654,7 +645,7 @@ async function executeQueuedCreate(
     queuePolicy: 'never',
     postCreate: payload.postCreate,
     // Replay the origin-derivation signals captured at enqueue time so a
-    // queued backend create keeps origin 'backend' (and its origin_ref).
+    // queued backend create keeps origin 'backend'.
     authType: payload.authType,
     apiKeyType: payload.apiKeyType,
     inSession: payload.inSession,
@@ -764,7 +755,7 @@ async function postPrompt(
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId, callerSessionId },
+      { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,

@@ -8,22 +8,22 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { GitCommit } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
-import { createTwoFilesPatch } from 'diff';
 import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Copy,
-  FileEdit,
-  FilePlus2,
-  FileSymlink,
-  FileX2,
-  History,
-  User,
-  X,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  CopyIcon as Copy,
+  NotePencilIcon as FileEdit,
+  FilePlusIcon as FilePlus2,
+  FileArrowUpIcon as FileSymlink,
+  FileXIcon as FileX2,
+  ClockCounterClockwiseIcon as History,
+  UserIcon as User,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { createTwoFilesPatch } from 'diff';
 import { useCallback, useState } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 

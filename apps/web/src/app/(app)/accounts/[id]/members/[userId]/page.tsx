@@ -1,17 +1,17 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Check,
-  ChevronLeft,
-  Eye,
-  FolderOpen,
-  MoreHorizontal,
-  Shield,
-  ShieldOff,
-  Users,
-  X,
-} from 'lucide-react';
+  CheckIcon as Check,
+  CaretLeftIcon as ChevronLeft,
+  EyeIcon as Eye,
+  FolderOpenIcon as FolderOpen,
+  DotsThreeIcon as MoreHorizontal,
+  ShieldIcon as Shield,
+  ShieldSlashIcon as ShieldOff,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -39,6 +39,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -49,10 +50,9 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',

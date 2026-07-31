@@ -5,10 +5,10 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  type ProjectPolicySpec,
   extractProjectPolicies,
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
-  type ProjectPolicySpec,
 } from '../projects/policies';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
@@ -140,3 +140,168 @@ describe('round-trip serializers', () => {
     expect(projectPolicySettingsToToml({ defaultMode: 'risk' })).toEqual({ default_mode: 'risk' });
   });
 });
+
+/**
+ * Argument CONDITIONS on a project policy — the authoring half of the
+ * arg-level guardrail. The engine could enforce these before this path existed,
+ * but `conditions` was dropped between the manifest and the DB, so an
+ * allow-list was unwritable (and, because sync is delete-then-insert from the
+ * manifest, a hand-inserted row was erased on the next sync).
+ */
+describe('extractProjectPolicies — argument conditions', () => {
+  test('parses an allow-list rule with a regex condition', () => {
+    const { policies, errors } = parseFrom(
+      [
+        'policies:',
+        '  - match: gmail.send_email',
+        '    action: require_approval',
+        '    conditions:',
+        '      - arg: to',
+        '        match: /^(owner|admin)@example\\.com$/',
+        '  - match: gmail.send_email',
+        '    action: block',
+      ].join('\n'),
+    );
+
+    expect(errors).toEqual([]);
+    expect(policies).toEqual([
+      {
+        match: 'gmail.send_email',
+        action: 'require_approval',
+        conditions: [{ arg: 'to', match: '/^(owner|admin)@example\\.com$/' }],
+      },
+      { match: 'gmail.send_email', action: 'block' },
+    ]);
+  });
+
+  test('keeps negate and a nested arg path', () => {
+    const { policies, errors } = parseFrom(
+      [
+        'policies:',
+        '  - match: slack.post',
+        '    action: block',
+        '    conditions:',
+        '      - arg: message.channel',
+        '        match: general',
+        '        negate: true',
+      ].join('\n'),
+    );
+
+    expect(errors).toEqual([]);
+    expect(policies[0]?.conditions).toEqual([
+      { arg: 'message.channel', match: 'general', negate: true },
+    ]);
+  });
+
+  test('a rule without conditions is unchanged', () => {
+    const { policies } = parseFrom(
+      ['policies:', '  - match: "*"', '    action: always_run'].join('\n'),
+    );
+
+    expect(policies).toEqual([{ match: '*', action: 'always_run' }]);
+  });
+
+  test('malformed conditions are a hard error, never a silently dropped field', () => {
+    // Dropping the field would turn "only these recipients" into "any
+    // recipient" — the rule would look saved while protecting nothing.
+    const { policies, errors } = parseFrom(
+      [
+        'policies:',
+        '  - match: gmail.send_email',
+        '    action: require_approval',
+        '    conditions:',
+        '      - arg: to',
+        '        match: "/(/"',
+      ].join('\n'),
+    );
+
+    expect(policies).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.error).toContain('conditions');
+  });
+
+  test('rejects a prototype-chain arg path', () => {
+    const { policies, errors } = parseFrom(
+      [
+        'policies:',
+        '  - match: gmail.send_email',
+        '    action: block',
+        '    conditions:',
+        '      - arg: __proto__',
+        '        match: "*"',
+      ].join('\n'),
+    );
+
+    expect(policies).toEqual([]);
+    expect(errors).toHaveLength(1);
+  });
+});
+
+describe('projectPoliciesToTomlEntries — conditions round-trip', () => {
+  test('serializes conditions back out', () => {
+    const specs: ProjectPolicySpec[] = [
+      {
+        match: 'gmail.send_email',
+        action: 'require_approval',
+        conditions: [{ arg: 'to', match: '/^owner@example\\.com$/', negate: true }],
+      },
+    ];
+
+    expect(projectPoliciesToTomlEntries(specs)).toEqual([
+      {
+        match: 'gmail.send_email',
+        action: 'require_approval',
+        conditions: [{ arg: 'to', match: '/^owner@example\\.com$/', negate: true }],
+      },
+    ]);
+  });
+
+  test('omits the key entirely when there are no conditions', () => {
+    expect(projectPoliciesToTomlEntries([{ match: '*', action: 'block' }])).toEqual([
+      { match: '*', action: 'block' },
+    ]);
+    expect(projectPoliciesToTomlEntries([{ match: '*', action: 'block', conditions: [] }])).toEqual(
+      [{ match: '*', action: 'block' }],
+    );
+  });
+
+  test('survives a full parse → serialize → parse cycle', () => {
+    const yaml = [
+      'policies:',
+      '  - match: gmail.send_email',
+      '    action: require_approval',
+      '    conditions:',
+      '      - arg: to',
+      '        match: /^owner@example\\.com$/',
+    ].join('\n');
+
+    const first = parseFrom(yaml);
+    const reparsed = parseFrom(
+      ['policies:', ...serializeEntries(projectPoliciesToTomlEntries(first.policies))].join('\n'),
+    );
+
+    expect(reparsed.errors).toEqual([]);
+    expect(reparsed.policies).toEqual(first.policies);
+  });
+});
+
+/** Minimal YAML emitter for the round-trip test above. */
+function serializeEntries(entries: Array<Record<string, unknown>>): string[] {
+  const lines: string[] = [];
+  for (const e of entries) {
+    lines.push(`  - match: ${JSON.stringify(e.match)}`);
+    lines.push(`    action: ${e.action}`);
+    const conditions = e.conditions as
+      | Array<{ arg: string; match: string; negate?: boolean }>
+      | undefined;
+    if (conditions) {
+      lines.push('    conditions:');
+      for (const c of conditions) {
+        lines.push(`      - arg: ${c.arg}`);
+        lines.push(`        match: ${JSON.stringify(c.match)}`);
+        if (c.negate) lines.push('        negate: true');
+      }
+    }
+  }
+  return lines;
+}

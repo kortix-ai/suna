@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 

@@ -1,12 +1,17 @@
 'use client';
 
-import { AlertCircle, CheckCircle2, Plug } from 'lucide-react';
+import {
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { isConnectorsEnabled } from '@/lib/config';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * Post-OAuth landing for connector 1-click connect (Pipedream). The connect
@@ -28,13 +33,14 @@ export default function ConnectorsPage() {
 }
 
 function ConnectorResult() {
+  const appHome = useAppHome();
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useSearchParams();
   const connectorsEnabled = isConnectorsEnabled();
 
   useEffect(() => {
-    if (!connectorsEnabled) router.replace('/projects');
+    if (!connectorsEnabled) router.replace(appHome);
   }, [connectorsEnabled, router]);
 
   const ok = params.get('connected') === 'true';
@@ -70,7 +76,7 @@ function ConnectorResult() {
             <Plug className="h-4 w-4" />
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextCloseWindowa183ed6a')}
           </Button>
-          <Button variant="ghost" onClick={() => router.replace('/projects')}>
+          <Button variant="ghost" onClick={() => router.replace(appHome)}>
             {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad')}
           </Button>
         </div>

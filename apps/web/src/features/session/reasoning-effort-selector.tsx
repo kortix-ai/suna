@@ -41,7 +41,11 @@
  * stays discoverable.
  */
 
-import { Brain, Check, ChevronDown } from 'lucide-react';
+import {
+  BrainIcon as Brain,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 import {

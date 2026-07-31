@@ -15,7 +15,11 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
-import { Brain, CalendarClock, Fingerprint } from 'lucide-react';
+import {
+  BrainIcon as Brain,
+  CalendarDotsIcon as CalendarClock,
+  FingerprintIcon as Fingerprint,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
@@ -127,9 +131,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                           value={report.prompt}
                         />
                       )}
-                      {report.session && (
-                        <ToolField label="Session" value={report.session} mono />
-                      )}
+                      {report.session && <ToolField label="Session" value={report.session} mono />}
                     </div>
                     {report.filesRead.length > 0 && (
                       <ToolSection

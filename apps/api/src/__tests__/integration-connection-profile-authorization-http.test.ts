@@ -4,6 +4,12 @@
  * profile may be listed, mutated, bound, or shared.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   accountMembers,
   accounts,
@@ -19,10 +25,12 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import { completeAuthorizationCodeSession } from '../executor/oauth2-store';
 import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
+import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
 import {
   publicShareToken,
@@ -36,6 +44,7 @@ const MANAGER = crypto.randomUUID();
 const ALICE = crypto.randomUUID();
 const BOB = crypto.randomUUID();
 const CONNECTOR = crypto.randomUUID();
+const USER_CONNECTOR = crypto.randomUUID();
 const PIPEDREAM_CONNECTOR = crypto.randomUUID();
 const DEFAULT_PROFILE = crypto.randomUUID();
 const EXTERNAL_PROFILE = crypto.randomUUID();
@@ -43,14 +52,53 @@ const ALICE_PROFILE = crypto.randomUUID();
 const BOB_PROFILE = crypto.randomUUID();
 const SERVICE_ACCOUNT_PROFILE = crypto.randomUUID();
 const SERVICE_ACCOUNT_PIPEDREAM_PROFILE = crypto.randomUUID();
+const USER_STRATEGY_PROJECT_PROFILE = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
+const DEFAULT_SCOPE_SESSION = crypto.randomUUID();
 const PREEXISTING_SHARE = crypto.randomUUID();
 const PREEXISTING_SHARE_TOKEN = publicShareToken(PREEXISTING_SHARE);
 const minted: string[] = [];
 let serviceAccountId = '';
 let serviceAccountToken = '';
+let fixtureRoot = '';
+let previousGitCacheDir: string | undefined;
+
+function git(args: string[], cwd: string): void {
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
+}
 
 beforeAll(async () => {
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'kortix-session-scope-http-'));
+  previousGitCacheDir = process.env.KORTIX_GIT_CACHE_DIR;
+  process.env.KORTIX_GIT_CACHE_DIR = join(fixtureRoot, 'git-cache');
+  const repository = join(fixtureRoot, 'repository');
+  mkdirSync(repository, { recursive: true });
+  git(['init', '-b', 'main'], repository);
+  git(['config', 'user.email', 'session-scope@kortix.test'], repository);
+  git(['config', 'user.name', 'Session Scope Test'], repository);
+  writeFileSync(
+    join(repository, 'kortix.yaml'),
+    [
+      'kortix_version: 2',
+      'default_agent: scope_worker',
+      'project:',
+      '  name: Session scope HTTP',
+      'agents:',
+      '  scope_worker:',
+      '    connectors: all',
+      '    secrets: all',
+      '    kortix_cli: all',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  git(['add', 'kortix.yaml'], repository);
+  git(['commit', '-m', 'initial'], repository);
+
   await db.execute(
     sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`,
   );
@@ -63,7 +111,8 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'profile-owner-http',
-    repoUrl: 'https://example.test/profile-owner-http.git',
+    repoUrl: repository,
+    manifestPath: 'kortix.yaml',
   });
   await db.insert(accountMembers).values([
     { accountId: ACCOUNT, userId: MANAGER, accountRole: 'member' },
@@ -117,12 +166,23 @@ beforeAll(async () => {
       config: { baseUrl: 'https://example.test', auth: { type: 'bearer' } },
     },
     {
+      connectorId: USER_CONNECTOR,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      slug: 'personal_data',
+      name: 'Personal data',
+      providerType: 'http',
+      authorizationStrategy: 'user',
+      config: { baseUrl: 'https://example.test', auth: { type: 'bearer' } },
+    },
+    {
       connectorId: PIPEDREAM_CONNECTOR,
       accountId: ACCOUNT,
       projectId: PROJECT,
       slug: 'google_sheets',
       name: 'Google Sheets',
       providerType: 'pipedream',
+      authorizationStrategy: 'user',
       config: { app: 'google_sheets' },
     },
   ]);
@@ -148,7 +208,7 @@ beforeAll(async () => {
       profileId: ALICE_PROFILE,
       accountId: ACCOUNT,
       projectId: PROJECT,
-      connectorId: CONNECTOR,
+      connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: ALICE,
       label: 'Alice data',
@@ -157,7 +217,7 @@ beforeAll(async () => {
       profileId: BOB_PROFILE,
       accountId: ACCOUNT,
       projectId: PROJECT,
-      connectorId: CONNECTOR,
+      connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: BOB,
       label: 'Bob data',
@@ -166,7 +226,7 @@ beforeAll(async () => {
       profileId: SERVICE_ACCOUNT_PROFILE,
       accountId: ACCOUNT,
       projectId: PROJECT,
-      connectorId: CONNECTOR,
+      connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: serviceAccountId,
       label: 'Forged service-account member data',
@@ -180,21 +240,40 @@ beforeAll(async () => {
       ownerId: serviceAccountId,
       label: 'Forged service-account OAuth profile',
     },
+    {
+      profileId: USER_STRATEGY_PROJECT_PROFILE,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: PIPEDREAM_CONNECTOR,
+      ownerType: 'project',
+      ownerId: null,
+      label: 'Invalid shared OAuth profile',
+    },
   ]);
-  await db.insert(projectSessions).values({
-    sessionId: SESSION,
-    accountId: ACCOUNT,
-    projectId: PROJECT,
-    branchName: SESSION,
-    createdBy: ALICE,
-    visibility: 'private',
-  });
+  await db.insert(projectSessions).values([
+    {
+      sessionId: SESSION,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      branchName: SESSION,
+      createdBy: ALICE,
+      visibility: 'private',
+    },
+    {
+      sessionId: DEFAULT_SCOPE_SESSION,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      branchName: DEFAULT_SCOPE_SESSION,
+      createdBy: ALICE,
+      visibility: 'private',
+    },
+  ]);
   await db.insert(projectSessionConnectorBindings).values({
     sessionId: SESSION,
     accountId: ACCOUNT,
     projectId: PROJECT,
-    connectorAlias: 'customer_data',
-    connectorId: CONNECTOR,
+    connectorAlias: 'personal_data',
+    connectorId: USER_CONNECTOR,
     profileId: ALICE_PROFILE,
     source: 'request',
     createdBy: ALICE,
@@ -220,6 +299,9 @@ afterAll(async () => {
     .where(eq(executorConnectionProfiles.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  if (previousGitCacheDir === undefined) delete process.env.KORTIX_GIT_CACHE_DIR;
+  else process.env.KORTIX_GIT_CACHE_DIR = previousGitCacheDir;
+  if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
 });
 
 async function mint(userId: string): Promise<string> {
@@ -269,7 +351,7 @@ describe('connection profile owner authorization over HTTP', () => {
     const ids = (
       (await response.json()) as { profiles: Array<{ profile_id: string }> }
     ).profiles.map((profile) => profile.profile_id);
-    expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE, EXTERNAL_PROFILE]));
+    expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE]));
   });
 
   test('managers see EVERY member connection via the read-only roster (/all)', async () => {
@@ -301,14 +383,14 @@ describe('connection profile owner authorization over HTTP', () => {
       'POST',
       `/v1/projects/${PROJECT}/connector-profiles/me`,
       await mint(ALICE),
-      { connector_alias: 'customer_data', label: 'Alice renamed' },
+      { connector_alias: 'personal_data', label: 'Alice data' },
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       profile_id: ALICE_PROFILE,
       owner_type: 'member',
       owner_id: ALICE,
-      label: 'Alice renamed',
+      label: 'Alice data',
     });
   });
 
@@ -318,7 +400,7 @@ describe('connection profile owner authorization over HTTP', () => {
       `/v1/projects/${PROJECT}/connector-profiles`,
       await mint(MANAGER),
       {
-        connector_alias: 'customer_data',
+        connector_alias: 'personal_data',
         owner_type: 'member',
         owner_id: BOB,
         label: 'Manager personal profile',
@@ -337,7 +419,7 @@ describe('connection profile owner authorization over HTTP', () => {
       'POST',
       `/v1/projects/${PROJECT}/connector-profiles/me`,
       serviceAccountToken,
-      { connector_alias: 'customer_data', label: 'Service account personal profile' },
+      { connector_alias: 'personal_data', label: 'Service account personal profile' },
     );
     expect(self.status).toBe(403);
 
@@ -346,7 +428,7 @@ describe('connection profile owner authorization over HTTP', () => {
       `/v1/projects/${PROJECT}/connector-profiles`,
       serviceAccountToken,
       {
-        connector_alias: 'customer_data',
+        connector_alias: 'personal_data',
         owner_type: 'member',
         owner_id: ALICE,
         label: 'Service account generic personal profile',
@@ -365,7 +447,7 @@ describe('connection profile owner authorization over HTTP', () => {
     const ids = (
       (await listed.json()) as { profiles: Array<{ profile_id: string }> }
     ).profiles.map((profile) => profile.profile_id);
-    expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE, EXTERNAL_PROFILE]));
+    expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE]));
 
     for (const [operation, body] of [
       ['credential', { value: 'service-account-capability' }],
@@ -449,13 +531,209 @@ describe('connection profile owner authorization over HTTP', () => {
     );
     expect(manager.status).toBe(404);
 
-    const managed = await request(
+    const mismatched = await request(
       'PUT',
       `/v1/projects/${PROJECT}/connector-profiles/${EXTERNAL_PROFILE}/credential`,
       await mint(MANAGER),
       { value: 'operator-capability' },
     );
-    expect(managed.status).toBe(200);
+    expect(mismatched.status).toBe(404);
+  });
+
+  test('project strategy rejects member authorization reconciliation', async () => {
+    const token = await mint(MANAGER);
+    const self = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles/me`,
+      token,
+      { connector_alias: 'customer_data', label: 'Rejected member authorization' },
+    );
+    expect(self.status).toBe(409);
+
+    const managed = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      token,
+      {
+        connector_alias: 'customer_data',
+        owner_type: 'member',
+        owner_id: MANAGER,
+        label: 'Rejected managed member authorization',
+      },
+    );
+    expect(managed.status).toBe(409);
+  });
+
+  test('user strategy rejects project authorization reconciliation', async () => {
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      await mint(MANAGER),
+      {
+        connector_alias: 'personal_data',
+        owner_type: 'project',
+        label: 'Rejected project authorization',
+      },
+    );
+    expect(response.status).toBe(409);
+  });
+
+  test('project strategy accepts project authorization reconciliation', async () => {
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      await mint(MANAGER),
+      {
+        connector_alias: 'customer_data',
+        owner_type: 'project',
+        label: 'Additional project authorization',
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      connector_alias: 'customer_data',
+      owner_type: 'project',
+      owner_id: null,
+    });
+  });
+
+  test('project OAuth bootstrap rejects a user authorization strategy', async () => {
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connectors/google_sheets/oauth2/profile`,
+      await mint(MANAGER),
+      {},
+    );
+    expect(response.status).toBe(409);
+  });
+
+  test('shared account-link routes reject a user authorization strategy', async () => {
+    const manager = await mint(MANAGER);
+    const connectRequest = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connect-requests`,
+      manager,
+      { slug: 'google_sheets' },
+    );
+    expect(connectRequest.status).toBe(409);
+
+    const sharedCredential = await request(
+      'PUT',
+      `/v1/executor/projects/${PROJECT}/connectors/google_sheets/credential`,
+      manager,
+      { value: 'shared-user-strategy-credential' },
+    );
+    expect(sharedCredential.status).toBe(409);
+    const sharedDisconnect = await request(
+      'DELETE',
+      `/v1/executor/projects/${PROJECT}/connectors/google_sheets/credential`,
+      manager,
+    );
+    expect(sharedDisconnect.status).toBe(409);
+
+    for (const operation of ['connect', 'connect/finalize'] as const) {
+      const response = await request(
+        'POST',
+        `/v1/executor/projects/${PROJECT}/connectors/google_sheets/${operation}`,
+        manager,
+        {},
+      );
+      expect(response.status).toBe(404);
+    }
+
+    const { token } = mintSetupLink(PROJECT, {
+      kind: 'connector',
+      slug: 'google_sheets',
+      app: 'google_sheets',
+      uid: MANAGER,
+    });
+    const publicStart = await app.request(`/v1/setup-links/connector/${token}/start`, {
+      method: 'POST',
+    });
+    expect(publicStart.status).toBe(409);
+  });
+
+  test('native OAuth routes enforce strategy and owner identity', async () => {
+    const manager = await mint(MANAGER);
+    const alice = await mint(ALICE);
+
+    const project = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/${DEFAULT_PROFILE}/oauth2/status`,
+      manager,
+    );
+    expect(project.status).toBe(200);
+
+    const personal = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/oauth2/status`,
+      alice,
+    );
+    expect(personal.status).toBe(200);
+
+    const mismatchedProject = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/${USER_STRATEGY_PROJECT_PROFILE}/oauth2/status`,
+      manager,
+    );
+    expect(mismatchedProject.status).toBe(404);
+
+    const mismatchedExternal = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/${EXTERNAL_PROFILE}/oauth2/status`,
+      manager,
+    );
+    expect(mismatchedExternal.status).toBe(404);
+  });
+
+  test('native OAuth callback rejects a strategy changed after authorization starts', async () => {
+    const alice = await mint(ALICE);
+    const saved = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/oauth2/application`,
+      alice,
+      {
+        authorization_url: 'https://identity.example.test/authorize',
+        token_url: 'https://identity.example.test/token',
+        client_id: 'strategy-test',
+        token_endpoint_auth_method: 'none',
+      },
+    );
+    expect(saved.status).toBe(200);
+    const started = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/oauth2/authorize`,
+      alice,
+      {},
+    );
+    expect(started.status).toBe(200);
+    const authorizationUrl = new URL(
+      ((await started.json()) as { authorization_url: string }).authorization_url,
+    );
+    const state = authorizationUrl.searchParams.get('state');
+    expect(state).not.toBeNull();
+    if (!state) throw new Error('OAuth authorization state is missing');
+
+    await db
+      .update(executorConnectors)
+      .set({ authorizationStrategy: 'project' })
+      .where(eq(executorConnectors.connectorId, USER_CONNECTOR));
+    try {
+      const result = await completeAuthorizationCodeSession({
+        stateHash: createHash('sha256').update(state).digest('hex'),
+        code: 'authorization-code',
+        callbackUrl: 'https://api.example.test/v1/integrations/oauth2/callback',
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        errorCode: 'authorization_strategy_changed',
+      });
+    } finally {
+      await db
+        .update(executorConnectors)
+        .set({ authorizationStrategy: 'user' })
+        .where(eq(executorConnectors.connectorId, USER_CONNECTOR));
+    }
   });
 
   test('personal-profile sessions reject project sharing and public links', async () => {
@@ -486,5 +764,287 @@ describe('connection profile owner authorization over HTTP', () => {
       ok: false,
       status: 403,
     });
+  });
+
+  test('session scope read-back uses canonical authorization identifiers', async () => {
+    const token = await mint(ALICE);
+    const connected = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/credential`,
+      token,
+      { value: 'scope-read-capability' },
+    );
+    expect(connected.status).toBe(200);
+
+    const response = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+      token,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      secrets_allowlist: null,
+      connector_bindings: {
+        personal_data: { authorization_id: ALICE_PROFILE },
+      },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+    });
+    expect(JSON.stringify(body)).not.toContain('profile_id');
+
+    const effective = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+    );
+    expect(effective.status).toBe(200);
+    expect(await effective.json()).toMatchObject({
+      connector_bindings: {
+        personal_data: { authorization_id: ALICE_PROFILE },
+      },
+    });
+  });
+
+  test('scope updates return effective bindings and replace inherited defaults', async () => {
+    const token = await mint(ALICE);
+    const connected = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/credential`,
+      token,
+      { value: 'scope-effective-capability' },
+    );
+    expect(connected.status).toBe(200);
+
+    const secretsOnly = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+      { secrets: [] },
+    );
+    expect(secretsOnly.status).toBe(200);
+    expect(await secretsOnly.json()).toMatchObject({
+      connector_bindings: {
+        personal_data: { authorization_id: ALICE_PROFILE },
+      },
+    });
+
+    await db
+      .update(projectSessions)
+      .set({
+        connectorBindingsConfigured: true,
+        connectorBindingsInheritUnbound: true,
+      })
+      .where(eq(projectSessions.sessionId, DEFAULT_SCOPE_SESSION));
+
+    const replaced = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+      { connector_bindings: {} },
+    );
+    expect(replaced.status).toBe(200);
+    expect(await replaced.json()).toMatchObject({
+      connector_bindings: {},
+      dropped_bindings: ['personal_data'],
+    });
+
+    const readBack = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+    );
+    expect(readBack.status).toBe(200);
+    expect(await readBack.json()).toMatchObject({
+      connector_bindings: {},
+    });
+
+    const [session] = await db
+      .select({
+        configured: projectSessions.connectorBindingsConfigured,
+        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, DEFAULT_SCOPE_SESSION));
+    expect(session).toEqual({
+      configured: true,
+      inheritUnbound: false,
+    });
+  });
+
+  test('scope replacement uses the session owner and rejects shared user authorization', async () => {
+    const ownerToken = await mint(ALICE);
+    const connected = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/credential`,
+      ownerToken,
+      { value: 'scope-owner-capability' },
+    );
+    expect(connected.status).toBe(200);
+    const managerToken = await mint(MANAGER);
+
+    try {
+      await db
+        .update(projectSessions)
+        .set({ visibility: 'project' })
+        .where(eq(projectSessions.sessionId, SESSION));
+      const shared = await request(
+        'PUT',
+        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        managerToken,
+        {
+          connector_bindings: {
+            personal_data: { authorization_id: ALICE_PROFILE },
+          },
+        },
+      );
+      expect(shared.status).toBe(409);
+      expect(await shared.json()).toMatchObject({
+        code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+      });
+    } finally {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(projectSessions)
+          .set({
+            visibility: 'private',
+            connectorBindingsConfigured: false,
+            connectorBindingsInheritUnbound: false,
+          })
+          .where(eq(projectSessions.sessionId, SESSION));
+        await tx
+          .delete(projectSessionConnectorBindings)
+          .where(eq(projectSessionConnectorBindings.sessionId, SESSION));
+        await tx.insert(projectSessionConnectorBindings).values({
+          sessionId: SESSION,
+          accountId: ACCOUNT,
+          projectId: PROJECT,
+          connectorAlias: 'personal_data',
+          connectorId: USER_CONNECTOR,
+          profileId: ALICE_PROFILE,
+          source: 'request',
+          createdBy: ALICE,
+        });
+      });
+    }
+  });
+
+  test('session scope replacement validates the full request before one atomic write', async () => {
+    const token = await mint(ALICE);
+    const credential = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/credential`,
+      token,
+      { value: 'scope-replacement-capability' },
+    );
+    expect(credential.status).toBe(200);
+
+    try {
+      const rejected = await request(
+        'PUT',
+        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        token,
+        {
+          secrets: [],
+          connector_bindings: {
+            personal_data: { authorization_id: BOB_PROFILE },
+          },
+        },
+      );
+      expect(rejected.status).toBe(403);
+      expect(await rejected.json()).toMatchObject({
+        code: 'CONNECTOR_PROFILE_NOT_FOUND',
+      });
+
+      const [unchangedSession] = await db
+        .select({
+          secretsAllowlist: projectSessions.secretsAllowlist,
+          connectorBindingsConfigured: projectSessions.connectorBindingsConfigured,
+        })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, SESSION));
+      expect(unchangedSession).toMatchObject({
+        secretsAllowlist: null,
+        connectorBindingsConfigured: false,
+      });
+      const unchangedBindings = await db
+        .select({ profileId: projectSessionConnectorBindings.profileId })
+        .from(projectSessionConnectorBindings)
+        .where(eq(projectSessionConnectorBindings.sessionId, SESSION));
+      expect(unchangedBindings).toEqual([{ profileId: ALICE_PROFILE }]);
+
+      const replaced = await request(
+        'PUT',
+        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        token,
+        { secrets: [], connector_bindings: {} },
+      );
+      expect(replaced.status).toBe(200);
+      expect(await replaced.json()).toMatchObject({
+        secrets_allowlist: [],
+        connector_bindings: {},
+        dropped_bindings: ['personal_data'],
+      });
+      const [replacedSession] = await db
+        .select({
+          secretsAllowlist: projectSessions.secretsAllowlist,
+          connectorBindingsConfigured: projectSessions.connectorBindingsConfigured,
+        })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, SESSION));
+      expect(replacedSession).toMatchObject({
+        secretsAllowlist: [],
+        connectorBindingsConfigured: true,
+      });
+      expect(
+        await db
+          .select()
+          .from(projectSessionConnectorBindings)
+          .where(eq(projectSessionConnectorBindings.sessionId, SESSION)),
+      ).toHaveLength(0);
+    } finally {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(projectSessions)
+          .set({
+            secretsAllowlist: null,
+            connectorBindingsConfigured: false,
+          })
+          .where(eq(projectSessions.sessionId, SESSION));
+        await tx
+          .delete(projectSessionConnectorBindings)
+          .where(eq(projectSessionConnectorBindings.sessionId, SESSION));
+        await tx.insert(projectSessionConnectorBindings).values({
+          sessionId: SESSION,
+          accountId: ACCOUNT,
+          projectId: PROJECT,
+          connectorAlias: 'personal_data',
+          connectorId: USER_CONNECTOR,
+          profileId: ALICE_PROFILE,
+          source: 'request',
+          createdBy: ALICE,
+        });
+      });
+    }
+  });
+
+  test('authorization-specific policy routes are removed', async () => {
+    const token = await mint(ALICE);
+    const read = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/policies`,
+      token,
+    );
+    expect(read.status).toBe(404);
+
+    const replace = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connector-profiles/${ALICE_PROFILE}/policies`,
+      token,
+      { policies: [{ match: '*', action: 'always_run' }] },
+    );
+    expect(replace.status).toBe(404);
   });
 });

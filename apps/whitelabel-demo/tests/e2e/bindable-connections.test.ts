@@ -15,7 +15,7 @@ const profile = (over: Record<string, unknown> = {}) =>
   }) as never;
 
 describe('selectBindableConnections', () => {
-  test('offers team connections for the requested connector', () => {
+  test('offers project connections for the requested connector', () => {
     const rows = selectBindableConnections([profile()], 'gmail');
     expect(rows.map((r) => r.label)).toEqual(['Support']);
   });

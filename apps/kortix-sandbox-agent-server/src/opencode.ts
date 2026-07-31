@@ -3,7 +3,6 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileS
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
-import { createInterface } from 'node:readline'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -13,13 +12,6 @@ import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
-import {
-  AcpConnection,
-  buildOpenCodeLaunch,
-  redactAcpDiagnostic,
-  resolveOpenCodeTransport,
-  type OpenCodeTransport,
-} from './acp/connection'
 
 const READY_POLL_MS = 100
 const BOOT_READY_POLL_MS = 50
@@ -34,7 +26,6 @@ const READY_LIVENESS_MS = 5_000
 
 export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
-const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
@@ -463,6 +454,66 @@ function scheduleCatalogWarmToPath(
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
 
+/**
+ * Where the composed Kortix config is materialized for an OpenCode child.
+ * Derived from the DAEMON's own home, never from `env.HOME`: a project may name
+ * a secret `HOME` (only `KORTIX_*` names are reserved), and an unwritable value
+ * would then fail every session boot instead of one shell command.
+ */
+const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-opencode.json')
+
+/**
+ * Materialize the composed Kortix config (see buildOpencodeConfigContent) and
+ * return the path OpenCode must read it from, or null when no contributor
+ * applies.
+ *
+ * The config carries the gateway's full model catalog — over a megabyte, far
+ * past Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN). Inlining it via
+ * OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and OpenCode never
+ * spawns ("runtime not ready"), so it is always handed over as a FILE.
+ */
+export async function writeKortixOpencodeConfig(
+  env: NodeJS.ProcessEnv,
+  opts: { configPath?: string } = {},
+): Promise<string | null> {
+  const content = await buildOpencodeConfigContent(env)
+  if (!content) return null
+  const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, content, { mode: 0o600 })
+  logger.info(`[opencode] wrote config (${content.length} bytes) to ${configPath}`)
+  return configPath
+}
+
+/**
+ * Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from an
+ * OpenCode child. With any such key in its env, OpenCode auto-connects a NATIVE
+ * provider and calls it directly — bypassing the gateway (no logs / spend /
+ * budgets) and leaving stale models that survive a BYOK disconnect. The gateway
+ * must be the only LLM path, so the API hands us the exact names to strip
+ * (Codex/OpenCode subscription auth is excluded — materializeOpencodeAuth has
+ * already consumed it into auth.json). This only shapes the child's env; the
+ * container itself keeps what it holds.
+ */
+export function withoutDeniedProviderEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const denied = (env.KORTIX_OPENCODE_DENY_ENV || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+  const next: NodeJS.ProcessEnv = { ...env }
+  let withheld = 0
+  for (const name of denied) {
+    if (name in next) {
+      delete next[name]
+      withheld++
+    }
+  }
+  if (withheld > 0) {
+    logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
+  }
+  return next
+}
+
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
 // Per-request hard cap. `opencode serve` cannot bind its port until
 // buildOpencodeConfigContent (which awaits this fetch) returns — so a slow/degraded
@@ -852,25 +903,11 @@ export type Opencode = {
   getInternalUrl(): string
   getBinaryPath(): string | null
   getState(): OpencodeState
-  getTransport(): OpenCodeTransport
-  getAcpConnection(): AcpConnection | null
   markReady(): void
 }
 
-export async function resumeCanonicalAcpSession(
-  connection: Pick<AcpConnection, 'request'>,
-  sessionId: string,
-  cwd: string,
-): Promise<void> {
-  await connection.request('session/resume', {
-    sessionId,
-    cwd,
-    mcpServers: [],
-  })
-}
-
 export interface OpencodeSupervisorOptions {
-  getCanonicalAcpSessionId?: () => string | null
+  onStartupMark?: (label: string) => void
 }
 
 export function createOpencodeSupervisor(
@@ -889,14 +926,7 @@ export function createOpencodeSupervisor(
   let state: OpencodeState = 'starting'
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let opencodeCwd = cfg.workspace
-  let transport: OpenCodeTransport = resolveOpenCodeTransport(process.env)
-  let acpConnection: AcpConnection | null = null
-  let nextAcpEventId = 1
-
-  function rememberAcpEventCursor(): void {
-    if (!acpConnection) return
-    nextAcpEventId = Math.max(nextAcpEventId, acpConnection.lastEventId + 1)
-  }
+  const startupMark = options.onStartupMark ?? (() => {})
 
   function ensureCwdExists(): string {
     try {
@@ -930,7 +960,7 @@ export function createOpencodeSupervisor(
       })
     }
     const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
-    const env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
+    let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
       OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
@@ -945,25 +975,7 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
-    // Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from the
-    // opencode process. With any such key in its env, opencode auto-connects a
-    // NATIVE provider and calls it directly — bypassing the gateway (no logs /
-    // spend / budgets) and leaving stale models that survive a BYOK disconnect.
-    // The gateway must be the only LLM path, so the API hands us the exact names
-    // to strip (Codex/OpenCode subscription auth is excluded — it's already been
-    // consumed into auth.json by materializeOpencodeAuth above). This only touches
-    // the opencode process env; it doesn't change what the container itself holds.
-    const denyEnv = (env.KORTIX_OPENCODE_DENY_ENV || '').split(',').map((n) => n.trim()).filter(Boolean)
-    let withheld = 0
-    for (const name of denyEnv) {
-      if (name in env) {
-        delete env[name]
-        withheld++
-      }
-    }
-    if (withheld > 0) {
-      logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-    }
+    env = withoutDeniedProviderEnv(env)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
@@ -973,33 +985,23 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
-    const opencodeConfig = await buildOpencodeConfigContent(baseEnv)
-    if (opencodeConfig) {
-      // The assembled config carries the gateway's full model catalog, which is
-      // ~400KB — far over Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN).
-      // Inlining it via OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and
-      // opencode never spawns ("runtime not ready"). Hand it a file path instead.
-      const configPath = join(OPENCODE_CONFIG_HOME, 'kortix-opencode.json')
-      mkdirSync(dirname(configPath), { recursive: true })
-      writeFileSync(configPath, opencodeConfig, { mode: 0o600 })
+    const configPath = await writeKortixOpencodeConfig(baseEnv)
+    if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
-      logger.info(`[opencode] wrote config (${opencodeConfig.length} bytes) to ${configPath}`)
     }
+    startupMark('runtime-config-ready')
+
+    const args = [
+      'serve',
+      '--port',
+      String(currentCfg.opencodeInternalPort),
+      '--hostname',
+      '127.0.0.1',
+    ]
 
     const cwd = ensureCwdExists()
-    transport = resolveOpenCodeTransport(env)
-    const launch = buildOpenCodeLaunch(
-      transport,
-      currentCfg.opencodeInternalPort,
-      cwd,
-    )
-    logger.info('[opencode] spawning', {
-      bin,
-      port: currentCfg.opencodeInternalPort,
-      cwd,
-      transport,
-    })
+    logger.info('[opencode] spawning', { bin, port: currentCfg.opencodeInternalPort, cwd })
     // detached: true makes opencode the leader of its own process group, so
     // stop()/restart() can SIGTERM/SIGKILL the whole group (-pid) instead of
     // just this direct child. Without it, a grandchild opencode forks itself
@@ -1008,20 +1010,16 @@ export function createOpencodeSupervisor(
     // freshly-spawned opencode is installing into concurrently — a real path
     // to a torn/corrupted node_modules that then fails every session's first
     // prompt until the sandbox is rebuilt.
-    const proc = spawn(bin, launch.args, {
+    const proc = spawn(bin, args, {
       cwd,
-      env: { ...env, ...launch.env },
-      stdio: launch.stdio,
+      env,
+      stdio: ['ignore', 'inherit', 'inherit'],
       detached: true,
     })
+    proc.once('spawn', () => startupMark('runtime-process-spawned'))
 
     proc.on('exit', (code, signal) => {
       logger.warn('[opencode] child exited', { code, signal })
-      rememberAcpEventCursor()
-      acpConnection?.dispose(
-        `OpenCode ACP exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`,
-      )
-      acpConnection = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -1038,61 +1036,6 @@ export function createOpencodeSupervisor(
     })
 
     child = proc
-
-    if (transport === 'acp') {
-      if (!proc.stdin || !proc.stdout || !proc.stderr) {
-        throw new Error('OpenCode ACP process did not expose stdio pipes')
-      }
-      const stderr = createInterface({ input: proc.stderr })
-      stderr.on('line', (line) => {
-        logger.warn('[opencode-acp] stderr', {
-          line: redactAcpDiagnostic(line, env),
-        })
-      })
-      const connection = new AcpConnection({
-        input: proc.stdin,
-        output: proc.stdout,
-        initialEventId: nextAcpEventId,
-        onDiagnostic: (line) => logger.warn('[opencode-acp] protocol', { line }),
-      })
-      try {
-        const initialized = await connection.initialize({
-          clientInfo: {
-            name: 'kortix-sandbox-agent-server',
-            version: '1',
-          },
-        })
-        logger.info('[opencode-acp] initialized', {
-          protocolVersion: initialized.protocolVersion,
-        })
-        const canonicalSessionId = options.getCanonicalAcpSessionId?.()
-        if (canonicalSessionId) {
-          await resumeCanonicalAcpSession(
-            connection,
-            canonicalSessionId,
-            currentCfg.workspace,
-          )
-          logger.info('[opencode-acp] resumed canonical session after process start', {
-            sessionId: canonicalSessionId,
-          })
-        }
-        acpConnection = connection
-        connection.notifyClient('kortix/runtime_ready', {
-          sessionId: canonicalSessionId ?? null,
-        })
-      } catch (error) {
-        connection.dispose('OpenCode ACP initialization failed')
-        acpConnection = null
-        if (proc.pid) {
-          try {
-            process.kill(-proc.pid, 'SIGTERM')
-          } catch {
-            proc.kill('SIGTERM')
-          }
-        }
-        throw error
-      }
-    }
   }
 
   function markReady() {
@@ -1134,7 +1077,9 @@ export function createOpencodeSupervisor(
         return
       }
       binaryPath = bin
+      startupMark('runtime-binary-resolved')
       opencodeCwd = await resolveOpencodeCwd(currentCfg)
+      startupMark('runtime-cwd-resolved')
       try {
         await spawnChild(bin)
       } catch (err) {
@@ -1146,9 +1091,6 @@ export function createOpencodeSupervisor(
     async stop(signal: NodeJS.Signals = 'SIGTERM') {
       stopping = true
       state = 'down'
-      rememberAcpEventCursor()
-      acpConnection?.dispose('OpenCode supervisor stopped')
-      acpConnection = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
@@ -1199,9 +1141,6 @@ export function createOpencodeSupervisor(
       currentCfg = nextCfg
       currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
-      transport = resolveOpenCodeTransport(
-        nextProjectEnv ? mergeProjectEnv(process.env, nextProjectEnv) : process.env,
-      )
       state = 'starting'
       logger.info('[opencode] reconfigured', {
         projectId: nextCfg.projectId,
@@ -1223,14 +1162,6 @@ export function createOpencodeSupervisor(
 
     getState() {
       return state
-    },
-
-    getTransport() {
-      return transport
-    },
-
-    getAcpConnection() {
-      return acpConnection
     },
 
     markReady,

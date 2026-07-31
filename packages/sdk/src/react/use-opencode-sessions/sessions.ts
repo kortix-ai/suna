@@ -45,8 +45,7 @@ export function useOpenCodeSessions(enabled = true) {
     // the first success in <300ms instead of mid-400ms-window; exponential tail
     // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
     // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
-    retry: (failureCount, error) =>
-      !isOpenCodeConfigInvalidError(error) && failureCount < 16,
+    retry: (failureCount, error) => !isOpenCodeConfigInvalidError(error) && failureCount < 16,
     retryDelay: (attempt) =>
       attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
@@ -57,7 +56,7 @@ export function useOpenCodeSession(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
   const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery<Session>({
-    queryKey: opencodeKeys.session(sessionId),
+    queryKey: opencodeKeys.runtimeSession(sessionId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.get({ sessionID: sessionId });
@@ -68,8 +67,7 @@ export function useOpenCodeSession(sessionId: string) {
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
     // not-accessible error. The query stays in its loading state across retries.
-    retry: (failureCount, error) =>
-      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
+    retry: (failureCount, error) => !isOpenCodeConfigInvalidError(error) && failureCount < 3,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     placeholderData: () => {
       const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
@@ -125,7 +123,7 @@ export function useCreateOpenCodeSession() {
         }
         return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
       });
-      queryClient.setQueryData(opencodeKeys.session(session.id), session);
+      queryClient.setQueryData(opencodeKeys.runtimeSession(session.id), session);
     },
   });
 }
@@ -146,8 +144,12 @@ export function useDeleteOpenCodeSession() {
         if (!old) return old;
         return old.filter((s) => s.id !== sessionId);
       });
-      queryClient.removeQueries({ queryKey: opencodeKeys.session(sessionId) });
-      queryClient.removeQueries({ queryKey: opencodeKeys.messages(sessionId) });
+      queryClient.removeQueries({
+        queryKey: opencodeKeys.runtimeSession(sessionId),
+      });
+      queryClient.removeQueries({
+        queryKey: opencodeKeys.runtimeMessages(sessionId),
+      });
     },
   });
 }
@@ -169,7 +171,10 @@ export function useUpdateOpenCodeSession() {
       const body: { title?: string; time?: { archived?: number } } = {};
       if (title !== undefined) body.title = title;
       if (archived !== undefined) body.time = { archived: archived ? Date.now() : 0 };
-      const result = await client.session.update({ sessionID: sessionId, ...body });
+      const result = await client.session.update({
+        sessionID: sessionId,
+        ...body,
+      });
       return unwrap(result);
     },
     onSuccess: (updatedSession) => {
@@ -183,7 +188,7 @@ export function useUpdateOpenCodeSession() {
         next[idx] = session;
         return next.sort((a, b) => b.time.updated - a.time.updated);
       });
-      queryClient.setQueryData(opencodeKeys.session(session.id), session);
+      queryClient.setQueryData(opencodeKeys.runtimeSession(session.id), session);
     },
   });
 }
@@ -228,7 +233,11 @@ export function useSummarizeOpenCodeSession() {
   const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   return useMutation({
-    mutationFn: async (params: { sessionId: string; providerID?: string; modelID?: string }) => {
+    mutationFn: async (params: {
+      sessionId: string;
+      providerID?: string;
+      modelID?: string;
+    }) => {
       const client = getClient();
 
       let { providerID, modelID } = params;
@@ -257,7 +266,9 @@ export function useSummarizeOpenCodeSession() {
             sessionID: params.sessionId,
             limit: SESSION_SYNC_PAGE_SIZE,
           });
-          const allMsgs = (msgs.data ?? []) as Array<{ info: { role: string; providerID?: string; modelID?: string } }>;
+          const allMsgs = (msgs.data ?? []) as Array<{
+            info: { role: string; providerID?: string; modelID?: string };
+          }>;
           for (let i = allMsgs.length - 1; i >= 0; i--) {
             const m = allMsgs[i].info;
             if (m.role === 'assistant' && m.providerID && m.modelID) {
@@ -282,7 +293,9 @@ export function useSummarizeOpenCodeSession() {
           const providerResult = await client.provider.list();
           const providers: unknown = providerResult.data;
           if (providers && typeof providers === 'object') {
-            for (const [pid, providerInfo] of Object.entries(providers as Record<string, unknown>)) {
+            for (const [pid, providerInfo] of Object.entries(
+              providers as Record<string, unknown>,
+            )) {
               const models =
                 providerInfo && typeof providerInfo === 'object'
                   ? (providerInfo as Record<string, unknown>).models
@@ -353,7 +366,8 @@ export function useInitSession() {
         // NotFoundError`) doesn't share a `.message`/`.data.message` shape
         // across all members — duck-type defensively rather than assume one.
         const err = result.error;
-        const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+        const errRec =
+          err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
         const dataRec =
           errRec?.data && typeof errRec.data === 'object'
             ? (errRec.data as Record<string, unknown>)
@@ -366,7 +380,9 @@ export function useInitSession() {
     onSuccess: (sessionId) => {
       // SSE events handle session updates. Just refetch messages for this session
       // since /init creates new messages.
-      queryClient.refetchQueries({ queryKey: opencodeKeys.messages(sessionId) });
+      queryClient.refetchQueries({
+        queryKey: opencodeKeys.runtimeMessages(sessionId),
+      });
     },
     // Suppress global error handler — caller handles errors via onError callback
     onError: () => {},

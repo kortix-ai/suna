@@ -18,7 +18,8 @@ type UsersData = Record<string, string[]>;
 // LUMEN_DATA_DIR override exists so the e2e suite can point a test instance at
 // a throwaway temp dir — without it, tests booting `next start` from the app
 // dir share (and would wipe) the developer's real local store.
-const DATA_DIR = process.env.LUMEN_DATA_DIR || path.join(process.cwd(), '.lumen-data');
+const DATA_DIR =
+  process.env.LUMEN_DATA_DIR || path.join(process.cwd(), '.lumen-data');
 const DATA_FILE = path.join(DATA_DIR, 'users.json');
 
 function readData(): UsersData {
@@ -38,9 +39,10 @@ function writeData(data: UsersData): void {
 
 // Kortix project ids are UUIDs. Enforced on WRITE (only record what upstream
 // actually minted) and on READ (ids from this file end up inside upstream
-// request URLs — see /api/usage — so a hand-edited or corrupted store must
+// request URLs — see /api/session-costs — so a hand-edited or corrupted store must
 // never be able to steer a request anywhere unexpected).
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isValidProjectId(projectId: string): boolean {
   return UUID_RE.test(projectId);

@@ -5,6 +5,7 @@ import {
   provisionProject,
   provisionProjectWithToken,
   type CreateProjectRepoInput,
+  type ProvisionProjectInput,
 } from './projects';
 import { configureKortix } from '../../http/config';
 

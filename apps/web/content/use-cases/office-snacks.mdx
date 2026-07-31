@@ -86,7 +86,7 @@ model, the agent can:
 The prepared order stops at a **human approval gate** in Slack. The office manager
 sees the full cart and the total, and nothing is purchased until they approve.
 Credentials for the ordering account are encrypted in the secrets manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 </Steps>
@@ -103,10 +103,10 @@ injected at runtime, never shown to the model or written to logs.
 Because the agent can prepare an order that spends money, the controls matter even
 for a small chore:
 
-- **Isolation.** Each weekly run executes in its own microVM sandbox, and only the
-  prepared order and Slack post it's explicitly allowed to send leave the sandbox.
+- **Isolation.** Each weekly run executes in its own isolated sandbox, and only the
+  prepared order and Slack post it's explicitly allowed to send are written back out.
 - **Scoped secrets.** The ordering-account credential is encrypted in the secrets
-  manager and injected into the sandbox at runtime, never exposed to the model or
+  manager and injected into the sandbox at runtime, scoped to the agents you grant them to or
   the logs.
 - **Human approval gates.** No purchase is placed until the office manager approves
   the draft order in Slack.

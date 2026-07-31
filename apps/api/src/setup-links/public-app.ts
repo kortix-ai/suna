@@ -9,15 +9,15 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
-import { Hono, type Context, type Next } from 'hono';
-import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { executorConnectors, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { type Context, Hono, type Next } from 'hono';
 import { pipedreamConfigured, pipedreamConnectUrl } from '../executor/pipedream';
+import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
+import { db } from '../shared/db';
+import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { resolveSetupLink } from './token';
-import { enforceRateLimit, TokenBucketRateLimiter } from '../shared/rate-limit';
 
 const setupLinksPublicApp = new Hono();
 
@@ -162,10 +162,33 @@ setupLinksPublicApp.post('/connector/:token/start', async (c) => {
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
   if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
   if (!resolved.payload.app) return c.json({ error: 'This connector has no Pipedream app bound' }, 400);
+  const [connector] = await db
+    .select({
+      providerType: executorConnectors.providerType,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
+    .from(executorConnectors)
+    .where(
+      and(
+        eq(executorConnectors.projectId, resolved.projectId),
+        eq(executorConnectors.slug, resolved.payload.slug),
+      ),
+    )
+    .limit(1);
+  if (!connector || connector.providerType !== 'pipedream') {
+    return c.json({ error: 'Connector not found' }, 404);
+  }
+  if (connector.authorizationStrategy !== 'project') {
+    return c.json(
+      {
+        error: 'Shared connect links require a project authorization strategy',
+        code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+      },
+      409,
+    );
+  }
 
   try {
-    // Always the shared project account — `per_user` (each member's own) was
-    // removed 2026-07-05.
     const { connectUrl } = await pipedreamConnectUrl(
       resolved.projectId,
       resolved.payload.slug,

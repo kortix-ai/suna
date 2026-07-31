@@ -40,12 +40,16 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
-import { readRepoFile } from '../git';
-import { commitMultipleFilesToBranch } from '../git/branches';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { extractAgents } from '../agents';
-import { applyAgentBlockV2, applyDefaultAgentV2, readAgentBlockV2 } from '../lib/agent-config-v2';
-import { metadataMerge } from '../lib/metadata-merge';
+import { readRepoFile } from '../git';
+import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import {
+  applyAgentBlockV2,
+  applyDefaultAgentV2,
+  normalizeRequiredConnectorAliases,
+  readAgentBlockV2,
+} from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
 import {
@@ -54,6 +58,7 @@ import {
   agentMarkdownPath,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
+import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
 import { MANIFEST_FILENAME, serializeManifest } from '../triggers';
 
@@ -76,12 +81,8 @@ const AgentBlockSchema = z
     enabled: z.boolean().optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
-    // The subset of `connectors` that must resolve to the LAUNCHING USER's own
-    // connection. GET already returns this key verbatim from the manifest, so
-    // omitting it here made `.strict()` reject EVERY save on any project that
-    // declares it — the editor could read the agent but never write it back.
-    // A concrete list only: 'all' would make the agent unstartable for anyone
-    // who hasn't personally connected every one of its connectors.
+    connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+    // Deprecated request alias. The handler normalizes it before serialization.
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
@@ -179,7 +180,11 @@ projectsApp.openapi(
     let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
     if (read.schemaVersion === 2) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
-      const { frontmatter, body } = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
+      const { frontmatter, body } = await readAgentMarkdown(
+        loaded.row,
+        loaded.row.defaultBranch,
+        mdPath,
+      );
       const opencode = pickBehaviorFields(frontmatter);
       if (body.trim()) opencode.prompt = body;
       block = { ...(read.block ?? {}), opencode };
@@ -215,7 +220,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(DefaultAgentResponseSchema, 'Updated project default agent'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -232,7 +237,10 @@ projectsApp.openapi(
 
     const parsed = DefaultAgentBodySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+      return c.json(
+        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        400,
+      );
     }
     const agentName = parsed.data.agent.trim();
 
@@ -259,8 +267,19 @@ projectsApp.openapi(
         files: [{ path: manifestPath, content: serializeManifest(manifest) }],
         message: `chore: set default agent to ${agentName}`,
         branch: loaded.row.defaultBranch,
+        expectedFileRevision:
+          manifest.revision === undefined
+            ? undefined
+            : {
+                path: manifestPath,
+                sha: manifest.revision,
+                candidatePaths: manifest.candidatePaths,
+              },
       });
     } catch (error) {
+      if (error instanceof GitFileRevisionConflictError) {
+        return c.json({ error: error.message }, 409);
+      }
       return c.json(
         { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
         502,
@@ -296,7 +315,10 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), agentName: z.string() }),
       body: { content: { 'application/json': { schema: AgentBlockSchema } } },
     },
-    responses: { 200: json(z.any(), 'Updated agent config'), ...errors(400, 403, 404) },
+    responses: {
+      200: json(z.any(), 'Updated agent config'),
+      ...errors(400, 403, 404, 409, 502),
+    },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -313,15 +335,22 @@ projectsApp.openapi(
 
     const parsed = AgentBlockSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+      return c.json(
+        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        400,
+      );
     }
 
     // Split the wire body into its two homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
     const { opencode: opencodeDraft, ...governanceRaw } = parsed.data;
+    const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
+    if (!normalizedGovernance.ok) {
+      return c.json({ error: normalizedGovernance.error, code: 'invalid_body' }, 400);
+    }
     const governanceBlock: AgentBlockV2 = {};
-    for (const [key, value] of Object.entries(governanceRaw)) {
+    for (const [key, value] of Object.entries(normalizedGovernance.block)) {
       if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
     }
 
@@ -361,11 +390,7 @@ projectsApp.openapi(
       return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
     }
 
-    // Shape-validate through the REAL parser before committing, exactly as the
-    // scope route does. `validateManifest` (which applyAgentBlockV2 gates on)
-    // does not check `connectors_personal` at all, so without this a save could
-    // commit an agent whose personal set isn't a subset of its grant — a block
-    // that then fails to parse, breaking session-create for that agent.
+    // Re-parse through the runtime grant reader before committing.
     const parsedCheck = extractAgents({ ...manifest, raw: applied.raw });
     const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
     if (parseProblem) {
@@ -428,8 +453,19 @@ projectsApp.openapi(
         files,
         message,
         branch: loaded.row.defaultBranch,
+        expectedFileRevision:
+          manifest.revision === undefined
+            ? undefined
+            : {
+                path: manifestPath,
+                sha: manifest.revision,
+                candidatePaths: manifest.candidatePaths,
+              },
       });
     } catch (err) {
+      if (err instanceof GitFileRevisionConflictError) {
+        return c.json({ error: err.message }, 409);
+      }
       return c.json(
         { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },
         502,

@@ -89,7 +89,7 @@ model, the agent can:
 The agent is **read-only** on every source and its only write is to Linear, where
 it creates and updates issues. It does not set priority, assign owners, or close
 issues — those stay with people. Credentials are encrypted in the Secrets Manager
-and injected at runtime, never shown to the model or written to logs.
+and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Keep one issue per theme">
@@ -114,12 +114,9 @@ systems and becomes one quantified issue the team can weigh against the rest.
 The agent reads several feedback sources and writes to Linear, so its access is
 scoped to exactly that:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the sources it's scoped to, and only the Linear writes leave the
-  sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the sources it's scoped to, and only the Linear writes are written back out.
 - **Scoped secrets.** The Plain, review-source, Slack, and Linear credentials are
-  encrypted in the Secrets Manager and injected into the sandbox at runtime, never
-  exposed to the model or the logs.
+  encrypted in the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only sources, scoped writes.** The feedback sources are read-only; the
   only write is creating and updating Linear issues. The agent does not prioritize,
   assign, or close.

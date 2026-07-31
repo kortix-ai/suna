@@ -49,7 +49,8 @@ kortix init my-app
 cd my-app
 ```
 
-`kortix init` creates a project directory with the `general-knowledge-worker` template.
+`kortix init` creates a project directory with the general-purpose starter. Its
+`kortix.yaml` declares `kortix_version: 2` and runs OpenCode.
 
 To link an existing cloned repo to a project you already created:
 
@@ -94,6 +95,8 @@ To attach your local OpenCode client to the sandbox instead, run:
 ```sh
 kortix sessions connect
 ```
+
+This command attaches to the OpenCode REST process.
 
 To open a raw shell in the sandbox, with no agent involved, run:
 
@@ -184,18 +187,23 @@ A command resolves "the project" in this order:
 
 ### Project scaffold
 
-`kortix init [project-name] [options]` creates a new, empty project directory. It writes `kortix.yaml`, `.kortix/Dockerfile`, and the OpenCode config directory. It does not write `.kortix/link.json` — `kortix ship` or `kortix projects link` create that later.
+`kortix init [project-name] [options]` creates a new project directory. The
+starter writes a v2 `kortix.yaml` and the canonical `.kortix/opencode`
+system-skill source. The command can wire local coding-tool discovery without
+changing the cloud OpenCode runtime. The command does not write
+`.kortix/link.json`. `kortix ship` or `kortix projects link` create that file.
 
 | Flag | Meaning |
 | --- | --- |
 | `--name <project>` | Project name. |
 | `--primary <agent>` | Primary agent. |
 | `--agents <csv>` | Local coding-agent integrations to wire up. |
-| `--template <general-knowledge-worker\|minimal>` | Project template. Default: `general-knowledge-worker`. |
 | `--force` | Configure the current directory in place instead of scaffolding a new one. |
 | `--overwrite` | Overwrite existing files. |
 | `--no-git` | Skip git init. |
 | `-y, --yes` | Don't prompt. |
+
+The local coding-tool selection does not change the cloud OpenCode runtime.
 
 `kortix init` does not include a marketplace picker. Adding a marketplace skill is an agent import: start a session and ask the agent to bring one in.
 
@@ -233,9 +241,9 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions ls` | List every session on the project. |
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
-| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes); a timeout is a hard failure (exit 1), not a silent success. Backend-origin overrides require a backend token (PAT or service account) and 403 otherwise: `--origin-ref <user-id>` (attribute to your end user), `--secret <id>` (narrow injected secrets, repeatable), `--no-secrets` (inject zero project secrets), `--connector <alias>=<profile-id>` (bind a connector to a profile, repeatable), `--context <key>=<value>` (runtime context, repeatable). |
+| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes); a timeout is a hard failure (exit 1), not a silent success. Use `--secret <id>` (repeatable) or `--no-secrets` to narrow project-secret delivery; these flags require a backend token. Use `--connector <alias>=<authorization-id>` to select connector authorizations. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
-| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode server already running in the sandbox. Alias: `attach`. |
+| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode REST compatibility process in the sandbox. Alias: `attach`. |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. Aliases: `messages`, `history`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
@@ -363,7 +371,10 @@ Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`
 
 ### System skills
 
-The Kortix system skills are the platform's own documentation — sessions, sandboxes, the executor, memory, channels. The API serves them live, so they always match the version of Kortix you are signed into. The binary and a token are all any agent needs to learn how to drive Kortix: no repo checkout, no baked image.
+The Kortix system skills are the platform's own documentation. They cover
+sessions, sandboxes, OpenCode, the executor, memory, and
+channels. The API serves them live, so they match the deployed host version.
+The binary and a token are enough for an agent to retrieve this context.
 
 | Command | Effect |
 | --- | --- |
@@ -385,7 +396,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | --- | --- |
 | `kortix executor discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix executor describe <connector>.<action>` | Show a tool's input schema. |
-| `kortix executor call <connector> <action> '<json-args>'` | Run a tool. |
+| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. The legacy split form remains supported. |
 | `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix executor rm <slug>` | Remove a connector from the project. |
 | `kortix executor connect <slug>` | Mint a connect link for a human. |

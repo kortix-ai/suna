@@ -97,10 +97,10 @@ can reconnect it before the next task arrives. Do nothing else on this run.
 
 <guardrails>
 - **Isolation.** Every mention runs in its own fresh session and its own
-  microVM sandbox. A session reaches only the platforms it's scoped to.
+  isolated sandbox. A session reaches only the platforms it's scoped to.
 - **Scoped, brokered secrets.** Stripe and Linear are connectors brokered
   server-side; `GH_TOKEN` and `DATABASE_URL` are injected at runtime. No raw
-  credential is ever shown to the model, pasted in chat, or written to logs.
+  credential is ever pasted into chat.
 - **Human approval gates.** Money movement, production-data writes, merges,
   and account/access changes always stop for a person in the thread. No
   exceptions, no batching around the gate.

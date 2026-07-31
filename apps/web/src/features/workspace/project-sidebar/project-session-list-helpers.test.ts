@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   resolveSessionListViewState,
+  sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
-  sortSessionsByCreatedAt,
+  sortSessionsByLastActivity,
 } from './project-session-list-helpers';
-import type { ProjectSession } from '@kortix/sdk';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -51,13 +52,43 @@ describe('shouldPollProjectSessions', () => {
   });
 });
 
-describe('sortSessionsByCreatedAt', () => {
-  test('orders sessions newest-first', () => {
-    const oldest = makeSession({ session_id: 'a', created_at: '2026-01-01T00:00:00.000Z' });
-    const middle = makeSession({ session_id: 'b', created_at: '2026-01-02T00:00:00.000Z' });
-    const newest = makeSession({ session_id: 'c', created_at: '2026-01-03T00:00:00.000Z' });
+describe('session last activity', () => {
+  test('uses updated_at for a reused session', () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-08T08:00:00.000Z',
+    });
 
-    const result = sortSessionsByCreatedAt([oldest, newest, middle]);
+    expect(sessionLastActivityAt(session)).toBe('2026-01-08T08:00:00.000Z');
+  });
+
+  test('falls back to created_at when updated_at is absent', () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: undefined,
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  test('orders reused sessions by latest activity', () => {
+    const oldest = makeSession({
+      session_id: 'a',
+      created_at: '2026-01-03T00:00:00.000Z',
+      updated_at: '2026-01-03T00:00:00.000Z',
+    });
+    const middle = makeSession({
+      session_id: 'b',
+      created_at: '2026-01-02T00:00:00.000Z',
+      updated_at: '2026-01-05T00:00:00.000Z',
+    });
+    const newest = makeSession({
+      session_id: 'c',
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-06T00:00:00.000Z',
+    });
+
+    const result = sortSessionsByLastActivity([oldest, newest, middle]);
 
     expect(result.map((s) => s.session_id)).toEqual(['c', 'b', 'a']);
   });
@@ -69,13 +100,13 @@ describe('sortSessionsByCreatedAt', () => {
     ];
     const inputCopy = [...input];
 
-    sortSessionsByCreatedAt(input);
+    sortSessionsByLastActivity(input);
 
     expect(input).toEqual(inputCopy);
   });
 
   test('an empty list sorts to an empty list', () => {
-    expect(sortSessionsByCreatedAt([])).toEqual([]);
+    expect(sortSessionsByLastActivity([])).toEqual([]);
   });
 });
 

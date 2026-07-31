@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -69,5 +69,8 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
         lte(sandboxComputeSessions.lastBilledAt, cutoff.toISOString()),
       ),
     )
+    // Longest-unsettled first, so a saturated batch drains the most expensive
+    // backlog rather than whatever the planner happened to scan.
+    .orderBy(asc(sandboxComputeSessions.lastBilledAt))
     .limit(limit);
 }

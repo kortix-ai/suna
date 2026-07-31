@@ -4,6 +4,7 @@ import {
   canMountSessionChat,
   canShowSessionChat,
   findInitialSessionPin,
+  resolveSessionContentState,
 } from './session-load-state';
 
 describe('session load state', () => {
@@ -46,5 +47,65 @@ describe('session load state', () => {
         runtimeBootError: null,
       }),
     ).toBe(true);
+  });
+
+  test('keeps hydrated messages visible after a runtime session lookup miss', () => {
+    expect(
+      resolveSessionContentState({
+        runtimeReady: true,
+        sessionFetched: true,
+        hasRuntimeSession: false,
+        hasMessages: true,
+        hasOptimisticPrompt: false,
+      }),
+    ).toEqual({
+      isNotFound: false,
+      isDataLoading: false,
+    });
+  });
+
+  test('reports a terminal lookup miss when the session has no content', () => {
+    expect(
+      resolveSessionContentState({
+        runtimeReady: true,
+        sessionFetched: true,
+        hasRuntimeSession: false,
+        hasMessages: false,
+        hasOptimisticPrompt: false,
+      }),
+    ).toEqual({
+      isNotFound: true,
+      isDataLoading: false,
+    });
+  });
+
+  test('keeps an unresolved session on the loading surface', () => {
+    expect(
+      resolveSessionContentState({
+        runtimeReady: false,
+        sessionFetched: false,
+        hasRuntimeSession: false,
+        hasMessages: false,
+        hasOptimisticPrompt: false,
+      }),
+    ).toEqual({
+      isNotFound: false,
+      isDataLoading: true,
+    });
+  });
+
+  test('keeps an optimistic prompt visible during a runtime session lookup miss', () => {
+    expect(
+      resolveSessionContentState({
+        runtimeReady: true,
+        sessionFetched: true,
+        hasRuntimeSession: false,
+        hasMessages: false,
+        hasOptimisticPrompt: true,
+      }),
+    ).toEqual({
+      isNotFound: false,
+      isDataLoading: false,
+    });
   });
 });

@@ -288,6 +288,17 @@ export type {
   BillingTransactionsSummary,
   BillingCreditBreakdown,
   BillingTierConfiguration,
+  SessionCostOwnerType,
+  SessionCostSummary,
+  SessionCostModelUsage,
+  SessionCostLlmLedgerEntry,
+  SessionCostComputeLedgerEntry,
+  SessionCostLedgerEntry,
+  SessionCostDetail,
+  SessionCostReconciliation,
+  SessionCostsPage,
+  ListSessionCostsOptions,
+  GetSessionCostRecordOptions,
   // Account audit
   AuditEvent,
   AuditEventList,
@@ -362,7 +373,6 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
-export * from './core/acp';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';

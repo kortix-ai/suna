@@ -1,43 +1,394 @@
 /**
- * Official brand logos.
- *  - Apple / macOS / Linux → @icons-pack/react-simple-icons (official Simple
- *    Icons), rendered in `currentColor` so they adapt to light/dark.
- *  - Windows → react-icons Font Awesome (Simple Icons dropped the Windows mark).
- *  - Chrome → the official multicolor logo from /public/brand/chrome.svg
- *    (Simple Icons only ships a flat single-color Chrome mark).
+ * Official brand logos — Apple / Windows / Linux / Google Play.
  *
- * App Store / Google Play use the official store badges in /public/stores
- * directly (they include the wordmark), so they're not wrapped here.
+ * All four marks the /download page needs live here, so its five rows draw from
+ * one source rather than mixing a local wrapper with a raw icon import. Apple
+ * covers two rows: macOS on the desktop card, iPhone and iPad on the mobile one.
+ *
+ * NOTHING in this module may be a client component, and that is the whole
+ * reason it exists. `features/icon/icon.tsx` carries the same Apple and Google
+ * Play glyphs, but that file is `'use client'` and exports them as properties of
+ * one `Icon` object. A Server Component importing it receives a client-reference
+ * proxy, so `Icon.Apple` reads back as `undefined` and React throws "Element
+ * type is invalid". /download is server-rendered, so it must import from here.
+ *
+ * Same reason the Phosphor marks come from `@/lib/icons/ssr` and not
+ * `@phosphor-icons/react`: the main entry calls createContext at module scope
+ * and crashes any server component that reaches it. The explicit weight="fill"
+ * still wins over the bound default, so those glyphs stay solid regardless of
+ * DEFAULT_ICON_WEIGHT.
+ *
+ * Apple, Windows and Linux are `currentColor` and inherit the row's text
+ * colour. Google Play is the four-colour original, because its mark has no
+ * recognisable single-colour form — flattening it produces a bare triangle.
+ *
+ * Every mark is `aria-hidden`. Each one sits beside its own platform name in
+ * the row, so announcing the logo as well is duplication, not information.
  */
 
-import { SiApple, SiLinux } from '@icons-pack/react-simple-icons';
-import { FaWindows } from 'react-icons/fa6';
+import { cn } from '@/lib/utils';
 
 type MarkProps = { className?: string };
 
+/**
+ * `size-4` is a default, not a fixed size — `cn` runs tailwind-merge, so a
+ * caller passing `size-5` replaces it rather than fighting it.
+ */
 export function AppleMark({ className }: MarkProps) {
-  return <SiApple className={className} />;
+  return (
+    <svg
+      viewBox="0 0 41.5 51"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('size-4', className)}
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        d="M40.2,17.4c-3.4,2.1-5.5,5.7-5.5,9.7c0,4.5,2.7,8.6,6.8,10.3c-0.8,2.6-2,5-3.5,7.2
+          c-2.2,3.1-4.5,6.3-7.9,6.3s-4.4-2-8.4-2c-3.9,0-5.3,2.1-8.5,2.1s-5.4-2.9-7.9-6.5C2,39.5,0.1,33.7,0,27.6
+          c0-9.9,6.4-15.2,12.8-15.2c3.4,0,6.2,2.2,8.3,2.2c2,0,5.2-2.3,9-2.3C34.1,12.2,37.9,14.1,40.2,17.4z
+          M28.3,8.1C30,6.1,30.9,3.6,31,1c0-0.3,0-0.7-0.1-1c-2.9,0.3-5.6,1.7-7.5,3.9c-1.7,1.9-2.7,4.3-2.8,6.9c0,0.3,0,0.6,0.1,0.9
+          c0.2,0,0.5,0.1,0.7,0.1C24.1,11.6,26.6,10.2,28.3,8.1z"
+      />
+    </svg>
+  );
+}
+
+export function PlayStoreMark({ className }: MarkProps) {
+  return (
+    <svg
+      viewBox="0 0 466 511.98"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('size-4', className)}
+      aria-hidden="true"
+    >
+      <path
+        fill="#EA4335"
+        d="M199.9 237.8l-198.5 232.37c7.22,24.57 30.16,41.81 55.8,41.81 11.16,0 20.93,-2.79 29.3,-8.37l0 0 244.16 -139.46 -130.76 -126.35z"
+      />
+      <path
+        fill="#FBBC04"
+        d="M433.91 205.1l0 0 -104.65 -60 -111.61 110.22 113.01 108.83 104.64 -58.6c18.14,-9.77 30.7,-29.3 30.7,-50.23 -1.4,-20.93 -13.95,-40.46 -32.09,-50.22z"
+      />
+      <path
+        fill="#34A853"
+        d="M199.42 273.45l129.85 -128.35 -241.37 -136.73c-8.37,-5.58 -19.54,-8.37 -30.7,-8.37 -26.5,0 -50.22,18.14 -55.8,41.86 0,0 0,0 0,0l198.02 231.59z"
+      />
+      <path
+        fill="#4285F4"
+        d="M1.39 41.86c-1.39,4.18 -1.39,9.77 -1.39,15.34l0 397.64c0,5.57 0,9.76 1.4,15.34l216.27 -214.86 -216.28 -213.46z"
+      />
+    </svg>
+  );
 }
 
 export function WindowsMark({ className }: MarkProps) {
-  return <FaWindows className={className} />;
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="32"
+      height="32"
+      fill="currentColor"
+      viewBox="0 0 256 256"
+      className={cn('size-4', className)}
+      aria-hidden="true"
+    >
+      <path d="M104,144v51.64a8,8,0,0,1-8,8,8.54,8.54,0,0,1-1.43-.13l-64-11.64A8,8,0,0,1,24,184V144a8,8,0,0,1,8-8H96A8,8,0,0,1,104,144Zm-2.87-89.78a8,8,0,0,0-6.56-1.73l-64,11.64A8,8,0,0,0,24,72v40a8,8,0,0,0,8,8H96a8,8,0,0,0,8-8V60.36A8,8,0,0,0,101.13,54.22ZM208,136H128a8,8,0,0,0-8,8v57.45a8,8,0,0,0,6.57,7.88l80,14.54A7.61,7.61,0,0,0,208,224a8,8,0,0,0,8-8V144A8,8,0,0,0,208,136Zm5.13-102.14a8,8,0,0,0-6.56-1.73l-80,14.55A8,8,0,0,0,120,54.55V112a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V40A8,8,0,0,0,213.13,33.86Z"></path>
+    </svg>
+  );
 }
 
 export function LinuxMark({ className }: MarkProps) {
-  return <SiLinux className={className} />;
-}
-
-export function ChromeMark({ className }: MarkProps) {
-  // Official multicolor Chrome logo, inlined so it renders without depending on
-  // a deployed /public asset (a missing image is the usual "nothing renders" in
-  // the desktop webview before a deploy). Simple Icons only ships a flat mark.
   return (
-    <svg viewBox="0 0 48 48" className={className} role="img" aria-hidden>
-      <path fill="#EA4335" d="M24 24 L4.95 13 A22 22 0 0 1 43.05 13 Z" />
-      <path fill="#34A853" d="M24 24 L24 46 A22 22 0 0 1 4.95 13 Z" />
-      <path fill="#FBBC04" d="M24 24 L43.05 13 A22 22 0 0 1 24 46 Z" />
-      <circle cx="24" cy="24" r="10" fill="#fff" />
-      <circle cx="24" cy="24" r="8" fill="#1A73E8" />
+    <svg
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('size-4 origin-center scale-[1.5]', className)}
+      aria-hidden="true"
+    >
+      <path
+        d="M30 16C30 23.728 23.735 30 16 30C8.265 30 2 23.728 2 16C2 8.265 8.265 2 16 2C23.735 2 30 8.265 30 16Z"
+        fill="white"
+      />
+      <path
+        d="M11.3063 21.91C11.181 21.7232 11.0714 21.4713 10.9824 21.1699C9.37571 19.358 10.6169 16.6916 11.8446 14.881C11.9623 14.6874 12.0905 14.5004 12.2299 14.3215C13.1666 13.1577 13.4089 12.3478 13.481 11.2521C13.4896 11.0481 13.4727 10.7781 13.4533 10.4678C13.3542 8.8837 13.1895 6.25174 16.0159 6.0184C19.5489 5.72669 19.2611 8.97105 19.235 10.8732C19.2339 10.9519 19.2328 11.0285 19.2321 11.1024C19.2225 12.249 19.8209 13.0341 20.4455 13.8535C20.6736 14.1528 20.9052 14.4566 21.112 14.7843C21.1181 14.794 21.1242 14.8038 21.1303 14.8135C22.2218 16.3877 23.2994 18.737 21.7995 20.9653C21.5887 21.7259 21.2695 22.424 20.8434 22.9921C19.3136 25.0052 17.9539 24.8008 16.892 24.6412C16.5717 24.5931 16.2785 24.549 16.0159 24.5711C15.5797 24.5977 15.2301 24.6682 14.9281 24.7292C13.7608 24.9648 13.3046 25.0569 11.3063 21.91Z"
+        fill="#000000"
+      />
+      <path
+        d="M18.0139 7.79452C17.9811 8.72691 16.9921 9.53681 15.8065 9.61167C14.6209 9.68654 13.6907 8.97873 13.7235 8.04633C13.7562 7.11393 14.7453 6.30404 15.9309 6.22917C17.1165 6.16112 18.0466 6.86212 18.0139 7.79452Z"
+        fill="url(#paint0_linear_87_7435)"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M15.8656 10.0609C15.8751 10.5679 16.1073 11.0002 16.4334 11.1955C15.3695 11.1002 14.0512 11.4891 14.0512 12.2252C14.0348 13.4703 13.3418 15.0195 12.8429 16.1346C12.7447 16.3543 12.654 16.5571 12.5774 16.7374C12.2686 17.5021 12.0833 18.32 12.0614 19.1221C11.2435 17.9947 11.8378 16.5484 12.1582 15.9207C12.5846 15.0947 12.5764 14.9916 12.4108 15.1852C11.7759 16.2648 10.5803 18.4333 12.0775 19.736C12.125 20.3177 12.2667 20.8813 12.5185 21.3994C14.5228 25.4421 18.2761 23.7815 19.5141 21.6853C19.6788 21.3872 19.812 21.0989 19.9177 20.8203C19.9797 20.8593 20.0461 20.8895 20.1167 20.9094C20.739 21.0932 21.6691 20.3922 21.8918 19.9566C22.1604 19.3781 21.8853 18.9833 20.9683 18.5137C20.9215 18.4906 20.8753 18.4688 20.8297 18.4485C21.1814 16.9676 20.2122 15.4276 19.52 14.7743C19.3909 14.7424 19.3727 14.8156 19.5731 15.0155C20.009 15.4333 20.9572 16.9228 20.4442 18.3091C20.3597 18.2864 20.2784 18.2704 20.2009 18.2616C20.0433 17.3158 19.6231 16.58 19.3294 16.0658C19.2629 15.9493 19.2029 15.8442 19.1538 15.7506C19.055 15.5617 18.9368 15.3661 18.8114 15.1587C18.3283 14.3594 17.739 13.3843 17.739 11.9393C17.6651 11.6214 17.3651 11.4094 16.9658 11.2923C17.4293 11.1988 17.7772 10.6573 17.7652 10.0065C17.7521 9.30545 17.3132 8.74737 16.7892 8.76099C16.2652 8.7746 15.846 9.3599 15.8656 10.0609ZM16.2979 10.2174C16.2914 10.6054 16.4748 10.9184 16.7172 10.9184C16.953 10.9184 17.156 10.6054 17.1626 10.2242C17.1691 9.83631 16.9857 9.52324 16.7434 9.52324C16.501 9.52324 16.3045 9.83631 16.2979 10.2174Z"
+        fill="url(#paint1_linear_87_7435)"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M14.5556 11.1498C14.9355 11.1294 15.2106 10.619 15.1779 10.0133C15.1451 9.40754 14.8111 8.93794 14.4311 8.95835C14.0512 8.97877 13.7761 9.48921 13.8089 10.0949C13.8416 10.7006 14.1757 11.1702 14.5556 11.1498ZM14.7848 10.2242C14.8176 10.5441 14.6997 10.8163 14.5294 10.8436C14.3591 10.864 14.1953 10.6258 14.1626 10.3059C14.1298 9.98604 14.2477 9.7138 14.418 9.68658C14.5883 9.66616 14.7521 9.90436 14.7848 10.2242Z"
+        fill="url(#paint2_linear_87_7435)"
+      />
+      <path
+        d="M16.3961 9.99963C16.3764 10.2174 16.4747 10.3944 16.6122 10.408C16.7498 10.4216 16.8808 10.2514 16.9004 10.0405C16.9201 9.82267 16.8218 9.64572 16.6843 9.63211C16.5467 9.6185 16.4157 9.78865 16.3961 9.99963Z"
+        fill="url(#paint3_linear_87_7435)"
+      />
+      <path
+        d="M14.641 10.0542C14.6606 10.2312 14.5886 10.3877 14.4838 10.4013C14.379 10.4149 14.2807 10.2788 14.261 10.0951C14.2414 9.91811 14.3134 9.76158 14.4183 9.74797C14.5231 9.73436 14.6213 9.87728 14.641 10.0542Z"
+        fill="url(#paint4_linear_87_7435)"
+      />
+      <path
+        d="M18.669 17.1525C18.669 18.3503 17.562 19.9021 15.6625 19.8885C13.7039 19.9021 12.8721 18.3503 12.8721 17.1525C12.8721 15.9547 14.169 14.9814 15.7673 14.9814C17.3721 14.9883 18.669 15.9547 18.669 17.1525Z"
+        fill="url(#paint5_linear_87_7435)"
+      />
+      <path
+        d="M17.6346 13.3892C17.615 14.6279 16.8355 14.9205 15.8529 14.9205C14.8704 14.9205 14.1564 14.7367 14.0713 13.3892C14.0713 12.5453 14.8704 12.0552 15.8529 12.0552C16.8355 12.0484 17.6346 12.5385 17.6346 13.3892Z"
+        fill="url(#paint6_linear_87_7435)"
+      />
+      <path
+        d="M11.6936 15.2947C12.3356 14.2807 13.6914 12.7221 11.9491 15.5125C10.5342 17.8129 11.4251 19.2898 11.8836 19.6981C13.2067 20.9232 13.1543 21.7467 12.1128 21.1001C9.87922 19.7185 10.3443 17.3909 11.6936 15.2947Z"
+        fill="url(#paint7_linear_87_7435)"
+      />
+      <path
+        d="M20.9881 15.71C20.4314 14.519 18.6628 11.4972 21.0733 15.009C23.2676 18.1873 21.7283 20.3992 21.4532 20.617C21.1781 20.8348 20.2545 21.2771 20.5231 20.5081C20.7982 19.739 22.1606 18.2826 20.9881 15.71Z"
+        fill="url(#paint8_linear_87_7435)"
+      />
+      <path
+        d="M11.2089 25.1021C9.74165 24.2922 7.61283 25.2586 8.38575 23.0671C8.54296 22.5703 8.15649 21.8217 8.4054 21.3384C8.70016 20.7463 9.33553 20.8756 9.71544 20.4809C10.0888 20.0726 10.3246 19.3648 11.0255 19.4736C11.7198 19.5825 12.1849 20.4673 12.6696 21.5562C13.0299 22.3321 14.3006 23.4278 14.2154 24.299C14.1106 25.6329 12.6499 25.8847 11.2089 25.1021Z"
+        fill="url(#paint9_linear_87_7435)"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.87664 20.6404C9.51984 21.0307 8.86452 20.9371 8.60152 21.4477C8.43261 21.7756 8.61716 22.2796 8.64206 22.6387C8.67282 23.0824 8.30503 23.711 8.49233 24.0899C8.70268 24.5154 9.65296 24.4602 10.0707 24.5213C11.1019 24.6719 12.8063 26.0065 13.7388 24.9414C14.6504 23.9002 12.8982 22.5825 12.4684 21.6569C12.1889 21.0289 11.7706 19.825 10.992 19.7027C10.4431 19.6175 10.1931 20.2943 9.87664 20.6404ZM11.0583 19.2446C12.0278 19.3967 12.5129 20.6535 12.8707 21.4572C13.4138 22.6227 15.2747 23.8755 14.0686 25.2531C12.9732 26.5043 11.2438 25.1604 10.0086 24.98C9.39166 24.8898 8.41858 24.9546 8.09576 24.3015C7.81821 23.7401 8.2362 23.2316 8.1974 22.672C8.16434 22.1952 7.97565 21.6832 8.2077 21.2306C8.52537 20.5945 9.13864 20.7485 9.55546 20.3192C9.99809 19.8328 10.2634 19.1211 11.0583 19.2446Z"
+        fill="#E68C3F"
+      />
+      <path
+        d="M21.3814 24.7278C22.4556 23.3735 24.8464 23.6525 23.2351 21.7945C22.8945 21.393 22.9993 20.5354 22.5801 20.1679C22.0888 19.7187 21.5451 20.0862 21.0473 19.8548C20.5495 19.603 20.0255 19.1198 19.4163 19.4601C18.8071 19.8072 18.7416 20.7056 18.6827 21.8898C18.6303 22.7405 17.8836 24.1629 18.2831 24.9456C18.8596 26.157 20.3596 25.9937 21.3814 24.7278Z"
+        fill="url(#paint10_linear_87_7435)"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M21.8097 19.6982C22.0851 19.6909 22.415 19.7102 22.7248 19.9925C23.1101 20.3322 23.1139 20.8867 23.2592 21.351C23.4312 21.9008 24.0341 22.2149 23.998 22.8597C23.9391 23.9136 22.1138 24.1675 21.552 24.8759C21.0121 25.5447 20.3297 25.9429 19.6821 25.9966C18.7 26.078 17.8888 25.2522 17.9462 24.2439C17.9928 23.4276 18.4086 22.6861 18.4593 21.8764C18.4885 21.29 18.52 20.7464 18.626 20.305C18.7331 19.8589 18.9261 19.4748 19.3083 19.257C20.1453 18.7894 20.9539 19.7206 21.8097 19.6982ZM19.5219 19.6637C19.2953 19.7931 19.1512 20.0316 19.0586 20.4171C18.9649 20.8073 18.9341 21.3073 18.9043 21.9046C18.8543 22.7162 18.4377 23.4572 18.3913 24.2713C18.3499 24.9972 18.9075 25.5961 19.6467 25.5348C20.1484 25.4932 20.7272 25.1764 21.2091 24.5797C21.6397 24.0373 23.5137 23.5336 23.5529 22.8328C23.5785 22.3752 22.9765 21.9459 22.8351 21.4943C22.7245 21.1408 22.7187 20.5932 22.4355 20.3449C22.2545 20.1795 22.0641 20.1549 21.8209 20.1613C21.1162 20.1797 20.1761 19.2992 19.5219 19.6637Z"
+        fill="#E68C3F"
+      />
+      <path
+        d="M20.9156 22.9174C22.5793 20.3652 21.3413 20.3856 20.9221 20.1882C20.5029 19.9841 20.0641 19.5825 19.5728 19.8616C19.0815 20.1474 19.0553 20.8824 19.0422 21.8489C19.0226 22.5431 18.4658 23.7069 18.7999 24.3534C19.206 25.1089 20.1885 24.0131 20.9156 22.9174Z"
+        fill="url(#paint11_linear_87_7435)"
+      />
+      <path
+        d="M10.8682 23.2847C8.37909 21.6105 9.54502 21.0388 9.91839 20.7733C10.3704 20.433 10.3769 19.7797 10.9337 19.8409C11.4904 19.9022 11.8179 20.6168 12.1913 21.5016C12.4664 22.1345 13.4228 22.9784 13.3507 23.7066C13.259 24.5642 11.9424 23.9993 10.8682 23.2847Z"
+        fill="url(#paint12_linear_87_7435)"
+      />
+      <path
+        d="M21.7481 19.9362C21.5516 20.2901 20.7525 20.8481 20.2219 20.6984C19.6783 20.5555 19.4294 19.7592 19.5407 19.1603C19.639 18.4797 20.2219 18.4457 20.9556 18.786C21.735 19.1535 21.9774 19.4666 21.7481 19.9362Z"
+        fill="#000000"
+      />
+      <path
+        d="M21.2108 19.7389C21.0863 19.9839 20.5623 20.3718 20.1955 20.2697C19.8287 20.1676 19.6453 19.6164 19.7042 19.2012C19.7566 18.7316 20.1496 18.7044 20.6475 18.9358C21.1846 19.1944 21.3549 19.4122 21.2108 19.7389Z"
+        fill="url(#paint13_linear_87_7435)"
+      />
+      <path
+        d="M14.4374 10.8576C14.6994 10.6057 15.3348 9.83668 16.54 10.6398C16.7627 10.7895 16.9461 10.8031 17.3719 10.9937C18.23 11.3612 17.8238 12.2459 16.9068 12.5454C16.5138 12.6747 16.1601 13.1715 15.4527 13.1239C14.8435 13.0899 14.6863 12.6747 14.3129 12.4501C13.6514 12.0622 13.5531 11.5381 13.9134 11.2591C14.2736 10.9801 14.4112 10.878 14.4374 10.8576Z"
+        fill="url(#paint14_linear_87_7435)"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M13.9933 11.3703C13.8563 11.4764 13.8127 11.6174 13.858 11.7734C13.951 12.0938 14.6216 12.5345 14.8784 12.7501C15.0244 12.8727 15.1914 12.9699 15.4613 12.985C16.0393 13.0239 16.3603 12.5792 16.8667 12.4126C17.1997 12.3038 17.9044 11.8882 17.671 11.4119C17.4718 11.0054 16.8008 10.9803 16.4675 10.7563C15.8939 10.3742 15.4763 10.3769 15.1788 10.4841C14.8528 10.6016 14.2885 11.1416 13.9933 11.3703ZM15.0911 10.2215C15.4781 10.0821 15.9812 10.1021 16.6126 10.5228C17.0276 10.8018 17.659 10.7749 17.9093 11.2858C18.2282 11.9365 17.4555 12.5116 16.947 12.6777C16.4025 12.857 16.0983 13.3061 15.4447 13.2624C15.1058 13.2433 14.8884 13.1158 14.7103 12.9663C14.3408 12.6561 13.7165 12.3613 13.5738 11.8694C13.4946 11.5966 13.6101 11.3204 13.8334 11.1474C14.1943 10.8679 14.682 10.369 15.0911 10.2215Z"
+        fill="#E68C3F"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M17.4745 11.5671C17.4772 11.6182 17.4395 11.6619 17.3904 11.6646C16.6971 11.7039 16.2099 12.4951 15.427 12.4951C14.9889 12.4951 14.6421 12.2837 14.3941 12.0804C14.3442 12.0395 13.9033 11.6996 13.9033 11.613C13.9033 11.5618 13.9432 11.5203 13.9925 11.5203C14.0846 11.5203 14.3625 11.8219 14.4659 11.9067C14.6995 12.0982 15.0463 12.3098 15.427 12.3098C16.2021 12.3098 16.6776 11.5195 17.3806 11.4796C17.4298 11.4768 17.4718 11.516 17.4745 11.5671Z"
+        fill="#E68C3F"
+      />
+      <path
+        d="M14.8442 10.7893C14.9752 10.6668 15.3878 10.3333 15.9315 10.6736C16.0494 10.7416 16.1673 10.8165 16.3376 10.9186C16.6848 11.1296 16.5145 11.4358 16.0952 11.6264C15.9053 11.7081 15.5909 11.885 15.3551 11.8714C15.0931 11.8442 14.9162 11.6672 14.7459 11.5515C14.4249 11.3338 14.4446 11.15 14.5952 11.0071C14.7066 10.8982 14.8311 10.7961 14.8442 10.7893Z"
+        fill="url(#paint15_linear_87_7435)"
+      />
+      <defs>
+        <linearGradient
+          id="paint0_linear_87_7435"
+          x1={16.0578}
+          y1={6.30617}
+          x2={15.8364}
+          y2={9.30598}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.8} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint1_linear_87_7435"
+          x1={12.8966}
+          y1={22.6721}
+          x2={11.2506}
+          y2={17.2716}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFEED7" />
+          <stop offset={1} stopColor="#BDBFC2" />
+        </linearGradient>
+        <linearGradient
+          id="paint2_linear_87_7435"
+          x1={12.8966}
+          y1={22.6721}
+          x2={11.2506}
+          y2={17.2716}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFEED7" />
+          <stop offset={1} stopColor="#BDBFC2" />
+        </linearGradient>
+        <linearGradient
+          id="paint3_linear_87_7435"
+          x1={16.6681}
+          y1={9.65546}
+          x2={16.5748}
+          y2={10.3542}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint4_linear_87_7435"
+          x1={14.434}
+          y1={9.78294}
+          x2={14.5344}
+          y2={10.3483}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint5_linear_87_7435"
+          x1={15.7613}
+          y1={15.6306}
+          x2={15.778}
+          y2={19.6272}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.8} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint6_linear_87_7435"
+          x1={15.8504}
+          y1={13.1247}
+          x2={15.8688}
+          y2={14.7138}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint7_linear_87_7435"
+          x1={11.72}
+          y1={14.1055}
+          x2={11.72}
+          y2={19.9372}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint8_linear_87_7435"
+          x1={21.033}
+          y1={13.5359}
+          x2={21.0308}
+          y2={18.8052}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint9_linear_87_7435"
+          x1={11.4286}
+          y1={22.4374}
+          x2={10.5354}
+          y2={25.4214}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFA63F" />
+          <stop offset={1} stopColor="#FFFF00" />
+        </linearGradient>
+        <linearGradient
+          id="paint10_linear_87_7435"
+          x1={19.882}
+          y1={21.53}
+          x2={22.2656}
+          y2={24.7801}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFA63F" />
+          <stop offset={1} stopColor="#FFFF00" />
+        </linearGradient>
+        <linearGradient
+          id="paint11_linear_87_7435"
+          x1={20.5198}
+          y1={18.9333}
+          x2={19.6863}
+          y2={22.8605}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint12_linear_87_7435"
+          x1={11.2464}
+          y1={19.9042}
+          x2={11.4117}
+          y2={24.3239}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint13_linear_87_7435"
+          x1={20.3755}
+          y1={18.8616}
+          x2={20.5688}
+          y2={20.1822}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient
+          id="paint14_linear_87_7435"
+          x1={15.7644}
+          y1={10.784}
+          x2={15.7805}
+          y2={13.1098}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFA63F" />
+          <stop offset={1} stopColor="#FFFF00" />
+        </linearGradient>
+        <linearGradient
+          id="paint15_linear_87_7435"
+          x1={15.5106}
+          y1={10.5638}
+          x2={15.5062}
+          y2={11.7936}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="white" stopOpacity={0.65} />
+          <stop offset={1} stopColor="white" stopOpacity={0} />
+        </linearGradient>
+      </defs>
     </svg>
   );
 }

@@ -107,6 +107,7 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
   return {
     crId: str(d.cr_id),
+    number: typeof d.number === 'number' ? d.number : undefined,
     whatChanged,
     descriptionMarkdown,
     impact: str(d.impact) ?? '',

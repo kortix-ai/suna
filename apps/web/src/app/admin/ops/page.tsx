@@ -14,7 +14,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
-import { Activity, AlertTriangle, Clock, Database, Gauge, RefreshCw } from 'lucide-react';
+import {
+  ActivityIcon as Activity,
+  WarningIcon as AlertTriangle,
+  ClockIcon as Clock,
+  DatabaseIcon as Database,
+  GaugeIcon as Gauge,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
 // Cap how many audit rows we render — the list is unbounded and re-renders on a

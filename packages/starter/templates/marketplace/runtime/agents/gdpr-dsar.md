@@ -6,7 +6,6 @@ description: >-
   in Google Docs, and flags it to {{legal_review_channel}} for a lawyer to
   approve. Never deletes data and never replies to the subject itself.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

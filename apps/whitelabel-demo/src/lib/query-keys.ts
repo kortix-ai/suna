@@ -11,6 +11,8 @@ export const qk = {
   sessions: (projectId: string) => ['project-sessions', projectId] as const,
   session: (projectId: string, sessionId: string) =>
     ['project-session', projectId, sessionId] as const,
+  sessionScope: (projectId: string, sessionId: string) =>
+    ['project-session-scope', projectId, sessionId] as const,
   sessionStart: (projectId: string, sessionId: string) =>
     ['session-start', projectId, sessionId] as const,
   secrets: (projectId: string) => ['project-secrets', projectId] as const,

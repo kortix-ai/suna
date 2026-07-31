@@ -3,27 +3,26 @@
 import { useTranslations } from 'next-intl';
 
 import {
-  ArrowDown,
-  ArrowDownRight,
-  ArrowUp,
-  ArrowUpRight,
-  Ban,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CreditCard,
-  ExternalLink,
-  Filter,
-  FolderKanban,
-  History,
-  Loader2,
-  Mail,
-  RefreshCw,
-  Shield,
-  SlidersHorizontal,
-  Users,
-  X,
-} from 'lucide-react';
+  ArrowDownIcon as ArrowDown,
+  ArrowDownRightIcon as ArrowDownRight,
+  ArrowUpIcon as ArrowUp,
+  ArrowUpRightIcon as ArrowUpRight,
+  ProhibitIcon as Ban,
+  CheckCircleIcon as CheckCircle2,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  CreditCardIcon as CreditCard,
+  ArrowSquareOutIcon as ExternalLink,
+  FunnelIcon as Filter,
+  KanbanIcon as FolderKanban,
+  ClockCounterClockwiseIcon as History,
+  EnvelopeIcon as Mail,
+  ArrowClockwiseIcon as RefreshCw,
+  ShieldIcon as Shield,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +58,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
@@ -73,9 +73,9 @@ import {
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
+import { useDebounce } from '@/hooks/use-debounced-value';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { useDebounce } from '@/hooks/use-debounced-value';
 
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
@@ -1210,7 +1210,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             disabled={setTier.isPending || isEnterprise}
             className="gap-1.5"
           >
-            {setTier.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {setTier.isPending && <Loading className="h-3.5 w-3.5" />}
             {isEnterprise ? 'Enterprise active' : 'Activate Enterprise'}
           </Button>
           {isEnterprise && (
@@ -1277,7 +1277,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             className="flex-1 gap-1.5"
           >
             {grant.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="h-3.5 w-3.5" />
             ) : (
               <ArrowUpRight className="h-3.5 w-3.5" />
             )}
@@ -1326,7 +1326,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
   if (usersQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loading className="h-4 w-4" />
         {tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}
       </div>
     );
@@ -1414,7 +1414,7 @@ function ProjectsTab({
   if (projectsQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loading className="h-4 w-4" />
         Loading projects…
       </div>
     );
@@ -1501,7 +1501,7 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
   if (ledgerQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loading className="h-4 w-4" />
         {tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}
       </div>
     );

@@ -9,21 +9,21 @@
 // per account+flow+provider in localStorage.
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  KeyRound,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  KeyIcon as KeyRound,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  MagnifyingGlassIcon as Search,
+  ShieldCheckIcon as ShieldCheck,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -224,7 +224,7 @@ function SchematicPanel({ schematic }: { schematic: StepSchematic }) {
                 {row.value ?? row.label}
               </Badge>
             ) : row.value ? (
-              <code className="bg-muted/50 min-w-0 max-w-[60%] truncate rounded px-1.5 py-0.5 font-mono text-xs">
+              <code className="bg-muted/50 max-w-[60%] min-w-0 truncate rounded px-1.5 py-0.5 font-mono text-xs">
                 {row.value}
               </code>
             ) : null}
@@ -832,13 +832,7 @@ function ImportForm({
 // (ScimValuesPanel below) then keeps both visible on every remaining Entra
 // step, instead of vanishing the moment you click Continue.
 
-function StepBlocks({
-  blocks,
-  spUrls,
-}: {
-  blocks: StepBlock[];
-  spUrls: SamlSpUrls | null;
-}) {
+function StepBlocks({ blocks, spUrls }: { blocks: StepBlock[]; spUrls: SamlSpUrls | null }) {
   return (
     <>
       {blocks.map((block, i) =>

@@ -1,6 +1,10 @@
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+// Server components must import icons from '@/lib/icons/ssr'. The `Icon`
+// namespace in '@/features/icon/icon' lives behind a 'use client' boundary, so
+// the RSC graph only ever sees an opaque client reference — dotting into it
+// (`Icon.Github`) yields `undefined` and crashes the render.
+import { GithubLogoIcon, SparkleIcon } from '@/lib/icons/ssr';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider';
@@ -54,7 +58,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             type: 'icon',
             text: 'Get started',
             label: 'Get started',
-            icon: <Icon.Sparkles />,
+            icon: <SparkleIcon />,
             url: '/auth',
             external: false,
           },
@@ -62,7 +66,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             type: 'icon',
             text: 'GitHub',
             label: 'GitHub',
-            icon: <Icon.Github />,
+            icon: <GithubLogoIcon />,
             url: 'https://github.com/kortix-ai/suna',
             external: true,
           },

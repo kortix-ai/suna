@@ -73,7 +73,7 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
  * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
- * this ceiling is genuinely unknown to the platform and still refused.
+ * this ceiling is genuinely unknown to the platform and remains refused.
  */
 export const MAX_SCHEMA_VERSION = 2;
 
@@ -200,6 +200,10 @@ export interface ParsedManifest {
    *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
    *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
   path: string;
+  /** Git blob SHA observed with this manifest, or null when the file was absent. */
+  revision?: string | null;
+  /** Logical manifest files in winner-priority order. */
+  candidatePaths?: string[];
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -223,9 +227,9 @@ export interface LoadedTriggers {
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
-  let found: { path: string; content: string } | null;
+  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale
     // default) even when the file actually on disk is kortix.yaml — so we
@@ -234,7 +238,9 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
+      forceRefresh: opts?.forceRefresh,
+    });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,
@@ -248,7 +254,13 @@ export async function readManifest(
     return null;
   }
   if (!found) return null;
-  return parseManifestString(found.content, manifestFormatForPath(found.path), found.path);
+  return parseManifestString(
+    found.content,
+    manifestFormatForPath(found.path),
+    found.path,
+    found.sha,
+    found.candidatePaths,
+  );
 }
 
 /**
@@ -289,6 +301,9 @@ export function synthesizeBlankManifest(project: {
   name?: string;
   manifestPath?: string | null;
 }): ParsedManifest {
+  const candidatePaths = manifestCandidatePaths(project.manifestPath ?? undefined).map(
+    (candidate) => candidate.path,
+  );
   return {
     schemaVersion: 2,
     raw: {
@@ -306,7 +321,9 @@ export function synthesizeBlankManifest(project: {
       },
     },
     format: 'yaml',
-    path: manifestCandidatePaths(project.manifestPath ?? undefined)[0].path,
+    path: candidatePaths[0] ?? MANIFEST_FILENAME_YAML,
+    revision: null,
+    candidatePaths,
   };
 }
 
@@ -320,6 +337,8 @@ export function parseManifestString(
   raw: string,
   format: ManifestFormat = 'toml',
   path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
+  revision?: string | null,
+  candidatePaths?: string[],
 ): ParsedManifest {
   const parsed = parseManifestText(raw, format);
   const version =
@@ -338,7 +357,15 @@ export function parseManifestString(
     );
   }
 
-  return { schemaVersion: Math.floor(version), raw: parsed, format, path };
+  const manifest: ParsedManifest = {
+    schemaVersion: Math.floor(version),
+    raw: parsed,
+    format,
+    path,
+  };
+  if (revision !== undefined) manifest.revision = revision;
+  if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
+  return manifest;
 }
 
 /** Serialize a parsed manifest back to text (in its own format) for committing. */
@@ -503,8 +530,13 @@ interface ParseErr {
   error: GitTriggerParseError;
 }
 
-function parseTriggerEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
-  const err = (slug: string, message: string): ParseErr => makeTriggerError(slug, message, filename);
+function parseTriggerEntry(
+  entry: unknown,
+  index: number,
+  filename: string = MANIFEST_FILENAME,
+): ParseOk | ParseErr {
+  const err = (slug: string, message: string): ParseErr =>
+    makeTriggerError(slug, message, filename);
 
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return err('(invalid)', `[[triggers]] entry #${index + 1} is not a table`);
@@ -747,7 +779,11 @@ function coerceBool(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function makeTriggerError(slug: string, message: string, filename: string = MANIFEST_FILENAME): ParseErr {
+function makeTriggerError(
+  slug: string,
+  message: string,
+  filename: string = MANIFEST_FILENAME,
+): ParseErr {
   return {
     ok: false,
     error: { slug, path: `${filename}#triggers.${slug}`, error: message },

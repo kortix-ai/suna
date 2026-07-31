@@ -18,9 +18,9 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
+  | 'teams'
   | 'voice'
   | 'llm_gateway'
-  | 'acp_runtime'
   | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
@@ -143,6 +143,13 @@ export interface GatewayCatalogModel {
   description?: string;
   open_weights?: boolean;
   last_updated?: string;
+  /**
+   * Whether the project OFFERS this model — server-owned per-project
+   * enablement, resolved by the API and enforced by the gateway. Served by
+   * `/model-picker`; absent on the raw `/llm-catalog` (sandbox config) path,
+   * where enablement doesn't apply.
+   */
+  enabled?: boolean;
 }
 
 export interface ProjectLlmCatalogResponse {

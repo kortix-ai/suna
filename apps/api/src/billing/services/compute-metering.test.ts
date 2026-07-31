@@ -104,10 +104,31 @@ let sandboxRows: FakeSandboxRow[] = [];
 let providerStatusById: Record<string, string> = {};
 
 mock.module('../../platform/providers', () => ({
+  // 60 minutes — the provider's own idle auto-stop, which is also the ceiling on
+  // how long a compute window may bill past its last liveness observation
+  // (services/compute-liveness.ts).
+  providerAutoStopBackstopMinutes: () => 60,
   getProvider: () => ({
     getStatus: async (externalId: string) => providerStatusById[externalId] ?? 'running',
   }),
 }));
+
+const selectMissing = async (limit: number) =>
+  sandboxRows
+    .filter(
+      (r) =>
+        r.status === 'active' &&
+        !openRowFor(r.sandboxId) &&
+        accountsById[r.accountId]?.billingModel === 'per_seat',
+    )
+    .slice(0, limit)
+    .map((r) => ({
+      sandboxId: r.sandboxId,
+      sessionId: r.sessionId,
+      accountId: r.accountId,
+      provider: r.provider,
+      externalId: r.externalId ?? `ext-${r.sandboxId}`,
+    }));
 
 mock.module('../../shared/db', () => ({
   db: {
@@ -120,22 +141,10 @@ mock.module('../../shared/db', () => ({
         innerJoin: () => ({
           leftJoin: () => ({
             where: () => ({
-              limit: async (limit: number) =>
-                sandboxRows
-                  .filter(
-                    (r) =>
-                      r.status === 'active' &&
-                      !openRowFor(r.sandboxId) &&
-                      accountsById[r.accountId]?.billingModel === 'per_seat',
-                  )
-                  .slice(0, limit)
-                  .map((r) => ({
-                    sandboxId: r.sandboxId,
-                    sessionId: r.sessionId,
-                    accountId: r.accountId,
-                    provider: r.provider,
-                    externalId: r.externalId ?? `ext-${r.sandboxId}`,
-                  })),
+              // The sweep orders oldest-sandbox-first before limiting, so an
+              // unordered LIMIT can't crowd the same rows out of every batch.
+              orderBy: () => ({ limit: selectMissing }),
+              limit: selectMissing,
             }),
           }),
         }),

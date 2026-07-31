@@ -88,7 +88,7 @@ model, the agent can:
 The agent never pushes to a branch anyone reads from: every change lands as a
 **pull request** gated on a human merge. It edits only files under the docs and
 README paths; the code itself is read-only to it. Credentials are encrypted in
-the secrets manager and injected at runtime, never shown to the model or written
+the secrets manager and injected at runtime, scoped to the agents you grant them to or written
 to logs.
 
 </Step>
@@ -115,12 +115,12 @@ handler. A removed feature becomes a PR that strips the stale section.
 Giving an agent write access to documentation is a trust question. The relevant
 controls on Kortix:
 
-- **Isolation.** The daily sweep runs in its own microVM sandbox, resuming the
+- **Isolation.** The daily sweep runs in its own isolated sandbox, resuming the
   same session across runs via a durable checkpoint rather than persisting the
   raw repo state. The session can read the whole repo to understand a change,
-  and only the docs PR it opens leaves the sandbox.
+  and only the docs PR it opens is written back out.
 - **Scoped secrets.** The GitHub credential is encrypted in the secrets manager,
-  injected into the sandbox at runtime, and not exposed to the model or the logs.
+  injected into the sandbox at runtime, and scoped to the agents you grant it to.
 - **PR-gated.** No change reaches a branch anyone reads without a person reviewing
   the diff and merging it.
 - **Everything is code.** The agent's persona, skills, and permissions are files

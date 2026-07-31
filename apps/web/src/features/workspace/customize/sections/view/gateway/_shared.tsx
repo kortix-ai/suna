@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
 import { getManagedModel } from '@kortix/llm-catalog';
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
+import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -20,7 +20,7 @@ export function modelLabel(id: string): string {
 }
 
 export function displayModel(id: string): string {
-  return getManagedModel(id)?.name ?? (id.split('/').pop() ?? id);
+  return getManagedModel(id)?.name ?? id.split('/').pop() ?? id;
 }
 
 export function tint(accent: string, pct: number): string {
@@ -39,11 +39,11 @@ export function CopyButton({ text, className }: { text: string; className?: stri
       }}
       aria-label="Copy"
       className={cn(
-        'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground',
+        'text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150',
         className,
       )}
     >
-      {copied ? <Check className="size-3.5 text-kortix-green" /> : <Copy className="size-3.5" />}
+      {copied ? <Check className="text-kortix-green size-3.5" /> : <Copy className="size-3.5" />}
     </button>
   );
 }
@@ -61,14 +61,16 @@ export function MetricBar({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Icon className="size-3 shrink-0 text-muted-foreground" />
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-primary/[0.06]">
+      <Icon className="text-muted-foreground size-3 shrink-0" />
+      <div className="bg-primary/[0.06] h-1.5 flex-1 overflow-hidden rounded-full">
         <div
           className="h-full rounded-full transition-[width] duration-500 ease-out"
           style={{ width: `${Math.max(3, Math.min(100, pct))}%`, backgroundColor: accent }}
         />
       </div>
-      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{value}</span>
+      <span className="text-muted-foreground w-20 shrink-0 text-right text-xs tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }

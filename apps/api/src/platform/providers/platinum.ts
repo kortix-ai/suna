@@ -151,10 +151,11 @@ export class PlatinumProvider implements SandboxProvider {
     //
     // Platinum AUTO-STOPS idle boxes natively and resumes them CoW on reopen
     // (the CH UFFD resume bug that once forced persistent is fixed; verified
-    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API
-    // is dead — the activity-aware reaper (sandbox-reaper.ts) is the primary
-    // stop, so the native interval sits well above the reaper's TTL to never
-    // kill a box mid-work (providerAutoStopBackstopMinutes).
+    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API is
+    // dead — `deadline_at` (projects/sandbox-deadline.ts) is the primary stop, so
+    // the native interval sits well above the longest real turn and never kills a
+    // box mid-work. See providerAutoStopBackstopMinutes(), which is now that
+    // policy alone and no longer doubles as the billing clamp's grace.
     const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
 
     const _t0 = Date.now();
@@ -278,6 +279,10 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'running') return 'running';
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
+      // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
+      // reported as `unknown` is a box `decideReconcile` never acts on, and
+      // compute billing then accrues wall-clock against it indefinitely.
+      if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
       if (isMissingSandboxError(err)) return 'removed';

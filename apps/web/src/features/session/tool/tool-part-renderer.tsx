@@ -1,7 +1,9 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { QuestionPrompt } from '@/features/session/question-prompt';
 import { GenericTool } from '@/features/session/tool/generic-tool';
-import { ToolError } from '@/features/session/tool/tool-error';
 import {
   BasicTool,
   BoundActivateContext,
@@ -13,14 +15,17 @@ import {
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { QuestionPrompt } from '@/features/session/question-prompt';
-import { Button } from '@/components/ui/button';
-import { STATUS_TEXT } from '@/components/ui/status';
-import { PERMISSION_LABELS, type PermissionRequest, type QuestionRequest, type ToolPart } from '@/ui';
-import { CircleAlert } from 'lucide-react';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
+import {
+  PERMISSION_LABELS,
+  type PermissionRequest,
+  type QuestionRequest,
+  type ToolPart,
+} from '@/ui';
+import { WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
@@ -210,7 +215,6 @@ export function ToolPartRenderer({
     </ToolNavigationContext.Provider>
   );
 }
-
 
 // Register all tool renderers after ToolPartRenderer is defined (avoids circular imports).
 import '@/features/session/tool/tools/register';

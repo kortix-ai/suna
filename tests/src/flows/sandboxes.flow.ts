@@ -33,7 +33,10 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/snapshots", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.templates").exists("$.builds");
+      // `status` is the derived "can a session start" verdict every UI alert
+      // reads. Without it the panel falls back to showing nothing, so it is
+      // part of the contract, not an optional extra.
+      r.status(200).body().exists("$.templates").exists("$.builds").exists("$.status.state");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client

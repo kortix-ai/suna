@@ -33,20 +33,20 @@ import {
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk';
-import { FileText, Terminal as TerminalIcon } from 'lucide-react';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
+import { FileTextIcon as FileText, TerminalIcon } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
-import { clampIndex, type FollowMode } from '../shared/action-navigator-logic';
+import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
-import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
+import { type OutputItem, deriveContext, deriveOutputs } from '../shared/derive-panels';
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
@@ -58,11 +58,12 @@ import {
   CloseButton,
   type Detail,
   DetailLayer,
-  terminalLayerMotion,
   ToolParts,
+  terminalLayerMotion,
 } from './detail-view';
 import {
   deriveIsRunning,
+  focusIndexForCall,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
@@ -70,10 +71,9 @@ import {
   quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
-  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
-import { FilePreview } from './file-preview';
+import { FilePreview, reportsIntrinsicSize } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
@@ -176,8 +176,11 @@ export const EasyPanel = memo(function EasyPanel({
   // and the home cards (progress/outputs/context/apps) render full-bleed
   // instead of snapping back to the resizable split; worse, "Ask for changes"
   // targets the chat composer, which fullscreen has collapsed to zero width.
-  // Paging between siblings goes through `setDetail` directly and KEEPS
-  // fullscreen — only the exits route through here.
+  // Only the exits route through here. Paging between siblings does NOT: the
+  // prev/next closures call `handleOpenOutput` again, which reaches `setDetail`
+  // through `openDetail` — so fullscreen survives the move from one deliverable
+  // to the next, and so does the panel width when both sides measure (see
+  // `openDetail`'s `measures` check).
   const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
   // Split override: a presentation deliverable grows the panel to its widest
   // split (70/30, Marko's feedback) and the terminal layer to an even 50/50,
@@ -186,13 +189,20 @@ export const EasyPanel = memo(function EasyPanel({
   // (same store, same `animate` opt, same `skipNextExpandAnimation` flag) —
   // see the store's doc comment.
   const setPanelSplit = useKortixComputerStore((s) => s.setPanelSplit);
+  // The measured shape of whatever document is open, which outranks
+  // `panelSplit` once it lands (see `resolveSideSize`). Cleared in lockstep
+  // with every `panelSplit` write below — a ratio that outlives the document
+  // it was measured from would silently win over the split the new layer
+  // asked for, so the two states are never allowed to disagree.
+  const setPanelAspect = useKortixComputerStore((s) => s.setPanelAspect);
   const closeDetail = useCallback(() => {
     setDetail(null);
     // `animate: false` — the detail slides out on its own; snapping the panel
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
     setPanelSplit(null, { animate: false });
-  }, [setIsExpanded, setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setIsExpanded, setPanelSplit, setPanelAspect]);
 
   /**
    * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
@@ -248,12 +258,14 @@ export const EasyPanel = memo(function EasyPanel({
     closeDetail();
     setTerminalOpen(true);
     setPanelSplit(50);
-  }, [detail, closeDetail, setPanelSplit]);
+    setPanelAspect(null);
+  }, [detail, closeDetail, setPanelSplit, setPanelAspect]);
   const closeTerminal = useCallback(() => {
     setTerminalSwap(false);
     setTerminalOpen(false);
     setPanelSplit(null, { animate: false });
-  }, [setPanelSplit]);
+    setPanelAspect(null, { animate: false });
+  }, [setPanelSplit, setPanelAspect]);
 
   // Every `detail` open funnels through here (instead of raw `setDetail`) so
   // opening a file/app/step/Audit always closes the terminal — the other half
@@ -271,8 +283,16 @@ export const EasyPanel = memo(function EasyPanel({
       setTerminalOpen(false);
       setDetail({ ...next, swapIn: terminalOpen });
       setPanelSplit(null);
+      // The outgoing document's ratio dies with it — UNLESS the incoming one
+      // will report a ratio of its own (`measures`), in which case holding the
+      // old value is what keeps A4 → A4 paging perfectly still instead of
+      // gliding down to the default column and straight back up. The incoming
+      // measurement overwrites it; a file that fails to open clears it from
+      // `FilePreview`. `handleOpenOutput` sets a split of its own right after
+      // this, but never an aspect.
+      if (!next.measures) setPanelAspect(null);
     },
-    [terminalOpen, setPanelSplit],
+    [terminalOpen, setPanelSplit, setPanelAspect],
   );
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
@@ -349,7 +369,7 @@ export const EasyPanel = memo(function EasyPanel({
       const present =
         output.kind === 'presentation' && output.presentationName
           ? () => {
-              const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
+              const kortixMasterPort = Number.parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
               const sandboxBaseUrl = getServiceUrl(kortixMasterPort)?.replace(/\/+$/, '');
               if (!sandboxBaseUrl) return;
               track('present_opened');
@@ -389,6 +409,11 @@ export const EasyPanel = memo(function EasyPanel({
             <AppPreview
               url={output.url ?? ''}
               name={displayName}
+              shareContext={
+                projectId && projectSessionId
+                  ? { projectId, sessionId: projectSessionId }
+                  : undefined
+              }
               onClose={closeDetail}
               onAskForChanges={askForChanges}
             />
@@ -407,6 +432,9 @@ export const EasyPanel = memo(function EasyPanel({
         hideHeader: true,
         padded: false,
         nav,
+        // `output.name` is the real filename — `displayName` may be a human
+        // title carrying no extension, which this predicate reads.
+        measures: reportsIntrinsicSize(output.name),
         body: (
           <FilePreview
             path={output.path}
@@ -705,9 +733,14 @@ export const EasyPanel = memo(function EasyPanel({
         // the shell reconnects on every open — the same tradeoff
         // `session-layout.tsx`'s Advanced-mode terminal accepts for its own
         // mobile drawer; there is no room for a persistent absolutely
-        // positioned layer inside a bottom sheet.
+        // positioned layer inside a bottom sheet. (Header/palette quick views
+        // never reach this on mobile — they open `MobileToolDrawer` instead —
+        // so this only serves in-panel openers.)
         <Drawer open={terminalOpen} onOpenChange={(next) => !next && closeTerminal()}>
-          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+          <DrawerContent
+            bar={false}
+            className="flex h-[95dvh] max-h-[95dvh] flex-col overflow-hidden p-0"
+          >
             <DrawerHeader className="shrink-0 px-4 py-3 text-left">
               <DrawerTitle className="flex items-center justify-between gap-2 text-base">
                 <span className="flex items-center gap-2.5">

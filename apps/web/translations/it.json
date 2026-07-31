@@ -1593,9 +1593,9 @@
       "checklistAuditTitle": "Esportazione di audit completa",
       "checklistAuditDescription": "Trasmetti ogni azione degli agenti al tuo SIEM.",
       "checklistSandboxesTitle": "Sandbox isolate",
-      "checklistSandboxesDescription": "Every session runs in an ephemeral VM with server-side credential resolution.",
+      "checklistSandboxesDescription": "Ogni sessione viene eseguita sulla propria macchina isolata.",
       "checklistSecretsTitle": "Segreti cifrati",
-      "checklistSecretsDescription": "Iniettati al runtime tramite il proxy dei token, mai visibili al modello.",
+      "checklistSecretsDescription": "Le credenziali dei connettori sono gestite lato server e non entrano mai nella macchina. Un secret di runtime raggiunge una sessione solo tramite il ruolo di chi l'ha avviata e l'autorizzazione concessa all'agente.",
       "deploymentEyebrow": "Distribuzione",
       "deploymentTitle": "I tuoi dati non devono mai uscire.",
       "deploymentDescription": "Kortix è open source. Lo stesso stack viene eseguito ovunque — e tutto è tuo: ogni configurazione, ogni conversazione, ogni byte di contesto. Nessun lock-in dei dati, mai.",
@@ -1643,7 +1643,7 @@
       "onboardingProcessTitle": "Un percorso chiaro dalla revisione di sicurezza al primo agente in produzione.",
       "architectureEyebrow": "Progettato per scalare",
       "architectureTitle": "Isolamento di default. Scala senza limiti.",
-      "architectureDescription": "Ogni sessione viene eseguita nella propria VM isolata, sul proprio branch Git. Esegui centinaia di migliaia di agenti in parallelo — nulla va in conflitto e ogni modifica rientra tramite una richiesta di modifica verificabile.",
+      "architectureDescription": "Ogni sessione viene eseguita sulla propria macchina isolata, sul proprio branch Git. Esegui centinaia di migliaia di agenti in parallelo — nulla va in conflitto e ogni modifica rientra tramite una richiesta di modifica verificabile.",
       "architectureSandboxTitle": "Una sandbox per sessione",
       "architectureSandboxDescription": "Ogni agente riceve una macchina isolata con un clone pulito di main. Nessuno stato condiviso, nessuna contaminazione incrociata.",
       "architectureBranchTitle": "Un branch per agente",
@@ -4649,10 +4649,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "Il tuo menu",
-      "line213JsxAttrLabelUserSettings": "Impostazioni utente",
+      "line213JsxAttrLabelUserSettings": "Preferenze",
       "line253JsxAttrLabelLogOut": "Esci",
       "line142JsxAttrAriaLabelYourMenu": "Il tuo menu",
-      "line209JsxAttrLabelUserSettings": "Impostazioni utente",
+      "line209JsxAttrLabelUserSettings": "Preferenze",
       "line248JsxAttrLabelLogOut": "Esci"
     },
     "componentsMaintenanceMaintenancePage": {

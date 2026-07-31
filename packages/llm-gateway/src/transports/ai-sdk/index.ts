@@ -249,6 +249,11 @@ export async function callUpstreamViaAiSdk(
     // wouldn't resolve here). The bundled static CATALOG is authoritative for
     // capability shape; the transport has no live snapshot.
     model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
+    // Upstream-pinned wire fields (OpenRouter `provider` routing). Read from the
+    // descriptor here rather than the body: apps/api's resolveCandidates builds
+    // it per-candidate from the catalog, so a failover onto a different upstream
+    // carries ITS pin, not the previous candidate's.
+    bodyExtras: descriptor.bodyExtras,
   });
   const clientWantsStream = body.stream === true;
   const ctx = {

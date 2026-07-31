@@ -6,7 +6,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { ComputeCreditCalculator } from '@/features/billing/compute-credit-calculator';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
@@ -49,7 +49,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 200 credits each month for sandbox compute and 3 projects. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',
@@ -162,7 +162,7 @@ export default function PricingPage() {
       </div>
 
       {/* ── CTA footer ─────────────────────────────────────────── */}
-      <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 xl:px-0">
+      <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 xl:px-0">
         <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">

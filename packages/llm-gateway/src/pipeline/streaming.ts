@@ -4,6 +4,8 @@ import {
   type SseErrorFrame,
   sseErrorFrame,
   sseHasContent,
+  sseMayContainSoftFailure,
+  sseSoftFailureFrame,
 } from '../usage';
 import { gatewayErrorBody } from './error-response';
 
@@ -126,7 +128,22 @@ export async function probeStream(
   let bytes = 0;
 
   for (;;) {
-    if (chunks.length >= PROBE_MAX_CHUNKS || bytes >= PROBE_MAX_BYTES) {
+    const mayContainSoftFailure =
+      sseHasContent(buffer) && sseMayContainSoftFailure(buffer);
+    if (bytes >= PROBE_MAX_BYTES && mayContainSoftFailure) {
+      const message = 'suspected soft-failure stream exceeded the probe byte limit';
+      await reader.cancel(message).catch(() => undefined);
+      return {
+        hasContent: false,
+        readError: { message, code: 'soft_failure_probe_limit' },
+        reader,
+        chunks,
+      };
+    }
+    if (
+      bytes >= PROBE_MAX_BYTES ||
+      (chunks.length >= PROBE_MAX_CHUNKS && !mayContainSoftFailure)
+    ) {
       return { hasContent: true, reader, chunks };
     }
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -165,20 +182,29 @@ export async function probeStream(
       };
     }
     const { done, value } = outcome.result;
-    if (done)
+    if (done) {
+      const softFailure = sseSoftFailureFrame(buffer);
       return {
-        hasContent: sseHasContent(buffer),
-        errorFrame: sseErrorFrame(buffer),
+        hasContent: softFailure ? false : sseHasContent(buffer),
+        errorFrame: softFailure ?? sseErrorFrame(buffer),
         reader,
         chunks,
       };
+    }
     if (!value) continue;
     chunks.push(value);
     bytes += value.byteLength;
     buffer += decoder.decode(value, { stream: true });
+    const softFailure = sseSoftFailureFrame(buffer);
+    if (softFailure) {
+      return { hasContent: false, errorFrame: softFailure, reader, chunks };
+    }
     // Content wins over an error frame in the same buffer: real output already
     // streamed, so relay it and let the relay path record any trailing error.
-    if (sseHasContent(buffer)) return { hasContent: true, reader, chunks };
+    // Hold only the exact prefix of the known soft-failure text.
+    if (sseHasContent(buffer) && !sseMayContainSoftFailure(buffer)) {
+      return { hasContent: true, reader, chunks };
+    }
     const errorFrame = sseErrorFrame(buffer);
     if (errorFrame) return { hasContent: false, errorFrame, reader, chunks };
   }

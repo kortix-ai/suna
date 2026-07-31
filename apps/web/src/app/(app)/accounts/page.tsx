@@ -13,10 +13,15 @@ import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import {
+  CaretRightIcon as ChevronRight,
+  PlusIcon as Plus,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export default function AccountsPage() {
   const router = useRouter();
@@ -62,7 +67,12 @@ export default function AccountsPage() {
           </div>
           {canCreateAccount && (
             <div className="mt-2 shrink-0 sm:mt-0">
-              <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
                 <Plus className="size-4" />
                 New account
               </Button>
@@ -95,7 +105,12 @@ export default function AccountsPage() {
             description="Create an account to start working with a team."
             action={
               canCreateAccount ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setCreateOpen(true)}
+                >
                   <Plus className="size-3.5" />
                   New account
                 </Button>
@@ -131,7 +146,9 @@ export default function AccountsPage() {
           void queryClient.invalidateQueries({
             queryKey: ['projects', account.account_id],
           });
-          router.replace('/projects');
+          // The landing door, NOT the remembered project: that cookie names a
+          // project in the account being left.
+          router.replace(PROJECT_LANDING_PATH);
         }}
       />
     </>

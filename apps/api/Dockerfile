@@ -47,6 +47,7 @@ COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
@@ -137,6 +138,7 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -168,6 +170,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-executor-runtime.attestation.json ./apps/cli/dist/kortix-executor-runtime.attestation.json
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md

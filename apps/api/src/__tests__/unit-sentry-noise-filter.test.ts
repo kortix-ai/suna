@@ -157,7 +157,9 @@ describe('index.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => 
     // The guard must classify via isSentryIgnoredError and conditionally skip
     // the captureException call (defense in depth — the ignoreErrors list
     // alone does NOT stop a direct captureException).
-    expect(indexSrc).toContain("const isPoolExhaustion = isSentryIgnoredError(errName, err.message)");
+    expect(indexSrc).toContain('const isPoolExhaustion = isSentryIgnoredError(');
+    expect(indexSrc).toContain('databaseError.causeName ?? databaseError.outerName');
+    expect(indexSrc).toContain('databaseMessage');
     expect(indexSrc).toContain('if (!isPoolExhaustion)');
     // The structured log still fires (transient: true / errorType tag) so the
     // event stays observable without paging.

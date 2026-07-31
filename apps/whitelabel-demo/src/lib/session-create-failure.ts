@@ -1,4 +1,8 @@
 import { serverErrorBody } from './api-error-body';
+import {
+  connectorRequirement,
+  connectorRequirementSummary,
+} from './connector-required';
 
 /**
  * Why a session create was refused, in words a wrapper's END-USER can act on.
@@ -24,22 +28,6 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
   const serverText = typeof body?.error === 'string' ? body.error : null;
 
   switch (code) {
-    case 'per_end_user_spend_limit':
-      // The operator's ceiling, not a platform fault. The server's own message
-      // carries the numbers ($ spent / limit / window), so pass it through
-      // rather than inventing a vaguer one.
-      return {
-        title: 'Spending limit reached',
-        detail: serverText ?? 'This account has reached its spending limit for now.',
-        retryable: false,
-      };
-    case 'per_origin_session_limit':
-      // Genuinely self-clearing: finish or stop a session and this passes.
-      return {
-        title: 'Too many sessions at once',
-        detail: serverText ?? 'Finish or stop one of your running sessions, then try again.',
-        retryable: true,
-      };
     case 'concurrent_session_limit':
       // Account-wide — an end-user can do nothing about it themselves.
       return {
@@ -57,18 +45,35 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
     case 'CONNECTOR_NOT_ASSIGNED':
       return {
         title: 'This agent is missing a connector',
-        detail: serverText ?? 'The agent is not granted a connector this session needs.',
+        detail:
+          serverText ??
+          'The agent is not granted a connector this session needs.',
         retryable: false,
       };
-    case 'CONNECTOR_CONNECTION_REQUIRED':
+    // The connector PRE-FLIGHT. These are the two codes the API really sends —
+    // `CONNECTOR_CONNECTION_REQUIRED`, which used to sit here, exists nowhere in
+    // the platform, so this arm never once matched a real refusal. The wording
+    // comes from the same classifier the connect card uses, so the toast and the
+    // card cannot tell the user two different stories.
+    case 'CONNECTOR_AUTHORIZATION_REQUIRED':
+    case 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE': {
+      const requirement = connectorRequirement(err);
+      const summary = requirement
+        ? connectorRequirementSummary(requirement)
+        : null;
       return {
-        title: 'Connect your account first',
-        detail: serverText ?? 'This session needs an account you have not connected yet.',
+        title: summary?.title ?? 'This session needs a connector',
+        detail:
+          summary?.detail ??
+          serverText ??
+          'A connector this session declares has no usable connection.',
+        // Retrying changes nothing until somebody connects an account, and a
+        // retry button next to "connect this first" invites exactly the loop
+        // the pre-flight exists to prevent.
         retryable: false,
       };
-    // The three the new overrides dialog makes reachable. Each is terminal:
-    // the allowlist is create-only, so "try again" with the same selection
-    // refuses identically.
+    }
+    // These selections refuse identically until the create input changes.
     case 'SECRET_IDENTIFIER_NOT_FOUND':
       return {
         title: 'A selected secret is not available to sessions',

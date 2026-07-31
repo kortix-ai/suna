@@ -1,12 +1,21 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { usageEvents } from '@kortix/db';
-import { type SQL, and, desc, eq, gte, isNotNull, lte, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
+import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
+import {
+  InvalidSessionCostQueryError,
+  getSessionCostRecord,
+  listSessionCosts,
+  parseSessionCostListQuery,
+} from '../../shared/session-costs';
 import type { AppEnv } from '../../types';
 import {
   InvalidUsageQueryError,
@@ -24,6 +33,31 @@ usageApp.use('*', combinedAuth);
 // every project's spend on multi-user accounts. See reject-sandbox-tokens.ts.
 usageApp.use('*', rejectSandboxTokens);
 
+async function resolveSessionCostAccountId(
+  c: Context<AppEnv>,
+  projectId?: string,
+): Promise<string> {
+  const tokenAccountId = c.get('accountId');
+  if (tokenAccountId) return tokenAccountId;
+
+  if (c.req.query('account_id') || !projectId) {
+    return resolveScopedAccountId(c, 'query');
+  }
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) {
+    throw new HTTPException(404, { message: 'Project not found' });
+  }
+  await assertProjectCapability(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+  );
+  return loaded.row.accountId;
+}
+
 const UsageTotalsSchema = z
   .object({
     total_input_tokens: z.number(),
@@ -40,10 +74,6 @@ const UsageBreakdownItemSchema = z
     day: z.string().optional(),
     provider: z.string().nullable().optional(),
     model: z.string().optional(),
-    /** Present only for group_by=end_user_ref (Kortix-as-a-Backend). */
-    end_user_ref: z.string().optional(),
-    /** @deprecated Renamed to `end_user_ref`; echoed with the same value. */
-    origin_ref: z.string().optional(),
     input_tokens: z.number(),
     output_tokens: z.number(),
     cached_tokens: z.number(),
@@ -64,14 +94,144 @@ const UsageQuerySchema = z
   .object({
     start: z.string().optional(),
     end: z.string().optional(),
-    group_by: z.enum(['model', 'provider', 'day', 'origin_ref', 'end_user_ref']).optional(),
+    group_by: z.enum(['model', 'provider', 'day']).optional(),
     account_id: z.string().optional(),
-    /** Kortix-as-a-Backend: narrow to a single end-user of the wrapper. */
-    end_user_ref: z.string().optional(),
-    /** @deprecated Renamed to `end_user_ref`; still accepted. */
-    origin_ref: z.string().optional(),
   })
   .openapi('UsageQuery');
+
+const SessionCostSummarySchema = z
+  .object({
+    session_id: z.string(),
+    project_id: z.string(),
+    project_name: z.string(),
+    owner_id: z.string().nullable(),
+    owner_type: z.enum(['user', 'service_account', 'unknown']).nullable(),
+    owner_name: z.string().nullable(),
+    owner_email: z.string().nullable(),
+    status: z.enum([
+      'queued',
+      'branching',
+      'provisioning',
+      'running',
+      'stopped',
+      'failed',
+      'completed',
+    ]),
+    created_at: z.string(),
+    updated_at: z.string(),
+    last_activity_at: z.string().nullable(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    request_count: z.number(),
+    error_count: z.number(),
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+    cached_tokens: z.number(),
+    cache_write_tokens: z.number(),
+    model_count: z.number(),
+    compute_seconds: z.number(),
+  })
+  .openapi('SessionCostSummary');
+
+const SessionCostReconciliationSchema = z
+  .object({
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    request_count: z.number(),
+    compute_window_count: z.number(),
+    compute_seconds: z.number(),
+  })
+  .openapi('SessionCostReconciliation');
+
+const SessionCostModelUsageSchema = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    request_count: z.number(),
+    error_count: z.number(),
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+    cached_tokens: z.number(),
+    cache_write_tokens: z.number(),
+    cost: z.number(),
+    last_at: z.string(),
+  })
+  .openapi('SessionCostModelUsage');
+
+const SessionCostLlmLedgerEntrySchema = z
+  .object({
+    kind: z.literal('llm'),
+    id: z.string(),
+    occurred_at: z.string(),
+    cost: z.number(),
+    provider: z.string(),
+    model: z.string(),
+    request_id: z.string(),
+    status: z.number(),
+    ok: z.boolean(),
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+    cached_tokens: z.number(),
+    cache_write_tokens: z.number(),
+  })
+  .openapi('SessionCostLlmLedgerEntry');
+
+const SessionCostComputeLedgerEntrySchema = z
+  .object({
+    kind: z.literal('compute'),
+    id: z.string(),
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    billed_through_at: z.string(),
+    cost: z.number(),
+    provider: z.string(),
+    state: z.string(),
+    compute_seconds: z.number(),
+    cpu_cores: z.number(),
+    memory_gb: z.number(),
+    disk_gb: z.number(),
+    gpu_count: z.number(),
+  })
+  .openapi('SessionCostComputeLedgerEntry');
+
+const SessionCostDetailSchema = SessionCostSummarySchema.extend({
+  model_usage: z.array(SessionCostModelUsageSchema),
+  ledger_entries: z.array(
+    z.discriminatedUnion('kind', [
+      SessionCostLlmLedgerEntrySchema,
+      SessionCostComputeLedgerEntrySchema,
+    ]),
+  ),
+}).openapi('SessionCostDetail');
+
+const SessionCostListResponseSchema = z
+  .object({
+    sessions: z.array(SessionCostSummarySchema),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+    next_offset: z.number().nullable(),
+    reconciliation: SessionCostReconciliationSchema,
+  })
+  .openapi('SessionCostListResponse');
+
+const SessionCostListQuerySchema = z
+  .object({
+    account_id: z.string().optional(),
+    project_id: z.string().optional(),
+    limit: z.string().optional(),
+    offset: z.string().optional(),
+  })
+  .openapi('SessionCostListQuery');
+
+const SessionCostDetailQuerySchema = z
+  .object({
+    account_id: z.string().optional(),
+    project_id: z.string().optional(),
+  })
+  .openapi('SessionCostDetailQuery');
 
 usageApp.openapi(
   createRoute({
@@ -96,8 +256,6 @@ usageApp.openapi(
         start: c.req.query('start'),
         end: c.req.query('end'),
         group_by: c.req.query('group_by'),
-        origin_ref: c.req.query('origin_ref'),
-        end_user_ref: c.req.query('end_user_ref'),
       });
     } catch (err) {
       if (err instanceof InvalidUsageQueryError) {
@@ -111,11 +269,6 @@ usageApp.openapi(
     const conds: SQL[] = [eq(usageEvents.accountId, accountId)];
     if (parsed.start) conds.push(gte(usageEvents.createdAt, parsed.start));
     if (parsed.end) conds.push(lte(usageEvents.createdAt, parsed.end));
-    // Narrowing to one end-user applies to the TOTALS as well as any breakdown —
-    // `conds` is shared by every aggregate below, so a wrapper asking for one
-    // user's spend never sees account-wide numbers in `data`.
-    if (parsed.originRef) conds.push(eq(usageEvents.originRef, parsed.originRef));
-
     const [totalsRow] = await db
       .select({
         totalInputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)`,
@@ -132,30 +285,6 @@ usageApp.openapi(
 
     if (!parsed.groupBy) {
       return c.json({ data });
-    }
-
-    if (parsed.groupBy === 'origin_ref' || parsed.groupBy === 'end_user_ref') {
-      // Only attributed rows participate. Unattributed spend (everything that
-      // isn't a backend session — the playground, the legacy router path, and
-      // anything written before this column existed) has a NULL origin_ref and
-      // is deliberately EXCLUDED rather than collapsed into one anonymous
-      // bucket, which would read as a spurious "end-user" in the wrapper's
-      // report. `data` still reflects the unfiltered account totals.
-      const rows = await db
-        .select({
-          originRef: sql<string>`${usageEvents.originRef}`,
-          inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)`,
-          outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)`,
-          cachedTokens: sql<number>`coalesce(sum(${usageEvents.cachedTokens}), 0)`,
-          cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)`,
-          cost: sql<number>`coalesce(sum(${usageEvents.costUsd}), 0)::float8`,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(usageEvents)
-        .where(and(...conds, isNotNull(usageEvents.originRef)))
-        .groupBy(usageEvents.originRef)
-        .orderBy(sql`coalesce(sum(${usageEvents.costUsd}), 0) desc`);
-      return c.json({ data, breakdown: rows.map(mapUsageBreakdownRow) });
     }
 
     if (parsed.groupBy === 'day') {
@@ -211,6 +340,80 @@ usageApp.openapi(
       .groupBy(usageEvents.provider)
       .orderBy(desc(sql`sum(${usageEvents.costUsd})`));
     return c.json({ data, breakdown: rows.map(mapUsageBreakdownRow) });
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/session-costs',
+    tags: ['usage'],
+    summary: 'List session costs for one account',
+    description:
+      'Lists every project session, including zero-cost sessions, with LLM and billed compute totals.',
+    ...auth,
+    request: { query: SessionCostListQuerySchema },
+    responses: {
+      200: json(SessionCostListResponseSchema, 'Paginated session cost summaries'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c) => {
+    let pagination: { limit: number; offset: number };
+    try {
+      pagination = parseSessionCostListQuery({
+        limit: c.req.query('limit'),
+        offset: c.req.query('offset'),
+      });
+    } catch (error) {
+      if (error instanceof InvalidSessionCostQueryError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+
+    const projectId = c.req.query('project_id') || undefined;
+    const accountId = await resolveSessionCostAccountId(c, projectId);
+    return c.json(
+      await listSessionCosts({
+        accountId,
+        projectId,
+        ...pagination,
+      }),
+    );
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/session-costs/{sessionId}',
+    tags: ['usage'],
+    summary: 'Get one session cost ledger',
+    description:
+      'Returns one account-scoped session summary with model usage and LLM/compute ledger entries.',
+    ...auth,
+    request: {
+      params: z.object({ sessionId: z.string().min(1) }),
+      query: SessionCostDetailQuerySchema,
+    },
+    responses: {
+      200: json(SessionCostDetailSchema, 'Session cost detail'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const projectId = c.req.query('project_id') || undefined;
+    const accountId = await resolveSessionCostAccountId(c, projectId);
+    const detail = await getSessionCostRecord({
+      accountId,
+      projectId,
+      sessionId: c.req.param('sessionId'),
+    });
+    if (!detail) {
+      throw new HTTPException(404, { message: 'Session not found' });
+    }
+    return c.json(detail);
   },
 );
 

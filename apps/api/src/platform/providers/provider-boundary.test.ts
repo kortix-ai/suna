@@ -12,7 +12,6 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-env-sync.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
-  'projects/sandbox-busy-probe.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {

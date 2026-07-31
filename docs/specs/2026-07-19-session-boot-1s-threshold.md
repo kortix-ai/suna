@@ -1,5 +1,7 @@
 # Session boot — 1-second threshold gap analysis + attack sequence
 
+> This analysis measures the v2 OpenCode REST boot path.
+
 > Goal §1: *Performance: Kortix minimal harness + session boot optimization —
 > **1-second threshold**.* This doc is the grounded scoping step before any
 > code: where are we today, what's the 1s target, and what's the attack

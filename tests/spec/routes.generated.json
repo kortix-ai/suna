@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 507,
+  "count": 515,
   "routes": [
     {
       "method": "GET",
@@ -523,6 +523,10 @@
       "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
     },
     {
+      "method": "GET",
+      "path": "/v1/approval-links/:token"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
@@ -733,6 +737,10 @@
     {
       "method": "DELETE",
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/authorization-strategy"
     },
     {
       "method": "GET",
@@ -1275,6 +1283,10 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/default"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
     },
@@ -1307,6 +1319,10 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/all"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/connector-profiles/me"
     },
@@ -1321,10 +1337,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/execution-lease"
     },
     {
       "method": "PATCH",
@@ -1635,6 +1647,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/previews"
     },
@@ -1653,6 +1669,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
     },
     {
       "method": "PUT",
@@ -1961,6 +1985,14 @@
     {
       "method": "GET",
       "path": "/v1/usage"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage/session-costs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage/session-costs/:sessionId"
     },
     {
       "method": "GET",

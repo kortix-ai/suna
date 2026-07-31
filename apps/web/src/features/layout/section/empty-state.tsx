@@ -24,10 +24,12 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
+import {
+  type Icon as IconMynauiType,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import { IconType } from 'react-icons/lib';
 
 export interface EmptyStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;
@@ -56,7 +58,7 @@ export function EmptyState({
       <EmptyHeader className={maxW}>
         {IconComponent && (
           <EmptyMedia className="mb-4">
-            <IconComponent className={cn(iconSize, 'text-muted-foreground')} strokeWidth={1.25} />
+            <IconComponent className={cn(iconSize, 'text-muted-foreground')} />
           </EmptyMedia>
         )}
         <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">

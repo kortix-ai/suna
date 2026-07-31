@@ -56,6 +56,9 @@ export function resolveCapability(method: string): TunnelCapability | null {
 export async function executeTunnelRpc(input: {
   tunnelId: string;
   accountId: string;
+  projectId?: string | null;
+  sessionId?: string | null;
+  actorUserId?: string | null;
   method: string;
   params: Record<string, unknown>;
 }): Promise<TunnelRpcOutcome> {
@@ -127,6 +130,10 @@ export async function executeTunnelRpc(input: {
     writeAuditLog({
       tunnelId,
       accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      actorUserId: input.actorUserId,
+      actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
       capability,
       operation: method,
       requestSummary: buildRequestSummary(method, params),
@@ -235,6 +242,9 @@ export type ComputerCallOutcome =
  */
 export async function executeComputerCall(input: {
   accountId: string;
+  projectId?: string | null;
+  sessionId?: string | null;
+  actorUserId?: string | null;
   selector: string | null;
   method: string;
   args: Record<string, unknown>;
@@ -249,6 +259,9 @@ export async function executeComputerCall(input: {
   const outcome = await executeTunnelRpc({
     tunnelId: resolved.tunnelId,
     accountId: input.accountId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorUserId: input.actorUserId,
     method: input.method,
     params: input.args,
   });

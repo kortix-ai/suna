@@ -24,7 +24,7 @@ import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
-import { useCopy } from '@/hooks/use-copy';
+import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
@@ -34,26 +34,28 @@ import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
+import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Globe,
-  Link as LinkIcon,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  LinkIcon,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as TbExternalLink,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { sandboxRecents } from './easy-panel-logic';
+import type { ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -83,12 +85,17 @@ function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: 
 export function AppPreview({
   url,
   name,
+  shareContext,
   onClose,
   onAskForChanges,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
   name: string;
+  /** Project-session ids the share link is scoped to. Absent on a booting or
+   *  transient session, which is why Copy link is omitted rather than disabled
+   *  there — same rule as `ShareFileButton`. */
+  shareContext?: ShareContext;
   onClose: () => void;
   /** Seeds the composer with a starter line about this app and closes the
    *  detail (W12). Omitted entirely (not disabled) where there's no session
@@ -130,7 +137,24 @@ export function AppPreview({
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
-  const { copied, copy } = useCopy({ successMessage: 'Link copied' });
+
+  // Copy link mints a PUBLIC share and copies `/share/session/{token}`.
+  // It used to copy `previewUrl` — the authenticated `/v1/p/{sandbox}/{port}/…`
+  // proxy URL — which only ever worked in the tab that had the
+  // `__preview_session` cookie. Everyone else got a 401 on a link that also
+  // leaked the sandbox id.
+  const shareInput = useMemo<CreateSessionPublicShareInput | null>(() => {
+    if (port <= 0) return null;
+    const path = parseLocalhostUrl(current)?.path || '/';
+    return { mode: 'view', preview: { label: name, url: current, port, path } };
+  }, [current, name, port]);
+
+  const shareLink = usePublicShareLink({
+    projectId: shareContext?.projectId,
+    sessionId: shareContext?.sessionId,
+    input: shareInput,
+  });
+  const copied = shareLink.copied;
 
   const sandboxAlive = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
@@ -353,16 +377,15 @@ export function AppPreview({
           </Button>
         </Hint>
 
-        <Hint label={copied ? 'Copied' : 'Copy link'} side="bottom">
+        <Hint label={copied ? 'Copied' : 'Copy a public view-only link'} side="bottom">
           <Button
             variant="ghost"
             size="icon"
-            disabled={!hasPreview}
-            aria-label="Copy link"
+            disabled={!hasPreview || !shareLink.canShare || shareLink.isPending}
+            aria-label="Copy a public view-only link"
             onClick={() => {
-              if (!previewUrl) return;
               track('app_link_copied');
-              copy(previewUrl);
+              shareLink.copyLink();
             }}
             className="active:scale-[0.96]"
           >

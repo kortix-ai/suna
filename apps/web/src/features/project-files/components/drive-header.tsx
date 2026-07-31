@@ -7,8 +7,12 @@ import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
-import { ListSolid } from '@mynaui/icons-react';
-import { FileDiff, History, LayoutGrid } from 'lucide-react';
+import {
+  GitDiffIcon as FileDiff,
+  ClockCounterClockwiseIcon as History,
+  SquaresFourIcon as LayoutGrid,
+  ListIcon as ListSolid,
+} from '@phosphor-icons/react';
 
 interface DriveHeaderProps {
   historyToggle: { open: boolean; onToggle: () => void };
@@ -121,7 +125,7 @@ export function DriveHeader({
               aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
             >
-              <ListSolid className="size-4" />
+              <ListSolid weight="fill" className="size-4" />
             </Button>
           </Hint>
           <Hint label="Grid view">

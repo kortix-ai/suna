@@ -24,30 +24,30 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { createProjectSession } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
-import { SparklesSolid } from '@mynaui/icons-react';
-import { formatDistanceToNowStrict } from 'date-fns';
 import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  Columns2,
-  FileDiff,
-  FileEdit,
-  FilePlus2,
-  FileX2,
-  RefreshCcw,
-  RotateCcw,
-  Rows3,
-  XCircle,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle2,
+  CaretDownIcon as ChevronDown,
+  ColumnsIcon as Columns2,
+  NotePencilIcon as FileEdit,
+  GitDiffIcon as FileDiff,
+  FilePlusIcon as FilePlus2,
+  FileXIcon as FileX2,
+  ArrowClockwiseIcon as RefreshCcw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  RowsIcon as Rows3,
+  SparkleIcon as SparklesSolid,
+  XCircleIcon as XCircle,
+} from '@phosphor-icons/react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestStatus } from '../api/change-requests';
+import type { ChangeRequestRecoveryBlocker, ManifestIssue } from '../change-request-recovery';
 import { useProjectContext } from '../context';
+import { useChangeRequestRecovery } from '../hooks/use-change-request-recovery';
 import {
   useChangeRequest,
   useChangeRequestDiff,
@@ -57,45 +57,6 @@ import {
   useReopenChangeRequest,
 } from '../hooks/use-change-requests';
 import { DiffRenderer } from './diff-renderer';
-
-/** One manifest-validation finding, as returned in the merge 422 body. */
-interface ManifestIssue {
-  path: string;
-  message: string;
-  severity: string;
-  line?: number;
-  column?: number;
-}
-
-/**
- * The chat prompt that seeds the fix session. Carries the full CR context plus
- * every validation error so the agent can resolve the merge block end-to-end.
- */
-function buildManifestFixPrompt(
-  cr: { number: number; title: string; head_ref: string; base_ref: string },
-  issues: ManifestIssue[],
-  manifestFilename: string,
-): string {
-  const issueLines = issues
-    .map((i) => {
-      const where = i.line ? ` (line ${i.line}${i.column ? `, col ${i.column}` : ''})` : '';
-      return `- [${i.severity}] ${i.path}: ${i.message}${where}`;
-    })
-    .join('\n');
-  return [
-    `Change request #${cr.number} ("${cr.title}") can't merge: its ${manifestFilename} fails manifest validation, so the merge is blocked. Fix the manifest so the change request can merge.`,
-    ``,
-    `Branch: ${cr.head_ref} → ${cr.base_ref}`,
-    ``,
-    `Manifest validation errors:`,
-    issueLines || '- (the manifest failed to validate against the canonical schema)',
-    ``,
-    `Steps:`,
-    `1. Open ${manifestFilename} and review each validation error above.`,
-    `2. Fix the root cause of each error so the manifest validates against the schema.`,
-    `3. Commit the fix and open a change request. Once it merges, the change ships.`,
-  ].join('\n');
-}
 
 function StatusBadge({ status }: { status: ChangeRequestStatus }) {
   const map: Record<
@@ -202,7 +163,6 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     detailQuery.data?.change_request.status === 'open',
   );
 
-  const router = useRouter();
   const projectId = useProjectContext()?.projectId ?? '';
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const manifestFilename = manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml';
@@ -210,8 +170,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();
   const reopenMutation = useReopenChangeRequest();
+  const { startRecovery, startingCrId } = useChangeRequestRecovery();
   const [diffLayout, setDiffLayout] = useState<'unified' | 'split'>('unified');
-  const [fixing, setFixing] = useState(false);
 
   const cr = detailQuery.data?.change_request;
   const diff = diffQuery.data;
@@ -234,12 +194,38 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   // Gate on `variables === crId` so a stale failure from a previously-viewed CR
   // (the dialog is reused, not remounted) never bleeds onto the current one.
   const mergeError = mergeMutation.error as
-    | (Error & { code?: string; data?: { issues?: ManifestIssue[] } })
-    | null;
+    (Error & {
+        code?: string;
+        data?: { issues?: ManifestIssue[]; conflicts?: string[] };
+      }) | null;
   const manifestIssues =
     mergeError?.code === 'MANIFEST_INVALID' && mergeMutation.variables === crId
       ? (mergeError.data?.issues ?? [])
       : null;
+  const mergeErrorConflicts =
+    mergeError?.code === 'MERGE_CONFLICT' && mergeMutation.variables === crId
+      ? (mergeError.data?.conflicts ?? [])
+      : null;
+  const previewHasConflicts = Boolean(
+    cr?.status === 'open' && preview && !preview.is_up_to_date && !preview.can_merge,
+  );
+  const conflictPaths = previewHasConflicts ? (preview?.conflicts ?? []) : mergeErrorConflicts;
+  const recoveryBlocker: ChangeRequestRecoveryBlocker | null =
+    manifestIssues !== null
+      ? {
+          kind: 'manifest_invalid',
+          issues: manifestIssues,
+          manifestFilename,
+        }
+      : conflictPaths !== null
+        ? {
+            kind: 'merge_conflict',
+            conflicts: conflictPaths,
+            baseSha: preview?.base_sha,
+            headSha: preview?.head_sha,
+          }
+        : null;
+  const isStartingRecovery = startingCrId === crId;
 
   const handleMerge = () => {
     if (!crId) return;
@@ -247,37 +233,27 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
       onSuccess: () => {
         successToast('Changes applied');
       },
-      // Manifest blocks render in the banner below; everything else stays a toast.
+      // Recoverable merge blocks render in the dialog. Everything else stays a toast.
       onError: (err) => {
-        if ((err as { code?: string })?.code !== 'MANIFEST_INVALID') errorToast(err.message);
+        const code = (err as { code?: string })?.code;
+        if (code !== 'MANIFEST_INVALID' && code !== 'MERGE_CONFLICT') errorToast(err.message);
       },
     });
   };
 
-  // Spin up a session pre-seeded with the validation errors so the agent can fix
-  // the manifest and re-ship. Purely client-side: mint the id, navigate, persist
-  // in the background — same optimistic path as every other "new session" entry.
-  const handleFixWithAgent = () => {
-    if (!cr || !projectId || manifestIssues === null || fixing) return;
-    setFixing(true);
-    const sessionId = crypto.randomUUID();
-    const prompt = buildManifestFixPrompt(cr, manifestIssues, manifestFilename);
-    router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-    onClose();
-    router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    createProjectSession(projectId, {
-      session_id: sessionId,
-      initial_prompt: prompt,
-      // Branch the fix session off the CR head so it opens on the broken
-      // manifest, with the whole change in view.
-      base_ref: cr.head_ref,
-      name: `Fix proposed change #${cr.number}`,
-    })
-      .catch((err) => {
-        errorToast(err instanceof Error ? err.message : 'Failed to start the fix session');
-        router.replace(`/projects/${projectId}`);
-      })
-      .finally(() => setFixing(false));
+  const handleSolveWithAgent = () => {
+    if (!cr || !projectId || !recoveryBlocker || isStartingRecovery) return;
+    void startRecovery(
+      {
+        crId: cr.cr_id,
+        number: cr.number,
+        title: cr.title,
+        headRef: cr.head_ref,
+        baseRef: cr.base_ref,
+      },
+      recoveryBlocker,
+      onClose,
+    );
   };
 
   const handleClose = () => {
@@ -318,16 +294,29 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta48f1c83',
             )}
           </Button>
-          <Button
-            size={buttonSize}
-            variant="blue"
-            disabled={mergeMutation.isPending || preview?.can_merge === false}
-            onClick={handleMerge}
-            className={cn(isFooter ? 'h-10 flex-[1.15]' : 'min-w-24')}
-          >
-            {mergeMutation.isPending ? <Loading /> : <Check />}
-            {mergeMutation.isPending ? 'Applying...' : 'Apply'}
-          </Button>
+          {recoveryBlocker?.kind === 'merge_conflict' ? (
+            <Button
+              size={buttonSize}
+              variant="blue"
+              disabled={isStartingRecovery}
+              onClick={handleSolveWithAgent}
+              className={cn(isFooter ? 'h-10 flex-[1.15]' : 'min-w-32')}
+            >
+              {isStartingRecovery ? <Loading /> : <SparklesSolid />}
+              {isStartingRecovery ? 'Starting...' : 'Solve with agent'}
+            </Button>
+          ) : (
+            <Button
+              size={buttonSize}
+              variant="blue"
+              disabled={mergeMutation.isPending}
+              onClick={handleMerge}
+              className={cn(isFooter ? 'h-10 flex-[1.15]' : 'min-w-24')}
+            >
+              {mergeMutation.isPending ? <Loading /> : <Check />}
+              {mergeMutation.isPending ? 'Applying...' : 'Apply'}
+            </Button>
+          )}
         </div>
       );
     }
@@ -428,8 +417,13 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               icon={AlertTriangle}
               title="Project config check failed, so this change can't be applied yet"
               action={
-                <Button size="sm" variant="blue" disabled={fixing} onClick={handleFixWithAgent}>
-                  {fixing ? <Loading /> : <SparklesSolid />}
+                <Button
+                  size="sm"
+                  variant="blue"
+                  disabled={isStartingRecovery}
+                  onClick={handleSolveWithAgent}
+                >
+                  {isStartingRecovery ? <Loading /> : <SparklesSolid />}
                   Fix with agent
                 </Button>
               }
@@ -628,6 +622,17 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                             tone="warning"
                             icon={AlertTriangle}
                             className="px-3 py-2 [&_li]:break-all"
+                            action={
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={isStartingRecovery}
+                                onClick={handleSolveWithAgent}
+                              >
+                                {isStartingRecovery ? <Loading /> : <SparklesSolid />}
+                                Solve with agent
+                              </Button>
+                            }
                             title={
                               <>
                                 {tHardcodedUi.raw(

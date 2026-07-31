@@ -36,18 +36,20 @@ describe('selectConnectorBindingChoices', () => {
     expect(choice!.unavailable).toBe('private_only');
   });
 
-  test('a revoked TEAM connection is a different ask than a private one', () => {
-    const [choice] = selectConnectorBindingChoices([profile({ status: 'revoked' })]);
-    expect(choice!.unavailable).toBe('team_connection_inactive');
+  test('a revoked project connection is a different ask than a private one', () => {
+    const [choice] = selectConnectorBindingChoices([
+      profile({ status: 'revoked' }),
+    ]);
+    expect(choice!.unavailable).toBe('project_connection_inactive');
   });
 
   test('a bindable connection wins over any unbindable sibling on the same alias', () => {
     const [choice] = selectConnectorBindingChoices([
       profile({ profile_id: 'mine', owner_type: 'member', owner_id: 'u1' }),
-      profile({ profile_id: 'team', label: 'Team inbox' }),
+      profile({ profile_id: 'project', label: 'Project inbox' }),
     ]);
     expect(choice!.unavailable).toBeNull();
-    expect(choice!.connections.map((c) => c.profileId)).toEqual(['team']);
+    expect(choice!.connections.map((c) => c.authorizationId)).toEqual(['project']);
   });
 
   test('no profiles is no connectors, not a crash', () => {
@@ -57,7 +59,12 @@ describe('selectConnectorBindingChoices', () => {
 
 describe('connectorBindingNotice', () => {
   const choiceFor = (over: Record<string, unknown>) =>
-    ({ alias: 'gmail', connections: [], unavailable: 'private_only', ...over }) as never;
+    ({
+      alias: 'gmail',
+      connections: [],
+      unavailable: 'private_only',
+      ...over,
+    }) as never;
 
   test('a bindable alias has no notice — the picker speaks for itself', () => {
     expect(
@@ -65,7 +72,12 @@ describe('connectorBindingNotice', () => {
         choiceFor({
           unavailable: null,
           connections: [
-            { profileId: 'p', connectorAlias: 'gmail', label: 'Support', isDefault: true },
+            {
+              authorizationId: 'p',
+              connectorAlias: 'gmail',
+              label: 'Support',
+              isDefault: true,
+            },
           ],
         }),
       ),
@@ -78,9 +90,13 @@ describe('connectorBindingNotice', () => {
     expect(notice.detail).toContain('own accounts');
   });
 
-  test('a revoked team connection asks for a reconnect, not a first-time share', () => {
-    const notice = connectorBindingNotice(choiceFor({ unavailable: 'team_connection_inactive' }))!;
+  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
+    const notice = connectorBindingNotice(
+      choiceFor({ unavailable: 'project_connection_inactive' }),
+    )!;
     expect(notice.detail).toContain('reconnect');
+    expect(notice.detail).toContain('project');
+    expect(notice.detail.toLowerCase()).not.toContain('team connection');
   });
 
   test('neither case offers a self-connect action', () => {
@@ -88,22 +104,33 @@ describe('connectorBindingNotice', () => {
     // interactive flow that would connect one is refused for it outright
     // (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY) — so a "connect it yourself"
     // button could only ever lead to that refusal.
-    for (const unavailable of ['private_only', 'team_connection_inactive']) {
-      expect(connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction).toBeNull();
+    for (const unavailable of ['private_only', 'project_connection_inactive']) {
+      expect(
+        connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction,
+      ).toBeNull();
     }
   });
 
   test('no notice ever tells the reader to connect the account themselves', () => {
-    for (const unavailable of ['private_only', 'team_connection_inactive']) {
+    for (const unavailable of ['private_only', 'project_connection_inactive']) {
       const notice = connectorBindingNotice(choiceFor({ unavailable }))!;
-      expect(`${notice.title} ${notice.detail}`.toLowerCase()).not.toContain('connect your');
+      expect(`${notice.title} ${notice.detail}`.toLowerCase()).not.toContain(
+        'connect your',
+      );
     }
   });
 });
 
 describe('unavailable reason must not mislabel a shared connection (F4)', () => {
   const profile = (owner: string, status = 'active') =>
-    ({ profile_id: `p-${owner}`, connector_alias: 'gmail', label: owner, owner_type: owner, status, is_default: false }) as never;
+    ({
+      profile_id: `p-${owner}`,
+      connector_alias: 'gmail',
+      label: owner,
+      owner_type: owner,
+      status,
+      is_default: false,
+    }) as never;
 
   test('an EXTERNAL profile is not "private only" — channel installs mint those', () => {
     // executor/sync.ts inserts owner_type:'external' profiles for channel/inbox
@@ -111,17 +138,21 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
     // system profiles. Calling that "only connected to people's own accounts"
     // is false AND names an action — ask a teammate to share it — that fixes
     // nothing.
-    const choices = selectConnectorBindingChoices([profile('external', 'revoked')], ['gmail']);
-    expect(choices[0]?.unavailable).toBe('team_connection_inactive');
+    const choices = selectConnectorBindingChoices([
+      profile('external', 'revoked'),
+    ]);
+    expect(choices[0]?.unavailable).toBe('project_connection_inactive');
   });
 
   test('only a MEMBER-owned connection is genuinely private to one person', () => {
-    const choices = selectConnectorBindingChoices([profile('member', 'revoked')], ['gmail']);
+    const choices = selectConnectorBindingChoices([
+      profile('member', 'revoked'),
+    ]);
     expect(choices[0]?.unavailable).toBe('private_only');
   });
 
-  test('an active team connection is offered, not reported unavailable', () => {
-    const choices = selectConnectorBindingChoices([profile('project')], ['gmail']);
+  test('an active project connection is offered, not reported unavailable', () => {
+    const choices = selectConnectorBindingChoices([profile('project')]);
     expect(choices[0]?.unavailable).toBeNull();
     expect(choices[0]?.connections).toHaveLength(1);
   });

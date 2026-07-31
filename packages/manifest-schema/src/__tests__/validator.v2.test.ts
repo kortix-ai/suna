@@ -470,6 +470,61 @@ connectors:
   });
 });
 
+describe('validateManifest — connector authorization strategy', () => {
+  test('accepts project and user connector profiles for the same provider app', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail-read
+    name: Gmail read only
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+  - slug: gmail-send
+    name: Gmail send
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('rejects a both authorization strategy', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: both
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('connectors[0].authorization_strategy');
+  });
+
+  test('defaults an omitted authorization strategy without a warning', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+`);
+    expect(valid).toBe(true);
+    expect(issues.find((issue) => issue.path === 'connectors[0].authorization_strategy')).toBeUndefined();
+  });
+});
+
 // The connector-side agent gate (`[[connectors]].agent_scope`) was removed
 // 2026-07 (wave-2 of the agent-first cut, docs/specs/
 // 2026-07-05-agent-first-config-unification.md §2.5): connector access is now
@@ -806,6 +861,83 @@ agents:
     workspace: everywhere
 `);
     expect(errorPaths).toContain('agents.w.workspace');
+  });
+});
+
+describe('validateManifest — kortix_version 2 required connectors', () => {
+  test('accepts the canonical field when every required connector is granted', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+`);
+    expect(valid).toBe(true);
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts the deprecated input alias with a warning', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail]
+    connectors_personal: [gmail]
+`);
+    expect(valid).toBe(true);
+    expect(warningPaths).toContain('agents.w.connectors_personal');
+  });
+
+  test('accepts both aliases when their normalized values match', () => {
+    const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail, slack]
+    connectors_personal: [slack, gmail, gmail]
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('rejects conflicting canonical and deprecated values', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+    connectors_personal: [slack]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_personal');
+  });
+
+  test('rejects a required connector outside the resolved connector grant', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors: [gmail]
+    connectors_required: [slack]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_required');
+  });
+
+  test('rejects required connectors when the connector grant resolves to none', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    connectors_required: [gmail]
+`);
+    expect(errorPaths).toContain('agents.w.connectors_required');
   });
 });
 

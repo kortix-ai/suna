@@ -1,8 +1,8 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
 
-import { seedDraft } from './policies-panel';
+import { seedDraft, toPayloadRule } from './policies-panel';
 
 // Regression test for the Better Stack error pattern `236e88fb…` —
 //   `TypeError: Cannot read properties of undefined (reading 'map')`
@@ -76,5 +76,90 @@ describe('PoliciesPanel source guard — no unguarded query.data.policies.map', 
   test('the seeding useEffect + revert handler route through seedDraft, not raw .policies.map', () => {
     expect(panelSource).not.toContain('query.data.policies.map(');
     expect(panelSource).toContain('seedDraft(query.data)');
+  });
+});
+
+/**
+ * Argument conditions must survive a panel round-trip.
+ *
+ * This panel replaces the WHOLE policy list on save, so any field the draft
+ * fails to carry is a field the save silently DELETES. Before conditions were
+ * threaded through `seedDraft` + `toPayloadRule`, merely opening the panel and
+ * saving an unrelated edit would strip a recipient allow-list off a rule —
+ * turning "only these addresses" into "any address" with no warning.
+ */
+describe('argument conditions survive the draft round-trip', () => {
+  const RULE = {
+    match: 'gmail.send_email',
+    action: 'require_approval' as const,
+    conditions: [{ arg: 'to', match: '/^owner@example\\.com$/' }],
+  };
+
+  test('seedDraft carries conditions onto the draft, with a stable row id', () => {
+    const { draft } = seedDraft({ policies: [RULE], defaultMode: 'risk' });
+
+    expect(draft[0]?.conditions).toMatchObject([{ arg: 'to', match: '/^owner@example\\.com$/' }]);
+    // Keyed by a stable id, not the array index: deleting a middle condition
+    // must not make React re-use the removed row's DOM node.
+    expect(draft[0]?.conditions[0]?.id).toBeString();
+  });
+
+  test('seedDraft defaults a rule without conditions to an empty list, not undefined', () => {
+    const { draft } = seedDraft({
+      policies: [{ match: '*', action: 'block' }],
+      defaultMode: 'risk',
+    });
+
+    expect(draft[0]?.conditions).toEqual([]);
+  });
+
+  test('a save re-emits the conditions it was seeded with', () => {
+    const { draft } = seedDraft({ policies: [RULE], defaultMode: 'risk' });
+
+    expect(toPayloadRule(draft[0]!)).toEqual(RULE);
+  });
+
+  test('an unconditional rule omits the key entirely rather than sending []', () => {
+    const { draft } = seedDraft({
+      policies: [{ match: '*', action: 'block' }],
+      defaultMode: 'risk',
+    });
+
+    const payload = toPayloadRule(draft[0]!);
+    expect(payload).toEqual({ match: '*', action: 'block' });
+    expect('conditions' in payload).toBe(false);
+  });
+
+  test('half-typed condition rows are dropped so they cannot fail the whole save', () => {
+    const payload = toPayloadRule({
+      id: 'r1',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [
+        { id: 'c1', arg: 'to', match: '' },
+        { id: 'c2', arg: '', match: 'x' },
+        { id: 'c3', arg: '  bcc  ', match: '  *@example.com  ' },
+      ],
+    });
+
+    expect(payload.conditions).toEqual([{ arg: 'bcc', match: '*@example.com' }]);
+  });
+
+  test('negate is preserved when set and omitted when not', () => {
+    const withNegate = toPayloadRule({
+      id: 'r1',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [{ id: 'c1', arg: 'to', match: '*', negate: true }],
+    });
+    const withoutNegate = toPayloadRule({
+      id: 'r2',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [{ id: 'c1', arg: 'to', match: '*', negate: false }],
+    });
+
+    expect(withNegate.conditions).toEqual([{ arg: 'to', match: '*', negate: true }]);
+    expect(withoutNegate.conditions).toEqual([{ arg: 'to', match: '*' }]);
   });
 });

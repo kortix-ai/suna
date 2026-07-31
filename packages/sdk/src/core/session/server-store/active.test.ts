@@ -55,6 +55,17 @@ test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted 
   expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
 });
 
+test('getActiveOpenCodeUrl stays empty before a session binds when no default sandbox is configured', () => {
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    billingEnabled: false,
+    sandboxId: '',
+  });
+
+  expect(getActiveOpenCodeUrl()).toBe('');
+});
+
 test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment with no active session', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',

@@ -51,7 +51,7 @@ document is normative and describes the target, not the current build.
 | Term | Definition |
 |---|---|
 | Project | A git repository that constitutes the organization's configuration and accumulated state. The unit of ownership, isolation, and billing. |
-| Manifest | `kortix.yaml` at the project root. The declarative definition of the project's agents, grants, connectors, required secrets, triggers, channels, policy, and runtime image. |
+| Manifest | `kortix.yaml` at the project root. The declarative definition of the project's agents, grants, connectors, required secrets, triggers, policy, and runtime image. (Channel routing is live project state; `channels:` is rejected in v2.) |
 | Agent | A named principal defined by a behavior file (`.md`) and a governance entry in the manifest. |
 | Session | One bounded unit of agent execution: one sandbox, one branch, one agent, one token. |
 | Sandbox | The isolated Linux machine a session executes in. |
@@ -71,7 +71,7 @@ document is normative and describes the target, not the current build.
 | # | Component | Responsibility |
 |---|---|---|
 | C1 | State store | Durable, versioned representation of everything the organization knows and how it behaves. |
-| C2 | Manifest | Declarative definition of agents, grants, connectors, secrets, triggers, channels, policy, runtime. |
+| C2 | Manifest | Declarative definition of agents, grants, connectors, secrets, triggers, policy, runtime. |
 | C3 | Action surface | The sole authorized path from an agent to any capability. |
 | C4 | Identity service | Mints, scopes, and introspects credentials for human, agent, machine, and service principals. |
 | C5 | Authorization engine | Resolves an action against a principal's scope and the agent's declared grant. |

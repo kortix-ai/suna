@@ -82,7 +82,7 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 async function iamDenied(res: Response): Promise<boolean> {
   if (res.status !== 403) return false;
   const text = JSON.stringify(await res.json().catch(() => ({})));
-  return /permission|do not have access|doesn't let you/i.test(text);
+  return /permission|do not have access|doesn't let you|is not granted/i.test(text);
 }
 
 interface WCase {
@@ -130,6 +130,15 @@ const CASES: WCase[] = [
     // same destructive capability as the stop route.
     denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
   },
+  {
+    name: 'session scope replacement (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/scope`,
+    body: { connector_bindings: {} },
+    tier: 'member',
+    denyGrant: [A.PROJECT_SESSION_START],
+    allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
   // ── Review ───────────────────────────────────────────────────────────────
   {
     name: 'CR request-changes (review.act, not gitops.push)',
@@ -176,12 +185,19 @@ const CASES: WCase[] = [
   },
   {
     // Teams disconnect — twin of email installation DELETE; no feature-flag
-    // pre-gate, so the connector-write assert is directly exercised. (Teams
-    // CONNECT uses the identical assert but sits behind teamsChannelEnabled(),
-    // untestable here without the flag; DELETE covers the same code pattern.)
+    // pre-gate, so the connector-write assert is directly exercised.
     name: 'teams installation DELETE (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
+    // Teams connect — the capability assert runs BEFORE the per-project `teams`
+    // feature check, so the 403 fires whether or not the project enabled Teams.
+    // (While the gate was an operator env var this case was untestable here.)
+    name: 'teams connect (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/channels/teams/connect`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
@@ -216,12 +232,6 @@ const CASES: WCase[] = [
     name: 'meet bot name (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/channels/meet/name`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
-  },
-  {
-    name: 'meet voice (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/channels/meet/voice`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {

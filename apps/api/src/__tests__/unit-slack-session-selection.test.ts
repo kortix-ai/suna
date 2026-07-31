@@ -34,6 +34,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     originRef: null,
     secretsAllowlist: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -113,7 +114,9 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',
@@ -128,6 +131,7 @@ mock.module('../channels/install-store', () => ({
   loadSlackSigningSecretForProject: async () => null,
   loadSlackTeamNameForProject: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
+  loadTeamsInstall: async () => null,
   loadTelegramWebhookSecretForProject: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),

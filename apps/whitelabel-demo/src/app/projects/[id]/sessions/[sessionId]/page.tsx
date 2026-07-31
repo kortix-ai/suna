@@ -1,6 +1,8 @@
 'use client';
 
 import { ProjectShell } from '@/components/project-shell';
+import { ApplicationUserBadge } from '@/components/project-access-panel';
+import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
 import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
@@ -28,6 +30,16 @@ function Workbench() {
   return (
     <>
       <SessionHeader projectId={projectId} sessionId={sessionId} />
+      {/* Who this browser is acting as, above the conversation rather than in a
+          settings page: in wrapper mode it is the ONLY thing separating this
+          session from another signed-in person's. */}
+      <ApplicationUserBadge projectId={projectId} />
+      {/* A `require_approval` gate ends the agent's turn and nothing says so in
+          the transcript — the session just goes quiet. Poll for it here, where
+          the person who can decide is already looking. Rendered before the boot
+          check on purpose: a gate raised earlier is still pending while the
+          runtime is coming back up. */}
+      <SessionApprovals projectId={projectId} sessionId={sessionId} />
       {session.phase !== 'ready' ? (
         <BootScreen
           stage={session.stage ?? undefined}
@@ -36,7 +48,11 @@ function Workbench() {
           onRetry={session.retry}
         />
       ) : (
-        <WorkbenchTabs session={session} projectId={projectId} sessionId={sessionId} />
+        <WorkbenchTabs
+          session={session}
+          projectId={projectId}
+          sessionId={sessionId}
+        />
       )}
     </>
   );

@@ -55,13 +55,15 @@ export async function withTokenRetry(
 export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 /**
- * Long-lived streaming calls reached through the auth fetch injection point.
- * OpenCode REST uses `/global/event`. ACP uses `/kortix/acp/:sessionId`.
- * Both callers manage their own abort and reconnect lifecycle.
+ * The one long-lived streaming call reached through the auth fetch injection
+ * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
+ * client's `global.event(...)` SSE endpoint (`GET {runtimeUrl}/global/event`).
+ * It manages its own lifecycle (heartbeat watchdog + explicit abort/reconnect
+ * loop) and must stay open far longer than any request timeout.
  */
 export function isStreamingRequest(input: RequestInfo | URL): boolean {
 	const url = input instanceof Request ? input.url : String(input);
-	return url.includes('/global/event') || url.includes('/kortix/acp/');
+	return url.includes('/global/event');
 }
 
 /**

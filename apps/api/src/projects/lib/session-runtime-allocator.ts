@@ -112,7 +112,11 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         .set({
           status: 'failed',
           error: message,
-          metadata: { ...input.sessionMetadata, provisioning_error: message },
+          // Merge, never re-write `input.sessionMetadata`: that snapshot was
+          // taken before allocation started, so writing it back drops anything
+          // committed since — the generated title, remote_branch,
+          // the start timeline. The session is terminal here, so nothing retries.
+          metadata: projectSessionMetadataMerge({ provisioning_error: message }),
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, input.sessionId));

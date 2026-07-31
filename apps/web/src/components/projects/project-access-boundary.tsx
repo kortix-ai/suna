@@ -1,20 +1,19 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  LockKeyhole,
-  RefreshCw,
-  Send,
-  ShieldAlert,
-  UserRound,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  ArrowLeftIcon as ArrowLeft,
+  CheckCircleIcon as CheckCircle2,
+  LockIcon as LockKeyhole,
+  ArrowClockwiseIcon as RefreshCw,
+  PaperPlaneTiltIcon as Send,
+  ShieldWarningIcon as ShieldAlert,
+  UserCircleIcon as UserRound,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +29,9 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
+import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
@@ -134,6 +135,16 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [bypassError, setBypassError] = useState<string | null>(null);
 
+  // Stop this screen from becoming the user's permanent landing page. If the
+  // remembered project is one they cannot read, every `/` hit and every sign-in
+  // would redirect straight back here. The shell's self-heal does not fire for
+  // this case: a private project is a legitimate 403 surface, not a failed
+  // fetch. Forget it and let the landing door resolve a project they can open.
+  useEffect(() => {
+    if (readLastProjectId(user?.id) !== projectId) return;
+    clearLastProjectId();
+  }, [projectId, user?.id]);
+
   const requestMutation = useMutation({
     mutationFn: () => requestProjectAccess(projectId, message),
     onMutate: () => setInlineError(null),
@@ -187,7 +198,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
               disabled={bypassMutation.isPending}
             >
               {bypassMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loading className="size-3.5" />
               ) : (
                 <ShieldAlert className="size-3.5" />
               )}
@@ -292,7 +303,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
               disabled={requestMutation.isPending}
             >
               {requestMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
+                <Loading className="size-4" />
               ) : (
                 <Send className="size-4" />
               )}
@@ -350,7 +361,7 @@ function ProjectAccessStateFrame({
       />
 
       {cornerAction ? (
-        <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">{cornerAction}</div>
+        <div className="absolute top-4 right-4 z-20 sm:top-6 sm:right-6">{cornerAction}</div>
       ) : null}
 
       <main className="relative z-10 mx-auto flex w-full max-w-4xl items-center">

@@ -16,7 +16,7 @@ import type { GitBackedProject } from './types';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, Promise<string>>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
 const lastRefreshAt = new Map<string, number>();
 
 /**
@@ -428,7 +428,11 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
 
 export async function refreshMirror(project: GitBackedProject, force = false) {
   const current = refreshLocks.get(project.projectId);
-  if (current) return current;
+  if (current) {
+    if (!force || current.forced) return current.promise;
+    await current.promise;
+    return refreshMirror(project, true);
+  }
   const next = doRefreshMirror(project, force)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -438,8 +442,12 @@ export async function refreshMirror(project: GitBackedProject, force = false) {
       await utimes(repoPath, now, now).catch(() => {});
       return repoPath;
     })
-    .finally(() => refreshLocks.delete(project.projectId));
-  refreshLocks.set(project.projectId, next);
+    .finally(() => {
+      if (refreshLocks.get(project.projectId)?.promise === next) {
+        refreshLocks.delete(project.projectId);
+      }
+    });
+  refreshLocks.set(project.projectId, { promise: next, forced: force });
   return next;
 }
 

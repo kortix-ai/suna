@@ -55,8 +55,8 @@ import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
+import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
-import { resolveProjectRuntimeTransport } from '../../experimental/features';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -269,7 +269,6 @@ export async function provisionSessionSandbox(opts: {
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   const providerWasExplicitlySelected = opts.provider !== undefined;
-  const requireCurrentRuntime = resolveProjectRuntimeTransport(opts.projectMetadata) === 'acp';
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -306,7 +305,6 @@ export async function provisionSessionSandbox(opts: {
       accountId,
       source: 'session-start',
       provider: providerName,
-      requireCurrentRuntime,
     });
     return { ...image, gitProject };
   })();
@@ -404,6 +402,13 @@ export async function provisionSessionSandbox(opts: {
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
+  // A WARM-POOL box is the one box the control plane can never observe again
+  // until somebody claims it: no turns, no LLM calls, no human preview traffic.
+  // Under the bare 20-minute boot floor every warm box was therefore reaped
+  // before it could be handed out, which defeats the whole feature. Grant its
+  // (bounded) lifetime here, at the one moment we know it is warm. No-op for
+  // every other box, and fire-and-forget: the row already carries the floor.
+  void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
   // provider.sandboxFacingApiOrigin() (optional) lets a same-machine provider
@@ -470,15 +475,16 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Idle lifecycle: each provider's NATIVE auto-stop is the primary stop
-    // mechanism. We pass NO explicit autoStopInterval for a normal session so the
-    // provider applies its own policy: Daytona → daytonaLifecycle()
-    // (KORTIX_SANDBOX_AUTOSTOP_MINUTES); Platinum → the same idle timeout (see
-    // platinum.ts). Platinum NO LONGER forces persistent — the CH resume-freeze
+    // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
+    // so each provider gets its native idle timer set from
+    // providerAutoStopBackstopMinutes() (Daytona → daytonaLifecycle(); Platinum →
+    // auto_stop_minutes). That timer is a LAST-RESORT backstop for a box this API
+    // can no longer reach — 12h, deliberately far above any real turn, because it
+    // sees only inbound traffic and nothing resets it during a local tool run.
+    // The primary stop is `deadline_at` (projects/sandbox-deadline.ts), enforced
+    // by the reaper. Platinum NO LONGER forces persistent — the CH resume-freeze
     // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
-    // idle-stops + CoW-resumes natively rather than depending on the maintenance
-    // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
-    // reaper stays as a secondary backstop only.
+    // idle-stops + CoW-resumes natively too.
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -528,7 +534,6 @@ export async function provisionSessionSandbox(opts: {
           accountId,
           source: 'session-start',
           provider: providerName,
-          requireCurrentRuntime,
         });
       }
       imageInfo = {
@@ -928,7 +933,7 @@ export async function provisionSessionSandbox(opts: {
       // are transient outages, not session failures. Log them as a warning so
       // they don't read as code bugs in the console, and present a friendly
       // message to the user instead of the SDK stack trace.
-      const isCapacity = /no available runner|no runners available|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
+      const isCapacity = /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
       // Git auth / repo-access failures. These are NOT a provider fault — the
       // sandbox provider is fine; we couldn't clone the project's repo. Reporting
       // them as "Provisioning failed via daytona" actively misdirects debugging

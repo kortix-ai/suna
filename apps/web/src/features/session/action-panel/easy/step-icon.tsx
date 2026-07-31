@@ -13,26 +13,26 @@
 
 import { cn } from '@/lib/utils';
 import {
-  Archive,
-  Bot,
-  Brain,
-  CircleHelp,
-  FilePen,
-  FolderOpen,
-  Globe,
-  History,
-  ListChecks,
-  Plug,
-  Search,
-  Sparkles,
-  Terminal,
-  Wand2,
-  Wrench,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react';
-import type { StepFamily } from '../shared/narration';
+  ArchiveIcon as Archive,
+  RobotIcon as Bot,
+  BrainIcon as Brain,
+  QuestionIcon as CircleHelp,
+  NotePencilIcon as FilePen,
+  FolderOpenIcon as FolderOpen,
+  GlobeIcon as Globe,
+  ClockCounterClockwiseIcon as History,
+  ListChecksIcon as ListChecks,
+  PlugIcon as Plug,
+  MagnifyingGlassIcon as Search,
+  SparkleIcon as Sparkles,
+  TerminalIcon as Terminal,
+  MagicWandIcon as Wand2,
+  WrenchIcon as Wrench,
+  LightningIcon as Zap,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import type { Step } from '../shared/group-steps';
+import type { StepFamily } from '../shared/narration';
 
 const FAMILY_ICON: Record<StepFamily, LucideIcon> = {
   explore: Search,

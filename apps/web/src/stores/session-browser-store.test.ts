@@ -1,6 +1,28 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { openFileInSessionPanel, useSessionBrowserStore } from './session-browser-store';
+import {
+  normalizeSessionPanelLayoutView,
+  openFileInSessionPanel,
+  useSessionBrowserStore,
+} from './session-browser-store';
 import { useUserPreferencesStore } from './user-preferences-store';
+
+describe('normalizeSessionPanelLayoutView', () => {
+  it('returns users with the removed persisted Voice view to Actions', () => {
+    expect(normalizeSessionPanelLayoutView('voice')).toBe('actions');
+  });
+
+  it('maps the explorer Changes mode to the Files tab', () => {
+    expect(normalizeSessionPanelLayoutView('files')).toBe('explorer');
+  });
+
+  it('preserves current panel views', () => {
+    expect(normalizeSessionPanelLayoutView('browser')).toBe('browser');
+    expect(normalizeSessionPanelLayoutView('explorer')).toBe('explorer');
+    expect(normalizeSessionPanelLayoutView('terminal')).toBe('terminal');
+    expect(normalizeSessionPanelLayoutView('audit')).toBe('audit');
+    expect(normalizeSessionPanelLayoutView('actions')).toBe('actions');
+  });
+});
 
 describe('requestFileOpen vs requestFileOpenSilently', () => {
   beforeEach(() => {

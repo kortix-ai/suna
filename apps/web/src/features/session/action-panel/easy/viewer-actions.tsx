@@ -13,7 +13,7 @@ import { PublicShareLinkButton } from '@/components/projects/public-share-link-b
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowsOutSimpleIcon as Maximize2, ArrowsInSimpleIcon as Minimize2 } from '@phosphor-icons/react';
 
 /** Project-session ids a share link is scoped to. */
 export interface ShareContext {

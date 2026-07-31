@@ -211,7 +211,6 @@ export async function supabaseAuth(c: Context, next: Next) {
   const path = c.req.path;
   const sandboxTokenPathAllowed =
     path.endsWith('/git/clone-credential') ||
-    path.endsWith('/execution-lease') ||
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox

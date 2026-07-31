@@ -17,28 +17,28 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight,
-  Bot,
-  Box,
-  Boxes,
-  Brain,
-  Building2,
-  Clock,
-  Code2,
-  Copy,
-  FileCode2,
-  GitBranch,
-  KeyRound,
-  Layers,
-  MessagesSquare,
-  Plug,
-  Server,
-  Shield,
-  Sparkles,
-  Store,
-  Users,
-  Webhook,
-} from 'lucide-react';
+  ArrowRightIcon as ArrowRight,
+  RobotIcon as Bot,
+  PackageIcon as Box,
+  CubeIcon as Boxes,
+  BrainIcon as Brain,
+  BuildingsIcon as Building2,
+  ClockIcon as Clock,
+  CodeSimpleIcon as Code2,
+  CopyIcon as Copy,
+  FileCodeIcon as FileCode2,
+  GitBranchIcon as GitBranch,
+  KeyIcon as KeyRound,
+  StackIcon as Layers,
+  ChatsIcon as MessagesSquare,
+  PlugIcon as Plug,
+  HardDrivesIcon as Server,
+  ShieldIcon as Shield,
+  SparkleIcon as Sparkles,
+  StorefrontIcon as Store,
+  UsersIcon as Users,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import {
@@ -632,7 +632,7 @@ export function useSlides(): SlideDef[] {
                     [Bot, 'Agents', 'Markdown personas with a scoped reach into tools.'],
                     [Sparkles, 'Skills', 'Reusable know-how that rides into every session.'],
                     [Plug, 'Connectors', '3,000+ apps through one scoped token.'],
-                    [KeyRound, 'Secrets', 'Encrypted, scoped, never shown to the model.'],
+                    [KeyRound, 'Secrets', 'Encrypted, scoped per project and per agent grant.'],
                     [MessagesSquare, 'Channels', 'Slack & chat surfaces, one click.'],
                     [Clock, 'Triggers', 'Cron and signed webhooks spawn sessions.'],
                     [Brain, 'Memory', 'A living company brain that compounds.'],
@@ -666,7 +666,7 @@ export function useSlides(): SlideDef[] {
             'autoAppPresentationSlidesPlatformJsxAttrLeadMarkdownPersonasWithb049eae2',
           )}
           bullets={[
-            'A persona is just a markdown file you can read',
+            'An OpenCode agent — markdown at the baseline, the full lifecycle open',
             'Scoped permissions per agent — people and agents are principals',
             'Any agent can edit its own config and propose the change',
           ]}
@@ -749,9 +749,9 @@ export function useSlides(): SlideDef[] {
               </Lead>
               <Bullets
                 items={[
-                  'Your API keys never enter a sandbox',
+                  'Connector credentials never enter a sandbox',
                   'Agents act through a single scoped Kortix token',
-                  'Allow, ask-first, or block — network rules you control',
+                  'Allow, ask-first, or block — connector action rules you control',
                 ]}
               />
             </div>
@@ -1101,7 +1101,7 @@ export function useSlides(): SlideDef[] {
               [
                 'Operations',
                 'An operations agent that runs the SOP.',
-                'Runs each step in a sandbox, pausing at every approval gate.',
+                'Runs each step in a sandbox, pausing at the approval gates you switch on.',
               ],
             ].map(([tag, title, body]) => (
               <MiniCard key={tag} label={tag} title={title} body={body} />
@@ -1326,7 +1326,7 @@ export function useSlides(): SlideDef[] {
                   [Server, 'Managed cloud'],
                   [Building2, 'Your VPC'],
                   [Box, 'On-prem'],
-                  [Shield, 'Air-gapped'],
+                  [Shield, 'Your own network'],
                 ] as [typeof Server, string][]
               ).map(([Icon, h], i) => (
                 <div
@@ -1405,13 +1405,13 @@ export function useSlides(): SlideDef[] {
           </div>
           <div className="mt-6 flex flex-wrap gap-2">
             {[
-              'MicroVM isolation',
+              'One isolated machine per session',
               'SSO · RBAC · groups',
               'Per-resource permissions',
               'Secrets manager',
               'Human approval gates',
               'Full audit trail',
-              'On-prem / VPC / air-gapped',
+              'On-prem / your own VPC / your own network',
             ].map((c) => (
               <Pill key={c}>{c}</Pill>
             ))}
@@ -1440,7 +1440,7 @@ export function useSlides(): SlideDef[] {
                 [
                   Code2,
                   'Developers',
-                  'A managed cloud for OpenCode, Claude, and Codex agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.',
+                  'A managed cloud for your OpenCode agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.',
                 ],
                 [
                   Users,
@@ -1450,7 +1450,7 @@ export function useSlides(): SlideDef[] {
                 [
                   Shield,
                   'Enterprise',
-                  'Built to survive a security review: microVM isolation, real members/groups/roles, per-resource permissions, a secrets manager, audit trail, approval gates.',
+                  'Built to survive a security review: one isolated machine per session, real members/groups/roles, per-resource permissions, a secrets manager, audit trail, approval gates.',
                 ],
                 [
                   Building2,

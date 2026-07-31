@@ -13,7 +13,7 @@ describe('Custom connector OAuth2 onboarding', () => {
   });
 
   test('renders the OAuth2 credential fields before connector creation', () => {
-    expect(connectorsSource).toContain('oauth2Selected={oauth2Selected}');
+    expect(connectorsSource).toContain('oauth2Selected={sharedOAuth2Selected}');
     expect(connectorsSource).toContain('idPrefix="new-connector-oauth2"');
     expect(connectorsSource).toContain('createConnectorWithOptionalOAuth2(');
   });

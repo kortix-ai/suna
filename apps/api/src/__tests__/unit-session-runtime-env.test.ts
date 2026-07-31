@@ -9,7 +9,6 @@ const base = {
   baseRef: 'main',
   agentName: 'default',
   apiUrl: 'https://api.kortix.test/v1',
-  opencodeProcessTransport: 'acp' as const,
 };
 
 describe('buildSessionRuntimeEnv', () => {

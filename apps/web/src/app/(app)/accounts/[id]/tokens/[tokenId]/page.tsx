@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
+import { CaretLeftIcon as ChevronLeft, KeyIcon as KeyRound } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
@@ -95,9 +95,7 @@ export default function TokenDetailPage() {
       </div>
 
       {!tokensQuery.isLoading && !token && tokenId ? (
-        <InfoBanner tone="neutral">
-          This token doesn&apos;t exist or has been revoked.
-        </InfoBanner>
+        <InfoBanner tone="neutral">This token doesn&apos;t exist or has been revoked.</InfoBanner>
       ) : null}
 
       {token && accountId ? (

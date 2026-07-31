@@ -15,7 +15,10 @@ import {
 import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { getClient } from '../../core/runtime/client';
-import { SESSION_SYNC_PAGE_SIZE, type SessionSyncReason } from '../../core/session-sync/session-sync-controller';
+import {
+  SESSION_SYNC_PAGE_SIZE,
+  type SessionSyncReason,
+} from '../../core/session-sync/session-sync-controller';
 import { fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
@@ -57,13 +60,15 @@ export function createEventHandler(deps: {
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
   } = deps;
-  const reconcileTail = deps.reconcileSessionTail ?? (async (sessionID: string) => {
-    const result = await client.session.messages({
-      sessionID,
-      limit: SESSION_SYNC_PAGE_SIZE,
+  const reconcileTail =
+    deps.reconcileSessionTail ??
+    (async (sessionID: string) => {
+      const result = await client.session.messages({
+        sessionID,
+        limit: SESSION_SYNC_PAGE_SIZE,
+      });
+      if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
     });
-    if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
-  });
 
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
@@ -72,7 +77,7 @@ export function createEventHandler(deps: {
       const s = sessions.find((s) => s.id === sessionID);
       if (s?.title) return s.title;
     }
-    const session = queryClient.getQueryData<Session>(opencodeKeys.session(sessionID));
+    const session = queryClient.getQueryData<Session>(opencodeKeys.runtimeSession(sessionID));
     return session?.title || undefined;
   }
 
@@ -123,7 +128,7 @@ export function createEventHandler(deps: {
             }
             return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
           });
-          queryClient.setQueryData(opencodeKeys.session(info.id), info);
+          queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
           refetchKortixSessionMirrors(queryClient);
         }
         break;
@@ -139,11 +144,11 @@ export function createEventHandler(deps: {
             queryClient
               .getQueryData<Session[]>(opencodeKeys.sessions())
               ?.find((s) => s.id === info.id)?.title ??
-            queryClient.getQueryData<Session>(opencodeKeys.session(info.id))?.title ??
+            queryClient.getQueryData<Session>(opencodeKeys.runtimeSession(info.id))?.title ??
             null;
           const titleChanged = !!info.title && info.title !== prevTitle;
           // Only update individual session cache (cheap, targeted)
-          queryClient.setQueryData(opencodeKeys.session(info.id), info);
+          queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
           // Update session list only if the session actually changed
           queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
             if (!old) return old;
@@ -152,10 +157,7 @@ export function createEventHandler(deps: {
             // Shallow check: skip only if BOTH the timestamp and the title are
             // unchanged. Title alone can flip (opencode auto-titles) without a
             // perceptible time bump, and dropping that would keep the tab stale.
-            if (
-              old[idx].time.updated === info.time.updated &&
-              old[idx].title === info.title
-            )
+            if (old[idx].time.updated === info.time.updated && old[idx].title === info.title)
               return old;
             const next = [...old];
             next[idx] = info;
@@ -175,8 +177,12 @@ export function createEventHandler(deps: {
             if (!found) return old;
             return old.filter((s) => s.id !== info.id);
           });
-          queryClient.removeQueries({ queryKey: opencodeKeys.session(info.id) });
-          queryClient.removeQueries({ queryKey: opencodeKeys.messages(info.id) });
+          queryClient.removeQueries({
+            queryKey: opencodeKeys.runtimeSession(info.id),
+          });
+          queryClient.removeQueries({
+            queryKey: opencodeKeys.runtimeMessages(info.id),
+          });
           deleteSessionFromIDB(info.id);
         }
         break;
@@ -195,7 +201,7 @@ export function createEventHandler(deps: {
             .then((res) => {
               if (res.data) {
                 const session = res.data;
-                queryClient.setQueryData(opencodeKeys.session(sessionID), session);
+                queryClient.setQueryData(opencodeKeys.runtimeSession(sessionID), session);
                 // Also update in session list
                 queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
                   if (!old) return old;
@@ -224,8 +230,14 @@ export function createEventHandler(deps: {
             // Agent finished editing files — refresh the Changes panel.
             // Nothing else invalidates git status for agent-driven edits,
             // so without this the panel shows stale diff state.
-            queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
-            queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
+            queryClient.invalidateQueries({
+              queryKey: gitStatusKeys.all,
+              type: 'active',
+            });
+            queryClient.invalidateQueries({
+              queryKey: fileListKeys.all,
+              type: 'active',
+            });
           }
         }
         break;
@@ -240,8 +252,14 @@ export function createEventHandler(deps: {
             // Agent finished editing files — refresh the Changes panel.
             // Nothing else invalidates git status for agent-driven edits,
             // so without this the panel shows stale diff state.
-            queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
-            queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
+            queryClient.invalidateQueries({
+              queryKey: gitStatusKeys.all,
+              type: 'active',
+            });
+            queryClient.invalidateQueries({
+              queryKey: fileListKeys.all,
+              type: 'active',
+            });
           }
         }
         break;
@@ -268,7 +286,7 @@ export function createEventHandler(deps: {
           // 2. Some error paths (model-not-found, agent-not-found) never
           //    emit message.updated with .error at all
           // 3. Polling can race and overwrite the error from message.updated
-          const key = opencodeKeys.messages(sessionID);
+          const key = opencodeKeys.runtimeMessages(sessionID);
           queryClient.cancelQueries({ queryKey: key });
           queryClient.setQueryData<MessageWithParts[]>(key, (old) => {
             if (!old || old.length === 0) return old;
@@ -345,9 +363,7 @@ export function createEventHandler(deps: {
           addQuestion(props);
           // Fire browser notification for questions needing user input
           const questionText =
-            props.questions[0]?.question ||
-            props.questions[0]?.header ||
-            'Kortix needs your input';
+            props.questions[0]?.question || props.questions[0]?.header || 'Kortix needs your input';
           notifyQuestion(props.sessionID, questionText, getSessionTitle(props.sessionID));
         }
         break;
@@ -400,18 +416,39 @@ export function createEventHandler(deps: {
         // tools, and commands. Invalidate all cached app metadata so
         // the UI picks up newly installed marketplace components or
         // agent-created skills/agents immediately.
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.sessions(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.skills(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.agents(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.commands(), type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.sessions(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.mcpStatus(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.skills(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.agents(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.toolIds(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.commands(),
+          type: 'active',
+        });
         break;
       }
 
       // ---- LSP updated ----
       case 'lsp.updated': {
-        queryClient.invalidateQueries({ queryKey: ['opencode', 'lsp'], type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: ['opencode', 'lsp'],
+          type: 'active',
+        });
         // A new LSP client connected — fetch diagnostics after a short
         // delay to give the language server time to produce initial results.
         fetchLspDiagnosticsDebounced.current();
@@ -431,8 +468,14 @@ export function createEventHandler(deps: {
       case 'mcp.tools.changed': {
         // MCP server tools were added/removed/changed — refresh status + tool lists.
         // Only refetch if queries are actively mounted (type: 'active').
-        queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
-        queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+        queryClient.refetchQueries({
+          queryKey: opencodeKeys.mcpStatus(),
+          type: 'active',
+        });
+        queryClient.refetchQueries({
+          queryKey: opencodeKeys.toolIds(),
+          type: 'active',
+        });
         break;
       }
 
@@ -441,19 +484,31 @@ export function createEventHandler(deps: {
       case 'pty.updated':
       case 'pty.exited':
       case 'pty.deleted': {
-        queryClient.invalidateQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: ptyKeys.listPrefix(),
+          type: 'active',
+        });
         break;
       }
 
       // ---- Worktree events — disabled for now ----
       case 'worktree.ready': {
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.worktrees(), type: 'active' });
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.projects(), type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.worktrees(),
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.projects(),
+          type: 'active',
+        });
         break;
       }
 
       case 'worktree.failed': {
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.worktrees(), type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.worktrees(),
+          type: 'active',
+        });
         break;
       }
 
@@ -469,10 +524,19 @@ export function createEventHandler(deps: {
       // ---- File edited (outside agent, e.g. user edits in editor) ----
       case 'file.edited': {
         const fileProps = event.properties;
-        queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
-        queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
+        queryClient.invalidateQueries({
+          queryKey: fileListKeys.all,
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: gitStatusKeys.all,
+          type: 'active',
+        });
         if (fileProps.file) {
-          queryClient.invalidateQueries({ queryKey: fileContentKeys.all, type: 'active' });
+          queryClient.invalidateQueries({
+            queryKey: fileContentKeys.all,
+            type: 'active',
+          });
         }
         break;
       }

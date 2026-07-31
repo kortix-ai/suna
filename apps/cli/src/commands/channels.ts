@@ -71,7 +71,10 @@ interface TeamsInstallation {
 }
 
 interface TeamsMode {
-  oauth_available: boolean;
+  /** The project's `teams` experimental feature. Off ⇒ the channel is dark. */
+  enabled: boolean;
+  /** Server (or bring-your-own) bot credentials resolve ⇒ an install can run. */
+  available: boolean;
   orgConsentUrl: string | null;
   orgInstalled: boolean;
   deepLinkUrl: string | null;
@@ -487,9 +490,15 @@ async function teamsConnect(
     const mode = await ctx.client.get<TeamsMode>(
       `/projects/${ctx.projectId}/channels/teams/mode`,
     );
-    if (!mode.oauth_available || !mode.orgConsentUrl) {
+    if (!mode.enabled) {
       process.stdout.write(
-        `${C.dim}Teams one-click install isn't configured on this host. Set the Teams app credentials (TEAMS_CLIENT_ID / TEAMS_CLIENT_SECRET / TEAMS_TENANT_ID) on the server, then retry.${C.reset}\n`,
+        `${C.dim}Microsoft Teams is off for this project. Turn it on under Customize → Settings → Experimental, then retry.${C.reset}\n`,
+      );
+      return 1;
+    }
+    if (!mode.orgConsentUrl) {
+      process.stdout.write(
+        `${C.dim}Teams one-click install isn't configured on this host. Set MICROSOFT_APP_ID / MICROSOFT_APP_PASSWORD on the server, or bring your own bot from the dashboard.${C.reset}\n`,
       );
       return 1;
     }

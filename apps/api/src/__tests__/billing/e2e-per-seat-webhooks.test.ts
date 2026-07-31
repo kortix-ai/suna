@@ -92,7 +92,7 @@ function perSeatSubscription(quantity: number, overrides: Record<string, any> = 
 }
 
 describe('per-seat webhook reconciliation', () => {
-  test('quantity 1 → 3: seat_count updates, one seat_grant of $80 emitted', async () => {
+  test('quantity 1 → 3: seat_count updates, one seat_grant of $50 emitted', async () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
 
@@ -105,14 +105,19 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats → grant $80 (PER_SEAT_PRICE_USD $40 × 2)
+    // Delta = 3 - 1 = 2 seats → grant $50 (INCLUDED_CREDITS_PER_SEAT_USD $25 × 2).
+    // NOT $80: the $40 seat PRICE is not the wallet allowance.
     expect(grantCreditsCalls.length).toBe(1);
     const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
     expect(accountId).toBe('acc_test_123');
-    expect(amount).toBe(80);
+    expect(amount).toBe(50);
     expect(type).toBe('seat_grant');
     expect(idempotencyKey).toBeDefined();
-    expect(String(idempotencyKey)).toContain('seats:3');
+    // Keyed on the seat count REACHED within this billing period, so a team that
+    // shrinks and regrows to 3 inside one cycle reuses the key instead of being
+    // funded twice for the same seat.
+    expect(String(idempotencyKey)).toContain(':seats:');
+    expect(String(idempotencyKey).endsWith(':3')).toBe(true);
   });
 
   test('auto-topup defaults rescale unless user customized', async () => {
@@ -174,7 +179,7 @@ describe('per-seat webhook reconciliation', () => {
     // All grant calls for this seat-count transition use the same key.
     const keys = new Set(grantCreditsCalls.map((c) => c[5]));
     expect(keys.size).toBe(1);
-    expect([...keys][0]).toContain('seats:3');
+    expect(String([...keys][0]).endsWith(':3')).toBe(true);
   });
 
   test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
@@ -251,14 +256,14 @@ describe('per-seat webhook reconciliation', () => {
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
     expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(120); // delta 4-1=3 seats × $40 = $120
+    expect(grantCreditsCalls[0][1]).toBe(75); // delta 4-1=3 seats × $25 allowance = $75
   });
 
   test('grant amount math is correct for various deltas', async () => {
     const cases = [
-      { from: 1, to: 2, expectedGrant: 40 },
-      { from: 1, to: 5, expectedGrant: 160 },
-      { from: 1, to: 10, expectedGrant: 360 },
+      { from: 1, to: 2, expectedGrant: 25 },
+      { from: 1, to: 5, expectedGrant: 100 },
+      { from: 1, to: 10, expectedGrant: 225 },
     ];
     for (const { from, to, expectedGrant } of cases) {
       grantCreditsCalls = [];

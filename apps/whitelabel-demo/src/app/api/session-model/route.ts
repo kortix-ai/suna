@@ -88,7 +88,15 @@ export async function PUT(req: NextRequest) {
 
   try {
     const result = await ctx.kortix.session(ctx.projectId, ctx.sessionId).changeModel(model);
-    return Response.json({ model: result.opencode_model, appliedLive: result.applied_live });
+    // `pushFailed` rides through: the write succeeded (hence 200), but a
+    // REQUIRED live push may not have. Dropping it here is what made the UI
+    // report a half-applied change as saved. See classifyModelChange.
+    return Response.json({
+      model: result.opencode_model,
+      appliedLive: result.applied_live,
+      ...(result.push_failed ? { pushFailed: true } : {}),
+      ...(result.detail ? { detail: result.detail } : {}),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not change the model';
     return Response.json({ error: message }, { status: 400 });

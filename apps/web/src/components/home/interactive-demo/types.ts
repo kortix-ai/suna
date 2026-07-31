@@ -1,7 +1,6 @@
-import type { LucideIcon } from 'lucide-react';
+import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import type { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import type { IconType } from 'react-icons/lib';
 
 export type PageId =
   | 'home'

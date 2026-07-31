@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { jsonHasContent, sseErrorFrame, sseHasContent } from './completion-guard';
+import {
+  jsonHasContent,
+  jsonSoftFailureFrame,
+  sseErrorFrame,
+  sseHasContent,
+  sseMayContainSoftFailure,
+  sseSoftFailureFrame,
+} from './completion-guard';
 import { IncrementalSseScanner } from './sse-scanner';
+
+const RAMP_RATE_MESSAGE =
+  'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.';
 
 describe('jsonHasContent', () => {
   test('true for a normal message completion', () => {
@@ -65,6 +75,68 @@ describe('sseHasContent', () => {
 
   test('ignores malformed JSON lines instead of throwing', () => {
     expect(sseHasContent('data: {not json\n\n')).toBe(false);
+  });
+});
+
+describe('soft upstream failures encoded as assistant content', () => {
+  test('classifies the production ramp-rate response in a non-streaming completion', () => {
+    expect(
+      jsonSoftFailureFrame({
+        choices: [{ message: { content: RAMP_RATE_MESSAGE }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 0, completion_tokens: 0 },
+      }),
+    ).toEqual({
+      message: RAMP_RATE_MESSAGE,
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('does not classify a user-visible discussion of the same sentence', () => {
+    expect(
+      jsonSoftFailureFrame({
+        choices: [
+          {
+            message: {
+              content: `The provider returned: ${RAMP_RATE_MESSAGE}`,
+            },
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  test('holds a streaming prefix until the full failure sentence and stop frame arrive', () => {
+    const prefix =
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n';
+    expect(sseMayContainSoftFailure(prefix)).toBe(true);
+    expect(sseSoftFailureFrame(prefix)).toBeNull();
+
+    const complete = `${prefix}data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\ndata: [DONE]\n\n`;
+    expect(sseSoftFailureFrame(complete)).toEqual({
+      message: RAMP_RATE_MESSAGE,
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('does not classify the exact sentence when streaming usage is non-zero', () => {
+    const valid = `data: {"choices":[{"delta":{"content":"${RAMP_RATE_MESSAGE}"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}\n\ndata: [DONE]\n\n`;
+
+    expect(sseSoftFailureFrame(valid)).toBeNull();
+  });
+
+  test('does not classify the exact sentence when streaming usage is absent', () => {
+    const unverified = `data: {"choices":[{"delta":{"content":"${RAMP_RATE_MESSAGE}"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n`;
+
+    expect(sseSoftFailureFrame(unverified)).toBeNull();
+  });
+
+  test('releases normal content as soon as it diverges from the failure prefix', () => {
+    const normal =
+      'data: {"choices":[{"delta":{"content":"Request rate increased because traffic doubled."}}]}\n\n';
+    expect(sseMayContainSoftFailure(normal)).toBe(false);
+    expect(sseSoftFailureFrame(normal)).toBeNull();
   });
 });
 

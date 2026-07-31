@@ -71,7 +71,9 @@ async function resolveOwnerRawEnv(
   // re-pushed the broad agent's full env on every turn. A switch that would
   // change the grant now throws AgentSecretGrantMismatchError (→ 409) rather
   // than quietly re-scoping, because a later narrowing cannot un-read what the
-  // previous agent already pulled into the box.
+  // previous agent already pulled into the box when the optional strict lock
+  // is enabled. By default, the hot push replaces the env with the running
+  // agent's grant before the prompt is forwarded.
   const [project] = await db
     .select({
       repoUrl: projects.repoUrl,
@@ -97,7 +99,16 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
-  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnvForSession)).env;
+  return (
+    await listProjectSecretsSnapshotForUser(
+      projectId,
+      row.createdBy,
+      grantEnvForSession,
+      // Same session the boot path built for — boot and hot push must agree on
+      // delivery or a prompt would re-push a value boot deliberately withheld.
+      sessionId,
+    )
+  ).env;
 }
 
 export async function resolveSandboxEnvSnapshot(

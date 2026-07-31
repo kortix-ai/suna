@@ -67,6 +67,59 @@ export function stripBedrockInferenceProfilePrefix(modelId: string): string {
   return modelId;
 }
 
+// The geography prefixes a CONFIGURED Anthropic-on-Bedrock model id might
+// already carry. Broader than the pricing-strip list above: it also includes
+// the region-specific `jp` (Tokyo) and `au` (Sydney) profiles, which are
+// exactly the ones that end up mismatched against a us-/eu- endpoint.
+const BEDROCK_ANTHROPIC_GEO_PREFIXES = ['us-gov', 'us', 'eu', 'apac', 'jp', 'au'] as const;
+
+// AWS region → the Bedrock cross-region inference-profile geography prefix its
+// endpoint accepts. A profile's geography MUST match the endpoint region's
+// geography — invoking `jp.anthropic.*` against a us-east-1 endpoint 400s "The
+// provided model identifier is invalid." (verified against real Bedrock). Only
+// geographies Kortix has validated are mapped; an unrecognized region returns
+// undefined so normalization is skipped — never rewrite toward a prefix we
+// can't vouch for.
+function regionInferenceGeoPrefix(region: string): string | undefined {
+  const r = region.trim().toLowerCase();
+  if (r.startsWith('us-gov-')) return 'us-gov';
+  if (r.startsWith('us-')) return 'us';
+  if (r.startsWith('eu-')) return 'eu';
+  if (r.startsWith('ap-')) return 'apac';
+  return undefined;
+}
+
+/**
+ * Normalize an Anthropic-on-Bedrock model id's cross-region inference-profile
+ * geography prefix to match the endpoint `region`. A configured id can arrive
+ * with a stale/wrong geography — a picked catalog variant, an old account
+ * default, a session pin (e.g. `jp.anthropic.claude-opus-5` on a us-east-1
+ * box) — which Bedrock rejects with an opaque `400 The provided model
+ * identifier is invalid.` before the turn even starts. Rewriting the prefix to
+ * the endpoint's geography makes a region-mismatched pick self-heal.
+ *
+ * Safe by construction: only rewrites a KNOWN geography prefix to a KNOWN
+ * target geography, and only for `*.anthropic.*` ids. Leaves bare ids,
+ * `global.` profiles, non-Anthropic families, and ids under an unrecognized
+ * region untouched — so it can only ever turn an id that WOULD 400 on this
+ * endpoint into the one that works, never break an already-valid id.
+ * Bedrock-scoped: call only for `kind === 'bedrock'`.
+ */
+export function normalizeBedrockInferenceProfileRegion(
+  modelId: string,
+  region: string | null | undefined,
+): string {
+  const target = regionInferenceGeoPrefix(region?.trim() || DEFAULT_BEDROCK_BYOK_REGION);
+  if (!target) return modelId;
+  for (const prefix of BEDROCK_ANTHROPIC_GEO_PREFIXES) {
+    const withDot = `${prefix}.anthropic.`;
+    if (modelId.startsWith(withDot)) {
+      return prefix === target ? modelId : `${target}.anthropic.${modelId.slice(withDot.length)}`;
+    }
+  }
+  return modelId;
+}
+
 export function livePricing(
   providerId: string,
   modelId: string,
@@ -182,6 +235,23 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   return managedCandidates(managed)[0] ?? null;
+}
+
+/**
+ * Whether THIS deployment can actually reach `managed` — i.e. its transport's
+ * credential is configured (ASTER_API_KEY / AWS_BEDROCK_API_KEY /
+ * OPENROUTER_API_KEY) and the managed provider is on.
+ *
+ * The served catalog reads this so a model that would fail resolution is never
+ * OFFERED. Without it, `/model-picker` advertised `glm-5.2` (the platform
+ * default, transport `aster`) on a deployment with no ASTER_API_KEY, and every
+ * attempt to select it came back `400 INVALID_SESSION_MODEL` — the picker and
+ * request-time resolution disagreed because only resolution checked the
+ * credential. Derived from `managedCandidates` rather than re-listing the env
+ * vars, so the two can never drift.
+ */
+export function managedTransportAvailable(managed: ManagedModel): boolean {
+  return managedCandidates(managed).length > 0;
 }
 
 export function codexDescriptor(credential: CodexCredential, model: string): UpstreamDescriptor {

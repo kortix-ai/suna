@@ -3,13 +3,11 @@ import { logger } from './logger'
 import type { Opencode } from './opencode'
 import type { ProxyServer } from './proxy'
 import type { StaticWebServer } from './static-web'
-import type { AcpRuntime } from './acp/runtime'
 
 export function installShutdownHandlers(
   opencode: Opencode,
   proxy: ProxyServer,
   staticWeb?: StaticWebServer,
-  acpRuntime?: AcpRuntime,
 ) {
   let shuttingDown = false
 
@@ -30,13 +28,6 @@ export function installShutdownHandlers(
           await staticWeb.stop()
         } catch (err) {
           logger.warn('[shutdown] static-web stop failed', err)
-        }
-      }
-      if (acpRuntime) {
-        try {
-          await acpRuntime.shutdown()
-        } catch (err) {
-          logger.warn('[shutdown] ACP runtime stop failed', err)
         }
       }
       try {

@@ -37,6 +37,8 @@ export const CONNECTOR_AUTH_TYPES = [
   'mtls',
   'none',
 ] as const;
+/** The exclusive owner model for authorizations under one connector profile. */
+export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
 export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'voice'] as const;
 /**

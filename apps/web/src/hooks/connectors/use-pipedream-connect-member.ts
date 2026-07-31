@@ -5,9 +5,9 @@ import { useMutation } from '@tanstack/react-query';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
-  pipedreamConnectConnectionProfile,
-  pipedreamFinalizeConnectionProfile,
-  reconcileMemberConnectionProfile,
+  pipedreamConnectConnectorAuthorization,
+  pipedreamFinalizeConnectorAuthorization,
+  reconcileMemberConnectorAuthorization,
 } from '@kortix/sdk';
 
 const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
@@ -61,16 +61,23 @@ export function withPipedreamOverlayEscape(): () => void {
  * never shared with the team. Shared by the connectors view and the
  * connect-to-start gate so both drive one implementation.
  */
-export function usePipedreamConnectMember(projectId: string, slug: string, onConnected: () => void) {
+export function usePipedreamConnectMember(
+  projectId: string,
+  slug: string,
+  onConnected: () => void,
+) {
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
-      const profile = await reconcileMemberConnectionProfile(projectId, {
+      const profile = await reconcileMemberConnectorAuthorization(projectId, {
         connector_alias: slug,
         // The label distinguishes several personal connections on one connector
         // ("Work", "Personal") — reconciling the same label updates in place.
         label: input?.label?.trim() || 'Private connection',
       });
-      const { token, app } = await pipedreamConnectConnectionProfile(projectId, profile.profile_id);
+      const { token, app } = await pipedreamConnectConnectorAuthorization(
+        projectId,
+        profile.profile_id,
+      );
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
         externalUserId: `${projectId}:${slug}:${profile.profile_id}`,
@@ -93,7 +100,7 @@ export function usePipedreamConnectMember(projectId: string, slug: string, onCon
         release();
       }
       if (!connected) return { connected: false };
-      await pipedreamFinalizeConnectionProfile(projectId, profile.profile_id);
+      await pipedreamFinalizeConnectorAuthorization(projectId, profile.profile_id);
       return { connected: true };
     },
     onSuccess: (res) => {

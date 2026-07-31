@@ -42,7 +42,18 @@ flow(
           .has('$.tier.monthly_credits', 2)
           .has('$.credits.total', 2)
           .has('$.credits.monthly', 2)
-          .has('$.credits.can_run', true);
+          .has('$.credits.can_run', true)
+          // billing_state is the unambiguous discriminator every client branches
+          // on. A funded free account is `active`; `can_run:false` must never be
+          // read as "no plan" (see billing/services/billing-state.ts).
+          .has('$.billing_state', 'active')
+          .has('$.has_active_subscription', false)
+          // Lifetime rollups are maintained from credit_ledger. They read 0 on
+          // every account before migration 20260729013905335 because nothing
+          // had incremented them since the Python -> TS rewrite.
+          .exists('$.credits.lifetime_granted')
+          .exists('$.credits.lifetime_purchased')
+          .exists('$.credits.lifetime_used');
       },
     );
   },

@@ -58,7 +58,6 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -71,6 +70,8 @@ import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
+import { triggerBadgeState } from './trigger-status';
 import {
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
@@ -83,29 +84,33 @@ import {
   upsertProjectSecret,
 } from '@kortix/sdk';
 import {
-  AlarmClockSolid,
-  DangerTriangleSolid,
-  PauseSolid,
-  Pencil,
-  PlaySolid,
-  Search,
-  TrashSolid,
-} from '@mynaui/icons-react';
+  AlarmIcon as AlarmClockSolid,
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  WarningIcon as DangerTriangleSolid,
+  DotsThreeIcon as MoreHorizontal,
+  PauseIcon as PauseSolid,
+  PencilSimpleIcon,
+  PlayIcon as Play,
+  PlayIcon as PlaySolid,
+  ArrowClockwiseIcon as RefreshCw,
+  MagnifyingGlassIcon as Search,
+  TimerIcon as Timer,
+  TrashIcon,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Copy,
-  MoreHorizontal,
-  Play,
-  RefreshCw,
-  Timer,
-  Webhook,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+
+const TRIGGER_BADGE_ICONS = {
+  clock: AlarmClockSolid,
+  webhook: Webhook,
+  pause: PauseSolid,
+} as const;
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -499,7 +504,7 @@ function FilterRowsEditor({
               disabled={disabled}
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
             >
-              <TrashSolid className="size-4 shrink-0" />
+              <TrashIcon className="size-4 shrink-0" />
             </Button>
           </div>
         ))
@@ -636,7 +641,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
             </div>
           ) : isForbidden ? (
             <InfoBanner
-              icon={DangerTriangleSolid}
+              icon={<DangerTriangleSolid weight="fill" />}
               title={tHardcodedUi.raw(
                 'componentsProjectsTriggersView.line1438JsxTextAccessRequired',
               )}
@@ -698,6 +703,8 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                     const name = getTriggerName(trigger);
                     const subtitle = getTriggerSubtitle(trigger);
                     const lastFired = trigger.last_fired_at;
+                    const badge = triggerBadgeState(trigger.enabled, type);
+                    const BadgeIcon = TRIGGER_BADGE_ICONS[badge.icon];
 
                     return (
                       <TableRow
@@ -709,16 +716,16 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                           <div
                             className={cn(
                               'inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold',
-                              !trigger.enabled
-                                ? 'bg-kortix-green/10 text-kortix-green'
-                                : 'bg-kortix-red/10 text-kortix-red',
+                              badge.className,
                             )}
+                            title={badge.label}
                           >
-                            {!trigger.enabled ? (
-                              <AlarmClockSolid className="size-5 shrink-0" />
-                            ) : (
-                              <PauseSolid className="size-6 shrink-0" />
-                            )}
+                            <BadgeIcon
+                              className={cn(
+                                'shrink-0',
+                                badge.icon === 'pause' ? 'size-6' : 'size-5',
+                              )}
+                            />
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[200px]">
@@ -943,7 +950,7 @@ function TriggerDetailToolbar({
     <div className="flex items-center gap-1.5">
       <Button size="sm" className="gap-1.5" onClick={onFire} disabled={firePending}>
         {firePending ? (
-          <Loading className="shrink-0 animate-spin" />
+          <Loading className="shrink-0" />
         ) : (
           <Play className="shrink-0" />
         )}
@@ -951,11 +958,11 @@ function TriggerDetailToolbar({
       </Button>
       <Button size="sm" variant="outline" onClick={onToggle} disabled={togglePending}>
         {togglePending ? (
-          <Loading className="shrink-0 animate-spin" />
+          <Loading className="shrink-0" />
         ) : enabled ? (
-          <PauseSolid className="shrink-0" />
+          <PauseSolid weight="fill" className="shrink-0" />
         ) : (
-          <PlaySolid className="shrink-0" />
+          <PlaySolid weight="fill" className="shrink-0" />
         )}
         {enabled ? 'Pause' : 'Enable'}
       </Button>
@@ -967,8 +974,8 @@ function TriggerDetailToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={onDelete} variant="destructive">
-            <TrashSolid className="shrink-0" />
+          <DropdownMenuItem onClick={onDelete}>
+            <TrashIcon className="shrink-0" />
             Delete trigger
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1364,7 +1371,7 @@ function CronSection({
         </ButtonGroup>
       ) : (
         <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-          <Pencil className="size-3.5 shrink-0" />
+          <PencilSimpleIcon className="size-3.5 shrink-0" />
           Edit
         </Button>
       )}
@@ -1642,7 +1649,7 @@ function PromptTemplateSection({
           </ButtonGroup>
         ) : (
           <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-            <Pencil className="size-3.5 shrink-0" />
+            <PencilSimpleIcon className="size-3.5 shrink-0" />
             Edit
           </Button>
         )}
@@ -2049,7 +2056,7 @@ function CreateTriggerModal({
                       className="text-muted-foreground hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full border-none bg-transparent px-3 text-xs"
                       title="Timezone"
                     >
-                      <AlarmClockSolid className="size-3.5" />
+                      <AlarmClockSolid weight="fill" className="size-3.5" />
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

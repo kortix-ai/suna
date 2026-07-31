@@ -130,6 +130,8 @@ async function spawnAgentTurn(
       base_ref: project.defaultBranch,
       agent_name: 'default',
       initial_prompt: initialPrompt,
+      // Title from the user's actual words, not the scaffolded envelope.
+      title_source: message.text ?? message.caption ?? null,
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',

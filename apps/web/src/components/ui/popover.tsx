@@ -5,13 +5,28 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
+function PopoverTrigger({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof PopoverPrimitive.Trigger>, 'size'> & TriggerVariantProps) {
+  return (
+    <PopoverPrimitive.Trigger
+      data-slot="popover-trigger"
+      asChild={asChild}
+      // With `asChild` the child owns its styling — merging ours would double it.
+      className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+      {...props}
+    />
+  );
 }
 
 function PopoverContent({

@@ -149,7 +149,7 @@ get their own post in {{escalation_channel}} instead, never a silent skip.
   sweep from each rep's current HubSpot lead count — never a pointer or
   counter that needs to survive between sessions.
 - **Scoped secrets.** The HubSpot connector is brokered server-side at
-  runtime; no raw credential is ever shown to the model or written to logs.
+  runtime; no raw credential is ever pasted into chat.
 </guardrails>
 
 </skill>

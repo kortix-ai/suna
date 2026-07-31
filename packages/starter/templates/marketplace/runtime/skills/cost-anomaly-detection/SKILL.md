@@ -133,7 +133,7 @@ anomaly log entries older than 90 days.
   baseline history, and don't re-alert on a pattern already confirmed and
   noted as known/planned in the ledger.
 - **Scoped secrets.** AWS access is brokered server-side through the
-  connector; no raw credential is ever shown to the model or written to logs.
+  connector; no raw credential is ever pasted into chat.
 - **People decide, not the agent.** The alert states the delta and a
   suspected driver; a human decides whether and how to respond. The agent
   never resizes, stops, or deletes anything to "fix" a spike.

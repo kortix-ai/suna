@@ -25,9 +25,11 @@ function agentSublabel(agent: CodingAgent): string {
     case 'opencode':
       return 'symlink .opencode → .kortix/opencode';
     case 'claude':
-      return 'symlink .claude → .kortix/opencode';
+      return 'link .claude skills, agents, and commands';
     case 'codex':
       return 'symlink .agents → .kortix/opencode + AGENTS.md';
+    case 'pi':
+      return 'link .pi/skills + AGENTS.md';
     case 'cursor':
       return 'AGENTS.md (read natively — no rule file)';
     default:
@@ -40,7 +42,7 @@ const HELP = help`Usage: kortix init [project-name] [options]
 Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
-full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
+Kortix project floor, project memory, and a kortix.yaml to make it yours.
 By default this works like create-next-app and creates a new directory. In an
 already-cloned Kortix repository, pass --force to wire local coding agents in
 place without replacing repository files.
@@ -49,18 +51,18 @@ Arguments:
   project-name         Your project's name — and the directory it's created
                        in. Prompted if omitted.
 
-Pick the coding agent(s) to wire up. The OpenCode config dir is symlinked into
-each agent's native location (.opencode / .claude; codex wires .agents) so its
-skills and agents are shared; Codex and Cursor also get a root AGENTS.md pointer
-they read natively.
+Pick the local coding tools to wire up. The starter's canonical skill source is
+linked into each native discovery location. Local tool files remain in
+.claude, .codex, and .pi.
+Codex, Pi, and Cursor also get a root AGENTS.md pointer.
+
+This local tool selection does not change the cloud OpenCode REST runtime.
 
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: general-knowledge-worker (default, full
-                       skill kit) or minimal (base plumbing only).
   --force              Configure the current cloned Kortix repository in place.
                        Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
   --no-git             Don't run \`git init\` in the new project directory.
@@ -195,7 +197,7 @@ function gitAvailable(): boolean {
 function excludeLocalAgentWiring(repoRoot: string): void {
   appendGitExcludeEntries(
     repoRoot,
-    ['/.agents', '/.claude', '/.opencode', '/AGENTS.md'],
+    ['/.agents', '/.claude', '/.opencode', '/.pi', '/AGENTS.md'],
     'Kortix local coding-agent wiring',
   );
 }
@@ -210,12 +212,10 @@ function printAgentPreamble(): void {
   const opts = SUPPORTED_AGENTS.map((a) => `${bold}${a}${reset}`).join(`  ${dim}·${reset}  `);
   const lines = [
     '',
-    `  Pick the coding agent(s) to wire into this Kortix project.`,
+    `  Pick the local coding tools to wire into this Kortix project.`,
     '',
-    `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
-    `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
-    `  ${dim}custom agents, or edit kortix.yaml for you.${reset}`,
-    `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
+    `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or OpenCode settings.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -300,9 +300,8 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Resolve starter template ────────────────────────────────────────
-  // There's one starter kit — every project scaffolds with the full Kortix
-  // skill kit. The `--template` flag stays as an advanced escape hatch (e.g.
-  // the internal base-only `minimal`), but we no longer prompt for a choice.
+  // One public starter exists. Keep parsing historical template values for
+  // scripts and API compatibility. Do not expose them as product choices.
   const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
   // ── Resolve coding agents (multi-select TUI) ─────────────────────────
@@ -365,8 +364,7 @@ export async function runInit(argv: string[]): Promise<number> {
   });
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
-  // Symlink the OpenCode config dir into each agent's native location
-  // (.opencode/.claude; codex wires .agents) + an AGENTS.md pointer for Codex & Cursor.
+  // Link the canonical skill source into each local tool's discovery path.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,

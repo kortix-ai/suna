@@ -25,6 +25,11 @@ export interface AccountState {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived server-side from credit_ledger. Optional —
+     *  absent on API versions that predate them. */
+    lifetime_granted?: number;
+    lifetime_purchased?: number;
+    lifetime_used?: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;

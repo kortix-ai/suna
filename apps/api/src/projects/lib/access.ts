@@ -9,6 +9,7 @@ import {
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -26,7 +27,7 @@ import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
 
-// Enforce the per-account project cap (free → 3, paid → effectively uncapped).
+// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
 // project. Every isolated project counts, even when another project uses the
 // same Git repository or branch.
@@ -45,12 +46,15 @@ export async function enforceProjectQuota(
     .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
   const count = counted?.count ?? 0;
   if (count >= limit) {
+    // FREE_TIER_PROJECT_LIMIT is 1, so this string is pluralized rather than
+    // hardcoded — "limited to 1 projects" reads as a bug to the user.
+    const projectsWord = limit === 1 ? 'project' : 'projects';
     return c.json(
       {
         error:
           limit === FREE_TIER_PROJECT_LIMIT
-            ? `Free accounts are limited to ${limit} projects. Upgrade to a paid plan to create more.`
-            : `This account has reached its limit of ${limit} projects.`,
+            ? `Free accounts are limited to ${limit} ${projectsWord}. Upgrade to a paid plan to create more.`
+            : `This account has reached its limit of ${limit} ${projectsWord}.`,
         code: 'project_limit_reached',
         limit,
         count,
@@ -382,6 +386,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
   (c as any).set('accountId', membership.accountId);
+  setContextField('accountId', membership.accountId);
 
   return {
     userId,
@@ -528,6 +533,8 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!row || row.status === 'archived') return null;
+  setContextField('accountId', row.accountId);
+  setContextField('projectId', row.projectId);
 
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as

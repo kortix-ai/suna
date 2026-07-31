@@ -1,12 +1,12 @@
-import { accountModelPreferences, projectLlmRoutingPolicies } from "@kortix/db";
-import { and, eq, sql } from "drizzle-orm";
-import { db } from "../shared/db";
+import { accountModelPreferences, projectLlmRoutingPolicies } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import type {
   ProjectModelGenerationConfig,
   ProjectRoutingFallback,
   ProjectRoutingPolicyInput,
   ProjectRoutingRule,
-} from "../llm-gateway/routing/project-policy";
+} from '../llm-gateway/routing/project-policy';
+import { db } from '../shared/db';
 
 export interface StoredProjectRoutingPolicy {
   visionModel: string | null;
@@ -15,9 +15,7 @@ export interface StoredProjectRoutingPolicy {
   modelGenerationConfig: ProjectModelGenerationConfig;
 }
 
-function fromRow(
-  row: typeof projectLlmRoutingPolicies.$inferSelect,
-): StoredProjectRoutingPolicy {
+function fromRow(row: typeof projectLlmRoutingPolicies.$inferSelect): StoredProjectRoutingPolicy {
   return {
     visionModel: row.visionModel,
     defaultFallback:
@@ -25,7 +23,7 @@ function fromRow(
         ? null
         : {
             models: row.defaultFallbackModels,
-            fallbackOn: row.defaultFallbackOn as "transient" | "any-error",
+            fallbackOn: row.defaultFallbackOn as 'transient' | 'any-error',
           },
     rules: row.rules,
     modelGenerationConfig: (row.modelGenerationConfig ?? {}) as ProjectModelGenerationConfig,
@@ -57,7 +55,7 @@ export async function setProjectRoutingPolicy(params: {
   await db.transaction(async (tx) => {
     const preferenceWhere = and(
       eq(accountModelPreferences.accountId, params.accountId),
-      eq(accountModelPreferences.scope, "project"),
+      eq(accountModelPreferences.scope, 'project'),
       eq(accountModelPreferences.scopeKey, params.projectId),
     );
     if (params.policy.defaultModel) {
@@ -65,7 +63,7 @@ export async function setProjectRoutingPolicy(params: {
         .insert(accountModelPreferences)
         .values({
           accountId: params.accountId,
-          scope: "project",
+          scope: 'project',
           scopeKey: params.projectId,
           model: params.policy.defaultModel,
           updatedBy: params.updatedBy,
@@ -131,7 +129,7 @@ export async function resetProjectRoutingPolicy(params: {
       .where(
         and(
           eq(accountModelPreferences.accountId, params.accountId),
-          eq(accountModelPreferences.scope, "project"),
+          eq(accountModelPreferences.scope, 'project'),
           eq(accountModelPreferences.scopeKey, params.projectId),
         ),
       );

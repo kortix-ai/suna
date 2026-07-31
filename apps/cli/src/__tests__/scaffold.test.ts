@@ -11,17 +11,24 @@ const REQUIRED_BASE_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
   '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/skills/kortix-system/SKILL.md',
+  // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
+  // the `kortix-*` family lives in templates/managed/ and is injected at boot.
+  '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
   'kortix.yaml',
 ];
 
+// A sample of the artifact floor the general-knowledge-worker layer adds on top
+// of base — a document, a deck, and a site. Not the full list; `@kortix/starter`
+// owns that assertion.
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/account-research/SKILL.md',
-  '.kortix/opencode/skills/deep-research/SKILL.md',
   '.kortix/opencode/skills/pdf/SKILL.md',
+  '.kortix/opencode/skills/presentations/SKILL.md',
+  '.kortix/opencode/skills/website-building/SKILL.md',
 ];
+
+const NATIVE_HARNESS_CONFIG_PATHS = ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md'];
 
 function baseStarterPaths(): string[] {
   const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-base-'));

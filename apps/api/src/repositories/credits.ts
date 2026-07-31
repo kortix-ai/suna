@@ -97,14 +97,30 @@ export async function checkCredits(
 }
 
 /**
+ * Granular kind stamped into credit_ledger.metadata->>'ledger_type'. Must stay
+ * in sync with `LedgerDebitType` in billing/services/credits.ts — the usage
+ * breakdown (billing/services/usage-breakdown.ts) classifies off this value.
+ */
+export type RouterLedgerDebitType = 'usage' | 'llm_debit' | 'compute_debit';
+
+/**
  * Deduct credits atomically using database function.
  * Uses existing atomic_use_credits PostgreSQL function.
  * When billing is disabled (self-hosted), always succeeds.
+ *
+ * NAMED arguments, deliberately. This call used to pass THREE POSITIONAL args,
+ * which silently bound the weaker of two overloads — SECURITY INVOKER, and it
+ * stamped no `ledger_type`, so every router debit (web search, image search,
+ * tool proxy, LLM reservation) was invisible to the usage breakdown and
+ * reported as $0. Migration 20260730012238065 collapsed the two overloads into
+ * one; naming the parameters here means this call site can never re-acquire an
+ * arity-resolved binding if a future migration adds a signature back.
  */
 export async function deductCredits(
   accountId: string,
   amount: number,
   description: string,
+  ledgerType: RouterLedgerDebitType = 'usage',
 ): Promise<CreditDeductResult> {
   // Billing disabled: no deduction
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -113,9 +129,10 @@ export async function deductCredits(
 
   try {
     const result = await db.execute(sql`SELECT atomic_use_credits(
-      ${accountId}::uuid,
-      ${amount}::numeric,
-      ${description}::text
+      p_account_id => ${accountId}::uuid,
+      p_amount => ${amount}::numeric,
+      p_description => ${description}::text,
+      p_ledger_type => ${ledgerType}::text
     ) as result`);
 
     const row = result[0] as Record<string, unknown> | undefined;

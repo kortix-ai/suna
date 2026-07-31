@@ -6,7 +6,6 @@ description: >-
   ticket volume and no article, drafts the top gaps from the actual
   resolutions, and opens a PR — never publishing or merging.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

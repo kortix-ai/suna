@@ -29,9 +29,10 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import {
   getSessionDisplayTitle,
   resolveSessionListViewState,
+  sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
-  sortSessionsByCreatedAt,
+  sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
@@ -43,22 +44,22 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNowStrict } from 'date-fns';
 import {
-  CalendarClock,
-  Mail,
-  MoreHorizontal,
-  RotateCcw,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
+  CalendarDotsIcon as CalendarClock,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  PencilSimpleIcon,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  SquareIcon as Square,
+  TrashIcon,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import { useState, type ComponentType } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -70,7 +71,7 @@ const SESSION_RELATIVE_TIME_CLASS =
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
-  LucideIcon | IconMynauiType | IconType
+  ComponentType<{ className?: string }>
 > = {
   slack: Icon.Slack,
   telegram: Icon.Telegram,
@@ -156,7 +157,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
-  const sessions = sortSessionsByCreatedAt(data ?? []);
+  const sessions = sortSessionsByLastActivity(data ?? []);
   // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
   // this list only applies the chosen filter.
   const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
@@ -344,11 +345,15 @@ function ProjectSessionRow({
     requestAnimationFrame(() => fn());
   };
 
-  const relative = (() => {
+  const activity = (() => {
     try {
-      return formatDistanceToNowStrict(new Date(session.created_at), { addSuffix: false });
+      const date = new Date(sessionLastActivityAt(session));
+      return {
+        relative: formatDistanceToNowStrict(date, { addSuffix: false }),
+        exact: format(date, 'MMM d, yyyy, h:mm a'),
+      };
     } catch {
-      return '';
+      return null;
     }
   })();
 
@@ -405,15 +410,17 @@ function ProjectSessionRow({
           </span>
 
           <div className="relative w-10 min-w-10 shrink-0">
-            {relative && (
+            {activity && (
               <span
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
                   'pr-1.5 transition-opacity duration-150',
                   'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
                 )}
+                title={`Last activity: ${activity.exact}`}
+                aria-label={`Last activity: ${activity.relative}`}
               >
-                {shortRelative(relative)}
+                {shortRelative(activity.relative)}
               </span>
             )}
 
@@ -428,7 +435,7 @@ function ProjectSessionRow({
                   )}
                   className={cn(
                     'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
-                    relative
+                    activity
                       ? cn(
                           'pointer-events-none opacity-0',
                           'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
@@ -449,7 +456,7 @@ function ProjectSessionRow({
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
                 >
-                  <Pencil />
+                  <PencilSimpleIcon />
                   Rename
                 </DropdownMenuItem>
                 {session.can_manage_sharing !== false && (
@@ -484,9 +491,8 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-                  variant="destructive"
                 >
-                  <TrashSolid />
+                  <TrashIcon />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>

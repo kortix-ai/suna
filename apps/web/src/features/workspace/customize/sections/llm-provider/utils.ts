@@ -150,12 +150,10 @@ export function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): s
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * The literal model id you'd pass as `model` in a gateway request body
- * (`POST /v1/chat/completions`, `/v1/messages`, …) — `provider/model` for
- * BYOK providers (e.g. `anthropic/claude-sonnet-4.6`), the bare id for
- * Kortix-managed models (single-segment by design — see `@kortix/llm-catalog`'s
- * `MANAGED_MODELS` doc comment), and `codex/<id>` for the ChatGPT-subscription
- * provider.
+ * The gateway wire id for a model listed under a PROVIDER entry (the "Add
+ * provider" catalog, which browses providers rather than the project's served
+ * models). Surfaces that work from the served catalog have the wire id already
+ * and use `modelKeyToWire` instead — see model-rows.ts.
  */
 export function gatewayModelId(
   provider: Pick<LlmProviderEntry, 'id' | 'managed'>,

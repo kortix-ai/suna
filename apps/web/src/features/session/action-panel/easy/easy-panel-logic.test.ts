@@ -2,12 +2,15 @@ import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
+  aspectChangedWidth,
   deriveIsRunning,
+  fitSplitPercent,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
   pathOutput,
   quickBrowserOutput,
+  resolveSideSize,
   sandboxRecents,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
@@ -86,6 +89,173 @@ describe('isWideDeliverable (wide split for landscape-shaped details)', () => {
     expect(isWideDeliverable({ kind: 'file', name: 'report.md' })).toBe(false);
     expect(isWideDeliverable({ kind: 'file', name: 'report.pdf' })).toBe(false);
     expect(isWideDeliverable({ kind: 'image', name: 'chart.png' })).toBe(false);
+  });
+});
+
+describe('fitSplitPercent (aspect-ratio-fit split for the Easy panel)', () => {
+  const box = { layoutWidth: 1400, panelContentHeight: 800 };
+
+  // ─── the shape table — same box, varying aspect. Values are approximate:
+  // idealPx = aspect * panelContentHeight + gutter(48), percent = idealPx /
+  // layoutWidth * 100, clamped to [35, 70]. ──
+  test.each([
+    ['A4 portrait (595/842) fits narrower than default', 595 / 842, 44],
+    ['A4 landscape (842/595) clamps to the 70 ceiling', 842 / 595, 70],
+    ['a square document sits mid-range', 1, 61],
+    ['an extreme-wide document clamps to 70', 10, 70],
+    ['an extreme-tall document clamps to the 35 floor', 0.05, 35],
+  ])('%s', (_label, aspect, expected) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeCloseTo(expected, 0);
+  });
+
+  test.each([
+    ['NaN aspect', NaN],
+    ['zero aspect', 0],
+    ['negative aspect', -1],
+    ['infinite aspect', Infinity],
+  ])('returns null, never NaN, for %s', (_label, aspect) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeNull();
+  });
+
+  it('returns null for a zero layoutWidth', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 0, panelContentHeight: 800 })).toBeNull();
+  });
+
+  it('returns null for a zero panelContentHeight', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 1400, panelContentHeight: 0 })).toBeNull();
+  });
+});
+
+describe('resolveSideSize (the panel-width precedence rule)', () => {
+  // 848 = the 800px content height the fitSplitPercent table above uses, plus
+  // PREVIEW_TOOLBAR_PX (48), which resolveSideSize subtracts itself. So an A4
+  // portrait through this box must land on that table's ~44.
+  const panelBox = { width: 1400, height: 848 };
+  const base = { isExpanded: false, isEasy: true, panelAspect: null, panelSplit: null, panelBox };
+
+  it('gives fullscreen the whole layout, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isExpanded: true, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(100);
+  });
+
+  it('keeps Advanced mode at an even 50, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isEasy: false, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(50);
+  });
+
+  it('lets a measured document outrank the split its extension asked for', () => {
+    const fitted = resolveSideSize({ ...base, panelAspect: 595 / 842, panelSplit: 70 });
+    expect(fitted).toBeCloseTo(44, 0);
+  });
+
+  it('falls back to panelSplit when the measurement is unusable', () => {
+    // NaN is what fitSplitPercent refuses; the split must survive that refusal
+    // rather than the panel collapsing to the default.
+    expect(resolveSideSize({ ...base, panelAspect: NaN, panelSplit: 70 })).toBe(70);
+  });
+
+  it('falls back to panelSplit when the panel box has not been measured yet', () => {
+    expect(
+      resolveSideSize({ ...base, panelBox: null, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(70);
+  });
+
+  it('falls back to panelSplit when the box is shorter than its own toolbar', () => {
+    // panelContentHeight goes <= 0, which fitSplitPercent nulls out — the
+    // Global Constraint 6 path, seen from the caller.
+    expect(
+      resolveSideSize({
+        ...base,
+        panelBox: { width: 1400, height: 20 },
+        panelAspect: 595 / 842,
+        panelSplit: 70,
+      }),
+    ).toBe(70);
+  });
+
+  it('falls back all the way to the 35 card column with neither a fit nor a split', () => {
+    expect(resolveSideSize(base)).toBe(35);
+    expect(resolveSideSize({ ...base, panelAspect: NaN })).toBe(35);
+  });
+
+  it('still honors a wide deliverable that reports no shape of its own', () => {
+    expect(resolveSideSize({ ...base, panelSplit: 70 })).toBe(70);
+  });
+
+  it('never returns a non-finite size, whatever it is handed', () => {
+    const sizes = [
+      resolveSideSize({ ...base, panelAspect: Infinity, panelSplit: null }),
+      resolveSideSize({ ...base, panelAspect: 0, panelSplit: null }),
+      resolveSideSize({ ...base, panelBox: { width: 0, height: 0 }, panelAspect: 1 }),
+      resolveSideSize({ ...base, panelAspect: 1 }),
+    ];
+    for (const size of sizes) expect(Number.isFinite(size)).toBe(true);
+  });
+});
+
+describe('aspectChangedWidth (does a measurement ask the panel to move?)', () => {
+  const held = { prevAspect: 0.707, nextAspect: 0.707, currentSize: 44, nextSize: 44 };
+
+  it('is false when the ratio did not change at all', () => {
+    expect(aspectChangedWidth({ ...held, currentSize: 60, nextSize: 35 })).toBe(false);
+  });
+
+  it('is false when a new ratio lands on the width the panel already has', () => {
+    // The no-op guard: a transition here moves nothing and still swings the
+    // panels' min/max/collapsible for 320ms.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35, nextSize: 35 }),
+    ).toBe(false);
+  });
+
+  // ─── the regression this function was extracted for. The user drags the
+  // divider to 60%, which `react-resizable-panels` records internally and
+  // never reports back, then opens a tall document whose fit clamps to the
+  // 35 floor. Comparing against the LAST COMMANDED width (also 35) says
+  // "nothing changed", no transition is attached, and the unconditional
+  // resize(35) that follows jump-cuts a hand-placed 60% panel. Comparing
+  // against the panel's real width is what keeps the glide. ──
+  it('is true when the panel was dragged away from the width we last commanded', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 60, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('is true for an ordinary fit that genuinely widens the panel', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 1.41, currentSize: 35, nextSize: 70 }),
+    ).toBe(true);
+  });
+
+  it('is true when a held ratio is finally cleared into a different width', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: 0.707, nextAspect: null, currentSize: 44, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('ignores sub-pixel drift, which a hand-dragged divider produces constantly', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.4, nextSize: 35 }),
+    ).toBe(false);
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.6, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('honors a custom epsilon and falls back to the default for a junk one', () => {
+    const drift = { prevAspect: null, nextAspect: 0.4, currentSize: 38, nextSize: 35 };
+    expect(aspectChangedWidth({ ...drift, epsilon: 5 })).toBe(false);
+    expect(aspectChangedWidth({ ...drift, epsilon: NaN })).toBe(true);
+  });
+
+  it('treats an unreadable size as a real change rather than a silent jump', () => {
+    // `getSize()` should never return this, but a size we cannot compare must
+    // keep its transition instead of committing with none attached.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: NaN, nextSize: 35 }),
+    ).toBe(true);
   });
 });
 

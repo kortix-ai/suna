@@ -34,8 +34,8 @@ Subcommands:
     --identifier <id>               Store under an explicit identifier (a second
     --id <id>                       value under the same KEY). One KEY=VALUE only.
   request NAME [NAME …]             Mint a short-lived link for a human to
-                                    ENTER the value(s) — you never see/handle
-                                    the raw key. Surface the URL (web: fill-in
+                                    ENTER the value(s) — never pasted into
+                                    chat. Surface the URL (web: fill-in
                                     modal, Slack: tappable link).
                                     --scope runtime|connector  --expires <min>
   unset IDENTIFIER [IDENTIFIER …]   Remove one or more secrets (by identifier).
@@ -388,7 +388,7 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
   process.stdout.write(
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
-      `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. You never see the value.${C.reset}\n` +
+      `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. The value is never pasted into chat.${C.reset}\n` +
       `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
   );
   return 0;

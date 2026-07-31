@@ -16,9 +16,9 @@ name: Deploy Prod
 #        blob, stamped with the clean KORTIX_VERSION.
 #      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
 #        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
-#      - US East 2 ECS shadow: deploy-us-shadow rolls the US API and gateway
-#        without changing database replication. The cutover workflow owns the
-#        final database migration and reconciliation.
+#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
+#        migrations, refreshes logical replication, and rolls the US API and
+#        gateway. It does not change production routing or enable writers.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -566,7 +566,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version]
+    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -774,10 +774,9 @@ jobs:
 
   # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
   # The shadow uses the native US East 2 Supabase project and separate ECS
-  # services. This job keeps its API and gateway on the same release as
-  # production. Database synchronization remains an explicit cutover action.
-  # This job does not change Cloudflare routing, production DNS, database
-  # replication, desired counts, or worker flags.
+  # services. This job keeps its database schema, logical publication, API, and
+  # gateway on the same release as production. It does not change Cloudflare
+  # routing, production DNS, desired counts, or worker flags.
   deploy-us-shadow:
     name: Deploy API + gateway to US East 2 shadow
     needs: [version, retag-images, verify-image-commits, migrate-db]
@@ -788,7 +787,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       source_sha: ${{ needs.version.outputs.source_sha }}
-      synchronize_database: false
+      synchronize_database: true
     secrets: inherit
 
   # ── Deploy API to prod EKS (the standby backend, kept in perfect parity) ─────
@@ -815,8 +814,6 @@ jobs:
       ARGO_APP: kortix-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
-      - uses: actions/checkout@v7
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -867,13 +864,6 @@ jobs:
               -p '{"spec":{"source":{"targetRevision":"prod"}}}'
           fi
           kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
-
-      - name: Reconcile Argo CD Application from repo (code is source of truth)
-        if: steps.guard.outputs.exists == 'true'
-        run: |
-          kubectl apply -f infra/k8s/argocd/applications/prod.yaml
-          kubectl -n argocd annotate application "$ARGO_APP" \
-            argocd.argoproj.io/refresh=hard --overwrite
 
       # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
       # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
@@ -927,8 +917,6 @@ jobs:
       ARGO_APP: kortix-gateway-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
-      - uses: actions/checkout@v7
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -1252,6 +1240,21 @@ jobs:
             echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  frontend-auth-proof:
+    name: Prod frontend auth configuration
+    needs: [version, frontend-note]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the released frontend and verify its EU Supabase configuration
+        run: |
+          node apps/web/scripts/validate-production-supabase-env.mjs \
+            --runtime-url https://kortix.com/api/runtime-config \
+            --expected-version "${{ needs.version.outputs.version }}" \
+            --attempts 30 \
+            --interval-ms 20000
+
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
   # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
   # merge). After a release publishes, advance main's VERSION to the NEXT dev
@@ -1365,7 +1368,7 @@ jobs:
   # rollout banner.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version]
+    needs: [verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

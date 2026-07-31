@@ -1,9 +1,9 @@
 /**
  * /v1/skills — the kortix-managed system skills, served over HTTP.
  *
- * The point: an agent in ANY harness (Claude Code, Codex, OpenCode) holding only
- * the `kortix` binary and a token can discover and read everything it needs to
- * drive Kortix. No repo checkout, no baked sandbox image. `kortix skills` /
+ * The point: an OpenCode agent holding only the `kortix` binary and a token can
+ * discover and read everything it needs to drive Kortix. No repo checkout, no
+ * baked sandbox image. `kortix skills` /
  * `kortix skills get <name>` are thin wrappers over these two routes.
  *
  * SHAPE — list + fetch, not one overloaded endpoint, because an agent pays tokens

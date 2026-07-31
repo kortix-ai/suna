@@ -1,5 +1,14 @@
 # KaaB hardening audit
 
+> **Historical and superseded.** This audit records earlier contracts and
+> defects. Customer-reference usage attribution and per-reference limits no
+> longer exist. Use
+> [Drive Kortix as a Backend](./KORTIX_AS_A_BACKEND_GUIDE.md) for current
+> integration guidance.
+
+> **Historical audit scope.** OpenCode REST findings remain compatibility
+> evidence.
+
 Method: a 35-agent adversarial audit of every Kortix-as-a-Backend edge case
 (plan `docs/KORTIX_AS_BACKEND_V1_PLAN.md` §4.1–4.11) against current `main` plus
 the 6 open hardening PRs (#5259, #5267, #5271, #5272, #5273, #5275). Every

@@ -1,34 +1,74 @@
 ---
 title: Connectors
-description: How connectors give agents scoped access to external tools.
+description: How connector profiles and authorizations give agents scoped access to external tools.
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-A connector links your project to an external tool or service, such as Gmail, Stripe, a database, or any HTTP API. The agent calls it as a tool. Kortix brokers every call, so the sandbox never holds the connector's credential. The dashboard may label this area **Connections** — it is the same feature.
+A connector profile links a project to an external tool or service. The agent
+calls it as a tool. Kortix brokers each call, so the sandbox never holds the
+connector credential.
 
-You declare most connectors in the project manifest, `kortix.yaml`. See the [manifest reference](/docs/project/manifest) for every field. Kortix declares channel and computer connectors for you, when you connect a chat platform or a machine.
+You declare most connector profiles in `kortix.yaml`. See the
+[manifest reference](/docs/project/manifest) for every field. Kortix declares
+channel and computer connector profiles when you connect a chat platform or a
+machine.
+
+## Profiles and authorizations
+
+A connector profile is the agent-facing permission package. It contains:
+
+- a project-unique slug
+- a display name
+- a provider app
+- one authorization strategy
+- connector policies
+
+An authorization is one connected account or credential under the connector
+profile. Every authorization uses the connector profile's policies.
+
+The authorization strategy is:
+
+- `project` for authorizations available to eligible project members
+- `user` for an authorization owned by the acting project member
+
+A service account cannot use a member's `user` authorization. Multiple
+connector profiles can reference the same provider app. Use separate profiles
+when one app needs different policies.
 
 ## Providers
 
-A connector uses one provider type:
+A connector profile uses one provider type:
 
-- **pipedream** — one-click OAuth for supported SaaS apps, when the deployment has Pipedream configured.
-- **openapi**, **postman**, **graphql**, **http** — a direct connector to an API.
-- **mcp** — a remote MCP server, reached over HTTP or SSE.
-- **channel** — a chat platform connection. See [Slack & channels](/docs/connect/slack).
-- **computer** — a tunnel to a machine you connect. See [Computers](/docs/connect/computers).
+- **pipedream** — managed OAuth for supported SaaS apps
+- **openapi**, **postman**, **graphql**, **http** — direct API connectors
+- **mcp** — a remote MCP server over HTTP or SSE
+- **channel** — a chat platform connection
+- **computer** — a tunnel to a connected machine
+
+See [Slack and channels](/docs/connect/slack) and
+[Computers](/docs/connect/computers) for the managed provider flows.
 
 ## Authentication and policy
 
-A connector authenticates one of two ways:
+An authorization authenticates with:
 
-- **OAuth** — through Pipedream, through a channel install, or through native OAuth2 client credentials for direct API connectors.
-- **API key or token** — you declare the connector in `kortix.yaml` and enter the credential yourself, or reference it from a project [secret](/docs/project/secrets) (legacy).
+- OAuth through Pipedream, a channel install, or a native OAuth2 grant
+- an API key or token entered through the dashboard or SDK
 
-Kortix never gives a connector's credential to the sandbox. It stores the credential encrypted and resolves it server-side, at call time. The agent requests the action. Kortix attaches the credential, calls the external API, and returns the result.
+Kortix encrypts authorization data and resolves it server-side for each tool
+call. The agent requests an action. Kortix attaches the credential, checks the
+agent grant and connector-profile policy, calls the external API, and returns
+the result.
 
-By default, a connector action runs without approval. Set `policy.default_mode: risk` in the manifest to require approval for write and destructive actions. Mark a connector `sensitive: true` to require approval for every action on it, including reads.
+Connector policies belong to the connector profile. An authorization cannot
+override them. Project guardrails apply above connector-profile policies.
+
+By default, an unmatched connector action runs without approval. Set
+`policy.default_mode: risk` to require approval for unmatched write and
+destructive actions. Set `sensitive: true` to make `require_approval` the
+connector profile's unmatched-action default, including reads. Explicit project
+or connector-profile rules still apply first.
 
 ## Connect with OAuth
 
@@ -36,137 +76,147 @@ By default, a connector action runs without approval. Set `policy.default_mode: 
 <Step>
 ### Open the project's Connectors page
 
-From the dashboard, open the project's Connectors page and search for the app.
+Open the project. Select **Connectors**, then select the app.
+
 </Step>
 <Step>
-### Connect the app
+### Select the authorization scope
 
-Click **Connect** and complete the OAuth flow. Kortix stores only the connected-account ID, never the credential itself.
+Select **Project** for a shared project authorization. Select **User** for an
+authorization owned by the acting project member.
+
+</Step>
+<Step>
+### Complete authorization
+
+Complete the OAuth flow. Kortix stores the connected account as an
+authorization under the connector profile.
+
 </Step>
 </Steps>
 
-This path creates the connector for you. Skip the next section.
+## Connect a direct API with OAuth2
 
-## Connect a direct API with OAuth2 client credentials
+Direct connectors support:
 
-Use this path for server-to-server APIs that require OAuth2. Microsoft Graph and SharePoint Online use this pattern.
+- client credentials
+- authorization code with PKCE
+- device authorization
 
-<Steps>
-<Step>
-### Declare the direct connector
+For client credentials, enter the token URL, client ID, scopes, and client
+secret. You can use `client_secret_basic`, `client_secret_post`,
+`client_secret_jwt`, or `private_key_jwt` token-endpoint authentication.
 
-In the Custom connector form, select **OAuth 2.0 client credentials** under **Auth**. Kortix configures bearer-token injection and shows the OAuth2 fields before it creates the connector.
-</Step>
-<Step>
-### Enter the OAuth2 configuration
+For authorization code, enter the authorization URL and token URL. For device
+authorization, enter the device-authorization URL and token URL. An RFC 8414
+discovery URL can provide these endpoints.
 
-Enter the token URL, client ID, scopes, and client secret. Existing connectors expose the same fields under **Set credential**.
+Kortix encrypts the OAuth2 configuration and tokens. It refreshes access tokens
+before expiry. Revoking the authorization blocks the next Executor call.
 
-For certificate authentication, select **Certificate assertion**. Enter the PKCS#8 private key PEM and the certificate's Base64url SHA-256 thumbprint (`x5t#S256`).
-</Step>
-<Step>
-### Save and verify
+For Microsoft Graph, use:
 
-Kortix requests a token before it saves the configuration. A rejected client ID, secret, certificate assertion, scope, or resource returns an error.
-</Step>
-</Steps>
+```text
+https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
+https://graph.microsoft.com/.default
+```
 
-Kortix encrypts the OAuth2 configuration and access token. The Executor refreshes the token 60 seconds before expiry. PostgreSQL serializes concurrent refreshes for one connection profile. Revoking the profile blocks the next Executor call.
+For direct SharePoint REST calls, use the SharePoint resource scope:
 
-For Microsoft Graph, use `https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token` and the scope `https://graph.microsoft.com/.default`.
-
-For direct SharePoint REST endpoints under `https://{tenant}.sharepoint.com/_api`, use the scope `https://{tenant}.sharepoint.com/.default` instead of the Microsoft Graph scope.
-
-## Connect a user-facing API with OAuth2
-
-For APIs that require a user's consent — Google, Microsoft, GitHub, or any identity provider that speaks standard OAuth2 — use the **Authorization Code with PKCE** or **Device Authorization** grant instead of client credentials. Kortix runs the full lifecycle: discovery, authorization redirect (or device pairing), token exchange, refresh, and revocation.
-
-<Steps>
-<Step>
-### Declare the direct connector and pick a grant
-
-In the Custom connector form, select **OAuth 2.0** under **Auth**, then choose a **Grant**: **Client Credentials** (server-to-server, covered above), **Authorization Code with PKCE**, or **Device Authorization**.
-</Step>
-<Step>
-### Enter the OAuth2 application configuration
-
-Enter the **Token URL**, **Client ID**, and **Scopes**. For **Authorization Code** you also provide an **Authorization URL**; for **Device Authorization** a **Device Authorization URL**.
-
-A **Discovery URL** (RFC 8414 or OpenID metadata) can fill the endpoint URLs for you — paste it and Kortix fetches the authorization, token, device-authorization, and revocation URLs from the metadata.
-</Step>
-<Step>
-### Pick a token-endpoint authentication method
-
-| Method | When to use it |
-| --- | --- |
-| **Public client** (`none`) | A public/native client with no secret. |
-| **Client secret with Basic** (`client_secret_basic`) | The standard server-side client secret, sent in the `Authorization` header. |
-| **Client secret in body** (`client_secret_post`) | Client secret sent in the request body. |
-| **Client secret JWT** (`client_secret_jwt`) | The client asserts itself with an HS256-signed JWT derived from the shared secret. |
-| **Private key JWT** (`private_key_jwt`) | Asymmetric assertion — paste a PKCS#8 private key PEM; Kortix signs RS256 client assertions with it. No shared secret crosses the wire. |
-</Step>
-<Step>
-### Authorize and verify
-
-For **Authorization Code**, Kortix generates a consent URL with a PKCE code challenge — send your user to it; they approve, and Kortix exchanges the code for tokens. For **Device Authorization**, Kortix returns a verification URL and code the user enters on another device; Kortix polls until they complete it.
-
-Kortix encrypts the tokens and refreshes them before they expire. Revoking the profile blocks the next Executor call.
-</Step>
-</Steps>
+```text
+https://{tenant}.sharepoint.com/.default
+```
 
 ## Connect with an API key
 
 <Steps>
 <Step>
-### Declare the connector in `kortix.yaml`
+### Declare the connector profile
 
 ```yaml
 connectors:
-  - slug: stripe
-    name: Stripe API
+  - slug: stripe-read
+    name: Stripe read access
     provider: openapi
-    spec: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
+    spec: 'https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json'
+    authorization_strategy: project
     auth:
       type: bearer
+    policies:
+      - match: 'get_*'
+        action: always_run
+      - match: '*'
+        action: block
 ```
 
-`provider` is one of `openapi`, `graphql`, `postman`, `http`, or `mcp`. `auth.type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none`.
+`authorization_strategy` defaults to `project` when the manifest omits it.
+
 </Step>
 <Step>
 ### Merge the change request
 
-Merge the change request. Kortix reads the manifest only from the default branch, so the connector does not exist until you merge.
+Kortix reads the manifest from the default branch. The connector profile becomes
+active after the change request merges.
+
 </Step>
 <Step>
-### Set the credential
+### Add the authorization
 
-Open the connector on the project's Connectors page and enter the credential value. Kortix stores it encrypted and never writes it to the manifest.
+Open the connector profile and set its credential. Kortix stores the value
+encrypted. It does not write the value to the manifest.
+
 </Step>
 </Steps>
 
 ## Grant an agent access
 
-An agent cannot use a connected tool until you grant it access. Add the slug to the agent's `connectors` field in `kortix.yaml`:
+Add the connector-profile slug to the agent's `connectors` field:
 
 ```yaml
 agents:
-  kortix:
-    connectors: all
   release-bot:
-    connectors: [stripe]
+    connectors: [stripe-read]
+    connectors_required: [stripe-read]
 ```
 
-Omit `connectors` on an agent, and it gets `none` — a v2 manifest denies access by default. Merge the change before it takes effect.
+`connectors_required` must be a subset of `connectors`. A session for this agent
+returns `409 CONNECTOR_AUTHORIZATION_REQUIRED` before sandbox startup when it
+cannot resolve a valid active authorization.
 
-## Use it in a session
+Omit `connectors`, and the agent gets `none`. Merge the change before it takes
+effect.
 
-Inside a session, the agent reaches connectors through the `kortix executor` CLI, never with raw credentials:
+## Select a session authorization
 
+Default resolution follows the connector profile's authorization strategy. A
+session can select a specific authorization:
+
+```json
+{
+  "connector_bindings": {
+    "stripe-read": {
+      "authorization_id": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}
 ```
+
+The binding key is the connector-profile slug. The value is an active
+authorization that matches the connector profile's strategy.
+
+Use `GET /projects/{projectId}/sessions/{sessionId}/scope` to read the effective
+binding. Use `PUT` on the same path to replace it. The replacement applies to
+the next tool call without restarting the session.
+
+## Use a connector in a session
+
+Inside a session, use the Executor CLI:
+
+```text
 kortix executor connectors
-kortix executor call stripe <action> '<json-args>'
+kortix executor call stripe-read <action> '<json-args>'
 ```
 
-`connectors` lists what the session can call. `call` runs one action. The Kortix Executor Gateway resolves the credential, checks the agent's grant, runs the call, and audits it.
+`connectors` lists the connector profiles in scope. `call` runs one action.
 
 Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).

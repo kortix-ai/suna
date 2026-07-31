@@ -5,8 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { groupProjectsByRepository } from '@/features/projects/project-repository-groups';
 import type { KortixProject } from '@kortix/sdk';
 import { listProjectsForAccount } from '@kortix/sdk';
+import { GitBranchIcon as GitBranch } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { GitBranch } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export function RelatedProjectsSwitcher({ project }: { project: KortixProject }) {

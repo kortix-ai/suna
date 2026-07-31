@@ -1,19 +1,16 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Cpu,
-} from 'lucide-react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { CpuIcon as Cpu } from '@phosphor-icons/react';
 
 export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);

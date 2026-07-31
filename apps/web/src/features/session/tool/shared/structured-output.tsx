@@ -3,7 +3,12 @@
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import type { OutputSection } from '@/lib/utils/structured-output';
-import { AlertTriangle, Ban, CheckCircle, ChevronRight } from 'lucide-react';
+import {
+  WarningIcon as AlertTriangle,
+  ProhibitIcon as Ban,
+  CheckCircleIcon as CheckCircle,
+  CaretRightIcon as ChevronRight,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 

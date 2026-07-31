@@ -1,6 +1,6 @@
 'use client';
 
-import { CreditCard, KeyRound } from 'lucide-react';
+import { CreditCardIcon as CreditCard, KeyIcon as KeyRound } from '@phosphor-icons/react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
@@ -42,11 +42,7 @@ export function ModelConnectionGate({
               Upgrade
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openConnectProvider('providers')}
-            >
+            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyRound className="size-3.5" />
               Bring your own key
             </Button>

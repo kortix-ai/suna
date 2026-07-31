@@ -101,6 +101,8 @@ const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
   { method: 'POST', path: '/v1/projects' },          // create + seed + provision
 ];
 
+const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [];
+
 export function isExempt(c: Context): boolean {
   // WebSocket upgrade (defensive — these are handled before app.fetch).
   if (c.req.header('upgrade')?.toLowerCase() === 'websocket') return true;
@@ -117,6 +119,9 @@ export function isExempt(c: Context): boolean {
   }
   for (const mp of EXEMPT_METHOD_PATHS) {
     if (c.req.method === mp.method && path === mp.path) return true;
+  }
+  for (const mp of EXEMPT_METHOD_PATH_PATTERNS) {
+    if (c.req.method === mp.method && mp.path.test(path)) return true;
   }
   return false;
 }

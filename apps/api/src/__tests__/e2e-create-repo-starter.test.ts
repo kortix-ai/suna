@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
-import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import {
-  accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGithubInstallations,
   accountMembers,
   projectGitConnections,
   projectMembers,
   projects,
 } from '@kortix/db';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -46,33 +47,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/plugins/opencode-pty/src/plugin/types.ts',
   '.kortix/opencode/plugins/opencode-pty/src/shared/constants.ts',
   '.kortix/opencode/plugins/pty.ts',
-  '.kortix/opencode/skills/kortix-executor/references/executor-sdk.md',
-  '.kortix/opencode/skills/kortix-executor/SKILL.md',
-  '.kortix/opencode/skills/kortix-marketplace/SKILL.md',
-  '.kortix/opencode/skills/kortix-memory/SKILL.md',
-  '.kortix/opencode/skills/kortix-onboarding/SKILL.md',
-  '.kortix/opencode/skills/kortix-slack/SKILL.md',
-  '.kortix/opencode/skills/kortix-system/references/authoring-skills.md',
-  '.kortix/opencode/skills/kortix-system/references/capabilities.md',
-  '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
-  '.kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md',
-  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
-  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md',
-  '.kortix/opencode/skills/kortix-system/references/kortix/marketplace.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/commands.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/models.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/overview.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/permissions.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/plugins.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/rules.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
-  '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
-  '.kortix/opencode/skills/kortix-system/references/scheduling.md',
-  '.kortix/opencode/skills/kortix-system/SKILL.md',
-  '.kortix/opencode/skills/kortix-teams/SKILL.md',
-  '.kortix/opencode/skills/kortix-voice/SKILL.md',
+  '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
   '.kortix/opencode/tools/memory.ts',
@@ -100,7 +75,12 @@ function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
 }
 
 function getTestAuth() {
-  return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'starter@example.test' };
+  return (
+    (globalThis as any)[TEST_AUTH_KEY] ?? {
+      userId: USER_ID,
+      userEmail: 'starter@example.test',
+    }
+  );
 }
 
 // This repo's local `.env` (loaded automatically by `bun test`) sets real
@@ -130,18 +110,20 @@ function resetState() {
   ownerRepoListCalls = [];
   installationRepoListCalls = [];
   platformAdmin = false;
-  installationRows = [{
-    installationRowId: '00000000-0000-4000-a000-000000000041',
-    accountId: ACCOUNT_ID,
-    installationId: '42',
-    ownerLogin: 'kortix-org',
-    ownerType: 'Organization',
-    repositorySelection: 'all',
-    permissions: { contents: 'write' },
-    metadata: {},
-    createdAt: new Date('2026-01-01T00:00:00Z'),
-    updatedAt: new Date('2026-01-01T00:00:00Z'),
-  }];
+  installationRows = [
+    {
+      installationRowId: '00000000-0000-4000-a000-000000000041',
+      accountId: ACCOUNT_ID,
+      installationId: '42',
+      ownerLogin: 'kortix-org',
+      ownerType: 'Organization',
+      repositorySelection: 'all',
+      permissions: { contents: 'write' },
+      metadata: {},
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    },
+  ];
 }
 
 mockIamEngineAllowAll();
@@ -166,6 +148,7 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  MergeConflictError: class MergeConflictError extends Error {},
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -173,9 +156,11 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -185,7 +170,11 @@ mock.module('../projects/git', () => ({
   resolveTreeOid: async () => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
-  resolveBranchAheadState: async () => ({ ahead: false, baseSha: 'a'.repeat(40), headSha: 'a'.repeat(40) }),
+  resolveBranchAheadState: async () => ({
+    ahead: false,
+    baseSha: 'a'.repeat(40),
+    headSha: 'a'.repeat(40),
+  }),
   getBranchDiff: async () => ({ files: [], diff: '' }),
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
@@ -200,34 +189,50 @@ mock.module('../projects/git', () => ({
 // snapshots/builder imports from projects/git — once mocked, builder.ts
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
-mock.module("../snapshots/builder", () => ({
-  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+mock.module('../snapshots/builder', () => ({
+  ensureSandboxImage: async () => ({
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+    contentHash: 'a'.repeat(64),
+    built: false,
+    isDefault: true,
+  }),
+  deleteSandboxImage: async () => ({
+    deleted: false,
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+  }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
-  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   reconcileStaleBuilds: async () => ({ healed: 0 }),
   reconcileProjectTemplates: async () => {},
-  resolveCommitSha: async () => "a".repeat(40),
+  resolveCommitSha: async () => 'a'.repeat(40),
   ensurePerProjectWarmImage: async () => ({
-    snapshotName: "kortix-ppwarm-test",
-    tip: "a".repeat(40),
+    snapshotName: 'kortix-ppwarm-test',
+    tip: 'a'.repeat(40),
     built: false,
-    provider: "daytona",
+    provider: 'daytona',
   }),
-  DEFAULT_SANDBOX_SLUG: "default",
+  DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
-  verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
-    ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
-    : null,
+  verifyGitHubAppInstallState: (state: string) =>
+    state === 'valid-install-state' ? ACCOUNT_ID : null,
+  verifyGitHubAppInstallStatePayload: (state: string) =>
+    state === 'valid-install-state'
+      ? {
+          accountId: ACCOUNT_ID,
+          nonce: 'valid-install-nonce',
+          issuedAt: Math.floor(Date.now() / 1000),
+        }
+      : null,
   deleteFile: async () => undefined,
   deleteRepo: async () => undefined,
   addCollaborator: async () => undefined,
@@ -289,17 +294,21 @@ mock.module('../projects/github', () => ({
   }),
   listInstallationRepositories: async (installationId: string, options?: any) => {
     installationRepoListCalls.push({ installationId, options });
-    return installationId === '84' ? [{
-        id: 84,
-        name: 'portal',
-        full_name: 'acme/portal',
-        private: true,
-        html_url: 'https://github.com/acme/portal',
-        clone_url: 'https://github.com/acme/portal.git',
-        ssh_url: 'git@github.com:acme/portal.git',
-        default_branch: 'trunk',
-        description: null,
-      }] : [];
+    return installationId === '84'
+      ? [
+          {
+            id: 84,
+            name: 'portal',
+            full_name: 'acme/portal',
+            private: true,
+            html_url: 'https://github.com/acme/portal',
+            clone_url: 'https://github.com/acme/portal.git',
+            ssh_url: 'git@github.com:acme/portal.git',
+            default_branch: 'trunk',
+            description: null,
+          },
+        ]
+      : [];
   },
   // Not exercised by this file's scenarios (App installations only, no
   // managed-git PAT fallback here) — stubbed so the mocked module still
@@ -308,8 +317,21 @@ mock.module('../projects/github', () => ({
     ownerRepoListCalls.push(input);
     return [];
   },
-  listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
-    { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
+  listLinkableGitHubAppInstallations: async () => ({
+    githubLogin: 'github-admin',
+    installations: [],
+  }),
+  listRepositoryBranches: async ({
+    owner,
+    repo,
+  }: {
+    owner: string;
+    repo: string;
+  }) => [
+    {
+      name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main',
+      protected: true,
+    },
     { name: 'dev', protected: false },
   ],
   isOrgAccount: async () => true,
@@ -328,7 +350,9 @@ mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
-        getUserById: async () => ({ data: { user: { email: 'starter@example.test' } } }),
+        getUserById: async () => ({
+          data: { user: { email: 'starter@example.test' } },
+        }),
       },
     },
   }),
@@ -343,7 +367,11 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
-  getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  getCreditBalance: async () => ({
+    balance: 1_000_000,
+    granted: 1_000_000,
+    used: 0,
+  }),
   upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
@@ -357,26 +385,30 @@ async function selectRowsForTable(table: unknown) {
   }
   if (table === accountGithubInstallationStates) {
     return githubInstallationStateConsumed
-      ? [{
-          installationId: '42',
-          consumedAt: new Date('2026-01-01T00:00:00Z'),
-        }]
+      ? [
+          {
+            installationId: '42',
+            consumedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+        ]
       : [];
   }
   if (table === projects) {
-    return [{
-      projectId: PROJECT_ID,
-      accountId: ACCOUNT_ID,
-      name: 'Company OS',
-      repoUrl: 'https://github.com/kortix-org/company-os.git',
-      defaultBranch: 'main',
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {},
-      lastOpenedAt: null,
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      updatedAt: new Date('2026-01-01T00:00:00Z'),
-    }];
+    return [
+      {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        name: 'Company OS',
+        repoUrl: 'https://github.com/kortix-org/company-os.git',
+        defaultBranch: 'main',
+        manifestPath: 'kortix.yaml',
+        status: 'active',
+        metadata: {},
+        lastOpenedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
   }
   if (table === projectGitConnections) {
     return gitConnectionRows;
@@ -402,137 +434,144 @@ function storedProject(values: any) {
 }
 
 const starterDbMock: any = {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => {
-          const builder = {
+  select: () => ({
+    from: (table: unknown) => ({
+      where: () => {
+        const builder = {
+          limit: async () => (await selectRowsForTable(table)).slice(0, 1),
+          orderBy: () => ({
             limit: async () => (await selectRowsForTable(table)).slice(0, 1),
-            orderBy: () => ({
-              limit: async () => (await selectRowsForTable(table)).slice(0, 1),
-              then: (resolve: any, reject: any) =>
-                selectRowsForTable(table).then(resolve, reject),
-            }),
-            then: (resolve: any, reject: any) =>
-              selectRowsForTable(table).then(resolve, reject),
-          };
-          return builder;
-        },
-      }),
-    }),
-    insert: (table: unknown) => ({
-      values: (values: any) => ({
-        onConflictDoNothing: () => ({
-          returning: async () => table === projects ? [storedProject(values)] : [],
-        }),
-        onConflictDoUpdate: () => {
-          if (table === projectMembers) {
-            const persist = () => {
-              grantedProjectRole = values;
-              return [values];
-            };
-            return {
-              returning: async () => persist(),
-              then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
-                Promise.resolve(persist()).then(resolve, reject),
-            };
-          }
-          return {
-            returning: async () => {
-              if (table === accountGithubInstallations) {
-                const existingIndex = installationRows.findIndex((row) =>
-                  row.accountId === values.accountId &&
-                  row.installationId === values.installationId,
-                );
-                const row = {
-                  installationRowId: existingIndex >= 0
-                    ? installationRows[existingIndex]!.installationRowId
-                    : '00000000-0000-4000-a000-000000000042',
-                  accountId: values.accountId,
-                  installationId: values.installationId,
-                  ownerLogin: values.ownerLogin,
-                  ownerType: values.ownerType,
-                  repositorySelection: values.repositorySelection ?? null,
-                  permissions: values.permissions ?? {},
-                  metadata: values.metadata ?? {},
-                  createdAt: existingIndex >= 0
-                    ? installationRows[existingIndex]!.createdAt
-                    : new Date('2026-01-01T00:00:00Z'),
-                  updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                };
-                if (existingIndex >= 0) installationRows[existingIndex] = row;
-                else installationRows.push(row);
-                return [row];
-              }
-              if (table === projectGitConnections) {
-                const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
-                const row = {
-                  connectionId: existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.connectionId
-                    : '00000000-0000-4000-a000-000000000501',
-                  accountId: values.accountId,
-                  projectId: values.projectId,
-                  provider: values.provider,
-                  repoUrl: values.repoUrl,
-                upstreamUrl: values.upstreamUrl ?? null,
-                managed: values.managed ?? false,
-                  repoOwner: values.repoOwner ?? null,
-                  repoName: values.repoName ?? null,
-                  externalRepoId: values.externalRepoId ?? null,
-                  defaultBranch: values.defaultBranch,
-                  authMethod: values.authMethod,
-                  installationId: values.installationId ?? null,
-                  credentialRef: values.credentialRef ?? null,
-                  permissions: values.permissions ?? {},
-                  visibility: values.visibility ?? null,
-                  webhookId: values.webhookId ?? null,
-                  status: values.status ?? 'connected',
-                  lastValidatedAt: values.lastValidatedAt ?? new Date('2026-01-01T00:00:00Z'),
-                  lastErrorCode: values.lastErrorCode ?? null,
-                  lastErrorMessage: values.lastErrorMessage ?? null,
-                  metadata: values.metadata ?? {},
-                  createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : new Date('2026-01-01T00:00:00Z'),
-                  updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
-                } as typeof projectGitConnections.$inferSelect;
-                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-                else gitConnectionRows.push(row);
-                return [row];
-              }
-              if (table !== projects) return [];
-              return [storedProject(values)];
-            },
-          };
-        },
-        returning: async () => {
-          if (table === projectGitConnections) {
-            return starterDbMock.insert(table).values(values).onConflictDoUpdate({}).returning();
-          }
-          if (table === projectMembers) {
-            grantedProjectRole = values;
-            return [values];
-          }
-          if (table !== projects) return [];
-          return [storedProject(values)];
-        },
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: () => ({
-        where: () => ({
-          returning: async () => {
-            if (table === accountGithubInstallationStates && !githubInstallationStateConsumed) {
-              githubInstallationStateConsumed = true;
-              return [{ stateNonce: 'valid-install-nonce' }];
-            }
-            return [];
-          },
-        }),
-      }),
-    }),
-    delete: (table: unknown) => ({
-      where: async () => {
-        if (table === accountGithubInstallations) installationRows = [];
+            then: (resolve: any, reject: any) => selectRowsForTable(table).then(resolve, reject),
+          }),
+          then: (resolve: any, reject: any) => selectRowsForTable(table).then(resolve, reject),
+        };
+        return builder;
       },
     }),
+  }),
+  insert: (table: unknown) => ({
+    values: (values: any) => ({
+      onConflictDoNothing: () => ({
+        returning: async () => (table === projects ? [storedProject(values)] : []),
+      }),
+      onConflictDoUpdate: () => {
+        if (table === projectMembers) {
+          const persist = () => {
+            grantedProjectRole = values;
+            return [values];
+          };
+          return {
+            returning: async () => persist(),
+            then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(persist()).then(resolve, reject),
+          };
+        }
+        return {
+          returning: async () => {
+            if (table === accountGithubInstallations) {
+              const existingIndex = installationRows.findIndex(
+                (row) =>
+                  row.accountId === values.accountId &&
+                  row.installationId === values.installationId,
+              );
+              const row = {
+                installationRowId:
+                  existingIndex >= 0
+                    ? installationRows[existingIndex]!.installationRowId
+                    : '00000000-0000-4000-a000-000000000042',
+                accountId: values.accountId,
+                installationId: values.installationId,
+                ownerLogin: values.ownerLogin,
+                ownerType: values.ownerType,
+                repositorySelection: values.repositorySelection ?? null,
+                permissions: values.permissions ?? {},
+                metadata: values.metadata ?? {},
+                createdAt:
+                  existingIndex >= 0
+                    ? installationRows[existingIndex]!.createdAt
+                    : new Date('2026-01-01T00:00:00Z'),
+                updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+              };
+              if (existingIndex >= 0) installationRows[existingIndex] = row;
+              else installationRows.push(row);
+              return [row];
+            }
+            if (table === projectGitConnections) {
+              const existingIndex = gitConnectionRows.findIndex(
+                (row) => row.projectId === values.projectId,
+              );
+              const row = {
+                connectionId:
+                  existingIndex >= 0
+                    ? gitConnectionRows[existingIndex]!.connectionId
+                    : '00000000-0000-4000-a000-000000000501',
+                accountId: values.accountId,
+                projectId: values.projectId,
+                provider: values.provider,
+                repoUrl: values.repoUrl,
+                upstreamUrl: values.upstreamUrl ?? null,
+                managed: values.managed ?? false,
+                repoOwner: values.repoOwner ?? null,
+                repoName: values.repoName ?? null,
+                externalRepoId: values.externalRepoId ?? null,
+                defaultBranch: values.defaultBranch,
+                authMethod: values.authMethod,
+                installationId: values.installationId ?? null,
+                credentialRef: values.credentialRef ?? null,
+                permissions: values.permissions ?? {},
+                visibility: values.visibility ?? null,
+                webhookId: values.webhookId ?? null,
+                status: values.status ?? 'connected',
+                lastValidatedAt: values.lastValidatedAt ?? new Date('2026-01-01T00:00:00Z'),
+                lastErrorCode: values.lastErrorCode ?? null,
+                lastErrorMessage: values.lastErrorMessage ?? null,
+                metadata: values.metadata ?? {},
+                createdAt:
+                  existingIndex >= 0
+                    ? gitConnectionRows[existingIndex]!.createdAt
+                    : new Date('2026-01-01T00:00:00Z'),
+                updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
+              } as typeof projectGitConnections.$inferSelect;
+              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+              else gitConnectionRows.push(row);
+              return [row];
+            }
+            if (table !== projects) return [];
+            return [storedProject(values)];
+          },
+        };
+      },
+      returning: async () => {
+        if (table === projectGitConnections) {
+          return starterDbMock.insert(table).values(values).onConflictDoUpdate({}).returning();
+        }
+        if (table === projectMembers) {
+          grantedProjectRole = values;
+          return [values];
+        }
+        if (table !== projects) return [];
+        return [storedProject(values)];
+      },
+    }),
+  }),
+  update: (table: unknown) => ({
+    set: () => ({
+      where: () => ({
+        returning: async () => {
+          if (table === accountGithubInstallationStates && !githubInstallationStateConsumed) {
+            githubInstallationStateConsumed = true;
+            return [{ stateNonce: 'valid-install-nonce' }];
+          }
+          return [];
+        },
+      }),
+    }),
+  }),
+  delete: (table: unknown) => ({
+    where: async () => {
+      if (table === accountGithubInstallations) installationRows = [];
+    },
+  }),
 };
 starterDbMock.transaction = async (run: (tx: typeof starterDbMock) => Promise<unknown>) =>
   run(starterDbMock);
@@ -571,9 +610,15 @@ describe('create-repo starter scaffold contract', () => {
     expect(new Set(files.map((file) => file.path)).size).toBe(BASE_STARTER_PATHS.length);
     expect(files.every((file) => file.content.trim().length > 0)).toBe(true);
 
-    // The full core ships as source (self-contained): tools, skills, agents.
+    // The repository ships runtime tools, project skills, and agents. Managed
+    // system skills are injected at session boot.
     expect(files.find((file) => file.path === '.kortix/opencode/tools/show.ts')).toBeDefined();
-    expect(files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md')).toBeDefined();
+    expect(
+      files.find((file) => file.path === '.kortix/opencode/skills/kortix-cli/SKILL.md'),
+    ).toBeDefined();
+    expect(
+      files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md'),
+    ).toBeUndefined();
     expect(files.find((file) => file.path === '.kortix/opencode/agents/kortix.md')).toBeDefined();
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
@@ -595,7 +640,7 @@ describe('create-repo starter scaffold contract', () => {
 
     expect(paths).toEqual(explicitPaths);
     for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
-    expect(paths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
@@ -610,7 +655,7 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     expect(paths).toEqual(BASE_STARTER_PATHS);
-    expect(paths).not.toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(paths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
   });
@@ -618,7 +663,9 @@ describe('create-repo starter scaffold contract', () => {
   test('manages account GitHub App installation metadata through the project API', async () => {
     const app = createApp();
 
-    const installed = await app.request(`/v1/projects/github/installation?account_id=${ACCOUNT_ID}`);
+    const installed = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+    );
     expect(installed.status).toBe(200);
     expect(await installed.json()).toMatchObject({
       account_id: ACCOUNT_ID,
@@ -663,14 +710,19 @@ describe('create-repo starter scaffold contract', () => {
       owner_login: 'kortix-org',
     });
 
-    const disconnect = await app.request(`/v1/projects/github/installation?account_id=${ACCOUNT_ID}`, {
-      method: 'DELETE',
-    });
+    const disconnect = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+      {
+        method: 'DELETE',
+      },
+    );
     expect(disconnect.status).toBe(200);
     expect(await disconnect.json()).toEqual({ ok: true });
     expect(installationRows).toEqual([]);
 
-    const uninstalled = await app.request(`/v1/projects/github/installation?account_id=${ACCOUNT_ID}`);
+    const uninstalled = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+    );
     expect(uninstalled.status).toBe(200);
     expect(await uninstalled.json()).toMatchObject({
       account_id: ACCOUNT_ID,
@@ -690,23 +742,32 @@ describe('create-repo starter scaffold contract', () => {
       ownerType: 'Organization',
       repositorySelection: 'selected',
       permissions: { contents: 'write' },
-      metadata: { html_url: 'https://github.com/organizations/acme/settings/installations/84' },
+      metadata: {
+        html_url: 'https://github.com/organizations/acme/settings/installations/84',
+      },
       createdAt: new Date('2026-01-01T00:00:00Z'),
       updatedAt: new Date('2026-01-02T00:00:00Z'),
     });
 
     const app = createApp();
-    const installations = await app.request(`/v1/projects/github/installations?account_id=${ACCOUNT_ID}`);
+    const installations = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
     expect(installations.status).toBe(200);
     const installationsBody = await installations.json();
     expect(installationsBody).toMatchObject({
       account_id: ACCOUNT_ID,
       installed: true,
     });
-    expect(installationsBody.installations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ installation_id: '42', owner_login: 'kortix-org' }),
-      expect.objectContaining({ installation_id: '84', owner_login: 'acme' }),
-    ]));
+    expect(installationsBody.installations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          installation_id: '42',
+          owner_login: 'kortix-org',
+        }),
+        expect.objectContaining({ installation_id: '84', owner_login: 'acme' }),
+      ]),
+    );
 
     const repos = await app.request(
       `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
@@ -773,7 +834,7 @@ describe('create-repo starter scaffold contract', () => {
     expect(gitConnectionRows).toContainEqual(
       expect.objectContaining({
         projectId: PROJECT_ID,
-        provider: "github",
+        provider: 'github',
         managed: false,
       }),
     );
@@ -883,7 +944,7 @@ describe('create-repo starter scaffold contract', () => {
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
-    expect(committedPaths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
@@ -892,7 +953,9 @@ describe('create-repo starter scaffold contract', () => {
     // on repo creation. Every other file is brand-new.
     const readmeIdx = committedPaths.indexOf('README.md');
     expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
-    expect(commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined)).toBe(true);
+    expect(
+      commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined),
+    ).toBe(true);
 
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,
@@ -910,19 +973,23 @@ describe('create-repo starter scaffold contract', () => {
         },
       },
     });
-    expect(gitConnectionRows).toContainEqual(expect.objectContaining({
-      projectId: PROJECT_ID,
-      provider: 'github',
-      repoUrl: 'https://github.com/kortix-org/company-os.git',
-      repoOwner: 'kortix-org',
-      repoName: 'company-os',
-      externalRepoId: '7',
-      authMethod: 'github_app',
-      installationId: '42',
-      managed: true,
-      visibility: 'private',
-      status: 'connected',
-    }));
+    // The default starter uses only the version 2 OpenCode REST contract.
+    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
+    expect(gitConnectionRows).toContainEqual(
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        provider: 'github',
+        repoUrl: 'https://github.com/kortix-org/company-os.git',
+        repoOwner: 'kortix-org',
+        repoName: 'company-os',
+        externalRepoId: '7',
+        authMethod: 'github_app',
+        installationId: '42',
+        managed: true,
+        visibility: 'private',
+        status: 'connected',
+      }),
+    );
     expect(grantedProjectRole).toMatchObject({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
@@ -932,83 +999,55 @@ describe('create-repo starter scaffold contract', () => {
     });
   });
 
-  test("commits a selected marketplace project template into the new GitHub repository", async () => {
+  test('commits a selected marketplace project template into the new GitHub repository', async () => {
     const app = createApp();
-    const res = await app.request("/v1/projects/create-repo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await app.request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        name: "company-os",
-        project_name: "Company OS",
+        name: 'company-os',
+        project_name: 'Company OS',
         private: true,
-        source_item_id: "kortix-projects:starter",
+        source_item_id: 'kortix-projects:starter',
       }),
     });
 
     expect(res.status).toBe(201);
     expect(commitCalls.map((call) => call.path)).toContain(
-      ".kortix/opencode/skills/account-research/SKILL.md",
+      '.kortix/opencode/skills/agent-browser/SKILL.md',
     );
-    expect(
-      commitCalls.find((call) => call.path === "kortix.yaml")?.content,
-    ).toContain('name: "Company OS"');
+    expect(commitCalls.find((call) => call.path === 'kortix.yaml')?.content).toContain(
+      'name: "Company OS"',
+    );
     expect(gitConnectionRows).toContainEqual(
       expect.objectContaining({
         projectId: PROJECT_ID,
-        provider: "github",
+        provider: 'github',
         managed: true,
       }),
     );
   });
 
-  test("commits the SEO Department marketplace project into the new GitHub repository", async () => {
+  test('rejects a retired bundled project id instead of committing a half-built repo', async () => {
     const app = createApp();
-    const res = await app.request("/v1/projects/create-repo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await app.request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        name: "seo-team",
-        project_name: "Acme SEO",
+        name: 'seo-team',
+        project_name: 'Acme SEO',
         private: true,
-        source_item_id: "kortix-projects:seo-department",
+        source_item_id: 'kortix-projects:seo-department',
       }),
     });
 
-    expect(res.status).toBe(201);
-    expect(commitCalls.map((call) => call.path)).toEqual(
-      expect.arrayContaining([
-        ".kortix/opencode/agents/seo-director.md",
-        ".kortix/opencode/agents/technical-seo.md",
-        ".kortix/opencode/agents/content-strategist.md",
-        ".kortix/opencode/agents/serp-analyst.md",
-        ".kortix/opencode/agents/seo-repo-watchdog.md",
-        ".kortix/opencode/skills/seo-operating-system/SKILL.md",
-        ".kortix/opencode/skills/technical-seo-audit/SKILL.md",
-        ".kortix/opencode/skills/seo-repo-monitoring/SKILL.md",
-        ".kortix/opencode/skills/content-seo-workflow/SKILL.md",
-        ".kortix/opencode/skills/serp-intelligence/SKILL.md",
-        ".kortix/memory/SEO.md",
-        "install.md",
-      ]),
-    );
-    const manifest = commitCalls.find((call) => call.path === "kortix.yaml")?.content;
-    expect(manifest).toContain('name: "Acme SEO"');
-    expect(manifest).toContain("default_agent: seo-director");
-    expect(manifest).toContain("daily-serp-watch");
-    expect(manifest).toContain("repo-seo-watch");
-    expect(manifest).toContain("daily-repo-seo-sweep");
-    expect(manifest).toContain("weekly-technical-audit");
-    expect(manifest).toContain("weekly-content-refresh");
-    expect(manifest).toContain("monthly-seo-growth-report");
-    expect(gitConnectionRows).toContainEqual(
-      expect.objectContaining({
-        projectId: PROJECT_ID,
-        provider: "github",
-        managed: true,
-      }),
-    );
+    // The department templates were retired; the marketplace now leads with the
+    // single Kortix Starter project. Asking for a gone id must fail outright
+    // rather than create a repo and commit a partial tree into it.
+    expect(res.status).not.toBe(201);
+    expect(commitCalls.length).toBe(0);
   });
 
   test('rejects hidden marketplace projects before creating a GitHub repository', async () => {

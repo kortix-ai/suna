@@ -69,7 +69,7 @@ feature works.
 | **P2** | **Progressive delivery** — re-enable Argo Rollouts canary + analysis in prod | 5 | Auto-rollback on bad releases once real traffic makes metric analysis meaningful (post-cutover). |
 | **P2** | **Tracing + DORA** — OTel → Tempo, DORA dashboard | 4 | No distributed tracing; DORA metrics not measured. |
 | **P2** | **Drift cleanup** — retire Lightsail/ECS modules, fix-or-remove `external-dns` | 5 | Eliminate desired-vs-actual drift after EKS cutover. |
-| **P3** | **Cost visibility** — OpenCost/Kubecost, spot node pool for dev/preview | 5 | No cost attribution; spot would trim the parallel-run bill. |
+| **P3** | **Infrastructure cost visibility** — OpenCost/Kubecost, spot node pool for dev/preview | 5 | Session-level LLM and compute costs exist. Kubernetes namespace, workload, and node-pool allocation does not. |
 | **P3** | **Falco runtime detection** + `staging` env | 3 / 10 | Runtime threat detection; a real pre-prod tier (previews share dev today). |
 
 ---

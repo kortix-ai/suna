@@ -30,20 +30,20 @@ import {
 import { ProviderCard } from '@/features/providers/provider-card';
 import { cn } from '@/lib/utils';
 import {
-  AlertCircle,
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Globe,
-  Key,
-  Loader2,
-  Plus,
-  Search,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  ArrowLeftIcon as ArrowLeft,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  KeyIcon as Key,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { successToast } from '@/components/ui/toast';
+import Loading from '@/components/ui/loading';
 import {
   buildCustomProviderConfigUpdate,
   isEnvReference,
@@ -788,7 +788,7 @@ export function ConnectProviderContent({
           <Button type="submit" disabled={saving} size="sm" className="px-4">
             {saving ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loading className="mr-1.5 h-3.5 w-3.5" />
                 Connecting...
               </>
             ) : (
@@ -878,7 +878,7 @@ export function ConnectProviderContent({
               <Button type="submit" disabled={saving} size="sm" className="px-4">
                 {saving ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <Loading className="mr-1.5 h-3.5 w-3.5" />
                     Connecting...
                   </>
                 ) : (
@@ -890,7 +890,7 @@ export function ConnectProviderContent({
 
           {showOAuthPending && (
             <div className="flex items-center justify-center gap-2.5 py-6">
-              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+              <Loading className="text-muted-foreground h-4 w-4" />
               <span className="text-muted-foreground text-sm">
                 {tHardcodedUi.raw(
                   'componentsProvidersConnectProviderContent.line960JsxTextStartingAuthorization',
@@ -998,7 +998,7 @@ export function ConnectProviderContent({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <Loading className="mr-1.5 h-3.5 w-3.5" />
                     Connecting...
                   </>
                 ) : (
@@ -1037,7 +1037,7 @@ export function ConnectProviderContent({
                 )}
               </Button>
               <div className="text-muted-foreground flex items-center justify-center gap-2.5 text-sm">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="h-3.5 w-3.5" />
                 <span>
                   {tHardcodedUi.raw(
                     'componentsProvidersConnectProviderContent.line1090JsxTextWaitingForAuthorization',

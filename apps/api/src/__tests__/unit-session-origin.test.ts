@@ -76,7 +76,7 @@ describe('canOverride', () => {
     'runtime_context',
     'skills',
   ];
-  const BACKEND_ONLY: SessionOverrideField[] = ['origin_ref', 'secrets'];
+  const BACKEND_ONLY: SessionOverrideField[] = ['secrets'];
 
   test('backend may override everything', () => {
     for (const f of [...OPEN, ...BACKEND_ONLY]) {
@@ -92,9 +92,8 @@ describe('canOverride', () => {
     }
   });
 
-  test('only a backend may set origin_ref or a secret bundle', () => {
+  test('only a backend may set a secret bundle', () => {
     for (const origin of ['user', 'trigger', 'schedule', 'system'] as SessionOrigin[]) {
-      expect(canOverride(origin, 'origin_ref')).toBe(false);
       expect(canOverride(origin, 'secrets')).toBe(false);
     }
   });

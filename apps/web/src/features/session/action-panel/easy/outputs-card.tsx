@@ -14,19 +14,19 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
 import { track } from '@/lib/track';
 import {
-  AppWindow,
-  ChevronDown,
-  Download,
-  FileText,
-  Image as ImageIcon,
-  Loader2,
-  Presentation as PresentationIcon,
-  Video as VideoIcon,
-} from 'lucide-react';
+  AppWindowIcon as AppWindow,
+  CaretDownIcon as ChevronDown,
+  DownloadIcon as Download,
+  FileTextIcon as FileText,
+  ImageIcon,
+  PresentationIcon,
+  VideoIcon,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel, isScaffoldingOutput } from '../shared/output-priority';
@@ -101,7 +101,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
   if (output.kind === 'file') {
     return (
       <span className={tile}>
-        {getFileIcon(output.name, { className: 'size-3.5', variant: 'monochrome' })}
+        {getFileIcon(output.name, { className: 'size-4', variant: 'monochrome' })}
       </span>
     );
   }
@@ -117,7 +117,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
   const Ico = KIND_ICON[output.kind];
   return (
     <span className={tile}>
-      <Ico className="text-muted-foreground size-3.5" />
+      <Ico className="text-muted-foreground size-4" />
     </span>
   );
 }
@@ -250,7 +250,7 @@ function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {busy ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="text-muted-foreground size-3.5 motion-reduce:animate-none" />
         ) : (
           <Download className="size-3.5" />
         )}

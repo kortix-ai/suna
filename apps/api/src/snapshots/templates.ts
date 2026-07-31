@@ -19,13 +19,9 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
@@ -51,7 +47,10 @@ import {
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
 import { computeSnapshotHash } from './hash';
-import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import {
+  buildRuntimeArtifactFingerprint,
+  cliExecutorRuntimeArtifacts,
+} from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,19 +91,7 @@ const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // stale in-sandbox executor. packages/starter (scaffolding) and packages/
 // manifest-schema (only reached by laptop-side `ship`/`validate`) are likewise
 // never in the sandbox and are deliberately not fingerprinted.
-const CLI_SRC_DIR = resolve(REPO_ROOT, 'apps/cli/src');
-// The in-sandbox `kortix executor` closure (see comment above). Relative to
-// CLI_SRC_DIR; the guard test keeps this in sync with the real import graph.
-const CLI_EXECUTOR_CLOSURE = [
-  'executor',
-  'commands/executor.ts',
-  'api/auth.ts',
-  'api/client.ts',
-  'api/config.ts',
-  'api/sandbox-env.ts',
-  'project-link.ts',
-] as const;
-const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
+const CLI_ROOT = resolve(REPO_ROOT, 'apps/cli');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
@@ -221,11 +208,8 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // routes are removed: a sandbox baked at =<v32 still runs `meet speak`, and its
 // skill tells it never to fall back to a raw API, so it would report a retired
 // feature as a transient provider failure mid-call.
-// v34: bake exact Claude Code, Codex, and Pi ACP adapter versions. The sandbox
-// daemon can start all four harnesses without a request-time package download.
-// v35: pin Pi's internal 0.x packages to the same version as pi-coding-agent.
-// v36: install Pi with npm because pnpm 11 isolates each global root graph.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v36';
+// v37: require a source digest beside the compiled sandbox CLI.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v38';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -921,14 +905,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
-  // see CLI_EXECUTOR_CLOSURE. Labels carry the relative path so two files can't
-  // collide, and the set is sorted by label in buildRuntimeArtifactFingerprint.
-  ...CLI_EXECUTOR_CLOSURE.map((rel) => ({
-    label: `kortix-cli-${rel}`,
-    path: join(CLI_SRC_DIR, rel),
-    excludeNames: FINGERPRINT_EXCLUDES,
-  })),
-  { label: 'kortix-cli-pkg', path: CLI_PKG_JSON },
+  // see CLI_EXECUTOR_RUNTIME_FILES in @kortix/shared. Labels carry the relative
+  // path so two files cannot collide.
+  ...cliExecutorRuntimeArtifacts(CLI_ROOT),
 ];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
@@ -945,9 +924,9 @@ const runtimeIntegrityKey = () =>
     BUN_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${CLAUDE_AGENT_ACP_VERSION}:${CODEX_ACP_VERSION}:${PI_ACP_VERSION}:${PI_CODING_AGENT_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:claude-acp:${CLAUDE_AGENT_ACP_VERSION}:codex-acp:${CODEX_ACP_VERSION}:pi-acp:${PI_ACP_VERSION}:pi:${PI_CODING_AGENT_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

@@ -1,5 +1,4 @@
 import {
-  executorConnectionPolicies,
   executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
@@ -35,6 +34,7 @@ import {
 import { resolveProjectBotName } from '../channels/voice-identity';
 import { joinPageUrl } from '../channels/voice/livekit';
 import { mintJoinLink } from '../channels/voice/join-links';
+import { approvalPageUrl } from '../setup-links/token';
 import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/voice/runtime';
 import { readTranscriptForAgent } from '../channels/voice/transcript-read';
 import { kortixSay } from '../channels/voice/utterance';
@@ -44,6 +44,7 @@ import { agentMayUseConnector } from '../iam/agent-scope';
 import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
+import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector-authorization-strategy';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
@@ -51,6 +52,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
+import { recordAuditEvent } from '../shared/audit';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
@@ -71,6 +73,7 @@ import {
   getConnectorPoliciesFromManifest,
   getProjectPoliciesFromManifest,
   setConnectorCredentialModeInManifest,
+  setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
   setConnectorNameInManifest,
   setConnectorPoliciesInManifest,
@@ -94,6 +97,7 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
+  parseStoredConditions,
   resolveEffectiveAction,
 } from './policy';
 import type {
@@ -106,6 +110,7 @@ import { resolveShareSubject } from './share';
 import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
+import { executionAuditEvent } from './execution-audit';
 
 /** Which policy scope decided an action — surfaced so the editor can say so. */
 type EffectiveSource = EffectiveResolveResult['source'];
@@ -479,6 +484,7 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
         projectId,
         sessionId: principal.sessionId,
         alias: slug,
+        actingUserId: principal.userId,
       });
       if (!profile || profile.status !== 'active') return null;
       return toGatewayConnector(row, profile);
@@ -548,7 +554,8 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    loadConnectionPolicies: loadConnectionPoliciesFor,
+    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
+      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(executorExecutions)
@@ -570,7 +577,13 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
           resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
         })
         .returning({ id: executorExecutions.executionId });
-      return row?.id ?? null;
+      if (!row?.id) return null;
+      try {
+        await recordAuditEvent(executionAuditEvent(rec, row.id));
+      } catch (error) {
+        console.error('[executor] Failed to record central audit event:', error);
+      }
+      return row.id;
     },
     waitForApprovalDecision: waitForApprovalDecision,
     isSessionToolApproved: isSessionToolApproved,
@@ -583,8 +596,24 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     // Computer connectors relay through the shared tunnel RPC core (permission
     // check → relay → audit). The machine is resolved from the `computer`
     // selector, scoped to this account.
-    executeComputerCall: ({ accountId, selector, method, args }) =>
-      executeComputerCall({ accountId, selector, method, args }),
+    executeComputerCall: ({
+      accountId,
+      projectId,
+      sessionId,
+      actorUserId,
+      selector,
+      method,
+      args,
+    }) =>
+      executeComputerCall({
+        accountId,
+        projectId,
+        sessionId,
+        actorUserId,
+        selector,
+        method,
+        args,
+      }),
     // Voice channel: `spawn_room` creates the LiveKit room + human join token
     // (the same logic voice/routes.ts used to inline before it went through
     // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented
@@ -678,17 +707,13 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     .select()
     .from(executorConnectorPolicies)
     .where(eq(executorConnectorPolicies.connectorId, connectorId));
-  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
-}
-
-/** Rules attached to ONE connection (profile), the scope between project and connector. */
-async function loadConnectionPoliciesFor(profileId: string): Promise<Policy[]> {
-  const rows = await db
-    .select()
-    .from(executorConnectionPolicies)
-    .where(eq(executorConnectionPolicies.profileId, profileId))
-    .orderBy(executorConnectionPolicies.position);
-  return rows.map((r) => ({ match: r.match, action: r.action as PolicyAction, position: r.position }));
+  return rows.map((r) => ({
+    match: r.match,
+    action: r.action,
+    position: r.position,
+    // Conditions are re-validated on READ, never trusted from storage.
+    ...parseStoredConditions(r.conditions),
+  }));
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -696,7 +721,12 @@ async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
     .select()
     .from(executorProjectPolicies)
     .where(eq(executorProjectPolicies.projectId, projectId));
-  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+  return rows.map((r) => ({
+    match: r.match,
+    action: r.action,
+    position: r.position,
+    ...parseStoredConditions(r.conditions),
+  }));
 }
 
 async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
@@ -715,6 +745,7 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
       connectorId: executorConnectors.connectorId,
       providerType: executorConnectors.providerType,
       config: executorConnectors.config,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
     })
     .from(executorConnectors)
     .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
@@ -722,7 +753,58 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   if (!row || row.providerType !== 'pipedream') return null;
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return null;
-  return { connectorId: row.connectorId, app };
+  return {
+    connectorId: row.connectorId,
+    app,
+    authorizationStrategy: row.authorizationStrategy,
+  };
+}
+
+export type ConnectLinkEligibility =
+  | { ok: true; connectorId: string; app: string; authorizationStrategy: string }
+  /** No connector with this slug on the project. The manifest really is missing it. */
+  | { ok: false; reason: 'no_such_connector' }
+  /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
+  | { ok: false; reason: 'not_pipedream'; providerType: string }
+  /** Pipedream-backed but its config names no app — a broken connector, not a missing one. */
+  | { ok: false; reason: 'no_app' };
+
+/**
+ * Why a connect link can or cannot be minted for this slug.
+ *
+ * `loadPipedreamConnector` answers all three failures with `null`, so the mint
+ * route told everyone to "add it to kortix.yaml first" — including the people
+ * whose connector is already in kortix.yaml and simply is not Pipedream-backed.
+ * That sends someone to edit a file that already has the entry they are being
+ * asked to add, and the connector they actually need is reachable by a route
+ * this one cannot offer.
+ */
+export async function connectLinkEligibility(
+  projectId: string,
+  slug: string,
+): Promise<ConnectLinkEligibility> {
+  const [row] = await db
+    .select({
+      connectorId: executorConnectors.connectorId,
+      providerType: executorConnectors.providerType,
+      config: executorConnectors.config,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!row) return { ok: false, reason: 'no_such_connector' };
+  if (row.providerType !== 'pipedream') {
+    return { ok: false, reason: 'not_pipedream', providerType: row.providerType };
+  }
+  const app = (row.config as any)?.app;
+  if (typeof app !== 'string' || !app) return { ok: false, reason: 'no_app' };
+  return {
+    ok: true,
+    connectorId: row.connectorId,
+    app,
+    authorizationStrategy: row.authorizationStrategy,
+  };
 }
 
 export function resolveTokenBoundSessionId(
@@ -862,6 +944,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       projectId: p.projectId,
       sessionId: p.sessionId,
       alias: row.slug,
+      actingUserId: p.userId,
     });
     if (!profile || profile.status !== 'active') continue;
     const { hasAuth } = authOf(row);
@@ -998,7 +1081,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
     if (credentialConnectorIds.has(row.connectorId)) connectedSlugs.add(row.slug);
   }
   const candidates = conns.map((row) => {
-    const { hasAuth } = authOf(row);
+    const { auth, hasAuth } = authOf(row);
     const config = row.config as { icon_url?: unknown; sensitive?: unknown } | null;
     return {
       slug: row.slug,
@@ -1007,6 +1090,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       platform: channelPlatform(row.config),
       iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
       status: row.status,
+      authorizationStrategy: row.authorizationStrategy,
       sensitive: config?.sensitive === true,
       actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
         path: a.path,
@@ -1015,6 +1099,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
         risk: a.risk,
         inputSchema: a.inputSchema ?? null,
       })),
+      requestAuthType: auth.type,
       requiresAuth: hasAuth,
     };
   });
@@ -1119,9 +1204,11 @@ async function getConnectorConfig(
   const { auth } = authOf(row);
   return {
     slug: row.slug,
+    name: row.name,
     provider: row.providerType,
     platform: channelPlatform(row.config) as ChannelPlatform | null,
     credentialMode: 'shared',
+    authorizationStrategy: row.authorizationStrategy,
     app: cfg.app ?? null,
     account: cfg.account ?? null,
     url: cfg.url ?? null,
@@ -1155,17 +1242,33 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     setConnectorCredentialShared(projectId, slug, input),
   deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
-      .select()
+      .select({
+        connectorId: executorConnectors.connectorId,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
+      })
       .from(executorConnectors)
       .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
       .limit(1);
     if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
-    // Always the shared credential — `per_user` was removed 2026-07-05.
+    if (row.authorizationStrategy !== 'project') {
+      return {
+        ok: false as const,
+        error: 'Shared credentials require a project authorization strategy',
+        status: 409,
+      };
+    }
     await deleteCredential(row.connectorId, null);
     return { ok: true as const };
   },
   setCredentialMode: (projectId, accountId, slug, mode) =>
     setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  setAuthorizationStrategy: (projectId, accountId, slug, authorizationStrategy) =>
+    setConnectorAuthorizationStrategyInManifest(
+      projectId,
+      accountId,
+      slug,
+      authorizationStrategy,
+    ),
   setSensitive: (projectId, accountId, slug, sensitive) =>
     setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
   setConnectorName: (projectId, accountId, slug, name) =>
@@ -1179,13 +1282,10 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
       slug,
       policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
     ),
-  // `userId` is accepted for interface stability but unused: every connector
-  // resolves the one shared Pipedream external-user binding since `per_user`
-  // (each member's own) was removed 2026-07-05.
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
-        if (!conn) return null;
+        if (!conn || conn.authorizationStrategy !== 'project') return null;
         const { connectUrl, token } = await pipedreamConnectUrl(
           projectId,
           slug,
@@ -1199,7 +1299,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   pipedreamFinalize: pipedreamConfigured()
     ? async (projectId, slug, _userId) => {
         const conn = await loadPipedreamConnector(projectId, slug);
-        if (!conn) return null;
+        if (!conn || conn.authorizationStrategy !== 'project') return null;
         const r = await finalizePipedreamConnection({
           projectId,
           slug,
@@ -1219,7 +1319,11 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
         if (!conn) return false;
         if (identityId) {
           const [profile] = await db
-            .select({ profileId: executorConnectionProfiles.profileId })
+            .select({
+              profileId: executorConnectionProfiles.profileId,
+              ownerType: executorConnectionProfiles.ownerType,
+              ownerId: executorConnectionProfiles.ownerId,
+            })
             .from(executorConnectionProfiles)
             .where(
               and(
@@ -1229,7 +1333,16 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
               ),
             )
             .limit(1);
-          if (profile) {
+          if (
+            profile &&
+            connectorAuthorizationMatchesStrategy({
+              strategy: conn.authorizationStrategy,
+              ownerType: profile.ownerType,
+              ownerId: profile.ownerId,
+              actingUserId: profile.ownerId ?? '',
+              actingPrincipalIsServiceAccount: false,
+            })
+          ) {
             await finalizePipedreamProfileConnection({
               projectId,
               slug,
@@ -1240,13 +1353,15 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
             });
             return true;
           }
+          return false;
         }
+        if (conn.authorizationStrategy !== 'project') return false;
         await finalizePipedreamConnection({
           projectId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
-          userId: identityId ?? null,
+          userId: null,
         });
         return true;
       }

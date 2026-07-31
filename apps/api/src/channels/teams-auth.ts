@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 export const BOT_CONNECTOR_SCOPE = 'https://api.botframework.com/.default';
 export const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
@@ -12,8 +13,14 @@ interface CachedToken {
 
 const tokenCache = new Map<string, CachedToken>();
 
-export function teamsChannelEnabled(): boolean {
-  return config.TEAMS_CHANNEL_ENABLED === true;
+/**
+ * Is the Teams channel offered for THIS project? One gate, one source: the
+ * per-project `teams` experimental feature. There is no operator env var — a
+ * project turns Teams on in Customize → Settings → Experimental, exactly like
+ * `agentmail_email` and `voice`.
+ */
+export function teamsChannelEnabled(metadata: unknown): boolean {
+  return resolveExperimentalFeature(metadata, 'teams');
 }
 
 export function teamsConfigured(): boolean {

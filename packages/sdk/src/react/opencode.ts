@@ -74,9 +74,7 @@ export {
 } from './use-canonical-opencode-session';
 export { opencodeKeys as runtimeKeys } from './use-opencode-sessions/keys';
 export { useExecuteOpenCodeCommand as useExecuteRuntimeCommand } from './use-opencode-sessions/commands';
-export {
-  useAbortOpenCodeSession as useAbortRuntimeSession,
-} from './use-opencode-sessions/messages';
+export { useAbortOpenCodeSession as useAbortRuntimeSession } from './use-opencode-sessions/messages';
 export {
   useCreateOpenCodeSession as useCreateRuntimeSession,
   useSummarizeOpenCodeSession as useSummarizeRuntimeSession,

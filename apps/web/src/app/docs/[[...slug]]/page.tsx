@@ -1,9 +1,17 @@
 import { docsMdxComponents } from '@/components/markdown/docs-mdx-components';
 import { Button } from '@/components/ui/button';
-import { Icon } from '@/features/icon/icon';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
 import { cn } from '@/lib/utils';
+// Server components must import icons from '@/lib/icons/ssr'. The `Icon`
+// namespace in '@/features/icon/icon' lives behind a 'use client' boundary, so
+// the RSC graph only ever sees an opaque client reference — dotting into it
+// (`Icon.Github`) yields `undefined` and crashes the render.
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  GithubLogoIcon,
+} from '@/lib/icons/ssr';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
 import { findNeighbour } from 'fumadocs-core/server';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
@@ -12,7 +20,6 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -50,7 +57,9 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                 );
                 return (
                   <Fragment key={i}>
-                    {i !== 0 && <ChevronRight className="size-3.5 shrink-0" />}
+                    {i !== 0 && (
+                      <ChevronRight className="size-3.5 shrink-0" />
+                    )}
                     {item.url ? (
                       <Link
                         href={item.url}
@@ -67,7 +76,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             </span>
             <Button asChild variant="outline" size="xs" className="shrink-0 gap-1.5">
               <a href={editUrl} target="_blank" rel="noreferrer noopener">
-                <Icon.Github className="size-3.5" />
+                <GithubLogoIcon className="size-3.5" />
                 Edit on GitHub
               </a>
             </Button>

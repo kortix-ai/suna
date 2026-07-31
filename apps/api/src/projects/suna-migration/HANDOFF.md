@@ -1,5 +1,8 @@
 # Suna → opencode migration — status & handoff
 
+> **Historical compatibility scope.** This handoff migrates legacy Suna state
+> into the OpenCode REST format. The current V2 runtime uses OpenCode REST only.
+
 User-triggered, ECS-native (runs in the API via the durable runner, like the
 legacy-sandbox migration). One row per **account** → one new project with N
 sessions (his old Suna chats), files archived under `legacy/<slug>/`.

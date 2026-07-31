@@ -1,14 +1,14 @@
 import {
-  Bot,
-  Boxes,
-  FileText,
-  Package,
-  ScrollText,
-  Sparkles,
-  SquareTerminal,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+  RobotIcon as Bot,
+  CubeIcon as Boxes,
+  FileTextIcon as FileText,
+  PackageIcon as Package,
+  ScrollIcon as ScrollText,
+  SparkleIcon as Sparkles,
+  TerminalWindowIcon as SquareTerminal,
+  WrenchIcon as Wrench,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 import { cn } from '@/lib/utils';
 
@@ -24,9 +24,17 @@ const NEUTRAL = 'bg-foreground/5 text-muted-foreground';
 const TYPE_META: Record<string, TypeMeta> = {
   'registry:skill': { label: 'Skill', Icon: Sparkles, tile: 'bg-kortix-blue/10 text-kortix-blue' },
   'registry:agent': { label: 'Agent', Icon: Bot, tile: 'bg-kortix-purple/10 text-kortix-purple' },
-  'registry:command': { label: 'Command', Icon: SquareTerminal, tile: 'bg-kortix-green/10 text-kortix-green' },
+  'registry:command': {
+    label: 'Command',
+    Icon: SquareTerminal,
+    tile: 'bg-kortix-green/10 text-kortix-green',
+  },
   'registry:tool': { label: 'Tool', Icon: Wrench, tile: 'bg-kortix-orange/10 text-kortix-orange' },
-  'registry:bundle': { label: 'Bundle', Icon: Package, tile: 'bg-kortix-yellow/15 text-kortix-yellow' },
+  'registry:bundle': {
+    label: 'Bundle',
+    Icon: Package,
+    tile: 'bg-kortix-yellow/15 text-kortix-yellow',
+  },
   'registry:project': { label: 'Project', Icon: Boxes, tile: 'bg-kortix-blue/10 text-kortix-blue' },
   'registry:rules': { label: 'Rules', Icon: ScrollText, tile: NEUTRAL },
   'registry:file': { label: 'File', Icon: FileText, tile: NEUTRAL },
@@ -55,7 +63,9 @@ export function TypeTile({
   const { Icon, tile } = typeMeta(type);
   const s = TILE_SIZES[size];
   return (
-    <span className={cn('inline-flex shrink-0 items-center justify-center', s.box, tile, className)}>
+    <span
+      className={cn('inline-flex shrink-0 items-center justify-center', s.box, tile, className)}
+    >
       <Icon className={s.icon} />
     </span>
   );

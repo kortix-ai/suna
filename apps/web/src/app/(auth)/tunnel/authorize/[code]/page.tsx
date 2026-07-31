@@ -1,6 +1,6 @@
 'use client';
 
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 

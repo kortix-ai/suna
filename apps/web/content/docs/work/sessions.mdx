@@ -24,8 +24,8 @@ Kortix does not write them for a session today.
 ## Stop, resume, and idle auto-stop
 
 You can stop a session yourself. Resume brings back the same sandbox with the
-same filesystem: code, dependencies, and OpenCode state. Only the running
-processes and memory reset.
+same filesystem and runtime identity. Only the running processes and memory
+reset. The OpenCode conversation remains attached to the session.
 
 Kortix also stops an idle session for you:
 
@@ -46,6 +46,11 @@ pushed is gone.
 Stop and resume keep the sandbox's identity and filesystem. Delete destroys
 the sandbox. Git is the only durable record: work the agent commits and
 pushes survives; everything else does not.
+
+## Runtime
+
+Every session uses OpenCode REST. Kortix stores the selected OpenCode agent and
+model when the session starts. Restart and resume keep the same session runtime.
 
 ## Sharing a preview
 

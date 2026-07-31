@@ -1,5 +1,8 @@
 # Agent-First Configuration & Authorization Unification
 
+> **Extended on 2026-07-28.** This document remains the version 2 governance
+> record. Version 2 remains the active OpenCode REST manifest contract.
+
 **Status:** Shipped — Marko + Fable, 2026-07-05. Phases 0–2 (hygiene, schema v2 +
 compiler, mandatory agents) are live, and `per_user` credential removal (part of
 Phase 3's original scope) shipped early. Still open: secrets v2 (named secrets

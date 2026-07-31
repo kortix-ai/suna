@@ -218,6 +218,10 @@ flow(
       'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId',
       'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
     ],
+    // 26 steps over an enterprise-team fixture, and every audit list/export
+    // query scans a table that now grows with each API request (centralized
+    // audit log) — measured 242s on staging against the 120s default.
+    timeoutMs: 360_000,
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -484,6 +488,172 @@ flow(
       const hooks = r.json<any>().webhooks as any[];
       if (!hooks.some((h) => h.webhook_id === webhookId))
         throw new Error('teamA webhook missing after cross-account no-ops');
+    });
+  },
+);
+
+// AUD-FILTER — centralized reconstruction filters. UUID and enum filters reject
+// invalid values. Dates, cursors, and limits retain their established lenient
+// parsing and clamp behavior.
+flow(
+  'AUD-FILTER',
+  {
+    domain: 'audit',
+    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:projectId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const base = { params: { accountId: team.id } };
+    const correlationId = ctx.fixtures.name('audit-reconstruction');
+
+    await ctx.step('a client header cannot override the authenticated source', async () => {
+      const action = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', {
+          params: { projectId: project.id },
+          headers: {
+            'x-correlation-id': correlationId,
+            'x-kortix-client': 'cli',
+          },
+        });
+      action.status(200);
+
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: {
+          project_id: project.id,
+          actor_type: 'human',
+          source: 'web',
+          outcome: 'success',
+          correlation_id: correlationId,
+        },
+      });
+      r.status(200).body().exists('$.events');
+      const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
+      if (events.length !== 1) {
+        throw new Error(`expected one correlated event, got ${events.length}`);
+      }
+      const event = events[0];
+      if (
+        event.project_id !== project.id ||
+        event.actor_type !== 'human' ||
+        event.source !== 'web' ||
+        event.outcome !== 'success' ||
+        event.correlation_id !== correlationId ||
+        typeof event.request_id !== 'string' ||
+        typeof event.trace_id !== 'string'
+      ) {
+        throw new Error(`centralized audit envelope mismatch: ${JSON.stringify(event)}`);
+      }
+    });
+
+    await ctx.step('session filter accepts an exact session identifier', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { session_id: '00000000-0000-4000-a000-000000000000' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+
+    await ctx.step('invalid structured filters → 400', async () => {
+      const projectResponse = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/audit', {
+          ...base,
+          query: { project_id: 'not-a-uuid' },
+        });
+      projectResponse.status(400);
+
+      const actorTypeResponse = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/audit', {
+          ...base,
+          query: { actor_type: 'robot' },
+        });
+      actorTypeResponse.status(400);
+    });
+
+    await ctx.step('actor filter (uuid) → 200 with events envelope', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { actor: '00000000-0000-4000-a000-000000000000' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('resource_type prefix filter → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { resource_type: 'project' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('since + until date-range window → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { since: '2020-01-01T00:00:00Z', until: '2020-01-02T00:00:00Z' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('q search substring → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { q: 'iam' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('cursor pagination param accepted → 200', async () => {
+      // A well-formed cursor "<iso>|<uuid>" is accepted; a malformed one is
+      // silently ignored (buildFilters only pushes the cursor condition when
+      // the timestamp parses AND a lastId is present). Either way → 200.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { cursor: '2020-01-01T00:00:00Z|00000000-0000-4000-a000-000000000000' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('limit=0 is clamped to 1 (not 400)', async () => {
+      // Math.max(limitRaw, 1) — a zero/negative limit can't 400; it's clamped up.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { limit: '0' },
+      });
+      r.status(200);
+      const events = r.json<{ events: unknown[] }>().events;
+      if (events.length > 1)
+        throw new Error(`limit=0 should clamp to 1, got ${events.length} events`);
+    });
+    await ctx.step('limit=99999 is clamped to MAX_LIMIT (200), not 400', async () => {
+      // Math.min(limitRaw, MAX_LIMIT=200) — an oversized limit is clamped down.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { limit: '99999' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('malformed since date is silently ignored → 200 (not 400)', async () => {
+      // buildFilters guards Number.isNaN(since.getTime()) — a non-parseable
+      // date adds no condition rather than 400ing. Pins the CURRENT contract;
+      // a future fix that 400s here is a deliberate, visible delta.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { since: 'not-a-date' },
+      });
+      r.status(200).body().exists('$.events');
+    });
+    await ctx.step('combined filters (actor + resource_type + q + window) → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: {
+          actor: '00000000-0000-4000-a000-000000000000',
+          resource_type: 'project',
+          q: 'session',
+          since: '2020-01-01T00:00:00Z',
+          until: '2026-12-31T00:00:00Z',
+          limit: '10',
+        },
+      });
+      r.status(200).body().exists('$.events');
     });
   },
 );

@@ -80,21 +80,6 @@ export function selectSessionRowsForViewer(input: {
    *  token). Stops a sandbox listing SIBLING backend sessions, which all share
    *  one `created_by`. */
   callerSessionId: string | null;
-  /**
-   * True when the caller narrowed the list to ONE end-user (`?end_user_ref=`).
-   *
-   * Required, not optional: defaulting it would silently pick the permissive
-   * branch at any call site that forgot it.
-   *
-   * `scope=project` normally returns rows the caller cannot open, with the
-   * end-user label redacted by the serializer. Combined with this filter that
-   * becomes a guess-and-check oracle — send a handle, count the rows, learn
-   * whether that end-user exists here even though its label is redacted. So when
-   * the caller asks an end-user-scoped question, they only get the sessions they
-   * could have opened anyway. The full inventory is still one unfiltered request
-   * away, which is the manager's real use case.
-   */
-  endUserRefFiltered: boolean;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
@@ -125,12 +110,7 @@ export function selectSessionRowsForViewer(input: {
   });
 
   if (input.scope === 'project') {
-    return {
-      authorized: true,
-      items: input.endUserRefFiltered
-        ? items.filter((item) => item.canAccess)
-        : items,
-    };
+    return { authorized: true, items };
   }
 
   return {

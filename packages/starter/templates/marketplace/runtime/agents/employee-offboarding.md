@@ -8,7 +8,6 @@ description: >-
   (never deleting an account) and posting the completed checklist to
   {{notify_channel}}.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

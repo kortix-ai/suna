@@ -1,5 +1,11 @@
 # Kortix-as-a-Backend — depth plan
 
+> **Historical and superseded.** This plan records a 2026-07-27 implementation
+> state. Customer-reference usage attribution and per-reference limits no
+> longer exist. Use
+> [Drive Kortix as a Backend](./KORTIX_AS_A_BACKEND_GUIDE.md) for the current
+> contract.
+
 Written 2026-07-27, after a 7-lens adversarial audit (63 agents, 45 findings that
 survived refutation) and a day of shipping against it. Ordered by
 (real user impact × confidence) ÷ effort. Every item cites evidence; anything I

@@ -6,7 +6,6 @@ description: >-
   {{linear_team}}, assigned to the person who owns it. Flags anything it can't
   confidently assign for a human instead of guessing.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

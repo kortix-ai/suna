@@ -1,5 +1,8 @@
 # LLM Gateway — unified, catalog-driven, type-checked provider mapping
 
+> **Current runtime scope.** The normalized gateway contract serves OpenCode
+> REST sessions. The OpenCode request body below is the runtime input.
+
 **Status:** proposed (scoping) · **Date:** 2026-07-19 · **Owner:** platform/llm-gateway
 
 ## Problem

@@ -7,10 +7,16 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, Check, Copy, Terminal } from 'lucide-react';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowRightIcon as HiArrowRight,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const terminalLines = [
   { id: 'install', type: 'command', text: KORTIX_CLI_INSTALL_COMMAND },
@@ -30,7 +36,7 @@ export function CliInstallSection() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
   }, [user]);
 
   const copyInstallCommand = useCallback(() => {
@@ -43,7 +49,7 @@ export function CliInstallSection() {
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
 
   return (
-    <section id="cli" className="mx-auto max-w-6xl scroll-mt-24 px-6 py-16 sm:py-24 lg:px-0">
+    <section id="cli" className="mx-auto max-w-7xl scroll-mt-24 px-6 py-16 sm:py-24 lg:px-0">
       <Reveal>
         <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-stretch">
           <div className="flex flex-col items-start justify-center space-y-5">
@@ -108,7 +114,7 @@ export function CliInstallSection() {
                   <div
                     key={line.id}
                     className={cn(
-                      'whitespace-pre-wrap break-all',
+                      'break-all whitespace-pre-wrap',
                       line.type === 'muted' ? 'text-muted-foreground/70' : 'text-foreground/90',
                     )}
                   >
