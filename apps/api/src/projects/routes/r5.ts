@@ -21,6 +21,7 @@ import { eq, type SQL } from 'drizzle-orm';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { metadataMerge } from '../lib/metadata-merge';
 import { normalizeProjectIcon } from '../lib/project-icon';
+import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
@@ -690,26 +691,37 @@ projectsApp.openapi(
   if (defaultBranch) updates.defaultBranch = defaultBranch;
   if (manifestPath) updates.manifestPath = manifestPath;
 
-  // `icon` is the one field here where "absent" and "null" mean different
-  // things, so it cannot use the truthiness gate the three writers above use.
-  // `normalizeProjectIcon` answers "is this a storable emoji?" and returns
-  // `null` for a deliberate clear AND for garbage alike — so the REQUEST, not
-  // the normalizer's return value, is what separates them:
+  // `icon` and `icon_glyph` are the two fields here where "absent" and "null"
+  // mean different things, and where a malformed value must be distinguished
+  // from an explicit removal. Both normalizers collapse invalid input AND an
+  // explicit null to `null`, so only the request BODY can tell those apart:
   //
-  //   key absent    → no metadata write; the stored icon is untouched
-  //   icon: "🚀"    → merge { icon }
-  //   icon: null    → delete the `icon` key
-  //   icon: garbage → no metadata write; a malformed value must never be able
-  //                   to wipe an icon the user chose
+  //   key absent          → no metadata write; the stored value is untouched
+  //   icon: "🚀"          → merge { icon },       delete `icon_glyph`
+  //   icon: null          → delete the `icon` key
+  //   icon: garbage       → no metadata write
+  //   icon_glyph: {...}   → merge { icon_glyph }, delete `icon`
+  //   icon_glyph: null    → delete the `icon_glyph` key
+  //   icon_glyph: garbage → no metadata write
   //
-  // Both writes go through `metadataMerge`, which merges against the CURRENT
-  // row value inside the UPDATE's own row lock. A read-modify-write here would
-  // revert whatever a concurrent writer put in `projects.metadata` — the
-  // sandbox-provider routing pin above all (see lib/metadata-merge.ts).
+  // A malformed value must never be able to wipe a choice the user made.
+  //
+  // THE INVARIANT: a project shows one icon, so writing either key deletes the
+  // other in the SAME statement — `metadataMerge` emits
+  // `(coalesce(metadata,'{}') - 'icon') || '{"icon_glyph":…}'::jsonb`, one
+  // expression under the row's own lock. Enforcing it here rather than in the
+  // modal means every client gets the rule without implementing it.
+  //
+  // `icon_glyph` is handled FIRST so that a request carrying both valid values
+  // resolves the same way the create paths resolve it: the glyph wins.
   let metadataExpr: SQL | undefined;
-  if ('icon' in body) {
+  if ('icon_glyph' in body) {
+    const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+    if (iconGlyph) metadataExpr = metadataMerge({ icon_glyph: iconGlyph }, ['icon']);
+    else if (body.icon_glyph === null) metadataExpr = metadataMerge({}, ['icon_glyph']);
+  } else if ('icon' in body) {
     const icon = normalizeProjectIcon(body.icon);
-    if (icon) metadataExpr = metadataMerge({ icon });
+    if (icon) metadataExpr = metadataMerge({ icon }, ['icon_glyph']);
     else if (body.icon === null) metadataExpr = metadataMerge({}, ['icon']);
   }
 
