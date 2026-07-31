@@ -59,6 +59,16 @@ describe('normalizeProjectGlyph — rejects', () => {
     // `typeof [] === 'object'`, so a bare typeof check would let this through
     // and then read `.name` as undefined.
     expect(normalizeProjectGlyph(['Rocket', 'blue'])).toBeNull();
+
+    // The case above passes with OR without the Array.isArray guard, because a
+    // plain array has no own `name`/`color` and the type guards reject the
+    // resulting undefineds. THIS one is what pins the guard: an array that does
+    // carry both keys reaches the destructure intact, so only the isArray check
+    // stops it. Not reachable through JSON.parse — no HTTP body or jsonb read
+    // can produce own-keyed properties on an array — so the guard is
+    // defence-in-depth, and this test is what documents that it is deliberate.
+    const keyedArray = Object.assign(['x'], { name: 'Rocket', color: 'blue' });
+    expect(normalizeProjectGlyph(keyedArray)).toBeNull();
   });
 
   test('a nested-object name or colour', () => {
