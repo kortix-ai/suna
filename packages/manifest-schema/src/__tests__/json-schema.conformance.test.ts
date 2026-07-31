@@ -480,6 +480,20 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    secrets: [STRIPE_KEY]\n',
   },
   {
+    name: 'v2: canonical required connector subset accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    connectors: [gmail]\n    connectors_required: [gmail]\n',
+  },
+  {
+    name: 'v2: deprecated required connector input alias accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    connectors: [gmail]\n    connectors_personal: [gmail]\n',
+  },
+  {
     name: 'v2: top-level [env] section unaffected',
     format: 'yaml',
     valid: true,
@@ -499,6 +513,34 @@ connectors:
     valid: true,
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    provider: pipedream\n    app: gmail\n    credential: shared\n',
+  },
+  {
+    name: 'v2: connector project authorization strategy accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail-shared\n    name: Shared Gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: project\n',
+  },
+  {
+    name: 'v2: connector user authorization strategy accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail-personal\n    name: Personal Gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: user\n',
+  },
+  {
+    name: 'v2: connector both authorization strategy rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: both\n',
+  },
+  {
+    name: 'v2: connector blank name rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    name: ""\n    provider: pipedream\n    app: gmail\n',
   },
   {
     name: 'v2: connector agent_scope rejected outright',
@@ -680,6 +722,39 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
     for (const doc of [KORTIX_V1_JSON_SCHEMA, KORTIX_V2_JSON_SCHEMA, KORTIX_JSON_SCHEMA]) {
       expect(doc.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
     }
+  });
+
+  test('connector profile fields are discoverable in the versioned schema', () => {
+    const connectorProperties = (
+      KORTIX_V2_JSON_SCHEMA as {
+        properties: {
+          connectors: { items: { properties: Record<string, unknown> } };
+        };
+      }
+    ).properties.connectors.items.properties;
+    expect(connectorProperties.name).toEqual({ type: 'string', minLength: 1 });
+    expect(connectorProperties.authorization_strategy).toEqual({
+      type: 'string',
+      enum: ['project', 'user'],
+      default: 'project',
+    });
+  });
+
+  test('required connector fields publish canonical and deprecated annotations', () => {
+    const agentProperties = (
+      KORTIX_V2_JSON_SCHEMA as {
+        properties: {
+          agents: {
+            additionalProperties: { properties: Record<string, Record<string, unknown>> };
+          };
+        };
+      }
+    ).properties.agents.additionalProperties.properties;
+    expect(agentProperties.connectors_required?.description).toContain('must resolve');
+    expect(agentProperties.connectors_personal).toMatchObject({
+      deprecated: true,
+      description: 'Deprecated input alias for connectors_required.',
+    });
   });
 });
 

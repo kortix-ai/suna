@@ -1,27 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  originRefConflicts,
   requireConnectorsConflicts,
-  runtimeContextConflicts, endUserRefConflicts } from './idempotency-conflicts';
-
-describe('originRefConflicts', () => {
-  test('same origin_ref → no conflict', () => {
-    expect(originRefConflicts('alice', 'alice')).toBe(false);
-    expect(originRefConflicts('  alice ', 'alice')).toBe(false); // trim-normalized
-  });
-  test('different origin_ref → conflict (cross-end-user within an account)', () => {
-    expect(originRefConflicts('alice', 'bob')).toBe(true);
-  });
-  test('absent vs present → conflict (deny-by-default)', () => {
-    expect(originRefConflicts(undefined, 'alice')).toBe(true);
-    expect(originRefConflicts('alice', undefined)).toBe(true);
-    expect(originRefConflicts('alice', '   ')).toBe(true); // whitespace = absent
-  });
-  test('both absent → no conflict', () => {
-    expect(originRefConflicts(undefined, undefined)).toBe(false);
-    expect(originRefConflicts(null, '')).toBe(false);
-  });
-});
+  runtimeContextConflicts,
+} from './idempotency-conflicts';
 
 describe('runtimeContextConflicts', () => {
   test('same context (order-independent) → no conflict', () => {
@@ -56,30 +37,5 @@ describe('requireConnectorsConflicts', () => {
   test('absent vs a real requirement → conflict', () => {
     expect(requireConnectorsConflicts(undefined, ['gmail'])).toBe(true);
     expect(requireConnectorsConflicts(['gmail'], undefined)).toBe(true);
-  });
-});
-
-describe('end-user conflict detection reads BOTH spellings', () => {
-  // The rename added `end_user_ref` alongside `origin_ref`. A guard that reads
-  // only the raw legacy key sees `undefined` when the replay uses the new name,
-  // concludes "no conflict", and hands the FIRST end-user's session to the
-  // SECOND — the exact disclosure this guard exists to stop.
-  test('same key, different end-user, mixed spellings → CONFLICT', () => {
-    expect(endUserRefConflicts({ origin_ref: 'alice' }, { end_user_ref: 'bob' })).toBe(true);
-    expect(endUserRefConflicts({ end_user_ref: 'alice' }, { origin_ref: 'bob' })).toBe(true);
-  });
-
-  test('same end-user under different spellings → NO conflict (a legal replay)', () => {
-    expect(endUserRefConflicts({ origin_ref: 'alice' }, { end_user_ref: 'alice' })).toBe(false);
-    expect(endUserRefConflicts({ end_user_ref: 'alice' }, { origin_ref: ' alice ' })).toBe(false);
-  });
-
-  test('neither side names an end-user → NO conflict', () => {
-    expect(endUserRefConflicts({}, {})).toBe(false);
-  });
-
-  test('one side names an end-user and the other does not → CONFLICT', () => {
-    expect(endUserRefConflicts({}, { end_user_ref: 'bob' })).toBe(true);
-    expect(endUserRefConflicts({ origin_ref: 'alice' }, {})).toBe(true);
   });
 });

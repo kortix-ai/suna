@@ -2,56 +2,73 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useMemo } from 'react';
-import {
-  FileCode2,
-  FilePlus2,
-  FileX2,
-  FileEdit,
-  ChevronRight,
-  ChevronDown,
-  GitCompareArrows,
-  Columns2,
-  Rows2,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
-import { useRuntimeSessionDiff, useRuntimeMessages } from '@kortix/sdk/react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { createTwoFilesPatch } from 'diff';
-import type { FileDiff, ApplyPatchFile } from '@/ui/types';
 import { DiffView } from '@/components/diff/diff-view';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { DiffStat, STATUS_TEXT, StatusBadge } from '@/components/ui/status';
+import { useRuntimeMessages, useRuntimeSessionDiff } from '@kortix/sdk/react';
+import { cn } from '@/lib/utils';
+import type { ApplyPatchFile, FileDiff } from '@/ui/types';
+import {
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ColumnsIcon as Columns2,
+  FileCodeIcon as FileCode2,
+  NotePencilIcon as FileEdit,
+  FilePlusIcon as FilePlus2,
+  FileXIcon as FileX2,
+  GitDiffIcon as GitCompareArrows,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+  RowsIcon as Rows2,
+} from '@phosphor-icons/react';
+import { createTwoFilesPatch } from 'diff';
+import { useMemo, useState } from 'react';
 
 // ============================================================================
 // Single file diff card
 // ============================================================================
 
-function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMode: 'unified' | 'split'; isFullscreen?: boolean }) {
+function FileDiffCard({
+  diff,
+  viewMode,
+  isFullscreen,
+}: {
+  diff: FileDiff;
+  viewMode: 'unified' | 'split';
+  isFullscreen?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   const statusIcon = useMemo(() => {
     switch (diff.status) {
-      case 'added': return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
-      case 'deleted': return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
-      default: return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
+      case 'added':
+        return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
+      case 'deleted':
+        return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
+      default:
+        return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
     }
   }, [diff.status]);
 
   const statusLabel = useMemo(() => {
     switch (diff.status) {
-      case 'added': return 'Added';
-      case 'deleted': return 'Deleted';
-      default: return 'Modified';
+      case 'added':
+        return 'Added';
+      case 'deleted':
+        return 'Deleted';
+      default:
+        return 'Modified';
     }
   }, [diff.status]);
 
   const statusVariant = useMemo((): 'success' | 'destructive' | 'info' => {
     switch (diff.status) {
-      case 'added': return 'success';
-      case 'deleted': return 'destructive';
-      default: return 'info';
+      case 'added':
+        return 'success';
+      case 'deleted':
+        return 'destructive';
+      default:
+        return 'info';
     }
   }, [diff.status]);
 
@@ -59,40 +76,46 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
     if (diff.patch) return diff.patch;
     if (!diff.before && !diff.after) return '';
     return createTwoFilesPatch(
-      diff.file || '', diff.file || '',
-      diff.before || '', diff.after || '',
-      '', '',
+      diff.file || '',
+      diff.file || '',
+      diff.before || '',
+      diff.after || '',
+      '',
+      '',
     );
   }, [diff.file, diff.patch, diff.before, diff.after]);
 
   const hasDiffContent = patch.length > 0;
   const filename = diff.file?.split('/').pop() || diff.file;
-  const directory = diff.file?.includes('/') ? diff.file?.substring(0, diff.file?.lastIndexOf('/')) : '';
+  const directory = diff.file?.includes('/')
+    ? diff.file?.substring(0, diff.file?.lastIndexOf('/'))
+    : '';
 
   return (
-    <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">
+    <div className="border-border/50 bg-card overflow-hidden rounded-2xl border">
       {/* File header */}
       <button
         onClick={() => hasDiffContent && setExpanded(!expanded)}
         className={cn(
-          'flex items-center gap-2 w-full px-3 py-2 text-left transition-colors',
+          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
           hasDiffContent && 'hover:bg-muted/40 cursor-pointer',
           !hasDiffContent && 'cursor-default',
         )}
       >
-        {hasDiffContent && (
-          expanded
-            ? <ChevronDown className="size-3 text-muted-foreground/50 flex-shrink-0" />
-            : <ChevronRight className="size-3 text-muted-foreground/50 flex-shrink-0" />
-        )}
+        {hasDiffContent &&
+          (expanded ? (
+            <ChevronDown className="text-muted-foreground/50 size-3 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="text-muted-foreground/50 size-3 flex-shrink-0" />
+          ))}
         {!hasDiffContent && <span className="w-3" />}
 
         {statusIcon}
 
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
-          <span className="text-xs font-medium text-foreground truncate">{filename}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+          <span className="text-foreground truncate text-xs font-medium">{filename}</span>
           {directory && (
-            <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
+            <span className="text-muted-foreground/50 hidden truncate text-xs sm:inline">
               {directory}
             </span>
           )}
@@ -105,16 +128,18 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
         <DiffStat
           additions={diff.additions}
           deletions={diff.deletions}
-          className="text-xs whitespace-nowrap flex-shrink-0"
+          className="flex-shrink-0 text-xs whitespace-nowrap"
         />
       </button>
 
       {/* Expanded diff content */}
       {expanded && hasDiffContent && (
-        <div className={cn(
-          'border-t border-border/40 overflow-y-auto',
-          isFullscreen ? 'max-h-[calc(100vh-12rem)]' : 'max-h-96',
-        )}>
+        <div
+          className={cn(
+            'border-border/40 overflow-y-auto border-t',
+            isFullscreen ? 'max-h-[calc(100vh-12rem)]' : 'max-h-96',
+          )}
+        >
           <DiffView patch={patch} layout={viewMode} hideFileHeader />
         </div>
       )}
@@ -141,7 +166,11 @@ function DiffSummaryBar({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const totals = useMemo(() => {
-    let additions = 0, deletions = 0, added = 0, deleted = 0, modified = 0;
+    let additions = 0,
+      deletions = 0,
+      added = 0,
+      deleted = 0,
+      modified = 0;
     for (const d of diffs) {
       additions += d.additions;
       deletions += d.deletions;
@@ -153,11 +182,11 @@ function DiffSummaryBar({
   }, [diffs]);
 
   return (
-    <div className="flex w-full items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-2.5 pr-12">
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+    <div className="border-border/40 bg-muted/20 flex w-full items-center gap-3 border-b px-4 py-2.5 pr-12">
+      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
+      <div className="flex shrink-0 items-center gap-2 text-xs whitespace-nowrap">
         {totals.added > 0 && (
           <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}
@@ -181,24 +210,28 @@ function DiffSummaryBar({
         <button
           onClick={() => onViewModeChange('unified')}
           className={cn(
-            'p-1 rounded transition-colors cursor-pointer',
+            'cursor-pointer rounded p-1 transition-colors',
             viewMode === 'unified'
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView')}
+          title={tHardcodedUi.raw(
+            'componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView',
+          )}
         >
           <Rows2 className="size-3.5" />
         </button>
         <button
           onClick={() => onViewModeChange('split')}
           className={cn(
-            'p-1 rounded transition-colors cursor-pointer',
+            'cursor-pointer rounded p-1 transition-colors',
             viewMode === 'split'
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView')}
+          title={tHardcodedUi.raw(
+            'componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView',
+          )}
         >
           <Columns2 className="size-3.5" />
         </button>
@@ -207,7 +240,7 @@ function DiffSummaryBar({
         {onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
-            className="p-1 rounded transition-colors cursor-pointer text-muted-foreground/50 hover:text-muted-foreground"
+            className="text-muted-foreground/50 hover:text-muted-foreground cursor-pointer rounded p-1 transition-colors"
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -313,33 +346,37 @@ interface SessionDiffViewerProps {
   onToggleFullscreen?: () => void;
 }
 
-export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
+export function SessionDiffViewer({
+  sessionId,
+  isFullscreen,
+  onToggleFullscreen,
+}: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: apiDiffs, isLoading, error } = useRuntimeSessionDiff(sessionId);
   const { data: messages } = useRuntimeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
   // Fall back to extracting diffs from tool part metadata when the API returns empty
-  const messageDiffs = useMemo(
-    () => extractDiffsFromMessages(messages as any),
-    [messages],
-  );
+  const messageDiffs = useMemo(() => extractDiffsFromMessages(messages as any), [messages]);
 
-  const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
+  const diffs = apiDiffs && apiDiffs.length > 0 ? apiDiffs : messageDiffs;
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-4 pr-12 border-b border-border/40">
-          <GitCompareArrows className="size-4 text-muted-foreground/40" />
-          <span className="text-xs font-medium text-muted-foreground">Changes</span>
+      <div className="flex h-full flex-col">
+        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
+          <GitCompareArrows className="text-muted-foreground/40 size-4" />
+          <span className="text-muted-foreground text-xs font-medium">Changes</span>
         </div>
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-1 items-center justify-center">
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-5">
-                <div className="h-3 w-3 bg-muted/30 rounded animate-pulse" />
-                <div className="h-3 bg-muted/20 rounded animate-pulse" style={{ width: 120 + i * 40 }} />
+                <div className="bg-muted/30 h-3 w-3 animate-pulse rounded" />
+                <div
+                  className="bg-muted/20 h-3 animate-pulse rounded"
+                  style={{ width: 120 + i * 40 }}
+                />
               </div>
             ))}
           </div>
@@ -350,13 +387,17 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
 
   if (error && diffs.length === 0) {
     return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-4 pr-12 border-b border-border/40">
-          <GitCompareArrows className="size-4 text-muted-foreground/40" />
-          <span className="text-xs font-medium text-muted-foreground">Changes</span>
+      <div className="flex h-full flex-col">
+        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
+          <GitCompareArrows className="text-muted-foreground/40 size-4" />
+          <span className="text-muted-foreground text-xs font-medium">Changes</span>
         </div>
-        <div className="flex-1 flex items-center justify-center text-center px-6">
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges')}</p>
+        <div className="flex flex-1 items-center justify-center px-6 text-center">
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges',
+            )}
+          </p>
         </div>
       </div>
     );
@@ -364,22 +405,28 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
 
   if (!diffs || diffs.length === 0) {
     return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-4 pr-12 border-b border-border/40">
-          <GitCompareArrows className="size-4 text-muted-foreground/40" />
-          <span className="text-xs font-medium text-muted-foreground">Changes</span>
+      <div className="flex h-full flex-col">
+        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
+          <GitCompareArrows className="text-muted-foreground/40 size-4" />
+          <span className="text-muted-foreground text-xs font-medium">Changes</span>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 min-h-[200px]">
-          <FileCode2 className="size-10 text-muted-foreground/20 mb-4" />
-          <p className="text-base text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}</p>
-          <p className="text-sm text-muted-foreground/50 mt-1.5">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession')}</p>
+        <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+          <FileCode2 className="text-muted-foreground/20 mb-4 size-10" />
+          <p className="text-muted-foreground text-base">
+            {tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}
+          </p>
+          <p className="text-muted-foreground/50 mt-1.5 text-sm">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession',
+            )}
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       <DiffSummaryBar
         diffs={diffs}
         viewMode={viewMode}
@@ -387,10 +434,15 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
       />
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-3 space-y-2">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-2 p-3">
           {diffs.map((diff, i) => (
-            <FileDiffCard key={`${diff.file}-${i}`} diff={diff} viewMode={viewMode} isFullscreen={isFullscreen} />
+            <FileDiffCard
+              key={`${diff.file}-${i}`}
+              diff={diff}
+              viewMode={viewMode}
+              isFullscreen={isFullscreen}
+            />
           ))}
         </div>
       </ScrollArea>

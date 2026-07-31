@@ -3,6 +3,7 @@ import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
+import { IconProvider } from '@/components/ui/icon-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -327,7 +328,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delayDuration={300}>
+          <IconProvider>
+            <TooltipProvider delayDuration={300}>
             <AuthProvider>
               <I18nProvider>
                 <BrowserNoiseGuard />
@@ -385,7 +387,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 </Suspense>
               </I18nProvider>
             </AuthProvider>
-          </TooltipProvider>
+            </TooltipProvider>
+          </IconProvider>
         </ThemeProvider>
         <div id="portal" className="fixed left-0 top-0 z-40" />
       </body>

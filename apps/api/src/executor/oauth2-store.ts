@@ -1,15 +1,24 @@
+import { createHash } from 'node:crypto';
 import type { OAuth2ApplicationInput } from '@kortix/api-contract';
 import {
   executorConnectionProfiles,
+  executorConnectors,
   executorCredentials,
   executorOAuthApplications,
   executorOAuthSessions,
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import { createHash } from 'node:crypto';
+import {
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
+} from '../projects/lib/connector-authorization-strategy';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { upsertProfileCredential } from './credentials';
+import {
+  createStoredDelegatedCredential,
+  parseDelegatedCredential,
+} from './oauth2-delegated';
 import {
   buildOAuth2AuthorizationRequest,
   discoverOAuth2Metadata,
@@ -18,16 +27,56 @@ import {
   revokeOAuth2Token,
   startOAuth2DeviceAuthorization,
 } from './oauth2-lifecycle';
-import {
-  createStoredDelegatedCredential,
-  parseDelegatedCredential,
-} from './oauth2-delegated';
 
 interface ProfileIdentity {
   accountId: string;
   projectId: string;
   connectorId: string;
   profileId: string;
+}
+
+async function authorizationCanCompleteOAuth(
+  profileId: string,
+  initiatedBy: string,
+): Promise<boolean> {
+  const [authorization] = await db
+    .select({
+      ownerType: executorConnectionProfiles.ownerType,
+      ownerId: executorConnectionProfiles.ownerId,
+      metadata: executorConnectionProfiles.metadata,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+      providerType: executorConnectors.providerType,
+      connectorConfig: executorConnectors.config,
+    })
+    .from(executorConnectionProfiles)
+    .innerJoin(
+      executorConnectors,
+      and(
+        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+        eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
+        eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+      ),
+    )
+    .where(eq(executorConnectionProfiles.profileId, profileId))
+    .limit(1);
+  if (!authorization) return false;
+  return connectorAuthorizationMatchesStrategy({
+    strategy: authorization.authorizationStrategy,
+    ownerType: authorization.ownerType,
+    ownerId: authorization.ownerId,
+    actingUserId: initiatedBy,
+    actingPrincipalIsServiceAccount: false,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: authorization.providerType,
+      platform:
+        typeof authorization.connectorConfig.platform === 'string'
+          ? authorization.connectorConfig.platform
+          : null,
+      ownerType: authorization.ownerType,
+      ownerId: authorization.ownerId,
+      metadata: authorization.metadata,
+    }),
+  });
 }
 
 export async function saveOAuth2Application(
@@ -146,6 +195,13 @@ export async function completeAuthorizationCodeSession(input: {
     return row;
   });
   if (!claimed) return { redirectUri: null, ok: false, errorCode: 'invalid_state' };
+  if (!(await authorizationCanCompleteOAuth(claimed.profileId, claimed.initiatedBy))) {
+    return {
+      redirectUri: claimed.errorRedirectUri,
+      ok: false,
+      errorCode: 'authorization_strategy_changed',
+    };
+  }
   if (input.providerError || !input.code) {
     const errorCode =
       input.providerError && /^[A-Za-z0-9_.-]{1,128}$/.test(input.providerError)

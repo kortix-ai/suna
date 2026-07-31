@@ -10,7 +10,7 @@ For one-off agent actions, start with the CLI:
 kortix executor connectors
 kortix executor discover "send a slack message"
 kortix executor describe slack.send_message
-kortix executor call slack send_message '{"channel":"#general","text":"Shipped"}'
+kortix executor call slack.send_message '{"channel":"#general","text":"Shipped"}'
 ```
 
 The SDK, the `kortix executor` CLI, and the optional `kortix executor mcp`
@@ -109,4 +109,4 @@ the legacy flat routes that derive the project from an in-sandbox session token.
 
 ## License
 
-Elastic License 2.0 - see the repository.
+See the `LICENSE` file in the repository.

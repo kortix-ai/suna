@@ -7,6 +7,7 @@ import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
+import { ScopeBar } from '@/components/chat/scope-bar';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
@@ -299,6 +300,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             }
             commands={c.commands}
             onCommand={c.runCommand}
+            footer={<ScopeBar projectId={c.projectId} sessionId={c.sessionId} />}
             toolbar={
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />

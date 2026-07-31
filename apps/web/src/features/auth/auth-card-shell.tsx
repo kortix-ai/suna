@@ -10,7 +10,7 @@ import { useTranslations } from 'next-intl';
  * footer pinned to the bottom.
  */
 
-import { ChevronLeft } from 'lucide-react';
+import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 

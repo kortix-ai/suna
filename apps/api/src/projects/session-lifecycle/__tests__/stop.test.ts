@@ -6,15 +6,46 @@ let stopCalls: string[] = [];
 let stopError: Error | null = null;
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
-let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let updateCalls: Array<{ table: unknown; updates: Record<string, unknown>; inTransaction: boolean }> = [];
+let inTransaction = false;
+
+/** Flatten a drizzle SQL expression (including its bound params) to text, so a
+ *  test can assert what the write actually asks Postgres to do. */
+function describeSql(expression: unknown): string {
+  const chunks: unknown[] = (expression as any)?.queryChunks ?? [];
+  return chunks
+    .map((chunk: any) => {
+      if (typeof chunk === 'string') return chunk;
+      if (Array.isArray(chunk?.value)) return chunk.value.join('');
+      if (typeof chunk?.value === 'string') return chunk.value;
+      return chunk?.name ?? '';
+    })
+    .join(' ');
+}
 
 mock.module('../../../config', () => ({
   config: { ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'] },
 }));
 
+const updater = (table: unknown) => ({
+  set: (updates: Record<string, unknown>) => ({
+    where: async () => {
+      updateCalls.push({ table, updates, inTransaction });
+    },
+  }),
+});
+
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      inTransaction = true;
+      try {
+        return await fn({ update: updater });
+      } finally {
+        inTransaction = false;
+      }
+    },
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
@@ -22,13 +53,7 @@ mock.module('../../../shared/db', () => ({
         }),
       }),
     }),
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
-        },
-      }),
-    }),
+    update: updater,
   },
 }));
 
@@ -71,6 +96,7 @@ beforeEach(() => {
   pausedCompute = [];
   cacheInvalidations = [];
   updateCalls = [];
+  inTransaction = false;
 });
 
 describe('stopSession', () => {
@@ -106,14 +132,50 @@ describe('stopSession', () => {
 
     const sandboxUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sandboxUpdate?.updates.status).toBe('stopped');
-    expect(sandboxUpdate?.updates.metadata).toMatchObject({
-      foo: 'bar',
-      stoppedBy: 'user-1',
-      stopReason: 'manual',
-    });
+    const rendered = describeSql(sandboxUpdate?.updates.metadata);
+    expect(rendered).toContain('stoppedBy');
+    expect(rendered).toContain('user-1');
+    expect(rendered).toContain('manual');
 
     const sessionUpdate = updateCalls.find((c) => c.table === projectSessions);
     expect(sessionUpdate?.updates.status).toBe('stopped');
+    // Both flips in one transaction — the box is never parked while the session
+    // still claims to be running.
+    expect(sandboxUpdate?.inTransaction).toBe(true);
+    expect(sessionUpdate?.inTransaction).toBe(true);
+  });
+
+  // The lost update. This path used to write
+  // `metadata: { ...sandbox.metadata, stoppedAt, stoppedBy, stopReason }` — a
+  // whole object assembled from the SELECT at the top of stopSession, which
+  // re-sends every key as it looked THEN. Anything a concurrent writer put in
+  // the column in between is silently reverted, and two live writers do exactly
+  // that: projects/routes/shared.ts sets and clears the `runtimeWakeId` wake
+  // fence on the resume path. Under the old code `updates.metadata` is a plain
+  // object carrying `runtimeWakeId` and every assertion below fails.
+  test('REGRESSION: the stop patch is merged into jsonb, never rebuilt from the row it read', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: { runtimeWakeId: 'wake-1', lastTurnAt: '2026-07-29T11:00:00.000Z' },
+    };
+
+    const result = await stopSession(baseInput);
+    expect(result.status).toBe(200);
+
+    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
+    // A jsonb merge expression, not an object literal.
+    expect(Array.isArray((metadata as any)?.queryChunks)).toBe(true);
+    const rendered = describeSql(metadata);
+    expect(rendered).toContain('coalesce');
+    expect(rendered).toContain("'{}'::jsonb");
+    expect(rendered).toContain('stopReason');
+    // The keys it read are left for the DB to keep — never re-sent, so a
+    // concurrent write to either of them survives this stop.
+    expect(rendered).not.toContain('runtimeWakeId');
+    expect(rendered).not.toContain('lastTurnAt');
   });
 
   test('reconciles the row as stopped even if the provider says it is already gone', async () => {

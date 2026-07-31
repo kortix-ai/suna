@@ -13,11 +13,16 @@ import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
+import {
+  createExtendThrottle,
+  extendSandboxDeadline,
+  llmActivityGrantMs,
+} from '../projects/sandbox-deadline';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
-import { recordUsageEvent, resolveSessionOriginRef } from '../shared/usage-events';
+import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
@@ -195,18 +200,44 @@ export async function assertLlmBillingActive(
  * original flat deduct, skipped entirely when the route isn't billable
  * (billingMode === 'none').
  */
+/**
+ * One deadline write per minute per session for LLM activity. A single turn can
+ * make dozens of gateway calls; the extend is monotone, so the ones inside a
+ * window would land on the value the first already produced.
+ */
+const llmActivityThrottle = createExtendThrottle(60_000);
+
+/**
+ * THE MID-TURN EXTENSION, and the reason a long turn no longer gets killed.
+ *
+ * A turn is granted 4 hours when it STARTS, and nothing else used to re-extend
+ * it — so the measured tail (MAX ~8.4h, roughly 7-18 turns per 30 days over 4h)
+ * was work the reaper would stop mid-flight. `usage_events` closes that: it is
+ * written by the gateway after a real upstream completion, never by the sandbox,
+ * so it satisfies the invariant — the box cannot mint one without spending real
+ * money through our own control plane, and the row IS the billing record.
+ *
+ * `event.sessionId` is safe as the target for exactly the reason `originRef` is:
+ * the gateway principal's session id comes from the executor token, minted
+ * server-side with sessionId = sandboxId = the project session id, so a caller
+ * cannot name someone else's session. Fire-and-forget — a deadline write must
+ * never fail a billing settlement.
+ */
+function extendDeadlineForLlmActivity(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  if (!llmActivityThrottle.take(sessionId)) return;
+  void extendSandboxDeadline({ sessionId }, llmActivityGrantMs()).catch((err) =>
+    logger.warn('[deadline] llm-activity extend failed', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
+
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   const pureHoldRefund = isPureHoldRefund(event);
-
-  // KaaB attribution. Safe on THIS path only: the gateway principal's sessionId
-  // comes from the executor token (minted server-side with sessionId =
-  // sandboxId = the project session id), so a caller cannot name someone else's
-  // session and bill them. Best-effort — a lookup failure must never lose the
-  // usage row, which is the billing record.
-  const originRef =
-    pureHoldRefund || !event.sessionId
-      ? null
-      : await resolveSessionOriginRef(event.accountId, event.sessionId).catch(() => null);
+  // A pure hold refund observed nothing — no upstream call happened.
+  if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
 
   const usageEventId = pureHoldRefund
     ? null
@@ -215,7 +246,6 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         actorUserId: event.actorUserId,
         projectId: event.projectId ?? null,
         sessionId: event.sessionId ?? null,
-        originRef,
         provider: event.provider,
         model: event.model,
         route: '/v1/llm/chat/completions',

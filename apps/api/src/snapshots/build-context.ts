@@ -12,7 +12,7 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,8 +23,10 @@ import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { assertCliArtifactAttested } from './cli-artifact-attestation';
 const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,6 +40,8 @@ const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
 const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
+const cliAttestationPath = () => process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH
+  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-executor-runtime.attestation.json');
 const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
@@ -345,8 +349,11 @@ export async function stageWarmRepoCheckout(
   await assertCheckoutHasNoCredentials(dest);
   const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_ARCHIVE);
   await rm(stagedGit, { force: true });
-  await execFileAsyncBC('tar', ['-cf', stagedGit, '-C', dest, '.git'], {
-    env: plainEnv,
+  // Apple-metadata-free: this archive is extracted INSIDE the image, so leaked
+  // xattrs land as `._*` sidecars in `.git` (`.git/objects/pack/._pack-*.idx`
+  // makes git log `index file … is too small`). See staging-tar.ts.
+  await execFileAsyncBC('tar', stagingTarArgs(['-cf', stagedGit], ['-C', dest, '.git']), {
+    env: stagingTarEnv(plainEnv),
     timeout: 300_000,
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -412,6 +419,7 @@ export async function stageBuildContext(
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
+  const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
   const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
@@ -444,6 +452,15 @@ export async function stageBuildContext(
       );
     }
   }
+  // The snapshot identity hashes CLI SOURCE, but the image bakes this compiled
+  // binary. Refuse source/binary skew before the provider sees a context. A
+  // local API with edited CLI source and stale dist previously poisoned the
+  // shared content-addressed image under the NEW source hash.
+  await assertCliArtifactAttested({
+    cliRoot: resolve(REPO_ROOT, 'apps/cli'),
+    binaryPath: CLI_BIN_PATH,
+    attestationPath: CLI_ATTESTATION_PATH,
+  });
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
@@ -763,6 +780,8 @@ async function stageScaffoldRepo(contextDir: string): Promise<void> {
   await g(['config', 'user.email', 'noreply@kortix.ai'], work);
   await g(['add', '-A'], work);
   await g(['commit', '-m', 'chore: scaffold Kortix project'], work);
-  await g(['clone', '--bare', '-q', work, join(contextDir, 'scaffold.git')], contextDir);
+  const scaffoldGit = join(contextDir, 'scaffold.git');
+  await rename(join(work, '.git'), scaffoldGit);
+  await g(['--git-dir', scaffoldGit, 'config', 'core.bare', 'true'], contextDir);
   await rm(work, { recursive: true, force: true });
 }

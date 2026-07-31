@@ -6,16 +6,16 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import {
-  ChevronLeft,
-  ChevronRight,
-  Code,
-  Download,
-  Eye,
-  History,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  ClockCounterClockwiseIcon as History,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   useCallback,

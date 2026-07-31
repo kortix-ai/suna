@@ -72,7 +72,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
-    expect(merged).not.toContain('npm install -g');
+    expect(merged).not.toContain('npm install -g opencode-ai');
+    expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');
   });
 

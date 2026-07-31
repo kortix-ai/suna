@@ -33,7 +33,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { Globe } from 'lucide-react';
+import { GlobeIcon as Globe } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 

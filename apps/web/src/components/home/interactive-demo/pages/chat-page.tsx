@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare } from 'lucide-react';
+import { ChatIcon as MessageSquare } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { AssistantTurn, UserBubble } from '../chat/chat-turn';
 import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';

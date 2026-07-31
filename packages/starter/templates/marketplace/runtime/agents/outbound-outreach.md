@@ -6,7 +6,6 @@ description: >-
   {{approval_channel}} for a person to approve and send — capped at
   {{daily_cap}} contacts per run.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

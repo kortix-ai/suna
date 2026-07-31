@@ -18,3 +18,18 @@ describe('sandboxTokenMayActOnSession', () => {
     expect(sandboxTokenMayActOnSession('', 'sess-a')).toBe(false);
   });
 });
+
+describe('commit-push shares the same invariant', () => {
+  test('a sandbox may push its OWN session', () => {
+    expect(sandboxTokenMayActOnSession('sess-a', 'sess-a')).toBe(true);
+  });
+
+  test('a sandbox may NOT push a sibling session', () => {
+    // `POST /sessions/:sessionId/commit-push` gates on PROJECT_GITOPS_PUSH,
+    // which is project-wide — and in KaaB every end-user's sandbox holds it,
+    // because they all share the wrapper's credential. Without the binding,
+    // end-user A's agent could commit and push end-user B's working tree to B's
+    // branch: a write into another end-user's repository state.
+    expect(sandboxTokenMayActOnSession('sess-a', 'sess-b')).toBe(false);
+  });
+});

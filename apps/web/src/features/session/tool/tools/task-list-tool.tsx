@@ -1,17 +1,14 @@
 'use client';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  ListTodo,
-} from 'lucide-react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 
 export function TaskListTool({ part }: ToolProps) {
   const output = partOutput(part);
@@ -39,4 +36,3 @@ ToolRegistry.register('task_get', TaskListTool);
 ToolRegistry.register('task-get', TaskListTool);
 ToolRegistry.register('agent_task_get', TaskListTool);
 ToolRegistry.register('agent-task-get', TaskListTool);
-

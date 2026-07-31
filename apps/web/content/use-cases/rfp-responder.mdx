@@ -103,7 +103,7 @@ upload, no email, no attachment sent on our behalf. Anything without a confident
 match in the vetted library is left for a person rather than guessed. The
 finished draft stops at a **human approval gate** — a person reviews it and
 submits it. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Return a completed draft for review">
@@ -130,12 +130,11 @@ person.
 The agent drafts a document that can end up in front of a customer, so its
 access is scoped and the output is contained:
 
-- **Isolation.** Every check runs in its own microVM sandbox. The session reads
+- **Isolation.** Every check runs in its own isolated sandbox. The session reads
   only the RFP source and the answer library it's scoped to, and only the draft
   Google Doc is the output.
 - **Scoped secrets.** The Gmail, Drive, and Docs credentials are encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Draft only, never submitted.** The agent has no path to submit an RFP
   portal, send an email, or upload a file to the buyer. A human reviews the
   draft and submits it themselves.

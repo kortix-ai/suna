@@ -7,10 +7,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
-import { getKortixCliInstallCommand } from '@/lib/kortix-cli';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, GitBranch, GitFork, Github, RefreshCw } from 'lucide-react';
+import {
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  GitBranchIcon as GitBranch,
+  GithubLogoIcon as Github,
+  GitForkIcon as GitFork,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
@@ -167,7 +175,7 @@ function SummaryRow({
 }
 
 export function GitView({ projectId }: { projectId: string }) {
-  const installCommand = getKortixCliInstallCommand(getEnv().VERSION);
+  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),

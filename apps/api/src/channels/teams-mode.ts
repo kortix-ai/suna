@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { teamsChannelEnabled, teamsConfigured } from './teams-auth';
+import { teamsConfigured } from './teams-auth';
 
 export interface TeamsMode {
   enabled: boolean;
@@ -11,8 +11,13 @@ export interface TeamsMode {
   byo: boolean;
 }
 
-export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId?: string | null }): TeamsMode {
-  const enabled = teamsChannelEnabled();
+export function teamsMode(
+  baseUrl: string,
+  opts: { enabled: boolean; projectId?: string; byoAppId?: string | null },
+): TeamsMode {
+  // `enabled` is the project's `teams` experimental flag, resolved by the
+  // caller from the project row it already holds.
+  const enabled = opts.enabled;
   const byo = Boolean(opts?.byoAppId);
   const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
   if (!enabled || (!byo && !teamsConfigured()) || !appId) {

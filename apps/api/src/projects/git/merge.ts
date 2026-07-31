@@ -220,6 +220,36 @@ export async function getDiffBetweenShas(
 }
 
 /**
+ * Extract the conflicting paths from `git merge-tree --write-tree --name-only`.
+ * Git writes the generated tree SHA first. It then writes one path per line
+ * until the first blank line and the human-readable conflict diagnostics.
+ */
+export function parseMergeTreeConflictPaths(stdout: string): string[] {
+  const conflicts: string[] = [];
+  let started = false;
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trim();
+    if (!started) {
+      if (/^[0-9a-f]{40}$/.test(line)) started = true;
+      continue;
+    }
+    if (!line) break;
+    if (line.startsWith('Auto-merging ') || line.startsWith('CONFLICT ')) break;
+    conflicts.push(line);
+  }
+  return conflicts;
+}
+
+export class MergeConflictError extends Error {
+  readonly code = 'MERGE_CONFLICT';
+
+  constructor(readonly conflicts: string[]) {
+    super('Merge conflicts detected. Solve them with an agent before applying this change.');
+    this.name = 'MergeConflictError';
+  }
+}
+
+/**
  * Predict whether `headRef` can merge cleanly into `baseRef` without touching
  * either branch. Uses `git merge-tree --write-tree` (git 2.38+) which performs
  * a server-side 3-way merge entirely in the object DB. Non-zero exit means
@@ -252,31 +282,11 @@ export async function previewMerge(
     project.gitAuthHeaders,
   );
 
-  const conflicts: string[] = [];
   let canMerge = true;
   if (result.exitCode !== 0) {
     canMerge = false;
-    // merge-tree --name-only output on conflict:
-    //   <tree-sha>
-    //   <conflict path 1>
-    //   <conflict path 2>
-    //   <blank line>
-    //   Auto-merging <path>
-    //   CONFLICT (content): Merge conflict in <path>
-    // The conflict paths sit between the tree SHA and the first blank line.
-    const lines = result.stdout.split('\n');
-    let started = false;
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!started) {
-        if (/^[0-9a-f]{40}$/.test(line)) started = true;
-        continue;
-      }
-      if (!line) break;
-      if (line.startsWith('Auto-merging ') || line.startsWith('CONFLICT ')) break;
-      conflicts.push(line);
-    }
   }
+  const conflicts = canMerge ? [] : parseMergeTreeConflictPaths(result.stdout);
 
   return {
     base_sha: baseSha,
@@ -347,7 +357,7 @@ export async function mergeBranches(
 
   // 3-way merge.
   const mergeTreeResult = await runGitCapture(
-    ['merge-tree', '--write-tree', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
+    ['merge-tree', '--write-tree', '--name-only', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
     repoPath,
     project.gitAuthToken,
     undefined,
@@ -355,7 +365,7 @@ export async function mergeBranches(
     project.gitAuthHeaders,
   );
   if (mergeTreeResult.exitCode !== 0) {
-    throw new Error('Merge conflicts detected — resolve before merging');
+    throw new MergeConflictError(parseMergeTreeConflictPaths(mergeTreeResult.stdout));
   }
   const treeSha = mergeTreeResult.stdout.split('\n')[0]?.trim();
   if (!treeSha || !/^[0-9a-f]{40}$/.test(treeSha)) {

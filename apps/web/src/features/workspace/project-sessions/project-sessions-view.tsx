@@ -33,8 +33,10 @@ import {
 } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  sessionLastActivityAt,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
@@ -44,28 +46,28 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import {
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ArrowSquareOutIcon as ExternalLink,
+  CalendarDotsIcon as CalendarClock,
+  CaretDownIcon as ChevronDown,
+  ChatIcon as MessageSquare,
+  DotsThreeIcon as MoreHorizontal,
+  EnvelopeIcon as Mail,
+  GitBranchIcon as GitBranch,
+  MagnifyingGlassIcon as Search,
+  PencilSimpleIcon,
+  PlusIcon as Plus,
+  ShareNetworkIcon as Share,
+  SquareIcon as Square,
+  TrashIcon,
+  WarningIcon as AlertTriangle,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import {
-  AlertTriangle,
-  CalendarClock,
-  ChevronDown,
-  ExternalLink,
-  GitBranch,
-  Mail,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  RotateCcw,
-  Search,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import type { IconType } from 'react-icons/lib';
+import { useMemo, useState, type ComponentType } from 'react';
 
 import {
   filterProjectSessions,
@@ -76,7 +78,7 @@ import {
   type ProjectSessionsFilter,
 } from './project-sessions-helpers';
 
-const SOURCE_ICONS: Record<SessionSourceKind, LucideIcon | IconType> = {
+const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string }>> = {
   chat: MessageSquare,
   slack: Icon.Slack,
   telegram: Icon.Telegram,
@@ -133,7 +135,7 @@ function DetailItem({ label, value, mono }: { label: string; value: string; mono
       <dt className="text-muted-foreground text-xs">{label}</dt>
       <dd
         className={cn(
-          'text-foreground break-words text-sm',
+          'text-foreground text-sm break-words',
           mono && 'font-mono text-xs tabular-nums',
         )}
       >
@@ -185,7 +187,7 @@ function SessionRow({
           ? 'Unknown principal'
           : 'Unattributed';
   const created = formatTimestamp(session.created_at);
-  const updated = formatTimestamp(session.updated_at || session.created_at);
+  const updated = formatTimestamp(sessionLastActivityAt(session));
   const conversationCount = (session.opencode_sessions ?? []).length;
   const archivedConversationCount = (session.opencode_sessions ?? []).filter(
     (item) => item.archived_at,
@@ -260,9 +262,12 @@ function SessionRow({
           </div>
 
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Last activity" value={updated.exact} />
             <DetailItem label="Status" value={status.label} />
+            <DetailItem
+              label="Source"
+              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
+            />
             <DetailItem label="Session / resource owner" value={ownerLabel} />
             <DetailItem label="Owner identity" value={ownerTypeLabel} />
             <DetailItem
@@ -272,10 +277,7 @@ function SessionRow({
             />
             <DetailItem label="Your access" value={access.label} />
             <DetailItem label="Visibility" value={visibility.label} />
-            <DetailItem
-              label="Source"
-              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-            />
+            <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Agent" value={session.agent_name || 'Project default'} />
             <DetailItem label="Runtime" value={session.sandbox_provider || 'Not provisioned'} />
             <DetailItem
@@ -354,7 +356,7 @@ function SessionRow({
                   <DropdownMenuContent align="end" className="w-44">
                     {hasLifecycleActions ? (
                       <DropdownMenuItem onSelect={() => onRename(session.session_id, title)}>
-                        <Pencil />
+                        <PencilSimpleIcon />
                         Rename
                       </DropdownMenuItem>
                     ) : null}
@@ -387,7 +389,7 @@ function SessionRow({
                         variant="destructive"
                         onSelect={() => onDelete(session.session_id, title)}
                       >
-                        <TrashSolid />
+                        <TrashIcon />
                         Delete
                       </DropdownMenuItem>
                     ) : null}
@@ -412,6 +414,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     null,
   );
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
     queryKey: ['project-session-inventory', projectId],
@@ -460,6 +463,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       variant="secondary"
       className="gap-1.5"
       onClick={() => newSession()}
+      disabled={creatingSession}
+      aria-busy={creatingSession}
     >
       <Plus className="size-4 shrink-0" />
       New session
@@ -488,7 +493,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
         </InputGroupSearch>
 
-        <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="[scrollbar-width:none] overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
           <FilterBar className="h-8 rounded-md">
             {PROJECT_SESSIONS_FILTERS.map((option) => (
               <FilterBarItem
@@ -527,7 +532,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             title="No sessions yet"
             description="Start a session to give this project its first task."
             action={
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => newSession()}
+                disabled={creatingSession}
+                aria-busy={creatingSession}
+              >
                 <Plus className="size-3.5 shrink-0" />
                 New session
               </Button>

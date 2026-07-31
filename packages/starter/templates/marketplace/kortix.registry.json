@@ -2,33 +2,6 @@
   "name": "kortix-marketplace",
   "items": [
     {
-      "name": "agent-browser",
-      "type": "registry:skill",
-      "title": "Agent Browser",
-      "description": "Browser automation skill for using the baked agent-browser runtime from an OpenCode agent.",
-      "categories": [
-        "kortix-runtime",
-        "browser"
-      ],
-      "files": [
-        {
-          "path": "runtime/skills/agent-browser",
-          "type": "registry:file",
-          "target": "@skills/agent-browser"
-        }
-      ],
-      "meta": {
-        "source": "kortix",
-        "defaultProjectInstall": true,
-        "defaultProjectInstallOrder": 90,
-        "capabilities": {
-          "tools": [
-            "agent-browser"
-          ]
-        }
-      }
-    },
-    {
       "name": "ar-chaser-agent",
       "type": "registry:agent",
       "title": "AR chaser agent",
@@ -70,7 +43,7 @@
       "name": "ar-chaser",
       "type": "registry:template",
       "title": "Overdue-invoice chaser",
-      "description": "Chases overdue Stripe invoices with escalating email reminders, reconciles payments, and posts a daily summary — holding large or disputed balances for a human.",
+      "description": "Chases overdue Stripe invoices with escalating email reminders, reconciles payments, and posts a daily summary \u2014 holding large or disputed balances for a human.",
       "categories": [
         "finance",
         "use-case"
@@ -151,7 +124,7 @@
       "name": "dep-upgrader-agent",
       "type": "registry:agent",
       "title": "Dependency upgrade agent",
-      "description": "Reusable-session agent that keeps a repo's dependencies current: applies upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a PR — never merging.",
+      "description": "Reusable-session agent that keeps a repo's dependencies current: applies upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a PR \u2014 never merging.",
       "categories": [
         "engineering"
       ],
@@ -189,7 +162,7 @@
       "name": "dependency-upgrades",
       "type": "registry:template",
       "title": "Dependency upgrades on autopilot",
-      "description": "A weekly agent that keeps a repo's dependencies current: it applies patch, minor, and safe major upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a reviewable PR only when everything passes — never merging on its own.",
+      "description": "A weekly agent that keeps a repo's dependencies current: it applies patch, minor, and safe major upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a reviewable PR only when everything passes \u2014 never merging on its own.",
       "categories": [
         "engineering",
         "use-case"
@@ -244,7 +217,7 @@
               "agent": "dep-upgrader",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `dependency-upgrade` skill and run one complete upgrade sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/dependency-upgrade-log.md`, open upgrade PRs, and in-flight branches. Discover outdated deps; apply patch/minor together and majors one at a time on an isolated branch; prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration, audit); and open a PR only when everything passes. A failing upgrade is never pushed — log it and split or defer with a tracked issue. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
+              "prompt": "Load the `dependency-upgrade` skill and run one complete upgrade sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/dependency-upgrade-log.md`, open upgrade PRs, and in-flight branches. Discover outdated deps; apply patch/minor together and majors one at a time on an isolated branch; prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration, audit); and open a PR only when everything passes. A failing upgrade is never pushed \u2014 log it and split or defer with a tracked issue. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
             }
           ],
           "env_optional": [
@@ -295,7 +268,7 @@
       "name": "standup-summary",
       "type": "registry:template",
       "title": "Weekly shipping leaderboard + standup",
-      "description": "A weekly cron that posts an ENG/PRODUCT shipping brief to Slack — a ranked merged-PR leaderboard with week-on-week deltas and shipping streaks, what shipped, and an async standup thread — and keeps a running ledger. Reads GitHub, posts to Slack.",
+      "description": "A weekly cron that posts an ENG/PRODUCT shipping brief to Slack \u2014 a ranked merged-PR leaderboard with week-on-week deltas and shipping streaks, what shipped, and an async standup thread \u2014 and keeps a running ledger. Reads GitHub, posts to Slack.",
       "categories": [
         "operations",
         "use-case"
@@ -383,7 +356,7 @@
       "name": "support-agent",
       "type": "registry:agent",
       "title": "Customer support agent",
-      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding sensitive actions for approval.",
+      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding sensitive actions for approval.",
       "categories": [
         "support"
       ],
@@ -402,7 +375,7 @@
       "name": "customer-support",
       "type": "registry:template",
       "title": "Customer support on autopilot",
-      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding refunds and account changes for human approval.",
+      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding refunds and account changes for human approval.",
       "categories": [
         "support",
         "use-case"
@@ -476,7 +449,7 @@
       "name": "competitor-diff-skill",
       "type": "registry:skill",
       "title": "Competitor diff",
-      "description": "Fetch, normalize, diff against the last snapshot, filter cosmetic noise, and post a short summary — the daily competitor-watch runbook.",
+      "description": "Fetch, normalize, diff against the last snapshot, filter cosmetic noise, and post a short summary \u2014 the daily competitor-watch runbook.",
       "categories": [
         "marketing"
       ],
@@ -495,7 +468,7 @@
       "name": "competitor-watch",
       "type": "registry:template",
       "title": "Watch competitors daily",
-      "description": "Installs a daily agent that fetches your tracked competitor sites, changelogs, and pricing pages, diffs them against the last run, and posts a short summary of real changes to Slack. It only reads public pages and only writes to the one Slack channel you approve — nothing else is in scope.",
+      "description": "Installs a daily agent that fetches your tracked competitor sites, changelogs, and pricing pages, diffs them against the last run, and posts a short summary of real changes to Slack. It only reads public pages and only writes to the one Slack channel you approve \u2014 nothing else is in scope.",
       "categories": [
         "marketing",
         "use-case"
@@ -509,8 +482,8 @@
           "key": "watch_list",
           "label": "Competitors and pages to track",
           "type": "text",
-          "default": "Acme — pricing: https://acme.com/pricing\nAcme — changelog: https://acme.com/changelog",
-          "help": "One tracked page per line, as \"Competitor — page: URL\".",
+          "default": "Acme \u2014 pricing: https://acme.com/pricing\nAcme \u2014 changelog: https://acme.com/changelog",
+          "help": "One tracked page per line, as \"Competitor \u2014 page: URL\".",
           "required": true
         },
         {
@@ -551,7 +524,7 @@
               "agent": "competitor-watch",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `competitor-diff` skill and run today's competitor-watch sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/competitor-watch-log.md` for the last snapshot of each page in {{watch_list}}. Fetch every tracked page, normalize and diff it against the stored snapshot, filter out cosmetic edits, and post a short summary of real changes (pricing moves, shipped features, messaging changes) to {{slack_channel}} — or a brief 'nothing changed' line if the market was quiet. Read only public pages and write only to {{slack_channel}}; nothing else is in scope. Update the ledger with today's snapshots before finishing."
+              "prompt": "Load the `competitor-diff` skill and run today's competitor-watch sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/competitor-watch-log.md` for the last snapshot of each page in {{watch_list}}. Fetch every tracked page, normalize and diff it against the stored snapshot, filter out cosmetic edits, and post a short summary of real changes (pricing moves, shipped features, messaging changes) to {{slack_channel}} \u2014 or a brief 'nothing changed' line if the market was quiet. Read only public pages and write only to {{slack_channel}}; nothing else is in scope. Update the ledger with today's snapshots before finishing."
             }
           ]
         }
@@ -561,7 +534,7 @@
       "name": "compliance-monitoring-agent",
       "type": "registry:agent",
       "title": "Compliance monitoring agent",
-      "description": "Checks AWS resource state and audit logs against policy every day, files what it finds, and proposes remediation as a reviewed change — never applying a fix itself.",
+      "description": "Checks AWS resource state and audit logs against policy every day, files what it finds, and proposes remediation as a reviewed change \u2014 never applying a fix itself.",
       "categories": [
         "security"
       ],
@@ -599,7 +572,7 @@
       "name": "compliance-monitoring",
       "type": "registry:template",
       "title": "Daily infrastructure compliance sweep",
-      "description": "A daily agent that checks AWS resource state and audit logs against policy — public buckets, untagged resources, over-broad roles — files every finding to Slack, and proposes remediation as a reviewed change request that a human must approve before anything is applied.",
+      "description": "A daily agent that checks AWS resource state and audit logs against policy \u2014 public buckets, untagged resources, over-broad roles \u2014 files every finding to Slack, and proposes remediation as a reviewed change request that a human must approve before anything is applied.",
       "categories": [
         "security",
         "use-case"
@@ -672,7 +645,7 @@
               "type": "cron",
               "agent": "compliance-monitoring",
               "cron": "{{cadence}}",
-              "prompt": "Load the `compliance-sweep` skill and run one complete sweep. This is a fresh session every run — nothing carries over from yesterday. Read the compliance policy from memory, then check AWS resource state across {{aws_regions}} for public buckets, missing required tags, and over-broad IAM roles; cross-reference the audit logs for when each drifted and who changed it. File every finding and draft the fix as a proposed change request — never apply a fix directly. Post the findings, their audit trail context, and the proposed CR links to {{alert_channel}}."
+              "prompt": "Load the `compliance-sweep` skill and run one complete sweep. This is a fresh session every run \u2014 nothing carries over from yesterday. Read the compliance policy from memory, then check AWS resource state across {{aws_regions}} for public buckets, missing required tags, and over-broad IAM roles; cross-reference the audit logs for when each drifted and who changed it. File every finding and draft the fix as a proposed change request \u2014 never apply a fix directly. Post the findings, their audit trail context, and the proposed CR links to {{alert_channel}}."
             }
           ]
         }
@@ -720,7 +693,7 @@
       "name": "crm-hygiene",
       "type": "registry:template",
       "title": "CRM hygiene on autopilot",
-      "description": "A nightly agent that dedupes HubSpot contacts, fills missing fields from enrichment data, and flags stale deals — posting a data-quality summary to Slack while holding large bulk field updates for human approval.",
+      "description": "A nightly agent that dedupes HubSpot contacts, fills missing fields from enrichment data, and flags stale deals \u2014 posting a data-quality summary to Slack while holding large bulk field updates for human approval.",
       "categories": [
         "sales",
         "use-case"
@@ -798,7 +771,7 @@
               "type": "cron",
               "agent": "crm-hygiene",
               "cron": "{{cadence}}",
-              "prompt": "Load the `hubspot-hygiene` skill and run one complete CRM hygiene pass. Find and merge duplicate contacts in HubSpot, fill missing fields (job title, industry, company size) from enrichment data, and flag deals that have gone stale. Hold any bulk field update affecting more than {{bulk_update_threshold}} records for human approval before writing. Post the summary — duplicates merged, fields filled, deals flagged, and anything pending approval — to {{alert_channel}}."
+              "prompt": "Load the `hubspot-hygiene` skill and run one complete CRM hygiene pass. Find and merge duplicate contacts in HubSpot, fill missing fields (job title, industry, company size) from enrichment data, and flag deals that have gone stale. Hold any bulk field update affecting more than {{bulk_update_threshold}} records for human approval before writing. Post the summary \u2014 duplicates merged, fields filled, deals flagged, and anything pending approval \u2014 to {{alert_channel}}."
             }
           ]
         }
@@ -846,7 +819,7 @@
       "name": "docs-maintainer",
       "type": "registry:template",
       "title": "Keep docs in sync with the code",
-      "description": "A daily agent that reads the code merged since its last run, rewrites the documentation and READMEs that change made inaccurate, and opens one reviewable PR — never merging, never editing code.",
+      "description": "A daily agent that reads the code merged since its last run, rewrites the documentation and READMEs that change made inaccurate, and opens one reviewable PR \u2014 never merging, never editing code.",
       "categories": [
         "engineering",
         "use-case"
@@ -924,7 +897,7 @@
               "agent": "docs-maintainer",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `docs-sync` skill and run one docs sync pass on {{target_repo}}. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/docs-sync-log.md` for the last commit checkpoint and any open docs PR. Pull the commits that landed since that checkpoint, read the actual code they touched (not just the diff), and find every page under {{docs_path}} and every README that drifted out of accuracy. Rewrite only those pages to match the current code — docs and READMEs are your only write surface, the code itself is read-only. Group the day's updates into ONE PR with the reasoning and the commits that prompted each change. If nothing doc-visible changed, advance the ledger checkpoint and stop without opening a PR. Never merge — a human owns the merge."
+              "prompt": "Load the `docs-sync` skill and run one docs sync pass on {{target_repo}}. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/docs-sync-log.md` for the last commit checkpoint and any open docs PR. Pull the commits that landed since that checkpoint, read the actual code they touched (not just the diff), and find every page under {{docs_path}} and every README that drifted out of accuracy. Rewrite only those pages to match the current code \u2014 docs and READMEs are your only write surface, the code itself is read-only. Group the day's updates into ONE PR with the reasoning and the commits that prompted each change. If nothing doc-visible changed, advance the ledger checkpoint and stop without opening a PR. Never merge \u2014 a human owns the merge."
             }
           ],
           "env_optional": [
@@ -937,7 +910,7 @@
       "name": "inbox-triage-agent",
       "type": "registry:agent",
       "title": "Inbox triage agent",
-      "description": "Reads each new inbound email, labels it, drafts a reply from the help doc or files a Linear ticket — holding every customer-facing reply for human approval.",
+      "description": "Reads each new inbound email, labels it, drafts a reply from the help doc or files a Linear ticket \u2014 holding every customer-facing reply for human approval.",
       "categories": [
         "support"
       ],
@@ -997,7 +970,7 @@
           "key": "help_doc",
           "label": "Help doc for standard answers",
           "type": "text",
-          "default": "Notion — Help Center",
+          "default": "Notion \u2014 Help Center",
           "help": "The Notion page or database the agent looks up before drafting a reply.",
           "required": true
         },
@@ -1057,7 +1030,7 @@
               "type": "cron",
               "agent": "inbox-triage",
               "cron": "{{cadence}}",
-              "prompt": "Load the `email-triage` skill and run one complete triage pass over the shared Gmail inbox. This is a fresh session every run, so recompute from the current inbox state — nothing carries over from the prior check. For each new inbound message: label it by category, look up {{help_doc}} for support questions and draft a reply in Gmail only when the doc backs the answer, and file bug reports or follow-ups as tickets in the {{linear_team}} Linear team with the thread's context attached. Leave a thread label-only when the help doc doesn't clearly answer it. Never send a reply yourself — every customer-facing draft waits in Gmail for a human to review and send."
+              "prompt": "Load the `email-triage` skill and run one complete triage pass over the shared Gmail inbox. This is a fresh session every run, so recompute from the current inbox state \u2014 nothing carries over from the prior check. For each new inbound message: label it by category, look up {{help_doc}} for support questions and draft a reply in Gmail only when the doc backs the answer, and file bug reports or follow-ups as tickets in the {{linear_team}} Linear team with the thread's context attached. Leave a thread label-only when the help doc doesn't clearly answer it. Never send a reply yourself \u2014 every customer-facing draft waits in Gmail for a human to review and send."
             }
           ]
         }
@@ -1105,7 +1078,7 @@
       "name": "incident-postmortem",
       "type": "registry:template",
       "title": "Draft the postmortem when an incident resolves",
-      "description": "A periodic sweep that finds incidents marked resolved in your incident channel, correlates the channel timeline against GitHub deploys and Datadog log spikes, and opens a structured postmortem as a PR — root cause and action items are proposed, and a human always reviews and merges.",
+      "description": "A periodic sweep that finds incidents marked resolved in your incident channel, correlates the channel timeline against GitHub deploys and Datadog log spikes, and opens a structured postmortem as a PR \u2014 root cause and action items are proposed, and a human always reviews and merges.",
       "categories": [
         "engineering",
         "use-case"
@@ -1199,7 +1172,7 @@
               "type": "cron",
               "agent": "incident-postmortem",
               "cron": "{{cadence}}",
-              "prompt": "Load the `postmortem-draft` skill and check {{incident_channel}} for incidents marked resolved since the last sweep. For each one, first check {{target_repo}} for an existing postmortem PR or branch for that incident and skip it if one exists. Otherwise, pull the full incident thread from {{incident_channel}} as the timeline, correlate it against GitHub merges/deploys and Datadog error-rate/latency spikes over the incident window, and draft a structured postmortem (summary, timeline, proposed root cause, impact, candidate action items) as a PR under {{postmortem_path}} in {{target_repo}}. Root cause and action items are proposed, never finalized — never assign owners or close the incident yourself, and never merge the PR; a human reviews and merges."
+              "prompt": "Load the `postmortem-draft` skill and check {{incident_channel}} for incidents marked resolved since the last sweep. For each one, first check {{target_repo}} for an existing postmortem PR or branch for that incident and skip it if one exists. Otherwise, pull the full incident thread from {{incident_channel}} as the timeline, correlate it against GitHub merges/deploys and Datadog error-rate/latency spikes over the incident window, and draft a structured postmortem (summary, timeline, proposed root cause, impact, candidate action items) as a PR under {{postmortem_path}} in {{target_repo}}. Root cause and action items are proposed, never finalized \u2014 never assign owners or close the incident yourself, and never merge the PR; a human reviews and merges."
             }
           ],
           "env_optional": [
@@ -1250,7 +1223,7 @@
       "name": "investor-update",
       "type": "registry:template",
       "title": "Draft the monthly investor update",
-      "description": "Installs a monthly agent that pulls MRR and revenue from Stripe, active accounts, growth, burn, and runway from Postgres, compares them to last month's update and to plan, and drafts this month's update as a new document for a founder to finalize. Read-only across every connected system — the agent never writes back to a source and never sends the update itself.",
+      "description": "Installs a monthly agent that pulls MRR and revenue from Stripe, active accounts, growth, burn, and runway from Postgres, compares them to last month's update and to plan, and drafts this month's update as a new document for a founder to finalize. Read-only across every connected system \u2014 the agent never writes back to a source and never sends the update itself.",
       "categories": [
         "finance",
         "use-case"
@@ -1324,7 +1297,7 @@
               "type": "cron",
               "agent": "investor-update",
               "cron": "{{cadence}}",
-              "prompt": "Load the `investor-update-draft` skill and draft this month's investor update. This is a fresh session — nothing carries over except what's read from the source systems. Read last month's update from {{updates_folder}} for the prior figures and the format to match, pull MRR and revenue from Stripe, and active accounts, growth, burn, and runway from Postgres. Compare every metric to last month and to plan, then draft this month's update as a new document under {{updates_folder}}, following the same section order and tone as last month's. The agent is read-only across Postgres, Stripe, and every existing update document — it never writes back to any of them, its only output is the new draft, and it never sends the update anywhere. A founder reviews, edits the commentary, and sends it."
+              "prompt": "Load the `investor-update-draft` skill and draft this month's investor update. This is a fresh session \u2014 nothing carries over except what's read from the source systems. Read last month's update from {{updates_folder}} for the prior figures and the format to match, pull MRR and revenue from Stripe, and active accounts, growth, burn, and runway from Postgres. Compare every metric to last month and to plan, then draft this month's update as a new document under {{updates_folder}}, following the same section order and tone as last month's. The agent is read-only across Postgres, Stripe, and every existing update document \u2014 it never writes back to any of them, its only output is the new draft, and it never sends the update anywhere. A founder reviews, edits the commentary, and sends it."
             }
           ]
         }
@@ -1372,7 +1345,7 @@
       "name": "office-snacks",
       "type": "registry:template",
       "title": "Batch office snack requests weekly",
-      "description": "Installs a weekly agent that collects snack requests submitted through a Slack shortcut, consolidates them with standing staples into one cart, and posts the draft order for the office manager to approve — nothing is purchased until they sign off.",
+      "description": "Installs a weekly agent that collects snack requests submitted through a Slack shortcut, consolidates them with standing staples into one cart, and posts the draft order for the office manager to approve \u2014 nothing is purchased until they sign off.",
       "categories": [
         "operations",
         "use-case"
@@ -1441,7 +1414,7 @@
               "type": "cron",
               "agent": "office-snacks",
               "cron": "{{cadence}}",
-              "prompt": "Load the `snack-batching` skill and run this week's snack-batching pass. This is a fresh session, so scope from {{office_channel}}: find the last posted draft order to use as the cutoff (or the last 7 days if there isn't one), and collect every shortcut request submitted since then. Consolidate duplicates, fold in the standing staples from the skill, and build a cart against {{preferred_vendor}} within {{weekly_budget}} — never check out. Post the full draft order with its total to {{office_channel}} and state plainly that nothing has been purchased yet. Only place the order in a later turn if an explicit, in-thread written approval from the office manager appears on that draft; never treat silence, an emoji, or a vague reply as approval."
+              "prompt": "Load the `snack-batching` skill and run this week's snack-batching pass. This is a fresh session, so scope from {{office_channel}}: find the last posted draft order to use as the cutoff (or the last 7 days if there isn't one), and collect every shortcut request submitted since then. Consolidate duplicates, fold in the standing staples from the skill, and build a cart against {{preferred_vendor}} within {{weekly_budget}} \u2014 never check out. Post the full draft order with its total to {{office_channel}} and state plainly that nothing has been purchased yet. Only place the order in a later turn if an explicit, in-thread written approval from the office manager appears on that draft; never treat silence, an emoji, or a vague reply as approval."
             }
           ],
           "env_optional": [
@@ -1492,7 +1465,7 @@
       "name": "outbound-outreach",
       "type": "registry:template",
       "title": "Personalized outbound on autopilot",
-      "description": "A periodic agent that scans HubSpot for new leads, enriches each account, drafts a personalized first-touch and follow-up sequence, and logs every draft to the CRM — holding each batch in an email channel for a person to approve and send, capped at a set number of contacts per run.",
+      "description": "A periodic agent that scans HubSpot for new leads, enriches each account, drafts a personalized first-touch and follow-up sequence, and logs every draft to the CRM \u2014 holding each batch in an email channel for a person to approve and send, capped at a set number of contacts per run.",
       "categories": [
         "sales",
         "use-case"
@@ -1522,7 +1495,7 @@
           "key": "approval_channel",
           "label": "Where drafted batches wait for approval",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels that receives each batch of drafts for a person to review and send.",
+          "help": "The email channel connected in Settings\u2192Channels that receives each batch of drafts for a person to review and send.",
           "required": true
         },
         {
@@ -1577,7 +1550,7 @@
               "type": "cron",
               "agent": "outbound-outreach",
               "cron": "{{cadence}}",
-              "prompt": "Load the `personalized-outreach` skill and run one outreach sweep. Query HubSpot for contacts in {{hubspot_list}} that don't yet carry the `kortix_outreach_drafted` marker, taking at most {{daily_cap}} contacts this run. Enrich each contact, draft a personalized first-touch and follow-up sequence grounded in the account's real context using the angles and proof points in memory, and log every draft back to HubSpot. Never send anything yourself — hold the full batch in {{approval_channel}} as drafts only for a person to review, edit, approve, and send, and mark `kortix_outreach_drafted` on each contact you drafted so the next sweep doesn't duplicate it."
+              "prompt": "Load the `personalized-outreach` skill and run one outreach sweep. Query HubSpot for contacts in {{hubspot_list}} that don't yet carry the `kortix_outreach_drafted` marker, taking at most {{daily_cap}} contacts this run. Enrich each contact, draft a personalized first-touch and follow-up sequence grounded in the account's real context using the angles and proof points in memory, and log every draft back to HubSpot. Never send anything yourself \u2014 hold the full batch in {{approval_channel}} as drafts only for a person to review, edit, approve, and send, and mark `kortix_outreach_drafted` on each contact you drafted so the next sweep doesn't duplicate it."
             }
           ]
         }
@@ -1587,7 +1560,7 @@
       "name": "release-notes-agent",
       "type": "registry:agent",
       "title": "Release notes agent",
-      "description": "Reads merged PRs since the last release, groups them by area, writes the changelog entry, and opens a PR for review — never merging or announcing.",
+      "description": "Reads merged PRs since the last release, groups them by area, writes the changelog entry, and opens a PR for review \u2014 never merging or announcing.",
       "categories": [
         "engineering"
       ],
@@ -1625,7 +1598,7 @@
       "name": "release-notes",
       "type": "registry:template",
       "title": "Draft release notes from merged PRs",
-      "description": "On each new release, an agent reads every PR merged since the last one, groups the changes by area, writes plain-language notes, and opens a PR against the changelog — it never publishes, tags, or announces; a human reviews the wording and merges.",
+      "description": "On each new release, an agent reads every PR merged since the last one, groups the changes by area, writes plain-language notes, and opens a PR against the changelog \u2014 it never publishes, tags, or announces; a human reviews the wording and merges.",
       "categories": [
         "engineering",
         "use-case"
@@ -1703,7 +1676,7 @@
               "agent": "release-notes",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `changelog-sync` skill and check {{target_repo}} for any release published since the last checkpoint. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/changelog-sync-log.md` for the last release tag covered and any open changelog PR. For each new release, find the previous release tag, read every PR merged in that range in full (not just titles), drop internal-only and dependency-bump noise, group the rest by area, and write plain-language notes matching {{changelog_path}}'s existing format. Open one PR per release against {{changelog_path}} and stop — never merge, tag, publish, or announce the release yourself; a human reviews the wording and merges. Update the ledger with the checkpoint before finishing."
+              "prompt": "Load the `changelog-sync` skill and check {{target_repo}} for any release published since the last checkpoint. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/changelog-sync-log.md` for the last release tag covered and any open changelog PR. For each new release, find the previous release tag, read every PR merged in that range in full (not just titles), drop internal-only and dependency-bump noise, group the rest by area, and write plain-language notes matching {{changelog_path}}'s existing format. Open one PR per release against {{changelog_path}} and stop \u2014 never merge, tag, publish, or announce the release yourself; a human reviews the wording and merges. Update the ledger with the checkpoint before finishing."
             }
           ],
           "env_optional": [
@@ -1754,7 +1727,7 @@
       "name": "resume-triage",
       "type": "registry:template",
       "title": "Resume screening on autopilot",
-      "description": "Sweeps the applications inbox or ATS for new inbound applications, scores each one against the role's written rubric with supporting quotes as evidence, and proposes interview slots on the hiring manager's calendar for strong matches. The agent never rejects or advances anyone — a person makes every decision.",
+      "description": "Sweeps the applications inbox or ATS for new inbound applications, scores each one against the role's written rubric with supporting quotes as evidence, and proposes interview slots on the hiring manager's calendar for strong matches. The agent never rejects or advances anyone \u2014 a person makes every decision.",
       "categories": [
         "hr",
         "use-case"
@@ -1768,7 +1741,7 @@
           "key": "applications_source",
           "label": "Applications inbox or ATS pipeline",
           "type": "text",
-          "default": "Greenhouse — pipeline",
+          "default": "Greenhouse \u2014 pipeline",
           "help": "Where new applications arrive, e.g. the Greenhouse pipeline for the open role.",
           "required": true
         },
@@ -1837,7 +1810,7 @@
               "type": "cron",
               "agent": "resume-triage",
               "cron": "{{cadence}}",
-              "prompt": "Load the `resume-scoring` skill and check {{applications_source}} for any application that hasn't already been screened. For each new one, read it against {{role_rubric}}, write a structured screen — strengths, gaps, an overall score, and the quotes behind each — back to {{applications_source}}, and for strong matches propose 2-3 tentative interview slots on {{hiring_manager_calendar}} for the hiring manager to confirm. Never auto-reject or auto-advance a candidate: the agent produces the screen and the proposed slots, and a person makes every advance-or-reject decision."
+              "prompt": "Load the `resume-scoring` skill and check {{applications_source}} for any application that hasn't already been screened. For each new one, read it against {{role_rubric}}, write a structured screen \u2014 strengths, gaps, an overall score, and the quotes behind each \u2014 back to {{applications_source}}, and for strong matches propose 2-3 tentative interview slots on {{hiring_manager_calendar}} for the hiring manager to confirm. Never auto-reject or auto-advance a candidate: the agent produces the screen and the proposed slots, and a person makes every advance-or-reject decision."
             }
           ]
         }
@@ -1907,7 +1880,7 @@
           "label": "Heartbeat check frequency",
           "type": "cron",
           "default": "0 0 * * * *",
-          "help": "How often the agent verifies connected-platform health. Defaults to hourly — the real work happens live whenever it's @-mentioned in Slack.",
+          "help": "How often the agent verifies connected-platform health. Defaults to hourly \u2014 the real work happens live whenever it's @-mentioned in Slack.",
           "required": true
         },
         {
@@ -1973,7 +1946,7 @@
               "type": "cron",
               "agent": "slack-control-pane",
               "cron": "{{cadence}}",
-              "prompt": "Load the control-pane-ops skill. This is a low-frequency health-check heartbeat, not the main workload — the agent's real work happens live whenever a human @-mentions it in a Slack thread with a cross-platform task spanning the database, Stripe, Linear, and GitHub at {{target_repo}}, and it replies right there in that thread, holding anything that spends money, changes production data, or changes account or access state for human approval. On this heartbeat: run one lightweight read against each connected platform (database, Stripe, Linear, GitHub) to confirm the scoped credential still authenticates, and post a health-check alert to {{ops_channel}} for anything that fails so a human can reconnect it before the next task arrives."
+              "prompt": "Load the control-pane-ops skill. This is a low-frequency health-check heartbeat, not the main workload \u2014 the agent's real work happens live whenever a human @-mentions it in a Slack thread with a cross-platform task spanning the database, Stripe, Linear, and GitHub at {{target_repo}}, and it replies right there in that thread, holding anything that spends money, changes production data, or changes account or access state for human approval. On this heartbeat: run one lightweight read against each connected platform (database, Stripe, Linear, GitHub) to confirm the scoped credential still authenticates, and post a health-check alert to {{ops_channel}} for anything that fails so a human can reconnect it before the next task arrives."
             }
           ],
           "env_optional": [
@@ -1987,7 +1960,7 @@
       "name": "user-feedback-agent",
       "type": "registry:agent",
       "title": "Feedback agent",
-      "description": "Gathers feedback from Plain, public reviews, and Slack, clusters it into themes, and keeps one Linear issue per theme current — never prioritizing, assigning, or closing.",
+      "description": "Gathers feedback from Plain, public reviews, and Slack, clusters it into themes, and keeps one Linear issue per theme current \u2014 never prioritizing, assigning, or closing.",
       "categories": [
         "support"
       ],
@@ -2025,7 +1998,7 @@
       "name": "user-feedback",
       "type": "registry:template",
       "title": "Turn scattered feedback into a roadmap",
-      "description": "On a schedule, gathers feedback from Plain support threads, public reviews, and a Slack channel, clusters it into themes with representative quotes and counts, and creates or updates one Linear issue per theme — read-only on every source, writing only to Linear.",
+      "description": "On a schedule, gathers feedback from Plain support threads, public reviews, and a Slack channel, clusters it into themes with representative quotes and counts, and creates or updates one Linear issue per theme \u2014 read-only on every source, writing only to Linear.",
       "categories": [
         "support",
         "use-case"
@@ -2110,7 +2083,7 @@
               "type": "cron",
               "agent": "user-feedback",
               "cron": "{{cadence}}",
-              "prompt": "Load the `feedback-clustering` skill and run one complete feedback sweep. This is a fresh session each run, so read the existing issues in {{linear_team}} first to reconcile against. Read recent support threads from Plain, the public reviews at {{review_sources}}, and messages from {{feedback_channel}}, all read-only. Cluster the feedback into themes, pick a representative quote and title for each, and for each theme either update the matching Linear issue's quotes and mention count or create a new one in {{linear_team}}. Never set priority, assign an owner, or close an issue — that stays with people."
+              "prompt": "Load the `feedback-clustering` skill and run one complete feedback sweep. This is a fresh session each run, so read the existing issues in {{linear_team}} first to reconcile against. Read recent support threads from Plain, the public reviews at {{review_sources}}, and messages from {{feedback_channel}}, all read-only. Cluster the feedback into themes, pick a representative quote and title for each, and for each theme either update the matching Linear issue's quotes and mention count or create a new one in {{linear_team}}. Never set priority, assign an owner, or close an issue \u2014 that stays with people."
             }
           ]
         }
@@ -2158,7 +2131,7 @@
       "name": "weekly-report",
       "type": "registry:template",
       "title": "Auto-generate the weekly metrics report",
-      "description": "Installs a weekly cron that queries your Postgres metrics tables read-only, compares them against recent weeks, writes commentary on what moved and why, and posts the report to Slack — the database role can only select, never write.",
+      "description": "Installs a weekly cron that queries your Postgres metrics tables read-only, compares them against recent weeks, writes commentary on what moved and why, and posts the report to Slack \u2014 the database role can only select, never write.",
       "categories": [
         "operations",
         "use-case"
@@ -2220,7 +2193,7 @@
               "type": "cron",
               "agent": "weekly-report",
               "cron": "{{cadence}}",
-              "prompt": "Load the `weekly-metrics-report` skill and run this week's report. This is a fresh session every run, so recompute from the current state — nothing carries over from last week. Query this week's metrics from Postgres through the read-only role, pull the prior weeks for comparison, compute the deltas, and write plain-language commentary on what moved and whether it matters. Post exactly one report to {{report_channel}}. Never write to Postgres — the database role can only select, and the Slack post is the only output. Hold any follow-up action on what the report surfaces for a human."
+              "prompt": "Load the `weekly-metrics-report` skill and run this week's report. This is a fresh session every run, so recompute from the current state \u2014 nothing carries over from last week. Query this week's metrics from Postgres through the read-only role, pull the prior weeks for comparison, compute the deltas, and write plain-language commentary on what moved and whether it matters. Post exactly one report to {{report_channel}}. Never write to Postgres \u2014 the database role can only select, and the Slack post is the only output. Hold any follow-up action on what the report surfaces for a human."
             }
           ]
         }
@@ -2230,7 +2203,7 @@
       "name": "access-requests-agent",
       "type": "registry:agent",
       "title": "Access request agent",
-      "description": "Checks Slack for access requests, checks each against policy, looks up the requester in Okta, and prepares a least-privilege GitHub or AWS IAM grant — applying it only after an authorized approver signs off.",
+      "description": "Checks Slack for access requests, checks each against policy, looks up the requester in Okta, and prepares a least-privilege GitHub or AWS IAM grant \u2014 applying it only after an authorized approver signs off.",
       "categories": [
         "security"
       ],
@@ -2268,7 +2241,7 @@
       "name": "access-requests",
       "type": "registry:template",
       "title": "Access requests on autopilot",
-      "description": "Installs an agent that watches your access-request Slack channel on a schedule, checks each request against policy, looks up the requester's role and team in Okta, and prepares a least-privilege GitHub or AWS IAM grant. No grant is applied until an authorized approver — never the requester — signs off, and every applied grant is logged.",
+      "description": "Installs an agent that watches your access-request Slack channel on a schedule, checks each request against policy, looks up the requester's role and team in Okta, and prepares a least-privilege GitHub or AWS IAM grant. No grant is applied until an authorized approver \u2014 never the requester \u2014 signs off, and every applied grant is logged.",
       "categories": [
         "security",
         "use-case"
@@ -2297,7 +2270,7 @@
           "key": "authorized_approvers",
           "label": "Who can approve a request",
           "type": "text",
-          "help": "Comma-separated Slack handles (e.g. @jane,@security-team) allowed to approve a grant. A reply from anyone not on this list — including the requester — is never treated as an approval.",
+          "help": "Comma-separated Slack handles (e.g. @jane,@security-team) allowed to approve a grant. A reply from anyone not on this list \u2014 including the requester \u2014 is never treated as an approval.",
           "required": true
         },
         {
@@ -2358,7 +2331,7 @@
               "type": "cron",
               "agent": "access-requests",
               "cron": "{{cadence}}",
-              "prompt": "Load the `access-policy` skill and check {{request_channel}} for access requests. For each new request, look up the requester's role, team, and group memberships in Okta, check the request against policy, and prepare the narrowest GitHub or AWS IAM grant that unblocks it, posting the prepared grant with its policy check as a thread reply. For any earlier request whose thread now carries an explicit approval reply from someone on {{authorized_approvers}} — and never the requester — apply exactly that grant and log it, in the thread and to {{audit_channel}} if configured. Never apply a grant on an approval from anyone not on {{authorized_approvers}}."
+              "prompt": "Load the `access-policy` skill and check {{request_channel}} for access requests. For each new request, look up the requester's role, team, and group memberships in Okta, check the request against policy, and prepare the narrowest GitHub or AWS IAM grant that unblocks it, posting the prepared grant with its policy check as a thread reply. For any earlier request whose thread now carries an explicit approval reply from someone on {{authorized_approvers}} \u2014 and never the requester \u2014 apply exactly that grant and log it, in the thread and to {{audit_channel}} if configured. Never apply a grant on an approval from anyone not on {{authorized_approvers}}."
             }
           ]
         }
@@ -2406,7 +2379,7 @@
       "name": "churn-risk",
       "type": "registry:template",
       "title": "Flag at-risk accounts daily",
-      "description": "Installs a daily cron that scores every account on usage decline, rising support friction, and billing/renewal risk across Postgres, Plain, and Stripe, then posts a ranked at-risk list with a reason and a suggested next step per account to Slack. Strictly read-only — it never writes to any customer system.",
+      "description": "Installs a daily cron that scores every account on usage decline, rising support friction, and billing/renewal risk across Postgres, Plain, and Stripe, then posts a ranked at-risk list with a reason and a suggested next step per account to Slack. Strictly read-only \u2014 it never writes to any customer system.",
       "categories": [
         "support",
         "use-case"
@@ -2481,7 +2454,7 @@
               "type": "cron",
               "agent": "churn-risk",
               "cron": "{{cadence}}",
-              "prompt": "Load the `churn-signals` skill and run one complete churn-risk scan. This is a fresh session each run, so recompute from the current state — nothing carries over from the prior day. Read usage trends from Postgres, support thread volume and tone from Plain, and payment status plus renewal date from Stripe, all read-only. Score every account on declining usage, rising support friction, missed or failed payments, and upcoming renewal, then post a ranked at-risk list to {{alert_channel}} with the reason and a suggested next step for each account. Never write to Postgres, Plain, or Stripe — the Slack post is the only output. Hold all customer outreach and account decisions for a human."
+              "prompt": "Load the `churn-signals` skill and run one complete churn-risk scan. This is a fresh session each run, so recompute from the current state \u2014 nothing carries over from the prior day. Read usage trends from Postgres, support thread volume and tone from Plain, and payment status plus renewal date from Stripe, all read-only. Score every account on declining usage, rising support friction, missed or failed payments, and upcoming renewal, then post a ranked at-risk list to {{alert_channel}} with the reason and a suggested next step for each account. Never write to Postgres, Plain, or Stripe \u2014 the Slack post is the only output. Hold all customer outreach and account decisions for a human."
             }
           ],
           "env_optional": [
@@ -2494,7 +2467,7 @@
       "name": "contract-review-agent",
       "type": "registry:agent",
       "title": "Contract review agent",
-      "description": "Reviews a new contract against our playbook, flags non-standard clauses, drafts redlines, and posts the summary to Slack — holding every redline for a lawyer to sign off.",
+      "description": "Reviews a new contract against our playbook, flags non-standard clauses, drafts redlines, and posts the summary to Slack \u2014 holding every redline for a lawyer to sign off.",
       "categories": [
         "legal"
       ],
@@ -2610,7 +2583,7 @@
               "type": "cron",
               "agent": "contract-review",
               "cron": "{{cadence}}",
-              "prompt": "Load the `contract-playbook` skill and check {{contracts_folder}} for any contract that hasn't already been summarized to {{legal_channel}}. For each new contract, read it in full, summarize it, flag every clause that deviates from our playbook, draft redlines on the flagged clauses as Docs suggested edits in the contract doc, and post the summary with links to {{legal_channel}}. Never send a redline to the counterparty — hold every one for a lawyer to sign off first."
+              "prompt": "Load the `contract-playbook` skill and check {{contracts_folder}} for any contract that hasn't already been summarized to {{legal_channel}}. For each new contract, read it in full, summarize it, flag every clause that deviates from our playbook, draft redlines on the flagged clauses as Docs suggested edits in the contract doc, and post the summary with links to {{legal_channel}}. Never send a redline to the counterparty \u2014 hold every one for a lawyer to sign off first."
             }
           ]
         }
@@ -2660,7 +2633,7 @@
       "name": "employee-offboarding",
       "type": "registry:template",
       "title": "Employee offboarding on autopilot",
-      "description": "Checks Okta on a schedule for newly marked departures and runs the full offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub — revoking SSO and app access, transferring document and drive ownership, removing org and team access, and reclaiming licenses — holding the ownership transfer for human approval and never deleting an account.",
+      "description": "Checks Okta on a schedule for newly marked departures and runs the full offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub \u2014 revoking SSO and app access, transferring document and drive ownership, removing org and team access, and reclaiming licenses \u2014 holding the ownership transfer for human approval and never deleting an account.",
       "categories": [
         "security",
         "hr",
@@ -2752,7 +2725,7 @@
               "type": "cron",
               "agent": "employee-offboarding",
               "cron": "{{cadence}}",
-              "prompt": "Load the `offboarding-checklist` skill and check the {{hris_group}} group in Okta for anyone newly marked as departing since the last run. Work each new departure found as its own independent case, never letting a failure or pending approval on one block the others: revoke SSO and app access in Okta, transfer document and shared-drive ownership via Google Drive, suspend the account in Google Workspace, remove the person from the GitHub org and its teams, and reclaim licenses. Hold the ownership transfer away from a person at a human approval gate before it executes; never delete an account — that is out of scope for this agent entirely. Post the completed checklist, including anything still pending approval or failed, to {{notify_channel}}."
+              "prompt": "Load the `offboarding-checklist` skill and check the {{hris_group}} group in Okta for anyone newly marked as departing since the last run. Work each new departure found as its own independent case, never letting a failure or pending approval on one block the others: revoke SSO and app access in Okta, transfer document and shared-drive ownership via Google Drive, suspend the account in Google Workspace, remove the person from the GitHub org and its teams, and reclaim licenses. Hold the ownership transfer away from a person at a human approval gate before it executes; never delete an account \u2014 that is out of scope for this agent entirely. Post the completed checklist, including anything still pending approval or failed, to {{notify_channel}}."
             }
           ]
         }
@@ -2802,7 +2775,7 @@
       "name": "employee-onboarding",
       "type": "registry:template",
       "title": "Employee onboarding on autopilot",
-      "description": "Checks Google Workspace for new-hire records ready to onboard and prepares the Workspace account and group memberships, adds the hire to the right Slack channels, and files a first-week checklist in Linear — holding account creation and group membership for human approval.",
+      "description": "Checks Google Workspace for new-hire records ready to onboard and prepares the Workspace account and group memberships, adds the hire to the right Slack channels, and files a first-week checklist in Linear \u2014 holding account creation and group membership for human approval.",
       "categories": [
         "hr",
         "operations",
@@ -2888,7 +2861,7 @@
               "type": "cron",
               "agent": "employee-onboarding",
               "cron": "{{cadence}}",
-              "prompt": "Load the `onboarding-checklist` skill and check the {{new_hire_group}} group in Google Workspace for anyone newly marked as ready to onboard since the last run. For each new hire, work the checklist as its own independent case — a failure or pending approval on one never blocks the others found in the same run: read the onboarding standard for their role, prepare the Google Workspace account (mailbox, aliases, group memberships), add them to the Slack channels their team works in, and file a first-week checklist in the {{onboarding_project}} Linear project. Hold account creation and group membership at a human approval gate before anything is provisioned — Slack channel invites and the Linear checklist proceed directly. Post the prepared setup, including anything pending approval or failed, to {{notify_channel}}."
+              "prompt": "Load the `onboarding-checklist` skill and check the {{new_hire_group}} group in Google Workspace for anyone newly marked as ready to onboard since the last run. For each new hire, work the checklist as its own independent case \u2014 a failure or pending approval on one never blocks the others found in the same run: read the onboarding standard for their role, prepare the Google Workspace account (mailbox, aliases, group memberships), add them to the Slack channels their team works in, and file a first-week checklist in the {{onboarding_project}} Linear project. Hold account creation and group membership at a human approval gate before anything is provisioned \u2014 Slack channel invites and the Linear checklist proceed directly. Post the prepared setup, including anything pending approval or failed, to {{notify_channel}}."
             }
           ]
         }
@@ -2946,7 +2919,7 @@
         "reconciliation-match-skill"
       ],
       "envVars": {
-        "PLAID_ACCESS_TOKEN": "Plaid Item access_token for the specific bank account to reconcile. The `plaid` connector only carries app-level API credentials (client_id/client_secret/environment) — it does not grant access to any account's transactions on its own. Before the first run, a human must complete Plaid's Link flow once, out-of-band, for this bank account (link the account, authenticate, exchange the resulting public token for an Item access_token) and set that token here."
+        "PLAID_ACCESS_TOKEN": "Plaid Item access_token for the specific bank account to reconcile. The `plaid` connector only carries app-level API credentials (client_id/client_secret/environment) \u2014 it does not grant access to any account's transactions on its own. Before the first run, a human must complete Plaid's Link flow once, out-of-band, for this bank account (link the account, authenticate, exchange the resulting public token for an Item access_token) and set that token here."
       },
       "inputs": [
         {
@@ -3016,7 +2989,7 @@
               "type": "cron",
               "agent": "expense-reconciliation",
               "cron": "{{cadence}}",
-              "prompt": "Load the `reconciliation-match` skill and reconcile the period since the last dated entry in {{reconciliation_sheet}}. This is a fresh session with no memory of last month, so read the sheet's history and explained-mismatch notes first. Pull Stripe charges, payouts, and fees, and the matching bank feed activity, for the period; match each line against an invoice within the skill's tolerances; and write the reconciled summary back to {{reconciliation_sheet}}. Tie out clean and tolerance matches silently. Escalate anything unmatched or outside tolerance to a person with both records attached — never force-fit a match or write off a difference, and never take any action against Stripe or the bank beyond reading."
+              "prompt": "Load the `reconciliation-match` skill and reconcile the period since the last dated entry in {{reconciliation_sheet}}. This is a fresh session with no memory of last month, so read the sheet's history and explained-mismatch notes first. Pull Stripe charges, payouts, and fees, and the matching bank feed activity, for the period; match each line against an invoice within the skill's tolerances; and write the reconciled summary back to {{reconciliation_sheet}}. Tie out clean and tolerance matches silently. Escalate anything unmatched or outside tolerance to a person with both records attached \u2014 never force-fit a match or write off a difference, and never take any action against Stripe or the bank beyond reading."
             }
           ],
           "env_optional": [
@@ -3067,7 +3040,7 @@
       "name": "lead-follow-up",
       "type": "registry:template",
       "title": "Follow up every inbound lead",
-      "description": "Installs an agent that checks HubSpot for new leads, researches the company, drafts a personalized follow-up to your sales playbook, and proposes a call slot from real Google Calendar availability — holding every message as a draft for a rep to review and send.",
+      "description": "Installs an agent that checks HubSpot for new leads, researches the company, drafts a personalized follow-up to your sales playbook, and proposes a call slot from real Google Calendar availability \u2014 holding every message as a draft for a rep to review and send.",
       "categories": [
         "sales",
         "use-case"
@@ -3097,7 +3070,7 @@
           "key": "approval_channel",
           "label": "Where the drafted follow-up waits for approval",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels that receives the draft for a rep to review and send.",
+          "help": "The email channel connected in Settings\u2192Channels that receives the draft for a rep to review and send.",
           "required": true
         },
         {
@@ -3152,7 +3125,7 @@
               "type": "cron",
               "agent": "lead-follow-up",
               "cron": "{{cadence}}",
-              "prompt": "Load the `lead-followup` skill and run one new-lead sweep. This is a fresh session each run — resume by reading HubSpot itself, not a local ledger: query contacts on {{hubspot_lifecycle_stage}} that don't yet carry the `kortix_followup_drafted` marker. For each new lead, research the company's public site, draft a personalized follow-up to the sales playbook with one tailored qualifying question, check Google Calendar for a specific {{meeting_length_minutes}}-minute opening and propose that one slot, and write the research notes back onto the HubSpot record. Hold every drafted follow-up in {{approval_channel}} for a human to review, edit, and send — never send it yourself, and never create the calendar event yourself. Mark the lead's `kortix_followup_drafted` property once the draft is ready so the next sweep doesn't duplicate it. Treat each lead found in the sweep as an independent unit of work — a research or drafting failure on one lead is logged and skipped, never blocking the rest of the sweep."
+              "prompt": "Load the `lead-followup` skill and run one new-lead sweep. This is a fresh session each run \u2014 resume by reading HubSpot itself, not a local ledger: query contacts on {{hubspot_lifecycle_stage}} that don't yet carry the `kortix_followup_drafted` marker. For each new lead, research the company's public site, draft a personalized follow-up to the sales playbook with one tailored qualifying question, check Google Calendar for a specific {{meeting_length_minutes}}-minute opening and propose that one slot, and write the research notes back onto the HubSpot record. Hold every drafted follow-up in {{approval_channel}} for a human to review, edit, and send \u2014 never send it yourself, and never create the calendar event yourself. Mark the lead's `kortix_followup_drafted` property once the draft is ready so the next sweep doesn't duplicate it. Treat each lead found in the sweep as an independent unit of work \u2014 a research or drafting failure on one lead is logged and skipped, never blocking the rest of the sweep."
             }
           ]
         }
@@ -3200,7 +3173,7 @@
       "name": "meeting-notes",
       "type": "registry:template",
       "title": "Turn meetings into notes and tickets",
-      "description": "Spins up a fresh session for each finished Google Calendar meeting, writes structured notes from the transcript, and files every action item as a Linear ticket assigned to its owner — flagging anything it can't confidently assign for a human instead of guessing.",
+      "description": "Spins up a fresh session for each finished Google Calendar meeting, writes structured notes from the transcript, and files every action item as a Linear ticket assigned to its owner \u2014 flagging anything it can't confidently assign for a human instead of guessing.",
       "categories": [
         "operations",
         "use-case"
@@ -3322,7 +3295,7 @@
       "name": "oncall-triage",
       "type": "registry:template",
       "title": "Triage on-call alerts before paging",
-      "description": "Installs an agent that triages every Sentry alert on a tight cron sweep: it pulls the stack trace, correlates the Datadog logs, checks recent GitHub deploys, and posts a first-pass diagnosis to Slack — paging a human only when it can't resolve the alert or the severity is high.",
+      "description": "Installs an agent that triages every Sentry alert on a tight cron sweep: it pulls the stack trace, correlates the Datadog logs, checks recent GitHub deploys, and posts a first-pass diagnosis to Slack \u2014 paging a human only when it can't resolve the alert or the severity is high.",
       "categories": [
         "engineering",
         "use-case"
@@ -3428,7 +3401,7 @@
               "type": "cron",
               "agent": "oncall-triage",
               "cron": "{{cadence}}",
-              "prompt": "Load the `incident-triage` skill and check {{sentry_project}} in Sentry for any alert that is new or still unresolved since the last sweep. This is a fresh session every sweep — nothing carries over from the last run. Handle each alert found as an independent unit: for each one, pull the stack trace and first-seen timestamp from Sentry, correlate the Datadog log lines around the spike, and check {{target_repo}} on GitHub for the commits and PRs that shipped just before the error appeared, then post a first-pass diagnosis — the trace, the suspected deploy, and the evidence — to {{incident_channel}}. A failure or inconclusive diagnosis on one alert never blocks triage of the others found in this sweep. Page a human in {{incident_channel}} immediately for anything at or above {{page_severity_threshold}} severity or that you can't resolve; otherwise close it with the reasoning attached. You are read-only across Sentry, the logs, and GitHub — never deploy, roll back, or change anything."
+              "prompt": "Load the `incident-triage` skill and check {{sentry_project}} in Sentry for any alert that is new or still unresolved since the last sweep. This is a fresh session every sweep \u2014 nothing carries over from the last run. Handle each alert found as an independent unit: for each one, pull the stack trace and first-seen timestamp from Sentry, correlate the Datadog log lines around the spike, and check {{target_repo}} on GitHub for the commits and PRs that shipped just before the error appeared, then post a first-pass diagnosis \u2014 the trace, the suspected deploy, and the evidence \u2014 to {{incident_channel}}. A failure or inconclusive diagnosis on one alert never blocks triage of the others found in this sweep. Page a human in {{incident_channel}} immediately for anything at or above {{page_severity_threshold}} severity or that you can't resolve; otherwise close it with the reasoning attached. You are read-only across Sentry, the logs, and GitHub \u2014 never deploy, roll back, or change anything."
             }
           ],
           "env_optional": [
@@ -3441,7 +3414,7 @@
       "name": "qa-agent-agent",
       "type": "registry:agent",
       "title": "QA agent",
-      "description": "Checks out each PR, runs the suite, deploys and exercises the change in the test environment, and posts a pass/fail result — never touching production or merging.",
+      "description": "Checks out each PR, runs the suite, deploys and exercises the change in the test environment, and posts a pass/fail result \u2014 never touching production or merging.",
       "categories": [
         "engineering"
       ],
@@ -3479,7 +3452,7 @@
       "name": "qa-agent",
       "type": "registry:template",
       "title": "QA every pull request automatically",
-      "description": "Installs an agent that sweeps the target repo on a schedule for PRs opened or updated, then checks out each one in its own isolated clone, runs the full test suite, deploys the change to the test environment, and exercises it through the edge, posting a pass/fail result as a GitHub check and comment. It never touches production or merges — QA stays on the test environment, and a human owns the merge.",
+      "description": "Installs an agent that sweeps the target repo on a schedule for PRs opened or updated, then checks out each one in its own isolated clone, runs the full test suite, deploys the change to the test environment, and exercises it through the edge, posting a pass/fail result as a GitHub check and comment. It never touches production or merges \u2014 QA stays on the test environment, and a human owns the merge.",
       "categories": [
         "engineering",
         "use-case"
@@ -3537,7 +3510,7 @@
               "agent": "qa-agent",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `pr-qa` skill. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/qa-known-issues.md` for edge cases worth re-checking. Then discover every PR opened or pushed to {{target_repo}} since the last sweep whose current head SHA hasn't already been QA'd (a `gh pr list` scan filtered against each PR's status checks). Work through that batch one PR at a time, each in its own isolated checkout inside this session: check out the branch clean, run the full verification suite, deploy the change to the test environment, exercise the new behavior end-to-end, and re-check it through the edge. Handle each PR as an independent unit — a failure on one never blocks QA of the others. Post exactly one pass/fail result per PR as a GitHub check and comment — green with what was exercised, or red with the failing command, logs, and repro steps. Stay on the test environment only: no production access, no prod deploy, and never merge — a human owns the merge. If a run surfaces a genuinely new edge case, append it to the known-issues ledger and land it with a scoped, self-merged change request so the next sweep actually sees it."
+              "prompt": "Load the `pr-qa` skill. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/qa-known-issues.md` for edge cases worth re-checking. Then discover every PR opened or pushed to {{target_repo}} since the last sweep whose current head SHA hasn't already been QA'd (a `gh pr list` scan filtered against each PR's status checks). Work through that batch one PR at a time, each in its own isolated checkout inside this session: check out the branch clean, run the full verification suite, deploy the change to the test environment, exercise the new behavior end-to-end, and re-check it through the edge. Handle each PR as an independent unit \u2014 a failure on one never blocks QA of the others. Post exactly one pass/fail result per PR as a GitHub check and comment \u2014 green with what was exercised, or red with the failing command, logs, and repro steps. Stay on the test environment only: no production access, no prod deploy, and never merge \u2014 a human owns the merge. If a run surfaces a genuinely new edge case, append it to the known-issues ledger and land it with a scoped, self-merged change request so the next sweep actually sees it."
             }
           ],
           "env_optional": [
@@ -3551,7 +3524,7 @@
       "name": "sales-call-followup-agent",
       "type": "registry:agent",
       "title": "Sales call follow-up agent",
-      "description": "Turns a finished sales call's transcript into an updated HubSpot deal, filed Linear tasks, and a drafted recap email held for the rep — flagging the call instead of guessing when no deal confidently matches.",
+      "description": "Turns a finished sales call's transcript into an updated HubSpot deal, filed Linear tasks, and a drafted recap email held for the rep \u2014 flagging the call instead of guessing when no deal confidently matches.",
       "categories": [
         "sales"
       ],
@@ -3589,7 +3562,7 @@
       "name": "sales-call-followup",
       "type": "registry:template",
       "title": "Follow up every sales call automatically",
-      "description": "Installs an agent that spins up a fresh session for each new call transcript found in a connected Google Drive folder, updates the matching HubSpot deal and files the follow-up tasks in Linear — flagging the call for a human when no deal confidently matches — then drafts the recap email and holds it for the rep to review and send.",
+      "description": "Installs an agent that spins up a fresh session for each new call transcript found in a connected Google Drive folder, updates the matching HubSpot deal and files the follow-up tasks in Linear \u2014 flagging the call for a human when no deal confidently matches \u2014 then drafts the recap email and holds it for the rep to review and send.",
       "categories": [
         "sales",
         "use-case"
@@ -3627,7 +3600,7 @@
           "key": "approval_channel",
           "label": "Where the recap email waits for approval",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels that receives the recap draft for the rep to review and send.",
+          "help": "The email channel connected in Settings\u2192Channels that receives the recap draft for the rep to review and send.",
           "required": true
         }
       ],
@@ -3681,7 +3654,7 @@
               "type": "cron",
               "agent": "sales-call-followup",
               "cron": "{{cadence}}",
-              "prompt": "Load the `call-recap` skill and check the {{transcript_folder}} folder in Google Drive for any new call transcript since the last run. For each one, treat it as its own scoped case: read the full transcript and match it to a HubSpot deal from the attendees. If exactly one deal matches confidently, update its stage, notes, and contacts from what the call actually covered; if no deal matches or more than one plausibly matches, skip the deal update and flag the call in {{approval_channel}} instead of guessing. Either way, file every commitment as a task in {{linear_team}}, draft the recap email — summary, answers to the open questions, and next steps — and hold it in {{approval_channel}} for the rep to review and send. Never send the email yourself."
+              "prompt": "Load the `call-recap` skill and check the {{transcript_folder}} folder in Google Drive for any new call transcript since the last run. For each one, treat it as its own scoped case: read the full transcript and match it to a HubSpot deal from the attendees. If exactly one deal matches confidently, update its stage, notes, and contacts from what the call actually covered; if no deal matches or more than one plausibly matches, skip the deal update and flag the call in {{approval_channel}} instead of guessing. Either way, file every commitment as a task in {{linear_team}}, draft the recap email \u2014 summary, answers to the open questions, and next steps \u2014 and hold it in {{approval_channel}} for the rep to review and send. Never send the email yourself."
             }
           ]
         }
@@ -3729,7 +3702,7 @@
       "name": "security-questionnaire",
       "type": "registry:template",
       "title": "Draft security questionnaire responses",
-      "description": "On each inbound security questionnaire, drafts every answer from our vetted knowledge base of approved answers and policies in the vendor's own format (SIG, CAIQ, or a custom spreadsheet) and flags anything it can't answer confidently — holding the completed draft for security to review and send.",
+      "description": "On each inbound security questionnaire, drafts every answer from our vetted knowledge base of approved answers and policies in the vendor's own format (SIG, CAIQ, or a custom spreadsheet) and flags anything it can't answer confidently \u2014 holding the completed draft for security to review and send.",
       "categories": [
         "security",
         "use-case"
@@ -3814,7 +3787,7 @@
               "type": "cron",
               "agent": "security-questionnaire",
               "cron": "{{cadence}}",
-              "prompt": "Load the `questionnaire-response` skill and check {{questionnaire_label}} in Gmail for inbound security questionnaires that haven't been drafted yet. For each new one, parse every question, match it to our vetted knowledge base of approved answers and policies, draft the response in the vendor's own format (SIG, CAIQ, or a custom spreadsheet), and flag anything without a confident match for a person. Save the filled questionnaire as a Gmail draft on the original thread — never send it — and post the draft link with the flagged-question summary to {{security_channel}}. Hold the completed draft for security to review and send; never send it yourself."
+              "prompt": "Load the `questionnaire-response` skill and check {{questionnaire_label}} in Gmail for inbound security questionnaires that haven't been drafted yet. For each new one, parse every question, match it to our vetted knowledge base of approved answers and policies, draft the response in the vendor's own format (SIG, CAIQ, or a custom spreadsheet), and flag anything without a confident match for a person. Save the filled questionnaire as a Gmail draft on the original thread \u2014 never send it \u2014 and post the draft link with the flagged-question summary to {{security_channel}}. Hold the completed draft for security to review and send; never send it yourself."
             }
           ]
         }
@@ -3862,7 +3835,7 @@
       "name": "ap-invoice-processing",
       "type": "registry:template",
       "title": "Accounts payable on autopilot",
-      "description": "An agent that works the incoming-invoice queue: it extracts each vendor invoice from email, matches it to POs and prior invoices, flags duplicates and overcharges, and records it to the AP ledger for approval — never scheduling or marking a payment without a human.",
+      "description": "An agent that works the incoming-invoice queue: it extracts each vendor invoice from email, matches it to POs and prior invoices, flags duplicates and overcharges, and records it to the AP ledger for approval \u2014 never scheduling or marking a payment without a human.",
       "categories": [
         "finance",
         "use-case"
@@ -3947,7 +3920,7 @@
               "type": "cron",
               "agent": "ap-invoice-processing",
               "cron": "{{cadence}}",
-              "prompt": "Load the `ap-invoice-match` skill and process new vendor invoices filed under the {{invoice_label}} label in Gmail. For each invoice: extract the vendor, amount, and line items; match it against known POs and prior invoices in {{ap_ledger}}; flag duplicates, overcharges, and missing POs; and record it to {{ap_ledger}}, posting anything that needs a decision to {{approval_channel}}. Never schedule or mark a payment as paid — a human approves every payment."
+              "prompt": "Load the `ap-invoice-match` skill and process new vendor invoices filed under the {{invoice_label}} label in Gmail. For each invoice: extract the vendor, amount, and line items; match it against known POs and prior invoices in {{ap_ledger}}; flag duplicates, overcharges, and missing POs; and record it to {{ap_ledger}}, posting anything that needs a decision to {{approval_channel}}. Never schedule or mark a payment as paid \u2014 a human approves every payment."
             }
           ]
         }
@@ -3995,7 +3968,7 @@
       "name": "customer-onboarding",
       "type": "registry:template",
       "title": "Drive new customers to activation",
-      "description": "A daily agent that checks every new account against its onboarding milestones in Postgres, drafts a nudge email when one stalls, and alerts the owning CSM in Slack with the context to act — it never sends the email itself and never changes account settings.",
+      "description": "A daily agent that checks every new account against its onboarding milestones in Postgres, drafts a nudge email when one stalls, and alerts the owning CSM in Slack with the context to act \u2014 it never sends the email itself and never changes account settings.",
       "categories": [
         "customer-success",
         "use-case"
@@ -4136,7 +4109,7 @@
       "name": "payment-recovery",
       "type": "registry:template",
       "title": "Recover failed subscription payments",
-      "description": "Installs an hourly, session-persistent agent that reads failed Stripe invoices and escalates each one through a fixed dunning ladder — smart retry, payment reminder, update-your-card notice, final notice — alerting the revenue team on Slack and stopping the moment an invoice is paid. It only retries charges and sends dunning email; it never cancels a subscription, issues a credit, or refunds without human approval.",
+      "description": "Installs an hourly, session-persistent agent that reads failed Stripe invoices and escalates each one through a fixed dunning ladder \u2014 smart retry, payment reminder, update-your-card notice, final notice \u2014 alerting the revenue team on Slack and stopping the moment an invoice is paid. It only retries charges and sends dunning email; it never cancels a subscription, issues a credit, or refunds without human approval.",
       "categories": [
         "finance",
         "use-case"
@@ -4165,7 +4138,7 @@
           "key": "dunning_channel",
           "label": "Where dunning emails are sent from",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels that the agent sends the smart-retry, reminder, update-card, and final-notice emails through.",
+          "help": "The email channel connected in Settings\u2192Channels that the agent sends the smart-retry, reminder, update-card, and final-notice emails through.",
           "required": true
         }
       ],
@@ -4207,7 +4180,7 @@
               "agent": "payment-recovery",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `dunning-escalation` skill and run one payment-recovery pass. This is ONE persistent session re-prompted hourly, so resume the ledger first: read `.kortix/memory/payment-recovery-ledger.md` for every subscription's current rung and next-eligible escalation time. Read fresh failed-invoice and subscription state from Stripe. For each subscription whose wait time has elapsed, advance it exactly one rung on the ladder — smart retry, payment reminder, update-your-card notice, final notice — and send the matching email via {{dunning_channel}}. The moment a tracked subscription's invoice is paid, mark it recovered and stop emailing it. Never advance past the final notice, and never cancel a subscription, issue a credit, or process a refund without human approval — flag anything past final notice for a human instead. Post one summary to {{alert_channel}} covering what advanced, what's newly awaiting a human, and what recovered. Update the ledger before ending the turn."
+              "prompt": "Load the `dunning-escalation` skill and run one payment-recovery pass. This is ONE persistent session re-prompted hourly, so resume the ledger first: read `.kortix/memory/payment-recovery-ledger.md` for every subscription's current rung and next-eligible escalation time. Read fresh failed-invoice and subscription state from Stripe. For each subscription whose wait time has elapsed, advance it exactly one rung on the ladder \u2014 smart retry, payment reminder, update-your-card notice, final notice \u2014 and send the matching email via {{dunning_channel}}. The moment a tracked subscription's invoice is paid, mark it recovered and stop emailing it. Never advance past the final notice, and never cancel a subscription, issue a credit, or process a refund without human approval \u2014 flag anything past final notice for a human instead. Post one summary to {{alert_channel}} covering what advanced, what's newly awaiting a human, and what recovered. Update the ledger before ending the turn."
             }
           ]
         }
@@ -4255,7 +4228,7 @@
       "name": "pipeline-hygiene",
       "type": "registry:template",
       "title": "Keep the pipeline moving",
-      "description": "Installs a daily cron that scans every open HubSpot deal for stale activity, missing next steps/close dates, stage stalls, and overdue tasks, nudges the owning rep in Slack, and escalates the day's worst offenders to the sales manager. Read-mostly — the only write is an internal hygiene flag; it never changes a deal's stage, owner, or amount.",
+      "description": "Installs a daily cron that scans every open HubSpot deal for stale activity, missing next steps/close dates, stage stalls, and overdue tasks, nudges the owning rep in Slack, and escalates the day's worst offenders to the sales manager. Read-mostly \u2014 the only write is an internal hygiene flag; it never changes a deal's stage, owner, or amount.",
       "categories": [
         "sales",
         "use-case"
@@ -4333,7 +4306,7 @@
               "type": "cron",
               "agent": "pipeline-hygiene",
               "cron": "{{cadence}}",
-              "prompt": "Load the `pipeline-hygiene-rules` skill and run one complete pipeline-hygiene scan. This is a fresh session each run, so recompute from HubSpot's current state — nothing carries over from the prior day. Read every open deal's stage, amount, close date, next step, and time-in-stage, its logged activities, and its open tasks, all read-mostly. Flag any deal with no activity in {{stale_days}} days, a missing next step or close date, no stage movement in {{stall_days}} days, or an overdue task — writing only an internal hygiene flag onto the deal, never its stage, owner, or amount. Nudge each owning rep in Slack with what's wrong on their deals and what to do about it, then escalate the day's worst offenders — most rules tripped, largest amount at risk, longest gone quiet — to {{escalation_channel}}. Hold every other action for the rep and the sales manager."
+              "prompt": "Load the `pipeline-hygiene-rules` skill and run one complete pipeline-hygiene scan. This is a fresh session each run, so recompute from HubSpot's current state \u2014 nothing carries over from the prior day. Read every open deal's stage, amount, close date, next step, and time-in-stage, its logged activities, and its open tasks, all read-mostly. Flag any deal with no activity in {{stale_days}} days, a missing next step or close date, no stage movement in {{stall_days}} days, or an overdue task \u2014 writing only an internal hygiene flag onto the deal, never its stage, owner, or amount. Nudge each owning rep in Slack with what's wrong on their deals and what to do about it, then escalate the day's worst offenders \u2014 most rules tripped, largest amount at risk, longest gone quiet \u2014 to {{escalation_channel}}. Hold every other action for the rep and the sales manager."
             }
           ]
         }
@@ -4381,7 +4354,7 @@
       "name": "renewal-manager",
       "type": "registry:template",
       "title": "Renewals on autopilot",
-      "description": "A daily agent that surfaces upcoming contract renewals 90/60/30 days out, preps a renewal packet (usage, value delivered, expansion ideas), and drafts outreach for the account owner to review and send — never discounting or sending on its own.",
+      "description": "A daily agent that surfaces upcoming contract renewals 90/60/30 days out, preps a renewal packet (usage, value delivered, expansion ideas), and drafts outreach for the account owner to review and send \u2014 never discounting or sending on its own.",
       "categories": [
         "sales",
         "use-case"
@@ -4466,7 +4439,7 @@
               "type": "cron",
               "agent": "renewal-manager",
               "cron": "{{cadence}}",
-              "prompt": "Load the `renewal-prep` skill and run today's renewal check. Read {{renewal_date_property}} across HubSpot to find renewals 90/60/30 days out. For each, prep a renewal packet — usage and value delivered, account health, and expansion ideas — draft outreach into {{draft_channel}}, and post the upcoming and at-risk renewals to {{alert_channel}} for the account owner. Prep and draft only: the owner reviews and sends. Never send outreach or apply a discount automatically."
+              "prompt": "Load the `renewal-prep` skill and run today's renewal check. Read {{renewal_date_property}} across HubSpot to find renewals 90/60/30 days out. For each, prep a renewal packet \u2014 usage and value delivered, account health, and expansion ideas \u2014 draft outreach into {{draft_channel}}, and post the upcoming and at-risk renewals to {{alert_channel}} for the account owner. Prep and draft only: the owner reviews and sends. Never send outreach or apply a discount automatically."
             }
           ]
         }
@@ -4514,7 +4487,7 @@
       "name": "rfp-responder",
       "type": "registry:template",
       "title": "Draft RFP and proposal responses",
-      "description": "On each new inbound RFP or proposal questionnaire, drafts every answer from our vetted past-answers library and product docs into a new Google Doc, and flags anything it can't answer confidently — holding the completed draft for a human to review and submit. Never submits or sends anything itself.",
+      "description": "On each new inbound RFP or proposal questionnaire, drafts every answer from our vetted past-answers library and product docs into a new Google Doc, and flags anything it can't answer confidently \u2014 holding the completed draft for a human to review and submit. Never submits or sends anything itself.",
       "categories": [
         "sales",
         "use-case"
@@ -4596,7 +4569,7 @@
               "type": "cron",
               "agent": "rfp-responder",
               "cron": "{{cadence}}",
-              "prompt": "Load the `rfp-response` skill and check {{rfp_label}} in Gmail for inbound RFPs or proposal questionnaires that haven't been drafted yet. For each new one, open its attached or linked document from Google Drive, parse every question, match it to our vetted past-answers library and current product docs, and draft the full response in a new Google Doc inside {{drafts_folder}}, mirroring the RFP's own structure. Flag anything without a confident match for a person. Leave an unsent Gmail draft reply on the original thread linking the response doc and summarizing what was answered and what's flagged. Never submit or send the response yourself — hold it for a human to review and submit."
+              "prompt": "Load the `rfp-response` skill and check {{rfp_label}} in Gmail for inbound RFPs or proposal questionnaires that haven't been drafted yet. For each new one, open its attached or linked document from Google Drive, parse every question, match it to our vetted past-answers library and current product docs, and draft the full response in a new Google Doc inside {{drafts_folder}}, mirroring the RFP's own structure. Flag anything without a confident match for a person. Leave an unsent Gmail draft reply on the original thread linking the response doc and summarizing what was answered and what's flagged. Never submit or send the response yourself \u2014 hold it for a human to review and submit."
             }
           ]
         }
@@ -4644,7 +4617,7 @@
       "name": "saas-spend-audit",
       "type": "registry:template",
       "title": "SaaS spend audit",
-      "description": "A weekly agent that reconciles recurring charges against your subscription register to surface duplicate tools, unused seats, price hikes, upcoming renewals, and shadow IT — recommending cancellations, never making them.",
+      "description": "A weekly agent that reconciles recurring charges against your subscription register to surface duplicate tools, unused seats, price hikes, upcoming renewals, and shadow IT \u2014 recommending cancellations, never making them.",
       "categories": [
         "finance",
         "use-case"
@@ -4725,7 +4698,7 @@
               "agent": "saas-spend-audit",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `subscription-audit` skill and run this week's SaaS spend audit. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/subscription-audit-log.md` for known subscriptions and what you already flagged. Pull recurring charges via Plaid, reconcile them against {{subscription_sheet}}, and surface duplicate/overlapping tools, unused seats, price hikes, upcoming renewals, and shadow IT (charges absent from the register). Post a ranked waste report with a recommended action for each to {{alert_channel}}. Recommend only — never cancel or change a subscription. Update the ledger before finishing."
+              "prompt": "Load the `subscription-audit` skill and run this week's SaaS spend audit. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/subscription-audit-log.md` for known subscriptions and what you already flagged. Pull recurring charges via Plaid, reconcile them against {{subscription_sheet}}, and surface duplicate/overlapping tools, unused seats, price hikes, upcoming renewals, and shadow IT (charges absent from the register). Post a ranked waste report with a recommended action for each to {{alert_channel}}. Recommend only \u2014 never cancel or change a subscription. Update the ledger before finishing."
             }
           ]
         }
@@ -4735,7 +4708,7 @@
       "name": "ad-performance-agent",
       "type": "registry:agent",
       "title": "Ad-performance agent",
-      "description": "Reads Google Ads and Meta Ads spend and performance daily, flags budget pacing, CPA/ROAS drift, underperforming ads/keywords, and anomalies, and posts ranked optimization recommendations to Slack — recommend and alert only.",
+      "description": "Reads Google Ads and Meta Ads spend and performance daily, flags budget pacing, CPA/ROAS drift, underperforming ads/keywords, and anomalies, and posts ranked optimization recommendations to Slack \u2014 recommend and alert only.",
       "categories": [
         "marketing"
       ],
@@ -4773,7 +4746,7 @@
       "name": "ad-performance",
       "type": "registry:template",
       "title": "Monitor ad performance daily",
-      "description": "Installs a daily agent that reads campaign spend and performance from Google Ads and Meta Ads, checks budget pacing, CPA/ROAS drift, underperforming ads and keywords, and anomalies, then posts ranked findings and optimization recommendations to Slack. Recommend and alert only — it never changes a budget, pauses a campaign, or edits an ad.",
+      "description": "Installs a daily agent that reads campaign spend and performance from Google Ads and Meta Ads, checks budget pacing, CPA/ROAS drift, underperforming ads and keywords, and anomalies, then posts ranked findings and optimization recommendations to Slack. Recommend and alert only \u2014 it never changes a budget, pauses a campaign, or edits an ad.",
       "categories": [
         "marketing",
         "use-case"
@@ -4842,7 +4815,7 @@
               "type": "cron",
               "agent": "ad-performance",
               "cron": "{{cadence}}",
-              "prompt": "Load the `ad-performance-review` skill and run one complete ad-performance scan. This is a fresh session each run, so recompute from the current state — nothing carries over from the prior day. Read campaign spend and performance from Google Ads and Meta Ads, both read-only. Check budget pacing against each campaign's monthly target, CPA/ROAS drift against trailing baselines, underperforming ads and keywords, and spend or click-through anomalies. Draft a specific optimization recommendation for each finding — pause an ad, shift budget toward a better performer, add a negative keyword — and post the ranked list to {{alert_channel}}. Never write to Google Ads or Meta Ads and never change a budget, pause a campaign, or edit an ad — the Slack post is the only output, and every recommendation is for a human to execute."
+              "prompt": "Load the `ad-performance-review` skill and run one complete ad-performance scan. This is a fresh session each run, so recompute from the current state \u2014 nothing carries over from the prior day. Read campaign spend and performance from Google Ads and Meta Ads, both read-only. Check budget pacing against each campaign's monthly target, CPA/ROAS drift against trailing baselines, underperforming ads and keywords, and spend or click-through anomalies. Draft a specific optimization recommendation for each finding \u2014 pause an ad, shift budget toward a better performer, add a negative keyword \u2014 and post the ranked list to {{alert_channel}}. Never write to Google Ads or Meta Ads and never change a budget, pause a campaign, or edit an ad \u2014 the Slack post is the only output, and every recommendation is for a human to execute."
             }
           ]
         }
@@ -4890,7 +4863,7 @@
       "name": "candidate-sourcing",
       "type": "registry:template",
       "title": "Source and draft outbound candidate outreach",
-      "description": "A daily agent that searches LinkedIn for candidates matching an open role, dedupes every match against the role's Greenhouse pipeline, and drafts a personalized outreach email per new candidate for the recruiter to review — it never sends outreach and never adds anyone to the ATS without review.",
+      "description": "A daily agent that searches LinkedIn for candidates matching an open role, dedupes every match against the role's Greenhouse pipeline, and drafts a personalized outreach email per new candidate for the recruiter to review \u2014 it never sends outreach and never adds anyone to the ATS without review.",
       "categories": [
         "recruiting",
         "use-case"
@@ -4904,7 +4877,7 @@
           "key": "greenhouse_role",
           "label": "Open role to source for",
           "type": "text",
-          "default": "Open role — Greenhouse",
+          "default": "Open role \u2014 Greenhouse",
           "help": "The open Greenhouse job/pipeline the agent sources candidates for and dedupes against.",
           "required": true
         },
@@ -4913,14 +4886,14 @@
           "label": "Candidate profile to source",
           "type": "text",
           "default": "5+ years, backend engineer, Python/Go, Series B-D startups",
-          "help": "The ideal-candidate profile — title, seniority, skills, and any other criteria — used to search LinkedIn.",
+          "help": "The ideal-candidate profile \u2014 title, seniority, skills, and any other criteria \u2014 used to search LinkedIn.",
           "required": true
         },
         {
           "key": "recruiter_review_inbox",
           "label": "Recruiter's review inbox",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels where drafted outreach lands for the recruiter to review, edit, and send.",
+          "help": "The email channel connected in Settings\u2192Channels where drafted outreach lands for the recruiter to review, edit, and send.",
           "required": true
         },
         {
@@ -4983,7 +4956,7 @@
               "type": "cron",
               "agent": "candidate-sourcing",
               "cron": "{{cadence}}",
-              "prompt": "Load the `outbound-sourcing` skill and run one complete sourcing sweep for {{greenhouse_role}}. This is a fresh session each run, so recompute from the current state — nothing carries over from the prior day. First read {{greenhouse_role}}'s current Greenhouse pipeline (applicants, already-contacted candidates, and anyone rejected or passed on). Then search LinkedIn for candidates matching {{sourcing_criteria}}, drop anyone who matches the pipeline, and draft a personalized outreach email — grounded in each candidate's real background — for every new match, up to {{daily_cap}} candidates this run. Place the full batch in {{recruiter_review_inbox}}. Never send an outreach email yourself and never create, update, or tag any record in Greenhouse — the recruiter reviews every draft, decides whether to add the candidate to the ATS, and sends it themselves."
+              "prompt": "Load the `outbound-sourcing` skill and run one complete sourcing sweep for {{greenhouse_role}}. This is a fresh session each run, so recompute from the current state \u2014 nothing carries over from the prior day. First read {{greenhouse_role}}'s current Greenhouse pipeline (applicants, already-contacted candidates, and anyone rejected or passed on). Then search LinkedIn for candidates matching {{sourcing_criteria}}, drop anyone who matches the pipeline, and draft a personalized outreach email \u2014 grounded in each candidate's real background \u2014 for every new match, up to {{daily_cap}} candidates this run. Place the full batch in {{recruiter_review_inbox}}. Never send an outreach email yourself and never create, update, or tag any record in Greenhouse \u2014 the recruiter reviews every draft, decides whether to add the candidate to the ATS, and sends it themselves."
             }
           ]
         }
@@ -5031,7 +5004,7 @@
       "name": "content-refresh",
       "type": "registry:template",
       "title": "Keep published content from going stale",
-      "description": "Installs a weekly reusable-session agent that reads Google Search Console for pages losing impressions and clicks, rotates through the decaying set using its own ledger, refreshes the copy, stats, and internal links, and opens a PR — it never publishes or pushes to the live branch.",
+      "description": "Installs a weekly reusable-session agent that reads Google Search Console for pages losing impressions and clicks, rotates through the decaying set using its own ledger, refreshes the copy, stats, and internal links, and opens a PR \u2014 it never publishes or pushes to the live branch.",
       "categories": [
         "marketing",
         "use-case"
@@ -5057,7 +5030,7 @@
           "label": "Content directory",
           "type": "text",
           "default": "apps/web/content",
-          "help": "The path (relative to the repo root) the agent is allowed to refresh — marketing pages and blog posts.",
+          "help": "The path (relative to the repo root) the agent is allowed to refresh \u2014 marketing pages and blog posts.",
           "required": true
         },
         {
@@ -5117,7 +5090,7 @@
               "agent": "content-refresh",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `content-decay-refresh` skill and run one complete refresh pass. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/content-refresh-log.md` for which pages were refreshed and when, and check for any open refresh PR before starting new work. Read Google Search Console for {{site_url}} to find pages under {{content_path}} of {{target_repo}} losing the most impressions and clicks, rank them by decay severity weighted by traffic, then rerank against the ledger so pages refreshed recently drop in priority and never-touched pages rise. Take the top few as this week's batch. On an isolated branch, refresh only what's actually stale: dated copy, aged-out stats and numbers, and internal links pointing at renamed or retired pages. Open ONE PR summarizing what changed per page and why, using the gh CLI with GH_TOKEN. Never publish and never push to the live branch — a human reviews and merges. Update the ledger with what was refreshed and the rotation state for next run."
+              "prompt": "Load the `content-decay-refresh` skill and run one complete refresh pass. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/content-refresh-log.md` for which pages were refreshed and when, and check for any open refresh PR before starting new work. Read Google Search Console for {{site_url}} to find pages under {{content_path}} of {{target_repo}} losing the most impressions and clicks, rank them by decay severity weighted by traffic, then rerank against the ledger so pages refreshed recently drop in priority and never-touched pages rise. Take the top few as this week's batch. On an isolated branch, refresh only what's actually stale: dated copy, aged-out stats and numbers, and internal links pointing at renamed or retired pages. Open ONE PR summarizing what changed per page and why, using the gh CLI with GH_TOKEN. Never publish and never push to the live branch \u2014 a human reviews and merges. Update the ledger with what was refreshed and the rotation state for next run."
             }
           ],
           "env_optional": [
@@ -5168,7 +5141,7 @@
       "name": "data-pipeline-monitor",
       "type": "registry:template",
       "title": "Monitor data pipelines and warehouse health",
-      "description": "Installs an hourly agent that checks every monitored warehouse table for freshness against its SLA, row-count anomalies against its own trailing baseline, schema drift, and failed loads, then alerts Slack and drafts a GitHub issue with the likely cause. Strictly read-only across the warehouse — it never modifies data, tables, or pipelines.",
+      "description": "Installs an hourly agent that checks every monitored warehouse table for freshness against its SLA, row-count anomalies against its own trailing baseline, schema drift, and failed loads, then alerts Slack and drafts a GitHub issue with the likely cause. Strictly read-only across the warehouse \u2014 it never modifies data, tables, or pipelines.",
       "categories": [
         "data",
         "use-case"
@@ -5260,7 +5233,7 @@
               "type": "cron",
               "agent": "data-pipeline-monitor",
               "cron": "{{cadence}}",
-              "prompt": "Load the `pipeline-health-check` skill and run one complete warehouse health sweep over the {{warehouse_schema}} schema. This is a fresh session every sweep — recompute freshness, row counts, and schema state from what's in the warehouse right now, using the warehouse's own history for baselines; nothing carries over from the last run. Check every monitored table against its freshness SLA (the {{freshness_sla_hours}}-hour default unless skill memory notes a more specific one), compare row counts to the table's own trailing baseline, diff the current schema against the last-seen shape, and look for failed or stalled loads. For anything out of bounds, post an alert to {{alert_channel}} with the affected table, the anomaly, the evidence, and the most likely cause, and draft a GitHub issue in {{incident_repo}} with the same diagnosis for the team to track. You are read-only across the warehouse — never modify data, tables, or pipelines; alerting and drafting the issue are your only outputs."
+              "prompt": "Load the `pipeline-health-check` skill and run one complete warehouse health sweep over the {{warehouse_schema}} schema. This is a fresh session every sweep \u2014 recompute freshness, row counts, and schema state from what's in the warehouse right now, using the warehouse's own history for baselines; nothing carries over from the last run. Check every monitored table against its freshness SLA (the {{freshness_sla_hours}}-hour default unless skill memory notes a more specific one), compare row counts to the table's own trailing baseline, diff the current schema against the last-seen shape, and look for failed or stalled loads. For anything out of bounds, post an alert to {{alert_channel}} with the affected table, the anomaly, the evidence, and the most likely cause, and draft a GitHub issue in {{incident_repo}} with the same diagnosis for the team to track. You are read-only across the warehouse \u2014 never modify data, tables, or pipelines; alerting and drafting the issue are your only outputs."
             }
           ],
           "env_optional": [
@@ -5311,7 +5284,7 @@
       "name": "qbr-prep",
       "type": "registry:template",
       "title": "Assemble draft QBR decks weekly",
-      "description": "Installs a weekly agent that finds every account due a quarterly business review in HubSpot, pulls usage trends from Postgres and account/CSM data from HubSpot, and assembles a draft deck in Google Slides plus a briefing doc in Google Docs. Read-only across Postgres and HubSpot — it assembles the draft only, and the CSM reviews and presents it.",
+      "description": "Installs a weekly agent that finds every account due a quarterly business review in HubSpot, pulls usage trends from Postgres and account/CSM data from HubSpot, and assembles a draft deck in Google Slides plus a briefing doc in Google Docs. Read-only across Postgres and HubSpot \u2014 it assembles the draft only, and the CSM reviews and presents it.",
       "categories": [
         "customer-success",
         "use-case"
@@ -5408,7 +5381,7 @@
               "type": "cron",
               "agent": "qbr-prep",
               "cron": "{{cadence}}",
-              "prompt": "Load the `qbr-deck-assembly` skill and run one complete QBR-prep sweep. This is a fresh session each run, so recompute who's due and every figure from the current state of the data — nothing carries over from last week. Read HubSpot's {{qbr_date_property}} field for every account and select those due within {{lookahead_days}} days, along with the assigned CSM, account health, support history, and CSM notes, all read-only. Read usage trends for those accounts from Postgres, read-only. For each due account, assemble a draft QBR deck in Google Slides and a companion briefing doc in Google Docs under {{decks_folder}}, covering usage trends, value delivered, account health, a support summary, and expansion opportunities backed by a concrete data point. Never write to Postgres or HubSpot, and never share, present, or send the deck or the doc to anyone — report where each landed and let the CSM review and present it."
+              "prompt": "Load the `qbr-deck-assembly` skill and run one complete QBR-prep sweep. This is a fresh session each run, so recompute who's due and every figure from the current state of the data \u2014 nothing carries over from last week. Read HubSpot's {{qbr_date_property}} field for every account and select those due within {{lookahead_days}} days, along with the assigned CSM, account health, support history, and CSM notes, all read-only. Read usage trends for those accounts from Postgres, read-only. For each due account, assemble a draft QBR deck in Google Slides and a companion briefing doc in Google Docs under {{decks_folder}}, covering usage trends, value delivered, account health, a support summary, and expansion opportunities backed by a concrete data point. Never write to Postgres or HubSpot, and never share, present, or send the deck or the doc to anyone \u2014 report where each landed and let the CSM review and present it."
             }
           ]
         }
@@ -5437,7 +5410,7 @@
       "name": "brand-mention-monitor-skill",
       "type": "registry:skill",
       "title": "Brand mention monitor",
-      "description": "Search, dedupe against the seen-mentions ledger, classify sentiment and notability, and post a digest with suggested response drafts — the daily brand-monitor runbook.",
+      "description": "Search, dedupe against the seen-mentions ledger, classify sentiment and notability, and post a digest with suggested response drafts \u2014 the daily brand-monitor runbook.",
       "categories": [
         "marketing"
       ],
@@ -5456,7 +5429,7 @@
       "name": "brand-monitor",
       "type": "registry:template",
       "title": "Monitor brand mentions daily",
-      "description": "Installs a daily agent that searches news, social platforms, and forums for new mentions of your brand, dedupes against mentions it has already reported, classifies sentiment, and posts a Slack digest of notable or negative mentions with a suggested response drafted for each. It only searches and posts to Slack — it never replies, comments, or posts anywhere itself.",
+      "description": "Installs a daily agent that searches news, social platforms, and forums for new mentions of your brand, dedupes against mentions it has already reported, classifies sentiment, and posts a Slack digest of notable or negative mentions with a suggested response drafted for each. It only searches and posts to Slack \u2014 it never replies, comments, or posts anywhere itself.",
       "categories": [
         "marketing",
         "use-case"
@@ -5514,7 +5487,7 @@
               "agent": "brand-monitor",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `brand-mention-monitor` skill and run today's brand-monitor sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/brand-monitor-log.md` for every mention already reported. Search news, social platforms, and forums for {{brand_terms}}, dedupe each candidate against the ledger, and classify the sentiment of anything new. Post one digest to {{slack_channel}}: a one-line rollup for routine mentions, and for anything negative or notable, the source, an excerpt, why it was flagged, and a suggested response drafted for human review. Never reply, comment, or post anywhere — monitor and alert only. Update the ledger with today's mentions before finishing."
+              "prompt": "Load the `brand-mention-monitor` skill and run today's brand-monitor sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/brand-monitor-log.md` for every mention already reported. Search news, social platforms, and forums for {{brand_terms}}, dedupe each candidate against the ledger, and classify the sentiment of anything new. Post one digest to {{slack_channel}}: a one-line rollup for routine mentions, and for anything negative or notable, the source, an excerpt, why it was flagged, and a suggested response drafted for human review. Never reply, comment, or post anywhere \u2014 monitor and alert only. Update the ledger with today's mentions before finishing."
             }
           ]
         }
@@ -5562,7 +5535,7 @@
       "name": "cloud-cost-anomaly",
       "type": "registry:template",
       "title": "Catch cloud cost spikes daily",
-      "description": "Installs a daily reusable-session agent that keeps a per-service/per-account spend baseline from AWS Cost Explorer, flags spend that breaks out of that baseline, attributes the likely driver — a new resource, a traffic surge, a region — and alerts Slack with the delta. Strictly read-only and alert-only — it never modifies or deletes a resource or changes a budget.",
+      "description": "Installs a daily reusable-session agent that keeps a per-service/per-account spend baseline from AWS Cost Explorer, flags spend that breaks out of that baseline, attributes the likely driver \u2014 a new resource, a traffic surge, a region \u2014 and alerts Slack with the delta. Strictly read-only and alert-only \u2014 it never modifies or deletes a resource or changes a budget.",
       "categories": [
         "engineering",
         "use-case"
@@ -5636,7 +5609,7 @@
               "agent": "cloud-cost-anomaly",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `cost-anomaly-detection` skill and run today's cloud-cost anomaly sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/cloud-cost-baseline.md` for the current per-service/per-account baseline, prior anomalies, and any noted seasonal or planned spend patterns. Pull the prior day's spend from AWS Cost Explorer, read-only, grouped by service and linked account, fold it into each pair's running baseline, and flag any pair whose spend clears {{anomaly_threshold_pct}}% above its own baseline (skip pairs matching a known/planned pattern already in the ledger). For each anomaly, check resource-level detail to attribute the likely driver — a newly launched resource, usage consistent with a traffic surge, or spend appearing in a new region — and post the delta with the suspected driver to {{alert_channel}}. Post nothing if there is no anomaly. Update the ledger at the end. You are read-only and alert-only across AWS — never modify or delete a resource, and never change a budget or any spending control."
+              "prompt": "Load the `cost-anomaly-detection` skill and run today's cloud-cost anomaly sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/cloud-cost-baseline.md` for the current per-service/per-account baseline, prior anomalies, and any noted seasonal or planned spend patterns. Pull the prior day's spend from AWS Cost Explorer, read-only, grouped by service and linked account, fold it into each pair's running baseline, and flag any pair whose spend clears {{anomaly_threshold_pct}}% above its own baseline (skip pairs matching a known/planned pattern already in the ledger). For each anomaly, check resource-level detail to attribute the likely driver \u2014 a newly launched resource, usage consistent with a traffic surge, or spend appearing in a new region \u2014 and post the delta with the suspected driver to {{alert_channel}}. Post nothing if there is no anomaly. Update the ledger at the end. You are read-only and alert-only across AWS \u2014 never modify or delete a resource, and never change a budget or any spending control."
             }
           ]
         }
@@ -5684,7 +5657,7 @@
       "name": "error-triage",
       "type": "registry:template",
       "title": "Groom the production error backlog hourly",
-      "description": "Installs an hourly agent that reads the Sentry backlog for {{sentry_project}}, groups new and spiking errors, dedupes against existing GitHub issues in {{triage_repo}}, and drafts an issue with the stack trace and impact for the top offenders, then alerts Slack. It only drafts issues and alerts — it never resolves, ignores, mutes, or assigns an error.",
+      "description": "Installs an hourly agent that reads the Sentry backlog for {{sentry_project}}, groups new and spiking errors, dedupes against existing GitHub issues in {{triage_repo}}, and drafts an issue with the stack trace and impact for the top offenders, then alerts Slack. It only drafts issues and alerts \u2014 it never resolves, ignores, mutes, or assigns an error.",
       "categories": [
         "engineering",
         "use-case"
@@ -5784,7 +5757,7 @@
               "type": "cron",
               "agent": "error-triage",
               "cron": "{{cadence}}",
-              "prompt": "Load the `error-backlog-triage` skill and run one complete error-backlog grooming sweep. This is a fresh session every sweep — recompute from Sentry's and GitHub's current state; nothing carries over from the last run. Read {{sentry_project}} in Sentry, read-only, for issues that are new or whose event frequency has spiked at least {{spike_multiplier}}x over their trailing baseline. Group by fingerprint and rank by impact (event count x affected users). Before drafting anything, search {{triage_repo}} on GitHub for an issue already tracking each error by its Sentry issue ID, and skip anything already tracked. For the top {{max_issues_per_run}} errors not already tracked, draft a GitHub issue in {{triage_repo}} with the stack trace and impact attached. Post one sweep summary to {{alert_channel}}: what's new, what's spiking, what was drafted, and what was skipped as already tracked. Never resolve, ignore, or mute an error in Sentry, and never assign a drafted issue to anyone — drafting and alerting are your only outputs; a human owns prioritization and ownership from there."
+              "prompt": "Load the `error-backlog-triage` skill and run one complete error-backlog grooming sweep. This is a fresh session every sweep \u2014 recompute from Sentry's and GitHub's current state; nothing carries over from the last run. Read {{sentry_project}} in Sentry, read-only, for issues that are new or whose event frequency has spiked at least {{spike_multiplier}}x over their trailing baseline. Group by fingerprint and rank by impact (event count x affected users). Before drafting anything, search {{triage_repo}} on GitHub for an issue already tracking each error by its Sentry issue ID, and skip anything already tracked. For the top {{max_issues_per_run}} errors not already tracked, draft a GitHub issue in {{triage_repo}} with the stack trace and impact attached. Post one sweep summary to {{alert_channel}}: what's new, what's spiking, what was drafted, and what was skipped as already tracked. Never resolve, ignore, or mute an error in Sentry, and never assign a drafted issue to anyone \u2014 drafting and alerting are your only outputs; a human owns prioritization and ownership from there."
             }
           ],
           "env_optional": [
@@ -5835,7 +5808,7 @@
       "name": "escalation-manager",
       "type": "registry:template",
       "title": "Route support escalations automatically",
-      "description": "Installs a 15-minute sweep that scans the Plain support queue for SLA breaches, VIP accounts, and high-severity tickets, routes each to the right internal team, opens a linked Linear issue when engineering is needed, and posts every escalation to Slack. It only routes, links, and alerts — it never closes a ticket or promises the customer a resolution.",
+      "description": "Installs a 15-minute sweep that scans the Plain support queue for SLA breaches, VIP accounts, and high-severity tickets, routes each to the right internal team, opens a linked Linear issue when engineering is needed, and posts every escalation to Slack. It only routes, links, and alerts \u2014 it never closes a ticket or promises the customer a resolution.",
       "categories": [
         "support",
         "use-case"
@@ -5845,7 +5818,7 @@
         "escalation-routing-skill"
       ],
       "envVars": {
-        "PLAIN_API_KEY": "Plain API key (read tickets, tag/assign routing — no close/resolve access needed)"
+        "PLAIN_API_KEY": "Plain API key (read tickets, tag/assign routing \u2014 no close/resolve access needed)"
       },
       "inputs": [
         {
@@ -5927,7 +5900,7 @@
               "type": "cron",
               "agent": "escalation-manager",
               "cron": "{{cadence}}",
-              "prompt": "Load the `escalation-routing` skill and run one complete escalation sweep over the open Plain queue. This is a fresh session every run, so recompute from the queue's current state — nothing carries over from the prior sweep. For every open ticket, check three independent criteria: an SLA breach against {{sla_targets}}, a VIP account match against {{vip_accounts}}, or high severity (outage, data loss, security, or a blocked paying customer). Route every qualifying ticket to the right internal team in Plain by tagging or assigning it. When the ticket needs engineering work, open a linked issue in the {{linear_team}} Linear team with the ticket's context attached, and link the two records to each other — check for an existing linked issue first so you never file a duplicate. Post one alert per escalation to {{escalation_channel}} with the ticket link, the escalation reason(s), the routed team, and the linked Linear issue URL if one was opened. Never close or resolve a ticket, and never draft, send, or imply anything to the customer about when or how their issue will be fixed — route, link, and alert only."
+              "prompt": "Load the `escalation-routing` skill and run one complete escalation sweep over the open Plain queue. This is a fresh session every run, so recompute from the queue's current state \u2014 nothing carries over from the prior sweep. For every open ticket, check three independent criteria: an SLA breach against {{sla_targets}}, a VIP account match against {{vip_accounts}}, or high severity (outage, data loss, security, or a blocked paying customer). Route every qualifying ticket to the right internal team in Plain by tagging or assigning it. When the ticket needs engineering work, open a linked issue in the {{linear_team}} Linear team with the ticket's context attached, and link the two records to each other \u2014 check for an existing linked issue first so you never file a duplicate. Post one alert per escalation to {{escalation_channel}} with the ticket link, the escalation reason(s), the routed team, and the linked Linear issue URL if one was opened. Never close or resolve a ticket, and never draft, send, or imply anything to the customer about when or how their issue will be fixed \u2014 route, link, and alert only."
             }
           ],
           "env_optional": [
@@ -5978,7 +5951,7 @@
       "name": "feature-flag-cleanup",
       "type": "registry:template",
       "title": "Remove stale feature flags on autopilot",
-      "description": "A weekly agent that sweeps the repo's feature flags, removes the ones that are fully rolled out or long dead along with the dead code branch they guard, and opens a PR only when the full suite is green — never merging on its own, and never touching a flag still in partial rollout.",
+      "description": "A weekly agent that sweeps the repo's feature flags, removes the ones that are fully rolled out or long dead along with the dead code branch they guard, and opens a PR only when the full suite is green \u2014 never merging on its own, and never touching a flag still in partial rollout.",
       "categories": [
         "engineering",
         "use-case"
@@ -6042,7 +6015,7 @@
               "agent": "feature-flag-cleanup",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `flag-cleanup` skill and run one complete flag-cleanup sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/flag-cleanup-log.md`, open cleanup PRs, and flags already flagged for human review. Inventory every feature flag, classify each as fully rolled out, long dead (no live check or unchanged for more than {{min_flag_age_days}} days), partial rollout, or an active experiment. On an isolated branch, remove only the flags that are fully rolled out or long dead, along with the now-dead code branch each one guarded, then prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration) before opening a PR. Never remove a flag that's still in partial rollout or an active experiment — log those for a human to review instead. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
+              "prompt": "Load the `flag-cleanup` skill and run one complete flag-cleanup sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/flag-cleanup-log.md`, open cleanup PRs, and flags already flagged for human review. Inventory every feature flag, classify each as fully rolled out, long dead (no live check or unchanged for more than {{min_flag_age_days}} days), partial rollout, or an active experiment. On an isolated branch, remove only the flags that are fully rolled out or long dead, along with the now-dead code branch each one guarded, then prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration) before opening a PR. Never remove a flag that's still in partial rollout or an active experiment \u2014 log those for a human to review instead. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
             }
           ],
           "env_optional": [
@@ -6093,7 +6066,7 @@
       "name": "flaky-test-triage",
       "type": "registry:template",
       "title": "Detect and quarantine flaky tests",
-      "description": "Installs a daily agent that reads CI run history from GitHub, scores every test on how often it flips outcome on unchanged code, and opens a quarantine PR (skip + reason, never a deletion) for the worst offenders plus a running tracking issue and a Slack summary. It never merges its own PR — a human reviews and merges the quarantine.",
+      "description": "Installs a daily agent that reads CI run history from GitHub, scores every test on how often it flips outcome on unchanged code, and opens a quarantine PR (skip + reason, never a deletion) for the worst offenders plus a running tracking issue and a Slack summary. It never merges its own PR \u2014 a human reviews and merges the quarantine.",
       "categories": [
         "engineering",
         "use-case"
@@ -6181,7 +6154,7 @@
               "agent": "flaky-test-triage",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `flaky-test-quarantine` skill and run one triage pass on {{target_repo}}. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/flaky-test-ledger.md`, any open quarantine PR, and the running tracking issue. Pull the CI run history since the last processed run, update every test's flakiness score (flip count and failure rate over its rolling window), and for any test at or above {{quarantine_threshold}} that isn't already quarantined, add a framework-appropriate skip marker with a reason and a link to the evidence — never remove a test, its assertions, or its file. Batch this run's newly-quarantined tests into a single PR, roll them into the one running `Flaky test quarantine tracker` issue, and post a summary (newly quarantined, still flaky, stable enough to de-quarantine) to {{alert_channel}}. Never merge the PR yourself and never push to the default branch — a human owns the merge and the eventual de-quarantine. Update the ledger at the end."
+              "prompt": "Load the `flaky-test-quarantine` skill and run one triage pass on {{target_repo}}. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/flaky-test-ledger.md`, any open quarantine PR, and the running tracking issue. Pull the CI run history since the last processed run, update every test's flakiness score (flip count and failure rate over its rolling window), and for any test at or above {{quarantine_threshold}} that isn't already quarantined, add a framework-appropriate skip marker with a reason and a link to the evidence \u2014 never remove a test, its assertions, or its file. Batch this run's newly-quarantined tests into a single PR, roll them into the one running `Flaky test quarantine tracker` issue, and post a summary (newly quarantined, still flaky, stable enough to de-quarantine) to {{alert_channel}}. Never merge the PR yourself and never push to the default branch \u2014 a human owns the merge and the eventual de-quarantine. Update the ledger at the end."
             }
           ],
           "env_optional": [
@@ -6194,7 +6167,7 @@
       "name": "gdpr-dsar-agent",
       "type": "registry:agent",
       "title": "GDPR DSAR agent",
-      "description": "Verifies each incoming data subject request, locates the subject's data across Postgres, compiles the access/deletion report in Google Docs, and flags it to legal — never deleting data or replying to the subject itself.",
+      "description": "Verifies each incoming data subject request, locates the subject's data across Postgres, compiles the access/deletion report in Google Docs, and flags it to legal \u2014 never deleting data or replying to the subject itself.",
       "categories": [
         "legal"
       ],
@@ -6232,7 +6205,7 @@
       "name": "gdpr-dsar",
       "type": "registry:template",
       "title": "Compile GDPR data subject access requests daily",
-      "description": "Installs a daily cron that reads new GDPR data subject requests out of Gmail, verifies the requester, locates their data read-only across Postgres, and compiles an access-or-deletion report in Google Docs within the SLA. It only compiles and flags the report to legal for review — it never deletes data or replies to the subject without legal approval.",
+      "description": "Installs a daily cron that reads new GDPR data subject requests out of Gmail, verifies the requester, locates their data read-only across Postgres, and compiles an access-or-deletion report in Google Docs within the SLA. It only compiles and flags the report to legal for review \u2014 it never deletes data or replies to the subject without legal approval.",
       "categories": [
         "legal",
         "use-case"
@@ -6262,7 +6235,7 @@
           "key": "legal_review_channel",
           "label": "Where compiled DSAR reports go for legal review",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels that receives each subject's compiled report and recommended action for a lawyer to review and approve.",
+          "help": "The email channel connected in Settings\u2192Channels that receives each subject's compiled report and recommended action for a lawyer to review and approve.",
           "required": true
         }
       ],
@@ -6316,7 +6289,7 @@
               "type": "cron",
               "agent": "gdpr-dsar",
               "cron": "{{cadence}}",
-              "prompt": "Load the `dsar-fulfillment` skill and run one complete DSAR sweep. This is a fresh session each run, so re-check the whole inbox for anything new or unactioned — nothing carries over from a prior day. Check Gmail for new or unhandled data subject access or deletion requests, verify each requester's identity against the account details we hold, and for every verified request query Postgres read-only across every table keyed to that subject (account, orders, invoices, support history, consent and login records) to locate everywhere their data lives. Compile the findings into a Google Doc formatted as an access report or deletion inventory with a recommended action and the SLA deadline (verified date plus {{sla_days}} days), then post the doc link and recommendation to {{legal_review_channel}} and label the Gmail thread as actioned. Never run a delete or update on any table, and never reply to the requester yourself — deletion and the response to the subject only happen after a lawyer reviews the flagged report and approves."
+              "prompt": "Load the `dsar-fulfillment` skill and run one complete DSAR sweep. This is a fresh session each run, so re-check the whole inbox for anything new or unactioned \u2014 nothing carries over from a prior day. Check Gmail for new or unhandled data subject access or deletion requests, verify each requester's identity against the account details we hold, and for every verified request query Postgres read-only across every table keyed to that subject (account, orders, invoices, support history, consent and login records) to locate everywhere their data lives. Compile the findings into a Google Doc formatted as an access report or deletion inventory with a recommended action and the SLA deadline (verified date plus {{sla_days}} days), then post the doc link and recommendation to {{legal_review_channel}} and label the Gmail thread as actioned. Never run a delete or update on any table, and never reply to the requester yourself \u2014 deletion and the response to the subject only happen after a lawyer reviews the flagged report and approves."
             }
           ]
         }
@@ -6433,7 +6406,7 @@
               "type": "cron",
               "agent": "hr-policy-qa",
               "cron": "{{cadence}}",
-              "prompt": "Load the `policy-qa` skill and run one complete pass over the HR inbox. This is a fresh session each run, so use Gmail labels, not memory, to find threads that don't yet carry an `hr-qa/*` label. For each new question, classify it: if it's answerable from the documented policy library in Notion, search for the specific policy section, draft a grounded Gmail reply citing it, and label the thread `hr-qa/drafted`. If it's ambiguous, legal, personal, or compensation-related, or the library doesn't clearly cover it, do not attempt an answer — post it to {{hr_channel}} in Slack with the question and the reason, and label the thread `hr-qa/escalated`. Never send an email yourself and never make a policy exception; every reply is a draft for HR to review and send."
+              "prompt": "Load the `policy-qa` skill and run one complete pass over the HR inbox. This is a fresh session each run, so use Gmail labels, not memory, to find threads that don't yet carry an `hr-qa/*` label. For each new question, classify it: if it's answerable from the documented policy library in Notion, search for the specific policy section, draft a grounded Gmail reply citing it, and label the thread `hr-qa/drafted`. If it's ambiguous, legal, personal, or compensation-related, or the library doesn't clearly cover it, do not attempt an answer \u2014 post it to {{hr_channel}} in Slack with the question and the reason, and label the thread `hr-qa/escalated`. Never send an email yourself and never make a policy exception; every reply is a draft for HR to review and send."
             }
           ]
         }
@@ -6462,7 +6435,7 @@
       "name": "interview-scheduling-skill",
       "type": "registry:skill",
       "title": "Interview scheduling",
-      "description": "Reads the interview plan, checks panel availability, and drafts the candidate slot proposal and calendar invites — a coordinator confirms and sends everything.",
+      "description": "Reads the interview plan, checks panel availability, and drafts the candidate slot proposal and calendar invites \u2014 a coordinator confirms and sends everything.",
       "categories": [
         "hr"
       ],
@@ -6495,7 +6468,7 @@
           "key": "greenhouse_pipeline",
           "label": "Greenhouse pipeline to watch",
           "type": "text",
-          "default": "Onsite — Ready to Schedule",
+          "default": "Onsite \u2014 Ready to Schedule",
           "help": "The Greenhouse stage/pipeline where candidates ready to schedule land, and where each one's interview plan (panel, round, duration) is read from.",
           "required": true
         },
@@ -6511,7 +6484,7 @@
           "key": "coordinator_review_inbox",
           "label": "Coordinator's review inbox",
           "type": "channel",
-          "help": "The email channel connected in Settings→Channels where drafted candidate proposals and calendar invites land for the coordinator to review and send.",
+          "help": "The email channel connected in Settings\u2192Channels where drafted candidate proposals and calendar invites land for the coordinator to review and send.",
           "required": true
         },
         {
@@ -6566,7 +6539,7 @@
               "type": "cron",
               "agent": "interview-scheduler",
               "cron": "{{cadence}}",
-              "prompt": "Load the `interview-scheduling` skill and run one complete scheduling sweep. This is a fresh session each run, so recompute from the current state — nothing carries over from the prior day. Read {{greenhouse_pipeline}} for every candidate ready to schedule who doesn't already have a drafted proposal, and for each one pull their interview plan (panel, round, duration). Check every panelist's availability on {{interviewer_calendars}} and propose 2-3 slots only where the full panel is free. Draft a slot-proposal email to the candidate and a calendar invite per interviewer, and place the full batch in {{coordinator_review_inbox}}. Never send the proposal, never send or create a calendar invite, and never make a hiring decision — no rejecting a candidate, no advancing a stage, no offer. The coordinator confirms the time and sends everything themselves."
+              "prompt": "Load the `interview-scheduling` skill and run one complete scheduling sweep. This is a fresh session each run, so recompute from the current state \u2014 nothing carries over from the prior day. Read {{greenhouse_pipeline}} for every candidate ready to schedule who doesn't already have a drafted proposal, and for each one pull their interview plan (panel, round, duration). Check every panelist's availability on {{interviewer_calendars}} and propose 2-3 slots only where the full panel is free. Draft a slot-proposal email to the candidate and a calendar invite per interviewer, and place the full batch in {{coordinator_review_inbox}}. Never send the proposal, never send or create a calendar invite, and never make a hiring decision \u2014 no rejecting a candidate, no advancing a stage, no offer. The coordinator confirms the time and sends everything themselves."
             }
           ]
         }
@@ -6576,7 +6549,7 @@
       "name": "lead-routing-agent",
       "type": "registry:agent",
       "title": "Lead routing agent",
-      "description": "Scores new inbound HubSpot leads, assigns each to the right rep by territory, segment, or round-robin, and notifies the rep in Slack — flagging ambiguous leads for a human and never deleting or merging a lead.",
+      "description": "Scores new inbound HubSpot leads, assigns each to the right rep by territory, segment, or round-robin, and notifies the rep in Slack \u2014 flagging ambiguous leads for a human and never deleting or merging a lead.",
       "categories": [
         "sales"
       ],
@@ -6614,7 +6587,7 @@
       "name": "lead-routing",
       "type": "registry:template",
       "title": "Route inbound leads to the right rep",
-      "description": "Installs an agent that checks HubSpot every 15 minutes for new inbound leads, scores each for intent, assigns it to the right rep by territory, segment, or round-robin, and notifies the rep in Slack — flagging ambiguous or unroutable leads for a human and never deleting or merging a lead.",
+      "description": "Installs an agent that checks HubSpot every 15 minutes for new inbound leads, scores each for intent, assigns it to the right rep by territory, segment, or round-robin, and notifies the rep in Slack \u2014 flagging ambiguous or unroutable leads for a human and never deleting or merging a lead.",
       "categories": [
         "sales",
         "use-case"
@@ -6692,7 +6665,7 @@
               "type": "cron",
               "agent": "lead-routing",
               "cron": "{{cadence}}",
-              "prompt": "Load the `lead-routing-rules` skill and run one complete lead-routing sweep. This is a fresh session each run — resume by reading HubSpot itself, not a local ledger: query contacts on {{hubspot_lifecycle_stage}} that don't yet carry the `kortix_routing_status` marker. For each new lead, score it for intent, then route it in order — named territory owner, then segment specialist, then whichever rep in the round-robin pool currently has the fewest leads this week — and set the HubSpot owner accordingly. Notify the assigned rep in {{routing_channel}} with the lead and the routing reason, flagging high-intent leads distinctly so they get worked first. If a lead's territory, segment, and round-robin all fail to resolve, never guess an owner — post it to {{escalation_channel}} for a human to assign by hand instead. Mark every lead's `kortix_routing_status` as `routed` or `flagged` so the next sweep doesn't reprocess it. Never delete or merge a lead record under any circumstance. Treat each lead found in the sweep as an independent unit of work — a scoring or routing failure on one lead is logged and skipped, never blocking the rest of the sweep."
+              "prompt": "Load the `lead-routing-rules` skill and run one complete lead-routing sweep. This is a fresh session each run \u2014 resume by reading HubSpot itself, not a local ledger: query contacts on {{hubspot_lifecycle_stage}} that don't yet carry the `kortix_routing_status` marker. For each new lead, score it for intent, then route it in order \u2014 named territory owner, then segment specialist, then whichever rep in the round-robin pool currently has the fewest leads this week \u2014 and set the HubSpot owner accordingly. Notify the assigned rep in {{routing_channel}} with the lead and the routing reason, flagging high-intent leads distinctly so they get worked first. If a lead's territory, segment, and round-robin all fail to resolve, never guess an owner \u2014 post it to {{escalation_channel}} for a human to assign by hand instead. Mark every lead's `kortix_routing_status` as `routed` or `flagged` so the next sweep doesn't reprocess it. Never delete or merge a lead record under any circumstance. Treat each lead found in the sweep as an independent unit of work \u2014 a scoring or routing failure on one lead is logged and skipped, never blocking the rest of the sweep."
             }
           ]
         }
@@ -6702,7 +6675,7 @@
       "name": "month-end-close-agent",
       "type": "registry:agent",
       "title": "Month-end close assistant",
-      "description": "Walks the close checklist, reconciles Stripe revenue against the ledger, and flags every open item — never posts a journal entry or closes the books.",
+      "description": "Walks the close checklist, reconciles Stripe revenue against the ledger, and flags every open item \u2014 never posts a journal entry or closes the books.",
       "categories": [
         "finance"
       ],
@@ -6740,7 +6713,7 @@
       "name": "month-end-close",
       "type": "registry:template",
       "title": "Run month-end close on autopilot",
-      "description": "Installs a monthly agent that walks the close checklist, reconciles Stripe revenue against the ledger in Google Sheets, flags unreconciled items, missing documentation, and anomalies against prior months, and posts a close-status summary to Slack. It only assembles and flags — it never posts a journal entry or marks the books closed; a human owns the close.",
+      "description": "Installs a monthly agent that walks the close checklist, reconciles Stripe revenue against the ledger in Google Sheets, flags unreconciled items, missing documentation, and anomalies against prior months, and posts a close-status summary to Slack. It only assembles and flags \u2014 it never posts a journal entry or marks the books closed; a human owns the close.",
       "categories": [
         "finance",
         "use-case"
@@ -6817,7 +6790,7 @@
               "type": "cron",
               "agent": "month-end-close",
               "cron": "{{cadence}}",
-              "prompt": "Load the `close-checklist` skill and run one complete month-end close pass over {{close_sheet}}. This is a fresh session with no memory of the last run, so read the checklist tab and prior months' notes and flags in {{close_sheet}} first. Pull Stripe revenue for the closed period and reconcile it against the ledger tab; walk every remaining checklist item for missing supporting documentation; and compare this month's figures against the trailing months for anomalies outside the skill's tolerances. Write status flags only to the checklist tab in {{close_sheet}} — unreconciled items, missing docs, anomalies — and post a close-status summary with every open item to {{close_channel}}. Never write a journal entry, never edit the ledger's recorded entries, and never mark the checklist or the period as closed — a human reviews the open items and closes the books."
+              "prompt": "Load the `close-checklist` skill and run one complete month-end close pass over {{close_sheet}}. This is a fresh session with no memory of the last run, so read the checklist tab and prior months' notes and flags in {{close_sheet}} first. Pull Stripe revenue for the closed period and reconcile it against the ledger tab; walk every remaining checklist item for missing supporting documentation; and compare this month's figures against the trailing months for anomalies outside the skill's tolerances. Write status flags only to the checklist tab in {{close_sheet}} \u2014 unreconciled items, missing docs, anomalies \u2014 and post a close-status summary with every open item to {{close_channel}}. Never write a journal entry, never edit the ledger's recorded entries, and never mark the checklist or the period as closed \u2014 a human reviews the open items and closes the books."
             }
           ]
         }
@@ -6827,7 +6800,7 @@
       "name": "nda-turnaround-agent",
       "type": "registry:agent",
       "title": "NDA turnaround agent",
-      "description": "Reviews each inbound NDA against the standard playbook, redlines non-standard terms in Docs, and drafts a flag summary for counsel — never signing, executing, or sending.",
+      "description": "Reviews each inbound NDA against the standard playbook, redlines non-standard terms in Docs, and drafts a flag summary for counsel \u2014 never signing, executing, or sending.",
       "categories": [
         "legal"
       ],
@@ -6865,7 +6838,7 @@
       "name": "nda-turnaround",
       "type": "registry:template",
       "title": "Turn NDAs around fast",
-      "description": "Every 15 minutes, checks Gmail for a new inbound NDA, saves it to Google Drive, reviews it against the standard NDA playbook, drafts redlines on non-standard terms as Google Docs suggested edits, and drafts a Gmail flag summary for counsel. Redline and flag only — it never signs, executes, or sends anything; counsel does.",
+      "description": "Every 15 minutes, checks Gmail for a new inbound NDA, saves it to Google Drive, reviews it against the standard NDA playbook, drafts redlines on non-standard terms as Google Docs suggested edits, and drafts a Gmail flag summary for counsel. Redline and flag only \u2014 it never signs, executes, or sends anything; counsel does.",
       "categories": [
         "legal",
         "use-case"
@@ -6947,7 +6920,7 @@
               "type": "cron",
               "agent": "nda-turnaround",
               "cron": "{{cadence}}",
-              "prompt": "Load the `nda-playbook` skill and check {{nda_label}} in Gmail for a new inbound NDA that hasn't been processed yet. This is a fresh session per run, so re-derive state from Gmail and {{nda_folder}} — there is no ledger. For the oldest unhandled NDA, save the document into {{nda_folder}} in Google Drive, open it in Google Docs, and check it clause by clause against our standard NDA playbook: mutuality, confidentiality duration, governing law, non-solicit scope, remedies, the residuals clause, return/destruction obligations, assignment, and indemnification. Draft a Docs suggested edit for every non-standard clause — never a direct edit — and draft, never send, a Gmail reply on the original thread addressed to counsel summarizing what's routine, what's flagged and why, and linking the redlined Doc. Never sign, execute, countersign, or send anything to the counterparty — redline and flag only; counsel reviews, decides, and sends."
+              "prompt": "Load the `nda-playbook` skill and check {{nda_label}} in Gmail for a new inbound NDA that hasn't been processed yet. This is a fresh session per run, so re-derive state from Gmail and {{nda_folder}} \u2014 there is no ledger. For the oldest unhandled NDA, save the document into {{nda_folder}} in Google Drive, open it in Google Docs, and check it clause by clause against our standard NDA playbook: mutuality, confidentiality duration, governing law, non-solicit scope, remedies, the residuals clause, return/destruction obligations, assignment, and indemnification. Draft a Docs suggested edit for every non-standard clause \u2014 never a direct edit \u2014 and draft, never send, a Gmail reply on the original thread addressed to counsel summarizing what's routine, what's flagged and why, and linking the redlined Doc. Never sign, execute, countersign, or send anything to the counterparty \u2014 redline and flag only; counsel reviews, decides, and sends."
             }
           ]
         }
@@ -6995,7 +6968,7 @@
       "name": "nps-analysis",
       "type": "registry:template",
       "title": "Turn NPS/CSAT responses into themes weekly",
-      "description": "Installs a weekly cron that reads new NPS/CSAT survey responses from a Google Sheet, clusters them into themes with sentiment and detractor drivers, tracks the score's week-over-week movement, and posts a summary with representative quotes to Slack — read-only on the sheet and report-only, with no automated follow-up.",
+      "description": "Installs a weekly cron that reads new NPS/CSAT survey responses from a Google Sheet, clusters them into themes with sentiment and detractor drivers, tracks the score's week-over-week movement, and posts a summary with representative quotes to Slack \u2014 read-only on the sheet and report-only, with no automated follow-up.",
       "categories": [
         "customer-success",
         "use-case"
@@ -7065,7 +7038,7 @@
               "type": "cron",
               "agent": "nps-analysis",
               "cron": "{{cadence}}",
-              "prompt": "Load the `nps-theme-analysis` skill and run one complete NPS/CSAT analysis sweep. This is a fresh session each run, so read the full response history in {{survey_sheet}} and recompute everything from it — nothing carries over between runs. Read the survey responses read-only, band each by score (promoter/passive/detractor), tag sentiment, and cluster the free-text comments into themes across the whole history. Isolate the drivers behind this week's detractors, and compute the score and its week-over-week movement. Post one summary to {{report_channel}} with the score trend, top themes with representative quotes and counts, and top detractor drivers. Never write to {{survey_sheet}} or any other survey system, and never contact a respondent — the Slack post is the only output, and it is a report, not an action."
+              "prompt": "Load the `nps-theme-analysis` skill and run one complete NPS/CSAT analysis sweep. This is a fresh session each run, so read the full response history in {{survey_sheet}} and recompute everything from it \u2014 nothing carries over between runs. Read the survey responses read-only, band each by score (promoter/passive/detractor), tag sentiment, and cluster the free-text comments into themes across the whole history. Isolate the drivers behind this week's detractors, and compute the score and its week-over-week movement. Post one summary to {{report_channel}} with the score trend, top themes with representative quotes and counts, and top detractor drivers. Never write to {{survey_sheet}} or any other survey system, and never contact a respondent \u2014 the Slack post is the only output, and it is a report, not an action."
             }
           ]
         }
@@ -7075,7 +7048,7 @@
       "name": "phishing-triage-agent",
       "type": "registry:agent",
       "title": "Phishing triage agent",
-      "description": "Reads newly reported phishing emails, classifies the risk, and posts a verdict with a recommended action to security — recommend-only, never remediates.",
+      "description": "Reads newly reported phishing emails, classifies the risk, and posts a verdict with a recommended action to security \u2014 recommend-only, never remediates.",
       "categories": [
         "security"
       ],
@@ -7113,7 +7086,7 @@
       "name": "phishing-triage",
       "type": "registry:template",
       "title": "Triage reported phishing emails",
-      "description": "Installs an agent that checks the phishing-report Gmail inbox every 15 minutes, analyzes headers, links, and attachments for phishing indicators, classifies the risk, and posts a verdict with a recommended action to the security Slack channel. It only analyzes, recommends, and alerts — it never blocks a sender, deletes mail, or takes any remediation action.",
+      "description": "Installs an agent that checks the phishing-report Gmail inbox every 15 minutes, analyzes headers, links, and attachments for phishing indicators, classifies the risk, and posts a verdict with a recommended action to the security Slack channel. It only analyzes, recommends, and alerts \u2014 it never blocks a sender, deletes mail, or takes any remediation action.",
       "categories": [
         "security",
         "use-case"
@@ -7184,7 +7157,7 @@
               "type": "cron",
               "agent": "phishing-triage",
               "cron": "{{cadence}}",
-              "prompt": "Load the `phishing-indicators` skill and run one complete triage pass over the phishing-report Gmail inbox, searching `{{report_query}}`. This is a fresh session every run, so recompute from the current inbox state — nothing carries over from the prior check. For each newly reported email, inspect the original (forwarded) message's authentication results (SPF/DKIM/DMARC), reply-to and return-path against the display name, where every link actually resolves, and any attachment's real type. Classify the risk (critical/high/medium/low/benign) with the specific indicators found, and post a verdict with a recommended action — block this sender, warn staff who may have received the same email, or no action needed — to {{security_channel}}. Never block a sender, delete or quarantine a message, or take any other remediation action yourself; every recommended action is for a person on security to carry out."
+              "prompt": "Load the `phishing-indicators` skill and run one complete triage pass over the phishing-report Gmail inbox, searching `{{report_query}}`. This is a fresh session every run, so recompute from the current inbox state \u2014 nothing carries over from the prior check. For each newly reported email, inspect the original (forwarded) message's authentication results (SPF/DKIM/DMARC), reply-to and return-path against the display name, where every link actually resolves, and any attachment's real type. Classify the risk (critical/high/medium/low/benign) with the specific indicators found, and post a verdict with a recommended action \u2014 block this sender, warn staff who may have received the same email, or no action needed \u2014 to {{security_channel}}. Never block a sender, delete or quarantine a message, or take any other remediation action yourself; every recommended action is for a person on security to carry out."
             }
           ]
         }
@@ -7232,7 +7205,7 @@
       "name": "pr-review-nudge",
       "type": "registry:template",
       "title": "Nudge stale PRs and enforce review SLAs",
-      "description": "Installs a daily cron that scans open pull requests via the gh CLI, flags PRs awaiting review past the SLA, stale PRs with no recent activity, and PRs with unaddressed requested changes, then nudges the author or reviewer in Slack with a summary of what's blocking each. Nudges and summarizes only — never merges, closes, or approves a PR.",
+      "description": "Installs a daily cron that scans open pull requests via the gh CLI, flags PRs awaiting review past the SLA, stale PRs with no recent activity, and PRs with unaddressed requested changes, then nudges the author or reviewer in Slack with a summary of what's blocking each. Nudges and summarizes only \u2014 never merges, closes, or approves a PR.",
       "categories": [
         "engineering",
         "use-case"
@@ -7310,7 +7283,7 @@
               "type": "cron",
               "agent": "pr-review-nudge",
               "cron": "{{cadence}}",
-              "prompt": "Load the `pr-review-sla` skill and run one complete review sweep on {{target_repos}}. This is a fresh session each run, so recompute from the current state of GitHub — nothing carries over from the prior day. Read every open PR via the gh CLI, read-only, and flag: PRs awaiting review past {{review_sla_hours}} hours, PRs stale with no activity in {{stale_days}} days, and PRs with unaddressed requested changes. Nudge the requested reviewer for overdue reviews, and the author for stale or unaddressed-changes PRs, in {{alert_channel}}, with a one-line summary of what's blocking each PR. Never merge, close, or approve a PR, and never dismiss or resolve a review — nudge and summarize only, and hold every decision for a human."
+              "prompt": "Load the `pr-review-sla` skill and run one complete review sweep on {{target_repos}}. This is a fresh session each run, so recompute from the current state of GitHub \u2014 nothing carries over from the prior day. Read every open PR via the gh CLI, read-only, and flag: PRs awaiting review past {{review_sla_hours}} hours, PRs stale with no activity in {{stale_days}} days, and PRs with unaddressed requested changes. Nudge the requested reviewer for overdue reviews, and the author for stale or unaddressed-changes PRs, in {{alert_channel}}, with a one-line summary of what's blocking each PR. Never merge, close, or approve a PR, and never dismiss or resolve a review \u2014 nudge and summarize only, and hold every decision for a human."
             }
           ],
           "env_optional": [
@@ -7361,7 +7334,7 @@
       "name": "sales-forecast",
       "type": "registry:template",
       "title": "Roll the pipeline into a weekly forecast",
-      "description": "Installs a weekly agent that rolls up HubSpot's open pipeline — weighted by each stage's own configured probability — into a forecast vs quota by stage, rep, and segment, flags deals slipping the quarter and other forecast risk, and posts it to Slack. Read-only and report-only — it never changes a deal's amount, close date, stage, or owner.",
+      "description": "Installs a weekly agent that rolls up HubSpot's open pipeline \u2014 weighted by each stage's own configured probability \u2014 into a forecast vs quota by stage, rep, and segment, flags deals slipping the quarter and other forecast risk, and posts it to Slack. Read-only and report-only \u2014 it never changes a deal's amount, close date, stage, or owner.",
       "categories": [
         "sales",
         "use-case"
@@ -7441,7 +7414,7 @@
               "type": "cron",
               "agent": "sales-forecast",
               "cron": "{{cadence}}",
-              "prompt": "Load the `forecast-rollup` skill and run one complete weekly forecast rollup. This is a fresh session each run, so recompute everything from HubSpot's current state — nothing carries over from last week. Read every open deal's amount, stage, close date, owner, and {{segment_property}}, plus each pipeline stage's own configured probability, all read-only. Weight every open deal in the current quarter by its stage's probability, roll the total up by stage, by rep, and by segment, and compare it to {{quarterly_quota}}. Flag deals whose close date has already passed while still open or that don't have enough runway left in their stage to close this quarter, and separately flag large deals showing other forecast risk (no recent activity, stalled in a late stage). Post the full forecast — total vs quota, the stage/rep/segment breakdown, and the slipping and at-risk deals — to {{forecast_channel}}. Never write to HubSpot: never change a deal's amount, close date, stage, or owner. Hold every decision for the sales team; this is a read-only, report-only agent."
+              "prompt": "Load the `forecast-rollup` skill and run one complete weekly forecast rollup. This is a fresh session each run, so recompute everything from HubSpot's current state \u2014 nothing carries over from last week. Read every open deal's amount, stage, close date, owner, and {{segment_property}}, plus each pipeline stage's own configured probability, all read-only. Weight every open deal in the current quarter by its stage's probability, roll the total up by stage, by rep, and by segment, and compare it to {{quarterly_quota}}. Flag deals whose close date has already passed while still open or that don't have enough runway left in their stage to close this quarter, and separately flag large deals showing other forecast risk (no recent activity, stalled in a late stage). Post the full forecast \u2014 total vs quota, the stage/rep/segment breakdown, and the slipping and at-risk deals \u2014 to {{forecast_channel}}. Never write to HubSpot: never change a deal's amount, close date, stage, or owner. Hold every decision for the sales team; this is a read-only, report-only agent."
             }
           ]
         }
@@ -7575,7 +7548,7 @@
               "type": "cron",
               "agent": "social-scheduler",
               "cron": "{{cadence}}",
-              "prompt": "Load the `social-post-drafting` skill and run one complete draft pass. This is a fresh session each run, so recompute from the current state of {{calendar_source}} — rely on each entry's `Kortix Drafted` marker in Notion, not local memory, to skip what's already handled. Read {{calendar_source}} for content, launches, and announcements landing within {{lookahead_days}} days, draft a platform-appropriate post for each entry for every platform in {{platforms}}, and post the full batch to {{approval_channel}} with each draft labeled by its scheduled date. Mark `Kortix Drafted` on every entry you draft for. Never schedule, queue, or post anything to any social account yourself — draft only; a human approves and publishes."
+              "prompt": "Load the `social-post-drafting` skill and run one complete draft pass. This is a fresh session each run, so recompute from the current state of {{calendar_source}} \u2014 rely on each entry's `Kortix Drafted` marker in Notion, not local memory, to skip what's already handled. Read {{calendar_source}} for content, launches, and announcements landing within {{lookahead_days}} days, draft a platform-appropriate post for each entry for every platform in {{platforms}}, and post the full batch to {{approval_channel}} with each draft labeled by its scheduled date. Mark `Kortix Drafted` on every entry you draft for. Never schedule, queue, or post anything to any social account yourself \u2014 draft only; a human approves and publishes."
             }
           ]
         }
@@ -7623,7 +7596,7 @@
       "name": "ticket-to-kb",
       "type": "registry:template",
       "title": "Mine resolved tickets into KB articles",
-      "description": "Installs a weekly reusable-session agent that clusters resolved Plain support tickets for recurring questions with no matching help-center article, drafts the top gaps as real articles from the actual resolutions, and opens a PR against your docs/KB repo — a human always reviews and publishes.",
+      "description": "Installs a weekly reusable-session agent that clusters resolved Plain support tickets for recurring questions with no matching help-center article, drafts the top gaps as real articles from the actual resolutions, and opens a PR against your docs/KB repo \u2014 a human always reviews and publishes.",
       "categories": [
         "support",
         "use-case"
@@ -7650,7 +7623,7 @@
           "label": "KB articles directory",
           "type": "text",
           "default": "content/kb",
-          "help": "The path (relative to the repo root) where KB articles live — the only path the agent may write to.",
+          "help": "The path (relative to the repo root) where KB articles live \u2014 the only path the agent may write to.",
           "required": true
         },
         {
@@ -7688,7 +7661,7 @@
               "agent": "ticket-to-kb",
               "cron": "{{cadence}}",
               "session_mode": "reuse",
-              "prompt": "Load the `kb-gap-mining` skill and run one complete mining pass. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/kb-gap-mining-log.md` for topics already covered, topics already drafted in an open PR, and clusters seen before that didn't yet clear the bar, and check for any open KB-gap PR before starting new work. Read recently resolved threads from Plain (read-only), cluster them into recurring topics by intent, and cross-reference each topic against {{kb_path}} of {{kb_repo}} and the ledger to find topics with real ticket volume and no existing article. Draft the top 3-5 gaps as KB articles under {{kb_path}}, grounded strictly in the actual resolutions used to close those tickets, with all customer names and account details stripped. Open ONE PR against {{kb_repo}} using the gh CLI with GH_TOKEN, noting the ticket count and source threads per article. Never publish and never merge — a human reviews and decides what ships. Update the ledger with this run's covered, drafted, and passed-over topics before finishing."
+              "prompt": "Load the `kb-gap-mining` skill and run one complete mining pass. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/kb-gap-mining-log.md` for topics already covered, topics already drafted in an open PR, and clusters seen before that didn't yet clear the bar, and check for any open KB-gap PR before starting new work. Read recently resolved threads from Plain (read-only), cluster them into recurring topics by intent, and cross-reference each topic against {{kb_path}} of {{kb_repo}} and the ledger to find topics with real ticket volume and no existing article. Draft the top 3-5 gaps as KB articles under {{kb_path}}, grounded strictly in the actual resolutions used to close those tickets, with all customer names and account details stripped. Open ONE PR against {{kb_repo}} using the gh CLI with GH_TOKEN, noting the ticket count and source threads per article. Never publish and never merge \u2014 a human reviews and decides what ships. Update the ledger with this run's covered, drafted, and passed-over topics before finishing."
             }
           ],
           "env_optional": [
@@ -7740,7 +7713,7 @@
       "name": "vendor-onboarding",
       "type": "registry:template",
       "title": "Vendor onboarding on autopilot",
-      "description": "A daily agent that checks new vendor requests in Gmail for a completed W-9, banking form, and signed contract, records each vendor's status to the Google Sheets vendor register, and drafts a follow-up plus a Slack flag for anything missing or invalid — never approving a vendor or setting up payment or banking.",
+      "description": "A daily agent that checks new vendor requests in Gmail for a completed W-9, banking form, and signed contract, records each vendor's status to the Google Sheets vendor register, and drafts a follow-up plus a Slack flag for anything missing or invalid \u2014 never approving a vendor or setting up payment or banking.",
       "categories": [
         "operations",
         "use-case"
@@ -7825,7 +7798,7 @@
               "type": "cron",
               "agent": "vendor-onboarding",
               "cron": "{{cadence}}",
-              "prompt": "Load the `vendor-doc-intake` skill and process new vendor onboarding requests filed under the {{request_label}} label in Gmail. This is a fresh session each run, so recompute from the current state — read {{vendor_register}} first and nothing carries over from the prior day. For each new vendor request, check the W-9, banking form, and signed contract against the fixed checklist; record every vendor's status to {{vendor_register}}, flagged or clean; draft a Gmail follow-up (never send it) for anything missing or invalid; and post the batch to {{review_channel}}. Never write account or routing numbers into the register, and never approve a vendor or set up payment or banking — a human owns that decision on every vendor, complete paperwork or not."
+              "prompt": "Load the `vendor-doc-intake` skill and process new vendor onboarding requests filed under the {{request_label}} label in Gmail. This is a fresh session each run, so recompute from the current state \u2014 read {{vendor_register}} first and nothing carries over from the prior day. For each new vendor request, check the W-9, banking form, and signed contract against the fixed checklist; record every vendor's status to {{vendor_register}}, flagged or clean; draft a Gmail follow-up (never send it) for anything missing or invalid; and post the batch to {{review_channel}}. Never write account or routing numbers into the register, and never approve a vendor or set up payment or banking \u2014 a human owns that decision on every vendor, complete paperwork or not."
             }
           ]
         }
@@ -7873,7 +7846,7 @@
       "name": "win-loss-analysis",
       "type": "registry:template",
       "title": "Analyze win-loss patterns weekly",
-      "description": "Installs a weekly agent that reads every HubSpot deal closed-won or closed-lost since the last run, breaks the outcomes down by segment, competitor, price, and the stage where deals die, and posts the themes plus recommendations to Slack. Read-only and report-only — it never changes a deal record.",
+      "description": "Installs a weekly agent that reads every HubSpot deal closed-won or closed-lost since the last run, breaks the outcomes down by segment, competitor, price, and the stage where deals die, and posts the themes plus recommendations to Slack. Read-only and report-only \u2014 it never changes a deal record.",
       "categories": [
         "sales",
         "use-case"
@@ -7960,7 +7933,7 @@
               "type": "cron",
               "agent": "win-loss-analysis",
               "cron": "{{cadence}}",
-              "prompt": "Load the `win-loss-patterns` skill and run one complete win-loss analysis. This is a fresh session each run, so recompute the window from HubSpot's own close-date timestamps — nothing carries over from the prior week. Read every deal closed-won or closed-lost in the last {{lookback_days}} days, read-only, including {{close_reason_property}} and {{competitor_property}} verbatim. Break the outcomes down by segment, competitor, price band, and the stage where lost deals died, cluster the close reasons into themes, and pair each theme with a concrete recommendation. Post the win rate, the four breakdowns, and the themes plus recommendations to {{alert_channel}}. Never write to HubSpot — no field, deal, or stage change, ever. The Slack post is the only output; a human decides what to change in the playbook."
+              "prompt": "Load the `win-loss-patterns` skill and run one complete win-loss analysis. This is a fresh session each run, so recompute the window from HubSpot's own close-date timestamps \u2014 nothing carries over from the prior week. Read every deal closed-won or closed-lost in the last {{lookback_days}} days, read-only, including {{close_reason_property}} and {{competitor_property}} verbatim. Break the outcomes down by segment, competitor, price band, and the stage where lost deals died, cluster the close reasons into themes, and pair each theme with a concrete recommendation. Post the win rate, the four breakdowns, and the themes plus recommendations to {{alert_channel}}. Never write to HubSpot \u2014 no field, deal, or stage change, ever. The Slack post is the only output; a human decides what to change in the playbook."
             }
           ]
         }

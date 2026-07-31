@@ -6,8 +6,16 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
-import { ImageOff, Maximize2, Minimize2, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  ImageBrokenIcon as ImageOff,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+  ArrowClockwiseIcon as RotateCw,
+  MagnifyingGlassPlusIcon as ZoomIn,
+  MagnifyingGlassMinusIcon as ZoomOut,
+} from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** What sits behind the artwork. Only meaningful for formats that can be
@@ -83,6 +91,11 @@ export function ImageRenderer({
   backdrop: showBackdrop = false,
 }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // `null` outside a <PreviewFitProvider> (Advanced-mode viewer, /projects
+  // previews, the file-preview modal, share pages) — `report` below is then
+  // an inert no-op, which is how this stays byte-identical everywhere except
+  // the Easy panel.
+  const previewFit = usePreviewFit();
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
@@ -165,8 +178,22 @@ export function ImageRenderer({
         height: imageRef.current.naturalHeight,
         type: displayFileType,
       });
+      previewFit?.report({
+        width: imageRef.current.naturalWidth,
+        height: imageRef.current.naturalHeight,
+      });
     }
-  }, [displayFileType]);
+  }, [displayFileType, previewFit]);
+
+  // Retries exhausted: these bytes are never going to decode, so there will be
+  // no `report` for this image. Say "never" rather than staying silent — a
+  // consumer reads silence as "still loading" and keeps whatever width it last
+  // measured. Guarded on `previewFit`, so this is inert everywhere but the
+  // Easy panel, exactly like `report`.
+  useEffect(() => {
+    if (!previewFit || !imgError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imgError]);
 
   // Force the browser to re-attempt by toggling the src. For blob: URLs a
   // cache-bust param doesn't help, so we briefly clear and re-set the src.

@@ -146,8 +146,7 @@ never merge it yourself.
 - **Sandbox isolation.** The clone, the correlation, and the draft all happen
   in the session sandbox. Only the PR leaves it.
 - **Secrets scoped.** The channel, GitHub, and Datadog credentials are
-  injected into the sandbox at runtime, never shown to the model or written
-  to logs.
+  injected into the sandbox at runtime, scoped to this agent's grant.
 - **No local ledger.** State is read fresh each sweep from the incident
   channel and from {{target_repo}}'s existing PRs/branches — nothing about
   a prior run is assumed.

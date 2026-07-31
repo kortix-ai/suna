@@ -16,6 +16,7 @@
  */
 
 import {
+  getManagedSkillFiles,
   getMarketplaceFiles,
   getProjectTemplateFiles,
   getStarterCatalogSourceMap,
@@ -199,7 +200,6 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     network: ["api.replicate.com"],
   },
   "deep-research": { tools: ["web_search"] },
-  "research-report": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },
   "draft-outreach": { tools: ["web_search"] },
@@ -345,6 +345,7 @@ function memSource(map: Map<string, string>): BuildSource {
 
 function buildStarterRegistry(): RegistryJson {
   const files = [
+    ...getManagedSkillFiles(),
     ...getStarterFiles({
       projectName: "Kortix Starter",
       template: "general-knowledge-worker",

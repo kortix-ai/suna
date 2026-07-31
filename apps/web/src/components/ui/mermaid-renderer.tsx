@@ -1,25 +1,21 @@
 'use client';
 
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from 'react';
-import { cn } from '@/lib/utils';
-import {
-  Modal,
-  ModalBody,
-  ModalClose,
-  ModalContent,
-  ModalTitle,
-} from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
-import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw, Copy, Check } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
+import { cn } from '@/lib/utils';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  XIcon as X,
+  MagnifyingGlassPlusIcon as ZoomIn,
+  MagnifyingGlassMinusIcon as ZoomOut,
+} from '@phosphor-icons/react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Global cache for rendered Mermaid diagrams
 const mermaidCache = new Map<string, string>();
@@ -80,9 +76,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-    const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(
-      null,
-    );
+    const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
     // Inline-card control: copy the diagram source.
     const [copied, setCopied] = useState(false);
@@ -151,15 +145,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       const touch1 = touches[0];
       const touch2 = touches[1];
       return Math.sqrt(
-        Math.pow(touch2.clientX - touch1.clientX, 2) +
-          Math.pow(touch2.clientY - touch1.clientY, 2),
+        Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2),
       );
     };
 
     const getTouchCenter = (touches: React.TouchList) => {
       if (touches.length === 0) return { x: 0, y: 0 };
-      if (touches.length === 1)
-        return { x: touches[0].clientX, y: touches[0].clientY };
+      if (touches.length === 1) return { x: touches[0].clientX, y: touches[0].clientY };
 
       const touch1 = touches[0];
       const touch2 = touches[1];
@@ -320,10 +312,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             setError(null);
           }
 
-          console.log(
-            '🎯 Starting Mermaid rendering for chart:',
-            chart.substring(0, 50) + '...',
-          );
+          console.log('🎯 Starting Mermaid rendering for chart:', chart.substring(0, 50) + '...');
 
           // Basic syntax validation before attempting to render
           const trimmedChart = chart.trim();
@@ -360,8 +349,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           ];
 
           const hasValidStarter = validStarters.some(
-            (starter) =>
-              firstLine.startsWith(starter) || firstLine.includes(starter),
+            (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
           );
 
           if (!hasValidStarter) {
@@ -402,9 +390,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           } catch (renderError) {
             // Handle specific Mermaid parsing errors
             const errorMessage =
-              renderError instanceof Error
-                ? renderError.message
-                : String(renderError);
+              renderError instanceof Error ? renderError.message : String(renderError);
             console.error('🚨 Mermaid parsing error:', errorMessage);
 
             // Remove any error elements that Mermaid might have added to the DOM
@@ -414,10 +400,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             }
 
             // Throw a more user-friendly error
-            if (
-              errorMessage.includes('Parse error') ||
-              errorMessage.includes('Syntax error')
-            ) {
+            if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
               throw new Error(`Diagram syntax error: ${errorMessage}`);
             } else if (errorMessage.includes('UnknownDiagramError')) {
               throw new Error('unsupported_diagram_type');
@@ -428,10 +411,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
           if (!mounted) return;
 
-          console.log(
-            '✅ Chart rendered successfully, SVG length:',
-            result.svg.length,
-          );
+          console.log('✅ Chart rendered successfully, SVG length:', result.svg.length);
 
           // Cache the result
           mermaidCache.set(chartHash, result.svg);
@@ -448,8 +428,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           cleanupTimer = setTimeout(cleanupMermaidErrors, 50);
 
           if (mounted) {
-            const errorMessage =
-              err instanceof Error ? err.message : 'Failed to render diagram';
+            const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
 
             // Check if it's an unsupported diagram type
             if (
@@ -457,9 +436,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
               errorMessage.includes('No diagram type detected')
             ) {
               // For unsupported diagrams, show as code block instead of large error
-              console.log(
-                '🔄 Unsupported Mermaid diagram type, falling back to code block',
-              );
+              console.log('🔄 Unsupported Mermaid diagram type, falling back to code block');
               setError('unsupported_diagram_type');
             } else {
               setError(errorMessage);
@@ -486,12 +463,12 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       return (
         <div
           className={cn(
-            'flex items-center justify-center p-8 bg-muted/30 rounded-lg border border-dashed',
+            'bg-muted/30 flex items-center justify-center rounded-lg border border-dashed p-8',
             className,
           )}
         >
           <div className="text-center">
-            <div className="text-sm text-muted-foreground mb-2">
+            <div className="text-muted-foreground mb-2 text-sm">
               🎨 Rendering Mermaid diagram...
             </div>
             <KortixLoader size="medium" />
@@ -505,13 +482,11 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       if (error === 'unsupported_diagram_type') {
         return (
           <div className={cn('my-2', className)}>
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+            <div className="text-muted-foreground mb-1 flex items-center gap-1 text-xs">
               <span>⚠️</span>
-              <span>
-                Unsupported diagram type (not available in Mermaid 11.x)
-              </span>
+              <span>Unsupported diagram type (not available in Mermaid 11.x)</span>
             </div>
-            <pre className="text-xs p-3 bg-muted/50 border rounded-lg overflow-x-auto whitespace-pre-wrap font-mono">
+            <pre className="bg-muted/50 overflow-x-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">
               {chart}
             </pre>
           </div>
@@ -520,23 +495,18 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
       // For other errors, show the full error UI
       return (
-        <div
-          className={cn(
-            'p-4 bg-muted/30 border border-border/40 rounded-lg',
-            className,
-          )}
-        >
-          <div className="text-sm text-muted-foreground font-medium mb-2">
+        <div className={cn('bg-muted/30 border-border/40 rounded-lg border p-4', className)}>
+          <div className="text-muted-foreground mb-2 text-sm font-medium">
             Failed to render Mermaid diagram
           </div>
-          <div className="text-xs text-muted-foreground font-mono bg-muted/50 p-2 rounded">
+          <div className="text-muted-foreground bg-muted/50 rounded p-2 font-mono text-xs">
             {error}
           </div>
           <details className="mt-2">
-            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+            <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs">
               📄 Show diagram source
             </summary>
-            <pre className="text-xs mt-2 p-2 bg-muted/50 rounded overflow-x-auto whitespace-pre-wrap">
+            <pre className="bg-muted/50 mt-2 overflow-x-auto rounded p-2 text-xs whitespace-pre-wrap">
               {chart}
             </pre>
           </details>
@@ -578,13 +548,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
         />
         <div
           className={cn(
-            'mermaid-container group relative my-4 w-full overflow-auto rounded-lg border bg-background',
+            'mermaid-container group bg-background relative my-4 w-full overflow-auto rounded-lg border',
             className,
           )}
           style={{ minHeight: '200px' }}
         >
           {/* Inline controls — reveal on hover/focus */}
-          <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <ButtonGroup>
               {enableFullscreen && (
                 <Hint label="Fullscreen" side="top">
@@ -608,7 +578,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
                   aria-label="Copy diagram source"
                 >
                   {copied ? (
-                    <Check className="size-3.5 text-kortix-green" />
+                    <Check className="text-kortix-green size-3.5" />
                   ) : (
                     <Copy className="size-3.5" />
                   )}
@@ -634,12 +604,22 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
                   </Button>
                 </Hint>
                 <Hint label="Zoom out" side="bottom">
-                  <Button variant="outline" size="icon" onClick={handleZoomOut} aria-label="Zoom out">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleZoomOut}
+                    aria-label="Zoom out"
+                  >
                     <ZoomOut className="size-4" />
                   </Button>
                 </Hint>
                 <Hint label="Rotate" side="bottom">
-                  <Button variant="outline" size="icon" onClick={handleRotate} aria-label="Rotate diagram">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRotate}
+                    aria-label="Rotate diagram"
+                  >
                     <RotateCcw className="size-4" />
                   </Button>
                 </Hint>
@@ -655,7 +635,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             <ModalBody className="relative min-h-0 flex-1 space-y-0 p-0">
               <div
                 ref={canvasRef}
-                className="absolute inset-0 touch-none select-none overflow-hidden bg-muted/10"
+                className="bg-muted/10 absolute inset-0 touch-none overflow-hidden select-none"
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}

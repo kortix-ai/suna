@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { isSessionFresh } from '../../http/fresh-sessions';
+import type { CreateProjectSessionInput, ProjectSession } from './sessions';
 import {
   createProjectSession,
   createSessionPublicShare,
@@ -8,6 +9,7 @@ import {
   deleteProjectSession,
   ensureWarmProjectSession,
   getProjectSession,
+  getProjectSessionScope,
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionTranscript,
@@ -16,6 +18,7 @@ import {
   listSessionPublicShares,
   restartProjectSession,
   revokeSessionPublicShare,
+  setProjectSessionScope,
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
@@ -42,6 +45,9 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
+
+type IsNever<T> = [T] extends [never] ? true : false;
+type SessionAttributionKey<T> = Extract<keyof T, `${'end_user' | 'origin'}_${'ref'}`>;
 
 test('listProjectSessions hits GET /projects/:id/sessions', async () => {
   nextResponse = { status: 200, body: [] };
@@ -130,6 +136,34 @@ test('createProjectSession serializes non-secret runtime_context unchanged', asy
       licensed: true,
       risk_score: 0.5,
       optional: null,
+    },
+  });
+});
+
+test('createProjectSession serializes canonical connector authorization bindings', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-BINDING', name: null } };
+  await createProjectSession('P1', {
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+});
+
+test('createProjectSession retains deprecated profile_id input compatibility', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-LEGACY-BINDING', name: null } };
+  await createProjectSession('P1', {
+    connector_bindings: {
+      gmail: { profile_id: 'AUTH-1' },
+    },
+  });
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { profile_id: 'AUTH-1' },
     },
   });
 });
@@ -283,17 +317,56 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(result.status).toBe('stopped');
 });
 
-test('listProjectSessions filters by end_user_ref, URL-encoding the handle', async () => {
-  // A wrapper's end-user handle is opaque — it can contain anything, including
-  // characters that would otherwise break out of the query string.
-  nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { end_user_ref: 'user@acme.com' });
-  expect(last().url).toContain('/projects/P1/sessions?end_user_ref=user%40acme.com');
+test('getProjectSessionScope reads canonical session scope', async () => {
+  const scope = {
+    secrets_allowlist: ['GMAIL_TOKEN'],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-1' } },
+    dropped_secrets: [],
+    added_secrets: [],
+    dropped_bindings: [],
+    retroactive: true,
+    detail: 'Current session scope.',
+  };
+  nextResponse = { status: 200, body: scope };
+  const result = await getProjectSessionScope('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(scope);
 });
 
-test('listProjectSessions combines scope and end_user_ref', async () => {
-  nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { scope: 'project', end_user_ref: 'u-1' });
-  expect(last().url).toContain('scope=project');
-  expect(last().url).toContain('end_user_ref=u-1');
+test('setProjectSessionScope replaces connector authorizations with canonical input', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: [],
+      connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      detail: 'Applies from the next prompt.',
+    },
+  };
+  const result = await setProjectSessionScope('P1', 'S1', {
+    secrets: [],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({
+    secrets: [],
+    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+  });
+  expect(result.connector_bindings).toEqual({
+    gmail: { authorization_id: 'AUTH-2' },
+  });
+});
+
+test('session contracts omit usage attribution keys', () => {
+  type ListOptions = NonNullable<Parameters<typeof listProjectSessions>[1]>;
+  const createInput: IsNever<SessionAttributionKey<CreateProjectSessionInput>> = true;
+  const response: IsNever<SessionAttributionKey<ProjectSession>> = true;
+  const listOptions: IsNever<SessionAttributionKey<ListOptions>> = true;
+
+  expect([createInput, response, listOptions]).toEqual([true, true, true]);
 });

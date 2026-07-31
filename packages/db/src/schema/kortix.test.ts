@@ -33,6 +33,8 @@ import {
   usageEvents,
   gatewayRequestLogs,
   accountSsoProviders,
+  executorConnectorAuthorizationStrategyEnum,
+  executorConnectors,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -137,6 +139,31 @@ describe('kortix enums', () => {
   test('change_request_status enum is non-empty and named', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
+  });
+
+  test('connector authorization strategy is project or user', () => {
+    expect(executorConnectorAuthorizationStrategyEnum.enumName).toBe(
+      'executor_connector_authorization_strategy',
+    );
+    expect(executorConnectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
+  });
+});
+
+describe('connector profiles', () => {
+  test('store one authorization strategy on each connector profile', () => {
+    expect(columnNames(executorConnectors)).toContain('authorization_strategy');
+  });
+});
+
+describe('project session connector bindings', () => {
+  test('store whether connector bindings were configured explicitly', () => {
+    const column = getTableConfig(projectSessions).columns.find(
+      (candidate) => candidate.name === 'connector_bindings_configured',
+    );
+
+    expect(column).toBeDefined();
+    expect(column?.notNull).toBe(true);
+    expect(column?.default).toBe(false);
   });
 });
 

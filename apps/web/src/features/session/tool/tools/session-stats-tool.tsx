@@ -1,17 +1,14 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Layers,
-} from 'lucide-react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { StackIcon as Layers } from '@phosphor-icons/react';
 
 export function SessionStatsTool({ part }: ToolProps) {
   const output = partOutput(part);
@@ -33,4 +30,3 @@ ToolRegistry.register('session_stats', SessionStatsTool);
 ToolRegistry.register('session-stats', SessionStatsTool);
 ToolRegistry.register('oc-session_stats', SessionStatsTool);
 ToolRegistry.register('oc-session-stats', SessionStatsTool);
-

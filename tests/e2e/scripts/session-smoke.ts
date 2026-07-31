@@ -14,16 +14,18 @@
  *   E2E_SUPABASE_URL       GoTrue base           (default http://127.0.0.1:54321)
  *   E2E_SERVICE_ROLE_KEY   Supabase service key  (default: apps/api/.env)
  *   E2E_ANON_KEY           Supabase anon key     (default: apps/web/.env)
- *   E2E_OPENROUTER_API_KEY model key for the run (default: apps/api/.env OPENROUTER_API_KEY)
- *   E2E_MODEL              opencode model id     (default openrouter/openai/gpt-4o-mini)
+ *   E2E_DATABASE_URL       local Postgres URL    (default postgresql://postgres:postgres@127.0.0.1:54322/postgres)
+ *   E2E_MODEL              opencode model id     (default kortix/glm-5.2)
  *   E2E_EXPECT_MANAGED_GIT_PROVIDER  assert the configured managed Git provider
+ *   E2E_SANDBOX_PROVIDER     explicit sandbox provider (daytona/platinum/e2b)
  *   E2E_SKIP_SNAPSHOT_WAIT   create the session immediately (default false)
- *   E2E_SKIP_AGENT_REPLY     skip model-secret and prompt assertions (default false)
+ *   E2E_SKIP_AGENT_REPLY     skip prompt assertions (default false)
  *
  * Exit code 0 = all assertions passed, non-zero = a failure (CI-friendly).
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const API_ENV = resolve(REPO_ROOT, 'apps/api/.env');
@@ -49,11 +51,11 @@ const API = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const SUPABASE = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || fromEnvFile(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY'), 'SUPABASE_SERVICE_ROLE_KEY');
 const ANON_KEY = need(process.env.E2E_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || fromEnvFile(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'SUPABASE anon key');
-const OPENROUTER = process.env.E2E_SKIP_AGENT_REPLY === '1'
-  ? null
-  : process.env.E2E_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || fromEnvFile(API_ENV, 'OPENROUTER_API_KEY');
-const MODEL = process.env.E2E_MODEL || 'openrouter/openai/gpt-4o-mini';
+const DATABASE_URL = process.env.E2E_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+const SKIP_AGENT_REPLY = process.env.E2E_SKIP_AGENT_REPLY === '1';
+const MODEL = process.env.E2E_MODEL || 'kortix/glm-5.2';
 const EXPECTED_MANAGED_GIT_PROVIDER = process.env.E2E_EXPECT_MANAGED_GIT_PROVIDER || '';
+const SANDBOX_PROVIDER = process.env.E2E_SANDBOX_PROVIDER || '';
 const [MODEL_PROVIDER, ...MODEL_REST] = MODEL.split('/');
 const MODEL_ID = MODEL_REST.join('/');
 
@@ -67,6 +69,35 @@ const ok = (label: string, cond: boolean, extra = '') => {
   log(`${cond ? '✅' : '❌'} ${label}${extra ? '  — ' + extra : ''}`);
   return cond;
 };
+
+function fundAccount(accountId: string): void {
+  execFileSync(
+    'psql',
+    [
+      DATABASE_URL,
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-c',
+      `INSERT INTO kortix.credit_accounts (
+         account_id,
+         balance,
+         balance_precise,
+         non_expiring_credits,
+         non_expiring_credits_precise,
+         tier
+       )
+       VALUES ('${accountId}', 1000, 1000, 1000, 1000, 'tier_2_20')
+       ON CONFLICT (account_id)
+       DO UPDATE SET
+         balance = 1000,
+         balance_precise = 1000,
+         non_expiring_credits = 1000,
+         non_expiring_credits_precise = 1000,
+         tier = 'tier_2_20'`,
+    ],
+    { stdio: 'ignore' },
+  );
+}
 
 async function api(method: string, path: string, body?: unknown, token = JWT) {
   const res = await fetch(`${API}${path}`, {
@@ -116,6 +147,10 @@ async function main() {
   const accts = await api('GET', '/accounts');
   const accountId = Array.isArray(accts.json) ? (accts.json.find((a: any) => a.personal_account)?.account_id ?? accts.json[0]?.account_id) : null;
   if (!ok('personal account', !!accountId, accountId ?? accts.text.slice(0, 120))) return finish();
+  if (!SKIP_AGENT_REPLY) {
+    fundAccount(accountId);
+    ok('fund local account for managed gateway inference', true);
+  }
   if (EXPECTED_MANAGED_GIT_PROVIDER) {
     const managed = await api('GET', '/projects/managed-git/status');
     ok(
@@ -153,14 +188,7 @@ async function main() {
     ok('fresh token returns Code Storage git username', gitToken.json?.git_username === 't', String(gitToken.json?.git_username));
   }
 
-  // 4. provider key as a project secret (so opencode has a model)
-  if (OPENROUTER) {
-    ok('POST secret OPENROUTER_API_KEY', (await api('POST', `/projects/${projectId}/secrets`, { name: 'OPENROUTER_API_KEY', value: OPENROUTER })).status === 200);
-  } else {
-    log('⚠️  no OPENROUTER key — skipping secret + reply assertions (infra-only run)');
-  }
-
-  // 5. wait for a ready snapshot of the base branch
+  // 4. wait for a ready snapshot of the base branch
   let snapReady = process.env.E2E_SKIP_SNAPSHOT_WAIT === '1';
   log(snapReady ? 'Skipping snapshot-list wait; session boot will resolve/build its image.' : 'Polling snapshot build...');
   const snapEnd = Date.now() + 9 * 60_000;
@@ -190,7 +218,10 @@ async function main() {
 
   // 6. session CRUD — create / list / read / rename
   const sessionName = `e2e session ${Date.now()}`;
-  let sess = await api('POST', `/projects/${projectId}/sessions`, { name: sessionName });
+  let sess = await api('POST', `/projects/${projectId}/sessions`, {
+    name: sessionName,
+    ...(SANDBOX_PROVIDER ? { provider: SANDBOX_PROVIDER } : {}),
+  });
   if (sess.status === 503) {
     const reconcileEnd = Date.now() + 45_000;
     while (Date.now() < reconcileEnd) {
@@ -215,7 +246,7 @@ async function main() {
   // and returns the serialized session sandbox once it is ready.
   log('Polling sandbox...');
   let ext = '', sbStatus = '', startStage = '';
-  const sbEnd = Date.now() + 5 * 60_000;
+  const sbEnd = Date.now() + 10 * 60_000;
   while (Date.now() < sbEnd) {
     const sb = await api('POST', `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`);
     startStage = sb.json?.stage ?? '';
@@ -261,7 +292,7 @@ async function main() {
   const ocId = oc.json?.id;
   if (!ok('create OpenCode session', !!ocId, `${oc.status} ${oc.text.slice(0, 120)}`)) return finish({ projectId, sessionId });
 
-  if (OPENROUTER) {
+  if (!SKIP_AGENT_REPLY) {
     const prompt = await api('POST', `/p/${ext}/8000/session/${ocId}/prompt_async`, {
       parts: [{ type: 'text', text: 'Reply with exactly one word: PONG' }],
       model: { providerID: MODEL_PROVIDER, modelID: MODEL_ID },
@@ -270,10 +301,12 @@ async function main() {
 
     log('Waiting for a real assistant reply...');
     let assistantText = '';
+    let lastMessages: unknown = [];
     const rEnd = Date.now() + 2 * 60_000;
     while (Date.now() < rEnd) {
       const m = await api('GET', `/p/${ext}/8000/session/${ocId}/message`);
       const items = Array.isArray(m.json) ? m.json : (m.json?.messages ?? []);
+      lastMessages = items;
       for (const entry of items) {
         if ((entry?.info?.role ?? entry?.role) !== 'assistant') continue;
         const parts = entry?.parts ?? entry?.info?.parts ?? [];
@@ -282,6 +315,9 @@ async function main() {
       }
       if (assistantText) break;
       await sleep(3000);
+    }
+    if (!assistantText) {
+      log('OpenCode transcript diagnostic', JSON.stringify(lastMessages).slice(0, 4_000));
     }
     ok('assistant replied', !!assistantText, assistantText ? `"${assistantText.slice(0, 100)}"` : 'no assistant text in 2m');
     ok('reply contains PONG', /pong/i.test(assistantText), assistantText.slice(0, 60));

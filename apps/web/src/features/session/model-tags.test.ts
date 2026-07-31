@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { modelVisibilityKeyForProviderModel, shouldShowFreeTag } from './model-tags';
+import { shouldShowFreeTag } from './model-tags';
 
 describe('shouldShowFreeTag', () => {
   test('uses an explicit free marker when a provider sends one', () => {
@@ -32,22 +32,3 @@ describe('shouldShowFreeTag', () => {
   });
 });
 
-describe('modelVisibilityKeyForProviderModel', () => {
-  test('keeps native provider keys unchanged', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', false),
-    ).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
-  });
-
-  test('maps gateway BYOK provider models onto the kortix provider namespace', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', true),
-    ).toEqual({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' });
-  });
-
-  test('keeps managed kortix model ids bare in gateway mode', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('kortix', 'claude-opus-4.8', true),
-    ).toEqual({ providerID: 'kortix', modelID: 'claude-opus-4.8' });
-  });
-});

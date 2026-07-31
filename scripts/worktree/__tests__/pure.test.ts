@@ -151,6 +151,13 @@ describe('launch envs', () => {
     expect(env.KORTIX_API_PROXY_TARGET).toBe(`http://localhost:${ports.api}`);
   });
 
+  test('web server actions use the worktree Supabase instance', () => {
+    const worktreeCreds = { ...creds, anonKey: 'test-anon-key' };
+    const env = webLaunchEnv(ports, worktreeCreds);
+    expect(env.SUPABASE_URL).toBe(worktreeCreds.supabaseUrl);
+    expect(env.SUPABASE_ANON_KEY).toBe(worktreeCreds.anonKey);
+  });
+
   test('api-generated links target the worktree web port', () => {
     const env = apiLaunchEnv(ports, creds);
     expect(env.FRONTEND_URL).toBe(`http://localhost:${ports.web}`);

@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import { useRuntimeSessionTodo } from '@kortix/sdk/react';
-import { ChevronDown, ListTodo } from 'lucide-react';
+import { CaretDownIcon as ChevronDown, ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 
 // --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
 

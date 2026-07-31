@@ -32,6 +32,7 @@ function row(
     originRef: null,
     secretsAllowlist: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: {},
     createdAt: new Date('2026-07-21T00:00:00.000Z'),
     updatedAt: new Date('2026-07-21T00:00:00.000Z'),
@@ -42,45 +43,6 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
-  test('an end-user-filtered project scope drops rows the manager cannot open', () => {
-    // scope=project normally returns inaccessible rows with the end-user label
-    // redacted. Pairing that with ?end_user_ref= would turn it into an oracle:
-    // send a guessed handle, count the rows, learn whether that end-user exists
-    // here. An end-user-scoped question gets end-user-scoped rows.
-    const privateOther = row('private-other', { createdBy: OTHER_ID });
-    const mine = row('mine', { createdBy: VIEWER_ID });
-
-    const filtered = selectSessionRowsForViewer({
-      rows: [privateOther, mine],
-      scope: 'project',
-      canManageProject: true,
-      subject,
-      grantsBySession: new Map(),
-      callerSessionId: null,
-      endUserRefFiltered: true,
-      runtimeStatusBySession: new Map(),
-    });
-
-    expect(filtered.items.map((item) => item.row.sessionId)).toEqual(['mine']);
-
-    // ...and the unfiltered inventory is unchanged — a manager asking for the
-    // whole project still gets the whole project.
-    const unfiltered = selectSessionRowsForViewer({
-      rows: [privateOther, mine],
-      scope: 'project',
-      canManageProject: true,
-      subject,
-      grantsBySession: new Map(),
-      callerSessionId: null,
-      endUserRefFiltered: false,
-      runtimeStatusBySession: new Map(),
-    });
-    expect(unfiltered.items.map((item) => item.row.sessionId)).toEqual([
-      'private-other',
-      'mine',
-    ]);
-  });
-
   test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
@@ -99,8 +61,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map(),
+      runtimeStatusBySession: new Map(),
     });
 
     expect(selected.authorized).toBe(true);
@@ -132,8 +93,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map(),
+      runtimeStatusBySession: new Map(),
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
@@ -155,8 +115,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
+      runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
     expect(selected.authorized).toBe(true);
@@ -207,29 +166,19 @@ describe('mergeSessionOwnerIdentities', () => {
   });
 });
 
-/**
- * Kortix-as-a-Backend isolation, at the LIST leg.
- *
- * The unit tests for `isSessionVisibleTo` cover the decision. This covers the
- * scenario the decision exists for, in the shape it actually occurs: a wrapper
- * creates every end-user's session under ONE credential, so `created_by` is
- * identical across them and cannot separate anybody.
- */
-describe('KaaB: one wrapper credential, many end-users', () => {
+describe('backend credential session isolation', () => {
   const WRAPPER = '33333333-3333-4333-8333-333333333333';
   const wrapperSubject = { userId: WRAPPER, groupIds: [] };
 
-  // Two end-users' sessions. Same creator, same visibility — the ONLY thing
-  // distinguishing them is which sandbox is asking.
   const alice = row('aaaa1111-1111-4111-8111-111111111111', {
     createdBy: WRAPPER,
     origin: 'backend',
-    originRef: 'end-user-alice',
+    originRef: null,
   });
   const bob = row('bbbb2222-2222-4222-8222-222222222222', {
     createdBy: WRAPPER,
     origin: 'backend',
-    originRef: 'end-user-bob',
+    originRef: null,
   });
 
   const select = (callerSessionId: string | null) =>
@@ -240,7 +189,6 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject: wrapperSubject,
       grantsBySession: new Map(),
       callerSessionId,
-      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
 
@@ -279,9 +227,8 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: mine.sessionId,
-      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
     expect(selected.items.every((item) => item.canAccess)).toBe(true);
   });
-})
+});

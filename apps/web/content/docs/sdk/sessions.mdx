@@ -30,10 +30,14 @@ ID, and the branch name are the same value. See
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
+| `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
+| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connector authorizations |
+| `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
 
 <Callout type="warn">
-  `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session without losing it, call `s.stop()` instead.
+  `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
+  without losing it, call `s.stop()` instead.
 </Callout>
 
 Three more read methods round out the handle:
@@ -59,6 +63,27 @@ retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
 
+### Seed a server-authorized OpenCode pin
+
+A server-rendered React host can supply the OpenCode pin already persisted for
+the same Kortix session:
+
+```tsx
+const session = useSession(projectId, sessionId, {
+  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+});
+```
+
+The seed only hydrates cached transcript content while `/start` runs. It does
+not override the runtime identity. The pin returned by `/start` is
+authoritative and replaces a stale seed.
+
+Do not accept this value from an untrusted tenant selector. Do not create an
+OpenCode session in the host. Kortix creates and persists the root session.
+OpenCode query caches and transcript controllers are scoped to the sandbox
+runtime, so equal OpenCode ids from different sandboxes do not share cache
+entries.
+
 ## Send a prompt
 
 ```ts
@@ -69,6 +94,16 @@ await s.send('Refactor the auth module');
 await s.send('One-off task', { model, agent }); // overrides for this call only
 await s.abort(); // stop the current run
 ```
+
+For OpenCode REST sessions, the first `send()` on a handle reads the model and
+agent persisted on the Kortix session. This prevents a snapshot-inherited
+OpenCode session from reusing stale snapshot defaults.
+
+Prompt choice precedence is:
+
+1. The `send()` call.
+2. The handle's `setModel()` or `setAgent()` value.
+3. The persisted Kortix session default.
 
 `setModel` only chooses what the next local `send` asks for — it never leaves the
 handle. To **persist** a new model for a running session server-side, use
@@ -86,13 +121,48 @@ the model; anyone else gets `403`.
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.
 
+## Session scope and cost
+
+Read the stored secret narrowing and materialized connector authorizations.
+`secrets_allowlist: null` means the agent's secret grant applies:
+
+```ts
+const scope = await s.scope();
+```
+
+Replace one or both scope fields:
+
+```ts
+await s.rescope({
+  secrets: ['DATABASE_URL'],
+  connector_bindings: {
+    github: { authorization_id: authorizationId },
+  },
+});
+```
+
+Each supplied field replaces its complete previous value. Omit a field to leave
+it unchanged. Connector authorization changes apply to the next tool call.
+Secret removal stops future delivery but cannot remove an already disclosed
+value from model context or an existing process.
+
+Read the unified cost record:
+
+```ts
+const cost = await s.cost();
+```
+
+The record combines finalized LLM cost, billed sandbox compute cost, model
+usage, token totals, compute duration, and ledger entries. `s.cost()` does not
+call `ensureReady()`.
+
 ## Runtime status and previews
 
-| Method | Returns | Use |
-|---|---|---|
-| `s.health(init?)` | `{ status, ok, health, body }` | Check whether the runtime is alive |
-| `s.previewUrl(port, path?)` | `string` | Get a proxy URL for a port the agent exposed |
-| `s.proxyUrl(url?)` | `string \| undefined` | Rewrite a localhost URL the agent printed |
+| Method                      | Returns                        | Use                                          |
+| --------------------------- | ------------------------------ | -------------------------------------------- |
+| `s.health(init?)`           | `{ status, ok, health, body }` | Check whether the runtime is alive           |
+| `s.previewUrl(port, path?)` | `string`                       | Get a proxy URL for a port the agent exposed |
+| `s.proxyUrl(url?)`          | `string \| undefined`          | Rewrite a localhost URL the agent printed    |
 
 ```ts
 const { ok, health } = await s.health();
@@ -110,12 +180,11 @@ Use `s.stream()` to receive live events in a script or server. In a React
 app, use [`useSession`](/docs/sdk/react) instead — it manages the whole
 session lifecycle for you.
 
-A session's events come from the OpenCode runtime inside its sandbox. The
-Kortix API proxies them to you. There is no separate WebSocket endpoint. The
+`s.stream()` is the OpenCode REST compatibility event stream. The Kortix API
+proxies it from the sandbox. There is no separate WebSocket endpoint. The
 transport is `fetch` with a streaming response body, read through
 `ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
-backoff, and a heartbeat check inside the event-stream layer. A dropped
-connection resumes on its own.
+backoff, and a heartbeat check.
 
 Stream a session:
 
@@ -158,15 +227,15 @@ exports.
 Each event has a `type` and a `properties` object that holds its data, for
 example `event.properties.sessionID`.
 
-| `type` | When it fires |
-| --- | --- |
-| `message.updated` / `message.removed` | A message changed or was deleted. |
+| `type`                                          | When it fires                                       |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `message.updated` / `message.removed`           | A message changed or was deleted.                   |
 | `message.part.updated` / `message.part.removed` | A part (text, tool call, file) grew or was removed. |
-| `session.status` | The session's busy state changed. |
-| `session.idle` | The turn finished. |
-| `session.error` | The turn failed. The event carries the error. |
-| `question.asked` | The agent asked for input. |
-| `question.replied` / `question.rejected` | The answer to a question arrived. |
+| `session.status`                                | The session's busy state changed.                   |
+| `session.idle`                                  | The turn finished.                                  |
+| `session.error`                                 | The turn failed. The event carries the error.       |
+| `question.asked`                                | The agent asked for input.                          |
+| `question.replied` / `question.rejected`        | The answer to a question arrived.                   |
 
 Turn raw messages and parts into renderable output with `classifyTurn`. See
 [SDK reference](/docs/sdk/reference).
@@ -216,9 +285,9 @@ the full method list.
 
 ## The raw runtime
 
-`s.runtime` is the typed OpenCode client, scoped to this session. Use it only
-for calls that `send`, `abort`, and `stream` do not cover. It requires a
-resolved runtime — call `s.ensureReady()` first.
+`s.runtime` is the typed OpenCode REST client. Use it only for calls that `send`,
+`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
+call `s.ensureReady()` first.
 
 ```ts
 const { opencodeSessionId } = await s.ensureReady();
@@ -279,13 +348,13 @@ try {
 
 ### Error classes
 
-| Class | Extends | When it throws | Key fields |
-|---|---|---|---|
-| `ApiError` | `Error` | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
-| `AuthError` | `ApiError` | `getToken` returned `null`. Kortix never sent the request | `code` is always `'NO_SESSION'` |
-| `BillingError` | `Error` | HTTP `402`. The only billing error class | `status` (`402`), `detail.message` |
-| `RequestTooLargeError` | `Error` | HTTP `431`. Usually too many files in one request | `detail.suggestion` |
-| `SessionNotReadyError` | `Error` | A runtime accessor ran before `ensureReady()` | `name` is `'SessionNotReadyError'` |
+| Class                  | Extends    | When it throws                                                                 | Key fields                                                           |
+| ---------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `ApiError`             | `Error`    | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
+| `AuthError`            | `ApiError` | `getToken` returned `null`. Kortix never sent the request                      | `code` is always `'NO_SESSION'`                                      |
+| `BillingError`         | `Error`    | HTTP `402`. The only billing error class                                       | `status` (`402`), `detail.message`                                   |
+| `RequestTooLargeError` | `Error`    | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
+| `SessionNotReadyError` | `Error`    | A runtime accessor ran before `ensureReady()`                                  | `name` is `'SessionNotReadyError'`                                   |
 
 `ApiError.name` is `'ApiError'` by default. Two cases override it:
 
@@ -327,10 +396,10 @@ Call `await session.ensureReady()` first, or call `send()`, which readies the se
 
 ### Helpers
 
-| Helper | Signature | What it does |
-|---|---|---|
-| `parseBillingError(error)` | `(error) => Error` | Wraps a `402` response into a `BillingError`. Returns other errors unchanged |
-| `isBillingError(error)` | `(error) => boolean` | Returns `error instanceof BillingError` |
+| Helper                           | Signature                           | What it does                                                                                                  |
+| -------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `parseBillingError(error)`       | `(error) => Error`                  | Wraps a `402` response into a `BillingError`. Returns other errors unchanged                                  |
+| `isBillingError(error)`          | `(error) => boolean`                | Returns `error instanceof BillingError`                                                                       |
 | `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
 
 ```ts

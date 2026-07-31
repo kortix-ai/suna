@@ -1,5 +1,8 @@
 # The final, enterprise-ready authorization model — plan
 
+> This plan preserves the authorization design record. Session runtime uses
+> OpenCode REST and `kortix_version: 2`.
+
 Source: founder notes ("CLEAR ACCESS / AUTHORISATION MODEL IS NEEDED. THAT IS 100% FINAL &
 ENTERPRISE READY."). This doc maps every ask to the **current code state** and lays out a
 **sequenced, decision-baked plan** to close the gaps. It is for team review before code.
@@ -40,7 +43,8 @@ only, ignoring its `_scope` param, so a sandbox can still `git clone`/`pull` the
 are unaffected (runtime-injected, never in the repo); the gap is config/skill/memory file visibility
 only. Planned fix: stamp resource caps into the session token at mint and have `authorizeGitProxy`
 honor them. See `docs/IAM_RBAC_V1_PLAN.md` §10 ("Known limitation (deferred): sandbox git-clone
-boundary") for detail. Marko-acknowledged, deferred out of v1, tracked as follow-up.
+boundary") for detail. The team accepted this v1 deferral and tracks it as a
+follow-up.
 
 The remaining work is the **enforcement/UX loop around** this foundation, plus a few
 architectural decoupling epics.
@@ -83,25 +87,24 @@ approval.
 
 ---
 
-## 2. Per-session AUDIT LOG + per-agent/actor COST  *(safe, additive — do first)*
+## 2. Per-session audit log and cost
 
 **Ask:** "Clear per session AUDIT LOG of everything the agent did" + "Clear per session/agent/user
 COST understanding."
 
-**Current state.** All the data exists but isn't surfaced per session/agent:
-`executor_executions` (every gated tool/connector call, with risk + status + approval),
-`audit_events` (HTTP mutations + IAM), `gateway_request_logs.finalCost`,
-`sandbox_compute_sessions.costUsd`. There is **no single per-session audit endpoint** and **no
-per-agent/per-actor cost rollup** endpoint.
+**Current state.** The API exposes a per-session action audit. It also exposes
+unified account and project-filtered session-cost records.
+
+Session cost combines finalized `gateway_request_logs.final_cost_precise` and
+billed `sandbox_compute_sessions.cost_usd`. The detail response includes model
+usage and discriminated LLM/compute ledger entries.
 
 **Plan:**
-- **2a — `GET /v1/projects/:id/sessions/:sessionId/audit` (M).** Chronological timeline of every
-  executor-gated action the agent took (action, risk, allow/ask/block verdict, who acted, who
-  approved). (Prototyped this pass; reverted to keep the merge PR clean — ship as its own PR with
-  route-manifest regen + a ke2e flow.)
-- **2b — Cost attribution (M).** `GET /v1/projects/:id/sessions/:sessionId/cost` (already partly
-  via gateway/sessions) + per-**agent** and per-**actor** rollups (the columns exist:
-  `usage_events.actorUserId`, `gateway_request_logs.actorUserId`, `executor_executions.actingUserId`).
+- **2a — shipped.** `GET /v1/projects/:id/sessions/:sessionId/audit` returns the
+  chronological executor action timeline.
+- **2b — shipped.** `GET /v1/usage/session-costs` returns a paginated list.
+  `GET /v1/usage/session-costs/:sessionId` returns one detailed ledger. The
+  SDK exposes `billing.sessionCosts` and `session(projectId, sessionId).cost()`.
 - **2c — Audit webhook/export (S, later).** Extend the existing account audit-webhook to include
   executor executions + session-scoped export for SIEM.
 
@@ -192,26 +195,22 @@ give access to the appropriate allowed Kortix scopes."
 
 ---
 
-## 6. Harnesses (Codex/Claude/Eve) + server-side skills  *(epic)*
+## 6. Server-side skills  *(epic)*
 
-**Ask:** "Want Codex/Claude SUPPORT (besides Opencode) — how do we load all these as harnesses?" +
-"Skills we can move server-side for discovery (perplexity computer style) for authorization
-control (need to modify opencode?)."
+**Ask:** "Skills we can move server-side for discovery (perplexity computer style) for authorization
+control (need to modify OpenCode?)."
 
-**Current state.** The CLI scaffolds multi-harness symlinks (`.claude`/`.codex`/`.agents` →
-`.kortix/opencode`), but the **session runtime is hardcoded to opencode** (`createOpencodeSupervisor`
-always spawns `opencode serve`; token mint assumes an opencode "executor session"). Skills are
-**file-based** (cloned at boot, discovered for IAM grants at build time) — no server-side skill
-discovery API.
+**Current state.** The session runtime uses OpenCode. Skills are **file-based**
+(cloned at boot and discovered for IAM grants at build time). There is no
+server-side skill discovery API.
 
 **Plan (epic):**
-- **6a** Abstract the harness spawn into a pluggable interface (spawn cmd, config injection,
-  identity, token shape) with opencode as the first implementation; add Codex/Claude adapters.
-- **6b** Server-side skill discovery: a `/skills` API the harness pulls at runtime (needs an
-  opencode modification), enabling per-request authorization control over which skills load.
+- **6a** Server-side skill discovery: a `/skills` API OpenCode pulls at runtime
+  (needs an OpenCode modification). This enables per-request authorization
+  control over which skills load.
 
-**Risk:** large; touches the runtime + a fork of opencode. **Decision needed:** priority + which
-harness first.
+**Risk:** large; touches the runtime and an OpenCode fork. **Decision needed:**
+priority.
 
 ---
 
@@ -246,7 +245,7 @@ the SDK lacks full workspace file-I/O CRUD + some hooks; and **git is a hard dep
 3. **PR B:** §1a–1c approve/ask/block loop (decisions baked; defer 1d resume).
 4. **PR C:** §3a resource ownership / private triggers.
 5. **Founder-gated:** §3b remove per-user connectors (migration), §4 full agent-identity,
-   §5 token consolidation, §6 harnesses, §7b CMS decoupling — each its own planned PR.
+   §5 token consolidation, §6 server-side skills, §7b CMS decoupling — each its own planned PR.
 
 Everything above §3b is additive/safe and can ship without breaking existing projects. Everything
 from §3b down changes existing behavior and needs an explicit greenlight + migration.

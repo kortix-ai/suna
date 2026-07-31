@@ -1,33 +1,23 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { InlineFileList, parseFilePaths } from '@/features/session/tool/shared/file-list';
 import {
   BasicTool,
   ToolEmptyState,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
-  partStreamingInput,
   partOutput,
   partStatus,
+  partStreamingInput,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  InlineFileList,
-  parseFilePaths,
-} from '@/features/session/tool/shared/file-list';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import {
-  Search,
-} from 'lucide-react';
+import { getDirectory } from '@/ui';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  getDirectory,
-} from '@/ui';
-
+import { useMemo } from 'react';
 
 export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -45,8 +35,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
-  const isNoResults =
-    !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
+  const isNoResults = !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
 
   return (
     <BasicTool
@@ -90,4 +79,3 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('glob', GlobTool);
-

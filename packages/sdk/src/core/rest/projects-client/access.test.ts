@@ -361,16 +361,20 @@ test('listSessionsNeedingInput GETs the needs-input summary', async () => {
   expect(result.total).toBe(2);
 });
 
-test('resolveApproval defaults scope to "once" and POSTs { decision, scope }', async () => {
-  nextResponse = { status: 200, body: { ok: true, scope: 'once' } };
+test('resolveApproval POSTs only the decision', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
   await resolveApproval('P1', 'ex1', 'approve');
   expect(last().url).toContain('/projects/P1/approvals/ex1');
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ decision: 'approve', scope: 'once' });
+  expect(last().body).toEqual({ decision: 'approve' });
 });
 
-test('resolveApproval forwards an explicit "session" scope', async () => {
-  nextResponse = { status: 200, body: { ok: true, scope: 'session' } };
-  await resolveApproval('P1', 'ex1', 'deny', 'session');
-  expect(last().body).toEqual({ decision: 'deny', scope: 'session' });
+// A decision covers exactly the call that asked for it. The 'session' /
+// 'session_all' scopes were removed because one click pre-authorised every later
+// call of the tool, whatever its arguments — the gate's whole purpose.
+test('resolveApproval sends no scope, so nothing can widen a decision', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await resolveApproval('P1', 'ex1', 'deny');
+  expect(last().body).toEqual({ decision: 'deny' });
+  expect(Object.keys(last().body as object)).not.toContain('scope');
 });

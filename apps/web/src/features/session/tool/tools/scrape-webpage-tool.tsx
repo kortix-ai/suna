@@ -26,7 +26,7 @@ import {
 } from '@/features/session/tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid } from '@mynaui/icons-react';
+import { WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -66,7 +66,10 @@ function ScrapeResultItem({ result }: { result: ScrapeResult }) {
           </div>
           <div className="flex items-center gap-2">
             {!result.success && (
-              <DangerTriangleSolid className={cn('size-3 shrink-0', STATUS_TEXT.destructive)} />
+              <DangerTriangleSolid
+                weight="fill"
+                className={cn('size-3 shrink-0', STATUS_TEXT.destructive)}
+              />
             )}
             <p className="text-muted-foreground ml-auto min-w-0 shrink-0 truncate text-xs">
               {hostname}

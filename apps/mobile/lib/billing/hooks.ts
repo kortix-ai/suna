@@ -267,9 +267,9 @@ function transformToSubscriptionInfo(
     credits: {
       balance: state.credits.total,
       tier_credits: state.tier.monthly_credits,
-      lifetime_granted: 0,
-      lifetime_purchased: 0,
-      lifetime_used: 0,
+      lifetime_granted: state.credits.lifetime_granted ?? 0,
+      lifetime_purchased: state.credits.lifetime_purchased ?? 0,
+      lifetime_used: state.credits.lifetime_used ?? 0,
       can_purchase_credits: state.subscription.can_purchase_credits,
     },
     is_trial: state.subscription.is_trial,

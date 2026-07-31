@@ -214,6 +214,58 @@ describe('panelSplit (width override for presentation/terminal layers)', () => {
   });
 });
 
+describe('panelAspect (aspect-ratio-fit input, mirrors panelSplit)', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('defaults to null and can be set and cleared', () => {
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+    useKortixComputerStore.getState().setPanelAspect(1.41);
+    expect(useKortixComputerStore.getState().panelAspect).toBe(1.41);
+    useKortixComputerStore.getState().setPanelAspect(null);
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+  });
+
+  test('animate: false sets the same shared skipNextExpandAnimation flag setPanelSplit uses', () => {
+    const s = useKortixComputerStore.getState();
+    s.setPanelAspect(0.7);
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
+    s.setPanelAspect(null, { animate: false });
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(true);
+  });
+
+  // ─── the three sites that already clear panelSplit must clear panelAspect
+  // alongside it, or the two states could disagree — a stale aspect from a
+  // previous document surviving into a session/detail that never measured one. ──
+  test('setIsSidePanelOpen(false) resets panelAspect', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.setPanelAspect(1.41);
+    s.setIsSidePanelOpen(false);
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+  });
+
+  test('setActiveSession resets panelAspect, mirroring panelSplit', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setPanelAspect(1.41);
+    expect(useKortixComputerStore.getState().panelAspect).toBe(1.41);
+    s.setActiveSession('other');
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+  });
+
+  test('closeSidePanel resets panelAspect', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setPanelAspect(0.7);
+    s.closeSidePanel();
+    expect(useKortixComputerStore.getState().panelAspect).toBeNull();
+  });
+});
+
 describe('pendingQuickView staleness', () => {
   beforeEach(() => {
     useKortixComputerStore.getState().reset();
@@ -322,5 +374,30 @@ describe('files quick-view destination', () => {
     expect(
       useKortixComputerStore.getState().consumeQuickView('s1', at + QUICK_VIEW_TTL_MS + 1),
     ).toBeNull();
+  });
+});
+
+describe('mobile tool drawer state', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('open → read → close', () => {
+    useKortixComputerStore.getState().openMobileTool('terminal');
+    expect(useKortixComputerStore.getState().mobileToolView).toBe('terminal');
+    useKortixComputerStore.getState().closeMobileTool();
+    expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
+  });
+
+  test('opening a tool never opens the panel — the drawer is a peer, not a passenger', () => {
+    useKortixComputerStore.getState().openMobileTool('browser');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+
+  test('reset clears an open tool', () => {
+    useKortixComputerStore.getState().openMobileTool('files');
+    useKortixComputerStore.getState().reset();
+    expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
   });
 });

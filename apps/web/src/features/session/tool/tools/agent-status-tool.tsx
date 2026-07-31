@@ -1,34 +1,30 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
-import { STATUS_TEXT, } from '@/components/ui/status';
+import { STATUS_TEXT } from '@/components/ui/status';
+import Loading from '@/components/ui/loading';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import {
-  Check,
-  ChevronRight,
-  Circle,
-  Clock,
-  Layers,
-  Loader2,
-  X,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CircleIcon as Circle,
+  ClockIcon as Clock,
+  StackIcon as Layers,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 
-
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 
 export function AgentStatusTool({ part, forceOpen }: ToolProps) {
   const status = partStatus(part);
@@ -83,7 +79,7 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
                   )}
                 >
                   {isActive ? (
-                    <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />
+                    <Loading className="text-muted-foreground size-3 flex-shrink-0" />
                   ) : row.status === 'completed' ? (
                     <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (
@@ -135,4 +131,3 @@ ToolRegistry.register('agent_status', AgentStatusTool);
 ToolRegistry.register('agent-status', AgentStatusTool);
 ToolRegistry.register('agent_task_list', AgentStatusTool);
 ToolRegistry.register('agent-task-list', AgentStatusTool);
-

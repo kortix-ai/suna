@@ -22,10 +22,13 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid, Icon as IconMynauiType } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  type Icon as IconMynauiType,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import { IconType } from 'react-icons/lib';
 
 export interface ErrorStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;
@@ -58,7 +61,7 @@ export function ErrorState({
               'bg-kortix-red/10 text-kortix-red',
             )}
           >
-            <IconComponent className="size-6 shrink-0" />
+            <IconComponent className="size-6 shrink-0" weight="fill" />
           </div>
         </EmptyMedia>
         <EmptyTitle className="text-base font-semibold">{title}</EmptyTitle>

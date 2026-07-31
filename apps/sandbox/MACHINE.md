@@ -1,6 +1,6 @@
 # Kortix Sandbox
 
-This machine is a Linux microVM.
+This machine is an isolated Linux sandbox.
 
 ## General Env
 
@@ -16,7 +16,8 @@ Use Bun only when a project requires it.
 
 ## Installed tools
 
-- Node.js, npm, pnpm, Python, uv, Bun, OpenCode, and the `kortix` CLI are on `PATH`.
+- Node.js, npm, pnpm, Python, uv, Bun, OpenCode, and the `kortix` CLI are on
+  `PATH`.
 - Bundled Python tools declare their required packages in their `uv run` commands.
 - `agent-browser` and Chromium are installed for accessing local pages.
 - Git, curl, tmux, ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract are installed.

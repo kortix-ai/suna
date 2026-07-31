@@ -8,48 +8,32 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Pencil,
-  Reply,
-  RotateCcw,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowDownIcon as ArrowDown,
+  BrainIcon as Brain,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  StackIcon as Layers,
+  PencilSimpleIcon,
+  ArrowBendUpLeftIcon as Reply,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ScissorsIcon as Scissors,
+  MagnifyingGlassIcon as Search,
+  TerminalIcon as Terminal,
+  TimerIcon as Timer,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import {
-  type ActivityEntry,
-  type ActivityKind,
-  buildActivityItems,
-  formatActivityDuration,
-  partitionForNarrative,
-  summarizeEntries,
-} from '@/features/session/activity/activity-model';
-import { densityForDetail, useChatDetail } from '@/features/session/activity/chat-detail';
-import {
-  type ActivityCounts,
-  activityGroupLabel,
-  humanizeShellStep,
-} from '@/features/session/activity/humanize';
-import { WorkStepRow } from '@/features/session/activity/work-step-row';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
@@ -61,7 +45,15 @@ import {
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { isShellActivityTool } from '@/features/session/session-activity-groups';
+import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
+import {
+  isInvisibleActivityPart,
+  isNoGroupActivityTool,
+  isShellActivityTool,
+  normalizeActivityToolName,
+  shellActivityGroupLabel,
+  writeActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -71,8 +63,14 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { SessionTurnMeta } from './session-turn-meta';
+import {
+  sessionTurnDurationMs,
+  sessionTurnEndedAt,
+  sessionTurnSpan,
+} from './session-turn-meta-rows';
 
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -90,6 +88,7 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
@@ -128,6 +127,47 @@ import {
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+// Shared UI primitives (framework-agnostic, reusable on mobile)
+import {
+  type AgentPart,
+  type Command,
+  type FilePart,
+  type MessageWithParts,
+  type Part,
+  type PermissionRequest,
+  type QuestionRequest,
+  type ReasoningPart,
+  type TextPart,
+  type ToolPart,
+  type Turn,
+  collectTurnParts,
+  findLastTextPart,
+  formatDuration,
+  getHiddenToolParts,
+  getPermissionForTool,
+  getRetryInfo,
+  getRetryMessage,
+  getShellModePart,
+  getTurnCost,
+  getTurnError,
+  getTurnErrorDetails,
+  getTurnStatus,
+  getWorkingState,
+  groupMessagesIntoTurns,
+  isAgentPart,
+  isAttachment,
+  isCompactionPart,
+  isFilePart,
+  isLastUserMessage,
+  isPatchPart,
+  isReasoningPart,
+  isSnapshotPart,
+  isTextPart,
+  isToolPart,
+  isToolPartHidden,
+  shouldShowToolPart,
+  splitUserParts,
+} from '@/ui';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type KortixSendError,
@@ -166,49 +206,11 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
-import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
-// Shared UI primitives (framework-agnostic, reusable on mobile)
-import {
-  type AgentPart,
-  type Command,
-  type FilePart,
-  type MessageWithParts,
-  type Part,
-  type PermissionRequest,
-  type QuestionRequest,
-  type ReasoningPart,
-  type TextPart,
-  type ToolPart,
-  type Turn,
-  collectTurnParts,
-  findLastTextPart,
-  formatCost,
-  formatDuration,
-  formatTokens,
-  getHiddenToolParts,
-  getPermissionForTool,
-  getRetryInfo,
-  getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnStatus,
-  getWorkingState,
-  groupMessagesIntoTurns,
-  isAgentPart,
-  isAttachment,
-  isCompactionPart,
-  isFilePart,
-  isLastUserMessage,
-  isReasoningPart,
-  isTextPart,
-  isToolPart,
-  isToolPartHidden,
-  shouldShowToolPart,
-  splitUserParts,
-} from '@/ui';
 import { SandboxUrlDetector } from './sandbox-url-detector';
+import { sessionComposerReadiness } from './session-composer-readiness';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { resolveSessionContentState } from './session-load-state';
+import { shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -1954,7 +1956,7 @@ function GroupedReasoningCard({
 
           <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
           {reasoningStreaming && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -1981,342 +1983,124 @@ function GroupedReasoningCard({
   );
 }
 
-/** `ActivityKind` → the icon that reads best for it in a collapsed group row. */
-function activityKindIcon(kind: ActivityKind) {
-  switch (kind) {
-    case 'shell':
-      return Terminal;
-    case 'web':
-      return Globe;
-    default:
-      return Search;
-  }
-}
-
 /**
- * One shell call inside a folded run (or standing alone). Non-technical by
- * default: the collapsed row is the human phrase from `humanizeShellStep`,
- * never the raw `$ command` — that only shows up once the row itself is
- * expanded, via the real `ToolPartRenderer` (`BashTool`), terminal output
- * included.
- */
-function ShellStepRow({
-  part,
-  sessionId,
-  disableNavigation,
-}: {
-  part: ToolPart;
-  sessionId?: string;
-  disableNavigation?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const input = ((part.state as { input?: Record<string, unknown> })?.input ?? {}) as Record<
-    string,
-    unknown
-  >;
-  const label = useMemo(
-    () =>
-      humanizeShellStep({
-        description: input.description as string | undefined,
-        command: input.command as string | undefined,
-      }),
-    [input.description, input.command],
-  );
-
-  const status = (part.state as { status?: string } | undefined)?.status;
-  const running = status === 'pending' || status === 'running';
-  const time = (part.state as { time?: { start?: number; end?: number } } | undefined)?.time;
-  const durationMs =
-    typeof time?.start === 'number' && typeof time?.end === 'number' && time.end > time.start
-      ? time.end - time.start
-      : 0;
-  const durationLabel = !running && durationMs >= 1000 ? `${Math.round(durationMs / 1000)}s` : '';
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex min-w-0 items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70 hover:text-foreground',
-            'group/step max-w-full transition-colors',
-          )}
-        >
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-          {durationLabel && (
-            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-              {durationLabel}
-            </span>
-          )}
-          {running && (
-            <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
-          )}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/step:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-0.5 mb-0.5">
-          <ToolPartRenderer
-            part={part}
-            sessionId={sessionId}
-            disableNavigation={disableNavigation}
-            defaultOpen
-          />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-/**
- * Folded run of same-tool calls (e.g. 5 reads, 12 shell commands). Header:
- * a human summary line from `activityGroupLabel` — "Ran 12 commands", never
- * a raw command or a bare tool name. Expanded: one row per call — shell
- * calls get the humanized `ShellStepRow` treatment (raw command stays one
- * more click away), everything else renders its full `ToolPartRenderer` so
- * real results (search hits, diffs, fetched pages) stay visible.
- */
-/**
- * Narrative mode's single work line — the whole of a turn's machinery, folded
- * to one faint row.
+ * Unified "activity" card that collapses any run of agent-side work —
+ * reasoning + tool calls, in original order — into a single compact shelf.
+ * Text parts (and other user-facing dividers) break the run.
  *
- * This is the shipping default. A reader following along sees the ask, the
- * agent's words and the deliverable; the twelve shell calls that produced it
- * are one line they never have to look at. Expanding shows the same humanized
- * step rows the full-history reading uses, and each of those still expands to
- * the real tool output — so nothing is unreachable, it is only quiet.
- *
- * What deliberately does NOT fold in here (handled by the caller): errors,
- * permission-locked calls, deliverables, todos and questions.
+ * Auto-opens while anything is still streaming/running; collapses once the
+ * burst settles. Respects manual user toggles thereafter.
  */
 /**
- * A thought inside an expanded work line. Collapsed to one quiet line by
- * default: the raw reasoning is often several paragraphs, and rendered as
- * body text it dwarfed the steps around it and read as the agent's answer
- * rather than as its scratchpad.
+ * Folded Tier-1 "exploration" card.
+ *
+ * Holds a run of reasoning + Tier-1 tool calls and renders:
+ *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
+ *     Verb comes from the run's categories (e.g. "Searched", "Read",
+ *     "Explored"), not a generic "N actions".
+ *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
+ *     existing ToolPartRenderer, which itself is expandable for full output).
+ *
+ * Auto-opens while anything is streaming; collapses once settled. Respects
+ * manual user toggles after the first click.
  */
-function ReasoningNote({ parts }: { parts: ReasoningPart[] }) {
-  const [open, setOpen] = useState(false);
-  const text = useMemo(
-    () =>
-      parts
-        .map((p) => p.text ?? '')
-        .join('\n\n')
-        .trim(),
-    [parts],
-  );
-  const preview = useMemo(
-    () =>
-      text
-        .split('\n')
-        .find((l) => l.trim())
-        ?.trim() ?? '',
-    [text],
-  );
-  if (!text) return null;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'group/think -ml-1.5 flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-1 pr-2 pl-1.5',
-            'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
-            'text-left text-xs transition-colors select-none',
-          )}
-        >
-          <Brain className="size-3 shrink-0 opacity-70" />
-          <span className="min-w-0 flex-1 truncate italic">{preview || 'Thought about it'}</span>
-          <ChevronRight
-            className={cn(
-              'text-muted-foreground/40 size-3 shrink-0 transition-transform',
-              open ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/think:opacity-100',
-            )}
-          />
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="border-border/40 my-1 ml-1 border-l pl-3">
-          <div className="text-muted-foreground/60 space-y-2 text-xs leading-relaxed italic [&_.kortix-markdown]:italic">
-            <UnifiedMarkdown content={text} />
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-function TurnWorkLine({
-  entries,
-  runChildren,
-  reasoningParts,
-  sessionId,
-  disableNavigation,
-  turnWorking,
-  isLatest,
-  statusText,
-}: {
-  entries: ActivityEntry[];
-  /** Reasoning + steps in the order they happened. */
-  runChildren: import('@/features/session/activity/activity-model').NarrativeRunChild[];
-  reasoningParts: ReasoningPart[];
-  sessionId: string;
-  disableNavigation?: boolean;
-  /** Whether the TURN is still streaming. On its own this says nothing about
-   *  THIS run — an earlier run finished long ago and must read as finished. */
-  turnWorking: boolean;
-  /** Only the last run of a still-working turn can still receive steps. */
-  isLatest: boolean;
-  /** The turn's live activity ("Running commands…", "Planning…"). While a run
-   *  is live this line IS the turn's status indicator, so it shows this instead
-   *  of a bare step count — there is no second indicator underneath. */
-  statusText?: string;
-}) {
-  // Collapsed-while-working read as "nothing is happening": a static count with
-  // no motion and nothing to look at. So a live run opens itself and shows the
-  // steps landing, then settles shut once the run finishes. A reader who
-  // touches it takes over — `pinned` means we never fight them afterwards.
-  const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const wasRunning = useRef(false);
-
-  const reasoningText = useMemo(
-    () =>
-      reasoningParts
-        .map((p) => p.text ?? '')
-        .join('\n\n')
-        .trim(),
-    [reasoningParts],
-  );
-
-  const summary = useMemo(() => summarizeEntries(entries), [entries]);
-  const duration = formatActivityDuration(summary.durationMs);
-  // A run is live only if one of ITS OWN steps is in flight, or it is the last
-  // run of a turn that is still going (the next step will land here). Using the
-  // turn-level flag for every run made four finished runs all claim
-  // "Making edits… · N steps" with a spinner — the same live state replicated
-  // down the page.
-  const running = summary.running || (turnWorking && isLatest);
-
-  const stepWord = summary.totalSteps === 1 ? 'step' : 'steps';
-
-  // Open on the way into a live run; settle shut on the way out. Guarded on the
-  // running EDGE, not on `running` itself, so a reader's manual toggle mid-run
-  // isn't stomped by the next re-render.
-  useEffect(() => {
-    if (running && !wasRunning.current) {
-      wasRunning.current = true;
-      if (!pinned) setOpen(true);
-      return;
-    }
-    if (!running && wasRunning.current) {
-      wasRunning.current = false;
-      if (!pinned) {
-        const t = setTimeout(() => setOpen(false), 600);
-        return () => clearTimeout(t);
-      }
-    }
-  }, [running, pinned]);
-
-  if (entries.length === 0 && !reasoningText) return null;
-
-  return (
-    <Collapsible
-      open={open}
-      onOpenChange={(next) => {
-        setPinned(true);
-        setOpen(next);
-      }}
-    >
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            // -ml only: the pill's left edge lines up with the prose, but a
-            // negative RIGHT margin pushed it past the parent's content box and
-            // an overflow-hidden ancestor sheared the hover background off.
-            'group/work -ml-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 pl-1.5',
-            'text-muted-foreground/45 hover:text-muted-foreground hover:bg-muted/40',
-            'text-xs transition-colors select-none',
-          )}
-        >
-          {running && <Loading variant="spokes" className="size-3 shrink-0" />}
-          <span className="tabular-nums">
-            {running
-              ? `${statusText || 'Working…'} · ${summary.totalSteps} ${stepWord}`
-              : `${summary.totalSteps} ${stepWord}${duration ? ` · ${duration}` : ''}`}
-          </span>
-          <ChevronRight
-            className={cn(
-              'size-3 shrink-0 opacity-0 transition-transform group-hover/work:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="border-border/40 mt-1.5 mb-1 ml-1 space-y-0.5 border-l pl-3">
-          {/* IN ORDER — a thought, then the step it produced, then the next
-              thought. Rendering all reasoning first and all steps after
-              detached the model's thinking from the work it explains. */}
-          {runChildren.map((child) =>
-            child.kind === 'reasoning' ? (
-              <ReasoningNote key={child.key} parts={child.parts} />
-            ) : (
-              <WorkStepRow
-                key={child.key}
-                part={child.entry.part}
-                sessionId={sessionId}
-                disableNavigation={disableNavigation}
-              />
-            ),
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
+/**
+ * Same-tool group: collapses 2+ consecutive calls of the same tool into
+ * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
+ * one-liners per call with individual durations.
+ */
 function SameToolGroup({
-  kind,
-  counts,
+  toolName,
   entries,
   sessionId,
   disableNavigation,
+  busy,
 }: {
-  kind: ActivityKind;
-  counts: ActivityCounts;
-  entries: ActivityEntry[];
+  toolName: string;
+  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
   sessionId: string;
   disableNavigation?: boolean;
+  busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const Icon = activityKindIcon(kind);
 
-  const { durationMs, running } = useMemo(() => {
+  const anyRunning = useMemo(
+    () =>
+      !!busy &&
+      entries.some(
+        ({ part }) =>
+          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
+      ),
+    [busy, entries],
+  );
+
+  const totalDurationMs = useMemo(() => {
     let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
-    let anyRunning = false;
     for (const { part } of entries) {
       const s = (part.state as any)?.time?.start;
       const e = (part.state as any)?.time?.end;
       if (typeof s === 'number' && s < earliest) earliest = s;
       if (typeof e === 'number' && e > latest) latest = e;
-      const status = (part.state as any)?.status;
-      if (status === 'pending' || status === 'running') anyRunning = true;
     }
-    return { durationMs: latest > earliest ? latest - earliest : 0, running: anyRunning };
+    return latest > earliest ? latest - earliest : 0;
   }, [entries]);
-  const durationLabel = !running && durationMs >= 1000 ? `${Math.round(durationMs / 1000)}s` : '';
-  const headerLabel = activityGroupLabel(counts, running);
+
+  const durationLabel =
+    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
+
+  const isContext = toolName === '__context__';
+  const isResearch = toolName === '__research__';
+  const isShell = useMemo(() => {
+    return isShellActivityTool(entries[0]?.part.tool);
+  }, [entries]);
+  const isWrite = useMemo(
+    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
+    [entries],
+  );
+
+  const headerLabel = useMemo(() => {
+    if (isContext) {
+      const s = contextToolSummary(entries.map((e) => e.part));
+      const items: string[] = [];
+      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
+      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
+      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
+      const summary = items.join(', ');
+      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
+      return summary ? `${prefix} · ${summary}` : prefix;
+    }
+
+    if (isResearch) {
+      let searches = 0;
+      let fetches = 0;
+      let scrapes = 0;
+      for (const { part } of entries) {
+        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
+        if (n === 'web_search' || n === 'websearch') searches++;
+        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
+        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
+      }
+      const items: string[] = [];
+      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
+      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
+      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
+      const summary = items.join(', ');
+      const prefix = anyRunning ? 'Researching' : 'Researched';
+      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
+    }
+
+    if (isShell) {
+      return shellActivityGroupLabel(entries.length, anyRunning);
+    }
+
+    if (isWrite) {
+      return writeActivityGroupLabel(entries.length, anyRunning);
+    }
+
+    const t = contextToolTrigger(entries[0].part);
+    return `${t.title} · ${entries.length}x`;
+  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2329,21 +2113,35 @@ function SameToolGroup({
             'group/grp max-w-full transition-colors',
           )}
         >
-          <Icon
-            className={cn(
-              'text-muted-foreground/50 size-3.5 flex-shrink-0',
-              running && 'animate-pulse-heartbeat',
-            )}
-          />
+          {isResearch ? (
+            <Globe
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : isShell ? (
+            <Terminal
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : (
+            <Search
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
             <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
               {durationLabel}
             </span>
           )}
-          {running && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
-          )}
+          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
           <ChevronRight
             className={cn(
               'size-3 flex-shrink-0 transition-transform',
@@ -2356,46 +2154,60 @@ function SameToolGroup({
 
       <CollapsibleContent>
         <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
-          {entries.map(({ part }) =>
-            isShellActivityTool(part.tool) ? (
-              <ShellStepRow
-                key={part.id}
-                part={part}
-                sessionId={sessionId}
-                disableNavigation={disableNavigation}
-              />
-            ) : (
-              // Non-shell groups (e.g. 3x web_search) render each call with
-              // its full ToolPartRenderer so users see real results —
-              // answers, sources, images — not just the input arg. Sits
-              // inside the rail's left padding (no negative margin) so each
-              // row aligns under the group header label, matching the
-              // reasoning block's nested treatment.
-              <div key={part.id}>
-                <ToolPartRenderer
-                  part={part}
-                  sessionId={sessionId}
-                  disableNavigation={disableNavigation}
-                />
-              </div>
-            ),
-          )}
+          {isContext
+            ? entries.map(({ part }) => {
+                const t = contextToolTrigger(part);
+                const running =
+                  (part.state as any)?.status === 'pending' ||
+                  (part.state as any)?.status === 'running';
+                const s = (part.state as any)?.time?.start;
+                const e = (part.state as any)?.time?.end;
+                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
+                return (
+                  <div
+                    key={part.id}
+                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
+                  >
+                    <span className="flex-shrink-0">{t.title}</span>
+                    {!running && t.subtitle && (
+                      <span
+                        className="min-w-0 flex-1 truncate font-mono opacity-70"
+                        title={t.subtitle}
+                      >
+                        {t.subtitle}
+                      </span>
+                    )}
+                    {!running && dur >= 1000 && (
+                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
+                        {Math.round(dur / 1000)}s
+                      </span>
+                    )}
+                    {running && (
+                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
+                    )}
+                  </div>
+                );
+              })
+            : entries.map(({ part }) => (
+                // Same-tool, non-context groups (e.g. 3x web_search) render
+                // each call with its full ToolPartRenderer so users see real
+                // results — answers, sources, images — not just the input arg.
+                // Sits inside the rail's left padding (no negative margin) so
+                // each row aligns under the group header label, matching the
+                // reasoning block's nested treatment.
+                <div key={part.id}>
+                  <ToolPartRenderer
+                    part={part}
+                    sessionId={sessionId}
+                    disableNavigation={disableNavigation}
+                  />
+                </div>
+              ))}
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
-
-/** Shared empty set for the full-history branch — allocating a new one per
- *  render would defeat the memo on every child that reads it. */
-const EMPTY_FOLD_KEYS: ReadonlySet<string> = new Set<string>();
-const EMPTY_RUNS: ReadonlyMap<
-  string,
-  import('@/features/session/activity/activity-model').NarrativeRun
-> = new Map();
-const EMPTY_RUN_LIST: ReadonlyArray<
-  import('@/features/session/activity/activity-model').NarrativeRun
-> = [];
 
 // ============================================================================
 // Session Turn — core turn component
@@ -2845,43 +2657,6 @@ function SessionTurn({
   }, [allParts, answeredQuestionPartsById, answeredQuestionParts.length]);
   const shouldUseInlineContent = !hasSteps && !!inlineContentParts;
 
-  // Tool calls with an active permission prompt — never folded into a group,
-  // always rendered on their own so the user can see exactly what they are
-  // approving (see the "tool" branch of ActivityItem below).
-  const lockedCallIds = useMemo(
-    () => new Set(permissions.map((p) => p.tool?.callID).filter((id): id is string => !!id)),
-    [permissions],
-  );
-
-  // The fixed activity model turns this turn's parts into the step list the
-  // transcript renders. It is the single fix for the fragmentation bug: the
-  // runtime's step-start/step-finish bookkeeping parts (and agent/retry/
-  // snapshot/patch) are transparent to grouping, so a run of N tool calls
-  // folds into one group instead of N raw rows.
-  // Full history is the default reading: the per-kind step list, every step
-  // visible and in order. "Hide full history" flips this to Narrative, where
-  // machinery folds into one work line per turn — same parts, same model,
-  // re-rendered in place.
-  const { detail } = useChatDetail();
-  const activityItems = useMemo(
-    () =>
-      buildActivityItems(allParts, {
-        density: densityForDetail(detail),
-        lockedCallIds,
-        isHidden: (part, messageId) => isToolPartHidden(part, messageId, hidden),
-      }),
-    [allParts, lockedCallIds, hidden, detail],
-  );
-
-  // True when Narrative mode will paint at least one work line for this turn —
-  // i.e. the turn's status already has a home and the trailing indicator would
-  // be a second, competing one.
-  const narrativeStatusOwned = useMemo(
-    () =>
-      detail === 'narrative' && partitionForNarrative(activityItems, lockedCallIds).runs.length > 0,
-    [detail, activityItems, lockedCallIds],
-  );
-
   // Whether the user message has any visible content (non-synthetic, non-ignored
   // text, or attachments). Background task notifications inject synthetic-only
   // user messages that should not render a user bubble.
@@ -3013,21 +2788,19 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  const [duration, setDuration] = useState('');
+  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
+  // where it called setDuration on mount and forced every completed turn in the
+  // transcript through a second render for a number that never changes. The
+  // early return below is what removes that pass. A settled turn's duration is
+  // now SessionTurnMeta's job, from turnDurationMs.
+  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
+  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
+  const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
-    const startTime = (turn.userMessage.info as any)?.time?.created;
-    if (!startTime) return;
-
-    if (!working) {
-      const lastMsg = turn.assistantMessages[turn.assistantMessages.length - 1];
-      const endTime =
-        (lastMsg?.info as any)?.time?.completed ||
-        (lastMsg?.info as any)?.time?.created ||
-        startTime;
-      setDuration(formatDuration(endTime - startTime));
-      return;
-    }
-    const update = () => setDuration(formatDuration(Date.now() - startTime));
+    if (!working) return;
+    const { startedAt } = sessionTurnSpan(turn);
+    if (startedAt == null) return;
+    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -3166,7 +2939,7 @@ function SessionTurn({
                   disabled={rewindDisabled}
                   onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
                 >
-                  <Pencil className="size-3.5" />
+                  <PencilSimpleIcon className="size-3.5" />
                 </Button>
               </Hint>
               <Tooltip>
@@ -3201,203 +2974,243 @@ function SessionTurn({
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-2">
           {(() => {
+            // Same-tool grouping: consecutive calls of the SAME tool
+            // (e.g. 5 reads, 3 greps) fold into one collapsible.
+            // Singles stay individual. Reasoning groups separately.
+            // ALL tool rows get a left border rail for visual separation.
+            type ToolEntry = { part: ToolPart; message: MessageWithParts };
+            type RenderItem =
+              | { type: 'part'; part: Part; message: MessageWithParts }
+              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
+              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
+              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
+
+            const items: RenderItem[] = [];
+            let pendingReasoning: ReasoningPart[] = [];
+            let pendingTools: ToolEntry[] = [];
+            let pendingToolName: string | null = null;
+
+            const flushReasoning = () => {
+              if (pendingReasoning.length > 0) {
+                items.push({
+                  type: 'reasoning-group',
+                  parts: pendingReasoning,
+                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
+                });
+                pendingReasoning = [];
+              }
+            };
+
+            const flushTools = () => {
+              if (pendingTools.length >= 2 && pendingToolName) {
+                items.push({
+                  type: 'tool-group',
+                  toolName: pendingToolName,
+                  entries: pendingTools,
+                  key: `tg-${pendingTools[0].part.id}`,
+                });
+              } else if (pendingTools.length === 1) {
+                items.push({
+                  type: 'tool-single',
+                  part: pendingTools[0].part,
+                  message: pendingTools[0].message,
+                });
+              }
+              pendingTools = [];
+              pendingToolName = null;
+            };
+
+            // Normalize tool name for grouping.
+            //   __context__ — read/glob/grep/list collapse into one
+            //                "Gathered context" pile (compact one-liners).
+            //   __research__ — web_search / webfetch / scrape collapse into
+            //                  one "Research" pile (full results expanded).
+            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
+            // by their normalized tool name and render full per-call results.
+            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
+            const RESEARCH_SET = new Set([
+              'web_search',
+              'websearch',
+              'webfetch',
+              'web_fetch',
+              'scrape',
+              'scrape_webpage',
+            ]);
+            const norm = (t: string) => {
+              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
+              if (CONTEXT_SET.has(n)) return '__context__';
+              if (RESEARCH_SET.has(n)) return '__research__';
+              return n;
+            };
+
+            for (const { part, message } of allParts) {
+              if (isReasoningPart(part)) {
+                if (part.text?.trim()) {
+                  flushTools();
+                  pendingReasoning.push(part);
+                }
+                continue;
+              }
+              // Render-nothing parts (blank text, internal snapshot/patch
+              // bookkeeping) must not split a run of groupable tools — otherwise
+              // consecutive shells fragment into inconsistent singles instead of
+              // one "Ran N commands" group.
+              if (isInvisibleActivityPart(part)) continue;
+              flushReasoning();
+
+              if (isToolPart(part)) {
+                const tp = part as ToolPart;
+                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
+                const groupable =
+                  shouldShowToolPart(tp) &&
+                  tp.tool !== 'todowrite' &&
+                  tp.tool !== 'question' &&
+                  !isNoGroupActivityTool(tp.tool) &&
+                  !hasPermission &&
+                  !isToolPartHidden(tp, message.info.id, hidden);
+
+                if (groupable) {
+                  const n = norm(tp.tool);
+                  if (pendingToolName === n) {
+                    pendingTools.push({ part: tp, message });
+                  } else {
+                    flushTools();
+                    pendingToolName = n;
+                    pendingTools = [{ part: tp, message }];
+                  }
+                  continue;
+                }
+              }
+
+              flushTools();
+              items.push({ type: 'part', part, message });
+            }
+            flushReasoning();
+            flushTools();
+
             const reasoningActive = working && permissions.length === 0 && questions.length === 0;
 
-            // ── Narrative mode (opt-in; the default is full history) ──
-            // Fold the turn's machinery into ONE work line, placed where the
-            // first piece of machinery occurred so the surrounding prose still
-            // reads in order. Errors and permission-locked calls are pulled
-            // back out — a reader must see a failure, and must see what they
-            // are being asked to approve, without expanding anything.
-            const narrative = detail === 'narrative';
-            // The fold decision is pure and lives in the model, where it is
-            // tested — see `partitionForNarrative`. Duplicating it here is how
-            // the two readings would drift apart.
-            const {
-              foldedKeys,
-              runByKey,
-              runs: narrativeRuns,
-            } = narrative
-              ? partitionForNarrative(activityItems, lockedCallIds)
-              : { foldedKeys: EMPTY_FOLD_KEYS, runByKey: EMPTY_RUNS, runs: EMPTY_RUN_LIST };
-            const latestRunKey = narrativeRuns.length
-              ? narrativeRuns[narrativeRuns.length - 1].key
-              : null;
-
-            return activityItems.map((item) => {
-              if (narrative && foldedKeys.has(item.key)) {
-                // One line per contiguous RUN of machinery, painted at the
-                // run's first slot — so work and prose stay interleaved and the
-                // back-and-forth survives. A key that isn't a run start was
-                // absorbed by the line above it.
-                const run = runByKey.get(item.key);
-                if (!run) return null;
+            return items.map((item) => {
+              // Reasoning group
+              if (item.type === 'reasoning-group') {
                 return (
-                  <TurnWorkLine
-                    key={item.key}
-                    entries={run.entries}
-                    runChildren={run.children}
-                    reasoningParts={run.reasoningParts}
-                    sessionId={sessionId}
-                    disableNavigation={disableToolNavigation}
-                    turnWorking={reasoningActive}
-                    isLatest={item.key === latestRunKey}
-                    statusText={throttledStatus || undefined}
-                  />
+                  <div key={item.key}>
+                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
+                  </div>
                 );
               }
 
-              switch (item.type) {
-                case 'reasoning':
-                  return (
-                    <div key={item.key}>
-                      <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
-                    </div>
-                  );
-
-                // 2+ consecutive calls of the same tool, folded behind one
-                // human summary line (never a raw command or bare tool name).
-                case 'group':
-                  return (
-                    <div key={item.key}>
-                      <SameToolGroup
-                        kind={item.kind}
-                        counts={item.counts}
-                        entries={item.entries}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                      />
-                    </div>
-                  );
-
-                // A lone tool call — either it didn't run alongside others of
-                // its kind, or it has an active permission prompt (never
-                // folded, always rendered so the user can see exactly what
-                // they're approving).
-                case 'tool': {
-                  const { part } = item.entry;
-                  const perm = getPermissionForTool(permissions, part.callID);
-                  const locked = lockedCallIds.has(part.callID);
-                  if (!locked && isShellActivityTool(part.tool)) {
-                    return (
-                      <div key={item.key}>
-                        <ShellStepRow
-                          part={part}
-                          sessionId={sessionId}
-                          disableNavigation={disableToolNavigation}
-                        />
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={item.key}>
-                      <ToolPartRenderer
-                        part={part}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                        permission={perm}
-                        onPermissionReply={onPermissionReply}
-                      />
-                    </div>
-                  );
-                }
-
-                // Rendered output (show/show-user, generated image/video/deck)
-                // — never folded, never humanized-and-collapsed, always
-                // full-size so the deliverable can't be missed.
-                case 'deliverable': {
-                  const { part } = item.entry;
-                  const perm = getPermissionForTool(permissions, part.callID);
-                  return (
-                    <div key={item.key}>
-                      <ToolPartRenderer
-                        part={part}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                        permission={perm}
-                        onPermissionReply={onPermissionReply}
-                      />
-                    </div>
-                  );
-                }
-
-                case 'text': {
-                  // When inline content rendering is active (text + answered
-                  // questions in order), text renders in the inline section.
-                  if (shouldUseInlineContent) return null;
-                  // No-step turns render their text below, in the dedicated
-                  // response section, to avoid duplicate output.
-                  if (!hasSteps) return null;
-                  const text = isTextPart(item.part) ? (item.part.text ?? '') : '';
-                  return (
-                    <div key={item.key} className="min-w-0 text-sm">
-                      <ThrottledMarkdown content={text} isStreaming={working} />
-                    </div>
-                  );
-                }
-
-                // Anything the activity list doesn't own: compaction
-                // dividers, and self-rendering tools (todowrite/todoread,
-                // question, task) that the turn body handles directly.
-                case 'passthrough': {
-                  const { part } = item;
-
-                  if (isCompactionPart(part)) {
-                    return (
-                      <div key={item.key} className="flex items-center gap-2 py-2.5">
-                        <div className="bg-border h-px flex-1" />
-                        <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                          <Layers className="text-muted-foreground size-3" />
-                          <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                            Compaction
-                          </span>
-                        </div>
-                        <div className="bg-border h-px flex-1" />
-                      </div>
-                    );
-                  }
-
-                  if (isToolPart(part)) {
-                    // Todos render in their own dedicated surface, not steps.
-                    if (part.tool === 'todowrite' || part.tool === 'todoread') return null;
-
-                    if (part.tool === 'question') {
-                      // Inline content rendering already shows answered
-                      // questions in the interleaved text+question section.
-                      if (shouldUseInlineContent) return null;
-                      // Render answered questions inline at their natural
-                      // position, where the user actually answered them.
-                      const answeredPart = answeredQuestionPartsById.get(part.id);
-                      if (answeredPart) {
-                        return <AnsweredQuestionCard key={item.key} part={answeredPart} />;
-                      }
-                      // Unanswered/dismissed: not shown in steps (dismissed
-                      // ones surface via the turnError banner instead).
-                      return null;
-                    }
-
-                    // task / any other self-rendering tool: full renderer,
-                    // never folded, permission-aware like any other tool.
-                    const perm = getPermissionForTool(permissions, part.callID);
-                    return (
-                      <div key={item.key}>
-                        <ToolPartRenderer
-                          part={part}
-                          sessionId={sessionId}
-                          disableNavigation={disableToolNavigation}
-                          permission={perm}
-                          onPermissionReply={onPermissionReply}
-                        />
-                      </div>
-                    );
-                  }
-
-                  return null;
-                }
-
-                default:
-                  return null;
+              // Same-tool group (2+ consecutive)
+              if (item.type === 'tool-group') {
+                return (
+                  <div key={item.key}>
+                    <SameToolGroup
+                      toolName={item.toolName}
+                      entries={item.entries}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      busy={working}
+                    />
+                  </div>
+                );
               }
+
+              // Single tool (with left rail)
+              if (item.type === 'tool-single') {
+                if (!shouldShowToolPart(item.part)) return null;
+                const perm = getPermissionForTool(permissions, item.part.callID);
+                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
+                return (
+                  <div key={item.part.id}>
+                    <ToolPartRenderer
+                      part={item.part}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      permission={perm}
+                      onPermissionReply={onPermissionReply}
+                    />
+                  </div>
+                );
+              }
+
+              const { part, message } = item;
+
+              // When inline content rendering is active (text + answered questions in order),
+              // hide ALL text parts from steps since they render in the inline section
+              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
+
+              // Text parts (intermediate + streaming response while working)
+              if (isTextPart(part)) {
+                if (!part.text?.trim()) return null;
+                // Text response rendering for no-step turns is handled below in
+                // the dedicated response section to avoid duplicate output.
+                if (!hasSteps) return null;
+                return (
+                  <div key={part.id} className="min-w-0 text-sm">
+                    <ThrottledMarkdown content={part.text} isStreaming={working} />
+                  </div>
+                );
+              }
+
+              // Compaction indicator
+              if (isCompactionPart(part)) {
+                return (
+                  <div key={part.id} className="flex items-center gap-2 py-2.5">
+                    <div className="bg-border h-px flex-1" />
+                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+                      <Layers className="text-muted-foreground size-3" />
+                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                        Compaction
+                      </span>
+                    </div>
+                    <div className="bg-border h-px flex-1" />
+                  </div>
+                );
+              }
+
+              // Tool parts
+              if (isToolPart(part)) {
+                if (!shouldShowToolPart(part)) return null;
+                if (part.tool === 'todowrite') return null;
+                if (part.tool === 'question') {
+                  // When inline content rendering is active, answered questions
+                  // render in the inline content section — skip here to avoid duplicates.
+                  if (shouldUseInlineContent) return null;
+                  // Render answered questions inline at their natural position
+                  // so they appear exactly where the user answered them.
+                  const answeredPart = answeredQuestionPartsById.get(part.id);
+                  if (answeredPart) {
+                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
+                  }
+                  // Unanswered/dismissed questions: don't render in steps;
+                  // dismissed ones show via the turnError banner.
+                  return null;
+                }
+
+                const perm = getPermissionForTool(permissions, part.callID);
+
+                // Hide tool parts that have active permission
+                if (isToolPartHidden(part, message.info.id, hidden)) return null;
+
+                return (
+                  <div key={part.id}>
+                    <ToolPartRenderer
+                      part={part}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      permission={perm}
+                      onPermissionReply={onPermissionReply}
+                    />
+                  </div>
+                );
+              }
+
+              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
+              if (isSnapshotPart(part) || isPatchPart(part)) {
+                return null;
+              }
+
+              return null;
             });
           })()}
         </div>
@@ -3508,13 +3321,8 @@ function SessionTurn({
         </>
       )}
 
-      {/* ── Working status indicator ──
-          Suppressed in Narrative mode once a live work line is on screen: that
-          line already carries the same status text, the step count and the
-          elapsed time. Two pulsing indicators stacked, each naming a different
-          thing, read as a bug rather than as progress. The retry notice is the
-          exception — it is not a duplicate of anything and must always show. */}
-      {working && (!narrativeStatusOwned || !!retryInfo) && (
+      {/* ── Working status indicator (always at the end while working) ── */}
+      {working && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
             <SessionRetryDisplay
@@ -3523,26 +3331,17 @@ function SessionTurn({
               secondsLeft={retrySecondsLeft}
             />
           )}
-          <div
-            className={cn(
-              'flex items-center gap-2 py-1 text-xs transition-colors',
-              'text-muted-foreground',
-            )}
-          >
-            <span className="relative flex size-3">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-            </span>
-            {retryInfo ? (
-              <span className="text-muted-foreground/70">
-                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
-              </span>
-            ) : (
-              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
-            )}
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </div>
+          <SessionBusyIndicator
+            statusText={throttledStatus || undefined}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+            elapsed={liveDuration}
+          />
         </div>
       )}
 
@@ -3551,22 +3350,18 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only) ── */}
+      {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-          {/* Duration & cost */}
-          {duration && (
-            <span className="text-muted-foreground/50 mr-1 text-xs">
-              {duration}
-              {costInfo && (
-                <>
-                  {' '}
-                  · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
-                </>
-              )}
-            </span>
-          )}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
+              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
+              different kinds on one dot-separated line, which reads as a list of
+              comparable things and is not one. They are a labelled list inside
+              `SessionTurnMeta` now. `focus-within` because a keyboard user could
+              otherwise tab into — and open — a control at `opacity-0`. The
+              `data-state=open` case is the pointer one: the popover is portalled
+              and takes focus, so without it the ⋯ would fade out from under its
+              own open panel the moment the pointer left the turn. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
@@ -3575,6 +3370,7 @@ function SessionTurn({
             </TooltipTrigger>
             <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
           </Tooltip>
+          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
         </div>
       )}
 
@@ -3593,6 +3389,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Durable Kortix project session id used by project-session APIs. */
+  projectSessionId?: string;
   /** Complete SDK state for the root session. Omit for a read-only child session. */
   sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
@@ -3611,6 +3409,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  projectSessionId,
   sessionState,
   projectId,
   boundAgentName,
@@ -4391,15 +4190,55 @@ export function SessionChat({
     working: isBusy && !hasActiveQuestion,
     hasContent: messageCount > 0,
   });
+  // Older history loads by scrolling, not by clicking: a sentinel above the
+  // first turn pulls the previous page as it nears the top of the viewport.
+  // A pull always prepends content above the reader, so every one is wrapped
+  // in the turn anchor — capture where the topmost visible turn sits, restore
+  // it after the prepended turns render, and the viewport never jumps.
+  const [olderPullFailed, setOlderPullFailed] = useState(false);
+  useEffect(() => {
+    setOlderPullFailed(false);
+  }, [sessionId]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
     const anchor = node ? captureTurnScrollAnchor(node) : null;
-    await loadOlder();
+    try {
+      await loadOlder();
+      setOlderPullFailed(false);
+    } catch {
+      // Surface a retry instead of letting the sentinel re-arm into a loop.
+      setOlderPullFailed(true);
+    }
     if (!node) return;
     requestAnimationFrame(() => {
       restoreTurnScrollAnchor(node, anchor);
     });
   }, [loadOlder, scrollRef]);
+  const olderSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = olderSentinelRef.current;
+    if (!node || !hasOlder) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (
+          shouldLoadOlderHistory({
+            isIntersecting: !!entry?.isIntersecting,
+            hasOlder,
+            isLoadingOlder,
+            lastPullFailed: olderPullFailed,
+          })
+        ) {
+          void handleLoadOlder();
+        }
+      },
+      // Pull before the reader reaches the top so history is already there.
+      { root: scrollRef.current, rootMargin: '400px 0px 0px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+    // sessionId is a dep because switching sessions swaps the scroll
+    // container the observer is rooted in.
+  }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -5389,6 +5228,19 @@ export function SessionChat({
   }, []);
 
   const chatCommands = useMemo(() => commands || [], [commands]);
+  const sessionScopeAgentName = lockedAgentName ?? local.agent.current?.name;
+
+  const chatToolbarSlot = useMemo(
+    () =>
+      projectId && projectSessionId ? (
+        <SessionScopeToolbar
+          projectId={projectId}
+          sessionId={projectSessionId}
+          agentName={sessionScopeAgentName}
+        />
+      ) : undefined,
+    [projectId, projectSessionId, sessionScopeAgentName],
+  );
 
   const chatInputSlot = useMemo(
     () => (
@@ -5477,19 +5329,24 @@ export function SessionChat({
   // This eliminates the loader for empty sessions entirely: instead of
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
-  const hasMessages = messages && messages.length > 0;
+  const hasMessages = Boolean(messages?.length);
   // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
   // the runtime is connected AND the session lookup has actually run and come
   // back empty. While the runtime is still connecting (the query is disabled and
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const sessionResolved = runtimeReady && sessionFetched;
-  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  const composerReadiness = sessionComposerReadiness({ runtimeReady });
+  const { isNotFound, isDataLoading } = resolveSessionContentState({
+    runtimeReady,
+    sessionFetched,
+    hasRuntimeSession: Boolean(session),
+    hasMessages,
+    hasOptimisticPrompt: Boolean(optimisticPrompt),
+  });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const isDataLoading = !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
@@ -5618,8 +5475,7 @@ export function SessionChat({
                         {(() => {
                           const { cleanText: afterReply, replyContext: optReply } =
                             parseReplyContext(optimisticPrompt || '');
-                            const { cleanText: afterFiles, files } =
-                              parseFileReferences(afterReply);
+                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
                           const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
                           const { cleanText: afterFileMentions } =
                             parseFileMentionReferences(afterProjects);
@@ -5701,16 +5557,27 @@ export function SessionChat({
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
                 {hasOlder && (
-                  <div className="mb-6 flex justify-center">
-                    <Button
-                      type="button"
-                      variant="outline-ghost"
-                      size="sm"
-                      disabled={isLoadingOlder}
-                      onClick={() => void handleLoadOlder()}
-                    >
-                      {isLoadingOlder ? <Loading /> : 'Load older messages'}
-                    </Button>
+                  <div className="mb-6 flex flex-col items-center gap-2">
+                    {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                    <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                    {isLoadingOlder && <Loading />}
+                    {olderPullFailed && !isLoadingOlder && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground text-xs">
+                          Couldn&apos;t load older messages.
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline-ghost"
+                          size="sm"
+                          onClick={() => void handleLoadOlder()}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
                 <ToolActivateContext.Provider value={toolActivate}>
@@ -5765,10 +5632,10 @@ export function SessionChat({
                           commands={commands}
                           disableToolNavigation={disableToolNavigation}
                           onPermissionReply={handlePermissionReply}
-                            onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
-                            rewindDisabled={
-                              !!readOnly || !sessionState || isBusy || sessionState.rewindPending
-                            }
+                          onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                          rewindDisabled={
+                            !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                          }
                         />
                       </div>
                     );
@@ -5858,100 +5725,106 @@ export function SessionChat({
 
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
-          <>
-        <SessionChatInput
-          onSend={async (text, files, mentions) => {
-            await handleSend(text, files, mentions);
-            if (failedStartDraft) {
-              clearStartStash(sessionId);
-              usePendingFilesStore.getState().consumePendingFiles();
-              setFailedStartDraft(null);
-            }
-          }}
-          prefill={
-                rewindDraft
-                  ? {
-                      text: rewindDraft.text,
-                      id: rewindDraft.id,
-                      mode: 'replace',
-                    }
-                  : failedStartDraft
-              ? {
-                  text: failedStartDraft.text,
-                  files: failedStartDraft.files,
-                  id: failedStartDraft.id,
-                  mode: 'merge',
-                }
-              : sessionPrefill
-                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                : null
-          }
-          isBusy={isBusy}
-          queuedMessages={queuedMessages}
-          onQueueMessage={handleQueueMessage}
-          onRemoveQueuedMessage={handleRemoveQueuedMessage}
-          onStop={handleStop}
-          escCount={escCount}
-          agents={local.agent.list}
-          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-          agentSelectorLocked={!!lockedAgentName}
-          commands={chatCommands}
-          onCommand={handleCommand}
-          models={local.model.list}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={handleModelChange}
-          modelDefaultControls={chatModelDefaultControls}
-          variants={local.model.variant.list}
-          selectedVariant={local.model.variant.current ?? null}
-          onVariantChange={handleVariantChange}
-          messages={messages}
-          sessionId={sessionId}
-          projectId={projectId}
-          onFileSearch={handleFileSearch}
-          providers={providers}
-          modelRequired
-          modelsLoading={providersLoading}
-          threadContext={threadContext}
-          onContextClick={handleContextClick}
-          replyTo={replyTo}
-          onClearReply={handleClearReply}
-          // Only lock the input into question-answer mode while the session is
-          // actually busy (a live question keeps the run busy). If a question
-          // chip is ever showing while the session is idle — e.g. a dead /
-          // abandoned question the agent left behind — the input stays unlocked
-          // so a typed message is sent to the agent instead of being swallowed
-          // as a custom answer.
-          lockForQuestion={!!renderedQuestion && isBusy}
-          // Same dead-prompt guard as questions: only lock while the agent is
-          // actually paused on the decision (isBusy), so a stale card can't
-          // swallow the composer on an idle session.
-          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-          onCustomAnswer={handleCustomAnswer}
-          questionButtonLabel={renderedQuestion ? questionAction.label : null}
-          questionCanAct={questionAction.canAct}
-          onQuestionAction={handleQuestionAction}
-          inputSlot={chatInputSlot}
-        />
-            <ConfirmDialog
-              open={!!rewindTarget}
-              onOpenChange={(open) => !open && setRewindTarget(null)}
-              title="Edit from this message?"
-              description={
-                <>
-                  <p>This rewinds the same session and restores its files to this message.</p>
-                  <p className="mt-2">
-                    You can restore the removed path until you send a replacement prompt.
-                  </p>
-                </>
+        <>
+          <SessionChatInput
+            onSend={async (text, files, mentions) => {
+              await handleSend(text, files, mentions);
+              if (failedStartDraft) {
+                clearStartStash(sessionId);
+                usePendingFilesStore.getState().consumePendingFiles();
+                setFailedStartDraft(null);
               }
-              confirmLabel="Rewind session"
-              confirmVariant="destructive"
-              confirmIcon={<RotateCcw className="size-3.5" />}
-              isPending={sessionState?.rewindPending}
-              onConfirm={() => void handleConfirmRewind()}
-            />
-          </>
+            }}
+            prefill={
+              rewindDraft
+                ? {
+                    text: rewindDraft.text,
+                    id: rewindDraft.id,
+                    mode: 'replace',
+                  }
+                : failedStartDraft
+                  ? {
+                      text: failedStartDraft.text,
+                      files: failedStartDraft.files,
+                      id: failedStartDraft.id,
+                      mode: 'merge',
+                    }
+                  : sessionPrefill
+                    ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                    : null
+            }
+            isBusy={isBusy}
+            queuedMessages={queuedMessages}
+            onQueueMessage={handleQueueMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
+            onStop={handleStop}
+            escCount={escCount}
+            agents={local.agent.list}
+            selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+            onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+            agentSelectorLocked={!!lockedAgentName}
+            commands={chatCommands}
+            onCommand={handleCommand}
+            models={local.model.list}
+            selectedModel={local.model.currentKey ?? null}
+            onModelChange={handleModelChange}
+            modelDefaultControls={chatModelDefaultControls}
+            variants={local.model.variant.list}
+            selectedVariant={local.model.variant.current ?? null}
+            onVariantChange={handleVariantChange}
+            messages={messages}
+            sessionId={sessionId}
+            projectId={projectId}
+            onFileSearch={handleFileSearch}
+            providers={providers}
+            modelRequired
+            modelsLoading={providersLoading}
+            threadContext={threadContext}
+            onContextClick={handleContextClick}
+            replyTo={replyTo}
+            onClearReply={handleClearReply}
+            // Only lock the input into question-answer mode while the session is
+            // actually busy (a live question keeps the run busy). If a question
+            // chip is ever showing while the session is idle — e.g. a dead /
+            // abandoned question the agent left behind — the input stays unlocked
+            // so a typed message is sent to the agent instead of being swallowed
+            // as a custom answer.
+            lockForQuestion={!!renderedQuestion && isBusy}
+            // Same dead-prompt guard as questions: only lock while the agent is
+            // actually paused on the decision (isBusy), so a stale card can't
+            // swallow the composer on an idle session.
+            lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+            onCustomAnswer={handleCustomAnswer}
+            questionButtonLabel={renderedQuestion ? questionAction.label : null}
+            questionCanAct={questionAction.canAct}
+            onQuestionAction={handleQuestionAction}
+            inputSlot={chatInputSlot}
+            toolbarSlot={chatToolbarSlot}
+            // The shell can now render on a cached transcript alone, i.e. before
+            // the sandbox answers — so sending has to be gated separately from
+            // reading. See sessionComposerReadiness.
+            disabled={composerReadiness.disabled}
+            placeholder={composerReadiness.placeholder}
+          />
+          <ConfirmDialog
+            open={!!rewindTarget}
+            onOpenChange={(open) => !open && setRewindTarget(null)}
+            title="Edit from this message?"
+            description={
+              <>
+                <p>This rewinds the same session and restores its files to this message.</p>
+                <p className="mt-2">
+                  You can restore the removed path until you send a replacement prompt.
+                </p>
+              </>
+            }
+            confirmLabel="Rewind session"
+            confirmVariant="destructive"
+            confirmIcon={<RotateCcw className="size-3.5" />}
+            isPending={sessionState?.rewindPending}
+            onConfirm={() => void handleConfirmRewind()}
+          />
+        </>
       )}
     </div>
   );

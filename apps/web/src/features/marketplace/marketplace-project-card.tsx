@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Boxes } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight, CubeIcon as Boxes } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import type { MarketplaceItem } from '@/lib/marketplace-client';

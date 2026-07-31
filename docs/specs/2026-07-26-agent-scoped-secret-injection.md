@@ -1,5 +1,8 @@
 # Agent-scoped secret injection
 
+> **Current runtime scope.** The immutable logical-agent secret grant applies to
+> the version 2 OpenCode REST runtime and its subagents.
+
 **Date:** 2026-07-26
 **Status:** Implemented
 **Area:** `apps/api` — project secrets → sandbox env

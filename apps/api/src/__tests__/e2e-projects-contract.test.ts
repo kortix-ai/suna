@@ -158,7 +158,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -192,6 +194,7 @@ mock.module('../projects/git', () => ({
     });
   },
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -245,7 +248,9 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
@@ -579,6 +584,7 @@ describe('projects API contract', () => {
         });
       },
       listBranches: async () => [],
+      remoteBranchExists: async () => true,
       listCommits: async () => ({ entries: [], nextCursor: null }),
       getCommit: async () => null,
       getCommitDiff: async () => null,

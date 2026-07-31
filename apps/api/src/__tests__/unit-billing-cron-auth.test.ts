@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 
+const actualConfig = await import('../config');
 mock.module('../config', () => ({
+  ...actualConfig,
   config: {
     KORTIX_BILLING_INTERNAL_ENABLED: false,
     INTERNAL_SERVICE_KEY: 'internal-test-key',

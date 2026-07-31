@@ -60,6 +60,7 @@ function sessionRow(
     originRef: null,
     secretsAllowlist: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,
@@ -76,6 +77,8 @@ function sandboxRow(
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     provider: 'platinum',
+    activeSince: NOW,
+    deadlineAt: NOW,
     externalId: 'sbx-123',
     baseUrl: 'https://sbx-123.proxy.kortix.com',
     status: 'active',
@@ -202,6 +205,18 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
+
+  test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
+    const placeholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),
+    );
+    expect(placeholder.name).toBeNull();
+
+    const real = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
+    );
+    expect(real.name).toBe('Set Up MS Graph');
+  });
 });
 
 describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
@@ -219,7 +234,7 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
       opencode_session_id: 'ses_abc',
-      runtime_transport: 'acp' as const,
+      runtime_transport: 'rest' as const,
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };

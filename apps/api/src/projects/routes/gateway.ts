@@ -3,8 +3,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   gatewayBudgets,
   gatewayRequestLogs,
-  sandboxComputeSessions,
-  sessionSandboxes,
 } from '@kortix/db';
 import {
   calculateCost,
@@ -15,6 +13,7 @@ import {
 import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
@@ -47,6 +46,7 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
 
 async function canDo(
   c: any,
@@ -383,100 +383,13 @@ projectsApp.openapi(
     );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-
-    const [llmRows, computeRows] = await Promise.all([
-      db
-        .select({
-          sessionId: gatewayRequestLogs.sessionId,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-          models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
-          lastAt: sql<string>`max(${gatewayRequestLogs.createdAt})`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.sessionId} is not null`,
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.sessionId),
-      db
-        .select({
-          sessionId: sandboxComputeSessions.sessionId,
-          cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-          seconds: sql<string>`coalesce(sum(extract(epoch from coalesce(${sandboxComputeSessions.endedAt}, ${sandboxComputeSessions.lastBilledAt}, now()) - ${sandboxComputeSessions.startedAt})), 0)::bigint`,
-          lastAt: sql<string>`max(${sandboxComputeSessions.lastBilledAt})`,
-        })
-        .from(sandboxComputeSessions)
-        .innerJoin(
-          sessionSandboxes,
-          eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId),
-        )
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, projectId),
-            sql`${sandboxComputeSessions.sessionId} is not null`,
-            sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(sandboxComputeSessions.sessionId),
-    ]);
-
-    type Row = {
-      session_id: string;
-      llm_cost: number;
-      compute_cost: number;
-      requests: number;
-      errors: number;
-      tokens: number;
-      models: number;
-      compute_seconds: number;
-      last_at: string | null;
-    };
-    const bySession = new Map<string, Row>();
-    for (const r of llmRows) {
-      if (!r.sessionId) continue;
-      bySession.set(r.sessionId, {
-        session_id: r.sessionId,
-        llm_cost: r.cost,
-        compute_cost: 0,
-        requests: r.requests,
-        errors: r.errors,
-        tokens: Number(r.tokens),
-        models: r.models,
-        compute_seconds: 0,
-        last_at: r.lastAt,
-      });
-    }
-    for (const r of computeRows) {
-      if (!r.sessionId) continue;
-      const e = bySession.get(r.sessionId) ?? {
-        session_id: r.sessionId,
-        llm_cost: 0,
-        compute_cost: 0,
-        requests: 0,
-        errors: 0,
-        tokens: 0,
-        models: 0,
-        compute_seconds: 0,
-        last_at: null,
-      };
-      e.compute_cost = r.cost;
-      e.compute_seconds = Number(r.seconds);
-      if (r.lastAt && (!e.last_at || r.lastAt > e.last_at)) e.last_at = r.lastAt;
-      bySession.set(r.sessionId, e);
-    }
-
-    const sessions = [...bySession.values()]
-      .map((e) => ({ ...e, total_cost: e.llm_cost + e.compute_cost }))
-      .sort((a, b) => b.total_cost - a.total_cost)
-      .slice(0, 50);
-
-    return c.json({ window_days: days, sessions });
+    return c.json(
+      await listProjectGatewaySessionSpend({
+        accountId: loaded.row.accountId,
+        projectId,
+        days,
+      }),
+    );
   },
 );
 
@@ -1130,7 +1043,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
-  const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+  const effectiveDefault = projectDefault ?? defaults.account ?? platformDefaultModelId();
   const defaultModelSource = projectDefault
     ? ('project' as const)
     : defaults.account
@@ -1176,9 +1089,9 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       },
     },
     platform: {
-      defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
+      defaultModel: platformDefaultModelId(),
       visionModel: config.LLM_GATEWAY_VISION_MODEL,
-      defaultFallback: operatorFallbackFor(config.LLM_GATEWAY_DEFAULT_MODEL),
+      defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },
   };
@@ -1260,7 +1173,7 @@ projectsApp.openapi(
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
-      policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json(
         {

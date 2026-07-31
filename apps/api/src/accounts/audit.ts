@@ -32,10 +32,20 @@ const AuditEventSchema = z
   .object({
     event_id: z.string(),
     occurred_at: z.string(),
+    project_id: z.string().nullable(),
+    session_id: z.string().nullable(),
     actor_user_id: z.string().nullable(),
+    actor_type: z.enum(['human', 'agent', 'service_account', 'system']).nullable(),
+    source: z.string().nullable(),
+    outcome: z.enum(['success', 'failure', 'denied', 'pending']).nullable(),
     action: z.string(),
     resource_type: z.string().nullable(),
     resource_id: z.string().nullable(),
+    http_status: z.number().nullable(),
+    duration_ms: z.number().nullable(),
+    request_id: z.string().nullable(),
+    trace_id: z.string().nullable(),
+    correlation_id: z.string().nullable(),
     before: z.any().nullable(),
     after: z.any().nullable(),
     ip: z.string().nullable(),
@@ -94,14 +104,22 @@ const DEFAULT_LIMIT = 50;
 export { buildFilters, type AuditFilterInput } from './audit-filters';
 
 // GET /v1/accounts/:accountId/audit
-//   ?action=iam.       — prefix match on action (e.g. "iam.policy.")
-//   ?actor=<uuid>      — only events performed by this user
-//   ?resource_type=X   — prefix match on resource_type (e.g. "project_session")
-//   ?since=ISO         — only events at or after this timestamp
-//   ?until=ISO         — only events at or before this timestamp
-//   ?q=text           — case-insensitive substring on action/resource_type/resource_id
-//   ?cursor=ISO|uuid   — keyset pagination cursor (occurredAt|eventId)
-//   ?limit=N           — default 50, max 200
+//   ?action=executor.       — prefix match on action
+//   ?actor=<uuid>           — only events performed by this user
+//   ?actor_type=agent       — human, agent, service_account, or system
+//   ?project_id=<uuid>      — one project
+//   ?session_id=<id>        — one session
+//   ?source=cli             — one client or execution source
+//   ?outcome=failure        — success, failure, denied, or pending
+//   ?request_id=<id>        — one API request
+//   ?correlation_id=<id>    — one cross-system operation
+//   ?resource_type=X        — prefix match on resource_type
+//   ?since=ISO              — only events at or after this timestamp
+//   ?until=ISO              — only events at or before this timestamp
+//   ?q=text                 — search action, resource, project, session, request,
+//                             trace, and correlation identifiers
+//   ?cursor=ISO|uuid        — keyset pagination cursor (occurredAt|eventId)
+//   ?limit=N                — default 50, max 200
 auditRouter.openapi(
   createRoute({
     method: 'get',
@@ -113,7 +131,14 @@ auditRouter.openapi(
       params: AccountIdParam,
       query: z.object({
         action: z.string().optional(),
-        actor: z.string().optional(),
+        actor: z.string().uuid().optional(),
+        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        project_id: z.string().uuid().optional(),
+        session_id: z.string().optional(),
+        source: z.string().optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        request_id: z.string().optional(),
+        correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
         since: z.string().optional(),
         until: z.string().optional(),
@@ -124,7 +149,7 @@ auditRouter.openapi(
     },
     responses: {
       200: json(AuditListSchema, 'Audit events page'),
-      ...errors(401, 403),
+      ...errors(400, 401, 403),
     },
   }),
   async (c: any) => {
@@ -136,6 +161,13 @@ auditRouter.openapi(
 
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
+    const actorType = c.req.query('actor_type')?.trim() || null;
+    const projectId = c.req.query('project_id')?.trim() || null;
+    const sessionId = c.req.query('session_id')?.trim() || null;
+    const source = c.req.query('source')?.trim() || null;
+    const outcome = c.req.query('outcome')?.trim() || null;
+    const requestId = c.req.query('request_id')?.trim() || null;
+    const correlationId = c.req.query('correlation_id')?.trim() || null;
     const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
     const untilRaw = c.req.query('until')?.trim() || null;
@@ -148,6 +180,13 @@ auditRouter.openapi(
 
     const conditions = buildFilters(accountId, {
       actor,
+      actorType,
+      projectId,
+      sessionId,
+      source,
+      outcome,
+      requestId,
+      correlationId,
       actionPrefix,
       resourceType,
       sinceRaw,
@@ -186,10 +225,20 @@ auditRouter.openapi(
       events: page.map((r) => ({
         event_id: r.eventId,
         occurred_at: r.occurredAt.toISOString(),
+        project_id: r.projectId,
+        session_id: r.sessionId,
         actor_user_id: r.actorUserId,
+        actor_type: r.actorType,
+        source: r.source,
+        outcome: r.outcome,
         action: r.action,
         resource_type: r.resourceType,
         resource_id: r.resourceId,
+        http_status: r.httpStatus,
+        duration_ms: r.durationMs,
+        request_id: r.requestId,
+        trace_id: r.traceId,
+        correlation_id: r.correlationId,
         before: r.before,
         after: r.after,
         ip: r.ip,
@@ -223,9 +272,19 @@ const CSV_HEADERS = [
   'event_id',
   'occurred_at',
   'action',
+  'project_id',
+  'session_id',
   'actor_user_id',
+  'actor_type',
+  'source',
+  'outcome',
   'resource_type',
   'resource_id',
+  'http_status',
+  'duration_ms',
+  'request_id',
+  'trace_id',
+  'correlation_id',
   'ip',
   'user_agent',
   'before',
@@ -245,7 +304,14 @@ auditRouter.openapi(
       query: z.object({
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
-        actor: z.string().optional(),
+        actor: z.string().uuid().optional(),
+        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        project_id: z.string().uuid().optional(),
+        session_id: z.string().optional(),
+        source: z.string().optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        request_id: z.string().optional(),
+        correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
         since: z.string().optional(),
         until: z.string().optional(),
@@ -277,6 +343,13 @@ auditRouter.openapi(
 
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
+    const actorType = c.req.query('actor_type')?.trim() || null;
+    const projectId = c.req.query('project_id')?.trim() || null;
+    const sessionId = c.req.query('session_id')?.trim() || null;
+    const source = c.req.query('source')?.trim() || null;
+    const outcome = c.req.query('outcome')?.trim() || null;
+    const requestId = c.req.query('request_id')?.trim() || null;
+    const correlationId = c.req.query('correlation_id')?.trim() || null;
     const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
     const untilRaw = c.req.query('until')?.trim() || null;
@@ -284,6 +357,13 @@ auditRouter.openapi(
 
     const conditions = buildFilters(accountId, {
       actor,
+      actorType,
+      projectId,
+      sessionId,
+      source,
+      outcome,
+      requestId,
+      correlationId,
       actionPrefix,
       resourceType,
       sinceRaw,
@@ -309,10 +389,20 @@ auditRouter.openapi(
           JSON.stringify({
             event_id: r.eventId,
             occurred_at: r.occurredAt.toISOString(),
+            project_id: r.projectId,
+            session_id: r.sessionId,
             action: r.action,
             actor_user_id: r.actorUserId,
+            actor_type: r.actorType,
+            source: r.source,
+            outcome: r.outcome,
             resource_type: r.resourceType,
             resource_id: r.resourceId,
+            http_status: r.httpStatus,
+            duration_ms: r.durationMs,
+            request_id: r.requestId,
+            trace_id: r.traceId,
+            correlation_id: r.correlationId,
             ip: r.ip,
             user_agent: r.userAgent,
             before: r.before,
@@ -340,9 +430,19 @@ auditRouter.openapi(
           csvEscape(r.eventId),
           csvEscape(r.occurredAt.toISOString()),
           csvEscape(r.action),
+          csvEscape(r.projectId),
+          csvEscape(r.sessionId),
           csvEscape(r.actorUserId),
+          csvEscape(r.actorType),
+          csvEscape(r.source),
+          csvEscape(r.outcome),
           csvEscape(r.resourceType),
           csvEscape(r.resourceId),
+          csvEscape(r.httpStatus),
+          csvEscape(r.durationMs),
+          csvEscape(r.requestId),
+          csvEscape(r.traceId),
+          csvEscape(r.correlationId),
           csvEscape(r.ip),
           csvEscape(r.userAgent),
           csvEscape(r.before),

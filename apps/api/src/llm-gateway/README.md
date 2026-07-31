@@ -34,12 +34,12 @@ opaque values and executes the finite route returned by the control plane.
 | `models/` | Builds the project/tier-specific catalog served to clients and resolves provider transports from the runtime catalog. |
 | `gateway-keys.ts` | Gateway API key (`kgw_…`) lifecycle + validation. |
 | `credentials/` | Codex (ChatGPT subscription) credential resolution. |
-| `sandbox-credentials.ts` | Which provider env vars are withheld from opencode so the gateway is the only LLM path. |
+| `sandbox-credentials.ts` | Which provider env vars are withheld from the OpenCode process when the gateway owns routing. |
 
 ## Request path
 
 ```
-client (opencode)
+OpenCode runtime
   → POST /v1/llm/chat/completions  (in-API)   or  → standalone gateway pod
        │                                                │  /internal/gateway/* RPC
        └──────────── @kortix/llm-gateway pipeline ──────┘
@@ -49,6 +49,11 @@ client (opencode)
                        → stream relay (SSE, 10s heartbeat) / json
                        → recordUsage + recordTrace
 ```
+
+OpenCode sends its provider traffic through the supported gateway dialect.
+Direct project credentials take precedence where OpenCode supports them. A
+generic provider-key check does not prove one model. The OpenCode REST smoke
+sends a real prompt through each selected provider and model pair.
 
 The standalone pod does not import `@kortix/llm-catalog`. It obtains both the
 served model catalog and each request's route plan from this API over the

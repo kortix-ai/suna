@@ -8,7 +8,7 @@
 // and idx_audit_events_resource (resource_type).
 
 import { auditEvents } from '@kortix/db';
-import { type SQL, eq, gte, ilike, like, lte, or } from 'drizzle-orm';
+import { type SQL, eq, gte, ilike, like, lte, or, sql } from 'drizzle-orm';
 
 export interface AuditFilterInput {
   /** actor user_id, or null for "everyone". */
@@ -23,6 +23,13 @@ export interface AuditFilterInput {
   untilRaw: string | null;
   /** Case-insensitive substring over action + resource_type + resource_id. */
   q: string | null;
+  projectId?: string | null;
+  sessionId?: string | null;
+  actorType?: string | null;
+  source?: string | null;
+  outcome?: string | null;
+  requestId?: string | null;
+  correlationId?: string | null;
 }
 
 export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] {
@@ -36,6 +43,13 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.actor) {
     push(eq(auditEvents.actorUserId, input.actor));
   }
+  if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
+  if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
+  if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
+  if (input.source) push(eq(auditEvents.source, input.source));
+  if (input.outcome) push(eq(auditEvents.outcome, input.outcome));
+  if (input.requestId) push(eq(auditEvents.requestId, input.requestId));
+  if (input.correlationId) push(eq(auditEvents.correlationId, input.correlationId));
 
   if (input.actionPrefix) {
     push(
@@ -74,6 +88,11 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
         ilike(auditEvents.action, term),
         ilike(auditEvents.resourceType, term),
         ilike(auditEvents.resourceId, term),
+        ilike(auditEvents.sessionId, term),
+        ilike(auditEvents.requestId, term),
+        ilike(auditEvents.traceId, term),
+        ilike(auditEvents.correlationId, term),
+        sql`${auditEvents.projectId}::text ilike ${term}`,
       ),
     );
   }

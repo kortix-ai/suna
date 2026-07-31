@@ -1,5 +1,8 @@
 # SDK model system redesign — defaults (project / agent / trigger) + free-tier as a pure gateway concern
 
+> **Runtime scope.** OpenCode provider injection below describes the current
+> `kortix_version: 2` runtime.
+
 Status: **draft / for review** · Owner: SDK refactor (branch `whitelabel-demo`)
 
 ## Goal

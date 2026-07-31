@@ -7,7 +7,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { Cpu } from 'lucide-react';
+import { CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 function parseToolName(tool: string): {
@@ -82,4 +82,3 @@ export function GenericTool({ part }: ToolProps) {
     </BasicTool>
   );
 }
-

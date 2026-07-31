@@ -38,6 +38,8 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - name: terraform fmt
         run: terraform fmt -check -recursive infra/terraform
+      - name: nacl auditor unit tests
+        run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
       - name: terraform validate (every root)
         run: |
           set -euo pipefail
@@ -96,6 +98,38 @@ jobs:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov-terraform
 
+  nacl-audit:
+    name: nacl admin-port audit
+    # Terraform governs the VPCs it creates; this checks what is actually
+    # deployed, so a hand-edited ACL or a new region cannot drift past the
+    # control. Hard gate — unlike drift detection, a finding is a real exposure.
+    #
+    # Uses its own role rather than TF_PLAN_ROLE_ARN: this job needs two
+    # read-only EC2 describes, while drift detection needs broad read plus
+    # state access. See security-baseline/iam-gha-nacl-audit.tf.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # An unset role would silently skip the audit, which reads as a pass.
+      # A control that cannot run must fail loudly instead.
+      - name: require audit role
+        run: |
+          if [ -z "${{ vars.NACL_AUDIT_ROLE_ARN }}" ]; then
+            echo "::error::NACL_AUDIT_ROLE_ARN is unset - the admin-port audit cannot run."
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ vars.NACL_AUDIT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+      - name: audit every region for public SSH/RDP
+        run: python3 infra/terraform/scripts/audit-nacl-admin-ports.py
+
   drift:
     name: drift detection
     if: github.event_name != 'pull_request' && vars.TF_PLAN_ROLE_ARN != ''
@@ -107,12 +141,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The */platform roots are deliberately absent. They drive the helm and
+        # kubernetes providers, and Helm keeps release state in Kubernetes
+        # Secrets — so planning them from CI would mean granting this role
+        # secret-read inside the production cluster. That is a bigger grant
+        # than drift reporting justifies. Plan them from an operator session.
         root:
           - infra/terraform/environments/prod-eks/cluster
-          - infra/terraform/environments/prod-eks/platform
           - infra/terraform/environments/dev-eks/cluster
-          - infra/terraform/environments/dev-eks/platform
-          - infra/terraform/environments/security-baseline
+          # The ECS envs became plannable from a clean checkout once their
+          # non-secret config moved out of gitignored tfvars into variable
+          # defaults (#5771, #5778). Before that a plan here proposed replacing
+          # the production certificate and live DNS, so covering them would
+          # have reported catastrophic false drift every night.
+          - infra/terraform/environments/prod
+          - infra/terraform/environments/staging
+          - infra/terraform/environments/dev
+          # Not under environments/ — the stack lives at the terraform root.
+          - infra/terraform/security-baseline
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
@@ -123,6 +169,13 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: plan -detailed-exitcode
+        # The EKS roots declare a Cloudflare provider and fall back to a dummy
+        # token when none is supplied, which fails the plan with Cloudflare's
+        # auth error 10000 before any drift is reported. Read-only here: plan
+        # never writes DNS.
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ vars.CLOUDFLARE_ZONE_ID }}
         run: |
           set -uo pipefail
           terraform -chdir="${{ matrix.root }}" init -input=false -no-color

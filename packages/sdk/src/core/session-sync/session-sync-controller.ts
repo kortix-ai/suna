@@ -1,6 +1,16 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
-export const SESSION_SYNC_PAGE_SIZE = 10;
+/**
+ * Messages per bounded read — the newest-first window a session opens with,
+ * and the step size when the transcript pulls older history.
+ *
+ * OpenCode carries tool output as *parts* of the assistant message, so a page
+ * is roughly half as many turns as it is messages: 50 covers ~25 turns, which
+ * is a whole ordinary session. That is the point — most sessions now open
+ * fully loaded and never pull at all, while a long one still opens bounded
+ * instead of dragging its entire history over the sandbox proxy.
+ */
+export const SESSION_SYNC_PAGE_SIZE = 50;
 
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
 
@@ -262,6 +272,7 @@ export class SessionSyncController {
     this.clearPromptSettlementTimer();
     this.promptObservationPhase = 'awaiting-work';
     this.update({ isPromptObservedBusy: true });
+    this.setBusy(true);
   }
 
   /** Observe an authoritative runtime status from SSE or status reconciliation. */
@@ -286,6 +297,7 @@ export class SessionSyncController {
     this.clearPromptSettlementTimer();
     this.promptObservationPhase = 'idle';
     this.update({ isPromptObservedBusy: false });
+    this.setBusy(false);
   }
 
   setBusy(isBusy: boolean): void {
@@ -313,6 +325,9 @@ export class SessionSyncController {
       const firstPage = await this.loadPage('tail', reason);
       const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
       if (this.destroyed) return;
+      if (this.containsNewPromptReply(page.messages)) {
+        this.observePromptActivity();
+      }
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
       if (!this.olderHistoryStarted) {
@@ -420,8 +435,31 @@ export class SessionSyncController {
     if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
       return;
     }
-    await Promise.all([this.reconcile('poll'), this.reconcileStatus()]);
+    // Load the transcript before status. A completed async prompt can transition
+    // back to idle before the first poll. The tail proves that work occurred;
+    // the following idle status can then settle prompt observation correctly.
+    await this.reconcile('poll');
+    await this.reconcileStatus();
     this.lastActivityAt = this.scheduler.now();
+  }
+
+  private containsNewPromptReply(messages: SessionSyncMessage[]): boolean {
+    if (this.promptObservationPhase === 'idle') return false;
+    const newUserMessageIds = new Set(
+      messages
+        .filter(
+          (message) =>
+            message.info.role === 'user' && !this.knownUserMessageIds.has(message.info.id),
+        )
+        .map((message) => message.info.id),
+    );
+    if (newUserMessageIds.size === 0) return false;
+    return messages.some(
+      (message) =>
+        message.info.role === 'assistant' &&
+        Boolean(message.info.parentID) &&
+        newUserMessageIds.has(message.info.parentID!),
+    );
   }
 
   private async reconcileStatus(): Promise<void> {
@@ -458,6 +496,7 @@ export class SessionSyncController {
       if (this.destroyed || this.promptObservationPhase !== 'settling') return;
       this.promptObservationPhase = 'idle';
       this.update({ isPromptObservedBusy: false });
+      this.stopLivenessTimer();
     };
     this.promptSettlementTimer = this.scheduler.setTimeout
       ? this.scheduler.setTimeout(settle, PROMPT_IDLE_SETTLEMENT_MS)

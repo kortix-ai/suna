@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { SESSION_SYNC_PAGE_SIZE } from '../core/session-sync/session-sync-controller';
 
 // Mirrors messages.test.ts / use-session.test.ts: stub the lowest network
 // boundary (the OpenCode SDK client singleton) so the real send/recovery
@@ -122,7 +123,7 @@ describe('recoverFromSendFailure', () => {
 
     await tick();
 
-    expect(lastMessagesArgs).toEqual({ sessionID: 'sess-1', limit: 10 });
+    expect(lastMessagesArgs).toEqual({ sessionID: 'sess-1', limit: SESSION_SYNC_PAGE_SIZE });
 
     // hydrate() ran with the server's echo of the same message — the
     // optimistic entry is superseded, not just deleted outright.

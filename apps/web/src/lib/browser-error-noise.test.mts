@@ -16,6 +16,8 @@ import {
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
+  isInpageJsNoErrorMessageNoise,
+  isInjectedScriptSendMessageNoise,
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
@@ -26,6 +28,7 @@ import {
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
   isRuntimeNotReadyNoiseMessage,
+  isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -909,6 +912,408 @@ test('does NOT suppress a storage SecurityError when only ONE of several frames 
     }),
     false,
   )
+})
+
+// ---------------------------------------------------------------------------
+// Safari generic SecurityError noise — the bare `The operation is insecure.`
+// message from Safari 26.6+ on iOS for cross-origin restricted API access
+// (`crypto.subtle`, `fetch` in a restricted context, or a Web Crypto operation
+// in a sandboxed iframe / Safari private-mode context). This is a SIBLING of
+// the storage SecurityError noise (`isStorageSecurityErrorNoise`) — the storage
+// matcher anchors on `'localStorage'`/`'sessionStorage'` property names and
+// does NOT catch the bare `The operation is insecure.` message.
+//
+// Better Stack frontend prod patterns:
+//   e1d25be3ab38488ba0bfb2b3f069f24641914e3d20bacc1027178a5522376294
+//   1918c62ac5434aa56d7ce150e96b99be1b520471360fa3ef091802327297cf73
+//   70e1c309921716ee01cd5cd083cef876b41a81311b51db3d5bd55def644fdc47
+//   1cec609ee07b7f15aea6fea1eed550e4ce45a838abdf40171050336ff4abc2aa
+// (Kortix Frontend prod, application_id 2346967): all `SecurityError: The
+// operation is insecure.`, 1 occurrence each / 0 identified users, last
+// 2026-07-29 08:36:02 UTC, release `c330eda4d96e7aee557618254a86df7d16ba5d9b`
+// (v0.11.0 — POST-Promote), transaction `/` (marketing homepage), URL
+// `https://kortix.com/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). Frames: all
+// in `webpack-befb5b1662175048.js` function `a` (webpack runtime) +
+// `59675-a333ed5b0ae6dae4.js` functions `17725`/`20532`/`63613` (in_app) —
+// NO first-party `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact raw message from the production events.
+const SAFARI_SECURITY_ERROR_MESSAGE = 'The operation is insecure.'
+
+// A minified chunk frame (webpack runtime / app chunk) — no resolved first-party
+// `apps/web/src/…` source, so the negative guard does NOT fire. Represents the
+// four production patterns' frame shapes.
+const SAFARI_SECURITY_ERROR_CHUNK_FRAME =
+  'app:///_next/static/chunks/webpack-befb5b1662175048.js'
+
+// The three canonical capture-path forms: raw, `SecurityError: ` prefix, and
+// stacked `Unhandled promise rejection: SecurityError: ` prefix.
+const SAFARI_SECURITY_ERROR_CAPTURE_FORMS = [
+  SAFARI_SECURITY_ERROR_MESSAGE,
+  `SecurityError: ${SAFARI_SECURITY_ERROR_MESSAGE}`,
+  `Unhandled promise rejection: SecurityError: ${SAFARI_SECURITY_ERROR_MESSAGE}`,
+]
+
+test('classifies every Safari generic SecurityError capture form as noise (no first-party frame)', () => {
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    // Matcher-level: message alone (frameless — still noise because the message
+    // is Safari-specific and generic enough).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message }),
+      true,
+      `expected "${message}" to be classified as Safari generic SecurityError noise`,
+    )
+    // Matcher-level: with a minified chunk frame (no first-party source).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message, frames: [{ filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }] }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    // Matcher-level: with a window.onerror filename (no first-party source).
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message, filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the Safari generic SecurityError Sentry event via the beforeSend gate', () => {
+  for (const value of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [{ filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless Safari generic SecurityError Sentry event (no first-party frame to preserve)', () => {
+  for (const value of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Safari generic SecurityError unhandled rejection via the runtime (window.onerror) gate', () => {
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: SAFARI_SECURITY_ERROR_CHUNK_FRAME }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a Safari generic SecurityError whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code threw a
+  // `SecurityError: The operation is insecure.` — actionable, so it must keep
+  // reporting so the call site can be fixed. This is the negative guard that
+  // distinguishes actionable first-party code regressions from the noise class.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    [{ filename: 'app:///apps/web/src/lib/security/some-crypto.ts' }],
+    [{ filename: 'apps/web/src/features/auth/use-auth.ts' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+      assert.equal(
+        isSafariGenericSecurityErrorNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/security/some-crypto.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded SecurityError from a different error type', () => {
+  // A non-SecurityError type with the same message (e.g. `Error: The operation
+  // is insecure.`) is a different error class — the bare `Error:` type without
+  // the `SecurityError:` prefix means a different throw path. The matcher
+  // anchors on the EXACT `SecurityError: The operation is insecure.` message
+  // (and its canonical wrappers) — a bare `Error:` prefix is NOT a `SecurityError:`
+  // prefix, so `stripErrorWrappers` strips it but leaves the remainder, and the
+  // exact regex `/^The operation is insecure\.$/` matches the underlying
+  // message. Wait — `stripErrorWrappers` strips `[A-Za-z]+Error: `, which
+  // includes `Error: `, so both `Error: The operation is insecure.` and
+  // `SecurityError: The operation is insecure.` strip to the same underlying
+  // message. The over-match guard is that a real first-party `throw new Error(
+  // 'The operation is insecure.')` de-minifies to `apps/web/src/…` and is
+  // preserved by the negative guard. But verify that a FIRST-PARTY frame
+  // preserves it even when the Error type differs.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/foo.ts' }],
+  ]) {
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message: `Error: ${SAFARI_SECURITY_ERROR_MESSAGE}`, frames }),
+false,
+      `expected Sentry event "${SAFARI_SECURITY_ERROR_MESSAGE}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// injectedScript.bundle.js `sendMessage` noise
+// ---------------------------------------------------------------------------
+
+const INJECTED_SCRIPT_SENDMESSAGE_MESSAGES = [
+  // The exact raw exception value from the production event (V8/Chrome).
+  "Cannot read properties of undefined (reading 'sendMessage')",
+  // `TypeError:` prefixed (window.onerror / onunhandledrejection paths).
+  "TypeError: Cannot read properties of undefined (reading 'sendMessage')",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'sendMessage')",
+  // Old JSC (Safari) wording.
+  "Cannot read property 'sendMessage' of undefined",
+  "TypeError: Cannot read property 'sendMessage' of undefined",
+]
+
+const INJECTED_SCRIPT_BUNDLE_FRAME = { filename: 'app:///injectedScript.bundle.js', function: 'n' }
+const INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN = [
+  { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+  { filename: 'app:///injectedScript.bundle.js', function: 'n', lineno: 84147 },
+]
+const FIRST_PARTY_APPS_SRC_FRAME = { filename: 'apps/web/src/lib/desktop.ts', function: 'handleMessage' }
+
+test('classifies every injectedScript.bundle.js sendMessage variant as noise when sourced from the injected script', () => {
+  for (const message of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, filename: 'app:///injectedScript.bundle.js' }),
+      true,
+      `expected "${message}" from injectedScript.bundle.js to be sendMessage noise`,
+    )
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, frames: [INJECTED_SCRIPT_BUNDLE_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be sendMessage noise`,
+    )
+  }
+})
+
+test('classifies the sendMessage variant from the full production frame chain', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN,
+    }),
+    true,
+  )
+})
+
+test('classifies injectedScript.bundle.js sendMessage noise from another injected-app source', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [{ filename: 'app:///scripts/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT classify sendMessage as noise when NO injected source is present', () => {
+  for (const message of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, filename: 'https://kortix.com/app.js' }),
+      false,
+      `expected "${message}" from a non-injected source to keep reporting`,
+    )
+    assert.equal(
+      isInjectedScriptSendMessageNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" with no frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT classify sendMessage as noise when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `chrome.runtime.sendMessage` / `browser.runtime.sendMessage` → actionable;
+  // the negative guard MUST preserve it.
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME, INJECTED_SCRIPT_BUNDLE_FRAME],
+    }),
+    false,
+    'expected first-party sendMessage to keep reporting despite the injected frame',
+  )
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME],
+    }),
+    false,
+    'expected first-party sendMessage without injected frame to keep reporting',
+  )
+})
+
+test('does NOT classify a non-sendMessage message from injectedScript.bundle.js as noise', () => {
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'addListener')",
+      frames: [INJECTED_SCRIPT_BUNDLE_FRAME],
+    }),
+    false,
+    'expected non-sendMessage message from injectedScript.bundle.js to keep reporting',
+  )
+})
+
+test('suppresses the injectedScript.bundle.js sendMessage Sentry event via the beforeSend gate', () => {
+  for (const value of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party sendMessage that throws from an apps/web/src frame', () => {
+  // Our own code throws `sendMessage` on an undefined runtime → actionable
+  // regression; the negative guard MUST preserve it so the call site can be fixed.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'sendMessage')",
+            stacktrace: {
+              frames: [
+                { filename: 'apps/web/src/features/desktop/bridge.ts', function: 'sendToExtension' },
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected first-party sendMessage Sentry event to keep reporting',
+  )
+})
+
+test('pins the production Better Stack pattern 95a70e66…', () => {
+  // The exact production event from Better Stack:
+  //   message: "Cannot read properties of undefined (reading 'sendMessage')"
+  //   stack:
+  //     app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy
+  //       function `u`
+  //     app:///injectedScript.bundle.js function `n` colno 84147
+  //   mechanism: auto.browser.global_handlers.onunhandledrejection
+  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
+  //   better-stack pattern: 95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+        { filename: 'app:///injectedScript.bundle.js' },
+      ],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'sendMessage')",
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+                { filename: 'app:///injectedScript.bundle.js' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('cross-matcher isolation: the new Safari generic matcher does NOT match the existing storage SecurityError message', () => {
+  // The storage SecurityError matcher (`isStorageSecurityErrorNoise`) is anchored
+  // on `Failed to read the 'localStorage'/'sessionStorage' property from 'Window'`.
+  // The new Safari generic matcher (`isSafariGenericSecurityErrorNoise`) is anchored
+  // on the bare `The operation is insecure.` — they must NOT overlap.
+  for (const message of [
+    "SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+    "Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
+    "Unhandled promise rejection: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+  ]) {
+    assert.equal(
+      isSafariGenericSecurityErrorNoise({ message }),
+      false,
+      `expected storage SecurityError "${message}" to NOT be matched by the Safari generic matcher`,
+    )
+  }
+})
+
+test('cross-matcher isolation: the existing storage matcher does NOT match the new Safari generic message', () => {
+  // The storage SecurityError matcher regexes anchor on `'localStorage'` /
+  // `'sessionStorage'` property names, so the bare `The operation is insecure.`
+  // must NOT match.
+  for (const message of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
+    assert.equal(
+      isStorageSecurityErrorNoise({ message }),
+      false,
+      `expected Safari generic SecurityError "${message}" to NOT be matched by the storage matcher`,
+    )
+  }
 })
 
 test('does NOT suppress a non-storage SecurityError with the same shape', () => {
@@ -3686,6 +4091,214 @@ test('does NOT suppress a real first-party TypeError on a DIFFERENT method name 
       `expected non-wallet-stream message "${value}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Wallet-extension injected `inpage.js` "No error message" noise
+// (Better Stack pattern
+//  61949432528f8a88c74799f2dc1a8dd128479ae49e6e75865f501e5eb40fc94e,
+//  Kortix Frontend prod, application_id 2346967). A wallet extension's
+//  `onGlobalMessage` → `runIfPresent` → `run` handlers in `app:///inpage.js`
+//  throw a value with no `.message` property, so Sentry SDK 10.x writes the
+//  `"No error message"` placeholder. The error propagates through the React
+//  reconciler (frames `iX`/`iu`/`ib`/`ik`/`oq`/`o_`/`l9`/`l`) and into the
+//  `global-error` boundary (chunk `app/global-error-*.js`), which Sentry's
+//  `onerror` handler captures. 1 occurrence, 0 identified users, last
+//  2026-07-30 09:14:21 UTC, route `/auth?expired=true&returnUrl=…`, mechanism
+//  `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never
+//  reached a React error boundary directly). The `isEmptyMessageUnresolved-
+//  BrowserChunkNoise` matcher does NOT catch this because the `app:///inpage.js`
+//  frames are not browser-bundle sources (the "every frame must be browser
+//  bundle" guard bails). The `isInpageWalletStreamNoise` matcher does NOT catch
+//  it because the message is `"No error message"`, not an `addListener`/`emit`
+//  TypeError. The new matcher anchors on the EXACT `"No error message"` string
+//  AND an `app:///inpage.js` frame, with a first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact production stack: wallet-extension `app:///inpage.js` frames
+// (onGlobalMessage → runIfPresent → run) → React reconciler → global-error →
+// chunk frames. NO first-party `apps/web/src/…` frame.
+const INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES = [
+  { filename: 'app:///inpage.js', function: 'onGlobalMessage' },
+  { filename: 'app:///inpage.js', function: 'runIfPresent' },
+  { filename: 'app:///inpage.js', function: 'run' },
+  { filename: 'app:///_next/static/chunks/86784-d4b6544b8ad14b3b.js', function: 'x' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'iX' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'iu' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'ib' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'ik' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'oq' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'o_' },
+  { filename: 'app:///_next/static/chunks/9ced0920-3a9e27d92db308d0.js', function: 'l9' },
+  { filename: 'app:///_next/static/chunks/app/global-error-dadddeab95eb9a36.js', function: 'l' },
+  { filename: 'app:///_next/static/chunks/31848-3448c16876d4ded2.js', function: '?' },
+]
+
+test('classifies the inpage.js "No error message" prod event as noise (exact message + inpage.js frames)', () => {
+  // Exact production shape: the `"No error message"` placeholder + the wallet-
+  // extension `app:///inpage.js` frames (onGlobalMessage → runIfPresent → run)
+  // + React reconciler + global-error boundary frames. No first-party
+  // `apps/web/src/…` frame, so the negative guard does not fire.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the inpage.js "No error message" Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: mechanism
+  // `auto.browser.global_handlers.onerror` (UNCAUGHT global error), request URL
+  // `https://kortix.com/auth?expired=true&returnUrl=…`, Chrome 150 / Windows 10.
+  // The wallet-extension inpage.js frames + React reconciler + global-error
+  // boundary — NO first-party `apps/web/src/…` frame.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
+      },
+      exception: {
+        values: [
+          {
+            value: 'No error message',
+            stacktrace: { frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the inpage.js "No error message" noise from a filename alone (window.onerror)', () => {
+  // The runtime gate (window.onerror) sees the `filename` directly — the throw
+  // originates from the injected script source.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      filename: 'app:///inpage.js',
+    }),
+    true,
+  )
+})
+
+test('classifies the inpage.js "No error message" noise from a chrome-extension:// frame', () => {
+  // Some wallet extensions inject under a chrome-extension:// origin instead of
+  // app:///inpage.js — the extension-source fallback anchor must also match.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: [{ filename: 'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the "No error message" event when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw an error with
+  // no message that happens to have an inpage.js frame in the stack (e.g. a
+  // first-party handler that wraps the extension provider) → still actionable;
+  // the negative guard MUST preserve it so the call site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/wallet/wallet-provider.ts', function: 'handleProvider' }],
+    [
+      { filename: 'app:///inpage.js', function: 'onGlobalMessage' },
+      { filename: 'app:///apps/web/src/features/auth/use-auth.ts', function: 'login' },
+    ],
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message: 'No error message',
+        frames,
+      }),
+      false,
+      `expected first-party "No error message" event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: 'No error message', stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party "No error message" event from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the "No error message" event with NO inpage.js frame (conservative — keep reporting)', () => {
+  // No `app:///inpage.js` frame → can't confirm extension origin; a real
+  // first-party error with no message (e.g. `Promise.reject()`) would produce
+  // the same `"No error message"` placeholder, so keep reporting.
+  // NOTE: `shouldIgnoreSentryBrowserNoise` may still suppress the event via
+  // the sibling `isEmptyMessageUnresolvedBrowserChunkNoise` matcher if the
+  // frames are all browser-bundle sources (that's a separate noise class). The
+  // new inpage.js matcher itself must return false when no inpage.js frame is
+  // present.
+  for (const frames of [
+    [],
+    [{ filename: 'app:///_next/static/chunks/app.js', function: '?' }],
+    [{ filename: 'apps/web/src/lib/foo.ts', function: 'bar' }],
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message: 'No error message',
+        frames,
+      }),
+      false,
+      `expected "No error message" event from ${JSON.stringify(frames)} (no inpage.js frame) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-No-error-message value even with inpage.js frames', () => {
+  // Only the EXACT `"No error message"` placeholder is noise — a real error
+  // message (e.g. a real TypeError) from the same inpage.js source is a
+  // different class and must keep reporting (or be handled by
+  // `isInpageWalletStreamNoise` if it matches the stream patterns).
+  for (const message of [
+    'Something went wrong',
+    "Cannot read properties of undefined (reading 'foo')",
+    'No error message: extra context',
+  ]) {
+    assert.equal(
+      isInpageJsNoErrorMessageNoise({
+        message,
+        frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" with inpage.js frames to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: INPAGE_JS_NO_ERROR_MESSAGE_PROD_FRAMES } }],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" with inpage.js frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the "No error message" event that is already handled by isEmptyMessageUnresolvedBrowserChunkNoise (no inpage.js frame)', () => {
+  // The sibling `isEmptyMessageUnresolvedBrowserChunkNoise` matcher handles
+  // the "No error message" + ALL-browser-bundle-frame class (patterns
+  // 141dcca3… / 19ee7c2f…). The new inpage.js matcher must NOT overlap with it:
+  // an event with ONLY browser-bundle frames (no inpage.js frame) is not
+  // matched by the new matcher and stays in the original classifier.
+  assert.equal(
+    isInpageJsNoErrorMessageNoise({
+      message: 'No error message',
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-30a0e6805d268c02.js', function: 'iX' },
+        { filename: 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js', function: '?' },
+      ],
+    }),
+    false,
+  )
 })
 
 test('does NOT suppress a same-worded message from a near-miss injected filename', () => {

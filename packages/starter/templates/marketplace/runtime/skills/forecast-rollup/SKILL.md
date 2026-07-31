@@ -111,7 +111,7 @@ reposted every week.
 - **Weight from HubSpot's own configuration.** Stage probabilities come from
   the team's own pipeline setup in HubSpot, never a hardcoded assumption.
 - **Scoped secrets.** HubSpot access is brokered server-side through the
-  connector; no raw credential is ever shown to the model or written to logs.
+  connector; no raw credential is ever pasted into chat.
 - **People decide, not the agent.** The forecast reports the number and flags
   the risk; reps and sales management decide what to do about any deal.
 </guardrails>

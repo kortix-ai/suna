@@ -54,22 +54,22 @@ tests/
 
 ### Playwright E2E Specs (`tests/e2e/specs/`)
 
-| Spec | Tests | What it verifies |
-|------|-------|------------------|
-| `01-containers` | 6 | All Docker containers running |
-| `02-services` | 4 | HTTP health checks on all ports |
-| `03-frontend-config` | 4 | Runtime config URLs correct (no placeholders) |
-| `04-auth-flow` | 4 | API auth + browser login |
-| `08-accounts-project-access` | 4 | Accounts, invites, project access, and no legacy route leaks |
-| `09-admin-ops` | 2 | Admin overview and operations dashboard |
-| `10-production-golden-paths` | gated | SPEC 10.5 golden paths when enabled |
-| `11-production-boundaries` | gated | SPEC 10.6/10.7 boundaries, SLOs, and negative-space probes |
-| `12-sandbox-templates` | gated | Sandbox template and snapshot behavior |
+| Spec                         | Tests | What it verifies                                             |
+| ---------------------------- | ----- | ------------------------------------------------------------ |
+| `01-containers`              | 6     | All Docker containers running                                |
+| `02-services`                | 4     | HTTP health checks on all ports                              |
+| `03-frontend-config`         | 4     | Runtime config URLs correct (no placeholders)                |
+| `04-auth-flow`               | 4     | API auth + browser login                                     |
+| `08-accounts-project-access` | 4     | Accounts, invites, project access, and no legacy route leaks |
+| `09-admin-ops`               | 2     | Admin overview and operations dashboard                      |
+| `10-production-golden-paths` | gated | SPEC 10.5 golden paths when enabled                          |
+| `11-production-boundaries`   | gated | SPEC 10.6/10.7 boundaries, SLOs, and negative-space probes   |
+| `12-sandbox-templates`       | gated | Sandbox template and snapshot behavior                       |
 
 ### Shell Checks (`tests/shell/`)
 
-| Suite | What it verifies |
-|-------|------------------|
+| Suite                 | What it verifies                               |
+| --------------------- | ---------------------------------------------- |
 | `vps/test-vps-e2e.sh` | Caddy HTTPS, basic auth, firewall (run on VPS) |
 
 ## pnpm Scripts
@@ -86,13 +86,13 @@ pnpm --filter @kortix/tests test:shell:vps               # VPS checks
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `E2E_OWNER_EMAIL` | `test-e2e@kortix.ai` | Test owner email |
-| `E2E_OWNER_PASSWORD` | `e2e-testpass-123` | Test owner password |
-| `E2E_BASE_URL` | `http://localhost:13737` | Frontend URL |
-| `E2E_API_URL` | `http://localhost:13738/v1` | API URL |
-| `E2E_SUPABASE_URL` | `http://localhost:13740` | Supabase URL |
+| Variable             | Default                     | Description         |
+| -------------------- | --------------------------- | ------------------- |
+| `E2E_OWNER_EMAIL`    | `test-e2e@kortix.ai`        | Test owner email    |
+| `E2E_OWNER_PASSWORD` | `e2e-testpass-123`          | Test owner password |
+| `E2E_BASE_URL`       | `http://localhost:13737`    | Frontend URL        |
+| `E2E_API_URL`        | `http://localhost:13738/v1` | API URL             |
+| `E2E_SUPABASE_URL`   | `http://localhost:13740`    | Supabase URL        |
 
 ## Note on Unit Tests
 

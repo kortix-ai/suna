@@ -7,7 +7,6 @@ description: >-
   loads. Posts anomalies to {{alert_channel}} and drafts a GitHub issue in
   {{incident_repo}} with the likely cause.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

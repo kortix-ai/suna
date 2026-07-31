@@ -105,8 +105,7 @@ no config change.
   {{page_severity_threshold}} pages regardless of how confident the diagnosis
   is.
 - **Scoped secrets.** Sentry, Datadog, and GitHub credentials are brokered
-  server-side through connectors and the GitHub token is injected at runtime;
-  never shown to the model or written to logs.
+  server-side through connectors and the GitHub token is injected at runtime; scoped to this agent's grant.
 - **No memory required between sweeps.** Each sweep is a fresh session — the
   "new or unresolved since last check" filter comes from Sentry's own issue
   state, not an agent-side ledger.

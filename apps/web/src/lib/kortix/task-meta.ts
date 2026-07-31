@@ -5,21 +5,16 @@
  */
 
 import {
-  Circle,
-  CircleDot,
-  CircleDotDashed,
-  CheckCircle2,
-  XCircle,
-  type LucideIcon,
-} from 'lucide-react';
+  CheckCircleIcon as CheckCircle2,
+  CircleIcon as Circle,
+  RadioButtonIcon as CircleDot,
+  CircleDashedIcon as CircleDotDashed,
+  XCircleIcon as XCircle,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 /** Canonical task statuses (inlined; formerly from the /kortix/tasks board API). */
 export type KortixTaskStatus =
-  | 'todo'
-  | 'in_progress'
-  | 'input_needed'
-  | 'awaiting_review'
-  | 'completed'
-  | 'cancelled';
+  'todo' | 'in_progress' | 'input_needed' | 'awaiting_review' | 'completed' | 'cancelled';
 
 export interface StatusMeta {
   icon: LucideIcon;
@@ -103,22 +98,14 @@ export const ALL_STATUSES: KortixTaskStatus[] = [
 
 /** Linear-style short ID — KTX-XXXX from the trailing chars of the task id. */
 export function shortTaskId(id: string): string {
-  const tail = id.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase();
+  const tail = id
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(-4)
+    .toUpperCase();
   return `KTX-${tail || '0000'}`;
 }
 
-export function relativeTime(t?: string | number | null): string {
-  if (!t) return '';
-  const ms = Date.now() - (typeof t === 'string' ? +new Date(t) : t);
-  const m = (ms / 60000) | 0;
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = (m / 60) | 0;
-  if (h < 24) return `${h}h ago`;
-  const d = (h / 24) | 0;
-  if (d < 30) return `${d}d ago`;
-  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+export { relativeTime } from '@/lib/relative-time';
 
 export function fullDate(t?: string | null): string {
   if (!t) return '';

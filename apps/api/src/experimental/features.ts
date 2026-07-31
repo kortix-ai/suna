@@ -100,6 +100,22 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
+    key: 'teams',
+    name: 'Microsoft Teams',
+    description:
+      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
+    stability: 'experimental',
+    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
+    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
+    // offered — `teamsMode().available` reports that separately, and a project
+    // can always bring its own bot app. Gating availability on the credentials
+    // would hide the bring-your-own flow on exactly the deployments that need
+    // it (self-host).
+    available: () => true,
+    // Explicit opt-in: a project turns Teams on in Settings.
+    platformDefault: () => false,
+  },
+  {
     key: 'voice',
     name: 'Voice',
     description:
@@ -127,15 +143,6 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // project, while explicit project overrides still win and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
-  },
-  {
-    key: 'acp_runtime',
-    name: 'ACP Runtime',
-    description:
-      'Use the Agent Client Protocol for this project session interface. Disable this experiment to use the compatibility transport.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
   },
   {
     key: 'review_center',
@@ -198,14 +205,6 @@ export function resolveExperimentalFeatures(
   return Object.fromEntries(
     FEATURES.map((f) => [f.key, resolveExperimentalFeature(metadata, f.key)]),
   ) as Record<ExperimentalFeatureKey, boolean>;
-}
-
-/** Select the SDK client transport for one project.
- *  `KORTIX_OPENCODE_TRANSPORT=acp` is the operator-wide rollout override.
- *  The normal rollout remains an explicit project `acp_runtime` opt-in. */
-export function resolveProjectRuntimeTransport(metadata: unknown): 'acp' | 'rest' {
-  if (config.KORTIX_OPENCODE_TRANSPORT === 'acp') return 'acp';
-  return resolveExperimentalFeature(metadata, 'acp_runtime') ? 'acp' : 'rest';
 }
 
 /** Serialized catalog entry for the client (drives the Customize UI). */

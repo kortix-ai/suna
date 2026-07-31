@@ -13,7 +13,8 @@
  */
 
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { shouldQueryAccountState } from '@/hooks/billing/account-state-gating';
+import { useBillingAccountId, useBillingAccountResolved } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -184,12 +185,20 @@ interface UseAccountStateOptions {
  * - Agent run completes (credits deducted)
  */
 export function useAccountState(options?: UseAccountStateOptions) {
-  const enabled = options?.enabled ?? true;
   // Explicit option wins; fall back to the nearest BillingAccountProvider so
   // any consumer inside /accounts/[id] is automatically scoped without
   // every call site having to pass the id by hand.
   const contextAccountId = useBillingAccountId();
+  const contextResolved = useBillingAccountResolved();
   const accountId = options?.accountId ?? contextAccountId;
+  // Hold the query until the surface knows whose account it is; fetching the
+  // primary account as a stand-in only to swap cache slots is what made every
+  // presence-driven billing UI paint, unpaint, and paint again on cold load.
+  const enabled = shouldQueryAccountState({
+    enabled: options?.enabled ?? true,
+    hasExplicitAccountId: options?.accountId !== undefined,
+    contextResolved,
+  });
 
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
@@ -227,9 +236,16 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
   // Inherit the BillingAccountProvider if one is wrapping us — keeps the
   // streaming variant aligned with the static one on /accounts/[id].
   const accountId = useBillingAccountId();
+  const contextResolved = useBillingAccountResolved();
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
     queryFn: () => getAccountState({ accountId }),
+    // Same wait as useAccountState — never fetch under a provisional account.
+    enabled: shouldQueryAccountState({
+      enabled: true,
+      hasExplicitAccountId: false,
+      contextResolved,
+    }),
     staleTime: 1000 * 60 * 5, // 5 minutes during streaming
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,

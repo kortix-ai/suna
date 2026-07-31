@@ -17,8 +17,16 @@ import { Separator } from '@/components/ui/separator';
 import type { SortField } from '@/features/file-browser/store/files-store';
 import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
-import { HomeSolid } from '@mynaui/icons-react';
-import { ArrowUpDown, ChevronRight, Download, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
+import {
+  ArrowsDownUpIcon as ArrowUpDown,
+  CaretRightIcon as ChevronRight,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  HouseIcon as HomeSolid,
+  ArrowClockwiseIcon as RefreshCw,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VersionSelector } from './version-selector';
@@ -155,7 +163,7 @@ export function DriveToolbar({
                 size="xs"
                 className={cn('text-foreground shrink-0 font-medium')}
               >
-                <HomeSolid className="size-4" />
+                <HomeSolid weight="fill" className="size-4" />
                 <span className="text-xs">{rootPath ? homeLabel : 'workspace'}</span>
               </Button>
 

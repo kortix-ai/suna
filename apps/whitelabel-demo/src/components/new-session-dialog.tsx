@@ -1,13 +1,12 @@
 'use client';
 
 /**
- * Start a session with its create-only overrides chosen up front.
+ * Start a session with its initial scope chosen up front.
  *
  * The sidebar used to create sessions with nothing but an id, which quietly
  * made "the project default agent, the agent's full secret grant, the default
  * connection for every connector" the only session shape this app could
- * produce — even though all three are settable exactly once, at create, and
- * never again (`mid-session-change.ts`). This is where that choice happens.
+ * produce. This is where that initial choice happens.
  *
  * Everything is optional and every unset field is OMITTED from the create body
  * rather than sent as a guess (`buildSessionCreateInput`), so the default
@@ -17,9 +16,9 @@
 import Loading from '@/components/ui/loading';
 
 import { AgentPicker } from '@/components/chat/agent-picker';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import {
   ConnectorBindingFields,
-  bindingLabels,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { Button } from '@/components/ui/button';
@@ -69,8 +68,8 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            These are set once, when the session starts. Leave anything untouched to keep this
-            project&apos;s defaults.
+            Set the initial agent, secrets, and connector authorizations. You
+            can change the session scope later.
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open so the pickers' fetches don't run on every
@@ -146,14 +145,11 @@ function NewSessionForm({
   const start = useMutation({
     mutationFn: async () => {
       const sessionId = generateSessionId();
-      await kortix
-        .project(projectId)
-        .sessions.create(
-          buildSessionCreateInput(overrides, {
-            sessionId,
-            connectionLabels: bindingLabels(connectors.data?.connectors ?? [], bindings),
-          }),
-        );
+      await kortix.project(projectId).sessions.create(
+        buildSessionCreateInput(overrides, {
+          sessionId,
+        }),
+      );
       return sessionId;
     },
     onSuccess: (sessionId) => {
@@ -198,10 +194,13 @@ function NewSessionForm({
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <Label htmlFor="narrow-secrets">Limit which secrets this session can read</Label>
+            <Label htmlFor="narrow-secrets">
+              Limit which secrets this session can read
+            </Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Off, the session gets the agent&apos;s full secret grant. An allowlist only ever
-              narrows it, and it cannot be changed once the session starts.
+              Off, the session gets the agent&apos;s full secret grant. An
+              allowlist only ever narrows it. You can replace the allowlist
+              after the session starts.
             </p>
           </div>
           <Switch
@@ -215,14 +214,19 @@ function NewSessionForm({
         {narrowSecrets && (
           <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
             {identifiers.map((secret) => (
-              <div key={secret.identifier} className="flex items-center justify-between gap-3">
+              <div
+                key={secret.identifier}
+                className="flex items-center justify-between gap-3"
+              >
                 <Label
                   htmlFor={`secret-${secret.identifier}`}
                   className="min-w-0 font-mono text-xs font-normal"
                 >
                   <span className="truncate">{secret.identifier}</span>
                   {secret.name !== secret.identifier && (
-                    <span className="truncate text-muted-foreground">→ {secret.name}</span>
+                    <span className="truncate text-muted-foreground">
+                      → {secret.name}
+                    </span>
                   )}
                 </Label>
                 <Switch
@@ -246,8 +250,8 @@ function NewSessionForm({
           <div>
             <Label>Connections</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Which shared account each connector acts as. Sessions started here can only use
-              connections shared with the team.
+              Which shared account each connector acts as. Sessions started here
+              can only use project connections.
             </p>
           </div>
           <ConnectorBindingFields
@@ -255,8 +259,21 @@ function NewSessionForm({
             value={bindings}
             onChange={setBindings}
           />
+          {/* Where the options in that picker come from — including why an
+              alias can be listed with nothing to choose. */}
+          <CallSnippet id="connections.list" context={{ projectId }} />
         </section>
       )}
+
+      {/* The dialog IS the create body — so show the body it currently builds,
+          updating as the switches move, rather than describing it. */}
+      <CallSnippet
+        id="session.create"
+        context={{
+          projectId,
+          overrides,
+        }}
+      />
 
       <DialogFooter>
         <Button variant="ghost" onClick={onDone} disabled={start.isPending}>

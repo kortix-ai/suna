@@ -129,8 +129,7 @@ or clearly a duplicate of another; leave that judgment to a human.
 - **Quotes over volume.** Keep a curated set of representative quotes per
   issue, not an ever-growing dump of every mention.
 - **Scoped secrets.** Plain, review-source, Slack, and Linear access is
-  brokered server-side; no raw credential is ever shown to the model or
-  written to logs.
+  brokered server-side; no raw credential is ever pasted into chat.
 - **No memory between runs.** Each run is a fresh session; the current state
   of {{linear_team}} in Linear is the only carryover, not an internal ledger.
 </guardrails>

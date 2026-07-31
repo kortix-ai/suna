@@ -5,7 +5,13 @@
  * (one owner, shared by every host). This module only adds the browser-only
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
-import { listFiles, readBlob } from '@kortix/sdk';
+import {
+  ensurePreviewSessionCookie,
+  isInternalLocalhostUrl,
+  listFiles,
+  readBlob,
+} from '@kortix/sdk';
+import { getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import JSZip from 'jszip';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
@@ -36,14 +42,15 @@ export type { UploadResult } from '@kortix/sdk';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
 
-/** Formats that are inert as a top-level document — safe to open directly in a
- * browser tab via a same-origin blob URL. HTML and SVG are deliberately
- * excluded even though a browser tab "renders them natively": both can carry
- * `<script>`, and a blob URL is same-origin, so opening one would execute
- * arbitrary script with access to this app's origin (XSS). In-app preview
- * already renders HTML inertly via a sandboxed iframe `srcDoc`, so nothing is
- * lost — everything else gets Download only, since an omitted control beats a
- * disabled one with no explanation (W4). */
+/** Formats that are inert as a top-level document, so opening one can never run
+ * author script. HTML and SVG stay excluded even though a browser tab renders
+ * them natively and `openFileInNewTab` no longer uses a same-origin blob URL:
+ * both can carry `<script>`, and a top-level tab — unlike the preview iframe —
+ * carries no `sandbox` attribute to inert it. Widening this set is a security
+ * decision about the API origin, not a side effect of fixing the URL, so it is
+ * deliberately left alone here. In-app preview already renders HTML inertly, so
+ * nothing is lost; everything else gets Download only, since an omitted control
+ * beats a disabled one with no explanation (W4). */
 const BROWSER_VIEWABLE_EXT = new Set([
   'pdf',
   'txt',
@@ -63,14 +70,43 @@ export function isBrowserViewable(fileName: string): boolean {
   return BROWSER_VIEWABLE_EXT.has(ext);
 }
 
-/** Open a sandbox file in a real browser tab via a blob URL. The URL is only
- * ever read by the tab we just opened, so a short-lived revoke (matching
- * `downloadFile`'s own window) is enough — no store, no cleanup on unmount. */
+/** Thrown when the tab can't be opened because the session's runtime has no
+ * sandbox bound yet. Callers surface this rather than opening a URL that would
+ * resolve against the *viewer's* own machine. */
+export class RuntimeNotBoundError extends Error {
+  constructor() {
+    super("This session's workspace isn't running, so the file has no address yet.");
+    this.name = 'RuntimeNotBoundError';
+  }
+}
+
+/**
+ * Open a workspace file in a real browser tab, at a real address.
+ *
+ * This used to hand the tab a `blob:` object URL built from bytes already in
+ * memory. That is not an address: it dies on reload, can't be bookmarked, can't
+ * be sent to anyone, and self-revoked after 60s. It also silently constrained
+ * `isBrowserViewable` above — a blob URL is *same-origin*, so HTML/SVG had to be
+ * excluded to avoid running author script on this app's origin.
+ *
+ * Instead we address the sandbox's static file server through the preview proxy
+ * (`/v1/p/{sandbox}/3211/open?path=…`), which lives on the API origin, not this
+ * app's. Auth is the `__preview_session` cookie, so mint it first: nothing has
+ * necessarily rendered a preview for this sandbox yet, and without the cookie
+ * the proxy answers 401.
+ *
+ * The localhost guard is load-bearing. When a session's runtime has not bound,
+ * `buildStaticFilePreviewUrl` falls back to a bare `http://localhost:3211/…`
+ * (see `hasPreviewTarget` in the SDK) — opening that would load a port on the
+ * *viewer's* machine. That is the same class of bug as the `/v1/p//PORT/`
+ * preview links fixed in cd5f4513ff, so it fails loudly here instead.
+ */
 export async function openFileInNewTab(filePath: string): Promise<void> {
-  const blob = await readBlob(filePath);
-  const url = URL.createObjectURL(blob);
+  const url = getActiveStaticFilePreviewUrl(filePath);
+  if (!url || isInternalLocalhostUrl(url)) throw new RuntimeNotBoundError();
+
+  await ensurePreviewSessionCookie(url);
   window.open(url, '_blank', 'noopener,noreferrer');
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Download a single file to the user's machine. */

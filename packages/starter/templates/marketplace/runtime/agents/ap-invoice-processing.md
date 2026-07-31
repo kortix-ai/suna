@@ -7,7 +7,6 @@ description: >-
   invoice in the ledger, and posts the batch to {{approval_channel}} for
   approval. Never schedules or marks a payment as paid.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

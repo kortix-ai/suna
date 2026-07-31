@@ -1,3 +1,4 @@
+import type { BillingState } from '@kortix/sdk';
 import { create } from 'zustand';
 
 export type UpgradeReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
@@ -18,6 +19,11 @@ interface UpgradeDialogState {
    *  which stays 'free' for per-seat accounts. */
   billingModel?: string;
   hasSubscription?: boolean;
+  /** The unambiguous state behind the block (lib/billing/billing-gate-state.ts).
+   *  `reason` is the legacy 402 code and is lossy; this is what the modal picks
+   *  its view and its copy from, so the gate that opened it and the modal can
+   *  never say opposite things about the same account. */
+  billingState?: BillingState;
   openUpgradeDialog: (opts: {
     reason?: UpgradeReason;
     message?: string;
@@ -25,6 +31,7 @@ interface UpgradeDialogState {
     accountId?: string;
     billingModel?: string;
     hasSubscription?: boolean;
+    billingState?: BillingState;
   }) => void;
   closeUpgradeDialog: () => void;
 }
@@ -37,6 +44,7 @@ export const useUpgradeDialogStore = create<UpgradeDialogState>((set) => ({
   accountId: undefined,
   billingModel: undefined,
   hasSubscription: undefined,
+  billingState: undefined,
   openUpgradeDialog: (opts) =>
     set({
       isOpen: true,
@@ -46,6 +54,7 @@ export const useUpgradeDialogStore = create<UpgradeDialogState>((set) => ({
       accountId: opts.accountId,
       billingModel: opts.billingModel,
       hasSubscription: opts.hasSubscription,
+      billingState: opts.billingState,
     }),
   closeUpgradeDialog: () => set({ isOpen: false }),
 }));

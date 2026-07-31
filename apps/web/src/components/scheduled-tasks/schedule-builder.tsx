@@ -1,6 +1,10 @@
 'use client';
 
-import { CalendarClock, ChevronDown, Clock } from 'lucide-react';
+import {
+  CalendarDotsIcon as CalendarClock,
+  CaretDownIcon as ChevronDown,
+  ClockIcon as Clock,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';

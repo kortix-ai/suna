@@ -24,8 +24,8 @@ import {
   mintConnectLink,
   removeConnector,
 } from '../executor/gateway.ts';
-import { runExecutorMcpServer } from '../executor/mcp.ts';
 import { CliError, out, parseExecArgs } from '../executor/io.ts';
+import { runExecutorMcpServer } from '../executor/mcp.ts';
 
 const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -45,6 +45,51 @@ const BUILTIN_CHANNEL_HINTS: Record<string, string> = {
 function rejectBuiltinChannel(slug: string): void {
   const hint = BUILTIN_CHANNEL_HINTS[slug];
   if (hint) throw new CliError(hint, 'BUILTIN_CHANNEL');
+}
+
+interface ExecutorCallInput {
+  slug: string;
+  action: string;
+  rawArgs: string | undefined;
+}
+
+const EXECUTOR_CALL_USAGE =
+  'usage: kortix executor call <connector>.<action> [json-args] ' +
+  '(split form also supported: <connector> <action> [json-args])';
+
+/**
+ * Accept the dotted tool reference returned by connectors/discover/describe.
+ * Split only the first dot because action paths can contain dots.
+ */
+export function parseExecutorCallInput(
+  args: string[],
+  flags: Record<string, string>,
+): ExecutorCallInput {
+  if (flags.as) {
+    throw new CliError(
+      '`--as` is not supported. Executor identity is fixed by the session token. Start a new session to use another agent.',
+      'AGENT_OVERRIDE_NOT_SUPPORTED',
+    );
+  }
+
+  const first = args[0]?.trim();
+  if (!first) throw new CliError(EXECUTOR_CALL_USAGE, 'USAGE');
+
+  const separator = first.indexOf('.');
+  if (separator >= 0) {
+    const slug = first.slice(0, separator).trim();
+    const action = first.slice(separator + 1).trim();
+    if (!slug || !action || args.length > 2) {
+      throw new CliError(EXECUTOR_CALL_USAGE, 'USAGE');
+    }
+    return { slug, action, rawArgs: args[1] ?? flags.args };
+  }
+
+  const action = args[1]?.trim();
+  if (!action || args.length > 3) {
+    throw new CliError(EXECUTOR_CALL_USAGE, 'USAGE');
+  }
+  return { slug: first, action, rawArgs: args[2] ?? flags.args };
 }
 
 // Build a connector draft (ConnectorDraft on the API) from CLI flags.
@@ -102,14 +147,11 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     }
 
     case 'call': {
+      const { slug, action, rawArgs } = parseExecutorCallInput(args, flags);
       const executor = executorClient(flags.project);
-      const slug = args[0];
-      const action = args[1];
-      if (!slug || !action) throw new CliError('usage: kortix executor call <connector> <action> [json-args]', 'USAGE');
-      const raw = args[2] ?? flags.args;
       let parsed: Record<string, unknown> = {};
-      if (raw) {
-        try { parsed = JSON.parse(raw); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
+      if (rawArgs) {
+        try { parsed = JSON.parse(rawArgs); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
       }
       // PAUSES for human approval instead of returning `pending_approval`
       // immediately — this is the agent's primary path, and the turn must
@@ -181,7 +223,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
           connectors: 'kortix executor connectors — list connectors + tools this session can use',
           discover: 'kortix executor discover "<intent>" — search tools by natural language',
           describe: 'kortix executor describe <connector>.<action> — show a tool\'s input schema',
-          call: 'kortix executor call <connector> <action> \'<json-args>\' — run a tool',
+          call: 'kortix executor call <connector>.<action> \'<json-args>\' — run a tool',
           add: 'kortix executor add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
           rm: 'kortix executor rm <slug> — remove a connector from the project',
           connect: 'kortix executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',

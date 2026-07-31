@@ -14,6 +14,7 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -24,24 +25,28 @@ const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
-const PROJECT_AGENT_PAT = 'kortix_pat_agent_session';
-const PROJECT_EXECUTOR_PAT = 'kortix_pat_executor_sandbox';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
+const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS;
 
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+
+const { config } = await import('../config');
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStatus = 'stopped';
 let providerStatusAfterStart: string | null = null;
+let providerStatusSessionMetadataUpdate: Record<string, unknown> | null = null;
 let providerStartError: Error | null = null;
 let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
+let runtimeInspectionHealth: SandboxRuntimeHealth | null = null;
 let providerRecoveryCalls = 0;
 let providerRecoveryEnabled = false;
 let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
@@ -51,8 +56,15 @@ let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
+let lastSessionInsertValues: Record<string, unknown> | null = null;
 let lastSessionListWhere: unknown = null;
-let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
+// `active_since` / `deadline_at` are assigned by a DB trigger, never by
+// application code, so these HTTP-contract fixtures deliberately omit them —
+// none of the routes under test reads either column (only the reaper does, and
+// it has its own suite).
+type SandboxRowFixture = Omit<typeof sessionSandboxes.$inferSelect, 'activeSince' | 'deadlineAt'> &
+  Partial<Pick<typeof sessionSandboxes.$inferSelect, 'activeSince' | 'deadlineAt'>>;
+let sessionSandboxRows: Array<SandboxRowFixture>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>;
 let secretValues: Map<string, string>;
@@ -97,9 +109,11 @@ function resetState() {
   providerStartCalls = 0;
   providerStatus = 'stopped';
   providerStatusAfterStart = null;
+  providerStatusSessionMetadataUpdate = null;
   providerStartError = null;
   providerStartGate = null;
   releaseProviderStart = null;
+  runtimeInspectionHealth = null;
   providerRecoveryCalls = 0;
   providerRecoveryEnabled = false;
   providerRecoveryStatus = 'unavailable';
@@ -108,6 +122,7 @@ function resetState() {
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
+  lastSessionInsertValues = null;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -136,6 +151,7 @@ function resetState() {
     originRef: null,
     secretsAllowlist: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -184,34 +200,6 @@ mock.module('../middleware/auth', () => ({
       await next();
       return;
     }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_AGENT_PAT}`) {
-      // An agent-session PAT: same principal as the runtime PAT but carrying a
-      // resolved agent grant — i.e. a token acting AS an agent inside a session.
-      c.set('userId', USER_ID);
-      c.set('userEmail', '');
-      c.set('authType', 'pat');
-      c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
-      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
-      c.set('agentGrant', { agent: 'default', kortixCli: 'all', connectors: 'all' });
-      await next();
-      return;
-    }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_EXECUTOR_PAT}`) {
-      // The REAL executor PAT injected into every sandbox (KORTIX_CLI_TOKEN):
-      // session-bound (sessionId set) but with a NULL agent grant — the common
-      // v1/default-agent case. It must still be excluded from 'backend'; keying
-      // the exclusion on the agent grant alone would fail open here.
-      c.set('userId', USER_ID);
-      c.set('userEmail', '');
-      c.set('authType', 'pat');
-      c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
-      c.set('sessionId', SESSION_ID);
-      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
-      await next();
-      return;
-    }
     c.set('userId', USER_ID);
     c.set('userEmail', 'contract@example.test');
     c.set('authType', 'supabase');
@@ -220,9 +208,11 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
@@ -338,7 +328,10 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
-  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -366,7 +359,18 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
-    getStatus: async () => providerStatus,
+    getStatus: async () => {
+      if (providerStatusSessionMetadataUpdate && sessionRow) {
+        sessionRow = {
+          ...sessionRow,
+          metadata: {
+            ...(sessionRow.metadata ?? {}),
+            ...providerStatusSessionMetadataUpdate,
+          },
+        };
+      }
+      return providerStatus;
+    },
     start: async () => {
       providerStartCalls += 1;
       if (providerStartError) throw providerStartError;
@@ -385,6 +389,12 @@ mock.module('../platform/providers', () => ({
         }
       : {}),
   }),
+}));
+
+const realRuntimeInspection = await import('../projects/runtime-inspection');
+mock.module('../projects/runtime-inspection', () => ({
+  ...realRuntimeInspection,
+  inspectSandboxRuntime: async () => runtimeInspectionHealth,
 }));
 
 mock.module('../projects/opencode-mapping', () => ({
@@ -608,6 +618,7 @@ mock.module('../shared/db', () => ({
             return [row];
           }
           if (table !== projectSessions) return [];
+          lastSessionInsertValues = values;
           sessionRow = {
             sessionId: values.sessionId,
             accountId: values.accountId,
@@ -627,6 +638,7 @@ mock.module('../shared/db', () => ({
             originRef: values.originRef ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
+            connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -641,96 +653,96 @@ mock.module('../shared/db', () => ({
         }) => {
           const conflictResult = {
             returning: async () => {
-            if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex(
-                (row) => row.projectId === values.projectId,
-              );
-              const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                connectionId:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.connectionId
-                    : '00000000-0000-4000-a000-000000000501',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                repoUrl: values.repoUrl,
-                repoOwner: values.repoOwner ?? null,
-                repoName: values.repoName ?? null,
-                externalRepoId: values.externalRepoId ?? null,
-                defaultBranch: values.defaultBranch,
-                authMethod: values.authMethod,
-                installationId: values.installationId ?? null,
-                credentialRef: values.credentialRef ?? null,
-                permissions: values.permissions ?? {},
-                visibility: values.visibility ?? null,
-                webhookId: values.webhookId ?? null,
-                status: values.status ?? 'connected',
-                lastValidatedAt: values.lastValidatedAt ?? now,
-                lastErrorCode: values.lastErrorCode ?? null,
-                lastErrorMessage: values.lastErrorMessage ?? null,
-                metadata: values.metadata ?? {},
+              if (table === projectGitConnections) {
+                const existingIndex = gitConnectionRows.findIndex(
+                  (row) => row.projectId === values.projectId,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  connectionId:
+                    existingIndex >= 0
+                      ? gitConnectionRows[existingIndex]!.connectionId
+                      : '00000000-0000-4000-a000-000000000501',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  repoUrl: values.repoUrl,
+                  repoOwner: values.repoOwner ?? null,
+                  repoName: values.repoName ?? null,
+                  externalRepoId: values.externalRepoId ?? null,
+                  defaultBranch: values.defaultBranch,
+                  authMethod: values.authMethod,
+                  installationId: values.installationId ?? null,
+                  credentialRef: values.credentialRef ?? null,
+                  permissions: values.permissions ?? {},
+                  visibility: values.visibility ?? null,
+                  webhookId: values.webhookId ?? null,
+                  status: values.status ?? 'connected',
+                  lastValidatedAt: values.lastValidatedAt ?? now,
+                  lastErrorCode: values.lastErrorCode ?? null,
+                  lastErrorMessage: values.lastErrorMessage ?? null,
+                  metadata: values.metadata ?? {},
                   createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitConnections.$inferSelect;
-              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-              else gitConnectionRows.push(row);
-              return [row];
-            }
-            if (table === projectGitCredentials) {
-              const existingIndex = gitCredentialRows.findIndex(
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitConnections.$inferSelect;
+                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+                else gitConnectionRows.push(row);
+                return [row];
+              }
+              if (table === projectGitCredentials) {
+                const existingIndex = gitCredentialRows.findIndex(
                   (row) => row.projectId === values.projectId && row.provider === values.provider,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  credentialId:
+                    existingIndex >= 0
+                      ? gitCredentialRows[existingIndex]!.credentialId
+                      : '00000000-0000-4000-a000-000000000601',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  authMethod: values.authMethod ?? 'token',
+                  valueEnc: values.valueEnc,
+                  createdBy: values.createdBy ?? null,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitCredentials.$inferSelect;
+                if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+                else gitCredentialRows.push(row);
+                return [row];
+              }
+              if (table !== projectSecrets) return [];
+              const existingIndex = secretRows.findIndex(
+                (row) => row.projectId === values.projectId && row.name === values.name,
               );
               const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                credentialId:
+              const row: typeof projectSecrets.$inferSelect = {
+                secretId:
                   existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.credentialId
-                    : '00000000-0000-4000-a000-000000000601',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                authMethod: values.authMethod ?? 'token',
-                valueEnc: values.valueEnc,
+                    ? secretRows[existingIndex]!.secretId
+                    : '00000000-0000-4000-a000-000000000401',
+                projectId: values.projectId!,
+                identifier: values.identifier ?? values.name!,
+                name: values.name!,
+                valueEnc: (set.valueEnc ?? values.valueEnc)!,
+                scope: values.scope ?? 'runtime',
+                ownerUserId: values.ownerUserId ?? null,
+                active: values.active ?? true,
                 createdBy: values.createdBy ?? null,
-                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitCredentials.$inferSelect;
-              if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
-              else gitCredentialRows.push(row);
+                description: values.description ?? null,
+                strategy: values.strategy ?? 'runtime',
+                egressPolicy: values.egressPolicy ?? null,
+                handlePrefix: values.handlePrefix ?? null,
+                rotatedAt: values.rotatedAt ?? null,
+                strategyLocked: values.strategyLocked ?? false,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
+              };
+              if (existingIndex >= 0) secretRows[existingIndex] = row;
+              else secretRows.push(row);
               return [row];
-            }
-            if (table !== projectSecrets) return [];
-            const existingIndex = secretRows.findIndex(
-                (row) => row.projectId === values.projectId && row.name === values.name,
-            );
-            const now = new Date('2026-01-02T00:00:00Z');
-            const row: typeof projectSecrets.$inferSelect = {
-              secretId:
-                existingIndex >= 0
-                  ? secretRows[existingIndex]!.secretId
-                  : '00000000-0000-4000-a000-000000000401',
-              projectId: values.projectId!,
-              identifier: values.identifier ?? values.name!,
-              name: values.name!,
-              valueEnc: (set.valueEnc ?? values.valueEnc)!,
-              scope: values.scope ?? 'runtime',
-              ownerUserId: values.ownerUserId ?? null,
-              active: values.active ?? true,
-              createdBy: values.createdBy ?? null,
-              description: values.description ?? null,
-              strategy: values.strategy ?? 'runtime',
-              egressPolicy: values.egressPolicy ?? null,
-              handlePrefix: values.handlePrefix ?? null,
-              rotatedAt: values.rotatedAt ?? null,
-              strategyLocked: values.strategyLocked ?? false,
-              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
-              updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
-            };
-            if (existingIndex >= 0) secretRows[existingIndex] = row;
-            else secretRows.push(row);
-            return [row];
-          },
+            },
             then: (
               resolve: (value: unknown[]) => unknown,
               reject?: (reason: unknown) => unknown,
@@ -897,69 +909,14 @@ describe('project session API contract', () => {
     } else {
       process.env.KORTIX_URL = ORIGINAL_KORTIX_URL;
     }
+    if (ORIGINAL_ALLOWED_SANDBOX_PROVIDERS === undefined) {
+      delete process.env.ALLOWED_SANDBOX_PROVIDERS;
+    } else {
+      process.env.ALLOWED_SANDBOX_PROVIDERS = ORIGINAL_ALLOWED_SANDBOX_PROVIDERS;
+    }
   });
 
   beforeEach(() => resetState());
-
-  test('sandbox token acquires, renews, and releases the execution lease route', async () => {
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: null,
-        baseUrl: null,
-        status: 'active',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
-        updatedAt: new Date('2026-01-01T00:00:00Z'),
-      },
-    ];
-    const app = createApp();
-    const request = (action: 'acquire' | 'renew' | 'release', token: string) =>
-      app.request(`/v1/projects/${PROJECT_ID}/execution-lease`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action,
-          session_id: SESSION_ID,
-          lease_ttl_seconds: 180,
-        }),
-      });
-
-    const acquire = await request('acquire', PROJECT_SANDBOX_TOKEN);
-    expect(acquire.status).toBe(200);
-    expect(await acquire.json()).toMatchObject({
-      ok: true,
-      provider_url: null,
-      provider_headers: null,
-    });
-
-    const renew = await request('renew', PROJECT_SANDBOX_TOKEN);
-    expect(renew.status).toBe(200);
-    expect(await renew.json()).toMatchObject({
-      ok: true,
-      provider_url: null,
-      provider_headers: null,
-    });
-
-    const release = await request('release', PROJECT_SANDBOX_TOKEN);
-    expect(release.status).toBe(200);
-    expect(await release.json()).toEqual({ ok: true });
-
-    const forbidden = await request('renew', PROJECT_RUNTIME_PAT);
-    expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({
-      error: 'execution lease requires a sandbox token',
-    });
-  });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
     deniedIamAction = 'project.session.read';
@@ -1070,7 +1027,7 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.optional)).toBe(true);
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
@@ -1092,9 +1049,9 @@ describe('project session API contract', () => {
     ).toBeUndefined();
 
     const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: 'gitlab-project-token' }),
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'gitlab-project-token' }),
     });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
@@ -1156,7 +1113,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1170,23 +1127,8 @@ describe('project session API contract', () => {
     });
   });
 
-  test('derives session origin from the caller token; only a backend-origin caller may set origin_ref', async () => {
+  test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
-
-    const whitespace = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: '   ' }),
-    });
-    expect(whitespace.status).toBe(400);
-
     const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1205,9 +1147,11 @@ describe('project session API contract', () => {
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(userRes.status).toBe(201);
-    const userBody = (await userRes.json()) as { origin: string; origin_ref: string | null };
+    const userBody = (await userRes.json()) as Record<string, unknown>;
     expect(userBody.origin).toBe('user');
-    expect(userBody.origin_ref).toBeNull();
+    expect(userBody).not.toHaveProperty('end_user_ref');
+    expect(userBody).not.toHaveProperty('origin_ref');
+    expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
     const backendRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1215,12 +1159,14 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_SA_TOKEN}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(backendRes.status).toBe(201);
-    const backendBody = (await backendRes.json()) as { origin: string; origin_ref: string | null };
+    const backendBody = (await backendRes.json()) as Record<string, unknown>;
     expect(backendBody.origin).toBe('backend');
-    expect(backendBody.origin_ref).toBe('tenant-42');
+    expect(backendBody).not.toHaveProperty('end_user_ref');
+    expect(backendBody).not.toHaveProperty('origin_ref');
+    expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
     const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1228,45 +1174,33 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-43' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(patRes.status).toBe(201);
-    const patBody = (await patRes.json()) as { origin: string; origin_ref: string | null };
+    const patBody = (await patRes.json()) as Record<string, unknown>;
     expect(patBody.origin).toBe('backend');
-    expect(patBody.origin_ref).toBe('tenant-43');
+    expect(patBody).not.toHaveProperty('end_user_ref');
+    expect(patBody).not.toHaveProperty('origin_ref');
+  });
 
-    const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}`,
-      },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(sandboxRes.status).toBe(403);
-    expect(await sandboxRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+  test('rejects removed session attribution fields', async () => {
+    const app = createApp();
 
-    const agentRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_AGENT_PAT}`,
-      },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(agentRes.status).toBe(403);
-    expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    for (const body of [
+      { provider: 'daytona', base_ref: 'main', end_user_ref: 'legacy-reference' },
+      { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
+    ]) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-    const executorRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_EXECUTOR_PAT}`,
-      },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(executorRes.status).toBe(403);
-    expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+      expect(response.status).toBe(400);
+    }
   });
 
   test('secrets allowlist is backend-only, existence-checked, and persisted', async () => {
@@ -1365,13 +1299,9 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
   });
 
-  test('KaaB: backend overrides (model, origin_ref, secrets, agent) each apply at boot', async () => {
-    // THE end-to-end proof: backend (PAT) creates carrying the Kortix-as-a-
-    // Backend overrides, asserting each is (a) reflected in the 201 and (b)
-    // actually applied in the env handed to the sandbox — not accepted-and-dropped.
+  test('backend overrides for model, secrets, and agent apply at boot', async () => {
     const app = createApp();
 
-    // Seed two runtime secrets; the allowlist will narrow the session to one.
     for (const [name, value] of [
       ['GMAIL_TOKEN', 'g-secret'],
       ['STRIPE_SECRET', 's-secret'],
@@ -1384,9 +1314,6 @@ describe('project session API contract', () => {
       expect(w.status).toBe(200);
     }
 
-    // (A) The default agent (unrestricted grant) + model + origin_ref + a secrets
-    // allowlist → each applied; the allowlist NARROWS from every secret to just
-    // the one named.
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1397,28 +1324,25 @@ describe('project session API contract', () => {
         provider: 'daytona',
         base_ref: 'main',
         opencode_model: 'anthropic/claude-opus-4-8',
-        origin_ref: 'tenant-42',
         secrets: ['GMAIL_TOKEN'],
       }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
       origin: string;
-      origin_ref: string | null;
       secrets_allowlist: string[] | null;
     };
     expect(body.origin).toBe('backend');
-    expect(body.origin_ref).toBe('tenant-42');
     expect(body.secrets_allowlist).toEqual(['GMAIL_TOKEN']);
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.KORTIX_ORIGIN_REF).toBe('tenant-42'); // origin_ref → attribution
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8'); // model
-    expect(env.GMAIL_TOKEN).toBe('g-secret'); // allowlisted secret injected
-    expect(env.STRIPE_SECRET).toBeUndefined(); // non-allowlisted secret withheld
+    expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
+    expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.GMAIL_TOKEN).toBe('g-secret');
+    expect(env.STRIPE_SECRET).toBeUndefined();
 
-    // (B) The agent_name override reaches the sandbox as KORTIX_AGENT_NAME.
     const res2 = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1433,59 +1357,25 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
-  test('KaaB: GET sessions filters by end_user_ref (and the deprecated origin_ref alias)', async () => {
-    // Without this filter a wrapper answering "show me THIS customer's sessions"
-    // has to pull every session in the project and filter client-side — which
-    // also means shipping other end-users' rows to a caller that asked about one.
-    //
-    // The DB here is a mock that returns rows regardless of the predicate, so
-    // asserting on the response body would pass even if the filter were dropped.
-    // We render the predicate the route actually built instead.
+  test('legacy attribution query parameters do not filter session inventory', async () => {
     const app = createApp();
     const renderWhere = () => new PgDialect().sqlToQuery(lastSessionListWhere as SQL);
 
-    // (A) modern spelling → an origin_ref term carrying the requested handle.
     lastSessionListWhere = null;
-    const modern = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42`,
+    const first = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=legacy-reference`,
     );
-    expect(modern.status).toBe(200);
-    expect(renderWhere().sql).toContain('origin_ref');
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (B) the deprecated alias resolves to the same filter — it stays accepted
-    // forever, so a live wrapper written before the rename keeps working.
-    lastSessionListWhere = null;
-    const legacy = await app.request(`/v1/projects/${PROJECT_ID}/sessions?origin_ref=tenant-42`);
-    expect(legacy.status).toBe(200);
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (C) unfiltered lists must NOT gain a stray origin_ref term.
-    lastSessionListWhere = null;
-    const unfiltered = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
-    expect(unfiltered.status).toBe(200);
+    expect(first.status).toBe(200);
     expect(renderWhere().sql).not.toContain('origin_ref');
+    expect(renderWhere().params).not.toContain('legacy-reference');
 
-    // (D) both spellings, disagreeing → refused. Silently preferring one would
-    // hand the caller a different end-user's sessions than they asked for.
-    const conflict = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-7`,
-    );
-    expect(conflict.status).toBe(400);
-    expect((await conflict.json()).code).toBe('END_USER_REF_CONFLICT');
-
-    // ...but agreeing duplicates are fine (a client mid-migration sends both).
     lastSessionListWhere = null;
-    const agreeing = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-42`,
+    const second = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?origin_ref=legacy-reference`,
     );
-    expect(agreeing.status).toBe(200);
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (E) a blank handle is a client bug, not "list everything" — refusing it
-    // keeps a wrapper from leaking the whole project on an empty variable.
-    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions?end_user_ref=%20%20`);
-    expect(blank.status).toBe(400);
+    expect(second.status).toBe(200);
+    expect(renderWhere().sql).not.toContain('origin_ref');
+    expect(renderWhere().params).not.toContain('legacy-reference');
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
@@ -1544,7 +1434,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1604,6 +1494,17 @@ describe('project session API contract', () => {
         message: 'metadata key is server-managed: deletedBy',
       },
       {
+        // metadata.name is owned by the title generator; planting a non
+        // placeholder value pre-empts titling forever. Renaming is `name` →
+        // metadata.custom_name.
+        body: { metadata: { name: 'zzz' } },
+        message: 'metadata key is server-managed: name',
+      },
+      {
+        body: { metadata: { title_source: 'zzz' } },
+        message: 'metadata key is server-managed: title_source',
+      },
+      {
         body: { random: 'field' },
         message: 'field is not user-editable: random',
       },
@@ -1611,9 +1512,9 @@ describe('project session API contract', () => {
 
     for (const { body, message } of forbiddenBodies) {
       const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
@@ -1635,9 +1536,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const inventory = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
-    );
+    const inventory = await app.request(`/v1/projects/${PROJECT_ID}/sessions?scope=project`);
     expect(inventory.status).toBe(200);
     expect((await inventory.json())[0]).toMatchObject({
       session_id: SESSION_ID,
@@ -1967,7 +1866,7 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
   });
 
-  test('dashboard start preserves an old active row whose provider status stays unknown', async () => {
+  test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1996,16 +1895,20 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'unknown';
+    runtimeInspectionHealth = {
+      runtimeReady: true,
+      bootError: null,
+    };
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'failed',
+      stage: 'ready',
       retriable: false,
-      reason: 'runtime_identity_unavailable',
-      sandbox: { external_id: 'box-status-unknown', status: 'stopped' },
+      reason: 'unchanged',
+      sandbox: { external_id: 'box-status-unknown', status: 'active' },
     });
 
     expect(providerStartCalls).toBe(0);
@@ -2302,7 +2205,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-        opencodeSessionId: 'ses_root_existing',
+      opencodeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2549,9 +2452,52 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-missing-on-start',
+      externalId: 'box-missing-on-start',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-missing-on-start' },
+    });
+  });
+
+  test('restart trusts live runtime health when the provider status stays unknown', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restarted-status-unknown',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    runtimeInspectionHealth = {
+      runtimeReady: true,
+      bootError: null,
+    };
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sessionRow?.status === 'running');
+    expect(providerStartCalls).toBe(1);
+    expect(sessionRow?.status).toBe('running');
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-restarted-status-unknown',
+      status: 'active',
     });
   });
 
@@ -2590,7 +2536,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-accepted-start-then-removed',
+      externalId: 'box-accepted-start-then-removed',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
     });
@@ -2633,12 +2579,12 @@ describe('project session API contract', () => {
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Human name',
-          metadata: { custom: 'ok' },
-        }),
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Human name',
+        metadata: { custom: 'ok' },
+      }),
     });
 
     expect(res.status).toBe(200);
@@ -2775,9 +2721,11 @@ describe('project session API contract', () => {
     expect(body.sandbox_provider).toBe('daytona');
     expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
+    expect(body.opencode_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
+    expect(sessionRow?.opencodeSessionId).toBeNull();
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
@@ -2856,11 +2804,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2883,11 +2831,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2931,7 +2879,7 @@ describe('project session API contract', () => {
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
 
     expect(res.status).toBe(200);
@@ -2941,7 +2889,7 @@ describe('project session API contract', () => {
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });

@@ -26,7 +26,12 @@ import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { ToolPart } from '@/ui';
-import { ChevronLeft, ChevronRight, PanelLeft, X } from 'lucide-react';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  SidebarSimpleIcon as PanelLeft,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import {
   AnimatePresence,
   motion,
@@ -154,6 +159,23 @@ export interface Detail {
    * `openDetail`, the one funnel that knows whether the terminal was up.
    */
   swapIn?: boolean;
+  /**
+   * Reads like a capability ("this detail will measure itself") but is
+   * actually a lifecycle instruction to `openDetail`: "do not clear
+   * `panelAspect`". Set when this detail's body will report its own
+   * intrinsic size (see `reportsIntrinsicSize` in `file-preview.tsx`), so
+   * `openDetail` leaves the store's `panelAspect` alone instead of clearing
+   * it, trusting the incoming report to replace it.
+   *
+   * Without this, paging between two A4 PDFs glides the panel down to the
+   * default column and straight back up again — a 123px round trip between
+   * two pages of the same report. Holding the outgoing ratio until the
+   * incoming document replaces it makes same-shape paging perfectly still and
+   * shape-changing paging exactly one glide. Everything that reports nothing
+   * (a deck, an app, a step, Audit, a text file) leaves this unset and clears
+   * as before, because for those the ratio has genuinely stopped being true.
+   */
+  measures?: boolean;
 }
 
 /**
@@ -439,6 +461,9 @@ export function DetailLayer({
   }, [detail?.key]);
 
   // Mobile: the panel is already a bottom drawer. Stack a drawer, not a slide.
+  // (Dev-tool quick views never come through here on mobile — they open the
+  // standalone `MobileToolDrawer` instead; this path is for the panel's own
+  // details: outputs, steps, context rows.)
   if (isMobile) {
     return (
       <>

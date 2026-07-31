@@ -6,7 +6,6 @@ import { AgentPicker } from '@/components/chat/agent-picker';
 import { ModelPicker } from '@/components/chat/model-picker';
 import {
   ConnectorBindingFields,
-  bindingLabels,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
@@ -39,14 +38,23 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 const STARTERS = [
-  { label: 'Build a landing page', prompt: 'Build a clean, modern landing page for my product.' },
+  {
+    label: 'Build a landing page',
+    prompt: 'Build a clean, modern landing page for my product.',
+  },
   {
     label: 'Onboard the agent',
     prompt:
       'Onboard me — ask about my company, what we do, who our customers are, and our goals, then save it to project memory.',
   },
-  { label: 'Fix a bug', prompt: 'There is a bug in the app. Investigate it and propose a fix.' },
-  { label: 'Add a feature', prompt: 'Add a new feature to the app — ask me what I have in mind.' },
+  {
+    label: 'Fix a bug',
+    prompt: 'There is a bug in the app. Investigate it and propose a fix.',
+  },
+  {
+    label: 'Add a feature',
+    prompt: 'Add a new feature to the app — ask me what I have in mind.',
+  },
 ];
 
 export default function ProjectPage() {
@@ -76,7 +84,7 @@ function ProjectHome() {
   // resolves to server-side anyway.
   const [bindings, setBindings] = useState<Record<string, string>>({});
 
-  // Only TEAM connections are offered: a wrapper has no personal identity
+  // Only project connections are offered: a wrapper has no personal identity
   // upstream, so a member's private connection cannot be bound at all. The
   // alias used to be hardcoded here, which meant exactly one connector could
   // ever be bound from this screen.
@@ -112,7 +120,6 @@ function ProjectHome() {
             sessionId,
             name: text.slice(0, 60),
             sandboxSlug: template,
-            connectionLabels: bindingLabels(connectors.data?.connectors ?? [], bindings),
           },
         ),
       );
@@ -135,7 +142,10 @@ function ProjectHome() {
       // below unreachable.
       const failure = classifySessionStartFailure(serverErrorBody(err));
       if (failure.kind === 'connector_connection_required') {
-        setConnectPrompt({ connector: failure.connector, message: failure.message });
+        setConnectPrompt({
+          connector: failure.connector,
+          message: failure.message,
+        });
         return;
       }
       if (failure.kind === 'require_connectors_backend_origin') {
@@ -157,7 +167,9 @@ function ProjectHome() {
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
             <Sparkles className="size-5 text-brand" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            What would you like to build?
+          </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pick your template, agent, and model, then describe the task.
           </p>
@@ -184,7 +196,9 @@ function ProjectHome() {
             <div className="text-sm font-medium">
               Connect {connectPrompt.connector} to continue
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{connectPrompt.message}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {connectPrompt.message}
+            </p>
             <div className="mt-3 flex items-center gap-2">
               <Button
                 size="sm"
@@ -195,7 +209,11 @@ function ProjectHome() {
               >
                 I&apos;ve connected it — retry
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConnectPrompt(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setConnectPrompt(null)}
+              >
                 Dismiss
               </Button>
             </div>
@@ -251,7 +269,11 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
+              {launching ? (
+                <Loading className="size-4" />
+              ) : (
+                <ArrowUp className="size-4" />
+              )}
             </Button>
           </div>
         </div>

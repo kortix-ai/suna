@@ -1,25 +1,25 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronDown,
-  Clock,
-  Coins,
-  CreditCard,
-  ExternalLink,
-  Fingerprint,
-  GitBranch,
-  Github,
-  Info,
-  KeyRound,
-  Link as LinkIcon,
-  Mail,
-  MoreHorizontal,
-  Network,
-  RefreshCw,
-  ScrollText,
-  Unplug,
-} from 'lucide-react';
+  CaretDownIcon as ChevronDown,
+  ClockIcon as Clock,
+  CoinsIcon as Coins,
+  CreditCardIcon as CreditCard,
+  ArrowSquareOutIcon as ExternalLink,
+  FingerprintIcon as Fingerprint,
+  GitBranchIcon as GitBranch,
+  GithubLogoIcon as Github,
+  InfoIcon as Info,
+  KeyIcon as KeyRound,
+  LinkIcon,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  NetworkIcon as Network,
+  ArrowClockwiseIcon as RefreshCw,
+  ScrollIcon as ScrollText,
+  PlugsIcon as Unplug,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -117,17 +117,16 @@ import {
   updateAccountMemberRole,
   updateAccountName,
 } from '@kortix/sdk';
+import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import {
-  CogOne,
+  GearSixIcon as CogOne,
   type Icon as IconMynauiType,
-  Search,
-  Shield,
-  TrashSolid,
-  UserPlus,
-  Users,
-} from '@mynaui/icons-react';
-import type { LucideIcon } from 'lucide-react';
-import type { IconType } from 'react-icons/lib';
+  MagnifyingGlassIcon as Search,
+  ShieldIcon as Shield,
+  TrashIcon,
+  UserPlusIcon as UserPlus,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
@@ -188,7 +187,7 @@ const NAV_GROUPS: Array<{
     label: 'Billing',
     items: [
       { id: 'billing', label: 'Plan', icon: CreditCard },
-      { id: 'transactions', label: 'Credits', icon: Coins },
+      { id: 'transactions', label: 'Usage', icon: Coins },
     ],
   },
   {
@@ -206,7 +205,10 @@ const NAV_GROUPS: Array<{
 const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
   members: { title: 'Members', description: 'People with access to this account.' },
   billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
-  transactions: { title: 'Credits', description: 'Every credit movement on this account.' },
+  transactions: {
+    title: 'Usage',
+    description: 'Session costs and credit ledger for this account.',
+  },
   tokens: {
     title: 'Tokens',
     description: 'Token policy and machine identities for CI and automations.',
@@ -341,9 +343,8 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
-  // Self-host billing-disabled: no Stripe/credit ledger to show — see
-  // isBillingEnabled() (mirrors the backend's KORTIX_BILLING_INTERNAL_ENABLED)
-  // instead of only checking permission.
+  // Self-host billing-disabled: no Stripe plan controls to show. Session costs
+  // remain available because they do not require the internal billing engine.
   const billingActive = isBillingEnabled();
 
   // Which rail items this caller can see. Mirrors the per-section gates the
@@ -355,7 +356,7 @@ export default function AccountSettingsPage() {
     roles: canManageRoles === true,
     identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
-    transactions: canWriteAccount === true && billingActive,
+    transactions: canWriteAccount === true,
     git: canWriteAccount === true,
     tokens: canWriteAccount === true,
     audit: canReadAudit === true,
@@ -1553,7 +1554,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid className="size-3.5" />
+                                      <TrashIcon className="size-3.5" />
                                       Remove from team
                                     </DropdownMenuItem>
                                   </>
@@ -1566,7 +1567,7 @@ function MembersCard({
                                       disabled={isLastOwner}
                                       className="gap-2"
                                     >
-                                      <TrashSolid className="size-3.5" />
+                                      <TrashIcon className="size-3.5" />
                                       Leave team
                                     </DropdownMenuItem>
                                   </>

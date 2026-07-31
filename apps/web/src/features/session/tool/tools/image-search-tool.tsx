@@ -1,23 +1,18 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
-import {
-  Image as ImageIcon,
-} from 'lucide-react';
+import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-
+import { useMemo } from 'react';
 
 export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -158,4 +153,3 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
   );
 }
 ToolRegistry.register('image-search', ImageSearchTool);
-

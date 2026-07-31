@@ -7,7 +7,16 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
 mock.module('../../../config', () => ({
-  config: { FRONTEND_URL: 'https://app.test', SLACK_REQUIRE_USER_IDENTITY: false },
+  // KORTIX_MANAGED_PROVIDER_ENABLED must be on: RUNTIME_MANAGED_MODELS is empty
+  // without it, so `isRuntimeManagedModelId('glm-5.2')` is false and
+  // `toOpencodeModelRef` skips the `kortix/` prefix — which silently defeats the
+  // canonicalization this file exists to pin. (scripts/test.env sets it, but a
+  // config mock replaces the module, so it has to be restated here.)
+  config: {
+    FRONTEND_URL: 'https://app.test',
+    SLACK_REQUIRE_USER_IDENTITY: false,
+    KORTIX_MANAGED_PROVIDER_ENABLED: true,
+  },
 }));
 
 // FIFO db mock — slashPanel reads one project row.

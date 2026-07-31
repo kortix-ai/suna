@@ -29,7 +29,7 @@ import {
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { ArrowUpCircle } from 'lucide-react';
+import { ArrowCircleUpIcon as ArrowUpCircle } from '@phosphor-icons/react';
 
 /** Presentational shell — no data fetching, so every state renders under
  *  renderToStaticMarkup. The network/permission reads live in the wrapper. */

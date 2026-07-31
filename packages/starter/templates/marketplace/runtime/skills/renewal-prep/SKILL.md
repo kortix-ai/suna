@@ -130,7 +130,7 @@ stage, amount, or pipeline.
   reappears every day the signal still holds — it's a nudge, not a one-time
   event.
 - **Scoped secrets.** HubSpot and Google Calendar credentials are injected by
-  the connector at runtime and never exposed to the model or written to logs.
+  the connector at runtime, scoped to this agent's grant.
 </guardrails>
 
 </skill>

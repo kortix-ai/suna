@@ -3,20 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 
 describe('canServeLastKnownGoodRuntime', () => {
-  test('rejects a stale runtime for ACP sessions', () => {
+  test('keeps the non-blocking path for session starts', () => {
     expect(
       canServeLastKnownGoodRuntime({
         source: 'session-start',
-        requireCurrentRuntime: true,
-      }),
-    ).toBe(false);
-  });
-
-  test('keeps the non-blocking compatibility path for REST sessions', () => {
-    expect(
-      canServeLastKnownGoodRuntime({
-        source: 'session-start',
-        requireCurrentRuntime: false,
       }),
     ).toBe(true);
   });
@@ -26,7 +16,6 @@ describe('canServeLastKnownGoodRuntime', () => {
       expect(
         canServeLastKnownGoodRuntime({
           source,
-          requireCurrentRuntime: false,
         }),
       ).toBe(false);
     }

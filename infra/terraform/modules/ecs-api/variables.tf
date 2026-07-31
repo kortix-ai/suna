@@ -172,3 +172,15 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "secrets_blob_arn" {
+  description = <<-EOT
+    ARN of the environment's Secrets Manager blob (kortix-<env>-env). The
+    execution role is granted GetSecretValue on it, which covers every key the
+    blob holds. Preferred over enumerating `secrets`, because ecs-deploy.sh
+    derives task-def secrets from the blob's keys — so the blob is the source
+    of truth and a second hand-maintained list can only drift from it.
+  EOT
+  type        = string
+  default     = ""
+}

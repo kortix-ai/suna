@@ -85,7 +85,7 @@ model, the agent can:
 Account creation and group membership are the steps that grant access, so they
 stop at a **human approval gate** before anything is provisioned. A person
 confirms the account and the memberships in one place. Credentials are encrypted
-in the secrets manager and injected at runtime, never shown to the model or
+in the secrets manager and injected at runtime, scoped to the agents you grant them to or
 written to logs.
 
 </Step>
@@ -111,11 +111,11 @@ Slack channels, and a Linear onboarding project, ready on day one.
 Giving an agent the ability to create accounts and grant access is a trust
 question. The relevant controls on Kortix:
 
-- **Isolation.** Every new hire runs in its own microVM sandbox on its own
-  branch. The session can reach only the systems it's scoped to, and only what
-  it's explicitly allowed to send leaves the sandbox.
+- **Isolation.** Every new hire runs in its own isolated sandbox on its own
+  branch. The session is granted access only to the systems it's scoped to, and only what
+  it's explicitly allowed to send is written back out.
 - **Scoped secrets.** Each credential is encrypted in the secrets manager,
-  injected into the sandbox at runtime, and never exposed to the model or the
+  injected into the sandbox at runtime, and scoped to the agents you grant them to or the
   logs.
 - **Human approval gate.** Account creation and group membership require a person
   to approve before anything is provisioned.

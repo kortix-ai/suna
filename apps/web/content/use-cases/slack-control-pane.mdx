@@ -91,7 +91,7 @@ Because the agent has access to every connected platform, its scope is kept
 tight. Access is **read-mostly by default**. Actions that touch money, production
 data, or account state (a Stripe change, a merge, a destructive query) stop at a
 **human approval gate** in the thread. Credentials are encrypted in the Secrets
-Manager and injected at runtime, never shown to the model or written to logs.
+Manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Run operations from a thread">
@@ -115,11 +115,11 @@ needed, a follow-up PR. The work spans one thread instead of several tools.
 Giving one agent access to the database, Stripe, sandboxes, Linear, and GitHub is
 a security question. The controls that make it workable:
 
-- **Isolation.** Every request runs in its own microVM sandbox on its own branch.
-  A session can reach only the platforms it's scoped to, and only what it's
-  explicitly allowed to send leaves the sandbox.
+- **Isolation.** Every request runs in its own isolated sandbox on its own branch.
+  A session is granted access only to the platforms it's scoped to, and only what it's
+  explicitly allowed to send is written back out.
 - **Scoped secrets.** Each platform credential is encrypted in the Secrets
-  Manager and injected into the sandbox at runtime, never exposed to the model or
+  Manager and injected into the sandbox at runtime, scoped to the agents you grant them to or
   the logs.
 - **Human approval gates.** Irreversible actions (money, production data, merges)
   require a person to approve in the thread.

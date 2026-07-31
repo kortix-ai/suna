@@ -24,8 +24,11 @@ const linkClass = cn(
 );
 
 // Inline-code chip — unified-markdown's INLINE_CODE at its non-clickable size.
+// `[overflow-wrap:anywhere]` matches linkClass above: a long unbreakable token
+// (e.g. a full `kortix cr open --title ...` invocation) is wider than a 390px
+// viewport and scrolls the whole page sideways without it.
 const inlineCodeClass =
-  'rounded-sm border border-border/40 bg-muted px-1.5 py-[0.1rem] font-mono text-[0.8rem] text-foreground/95 dark:bg-card';
+  'rounded-sm border border-border/40 bg-muted px-1.5 py-[0.1rem] font-mono text-[0.8rem] text-foreground/95 dark:bg-card [overflow-wrap:anywhere]';
 
 export const docsMdxComponents = {
   // ```mermaid fences arrive as <Mermaid chart="..."/> via remarkMdxMermaid

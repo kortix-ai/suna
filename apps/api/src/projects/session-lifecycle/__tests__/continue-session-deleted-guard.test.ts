@@ -76,7 +76,9 @@ mock.module('../actor', () => ({
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+const actualStore = await import('../store');
 mock.module('../store', () => ({
+  ...actualStore,
   claimCreateSessionCommand: async () => {
     throw new Error('not expected in this test');
   },

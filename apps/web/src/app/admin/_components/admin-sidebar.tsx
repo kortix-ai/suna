@@ -2,17 +2,17 @@
 
 import { useTranslations } from 'next-intl';
 
+import {
+  ActivityIcon as Activity,
+  ArrowLeftIcon as ArrowLeft,
+  CubeIcon as Boxes,
+  ShieldCheckIcon as ShieldCheck,
+  UsersIcon as Users,
+  WrenchIcon as Wrench,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  Activity,
-  Boxes,
-  ShieldCheck,
-  Users,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
 
 import {
   Sidebar,
@@ -25,6 +25,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 interface NavItem {
   href: string;
@@ -63,17 +64,19 @@ export function AdminSidebar() {
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
-      <SidebarHeader className="border-b border-sidebar-border/60">
+      <SidebarHeader className="border-sidebar-border/60 border-b">
         <Link
           href="/admin"
-          className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:text-foreground"
+          className="hover:text-foreground flex items-center gap-2 px-2 py-1.5 transition-colors"
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <div className="bg-primary/10 text-primary flex h-7 w-7 items-center justify-center rounded-2xl">
             <ShieldCheck className="h-4 w-4" />
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
-            <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}</span>
+            <span className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}
+            </span>
           </div>
         </Link>
       </SidebarHeader>
@@ -90,15 +93,17 @@ export function AdminSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border/60">
+      <SidebarFooter className="border-sidebar-border/60 border-t">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={tHardcodedUi.raw('appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole')}
-              onClick={() => router.push('/projects')}
+              onClick={() => router.push(PROJECT_LANDING_PATH)}
             >
               <ArrowLeft />
-              <span>{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}</span>
+              <span>
+                {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

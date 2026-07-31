@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Search } from 'lucide-react';
+import { PlusIcon as Plus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { AddMarketplaceModal } from './add-marketplace-modal';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
@@ -18,6 +17,7 @@ import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-proj
 import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace-client';
 import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { cn } from '@/lib/utils';
+import { AddMarketplaceModal } from './add-marketplace-modal';
 import {
   MARKETPLACE_GRID_COLUMNS,
   resolveMarketplaceTypeSectionTotal,
@@ -293,78 +293,78 @@ export function MarketplaceExplore({
 
         {/* Hidden entirely when there's nothing to show — no empty-state placeholder. */}
         {searching || !isAll || componentItems.length > 0 ? (
-        <div className="space-y-12">
-          <SectionHeading
-            title={sourceLabel ?? 'Skills'}
-            subtitle="Add these into a project you already have."
-          />
+          <div className="space-y-12">
+            <SectionHeading
+              title={sourceLabel ?? 'Skills'}
+              subtitle="Add these into a project you already have."
+            />
 
-          {searching ? (
-            <MarketplacePagedGrid
-              query={debounced}
-              source={isAll ? undefined : source}
-              publicOnly={publicOnly}
-              scrollContainerRef={scrollContainerRef}
-              columns={MARKETPLACE_GRID_COLUMNS}
-              gridClassName="sm:grid-cols-3"
-              showSource={isAll}
-              emptyTitle="No matches"
-              emptyDescription={`No items match "${debounced}".`}
-              emptyAction={
-                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                  Clear search
-                </Button>
-              }
-              header={({ total }) => (
-                <div className="text-muted-foreground text-sm">
-                  <span className="tabular-nums">{total}</span> {total === 1 ? 'result' : 'results'}{' '}
-                  for &ldquo;{debounced}&rdquo;
-                </div>
-              )}
-            />
-          ) : isAll ? (
-            // Show the whole catalog at once — one virtualized, scrollable grid
-            // per type. Single type (skills) → no redundant per-type heading
-            // (the "Skills" section heading above already names it). When there's
-            // nothing here, the section is hidden entirely (see the wrapper below).
-            <div className="space-y-12">
-              {groups.map((g) => (
-                <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
-                  {groups.length > 1 ? (
-                    <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
-                      {g.label}
-                    </h2>
-                  ) : null}
-                  <MarketplacePagedGrid
-                    type={g.type}
-                    publicOnly={publicOnly}
-                    scrollContainerRef={scrollContainerRef}
-                    columns={MARKETPLACE_GRID_COLUMNS}
-                    gridClassName="sm:grid-cols-3"
-                    emptyTitle=""
-                    emptyDescription=""
-                  />
-                </section>
-              ))}
-            </div>
-          ) : (
-            <MarketplacePagedGrid
-              source={source}
-              publicOnly={publicOnly}
-              scrollContainerRef={scrollContainerRef}
-              columns={MARKETPLACE_GRID_COLUMNS}
-              gridClassName="sm:grid-cols-3"
-              showSource={false}
-              emptyTitle="Nothing here yet"
-              emptyDescription="This source has no browseable items right now."
-              emptyAction={
-                <Button variant="outline" size="sm" onClick={() => selectSource(ALL_SOURCES)}>
-                  Browse all sources
-                </Button>
-              }
-            />
-          )}
-        </div>
+            {searching ? (
+              <MarketplacePagedGrid
+                query={debounced}
+                source={isAll ? undefined : source}
+                publicOnly={publicOnly}
+                scrollContainerRef={scrollContainerRef}
+                columns={MARKETPLACE_GRID_COLUMNS}
+                gridClassName="sm:grid-cols-3"
+                showSource={isAll}
+                emptyTitle="No matches"
+                emptyDescription={`No items match "${debounced}".`}
+                emptyAction={
+                  <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                    Clear search
+                  </Button>
+                }
+                header={({ total }) => (
+                  <div className="text-muted-foreground text-sm">
+                    <span className="tabular-nums">{total}</span>{' '}
+                    {total === 1 ? 'result' : 'results'} for &ldquo;{debounced}&rdquo;
+                  </div>
+                )}
+              />
+            ) : isAll ? (
+              // Show the whole catalog at once — one virtualized, scrollable grid
+              // per type. Single type (skills) → no redundant per-type heading
+              // (the "Skills" section heading above already names it). When there's
+              // nothing here, the section is hidden entirely (see the wrapper below).
+              <div className="space-y-12">
+                {groups.map((g) => (
+                  <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
+                    {groups.length > 1 ? (
+                      <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
+                        {g.label}
+                      </h2>
+                    ) : null}
+                    <MarketplacePagedGrid
+                      type={g.type}
+                      publicOnly={publicOnly}
+                      scrollContainerRef={scrollContainerRef}
+                      columns={MARKETPLACE_GRID_COLUMNS}
+                      gridClassName="sm:grid-cols-3"
+                      emptyTitle=""
+                      emptyDescription=""
+                    />
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <MarketplacePagedGrid
+                source={source}
+                publicOnly={publicOnly}
+                scrollContainerRef={scrollContainerRef}
+                columns={MARKETPLACE_GRID_COLUMNS}
+                gridClassName="sm:grid-cols-3"
+                showSource={false}
+                emptyTitle="Nothing here yet"
+                emptyDescription="This source has no browseable items right now."
+                emptyAction={
+                  <Button variant="outline" size="sm" onClick={() => selectSource(ALL_SOURCES)}>
+                    Browse all sources
+                  </Button>
+                }
+              />
+            )}
+          </div>
         ) : null}
       </div>
     </MarketplaceShell>

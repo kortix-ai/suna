@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -34,7 +34,7 @@ const optStr = z.string().optional().default('');
 const optStrDefault = (def: string) => z.string().optional().default(def);
 
 /** Optional URL string with a custom default. Not required, just validated if present. */
-  const optUrl = (def: string) =>
+const optUrl = (def: string) =>
   z
     .string()
     .optional()
@@ -48,7 +48,7 @@ const optInt = (def: number) =>
     .optional()
     .default(String(def))
     .transform((v) => {
-      const n = parseInt(v, 10);
+      const n = Number.parseInt(v, 10);
       return Number.isNaN(n) ? def : n;
     });
 
@@ -143,6 +143,17 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Kortix-owned session titles: the moment a session's first prompt text is
+  // known server-side (at create when it carries one, else on the first HTTP
+  // prompt), generate the title ourselves via the internal LLM gateway instead
+  // of relying on the harness summarizer. On by default; the kill-switch
+  // disables title generation entirely — nothing else writes `metadata.name`,
+  // so sessions then stay untitled and clients fall back to their display chain.
+  SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
+  // Per-project model enablement: when on, the gateway rejects a model a project
+  // has disabled and the picker hides it. On by default (empty disabled-set =
+  // no behavior change); kill-switch drops back to catalog-only gating.
+  MODEL_ENABLEMENT_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -240,10 +251,6 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // OpenCode client transport. REST remains the default until the project
-  // experimental flag enables ACP after parity verification.
-  KORTIX_OPENCODE_TRANSPORT: z.enum(['acp', 'rest']).default('rest'),
-
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
   // added for a future per-agent executor-token auth model that isn't built yet,
@@ -324,7 +331,8 @@ const envSchema = z.object({
     'https://login.botframework.com/v1/.well-known/openidconfiguration',
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
-  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  // Whether the Teams channel is offered is NOT an operator env var — it is the
+  // per-project `teams` experimental feature (experimental/features.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -537,6 +545,16 @@ const envSchema = z.object({
   KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
+  // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
+  // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
+  // longer reach, NOT the primary stop. It used to be derived from
+  // KORTIX_SANDBOX_AUTOSTOP_MINUTES above, which welded an idle-policy knob to
+  // a provider-safety knob; see providerAutoStopBackstopMinutes() in
+  // platform/providers/index.ts for why the two must move independently.
+  // Unrelated to AUTOARCHIVE_MINUTES despite the shared 720: that one is
+  // measured from the moment a box STOPS, this one from its last inbound
+  // request while running.
+  KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: optInt(720), // 12 hours
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY: optStr,
@@ -567,14 +585,6 @@ const envSchema = z.object({
   TUNNEL_MAX_WS_MESSAGE_SIZE: optInt(5 * 1024 * 1024),
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
-  /** Max LIVE sessions one Kortix-as-a-Backend end-user (origin_ref) may hold.
-   *  0 / unset = disabled, which is the default: the account-wide cap still
-   *  applies. Opt-in because the right number is wrapper-specific. */
-  KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: optInt(0),
-  /** Per-END-USER spend ceiling in USD over a rolling window. 0/unset = off. */
-  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: optNum(0),
-  /** The rolling window the spend ceiling is measured over. */
-  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: optInt(30),
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
@@ -888,6 +898,8 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
+  MODEL_ENABLEMENT_ENABLED: env.MODEL_ENABLEMENT_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
@@ -937,7 +949,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
@@ -967,7 +978,6 @@ export const config = {
   MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
   MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
   TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
-  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
   TEAMS_APP_NAME: env.TEAMS_APP_NAME,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
@@ -1025,6 +1035,7 @@ export const config = {
   KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+  KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,
@@ -1108,9 +1119,6 @@ export const config = {
   TUNNEL_RATE_LIMIT_WS_CONNECT: env.TUNNEL_RATE_LIMIT_WS_CONNECT,
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
-  KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: env.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT,
-  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: env.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD,
-  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: env.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS,
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
@@ -1303,7 +1311,7 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
 };
 
-export function getToolCost(toolName: string, resultCount: number = 0): number {
+export function getToolCost(toolName: string, resultCount = 0): number {
   const pricing = TOOL_PRICING[toolName];
   if (!pricing) {
     return 0.01;

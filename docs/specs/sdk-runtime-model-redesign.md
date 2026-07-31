@@ -1,5 +1,8 @@
 # SDK Runtime Model — first-principles redesign (per-session, no "active server")
 
+> The session-scoped invariant remains current. The OpenCode client and SSE
+> details below describe the active REST path.
+
 > Status: **proposal** · 2026-06-27 · Follows `sdk-session-collapse.md` (which shipped
 > `useSession`). This redesigns the layer *underneath* it — the client/server/store model —
 > grounded in how OpenCode's own web app is built (`sst/opencode` `packages/app`).

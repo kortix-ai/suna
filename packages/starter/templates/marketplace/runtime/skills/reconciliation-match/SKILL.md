@@ -119,7 +119,7 @@ the escalation — don't act on it.
   explanations live in the sheet's notes; if a mismatch doesn't match an
   existing explanation, treat it as new and escalate it.
 - **Scoped, brokered credentials.** Stripe and Sheets access are injected into
-  the sandbox at runtime and never shown to the model or written to logs. The
+  the sandbox at runtime, scoped to this agent's grant. The
   bank feed is read using the `PLAID_ACCESS_TOKEN` secret for the one account
   a human linked via Plaid Link ahead of time — this agent never runs Link
   itself and is scoped to that single linked account, not "any" bank account.

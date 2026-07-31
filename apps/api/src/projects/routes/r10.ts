@@ -14,7 +14,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { getAgentGrant } from '../../iam/agent-scope';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import {
   buildRegistryProjectInstallPrompt,
@@ -26,7 +26,8 @@ import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { sendSessionCreateError } from '../lib/sessions';
+import { createSession } from '../session-lifecycle';
 
 /** The project's manifest raw text, preferring kortix.yaml over kortix.toml
  *  (dual-format). */
@@ -50,7 +51,9 @@ function buildItemInstallPrompt(
 ): string {
   const item = entry.item;
   const typeLabel = item.type.replace('registry:', '');
-  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const meta = (item.meta ?? {}) as {
+    capabilities?: { connectors?: string[]; secrets?: string[] };
+  };
   const needs = [
     ...(meta.capabilities?.connectors ?? []),
     ...(meta.capabilities?.secrets ?? []),
@@ -105,11 +108,11 @@ async function handleMarketplaceInstallSession(c: any) {
     return c.json({ error: (err as Error).message }, 400);
   }
 
-  const result = await createProjectSession({
+  const result = await createSession({
+    source: 'ui',
     project: loaded.row,
     userId: loaded.userId,
-    requestingPrincipalType:
-      c.get('authType') === 'service_account' ? 'service_account' : 'human',
+    requestingPrincipalType: c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
@@ -118,15 +121,16 @@ async function handleMarketplaceInstallSession(c: any) {
     visibility: 'project',
     // Derive origin from the caller's token kind, same as POST /sessions (r7),
     // so a backend-driven install records origin='backend' rather than 'user'.
-    // No origin_ref is accepted here — the body is composed server-side.
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
-    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+    inSession: isProjectSessionPrincipal(c),
     request: requestAuditContext(c),
+    queuePolicy: 'never',
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
 
-  return c.json({ session_id: result.row!.sessionId }, 201);
+  return c.json({ session_id: result.row.sessionId }, 201);
 }
 
 projectsApp.openapi(

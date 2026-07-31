@@ -99,7 +99,7 @@ credential reaches the model, the agent:
 The agent's write access to Plain is scoped to **routing, not resolving** — it
 can tag and assign a ticket, but it cannot close one or mark it resolved. It
 never drafts or sends anything to the customer, and it never states or
-implies a resolution timeline. The only things that leave the sandbox are the
+implies a resolution timeline. The only things that are written back out are the
 Plain routing update, the linked Linear issue, and the Slack alert.
 
 </Step>
@@ -126,12 +126,10 @@ channel with the reason attached. The team decides what happens from there.
 The agent has write access to the support queue and the issue tracker, so its
 authority is scoped tightly to routing and alerting:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Plain, Linear, and the escalation Slack channel — nothing else.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Plain, Linear, and the escalation Slack channel — nothing else.
 - **Scoped secrets.** The Plain API key is encrypted in the Secrets Manager and
   injected into the sandbox at runtime; the Linear connector is brokered
-  server-side. No raw credential is ever shown to the model or written to
-  logs.
+  server-side. Every secret is scoped to the agents you grant it to.
 - **Route and alert, never resolve.** The agent can tag, assign, and open a
   linked issue. It cannot close a ticket, mark one resolved, or take any
   action that ends the customer's case.

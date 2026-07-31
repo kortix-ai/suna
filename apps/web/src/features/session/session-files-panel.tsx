@@ -1,7 +1,7 @@
 'use client';
 
+import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { FileDiff, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';

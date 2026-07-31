@@ -23,7 +23,6 @@ export function prepareInPlaceRestartMetadata(
   for (const key of RUNTIME_READINESS_CLOCK_KEYS) delete next[key];
   return {
     ...next,
-    lastTurnAt: now.toISOString(),
     runtimeWakeStartedAt: now.toISOString(),
     runtimeWakeProviderStatus: 'starting',
   };

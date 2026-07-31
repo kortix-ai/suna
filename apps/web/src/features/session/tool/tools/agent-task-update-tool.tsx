@@ -5,7 +5,7 @@ import { BasicTool, partInput } from '@/features/session/tool/shared/infrastruct
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
 import { AgentMessageTool } from '@/features/session/tool/tools/agent-message-tool';
 import { AgentSpawnTool } from '@/features/session/tool/tools/agent-spawn-tool';

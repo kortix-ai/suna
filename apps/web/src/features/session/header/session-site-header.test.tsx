@@ -13,24 +13,63 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('peekEnter');
     expect(source).toContain('peekLeave');
   });
+
+  // The collapse control lives in the panel's own header now
+  // (ProjectSidebar), so this one exists purely to bring a hidden panel back.
+  // Rendering it while the panel is docked would put two toggles for one
+  // panel on screen at once.
+  test('the toggle self-hides while the sidebar is docked open', () => {
+    const gate = source.slice(
+      source.indexOf('const showSidebarToggle ='),
+      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
+    );
+    expect(gate).toContain("sidebarState !== 'expanded'");
+    expect(source).toContain('{showSidebarToggle && (');
+  });
+
+  // `sidebarState` tracks the desktop dock cookie, not the mobile Sheet — so
+  // an ungated `!== 'expanded'` would strand mobile with no way to open it.
+  test('mobile is exempt from that gate', () => {
+    const gate = source.slice(
+      source.indexOf('const showSidebarToggle ='),
+      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
+    );
+    expect(gate).toContain('isMobileViewport ||');
+  });
 });
 
 describe('SessionSiteHeader trailing cluster — non-technical resting state', () => {
-  test('Terminal, Browser, and Files are grouped behind a single "Developer tools" control, not three bare icon buttons', () => {
-    // Exactly one Hint trigger carries the "Developer tools" label — the
-    // three surfaces live inside its menu, not as standalone header buttons.
+  test('Terminal, Browser, and Files come from one list, and collapse behind a single "Developer tools" control below lg', () => {
+    // One declaration drives both the desktop row and the collapsed menu, so
+    // a fourth surface is a one-line add that cannot land in only one of them.
+    const devToolsList = source.slice(
+      source.indexOf('const DEV_TOOLS'),
+      source.indexOf('interface SessionSiteHeaderProps'),
+    );
+    expect(devToolsList).toContain("view: 'terminal'");
+    expect(devToolsList).toContain("view: 'browser'");
+    expect(devToolsList).toContain("view: 'files'");
+
+    // Exactly one Hint trigger carries the "Developer tools" label, and it is
+    // the below-lg collapse — on lg+ the surfaces are their own buttons.
     const devToolsMatches = source.split('delayDuration={300} label="Developer tools"').length - 1;
     expect(devToolsMatches).toBe(1);
 
     const devToolsMenuStart = source.indexOf('label="Developer tools"');
     const devToolsMenuEnd = source.indexOf('</DropdownMenu>', devToolsMenuStart);
     const devToolsMenu = source.slice(devToolsMenuStart, devToolsMenuEnd);
+    expect(devToolsMenu).toContain('lg:hidden');
 
-    // Each surface still calls the same reachable entry point as before, so
-    // nothing that worked stops working — it just costs one extra tap.
-    expect(devToolsMenu).toContain("openSessionQuickView('terminal', 'header')");
-    expect(devToolsMenu).toContain("openSessionQuickView('browser', 'header')");
-    expect(devToolsMenu).toContain("openSessionQuickView('files', 'header')");
+    // Both renderings reach the same entry point as before, so nothing that
+    // worked stops working — below lg it just costs one extra tap.
+    const desktopRowStart = source.indexOf('<div className="hidden items-center gap-1.5 lg:flex">');
+    expect(desktopRowStart).toBeGreaterThan(-1);
+    const desktopRow = source.slice(desktopRowStart, devToolsMenuStart);
+
+    for (const block of [desktopRow, devToolsMenu]) {
+      expect(block).toContain('DEV_TOOLS.map');
+      expect(block).toContain("openSessionQuickView(view, 'header')");
+    }
   });
 
   test('the changes and approvals indicators render before the grouped controls', () => {
@@ -58,7 +97,7 @@ describe('SessionSiteHeader "more actions" menu — destructive last, technical 
 
     // `Delete` also appears earlier as a substring of the `SessionDeleteModal`
     // import — anchor on the destructive button's own icon instead.
-    const deleteIndex = source.indexOf('<TrashSolid');
+    const deleteIndex = source.indexOf('<TrashIcon');
     const exportIndex = source.indexOf('Export conversation');
     const compactIndex = source.indexOf('Summarize conversation');
     const renameIndex = source.indexOf("'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'");

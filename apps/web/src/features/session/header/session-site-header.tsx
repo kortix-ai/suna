@@ -20,7 +20,6 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
-import { useChatDetail } from '@/features/session/activity/chat-detail';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -28,32 +27,42 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import { useReadyChip } from '@/stores/kortix-computer-store';
+import { useReadyChip, type QuickView } from '@/stores/kortix-computer-store';
+import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
-  listProjectSessions,
-  restartProjectSession,
-  stopProjectSession,
-} from '@kortix/sdk';
-import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+  CodeSimpleIcon as Code2,
+  FileArrowDownIcon as FileDown,
+  FolderOpenIcon as FolderOpen,
+  GlobeIcon as Globe,
+  HouseIcon,
+  StackIcon as Layers,
+  DotsThreeIcon as MoreHorizontal,
+  SidebarSimpleIcon as PanelLeft,
+  SidebarSimpleIcon as PanelRight,
+  PencilSimpleIcon,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  SquareIcon as Square,
+  TerminalWindowIcon as SquareTerminal,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Code2,
-  FileDown,
-  FolderOpen,
-  Globe,
-  Layers,
-  MoreHorizontal,
-  PanelLeft,
-  PanelRight,
-  ListTree,
-  RotateCcw,
-  Square,
-  SquareTerminal,
-  Text,
-} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
+
+/** Sandbox surfaces reachable from the header. One list drives both the
+ *  desktop segment and the mobile sheet, so growing to 4-5 is a one-line add.
+ *  Every entry fires the same `openSessionQuickView(view, 'header')` call. */
+const DEV_TOOLS: {
+  view: QuickView;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { view: 'terminal', label: 'Terminal', Icon: SquareTerminal },
+  { view: 'browser', label: 'Browser', Icon: Globe },
+  { view: 'files', label: 'Files', Icon: FolderOpen },
+];
 
 interface SessionSiteHeaderProps {
   sessionId: string;
@@ -81,13 +90,27 @@ export function SessionSiteHeader({
   // window's left edge, where the macOS traffic lights and the shell's
   // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
   // buttons past both and drop them onto the same center line (y≈26).
-  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const {
+    state: sidebarState,
+    toggleSidebar,
+    peek,
+    peekEnter,
+    peekLeave,
+    isMobile: isMobileViewport,
+  } = useSidebar();
   const [desktopShell] = useState<'macos' | 'other' | null>(() =>
     isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
   );
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
   const sidebarToggleLabel =
     sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
+  // Desktop: this toggle only exists to bring a hidden panel BACK — the
+  // collapse control now lives in the panel's own header (ProjectSidebar).
+  // Two toggles for one panel is one too many, so it self-hides while docked.
+  // Mobile is untouched: `sidebarState` there tracks the desktop cookie, not
+  // the Sheet, so gating on it would strand the only way to open the sheet.
+  const showSidebarToggle =
+    desktopShell === null && (isMobileViewport || sidebarState !== 'expanded');
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -135,7 +158,6 @@ export function SessionSiteHeader({
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
   const readyChip = useReadyChip();
-  const { detail: chatDetail, toggle: toggleChatDetail } = useChatDetail();
 
   return (
     <>
@@ -149,7 +171,11 @@ export function SessionSiteHeader({
         <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
           <div
             className={cn(
-              'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
+              // No margin transition: this indent only changes when the
+              // sidebar docks/undocks, and gliding it made the row a fourth
+              // competing timeline in that toggle. Docking is one frame now,
+              // so the indent snaps with the panel and the gap.
+              'pointer-events-auto flex items-center gap-0.5',
               // Below md the shell floats an always-on sheet opener at this
               // row's left end (see ProjectSheelLayout) — indent past it.
               // 'max-md:ml-[34px]',
@@ -157,7 +183,7 @@ export function SessionSiteHeader({
               sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
             )}
           >
-            {desktopShell === null && (
+            {showSidebarToggle && (
               <Button
                 type="button"
                 aria-label={sidebarToggleLabel}
@@ -175,7 +201,7 @@ export function SessionSiteHeader({
             {isProjectSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
                 <Link href={`/projects/${projectId}`}>
-                  <HomeSolid className="size-4.5" />
+                  <HouseIcon className="size-4.5" />
                 </Link>
               </Button>
             )}
@@ -188,63 +214,6 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[28px]',
             )}
           >
-            {/* Resting header, non-technical default: identity (left, not
-                ours) + these two indicators (self-hide via `return null`
-                until there's something to see) + the panel toggle. Every
-                icon-only control below carries a Hint label — nothing here
-                is legible from the icon alone. */}
-            <SessionChangesIndicator sessionId={sessionId} />
-
-            <SessionPendingApprovalsIndicator sessionId={sessionId} />
-
-            {/* Terminal / Browser / Files, grouped behind one "Developer
-                tools" control (product owner's ask: "besides the show tool
-                and specific things, all these terminals here should be
-                perhaps grouped together" — three unlabeled icon buttons that
-                spell out sandbox internals is exactly the thing a
-                non-technical reader bounces off). Each item still fires the
-                same `openSessionQuickView` call as before with the same
-                'header' source, so nothing that worked stops working — it's
-                one extra tap instead of a bare icon. */}
-            <DropdownMenu>
-              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Developer tools"
-                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
-                  >
-                    <Code2 className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </Hint>
-
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => openSessionQuickView('terminal', 'header')}
-                >
-                  <SquareTerminal />
-                  Terminal
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => openSessionQuickView('browser', 'header')}
-                >
-                  <Globe />
-                  Browser
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => openSessionQuickView('files', 'header')}
-                >
-                  <FolderOpen />
-                  Files
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -278,30 +247,13 @@ export function SessionSiteHeader({
                   the first two groups always have at least Rename and
                   Restart, and the transcript group is unconditional. */}
               <DropdownMenuContent align="end" className="w-56">
-                {/* Reading depth. It lived as a persistent button above the
-                    transcript, which spent permanent chat real estate on a
-                    setting most people touch once. It belongs with the other
-                    per-session view actions. */}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    toggleChatDetail();
-                  }}
-                >
-                  {chatDetail === 'full' ? <Text /> : <ListTree />}
-                  {chatDetail === 'full' ? 'Hide full history' : 'Show full history'}
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator />
-
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       onClick={() => setRenameOpen(true)}
                     >
-                      <Pencil />
+                      <PencilSimpleIcon />
                       {tI18nHardcoded.raw(
                         'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
                       )}
@@ -368,11 +320,70 @@ export function SessionSiteHeader({
                       onClick={() => setDeleteOpen(true)}
                       variant="destructive"
                     >
-                      <TrashSolid />
+                      <TrashIcon />
                       Delete
                     </DropdownMenuItem>
                   </>
                 )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Resting header, non-technical default: identity (left, not
+                ours) + these two indicators (self-hide via `return null`
+                until there's something to see) + the panel toggle. Every
+                icon-only control below carries a Hint label — nothing here
+                is legible from the icon alone. */}
+            <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {/* Terminal / Browser / Files (grows to 4-5). Desktop (lg+):
+                individual icon buttons for one-click access. Below lg: they
+                collapse into a single dropdown so the header stays compact.
+                Both fire the same openSessionQuickView(view, 'header') — one
+                DEV_TOOLS list drives both, so a fourth/fifth tool is a
+                one-line add. */}
+            <div className="hidden items-center gap-1.5 lg:flex">
+              {DEV_TOOLS.map(({ view, label, Icon }) => (
+                <Hint key={view} side="bottom" sideOffset={4} delayDuration={300} label={label}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={label}
+                    onClick={() => openSessionQuickView(view, 'header')}
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                  >
+                    <Icon className="h-4 w-4" />
+                  </Button>
+                </Hint>
+              ))}
+            </div>
+
+            <DropdownMenu>
+              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Developer tools"
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96] lg:hidden"
+                  >
+                    <Code2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </Hint>
+
+              <DropdownMenuContent align="end" className="w-44">
+                {DEV_TOOLS.map(({ view, label, Icon }) => (
+                  <DropdownMenuItem
+                    key={view}
+                    className="cursor-pointer"
+                    onClick={() => openSessionQuickView(view, 'header')}
+                  >
+                    <Icon />
+                    {label}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -401,7 +412,7 @@ export function SessionSiteHeader({
                 className={cn('text-foreground cursor-pointer transition-colors')}
               >
                 <span className="relative inline-flex">
-                  <PanelRight className="h-4 w-4" />
+                  <PanelRight className="h-4 w-4" mirrored />
                   {readyChip?.sessionId === sessionId && !isSidePanelOpen && (
                     <span
                       className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"

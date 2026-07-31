@@ -1,6 +1,12 @@
 'use client';
 
-import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import {
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  FileTextIcon as FileText,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -11,10 +17,14 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Portal } from '@/components/ui/portal';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import type { MarketplaceItem, MarketplaceItemDetail, MarketplaceSummary } from '@/lib/marketplace-client';
+import type {
+  MarketplaceItem,
+  MarketplaceItemDetail,
+  MarketplaceSummary,
+} from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
@@ -101,7 +111,8 @@ function BundleMemberRow({
       </span>
     </>
   );
-  const rowClass = 'hover:bg-muted/50 flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors';
+  const rowClass =
+    'hover:bg-muted/50 flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors';
   if (surface.variant === 'public') {
     return (
       <Link href={surface.itemHref(id)} className={rowClass}>
@@ -684,84 +695,84 @@ export function MarketplaceDetail({
           />
         }
       >
-      <div className="space-y-8">
-        {isProject ? (
-          <>
-            {/* README first — the file view defaults to the project's README.md
+        <div className="space-y-8">
+          {isProject ? (
+            <>
+              {/* README first — the file view defaults to the project's README.md
                 (the sidebar file tree drives it to browse any other file). */}
-            {filesSection}
-            {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
-            {memberItemGroups.map((g) => (
-              <section key={g.label}>
-                <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {g.items.map((it) => (
-                    <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
-                  ))}
-                </div>
-              </section>
-            ))}
-            {/* Agents + triggers (from kortix.yaml), rendered as the SAME cards
-                in the SAME grid as the skills above — just non-navigable. */}
-            {projectExtraGroups.map((g) => (
-              <section key={g.label}>
-                <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {g.items.map((it) => (
-                    <MarketplaceExploreCard
-                      key={it.id}
-                      item={it}
-                      showSource={false}
-                      navigable={false}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </>
-        ) : (
-          <>
-            {filesSection}
-            {membersSection}
-          </>
-        )}
-
-        {capCount > 0 ? (
-          <section>
-            <SectionLabel count={capCount}>Requires</SectionLabel>
-            <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-              {capGroups.map((group) => (
-                <div key={group.kind}>
-                  <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.items.map((value) => (
-                      <Badge
-                        key={`${group.kind}:${value}`}
-                        variant="outline"
-                        size="sm"
-                        className="font-mono"
-                      >
-                        {value}
-                      </Badge>
+              {filesSection}
+              {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
+              {memberItemGroups.map((g) => (
+                <section key={g.label}>
+                  <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {g.items.map((it) => (
+                      <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
                     ))}
                   </div>
-                </div>
+                </section>
               ))}
-            </div>
-          </section>
-        ) : null}
+              {/* Agents + triggers (from kortix.yaml), rendered as the SAME cards
+                in the SAME grid as the skills above — just non-navigable. */}
+              {projectExtraGroups.map((g) => (
+                <section key={g.label}>
+                  <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {g.items.map((it) => (
+                      <MarketplaceExploreCard
+                        key={it.id}
+                        item={it}
+                        showSource={false}
+                        navigable={false}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </>
+          ) : (
+            <>
+              {filesSection}
+              {membersSection}
+            </>
+          )}
 
-        {isProject && otherProjects.length > 0 ? (
-          <section>
-            <SectionLabel count={otherProjects.length}>Other projects</SectionLabel>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {otherProjects.map((project) => (
-                <MarketplaceProjectCard key={project.id} item={project} />
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </div>
+          {capCount > 0 ? (
+            <section>
+              <SectionLabel count={capCount}>Requires</SectionLabel>
+              <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+                {capGroups.map((group) => (
+                  <div key={group.kind}>
+                    <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.items.map((value) => (
+                        <Badge
+                          key={`${group.kind}:${value}`}
+                          variant="outline"
+                          size="sm"
+                          className="font-mono"
+                        >
+                          {value}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {isProject && otherProjects.length > 0 ? (
+            <section>
+              <SectionLabel count={otherProjects.length}>Other projects</SectionLabel>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {otherProjects.map((project) => (
+                  <MarketplaceProjectCard key={project.id} item={project} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
       </MarketplaceShell>
     </>
   );

@@ -4,12 +4,12 @@
 
 # Kortix
 
-**The AI command center for your company**
+**The open-source AI Management System**
 
-**One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
+**The leading open-source alternative to Claude Cowork and ChatGPT Work.**
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
-[![Version](https://img.shields.io/badge/version-0.9.98-111111.svg)](VERSION)
+[![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
 [![Docs](https://img.shields.io/badge/Docs-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
@@ -17,9 +17,37 @@
 
 <br />
 
-<img src="apps/web/public/images/landing-showcase/platform/01-command-center.png" alt="The Kortix command center" width="900" />
+<img src="apps/web/public/media/showcase/kortix-showcase.gif" alt="Ask a project for real work, connect 3,000+ apps, manage agents, skills and schedules, then watch an agent research on a cloud computer and return a finished pitch deck" width="900" />
 
 </div>
+
+---
+
+Agents that deliver finished work — reports, decks, code, replies, deployed changes — are now a
+product category. Every version of it runs inside a model lab, on that lab's model, with your
+company's brain on their side of the wall.
+
+**Kortix is the one you own.** It's an open-source **AI Management System**: your agents, the
+skills they share, your company memory, and every connector live in one git repo — versioned,
+diffable, and shared by the whole company. The agents work on real **cloud computers** — an
+isolated sandbox per session, on its own branch — and land what they produce through a **change
+request** a human approves.
+
+Any model, your own API keys, your own infrastructure or our managed cloud.
+
+---
+
+## How it compares
+
+| | Claude Cowork | ChatGPT Work | **Kortix** |
+| --- | --- | --- | --- |
+| **Source** | Closed | Closed | **Open source — read it, fork it, audit it** |
+| **Models** | Anthropic only | GPT-5.6 only | **Any provider, your own API keys** |
+| **Where it runs** | Anthropic's cloud, or Bedrock / Google Cloud / Microsoft Foundry — no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
+| **Your configuration** | In their product | In their product | **Files in a git repo you own** |
+| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud $40/seat/mo + usage** |
+
+Competitor rows reflect publicly documented behavior as of July 2026.
 
 ---
 
@@ -46,65 +74,78 @@ kortix cr ls          # review what an agent proposes — merge to keep it
 kortix chat           # talk to a session's agent from your terminal
 ```
 
-Prefer zero setup? Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a session — nothing to install. Full command surface: **[CLI reference](https://kortix.com/docs/reference/cli)**.
+Prefer zero setup? Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a
+session — nothing to install. Full command surface: **[CLI reference](https://kortix.com/docs/cli)**.
 
 ---
 
 ## A company is going to be a git repository
 
-Not as a metaphor — literally something you can clone. Inside it: your agents, the skills they've built up, the way the work actually gets done, every fact the company has learned, and the definition of the machines it all runs on. **Versioned. Diffable. Owned outright.** Running on its own around the clock, opening pull requests against itself, getting better at being your company while everyone's asleep.
-
-Most AI tools give you a chat box. Kortix gives you a **command center** — one place where your agents, skills, integrations, automations and memory all live, and a workforce of agents that produces real output (decks, reports, code, replies, deployed work), not just chat. It feels as simple as a chat app. Underneath, everything is code you own.
+Not as a metaphor — literally something you can clone. Inside it: your agents, the skills they've
+built up, the way the work actually gets done, every fact the company has learned, and the
+definition of the machines it all runs on. **Versioned. Diffable. Owned outright.**
 
 ```
 project  (git repo + kortix.yaml)
-   └─ session ──> isolated cloud sandbox on a branch named after the session
-                     └─ agent (OpenCode) works, commits, pushes
+   └─ session ──> cloud computer: an isolated sandbox on a branch named after the session
+                     └─ the OpenCode agent works
                            └─ change request ──> you review & merge ──> main
 ```
 
-- Every **session** runs in its own disposable Linux sandbox on its own branch — the agent can install, run and break anything; only what it commits survives.
-- Work reaches `main` only through a **change request** you approve, so the company self-improves one reviewed change at a time.
-- Run **thousands of agents in parallel** on the same config, each fully isolated, each feeding work back through change requests.
+- Every **session** gets its own **cloud computer** — a disposable, isolated Linux sandbox on its
+  own branch. The agent can install, run and break anything; only what it commits survives.
+- Work reaches `main` only through a **change request** you approve, so the company self-improves
+  one reviewed change at a time.
+- Run **thousands of sandboxes in parallel** on the same config, each fully isolated, each feeding
+  work back through change requests.
+
+You can `grep` your entire company.
 
 ---
 
-## What's in the command center
+## What you manage
 
 | | |
 | --- | --- |
-| **Agents** | Markdown personas with a scoped reach into tools — one per role or task. Installable in a click, able to rewrite themselves. |
+| **Agents** | OpenCode agents with a scoped reach into tools — markdown at the baseline, with the whole OpenCode lifecycle open to you. One per role or task, installable in a click, able to rewrite themselves. |
 | **Skills** | Reusable know-how that encodes how your company does a job. Written once, shared into every session. |
-| **Connectors** | 3,000+ apps in a click — plus MCP, OpenAPI, GraphQL and raw HTTP — brokered server-side through one scoped token. |
-| **Secrets** | Encrypted, scoped per person and group, injected into sandboxes at runtime, never exposed to the model or logs. |
-| **Channels** | Slack and chat surfaces — one click stands up a bot that starts sessions where your team already works. |
-| **Triggers** | Cron and signed webhooks that spawn sessions automatically — every morning, or the instant something happens. |
 | **Memory** | A living company brain — plain files today, a system that compounds what it learns over time. |
+| **Connectors** | 3,000+ apps in a click — plus MCP, OpenAPI, GraphQL and raw HTTP. Credentials are brokered server-side through one scoped token and never enter the machine. |
+| **Secrets** | Encrypted at rest, granted per agent, and injected into the sandbox at runtime. A granted secret is a real environment value inside that session. |
+| **Channels** | Slack today, Microsoft Teams behind an operator switch, email and voice experimental. Install the Slack app, invite the bot to a channel, and @-mention it to start a session where your team already works. |
+| **Triggers** | Cron and signed webhooks that spawn sessions automatically — every morning, or the instant something happens. |
 
-Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the agent works and checks in for the calls that matter), and **automated** (runs on a schedule or trigger, end to end).
+Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the agent works
+and checks in for the calls that matter), and **automated** (runs on a schedule or trigger, end to
+end).
 
 ---
 
-### [`apps/web/`](apps/web/) — Dashboard & marketing
+## Why Kortix
 
 - **Open & yours.** Open source and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
 - **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
-- **Real work, not chat.** Agents run on real computers and return finished deliverables — and take real actions in your tools.
-- **Everything is code.** Versioned, reviewable, portable, governable — never a black box. `grep` your entire company.
+- **Real work, not chat.** Agents run on real cloud computers and return finished deliverables — and take real actions in your tools.
+- **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
 - **Bring your own models.** Any provider, your own keys — or the ChatGPT, Claude, or Cursor subscription you already pay for.
 
 ---
 
 ## Self-host
 
-Kortix runs on your own infrastructure — laptop, VPS, your VPC, or fully air-gapped. Start a production-style local instance from Docker images, then switch the CLI between Cloud and your own hosts:
+Kortix runs on your own infrastructure — a laptop, a VPS, your own VPC, or your own on-prem
+network. Start a production-style local instance from Docker images, then switch the CLI between
+Cloud and your own hosts:
 
 ```bash
 kortix self-host start
 kortix hosts use selfhost  # ↔  kortix hosts use cloud
 ```
 
-The first interactive setup asks only for the integration credentials that unlock managed git, GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are generated for you.
+The first interactive setup asks only for the integration credentials that unlock managed git,
+GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are
+generated for you. Note that `self-host start` pulls its images from Docker Hub, so this is a
+self-hosted install rather than a disconnected one.
 
 Managed hosting is **[Kortix Cloud](https://kortix.com)**.
 
@@ -112,16 +153,19 @@ Managed hosting is **[Kortix Cloud](https://kortix.com)**.
 
 ## Enterprise & security
 
-Built to survive a security review, not slip past one: microVM isolation · members, groups & roles that match your org · per-resource permissions for people **and** agents · a secrets manager (encrypted, injected at runtime, never exposed) · a full audit trail · human approval gates on sensitive actions · on-prem, VPC, or air-gapped deployment.
+Built to survive a security review, not slip past one: one isolated machine per session · members,
+groups & roles that match your org · per-resource permissions for people **and** agents ·
+connector credentials brokered server-side, so the raw key never reaches the sandbox · a secrets
+manager, encrypted at rest and injected at runtime · a full audit trail · merge that is deny-by-default
+for an agent · approval gates you switch on for the actions that matter · your own VPC or on-prem
+network.
+
+Isolation is per provider: the Platinum provider runs microVMs, the default runs containers.
+Ask us and we'll tell you which one you're on.
 
 ---
 
 ## Contributing
-
-- **Open & yours.** Source-available and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
-- **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
-- **Real work, not chat.** Agents run on real computers and return finished deliverables — and take real actions in your tools.
-- **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
 
 ```bash
 pnpm install
@@ -133,32 +177,12 @@ pnpm build          # build all packages
 pnpm nuke           # tear down the local Docker environment
 ```
 
-#### Secrets
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`);
+documentation source is in `apps/web/content/docs`. The whole platform ships under one version
+(root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`.
 
-API secrets live in **`apps/api/.env`, encrypted with [dotenvx](https://dotenvx.com)** and committed to the repo — the ciphertext is safe in git; only the private decryption key is secret. To run locally you need that key, which we keep off-device in **[Dotenv Armor](https://dotenvx.com/armor)**:
-
-```bash
-curl -sfS https://dotenvx.sh/armor | sh   # one-time install
-dotenvx-armor login                        # grants this machine decryption
-pnpm dev                                   # dev-local.sh decrypts apps/api/.env on boot
-```
-
-Four encrypted environments for local dev, one file each (each with its own keypair in `apps/api/.env.keys`):
-
-| Run | Env | File | API backend |
-| --- | --- | --- | --- |
-| `pnpm dev` | local | `apps/api/.env` | 100% local stack (local Supabase, test Stripe) + web + tunnel |
-| `pnpm dev:dev-env` | dev | `apps/api/.env.dev` | dev stack — dev DB, test Stripe, dev keys |
-| `pnpm dev:staging-env` | staging | `apps/api/.env.staging` | staging stack — staging DB, test Stripe, staging keys |
-| `pnpm dev:prod-env` | prod | `apps/api/.env.prod` | prod stack — prod DB, **LIVE** Stripe |
-
-Verify all four decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.staging|.prod]`, then commit. The env-specific run scripts use `dotenvx run --overload` so the selected profile wins over exported local cloud credentials.
-
-These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web` has the **same four encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`, mostly public `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
-
-CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
-
-Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
+Local secrets, test lanes, and the PR gate: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Issues and
+pull requests are welcome.
 
 ---
 

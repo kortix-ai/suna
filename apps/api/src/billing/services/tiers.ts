@@ -1,8 +1,18 @@
 import { config } from '../../config';
 import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
+// Config-free tier facts live in their own module so genuinely pure consumers
+// (billing-state.ts) can import them without booting env validation. Re-exported
+// here so every existing `from './tiers'` import keeps working — one definition.
+import { isPaidTier, isPerSeatAccount } from './tier-facts';
+
+export {
+  MINIMUM_CREDIT_FOR_RUN,
+  isLegacyAccount,
+  isPaidTier,
+  isPerSeatAccount,
+} from './tier-facts';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
-export const MINIMUM_CREDIT_FOR_RUN = 0.01;
 export const DEFAULT_TOKEN_COST = 0.000002;
 export const CREDITS_PER_DOLLAR = 100;
 
@@ -566,11 +576,6 @@ export function canPurchaseCredits(tierName: string): boolean {
   return getTier(tierName).canPurchaseCredits;
 }
 
-/** Returns true if the tier is a paid tier (not free/none). */
-export function isPaidTier(tierName: string): boolean {
-  return tierName !== 'free' && tierName !== 'none';
-}
-
 /**
  * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
  * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
@@ -621,21 +626,6 @@ export function tierHasEntitlement(tierName: string, key: keyof TierEntitlements
 export function resolvePerSeatPriceId(): string | null {
   const prices = getStripePrices();
   return prices.subscriptions.per_seat?.monthly ?? null;
-}
-
-/**
- * Per-seat code paths must no-op for legacy customers. Use this guard at every
- * branch that would otherwise mutate Stripe quantity / grant seat credits /
- * meter compute / mint per-member YOLO tokens.
- */
-export function isPerSeatAccount(billingModel: string | null | undefined): boolean {
-  return billingModel === 'per_seat';
-}
-
-export function isLegacyAccount(billingModel: string | null | undefined): boolean {
-  // Default for null/undefined is legacy — safer to skip new behaviour than to
-  // accidentally bill a legacy customer twice.
-  return billingModel !== 'per_seat';
 }
 
 /**

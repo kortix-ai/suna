@@ -1,18 +1,15 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Trash2,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-
 
 export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -55,4 +52,3 @@ function extractSkillFiles(output: string): string[] {
   }
   return files;
 }
-

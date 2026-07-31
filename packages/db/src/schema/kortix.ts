@@ -700,6 +700,10 @@ export const projectSessions = kortixSchema.table(
     // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
     // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
     secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
+    // Distinguishes omitted connector_bindings from an explicit replacement.
+    connectorBindingsConfigured: boolean('connector_bindings_configured')
+      .default(false)
+      .notNull(),
     // When a session sets `connector_bindings`, binding ANY alias normally
     // suppresses the project-default fallback for every OTHER (unbound) alias —
     // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
@@ -821,41 +825,38 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  * index creation stays on the CONCURRENTLY path; declaring them would make
  * `db:generate` emit conflicting plain CREATE INDEX statements. See MIGRATIONS.md.
  */
-export const projectSessionSecretHandles = kortixSchema.table(
-  'project_session_secret_handles',
-  {
-    handleId: uuid('handle_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    secretId: uuid('secret_id')
-      .notNull()
-      .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
-    /** Denormalized from the secret so a handle presented after the row is
-     *  deleted still audits as something a human can read. */
-    identifier: varchar('identifier', { length: 128 }).notNull(),
-    /** The env var KEY this handle was emitted under. Same non-uniqueness as
-     *  project_secrets.name — two identifiers may share one key. */
-    envName: varchar('env_name', { length: 64 }).notNull(),
-    /** The public 96-bit component of the handle; what the broker looks up. */
-    lookupId: varchar('lookup_id', { length: 32 }).notNull(),
-    /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
-     *  not char(64) despite the fixed width: char blank-pads and compares
-     *  ignoring trailing spaces, and squawk's ban-char-field is on. */
-    handleHash: varchar('handle_hash', { length: 64 }).notNull(),
-    /** Bumped by per-prompt rotation; the previous revision goes `superseded`
-     *  with an overlap window rather than dying mid-turn. */
-    revision: integer('revision').default(1).notNull(),
-    policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
-    status: projectSecretHandleStatusEnum('status').default('active').notNull(),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  },
-);
+export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
+  handleId: uuid('handle_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  sessionId: text('session_id')
+    .notNull()
+    .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  secretId: uuid('secret_id')
+    .notNull()
+    .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
+  /** Denormalized from the secret so a handle presented after the row is
+   *  deleted still audits as something a human can read. */
+  identifier: varchar('identifier', { length: 128 }).notNull(),
+  /** The env var KEY this handle was emitted under. Same non-uniqueness as
+   *  project_secrets.name — two identifiers may share one key. */
+  envName: varchar('env_name', { length: 64 }).notNull(),
+  /** The public 96-bit component of the handle; what the broker looks up. */
+  lookupId: varchar('lookup_id', { length: 32 }).notNull(),
+  /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
+   *  not char(64) despite the fixed width: char blank-pads and compares
+   *  ignoring trailing spaces, and squawk's ban-char-field is on. */
+  handleHash: varchar('handle_hash', { length: 64 }).notNull(),
+  /** Bumped by per-prompt rotation; the previous revision goes `superseded`
+   *  with an overlap window rather than dying mid-turn. */
+  revision: integer('revision').default(1).notNull(),
+  policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
+  status: projectSecretHandleStatusEnum('status').default('active').notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
 
 // Account-scoped default model preferences. Drives server-side resolution of the
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
@@ -950,6 +951,29 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .default({})
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
+    /**
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. The gateway refuses anything not effectively
+     * enabled everywhere (chat, Slack, triggers, API); the picker and "Manage
+     * models" render from the same answer.
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
+     */
+    modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
+    /**
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
+     */
+    disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -966,6 +990,14 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_gen_config_object_check',
       sql`jsonb_typeof(${table.modelGenerationConfig}) = 'object'`,
+    ),
+    check(
+      'project_llm_routing_policies_disabled_models_array_check',
+      sql`jsonb_typeof(${table.disabledModels}) = 'array'`,
+    ),
+    check(
+      'project_llm_routing_policies_model_overrides_object_check',
+      sql`jsonb_typeof(${table.modelOverrides}) = 'object'`,
     ),
   ],
 );
@@ -1548,6 +1580,18 @@ export const sessionSandboxes = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    // Start of this box's CURRENT continuous running stretch, and the anchor
+    // operand of the 24h cap. Assigned ONLY by the DB trigger
+    // kortix.session_sandboxes_anchor_guard(), which carries it forward on EVERY
+    // application UPDATE in EVERY status and re-anchors a new stretch only when
+    // resuming a park it witnessed itself. Never write this from TypeScript — a
+    // constraint on a difference whose left operand a caller can slide forward
+    // is a suggestion, not a bound.
+    activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
+    // When the control plane stops this box. Single TS writer:
+    // apps/api/src/projects/sandbox-deadline.ts. Bounded by a DB CHECK at
+    // active_since + 24h.
+    deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -2319,10 +2363,20 @@ export const auditEvents = kortixSchema.table(
   {
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+    projectId: uuid('project_id'),
+    sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    actorType: text('actor_type'),
+    source: text('source'),
+    outcome: text('outcome'),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
+    httpStatus: integer('http_status'),
+    durationMs: integer('duration_ms'),
+    requestId: text('request_id'),
+    traceId: text('trace_id'),
+    correlationId: text('correlation_id'),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
     ip: text('ip'),
@@ -2334,6 +2388,18 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    index('idx_audit_events_account_project_time').on(
+      table.accountId,
+      table.projectId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_account_session_time').on(
+      table.accountId,
+      table.sessionId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_request').on(table.requestId),
+    index('idx_audit_events_correlation').on(table.correlationId),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
@@ -3909,6 +3975,11 @@ export const executorCredentialModeEnum = kortixSchema.enum('executor_credential
   'per_user',
 ]);
 
+export const executorConnectorAuthorizationStrategyEnum = kortixSchema.enum(
+  'executor_connector_authorization_strategy',
+  ['project', 'user'],
+);
+
 export const executorConnectors = kortixSchema.table(
   'executor_connectors',
   {
@@ -3945,6 +4016,12 @@ export const executorConnectors = kortixSchema.table(
      *  doc comment for why `per_user` is gone but the enum literal lingers. A
      *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
+    /** Exclusive authorization owner model for this connector profile. */
+    authorizationStrategy: executorConnectorAuthorizationStrategyEnum(
+      'authorization_strategy',
+    )
+      .default('project')
+      .notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
     manifestHash: varchar('manifest_hash', { length: 64 }),
     status: executorConnectorStatusEnum('status').default('active').notNull(),
@@ -4020,8 +4097,8 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.profileId,
     ),
     // A connector may hold MANY connections (e.g. support@ and sales@ for the
-    // team, plus each member's own). The default marker is therefore scoped PER
-    // OWNER, not per connector: exactly one team default, and at most one default
+    // project, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one project default, and at most one default
     // per member/agent/external owner. Split into two partial indexes so the
     // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
     // is still capped at one.
@@ -4039,7 +4116,7 @@ export const executorConnectionProfiles = kortixSchema.table(
       .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
     // Project-owned rows carry owner_id NULL, so the index above (partial on
-    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // owner_id IS NOT NULL) can't dedupe them. Several project connections per
     // connector are allowed, distinguished by label — this keeps that set unique.
     uniqueIndex('idx_executor_connection_profiles_project_label')
       .on(table.connectorId, table.label)
@@ -4297,6 +4374,26 @@ export const executorConnectorActions = kortixSchema.table(
 );
 
 /** Connector-scoped tool-call policies, materialized from [[connectors.policies]]. */
+/**
+ * One ARGUMENT condition on a tool-call policy.
+ *
+ * A `match` pattern can only gate a tool NAME ("may the agent call
+ * `gmail.send_email`"). It cannot gate the call's target ("…but only to these
+ * addresses"), which is what a real guardrail needs to express. A policy row
+ * carrying `conditions` applies only when its tool pattern matches AND every
+ * condition holds.
+ *
+ * `arg` is a dot path into the call arguments; `match` uses the same
+ * glob-or-`/regex/` grammar as the tool pattern. Semantics (including how an
+ * unevaluable condition fails closed) live in apps/api/src/executor/policy.ts —
+ * this is only the stored shape.
+ */
+export interface ExecutorPolicyCondition {
+  arg: string;
+  match: string;
+  negate?: boolean;
+}
+
 export const executorConnectorPolicies = kortixSchema.table(
   'executor_connector_policies',
   {
@@ -4309,27 +4406,19 @@ export const executorConnectorPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_executor_connector_policies_connector').on(table.connectorId)],
 );
 
 /**
- * Per-CONNECTION tool-call policies, keyed by profile_id.
+ * Legacy authorization-policy storage.
  *
- * One connector can hold several connections — support@, sales@, a member's own
- * mailbox — and they often warrant DIFFERENT permissions. Connector-scoped rules
- * cannot express that: they are keyed by the connector, so every connection under
- * it shares one policy.
- *
- * Deliberately NOT in executor_connector_policies: sync.ts deletes every row for
- * a connector and re-inserts from the manifest on each manifest write, so a
- * DB-authored row there would be destroyed. Deliberately NOT in the manifest
- * either: a member's private connection can never appear in git, and profile
- * uuids are not portable across projects.
- *
- * Evaluated AFTER project rules (which remain un-overridable) and BEFORE
- * connector rules, so the more specific scope wins over the connector default.
+ * The runtime does not read or write this table. Connector-profile policies
+ * live in executor_connector_policies. Keep this table until a later contract
+ * migration removes the stored rows and physical schema.
  */
 export const executorConnectionPolicies = kortixSchema.table(
   'executor_connection_policies',
@@ -4341,6 +4430,8 @@ export const executorConnectionPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -4374,6 +4465,8 @@ export const executorProjectPolicies = kortixSchema.table(
     action: executorPolicyActionEnum('action').notNull(),
     /** Authoring order — evaluated top-to-bottom, first match wins. */
     position: integer('position').default(0).notNull(),
+    /** Optional ARGUMENT conditions — see `executorPolicyConditions`. */
+    conditions: jsonb('conditions').$type<ExecutorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_executor_project_policies_project').on(table.projectId)],

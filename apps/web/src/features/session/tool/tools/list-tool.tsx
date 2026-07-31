@@ -1,32 +1,22 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { InlineFileList, parseFilePaths } from '@/features/session/tool/shared/file-list';
 import {
   BasicTool,
   ToolEmptyState,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  InlineFileList,
-  parseFilePaths,
-} from '@/features/session/tool/shared/file-list';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import {
-  ListTree,
-} from 'lucide-react';
+import { getDirectory } from '@/ui';
+import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  getDirectory,
-} from '@/ui';
-
+import { useMemo } from 'react';
 
 export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -39,8 +29,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
-  const isNoResults =
-    !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
+  const isNoResults = !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
 
   return (
     <BasicTool
@@ -87,4 +76,3 @@ function looksLikeHtml(s: string): boolean {
   if (head.includes('<!doctype html') || head.includes('<html')) return true;
   return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
 }
-

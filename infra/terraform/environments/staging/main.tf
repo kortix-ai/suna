@@ -64,6 +64,13 @@ module "network" {
 }
 
 # ── ECS Fargate API service (autoscaled) ──────────────────────────────────────
+# The env secret blob is the source of truth for which secrets exist:
+# ecs-deploy.sh wires every key in it into each task-def revision. Looked up by
+# name so the random ARN suffix is never hard-coded.
+data "aws_secretsmanager_secret" "env" {
+  name = "kortix-staging-env"
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -76,11 +83,12 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image           = var.api_image
-  container_port  = var.container_port
-  certificate_arn = var.wildcard_certificate_arn
-  environment     = var.api_environment
-  secrets         = var.api_secrets
+  image            = var.api_image
+  container_port   = var.container_port
+  certificate_arn  = var.wildcard_certificate_arn
+  environment      = var.api_environment
+  secrets          = var.api_secrets
+  secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
@@ -112,6 +120,7 @@ module "gateway" {
   certificate_arn   = var.wildcard_certificate_arn
   environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://staging-api.kortix.com" })
   secrets           = var.api_secrets
+  secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

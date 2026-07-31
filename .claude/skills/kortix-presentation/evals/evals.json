@@ -4,7 +4,7 @@
     {
       "id": "create-pitch-deck",
       "prompt": "Build a Kortix pitch deck — 6 slides introducing our coding-agent platform that runs in your own repo.",
-      "expected_output": "An on-brand .pptx generated with pptxgenjs, run through repair.py + office/validate.py until it passes, and visually QA'd. Should read /product-marketing.md and ../internal-comms for copy and ../brand-guidelines for visuals first.",
+      "expected_output": "An on-brand .pptx generated with pptxgenjs, run through repair.py + office/validate.py until it passes, and visually QA'd. Should read /product-marketing.md and ../comms for copy and ../brand-guidelines for visuals first.",
       "assertions": [
         "Reads product-marketing.md (or fallbacks) and ../brand-guidelines/SKILL.md before building.",
         "Generates a .pptx via pptxgenjs using 6-char hex colors with no '#' prefix.",

@@ -150,6 +150,8 @@ export async function createOrJoinTeamsConversationSession(input: {
       agent_name: selection?.agentName || 'default',
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(activity),
+      // Title from the user's actual words, not the scaffolded envelope.
+      title_source: activity.text ?? null,
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',

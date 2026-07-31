@@ -16,7 +16,8 @@ import {
   saveGitHubInstallation,
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
-import { Github } from 'lucide-react';
+import { GithubLogoIcon as Github } from '@phosphor-icons/react';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
 
@@ -33,6 +34,7 @@ export default function GitHubSetupPage() {
 }
 
 function GitHubSetup() {
+  const appHome = useAppHome();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -66,7 +68,7 @@ function GitHubSetup() {
     if (setupAction === 'uninstall') {
       setState('done');
       setMessage('GitHub App removed from your account.');
-      redirectTimer.current = window.setTimeout(() => router.replace('/projects'), 900);
+      redirectTimer.current = window.setTimeout(() => router.replace(appHome), 900);
       return;
     }
 
@@ -267,7 +269,7 @@ function GitHubSetup() {
                 size="lg"
                 variant="outline"
                 className="w-full"
-                onClick={() => router.replace(consumeGitHubSetupReturn() ?? '/projects')}
+                onClick={() => router.replace(consumeGitHubSetupReturn() ?? appHome)}
               >
                 Back
               </Button>
@@ -275,8 +277,8 @@ function GitHubSetup() {
           </Rise>
         ) : state === 'error' ? (
           <Rise delay={0.06}>
-            <Button size="lg" className="w-full" onClick={() => router.replace('/projects')}>
-              Back to projects
+            <Button size="lg" className="w-full" onClick={() => router.replace(appHome)}>
+              Back to Kortix
             </Button>
           </Rise>
         ) : null}

@@ -1,37 +1,51 @@
 import { describe, expect, test } from 'bun:test';
-import { BOUND_CONNECTIONS_KEY, buildSessionCreateInput } from '../../src/lib/session-overrides';
 import {
+  buildCompleteSessionScopeReplacement,
   isFixedAtStart,
-  readBoundConnections,
+  readScopeBindingIds,
   sessionScopeIsReadable,
   sessionScopeRows,
 } from '../../src/lib/session-scope';
 
 const rows = (over: Partial<Parameters<typeof sessionScopeRows>[0]> = {}) =>
-  sessionScopeRows({ agentName: null, secretsAllowlist: null, boundConnections: {}, ...over });
+  sessionScopeRows({
+    agentName: null,
+    secretsAllowlist: null,
+    boundConnections: {},
+    ...over,
+  });
 
 const row = (key: string, over: Parameters<typeof rows>[0] = {}) =>
   rows(over).find((r) => r.key === key)!;
 
 describe('sessionScopeRows', () => {
-  test("a real allowlist is shown, not a description of what an allowlist is", () => {
-    expect(row('secrets', { secretsAllowlist: ['STRIPE_KEY', 'GMAIL_TOKEN'] }).value).toBe(
-      'STRIPE_KEY, GMAIL_TOKEN',
-    );
+  test('a real allowlist is shown, not a description of what an allowlist is', () => {
+    expect(
+      row('secrets', { secretsAllowlist: ['STRIPE_KEY', 'GMAIL_TOKEN'] }).value,
+    ).toBe('STRIPE_KEY, GMAIL_TOKEN');
   });
 
   test('no allowlist reads as "everything the agent is granted", never as empty', () => {
     // null (never narrowed) and [] (narrowed to nothing) are opposite states;
     // rendering both as an empty list would claim a session can read nothing.
-    expect(row('secrets', { secretsAllowlist: null, agentName: 'support' }).value).toBe(
-      'Everything support is granted',
+    expect(
+      row('secrets', { secretsAllowlist: null, agentName: 'support' }).value,
+    ).toBe('Everything support is granted');
+    expect(row('secrets', { secretsAllowlist: [] }).value).toBe(
+      'No project secrets',
     );
-    expect(row('secrets', { secretsAllowlist: [] }).value).toBe('No project secrets');
   });
 
   test('the allowlist reason is specific to whether THIS session has one', () => {
-    expect(row('secrets', { secretsAllowlist: null }).detail).toContain('without a narrower');
-    expect(row('secrets', { secretsAllowlist: ['A'] }).detail).toContain('cannot be widened');
+    // Both cases must say where to change it, and the narrowed one must state
+    // the limit that survives: removing a secret stops DELIVERY, it cannot
+    // un-read what the agent already holds.
+    expect(row('secrets', { secretsAllowlist: null }).detail).toContain(
+      'full secret grant',
+    );
+    expect(row('secrets', { secretsAllowlist: ['A'] }).detail).toContain(
+      'cannot un-read',
+    );
   });
 
   test("the agent row names this session's agent, in both directions", () => {
@@ -54,54 +68,85 @@ describe('sessionScopeRows', () => {
   });
 
   test('bound connections are listed by alias', () => {
-    expect(row('connections', { boundConnections: { slack: 'Support', gmail: 'Team inbox' } }).value).toBe(
-      'slack: Support, gmail: Team inbox',
-    );
+    expect(
+      row('connections', {
+        boundConnections: { slack: 'Support', gmail: 'Team inbox' },
+      }).value,
+    ).toBe('slack: Support, gmail: Team inbox');
   });
 
   test('nothing bound reads as the project default, not as "no connectors"', () => {
-    expect(row('connections').value).toBe('The project default for every connector');
+    expect(row('connections').value).toBe(
+      'The project default for every connector',
+    );
+    expect(row('connections').detail).toContain('project connection');
+    expect(row('connections').detail.toLowerCase()).not.toContain(
+      'team authorization',
+    );
   });
 
   test('a bound session is told unbound connectors still fall back to the default', () => {
-    expect(row('connections', { boundConnections: { slack: 'Support' } }).detail).toContain(
-      'still use the project default',
-    );
+    expect(
+      row('connections', { boundConnections: { slack: 'Support' } }).detail,
+    ).toContain('retroactive');
   });
 
-  test('only the model is changeable now — the badges match the contract', () => {
-    expect(isFixedAtStart('model')).toBe(false);
-    expect(isFixedAtStart('secrets')).toBe(true);
-    expect(isFixedAtStart('connections')).toBe(true);
-    // Per-message, so not frozen — but it has no control on this panel.
-    expect(isFixedAtStart('agent')).toBe(false);
-    expect(rows().filter((r) => r.control !== null).map((r) => r.key)).toEqual(['model']);
+  test('no scope-bar row is frozen any more — the badges match the contract', () => {
+    // `PUT .../scope` made secrets and connections changeable; `runtime_context`
+    // is the one field still fixed at create, which is what keeps that state a
+    // real branch rather than dead code.
+    for (const key of ['model', 'secrets', 'connections', 'agent'] as const) {
+      expect(isFixedAtStart(key)).toBe(false);
+    }
+    expect(isFixedAtStart('runtime_context')).toBe(true);
   });
 });
 
-describe('readBoundConnections', () => {
-  test('round-trips what the create wrote — the panel reads its own record', () => {
-    // The platform never serializes a session's bindings back, so the create
-    // body and the scope panel have to agree on one metadata key or the
-    // Connections row silently reads empty forever.
-    const created = buildSessionCreateInput(
-      { agent: null, secrets: null, bindings: { slack: 'prof_9' } },
-      { sessionId: 's', connectionLabels: { slack: 'Support' } },
-    );
-    expect(readBoundConnections(created.metadata)).toEqual({ slack: 'Support' });
-  });
+describe('authoritative session scope', () => {
+  const current = {
+    secrets_allowlist: ['PRIMARY_TOKEN'],
+    connector_bindings: { gmail: { authorization_id: 'auth-primary' } },
+    dropped_secrets: [],
+    added_secrets: [],
+    dropped_bindings: [],
+    retroactive: true,
+    detail: 'Current scope.',
+  };
 
-  test('a session created before this existed reads as unbound, not as broken', () => {
-    expect(readBoundConnections({})).toEqual({});
-    expect(readBoundConnections(null)).toEqual({});
-    expect(readBoundConnections({ name: 'Some session' })).toEqual({});
-  });
-
-  test('junk in metadata is ignored rather than rendered', () => {
-    expect(readBoundConnections({ [BOUND_CONNECTIONS_KEY]: 'nope' })).toEqual({});
-    expect(readBoundConnections({ [BOUND_CONNECTIONS_KEY]: { slack: 7, gmail: 'Team' } })).toEqual({
-      gmail: 'Team',
+  test('reads connector authorization identifiers from the scope response', () => {
+    expect(readScopeBindingIds(current.connector_bindings)).toEqual({
+      gmail: 'auth-primary',
     });
+  });
+
+  test('a secret change preserves and sends the complete connector map', () => {
+    expect(
+      buildCompleteSessionScopeReplacement(current, {
+        secrets: [],
+      }),
+    ).toEqual({
+      secrets: [],
+      connector_bindings: { gmail: { authorization_id: 'auth-primary' } },
+    });
+  });
+
+  test('a connector change preserves and sends the complete secret allowlist', () => {
+    expect(
+      buildCompleteSessionScopeReplacement(current, {
+        bindings: { slack: 'auth-slack' },
+      }),
+    ).toEqual({
+      secrets: ['PRIMARY_TOKEN'],
+      connector_bindings: { slack: { authorization_id: 'auth-slack' } },
+    });
+  });
+
+  test('empty bindings replace every existing connector binding', () => {
+    expect(
+      buildCompleteSessionScopeReplacement(current, {
+        bindings: {},
+      }).connector_bindings,
+    ).toEqual({});
   });
 });
 
@@ -123,7 +168,11 @@ describe('a redacted session must not read as permissive (F1)', () => {
   test('a null allowlist on an ACCESSIBLE session still means "everything granted"', () => {
     // Guard the other direction: the fix must not make a legitimately
     // un-narrowed session look restricted.
-    const rows = sessionScopeRows({ agentName: 'kortix', secretsAllowlist: null, boundConnections: {} });
+    const rows = sessionScopeRows({
+      agentName: 'kortix',
+      secretsAllowlist: null,
+      boundConnections: {},
+    });
     const secrets = rows.find((r) => r.key === 'secrets');
     expect(secrets?.detail ?? '').not.toContain('0 secret');
   });

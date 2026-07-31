@@ -127,7 +127,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'A connect link'),
-      ...errors(400, 404, 501),
+      ...errors(400, 404, 409, 501),
     },
   }),
   async (c: any) => {
@@ -149,6 +149,15 @@ projectsApp.openapi(
       return c.json(
         { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.yaml first.` },
         404,
+      );
+    }
+    if (conn.authorizationStrategy !== 'project') {
+      return c.json(
+        {
+          error: 'Shared connect links require a project authorization strategy',
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
       );
     }
 

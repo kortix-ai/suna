@@ -22,6 +22,10 @@ import { join } from 'node:path';
  */
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import {
+  migrationLedgerRepairExecutorName,
+  repairMigrationLedger,
+} from './migration-ledger-repair';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -205,15 +209,36 @@ async function main() {
 
   console.log(`node-pg-migrate ${cmd}  DB: ${fmtUrl(databaseUrl)}`);
 
+  const repairAppliedMigrationRenames = async () => {
+    const repaired = await repairMigrationLedger({
+      databaseUrl,
+      migrationsDir: MIGRATIONS_DIR,
+      applyExecutorMigration: async () => {
+        await runner({
+          ...base,
+          direction: 'up',
+          count: 1,
+          checkOrder: false,
+          file: migrationLedgerRepairExecutorName,
+        });
+      },
+    });
+    if (repaired) {
+      console.log('[migrate] reconciled renamed sandbox deadline migration records.');
+    }
+  };
+
   switch (cmd) {
     case 'up':
       await autoBaselineIfNeeded(base, databaseUrl);
+      await repairAppliedMigrationRenames();
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
       return;
     case 'bootstrap':
       // Fresh-DB convenience for self-host: prereqs → then `up`.
       await selfHostBootstrapIfFresh(databaseUrl);
       await autoBaselineIfNeeded(base, databaseUrl);
+      await repairAppliedMigrationRenames();
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
       return;
     case 'fake':

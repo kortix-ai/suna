@@ -24,7 +24,11 @@ import {
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import type { SessionAuditAction } from '@kortix/sdk';
-import { Check, ShieldCheck, X } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  ShieldCheckIcon as ShieldCheck,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 export function SessionAuditPanel({
@@ -65,7 +69,7 @@ export function SessionAuditPanel({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex-shrink-0 border-b border-border/60 px-6 py-3">
+      <div className="border-border/60 flex-shrink-0 border-b px-6 py-3">
         <h2 className="text-foreground text-sm font-semibold tracking-tight">Audit</h2>
         <p className="text-muted-foreground mt-0.5 text-xs">
           Every governed action this session took — and anything awaiting your approval.
@@ -75,7 +79,7 @@ export function SessionAuditPanel({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex justify-center py-16">
-            <Loading className="animate-spin" />
+            <Loading />
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
@@ -103,7 +107,7 @@ export function SessionAuditPanel({
             {pending.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 bg-amber-400/[0.06] px-6 pt-4 pb-2">
-                  <span className="text-foreground text-xs font-semibold uppercase tracking-wide">
+                  <span className="text-foreground text-xs font-semibold tracking-wide uppercase">
                     Needs your approval
                   </span>
                   <Badge variant="warning" size="xs">
@@ -143,7 +147,7 @@ export function SessionAuditPanel({
                               onClick={() => decide(a.execution_id, 'deny')}
                             >
                               {b === 'deny' ? (
-                                <Loading className="size-3.5 animate-spin" />
+                                <Loading className="size-3.5" />
                               ) : (
                                 <X className="size-3.5" />
                               )}
@@ -156,7 +160,7 @@ export function SessionAuditPanel({
                               onClick={() => decide(a.execution_id, 'approve')}
                             >
                               {b === 'approve' ? (
-                                <Loading className="size-3.5 animate-spin" />
+                                <Loading className="size-3.5" />
                               ) : (
                                 <Check className="size-3.5" />
                               )}
@@ -175,7 +179,7 @@ export function SessionAuditPanel({
               <section>
                 {pending.length > 0 && (
                   <div className="px-6 pt-4 pb-2">
-                    <span className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
+                    <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
                       History
                     </span>
                   </div>

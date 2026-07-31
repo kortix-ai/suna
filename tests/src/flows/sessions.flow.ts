@@ -287,6 +287,86 @@ flow(
       );
       r.status(400);
     });
+
+    // The `file` branch of the same endpoint. Everything above exercises
+    // `preview`; a file share takes a different path through
+    // buildPublicShareInsert (normalizeWorkspaceFilePath, port forced null,
+    // mode forced 'view') and resolves to `.../file` rather than `.../:port`.
+    // It went uncovered while nothing in the product could create one — the
+    // frontend only regained that ability in #5751.
+    let fileShareId = '';
+    let fileToken = '';
+
+    await ctx.step('create a file public share → 201, portless, view-only', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
+        { file: { path: '/workspace/README.md', label: 'ke2e file' } },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+      r.status(201)
+        .body()
+        .has('$.share.resource_type', 'file')
+        .has('$.share.file_path', '/workspace/README.md')
+        .has('$.share.port', null)
+        .has('$.share.mode', 'view')
+        .has('$.share.allow_websocket', false)
+        .matches('$.share.public_token', /^kps_[0-9a-f]{32}$/)
+        .matches('$.share.proxy_path', /^\/v1\/p\/public-share\/kps_[0-9a-f]{32}\/file$/);
+      const body = r.json<any>();
+      fileShareId = body.share.share_id;
+      fileToken = body.share.public_token;
+    });
+
+    await ctx.step('a workspace-relative path is normalized, not rejected', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
+        { file: { path: 'notes/report.md' } },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+      // Not ctx.track'ed: public_share rows are FK'd to the session with ON
+      // DELETE CASCADE, so the session fixture's own teardown reclaims them.
+      r.status(201).body().has('$.share.file_path', '/workspace/notes/report.md');
+    });
+
+    await ctx.step('a traversing file path is refused → 400', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
+        { file: { path: '/workspace/../../etc/passwd' } },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step(
+      'unauthenticated resolution of the file token → 200/503, and carries no public_url',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/p/public-share/:token', { params: { token: fileToken } });
+        r.status([200, 503]);
+        if (r.statusCode === 200) {
+          // `public_url` is populated only for preview shares — a file share is
+          // reached through its proxy_path, never a bare origin URL.
+          r.body()
+            .has('$.share.resource_type', 'file')
+            .has('$.share.public_url', null)
+            .has('$.share.file_path', '/workspace/README.md');
+        }
+      },
+    );
+
+    await ctx.step('revoked file token → 410, same as a preview token', async () => {
+      const del = await owner.del(
+        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
+        { params: { projectId: project.id, sessionId: session.id, shareId: fileShareId } },
+      );
+      del.status(200);
+
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/p/public-share/:token', { params: { token: fileToken } });
+      r.status(410);
+    });
   },
 );
 

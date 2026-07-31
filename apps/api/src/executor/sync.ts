@@ -43,6 +43,7 @@ import { synthesizeComputerConnectors } from './computer-materialize';
 import { computerCatalog } from './computers';
 import { ensureDefaultProfile } from './credentials';
 import { parseResponseBody } from './execute';
+import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeGraphql,
@@ -550,6 +551,7 @@ async function upsertConnector(
     enabled: spec.enabled,
     authSecret,
     credentialMode,
+    authorizationStrategy: spec.authorizationStrategy,
     manifestHash,
     status,
     lastError: catalog?.error ?? null,
@@ -591,7 +593,9 @@ async function upsertConnector(
     connectorId = created!.connectorId;
   }
 
-  await ensureDefaultProfile({ projectId, connectorId });
+  if (spec.authorizationStrategy === 'project') {
+    await ensureDefaultProfile({ projectId, connectorId });
+  }
 
   // Actions only change when the catalog was re-resolved — leave them in place
   // on a cheap reconcile.
@@ -628,6 +632,7 @@ async function upsertConnector(
         match: p.match,
         action: p.action,
         position: p.position,
+        conditions: p.conditions ?? null,
       })),
     );
   }
@@ -878,7 +883,7 @@ async function introspectGraphql(endpoint: string): Promise<any> {
 async function reconcileProjectPolicies(
   projectId: string,
   parsed: {
-    policies: { match: string; action: 'always_run' | 'require_approval' | 'block' }[];
+    policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
   },
 ): Promise<void> {
@@ -888,7 +893,15 @@ async function reconcileProjectPolicies(
     await db
       .insert(executorProjectPolicies)
       .values(
-      rows.map((p) => ({ projectId, match: p.match, action: p.action, position: p.position })),
+      rows.map((p) => ({
+        projectId,
+        match: p.match,
+        action: p.action,
+        position: p.position,
+        // Carried through, NOT dropped: reconcile is delete-then-insert from the
+        // manifest, so a field missing here is silently erased on every sync.
+        conditions: p.conditions ?? null,
+      })),
     );
   }
   // Upsert default_mode (one row per project).

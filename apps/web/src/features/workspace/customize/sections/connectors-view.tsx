@@ -1,35 +1,34 @@
 'use client';
 
 import { useCustomizeStore } from '@/stores/customize-store';
+import {
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  KeyIcon as KeyRound,
+  LockIcon as Lock,
+  type Icon as LucideIcon,
+  EnvelopeIcon as Mail,
+  ChatIcon as MessageSquare,
+  MonitorIcon as Monitor,
+  PencilSimpleIcon,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  ArrowClockwiseIcon as RefreshCw,
+  MagnifyingGlassIcon as Search,
+  ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+  XIcon as X,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Boxes,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  Globe,
-  Info,
-  KeyRound,
-  Lock,
-  type LucideIcon,
-  Mail,
-  MessageSquare,
-  Monitor,
-  Pencil,
-  Plug,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
-  Users,
-  X,
-  Zap,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -103,8 +102,10 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
+  type ConnectionProfile,
   type ConnectorAction,
   type ConnectorAuthDiscovery,
+  type ConnectorAuthorizationStrategy,
   type ConnectorConfig,
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
@@ -112,38 +113,38 @@ import {
   type ConnectorRequestAuthType,
   createConnector,
   deleteConnector,
-  discoverConnectorAuth,
   discoverConnectionProfileOAuth2,
+  discoverConnectorAuth,
   ensureProjectConnectorProfile,
   getConnectorConfig,
   getConnectorPolicies,
   getConnectStatus,
   getProjectDetail,
   listAllConnectionProfiles,
-  getConnectionPolicies,
   listConnectionProfiles,
   listConnectors,
-  listProjectAccess,
   listPipedreamApps,
+  listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
   pipedreamConnect,
+  pipedreamConnectConnectionProfile,
   pipedreamFinalize,
+  pipedreamFinalizeConnectionProfile,
   pollConnectionProfileOAuth2DeviceAuthorization,
   putConnectionProfileOAuth2Application,
-  type ConnectionProfile,
-  pipedreamConnectConnectionProfile,
-  pipedreamFinalizeConnectionProfile,
   reconcileConnectionProfile,
-  setConnectionPolicies,
-  setDefaultConnectionProfile,
+  reconcileMemberConnectorAuthorization,
   revokeConnectionProfile,
+  setConnectorAuthorizationStrategy,
   setConnectorCredential,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
+  setDefaultConnectionProfile,
   startConnectionProfileOAuth2Authorization,
   startConnectionProfileOAuth2DeviceAuthorization,
   syncConnectors,
+  updateConnectorAuthorizationCredential,
 } from '@kortix/sdk';
 import {
   buildOAuth2ApplicationInput,
@@ -151,14 +152,29 @@ import {
   createConnectorWithOptionalOAuth2,
   EMPTY_OAUTH2_APPLICATION_FORM,
   EMPTY_OAUTH2_CREDENTIAL_FORM,
-  type OAuth2ApplicationForm,
   mergeOAuth2DiscoveryMetadata,
+  type OAuth2ApplicationForm,
   oauth2ApplicationFormValid,
   type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
+import {
+  authorizationOwnerTypeForStrategy,
+  buildEasyConnectProfileDraft,
+  buildEmailConnectorProfileSlug,
+  connectorAuthorizationQueryKeys,
+  connectorAuthorizationStrategyForProvider,
+  connectorAuthorizationStrategyIsEditable,
+  connectorAuthorizationUpdateIsPending,
+  connectorSetupStatus,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  type EasyConnectApp,
+  proposeConnectorProfileSlug,
+} from './connector-profile-form';
+import { AuthorizationStrategyField, ConnectorProfileModal } from './connector-profile-modal';
 import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
@@ -230,11 +246,11 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
 }
 
 /**
- * Connect ANOTHER team-shared account under one connector (support@ alongside
+ * Connect another project-owned account under one connector (support@ alongside
  * sales@). Mints a labelled project-owned connection, then runs that profile's
  * OAuth handshake — the same per-profile flow the personal connect uses.
  */
-function usePipedreamConnectTeam(projectId: string, slug: string, onConnected: () => void) {
+function usePipedreamConnectProject(projectId: string, slug: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async (input: { label: string }) => {
       const profile = await reconcileConnectionProfile(projectId, {
@@ -270,7 +286,7 @@ function usePipedreamConnectTeam(projectId: string, slug: string, onConnected: (
     },
     onSuccess: (res) => {
       if (!res.connected) return;
-      successToast('Team connection added');
+      successToast('Project connection added');
       onConnected();
     },
     onError: (err: Error) => errorToast(err.message),
@@ -290,8 +306,16 @@ export function ConnectorsView({ projectId }: { projectId: string }) {
 function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ['project-connectors', projectId], [projectId]);
-  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+  const authorizationQueryKeys = useMemo(
+    () => connectorAuthorizationQueryKeys(projectId),
+    [projectId],
+  );
+  const queryKey = authorizationQueryKeys[0];
+  const invalidate = () => {
+    for (const affectedQueryKey of authorizationQueryKeys) {
+      void queryClient.invalidateQueries({ queryKey: affectedQueryKey });
+    }
+  };
 
   const query = useQuery({
     queryKey,
@@ -326,14 +350,15 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
     if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
     else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
-    void queryClient.invalidateQueries({ queryKey });
-    void queryClient.invalidateQueries({ queryKey: ['connector-profiles', projectId] });
+    for (const affectedQueryKey of authorizationQueryKeys) {
+      void queryClient.invalidateQueries({ queryKey: affectedQueryKey });
+    }
     const params = new URLSearchParams(search?.toString() ?? '');
     params.delete('oauth2');
     params.delete('oauth2_error');
     const suffix = params.toString();
     router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-  }, [oauth2Error, oauth2Result, pathname, projectId, queryClient, queryKey, router, search]);
+  }, [authorizationQueryKeys, oauth2Error, oauth2Result, pathname, queryClient, router, search]);
   const select = (sel: Selection) => {
     const key = sel.kind === 'connector' ? sel.slug : sel.kind;
     const params = new URLSearchParams(search?.toString() ?? '');
@@ -421,6 +446,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
             discoverEnabled={discoverEnabled}
+            existingSlugs={connectors.map((connector) => connector.slug)}
             canWrite={canWrite}
             onAdded={(slug) => {
               invalidate();
@@ -460,20 +486,23 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
 }
 
 function statusDot(c: AdminConnector): string {
-  if (c.status === 'error') return 'bg-destructive';
-  if (c.authSecret && !c.secretSet) return 'bg-kortix-orange';
+  const status = connectorSetupStatus(c);
+  if (status === 'error') return 'bg-destructive';
+  if (status === 'needs_setup') return 'bg-kortix-orange';
+  if (status === 'user_managed') return 'bg-kortix-blue';
   return 'bg-kortix-green';
 }
 
 function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  if (connector.status === 'error')
+  const status = connectorSetupStatus(connector);
+  if (status === 'error')
     return (
       <Badge variant="destructive" size="sm">
         Error
       </Badge>
     );
-  if (!connector.authSecret)
+  if (status === 'no_auth')
     return (
       <Badge variant="outline" size="sm">
         {tI18nHardcoded.raw(
@@ -481,7 +510,13 @@ function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
         )}
       </Badge>
     );
-  if (!connector.secretSet)
+  if (status === 'user_managed')
+    return (
+      <Badge variant="outline" size="sm">
+        User-managed
+      </Badge>
+    );
+  if (status === 'needs_setup')
     return (
       <Badge variant="warning" size="sm">
         {tI18nHardcoded.raw(
@@ -554,8 +589,8 @@ function ConnectorRail({
   const filtered = q.trim()
     ? connectors.filter((c) => c.slug.toLowerCase().includes(q.trim().toLowerCase()))
     : connectors;
-  const ready = filtered.filter((c) => !(c.authSecret && !c.secretSet));
-  const needsSetup = filtered.filter((c) => c.authSecret && !c.secretSet);
+  const ready = filtered.filter((c) => connectorSetupStatus(c) !== 'needs_setup');
+  const needsSetup = filtered.filter((c) => connectorSetupStatus(c) === 'needs_setup');
   const isSel = (slug: string) => selection.kind === 'connector' && selection.slug === slug;
 
   return (
@@ -611,7 +646,7 @@ function ConnectorRail({
           </p>
         ) : (
           <>
-            {ready.length > 0 && <RailGroupLabel>Connected</RailGroupLabel>}
+            {ready.length > 0 && <RailGroupLabel>Available</RailGroupLabel>}
             {ready.map((c) => (
               <RailItem
                 key={c.slug}
@@ -813,8 +848,8 @@ function ConnectionRow({
   onDisconnect,
   onStartSession,
   onCopyId,
-  onEditPermissions,
   pending,
+  disabled = false,
 }: {
   profile: ConnectionProfile;
   isMine: boolean;
@@ -823,23 +858,23 @@ function ConnectionRow({
   onDisconnect: () => void;
   onStartSession?: () => void;
   onCopyId: (profileId: string) => void;
-  onEditPermissions: () => void;
   pending: boolean;
+  disabled?: boolean;
 }) {
-  const isTeam = profile.owner_type === 'project';
+  const isProjectAuthorization = profile.owner_type === 'project';
   const active = profile.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
-  // or — for a team connection — a project manager.
-  const mayMutate = isTeam ? canManage : isMine;
+  // or, for a project authorization, a project manager.
+  const mayMutate = isProjectAuthorization ? canManage : isMine;
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
       <span
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          isTeam ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+          isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
         )}
       >
-        {isTeam ? (
+        {isProjectAuthorization ? (
           <Users className="text-kortix-blue size-5" />
         ) : (
           <Lock className="text-kortix-purple size-5" />
@@ -855,7 +890,7 @@ function ConnectionRow({
           )}
         </div>
         <InlineMeta>
-          {isTeam ? 'Shared with the team' : 'Private — only you'}
+          {isProjectAuthorization ? 'Shared with the project' : 'Private — only you'}
           {active ? null : profile.status === 'revoked' ? 'Disconnected' : 'Error'}
           {/* Every connection carries its own id — this is what a backend passes
               in connector_bindings to run as THIS account. Truncated to keep the
@@ -872,21 +907,12 @@ function ConnectionRow({
             size="icon"
             className="size-8 shrink-0"
             aria-label={`Actions for ${profile.label}`}
-            disabled={pending}
+            disabled={pending || disabled}
           >
             {pending ? <Loading className="size-4 shrink-0" /> : <ChevronDown className="size-4" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
-          {/* Per-CONNECTION permissions. The connector's own Permissions tab
-              applies to EVERY connection under it; this one applies to just
-              this account, which is what lets support@ and sales@ differ. */}
-          {mayMutate && (
-            <DropdownMenuItem onClick={onEditPermissions}>
-              <ShieldAlert className="size-4 shrink-0" />
-              Permissions for this connection
-            </DropdownMenuItem>
-          )}
           <DropdownMenuItem onClick={() => onCopyId(profile.profile_id)}>
             Copy connection ID
           </DropdownMenuItem>
@@ -895,7 +921,7 @@ function ConnectionRow({
           )}
           {mayMutate && !profile.is_default && active && (
             <DropdownMenuItem onClick={onSetDefault}>
-              Use by default{isTeam ? ' for the team' : ''}
+              Use by default{isProjectAuthorization ? ' for the project' : ''}
             </DropdownMenuItem>
           )}
           {mayMutate && (
@@ -910,143 +936,10 @@ function ConnectionRow({
 }
 
 /**
- * Every connection under one connector: the team-shared accounts and the current
- * user's own. A connector can hold several of each (support@ + sales@ for the
- * team, "Work" + "Personal" for a member) — the DEFAULT in each scope is the one
- * a session uses when it doesn't name a connection explicitly.
+ * Every authorization that matches the connector profile's exclusive owner
+ * strategy. A project profile lists project-managed accounts. A user profile
+ * lists only the current member's accounts.
  */
-
-/**
- * Permissions for ONE connection.
- *
- * The connector's own Permissions tab applies to every connection under it. This
- * applies to a single account, and sits between the project and connector scopes:
- * a project rule still wins, but this beats the connector default — which is what
- * lets support@ be read-only while sales@ may send.
- */
-function ConnectionPermissionsModal({
-  projectId,
-  profile,
-  tools,
-  displayName,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  profile: ConnectionProfile | null;
-  tools: AdminConnector['actions'];
-  displayName: string;
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-}) {
-  const [perTool, setPerTool] = useState<Record<string, ConnectorPolicyAction>>({});
-  const [search, setSearch] = useState('');
-  const [serverSig, setServerSig] = useState('');
-
-  const policiesQuery = useQuery({
-    queryKey: ['connection-policies', projectId, profile?.profile_id],
-    queryFn: () => getConnectionPolicies(projectId, profile!.profile_id),
-    enabled: open && !!profile,
-    staleTime: 15_000,
-  });
-
-  useEffect(() => {
-    if (!policiesQuery.data) return;
-    const next: Record<string, ConnectorPolicyAction> = {};
-    for (const rule of policiesQuery.data.policies) next[rule.match] = rule.action;
-    setPerTool(next);
-    setServerSig(JSON.stringify(next));
-  }, [policiesQuery.data]);
-
-  const save = useMutation({
-    mutationFn: () =>
-      setConnectionPolicies(
-        projectId,
-        profile!.profile_id,
-        Object.entries(perTool).map(([match, action]) => ({ match, action })),
-      ),
-    onSuccess: () => {
-      successToast(`Permissions saved for ${profile?.label ?? 'this connection'}`);
-      onOpenChange(false);
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to save permissions'),
-  });
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? tools.filter((t) => t.path.toLowerCase().includes(q)) : tools;
-  }, [tools, search]);
-  const dirty = JSON.stringify(perTool) !== serverSig;
-  const overrideCount = Object.keys(perTool).length;
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="sm:max-w-2xl">
-        <ModalHeader>
-          <ModalTitle>Permissions for “{profile?.label}”</ModalTitle>
-          <ModalDescription>
-            Applies to this {displayName} connection only. Anything left on Default follows the
-            connector&apos;s own permissions. A project-wide rule still overrides both.
-          </ModalDescription>
-        </ModalHeader>
-        <ModalBody className="space-y-3">
-          {tools.length > 6 && (
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter tools…"
-              className="h-8 text-sm"
-            />
-          )}
-          {policiesQuery.isLoading ? (
-            <div className="text-muted-foreground flex items-center gap-2 px-1 py-6 text-sm">
-              <Loading className="size-4 shrink-0" />
-              Loading permissions…
-            </div>
-          ) : (
-            <div className="max-h-[46vh] overflow-y-auto rounded-md border">
-              {filtered.map((tool) => (
-                <div
-                  key={tool.path}
-                  className="border-border/60 flex items-center gap-2.5 border-t px-3 py-1.5 first:border-t-0"
-                >
-                  <span className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">
-                    {tool.path}
-                  </span>
-                  <PermissionPicker
-                    value={perTool[tool.path] ?? 'default'}
-                    onChange={(choice) =>
-                      setPerTool((current) => {
-                        const next = { ...current };
-                        if (choice === 'default') delete next[tool.path];
-                        else next[tool.path] = choice;
-                        return next;
-                      })
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </ModalBody>
-        <ModalFooter>
-          <span className="text-muted-foreground mr-auto text-xs">
-            {overrideCount === 0
-              ? 'No overrides — follows the connector'
-              : `${overrideCount} override${overrideCount === 1 ? '' : 's'}`}
-          </span>
-          <Button variant="outline-ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
-            {save.isPending && <Loading className="size-4 shrink-0" />}
-            Save
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
-  );
-}
 
 function ConnectionsList({
   projectId,
@@ -1055,6 +948,7 @@ function ConnectionsList({
   canManageProfiles,
   onChanged,
   onStartSession,
+  disabled = false,
 }: {
   projectId: string;
   connector: AdminConnector;
@@ -1062,23 +956,30 @@ function ConnectionsList({
   canManageProfiles: boolean;
   onChanged: () => void;
   onStartSession?: () => void;
+  disabled?: boolean;
 }) {
   const [addScope, setAddScope] = useState<'project' | 'member' | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
   const [confirmDisconnect, setConfirmDisconnect] = useState<ConnectionProfile | null>(null);
-  const [permissionsFor, setPermissionsFor] = useState<ConnectionProfile | null>(null);
 
   const profilesQuery = useQuery({
     queryKey: ['connector-profiles', projectId],
     queryFn: () => listConnectionProfiles(projectId),
     staleTime: 30_000,
   });
+  const authorizationOwnerType = authorizationOwnerTypeForStrategy(connector.authorizationStrategy);
+  useEffect(() => {
+    setAddScope(null);
+    setLabelDraft('');
+  }, [connector.authorizationStrategy]);
   const refresh = () => {
     void profilesQuery.refetch();
     onChanged();
   };
 
-  const rows = connectorConnectionRows(profilesQuery.data?.profiles, connector.slug);
+  const rows = connectorConnectionRows(profilesQuery.data?.profiles, connector.slug).filter(
+    (profile) => profile.owner_type === authorizationOwnerType,
+  );
 
   const copyConnectionId = (profileId: string) => {
     // The Clipboard API is absent in insecure contexts (navigator.clipboard is
@@ -1094,7 +995,7 @@ function ConnectionsList({
     );
   };
 
-  const addTeam = usePipedreamConnectTeam(projectId, connector.slug, () => {
+  const addProject = usePipedreamConnectProject(projectId, connector.slug, () => {
     setAddScope(null);
     setLabelDraft('');
     refresh();
@@ -1122,10 +1023,10 @@ function ConnectionsList({
     onError: (e: Error) => errorToast(e.message || 'Failed to disconnect'),
   });
 
-  const adding = addTeam.isPending || addMine.isPending;
+  const adding = addProject.isPending || addMine.isPending;
   const submitAdd = () => {
-    if (!labelDraft.trim()) return;
-    if (addScope === 'project') addTeam.mutate({ label: labelDraft });
+    if (disabled || !labelDraft.trim()) return;
+    if (authorizationOwnerType === 'project') addProject.mutate({ label: labelDraft });
     else addMine.mutate({ label: labelDraft });
   };
 
@@ -1134,16 +1035,28 @@ function ConnectionsList({
       <div className="flex items-center justify-between gap-3">
         <Label>Connections</Label>
         <div className="flex items-center gap-2">
-          {canManageProfiles && (
-            <Button size="sm" variant="secondary" onClick={() => setAddScope('project')}>
+          {authorizationOwnerType === 'project' && canManageProfiles && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setAddScope('project')}
+              disabled={disabled}
+            >
               <Plus className="size-4" />
-              Add team connection
+              Add project connection
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setAddScope('member')}>
-            <Lock className="size-3.5 shrink-0" />
-            Add my own
-          </Button>
+          {authorizationOwnerType === 'member' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAddScope('member')}
+              disabled={disabled}
+            >
+              <Lock className="size-3.5 shrink-0" />
+              Add my own
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1157,7 +1070,11 @@ function ConnectionsList({
           size="sm"
           icon={Plug}
           title={`No ${displayName} connections yet`}
-          description="Connect a shared account for the team, or your own private one."
+          description={
+            authorizationOwnerType === 'project'
+              ? 'Connect a project-managed account for allowed sessions.'
+              : 'Connect your own account for your private sessions.'
+          }
         />
       ) : (
         <ul className="space-y-2">
@@ -1171,11 +1088,11 @@ function ConnectionsList({
                 (setDefault.isPending && setDefault.variables === profile.profile_id) ||
                 (disconnect.isPending && disconnect.variables === profile.profile_id)
               }
+              disabled={disabled}
               onSetDefault={() => setDefault.mutate(profile.profile_id)}
               onDisconnect={() => setConfirmDisconnect(profile)}
               onStartSession={onStartSession}
               onCopyId={copyConnectionId}
-              onEditPermissions={() => setPermissionsFor(profile)}
             />
           ))}
         </ul>
@@ -1193,7 +1110,9 @@ function ConnectionsList({
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
             <ModalTitle>
-              {addScope === 'project' ? `Add a team ${displayName} connection` : `Add your own ${displayName}`}
+              {addScope === 'project'
+                ? `Add a project ${displayName} connection`
+                : `Add your own ${displayName}`}
             </ModalTitle>
             <ModalDescription>
               {addScope === 'project'
@@ -1217,10 +1136,9 @@ function ConnectionsList({
                   placeholder={addScope === 'project' ? 'Support inbox' : 'Work'}
                   maxLength={255}
                   autoFocus
+                  disabled={adding || disabled}
                 />
-                <FieldDescription>
-                  You'll authorize the account in the next step.
-                </FieldDescription>
+                <FieldDescription>You'll authorize the account in the next step.</FieldDescription>
               </Field>
             </ModalBody>
             <ModalFooter className="sm:justify-between">
@@ -1235,7 +1153,7 @@ function ConnectionsList({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={adding || !labelDraft.trim()}>
+              <Button type="submit" disabled={adding || disabled || !labelDraft.trim()}>
                 {adding ? <Loading className="size-4 shrink-0" /> : null}
                 Continue
               </Button>
@@ -1243,15 +1161,6 @@ function ConnectionsList({
           </form>
         </ModalContent>
       </Modal>
-
-      <ConnectionPermissionsModal
-        projectId={projectId}
-        profile={permissionsFor}
-        tools={connector.actions}
-        displayName={displayName}
-        open={permissionsFor !== null}
-        onOpenChange={(next) => !next && setPermissionsFor(null)}
-      />
 
       <ConfirmDialog
         open={confirmDisconnect !== null}
@@ -1323,13 +1232,13 @@ function ConnectionRoster({
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="text-muted-foreground border-b px-4 py-2.5 text-xs font-medium">
-        Team members' own {displayName} connections
+        Project members' own {displayName} connections
       </div>
       {profilesQuery.isLoading ? (
         <div className="text-muted-foreground px-4 py-3 text-sm">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="text-muted-foreground px-4 py-3 text-sm">
-          No team member has connected their own {displayName} yet.
+          No project member has connected their own {displayName} yet.
         </div>
       ) : (
         <ul className="divide-y">
@@ -1370,8 +1279,12 @@ function ConnectorDetail({
   // a dedicated tab (Computers): no generic credential / connect / remove UI.
   const isComputer = connector.provider === 'computer';
   const isManaged = isComputer;
+  const authorizationStrategyEditable = connectorAuthorizationStrategyIsEditable(
+    connector.provider,
+  );
+  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const setSection = useCustomizeStore((s) => s.setSection);
-  const connected = connector.secretSet;
+  const connected = usesProjectAuthorization && connector.secretSet;
   // The connection's profile_id — the reference a backend (Kortix as a Backend)
   // passes in `connector_bindings` to run a session AS this connection. It isn't
   // surfaced anywhere else, so we expose + copy it here. Project-default profile
@@ -1386,13 +1299,13 @@ function ConnectorDetail({
     (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
   );
   // The CURRENT USER's own private (member-owned) connection for this connector,
-  // if any — separate from the team's shared connection. The API scopes this
+  // if any — separate from the project's shared connection. The API scopes this
   // list to the caller, so a member sees only their own member profile here.
   const myPrivateProfile = profilesQuery.data?.profiles.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
   );
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
-  // Administering TEAM connections (adding another, changing the team default)
+  // Administering project authorizations (adding another, changing the project default)
   // is manager-gated; a member always manages their OWN connections.
   const canManageProfiles =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE).allowed === true;
@@ -1412,19 +1325,25 @@ function ConnectorDetail({
   const displayName = connector.name?.trim() || connector.slug;
 
   // Which tabs this connector actually has. Pipedream connectors hold many
-  // connections (team + per-member), so they get Connections; everything else
+  // authorizations (project + per-member), so they get Connections; everything else
   // has at most one shared credential, which lives under Connection.
   const showConnections = isPipedream && !isChannel && !isComputer;
-  const showProfileTab = !isPipedream && !isManaged;
-  const showRoster = showConnections && canManageProfiles;
+  const showProfileTab = canWrite && !isPipedream && !isManaged;
+  const showPermissions = canWrite;
+  const showRoster =
+    showConnections && canManageProfiles && connector.authorizationStrategy === 'user';
   const defaultDetailTab = showConnections
     ? 'connections'
     : showProfileTab
       ? 'profile'
-      : 'permissions';
-  // Permissions is always present; the other three are conditional.
+      : showPermissions
+        ? 'permissions'
+        : '';
   const detailTabCount =
-    1 + (showConnections ? 1 : 0) + (showProfileTab ? 1 : 0) + (showRoster ? 1 : 0);
+    (showConnections ? 1 : 0) +
+    (showProfileTab ? 1 : 0) +
+    (showPermissions ? 1 : 0) +
+    (showRoster ? 1 : 0);
   const [detailTab, setDetailTab] = useState(defaultDetailTab);
   // Re-pin when the user switches to a connector whose tab set differs.
   useEffect(() => setDetailTab(defaultDetailTab), [defaultDetailTab, connector.slug]);
@@ -1440,14 +1359,24 @@ function ConnectorDetail({
   const connectionCount = connectorConnectionRows(
     detailProfilesQuery.data?.profiles,
     connector.slug,
+  ).filter(
+    (profile) =>
+      profile.owner_type === authorizationOwnerTypeForStrategy(connector.authorizationStrategy),
   ).length;
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
+  const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
+    useState<ConnectorAuthorizationStrategy | null>(null);
   useEffect(() => {
     setEditingName(false);
     setNameDraft(displayName);
   }, [connector.slug, displayName]);
+  useEffect(() => {
+    if (authorizationStrategyAwaitingRefresh === connector.authorizationStrategy) {
+      setAuthorizationStrategyAwaitingRefresh(null);
+    }
+  }, [authorizationStrategyAwaitingRefresh, connector.authorizationStrategy]);
 
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, connector.slug, nameDraft.trim()),
@@ -1458,6 +1387,32 @@ function ConnectorDetail({
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
   });
+
+  const updateAuthorizationStrategy = useMutation({
+    mutationFn: (next: ConnectorAuthorizationStrategy) =>
+      setConnectorAuthorizationStrategy(projectId, connector.slug, next),
+    onSuccess: (result, next) => {
+      const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
+      if (syncError) {
+        warningToast(
+          `Authorization owner changed, but synchronization failed: ${syncError.error}. Use Sync to retry.`,
+        );
+        onChanged();
+        return;
+      }
+      successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
+      onChanged();
+    },
+    onError: (error: Error) => {
+      setAuthorizationStrategyAwaitingRefresh(null);
+      errorToast(error.message || 'Failed to update authorization owner');
+    },
+  });
+  const strategyUpdating = connectorAuthorizationUpdateIsPending(
+    connector.authorizationStrategy,
+    authorizationStrategyAwaitingRefresh,
+    updateAuthorizationStrategy.isPending,
+  );
 
   const remove = useMutation({
     mutationFn: () => deleteConnector(projectId, connector.slug),
@@ -1490,13 +1445,14 @@ function ConnectorDetail({
                 onChange={(e) => setNameDraft(e.target.value)}
                 className="h-9 max-w-xs text-lg font-semibold"
                 autoFocus
+                disabled={strategyUpdating}
               />
               <Button
                 type="submit"
                 size="icon"
                 variant="ghost"
                 className="h-9 w-9"
-                disabled={rename.isPending}
+                disabled={rename.isPending || strategyUpdating}
                 aria-label={tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabela08f6c74',
                 )}
@@ -1515,7 +1471,7 @@ function ConnectorDetail({
                   setEditingName(false);
                   setNameDraft(displayName);
                 }}
-                disabled={rename.isPending}
+                disabled={rename.isPending || strategyUpdating}
               >
                 Cancel
               </Button>
@@ -1527,11 +1483,12 @@ function ConnectorDetail({
                 <Hint label="Rename">
                   <button
                     type="button"
-                    onClick={() => setEditingName(true)}
+                    onClick={() => !strategyUpdating && setEditingName(true)}
+                    disabled={strategyUpdating}
                     aria-label="Rename"
                     className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <PencilSimpleIcon className="h-3.5 w-3.5" />
                   </button>
                 </Hint>
               )}
@@ -1556,13 +1513,14 @@ function ConnectorDetail({
           connector.authSecret &&
           connected &&
           !isChannel &&
+          usesProjectAuthorization &&
           (isPipedream ? (
             <Button
               size="sm"
               variant="outline"
               className="shrink-0"
               onClick={() => reconnect.mutate()}
-              disabled={reconnect.isPending}
+              disabled={reconnect.isPending || strategyUpdating}
             >
               {reconnect.isPending ? (
                 <Loading className="size-4 shrink-0" />
@@ -1577,6 +1535,7 @@ function ConnectorDetail({
               variant="outline"
               className="shrink-0"
               onClick={() => setCredOpen(true)}
+              disabled={strategyUpdating}
             >
               <KeyRound className="h-4 w-4" />
               Replace credential
@@ -1585,6 +1544,31 @@ function ConnectorDetail({
       </div>
 
       <div className="mt-7 space-y-5">
+        <section className="space-y-2">
+          <Label>Authorization</Label>
+          <div className="bg-popover rounded-md border px-4 py-5">
+            <AuthorizationStrategyField
+              idPrefix={`connector-${connector.slug}`}
+              value={connector.authorizationStrategy}
+              onChange={(next) => {
+                setCredOpen(false);
+                setAuthorizationStrategyAwaitingRefresh(next);
+                updateAuthorizationStrategy.mutate(next);
+              }}
+              disabled={!canWrite || !authorizationStrategyEditable}
+              // Settled once the connector exists. Switching owner after the
+              // fact silently changes WHOSE account every future session runs
+              // as, and orphans the profiles and permission rules already
+              // attached under the old owner — a change that looks like a
+              // toggle and behaves like a migration.
+              //
+              // UI-only: `updateAuthorizationStrategy` below and its route are
+              // left intact, so re-enabling is deleting this one prop.
+              lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
+              pending={strategyUpdating}
+            />
+          </div>
+        </section>
         {/* Computer connectors are connected + permissioned in the Computers tab
             (device pairing, per-capability grants, audit) — point management
             there instead of the generic credential / connection / remove UI. */}
@@ -1609,141 +1593,161 @@ function ConnectorDetail({
             you control who can use it and review its tools.
           </InfoBanner>
         )}
-        {/* Prominent connect CTA — the first thing you see on an unconnected
-            connector. This is the SHARED (team) connection: everyone on the
-            project uses it. The private, per-user alternative is the banner
-            below — the two are labelled as an explicit either/or so nobody
-            connects a personal account thinking it stays personal. */}
-        {connector.authSecret && !connected && !isChannel && (
+        {/* Project-owned profiles accept only project-managed authorizations. */}
+        {connector.authSecret && !connected && !isChannel && usesProjectAuthorization && (
           <InfoBanner
             tone="info"
             icon={Users}
-            title={`Connect ${displayName} for the whole team`}
+            title={`Connect ${displayName} for the project`}
             action={
               canWrite ? (
                 <Button
                   size="lg"
                   className="h-11 shrink-0 gap-2 px-5 font-semibold"
                   onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-                  disabled={isPipedream && reconnect.isPending}
+                  disabled={strategyUpdating || (isPipedream && reconnect.isPending)}
                 >
                   {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
-                  {isPipedream ? 'Connect for the team' : 'Set shared credential'}
+                  {isPipedream ? 'Connect for the project' : 'Set shared credential'}
                 </Button>
               ) : undefined
             }
           >
             {isPipedream
-              ? `One shared ${displayName} account that everyone on this project uses — the agent and your triggers run on it. To connect your own account instead, use the private option below.`
+              ? `One project-managed ${displayName} account is available to allowed sessions and triggers.`
               : `One shared credential that everyone on this project uses — the agent and your triggers run on it.`}
           </InfoBanner>
         )}
+        {connector.authSecret &&
+          !isPipedream &&
+          !isChannel &&
+          !isComputer &&
+          !usesProjectAuthorization && (
+            <InfoBanner
+              tone="info"
+              icon={Lock}
+              title={`Connect ${displayName} for your sessions`}
+              action={
+                <Button
+                  size="lg"
+                  className="h-11 shrink-0 gap-2 px-5 font-semibold"
+                  onClick={() => setCredOpen(true)}
+                  disabled={strategyUpdating}
+                >
+                  <KeyRound className="size-4 shrink-0" />
+                  Set or replace my credential
+                </Button>
+              }
+            >
+              Your credential is private to your account. Only your private sessions can use this
+              connector authorization.
+            </InfoBanner>
+          )}
         {/* One tab per question this page answers: what can I use (Connections),
-            what may the agent do with it (Permissions), who on the team has
-            connected their own (Team members). Before this, everything stacked
+            what may the agent do with it (Permissions), which project members
+            connected their own (Project members). Before this, everything stacked
             into one long scroll above a lone "Permissions" tab, because the only
             other trigger — Profile — is hidden for Pipedream connectors. */}
-        <Tabs
-          value={detailTab}
-          onValueChange={setDetailTab}
-          className="gap-3"
-        >
-          {/* A single trigger is not a choice — it reads as a broken tab bar.
+        {detailTabCount > 0 && (
+          <Tabs value={detailTab} onValueChange={setDetailTab} className="gap-3">
+            {/* A single trigger is not a choice — it reads as a broken tab bar.
               Computer connectors are managed in Computers, so Permissions is
               all they have left here. */}
-          <TabsList
-            type="underline"
-            className={cn(
-              'flex w-full items-center justify-start',
-              detailTabCount < 2 && 'hidden',
-            )}
-          >
+            <TabsList
+              type="underline"
+              className={cn(
+                'flex w-full items-center justify-start',
+                detailTabCount < 2 && 'hidden',
+              )}
+            >
+              {showConnections && (
+                <TabsTrigger value="connections" className="w-fit flex-none gap-2">
+                  Connections
+                  {connectionCount > 0 ? (
+                    <Badge variant="secondary" size="sm">
+                      {connectionCount}
+                    </Badge>
+                  ) : null}
+                </TabsTrigger>
+              )}
+              {showProfileTab && (
+                <TabsTrigger value="profile" className="w-fit flex-none">
+                  Connection
+                </TabsTrigger>
+              )}
+              {showPermissions && (
+                <TabsTrigger value="permissions" className="w-fit flex-none">
+                  Permissions
+                </TabsTrigger>
+              )}
+              {showRoster && (
+                <TabsTrigger value="roster" className="w-fit flex-none">
+                  Project members
+                </TabsTrigger>
+              )}
+            </TabsList>
+            {/* Only authorizations that match this connector profile's owner strategy. */}
             {showConnections && (
-              <TabsTrigger value="connections" className="w-fit flex-none gap-2">
-                Connections
-                {connectionCount > 0 ? (
-                  <Badge variant="secondary" size="sm">
-                    {connectionCount}
-                  </Badge>
-                ) : null}
-              </TabsTrigger>
+              <TabsContent value="connections" className="space-y-5">
+                <ConnectionsList
+                  projectId={projectId}
+                  connector={connector}
+                  displayName={displayName}
+                  canManageProfiles={canManageProfiles}
+                  onChanged={onChanged}
+                  onStartSession={startPrivateSession}
+                  disabled={strategyUpdating}
+                />
+              </TabsContent>
             )}
-            {showProfileTab && (
-              <TabsTrigger value="profile" className="w-fit flex-none">
-                Connection
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="permissions" className="w-fit flex-none">
-              Permissions
-            </TabsTrigger>
-            {showRoster && (
-              <TabsTrigger value="roster" className="w-fit flex-none">
-                Team members
-              </TabsTrigger>
-            )}
-          </TabsList>
-          {/* Every connection under this connector — the team's shared accounts and
-              this member's own. A connector can hold several of each; the DEFAULT
-              in each scope is what a session uses when it names no connection. */}
-          {showConnections && (
-            <TabsContent value="connections" className="space-y-5">
-              <ConnectionsList
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                canManageProfiles={canManageProfiles}
-                onChanged={onChanged}
-                onStartSession={startPrivateSession}
-              />
-            </TabsContent>
-          )}
-          {/* The sensitive toggle lives under Permissions (it IS a permission
+            {/* The sensitive toggle lives under Permissions (it IS a permission
               default), so this tab only exists when there's a single shared
               credential to manage — for Pipedream connectors the Connections
               tab owns that, and this one would be empty. */}
-          {showProfileTab && (
-            <TabsContent value="profile" className="space-y-5">
-              {isChannel ? (
-                <ChannelConnectionSection
+            {showProfileTab && (
+              <TabsContent value="profile" className="space-y-5">
+                {isChannel ? (
+                  <ChannelConnectionSection
+                    projectId={projectId}
+                    connector={connector}
+                    onChanged={onChanged}
+                    onRemoved={onRemoved}
+                    canWrite={canWrite && !strategyUpdating}
+                  />
+                ) : (
+                  <ConnectionSection
+                    projectId={projectId}
+                    connector={connector}
+                    onChanged={onChanged}
+                    canWrite={canWrite && !strategyUpdating}
+                    onSetCredential={
+                      isPipedream || !usesProjectAuthorization ? undefined : () => setCredOpen(true)
+                    }
+                  />
+                )}
+              </TabsContent>
+            )}
+            {showPermissions && (
+              <TabsContent value="permissions" className="space-y-5">
+                <PermissionsSection
                   projectId={projectId}
                   connector={connector}
                   onChanged={onChanged}
-                  onRemoved={onRemoved}
-                  canWrite={canWrite}
+                  canWrite={canWrite && !strategyUpdating}
                 />
-              ) : (
-                <ConnectionSection
+              </TabsContent>
+            )}
+            {showRoster && (
+              <TabsContent value="roster" className="space-y-5">
+                <ConnectionRoster
                   projectId={projectId}
-                  connector={connector}
-                  onChanged={onChanged}
-                  canWrite={canWrite}
-                  onSetCredential={isPipedream ? undefined : () => setCredOpen(true)}
+                  connectorSlug={connector.slug}
+                  displayName={displayName}
                 />
-              )}
-            </TabsContent>
-          )}
-          <TabsContent value="permissions" className="space-y-5">
-            <PermissionsSection
-              projectId={projectId}
-              connector={connector}
-              onChanged={onChanged}
-              canWrite={canWrite}
-              connectionCount={connectionCount}
-              onOpenConnections={
-                showConnections ? () => setDetailTab('connections') : undefined
-              }
-            />
-          </TabsContent>
-          {showRoster && (
-            <TabsContent value="roster" className="space-y-5">
-              <ConnectionRoster
-                projectId={projectId}
-                connectorSlug={connector.slug}
-                displayName={displayName}
-              />
-            </TabsContent>
-          )}
-        </Tabs>
+              </TabsContent>
+            )}
+          </Tabs>
+        )}
 
         {canWrite && !isManaged && !isChannel && (
           <div className="bg-popover rounded-md border px-4 py-3">
@@ -1765,6 +1769,7 @@ function ConnectorDetail({
                 variant="outline"
                 className="shrink-0 gap-1.5"
                 onClick={() => setConfirmDelete(true)}
+                disabled={strategyUpdating}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Remove
@@ -1800,7 +1805,12 @@ function ConnectorDetail({
       <SetCredentialModal
         projectId={projectId}
         connector={credOpen ? connector : null}
-        profileId={connectionProfile?.profile_id ?? null}
+        profileId={
+          usesProjectAuthorization
+            ? (connectionProfile?.profile_id ?? null)
+            : (myPrivateProfile?.profile_id ?? null)
+        }
+        authorizationStrategy={connector.authorizationStrategy}
         open={credOpen}
         onOpenChange={setCredOpen}
         onSaved={onChanged}
@@ -2797,6 +2807,7 @@ function ConnectionSection({
     queryKey: ['connector-config', projectId, connector.slug],
     queryFn: () => getConnectorConfig(projectId, connector.slug),
     staleTime: 5_000,
+    enabled: canWrite,
   });
 
   const [draft, setDraft] = useState<ConnectorDraftInput | null>(null);
@@ -2861,34 +2872,36 @@ function ConnectionSection({
           <div className="space-y-4">
             <ConnectorConfigFields draft={draft} onChange={setDraft} readOnly={!canWrite} />
             {/* The credential lives next to the auth settings that consume it. */}
-            {connector.authSecret && onSetCredential && (
-              <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Credential</p>
-                  <p className="text-muted-foreground text-xs">
-                    {connector.secretSet
-                      ? 'Stored and in use. Setting a new value replaces it.'
-                      : 'Not set yet — the agent and your triggers cannot call this connector.'}
-                  </p>
+            {connector.authorizationStrategy === 'project' &&
+              connector.authSecret &&
+              onSetCredential && (
+                <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Credential</p>
+                    <p className="text-muted-foreground text-xs">
+                      {connector.secretSet
+                        ? 'Stored and in use. Setting a new value replaces it.'
+                        : 'Not set yet — the agent and your triggers cannot call this connector.'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
+                      {connector.secretSet ? 'Set' : 'Not set'}
+                    </Badge>
+                    {canWrite && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={onSetCredential}
+                      >
+                        <KeyRound className="size-3.5" />
+                        {connector.secretSet ? 'Replace' : 'Set credential'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
-                    {connector.secretSet ? 'Set' : 'Not set'}
-                  </Badge>
-                  {canWrite && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      onClick={onSetCredential}
-                    >
-                      <KeyRound className="size-3.5" />
-                      {connector.secretSet ? 'Replace' : 'Set credential'}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
+              )}
             {canWrite && (
               <SaveBar
                 dirty={dirty}
@@ -3032,16 +3045,11 @@ function PermissionsSection({
   connector,
   onChanged,
   canWrite = false,
-  connectionCount = 0,
-  onOpenConnections,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
   canWrite?: boolean;
-  /** How many connections this connector holds — these rules apply to all of them. */
-  connectionCount?: number;
-  onOpenConnections?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -3061,6 +3069,7 @@ function PermissionsSection({
     queryKey: ['connector-policies', projectId, connector.slug],
     queryFn: () => getConnectorPolicies(projectId, connector.slug),
     staleTime: 5_000,
+    enabled: canWrite,
   });
 
   const [perTool, setPerTool] = useState<Record<string, ConnectorPolicyAction>>({});
@@ -3207,28 +3216,6 @@ function PermissionsSection({
           </div>
         ) : null}
       </div>
-      {/* These are CONNECTOR-wide. With several connections under one connector
-          people come here looking for per-connection permissions (it is the tab
-          literally called Permissions) and find no way to differ — so point at
-          the place that does it, instead of letting them conclude it is missing. */}
-      {connectionCount > 1 && (
-        <InfoBanner
-          tone="info"
-          icon={Users}
-          title={`Applies to all ${connectionCount} connections`}
-          action={
-            onOpenConnections ? (
-              <Button size="sm" variant="outline" className="shrink-0" onClick={onOpenConnections}>
-                Open Connections
-              </Button>
-            ) : undefined
-          }
-        >
-          To give one connection different permissions — say, one mailbox that may send and another
-          that may only read — open Connections and use “Permissions for this connection” on that
-          row. Anything you set there overrides what you set here, for that connection only.
-        </InfoBanner>
-      )}
       {/* Say it once, up front. A project-scope rule beats everything on this
           page and cannot be lifted here — silently rendering the losing value
           is the bug this replaces. */}
@@ -3651,12 +3638,14 @@ function AddAppPanel({
   projectId,
   emailChannelEnabled,
   discoverEnabled,
+  existingSlugs,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
   discoverEnabled: boolean;
+  existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
 }) {
@@ -3713,12 +3702,16 @@ function AddAppPanel({
         </TabsList>
         {!easyConnectDisabled && (
           <TabsContent value="apps" className="mt-4">
-            <AppCatalogue projectId={projectId} onAdded={onAdded} />
+            <AppCatalogue projectId={projectId} existingSlugs={existingSlugs} onAdded={onAdded} />
           </TabsContent>
         )}
         {discoverEnabled && (
           <TabsContent value="discover" className="mt-4">
-            <DiscoverCatalogue projectId={projectId} onAdded={onAdded} />
+            <DiscoverCatalogue
+              projectId={projectId}
+              existingSlugs={existingSlugs}
+              onAdded={onAdded}
+            />
           </TabsContent>
         )}
         <TabsContent value="channels" className="mt-4">
@@ -3790,16 +3783,6 @@ function SlackIconTile() {
 const CHANNEL_CATALOGUE_CARD_CLASS =
   'group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none';
 
-function slugifyConnector(input: string): string {
-  const slug = input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48);
-  return slug || 'inbox';
-}
-
 function AddEmailProfileCard({
   projectId,
   onAdded,
@@ -3811,20 +3794,30 @@ function AddEmailProfileCard({
   const [name, setName] = useState('Email inbox');
   const [username, setUsername] = useState('');
   const add = useMutation({
-    mutationFn: () => {
-      const base = slugifyConnector(username || name);
-      const slug = `email_${base}_${Date.now().toString(36).slice(-4)}`;
-      return createConnector(projectId, {
-        slug,
-        name: name.trim() || 'Email inbox',
-        provider: 'channel',
-        platform: 'email',
-        credential: 'shared',
-      }).then(() => slug);
+    mutationFn: async () => {
+      const slug = buildEmailConnectorProfileSlug(username || name, globalThis.crypto.randomUUID());
+      const result = await createConnector(
+        projectId,
+        createOnlyConnectorDraft({
+          slug,
+          name: name.trim() || 'Email inbox',
+          provider: 'channel',
+          platform: 'email',
+          credential: 'shared',
+        }),
+      );
+      return { slug, syncError: connectorSyncErrorForSlug(result, slug) };
     },
-    onSuccess: (slug) => {
-      successToast('Added Email inbox');
+    onSuccess: ({ slug, syncError }) => {
       setOpen(false);
+      if (syncError) {
+        warningToast(
+          `Added the Email inbox to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
+        );
+        onAdded();
+        return;
+      }
+      successToast('Added Email inbox');
       onAdded(slug);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add Email inbox'),
@@ -3856,6 +3849,7 @@ function AddEmailProfileCard({
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field>
+              <FieldLabel htmlFor="email-profile-name">Display name</FieldLabel>
               <Input
                 id="email-profile-name"
                 name="email-profile-name"
@@ -3865,6 +3859,7 @@ function AddEmailProfileCard({
               />
             </Field>
             <Field>
+              <FieldLabel htmlFor="email-profile-prefix">Address prefix</FieldLabel>
               <Input
                 id="email-profile-prefix"
                 name="email-profile-prefix"
@@ -3945,13 +3940,16 @@ function AddSlackProfileCard({
 /** Easy-connect app catalogue — searchable card grid with "Load more". */
 function AppCatalogue({
   projectId,
+  existingSlugs,
   onAdded,
 }: {
   projectId: string;
+  existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
+  const [selectedApp, setSelectedApp] = useState<EasyConnectApp | null>(null);
   const appsQuery = useInfiniteQuery({
     queryKey: ['easy-connect-apps', projectId, q],
     queryFn: ({ pageParam }) =>
@@ -3965,16 +3963,31 @@ function AppCatalogue({
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
   const addApp = useMutation({
-    mutationFn: (app: { slug: string; name: string }) =>
-      createConnector(projectId, {
-        slug: app.slug,
-        provider: 'pipedream',
-        app: app.slug,
-        account: 'default',
-      }).then(() => app),
-    onSuccess: (app) => {
-      successToast(`Added ${app.name} — click Connect to authorize`);
-      onAdded(app.slug);
+    mutationFn: async (profile: {
+      name: string;
+      slug: string;
+      authorizationStrategy: ConnectorAuthorizationStrategy;
+    }) => {
+      if (!selectedApp) throw new Error('Select an app');
+      const draft = buildEasyConnectProfileDraft(selectedApp, profile);
+      const result = await createConnector(projectId, draft);
+      return {
+        name: draft.name ?? selectedApp.name,
+        slug: draft.slug,
+        syncError: connectorSyncErrorForSlug(result, draft.slug),
+      };
+    },
+    onSuccess: (profile) => {
+      setSelectedApp(null);
+      if (profile.syncError) {
+        warningToast(
+          `Added ${profile.name} to the manifest, but synchronization failed: ${profile.syncError}. Use Sync to retry.`,
+        );
+        onAdded();
+        return;
+      }
+      successToast(`Added ${profile.name} — click Connect to authorize`);
+      onAdded(profile.slug);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add'),
   });
@@ -4027,7 +4040,7 @@ function AppCatalogue({
                   key={app.slug}
                   type="button"
                   disabled={addApp.isPending}
-                  onClick={() => addApp.mutate({ slug: app.slug, name: app.name })}
+                  onClick={() => setSelectedApp(app)}
                   className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
                 >
                   <div className="flex items-center gap-3">
@@ -4085,6 +4098,20 @@ function AppCatalogue({
           </>
         )}
       </div>
+      <ConnectorProfileModal
+        open={selectedApp !== null}
+        idPrefix="easy-connect-profile"
+        title={`Add ${selectedApp?.name ?? 'app'}`}
+        description="Create a connector profile for this app. The profile name and slug identify it in sessions and project configuration."
+        initialName={selectedApp?.name ?? ''}
+        initialSlug={
+          selectedApp ? proposeConnectorProfileSlug(selectedApp.name, existingSlugs) : ''
+        }
+        existingSlugs={existingSlugs}
+        pending={addApp.isPending}
+        onOpenChange={(open) => !open && setSelectedApp(null)}
+        onSubmit={(profile) => addApp.mutate(profile)}
+      />
     </div>
   );
 }
@@ -4297,6 +4324,10 @@ function ConnectorConfigFields({
               const provider = v as ConnectorDraftInput['provider'];
               set({
                 provider,
+                authorization_strategy: connectorAuthorizationStrategyForProvider(
+                  provider,
+                  draft.authorization_strategy ?? 'project',
+                ),
                 platform:
                   provider === 'channel'
                     ? draft.platform === 'email' && !emailChannelEnabled
@@ -4312,7 +4343,7 @@ function ConnectorConfigFields({
               });
             }}
           >
-            <SelectTrigger id="connector-provider" className="w-full" variant="popover">
+            <SelectTrigger id="connector-provider" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -4428,7 +4459,7 @@ function ConnectorConfigFields({
               disabled={readOnly}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
-              <SelectTrigger id="connector-transport" className="w-full" variant="popover">
+              <SelectTrigger id="connector-transport" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4492,7 +4523,7 @@ function ConnectorConfigFields({
                 else setAuth({ type: v as ConnectorRequestAuthType });
               }}
             >
-              <SelectTrigger id="connector-auth" className="w-full" variant="popover">
+              <SelectTrigger id="connector-auth" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -4578,7 +4609,7 @@ function ConnectorConfigFields({
                     setAuth({ in: placement as 'header' | 'query' | 'cookie' })
                   }
                 >
-                  <SelectTrigger id="connector-auth-placement" variant="popover">
+                  <SelectTrigger id="connector-auth-placement">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -4634,10 +4665,16 @@ export function CustomConnectorForm({
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
+    authorization_strategy: 'project',
   });
   const [oauth2Selected, setOauth2Selected] = useState(false);
   const [oauth2, setOauth2] = useState<OAuth2CredentialForm>(EMPTY_OAUTH2_CREDENTIAL_FORM);
   const [discoveryDraft, setDiscoveryDraft] = useState(draft);
+  const effectiveAuthorizationStrategy = connectorAuthorizationStrategyForProvider(
+    draft.provider,
+    draft.authorization_strategy ?? 'project',
+  );
+  const sharedOAuth2Selected = oauth2Selected && effectiveAuthorizationStrategy === 'project';
   useEffect(() => {
     const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
     return () => window.clearTimeout(timer);
@@ -4648,20 +4685,32 @@ export function CustomConnectorForm({
     }
   }, [draft.platform, draft.provider, emailChannelEnabled]);
   useEffect(() => {
-    if (draft.provider === 'channel' && oauth2Selected) {
+    if (
+      (draft.provider === 'channel' || effectiveAuthorizationStrategy === 'user') &&
+      oauth2Selected
+    ) {
       setOauth2Selected(false);
     }
-  }, [draft.provider, oauth2Selected]);
+  }, [draft.provider, effectiveAuthorizationStrategy, oauth2Selected]);
 
   const save = useMutation({
     mutationFn: () =>
-      createConnectorWithOptionalOAuth2(projectId, draft, oauth2Selected ? oauth2 : null, {
+      createConnectorWithOptionalOAuth2(projectId, draft, sharedOAuth2Selected ? oauth2 : null, {
         createConnector,
         deleteConnector,
         setConnectorCredential,
       }),
-    onSuccess: () => {
-      successToast(oauth2Selected ? `Added and connected ${draft.slug}` : `Added ${draft.slug}`);
+    onSuccess: (result) => {
+      if (result.syncError) {
+        warningToast(
+          `Added ${draft.slug} to the manifest, but synchronization failed: ${result.syncError}. Use Sync to retry.`,
+        );
+        onAdded();
+        return;
+      }
+      successToast(
+        result.credentialStored ? `Added and connected ${draft.slug}` : `Added ${draft.slug}`,
+      );
       onAdded(draft.slug);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
@@ -4684,7 +4733,7 @@ export function CustomConnectorForm({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (oauth2Selected && !oauth2CredentialFormValid(oauth2)) return;
+          if (sharedOAuth2Selected && !oauth2CredentialFormValid(oauth2)) return;
           save.mutate();
         }}
       >
@@ -4703,10 +4752,23 @@ export function CustomConnectorForm({
                 : null
             }
             detectedTitle={discovery.data?.title ?? null}
-            oauth2Selected={oauth2Selected}
-            onOAuth2SelectedChange={setOauth2Selected}
+            oauth2Selected={sharedOAuth2Selected}
+            onOAuth2SelectedChange={
+              effectiveAuthorizationStrategy === 'project' ? setOauth2Selected : undefined
+            }
           />
-          {oauth2Selected && (
+          <AuthorizationStrategyField
+            idPrefix="custom-connector"
+            value={connectorAuthorizationStrategyForProvider(
+              draft.provider,
+              draft.authorization_strategy ?? 'project',
+            )}
+            onChange={(authorizationStrategy) =>
+              setDraft({ ...draft, authorization_strategy: authorizationStrategy })
+            }
+            disabled={!connectorAuthorizationStrategyIsEditable(draft.provider)}
+          />
+          {sharedOAuth2Selected && (
             <div className="space-y-4">
               <InfoBanner tone="info" title="OAuth 2.0 client credentials">
                 Kortix requests a token before saving. It encrypts the configuration and refreshes
@@ -4718,6 +4780,12 @@ export function CustomConnectorForm({
                 idPrefix="new-connector-oauth2"
               />
             </div>
+          )}
+          {effectiveAuthorizationStrategy === 'user' && authActive && (
+            <InfoBanner tone="info">
+              Add the connector profile first. Each user then stores their own private credential
+              from the connector page.
+            </InfoBanner>
           )}
           {draft.auth === undefined && discovery.isFetching && (
             <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
@@ -4736,7 +4804,7 @@ export function CustomConnectorForm({
               Could not inspect authentication: {(discovery.error as Error).message}
             </InfoBanner>
           )}
-          {authActive && !oauth2Selected && (
+          {authActive && !sharedOAuth2Selected && effectiveAuthorizationStrategy === 'project' && (
             <InfoBanner tone="info">
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626',
@@ -4751,7 +4819,7 @@ export function CustomConnectorForm({
                 !draft.slug ||
                 save.isPending ||
                 !connectionValid(draft, emailChannelEnabled) ||
-                (oauth2Selected && !oauth2CredentialFormValid(oauth2))
+                (sharedOAuth2Selected && !oauth2CredentialFormValid(oauth2))
               }
               className="gap-1.5"
             >
@@ -4771,6 +4839,7 @@ function SetCredentialModal({
   projectId,
   connector,
   profileId,
+  authorizationStrategy,
   open,
   onOpenChange,
   onSaved,
@@ -4778,6 +4847,7 @@ function SetCredentialModal({
   projectId: string;
   connector: AdminConnector | null;
   profileId: string | null;
+  authorizationStrategy: ConnectorAuthorizationStrategy;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
@@ -4792,10 +4862,11 @@ function SetCredentialModal({
   const configQuery = useQuery({
     queryKey: ['connector-config', projectId, connector?.slug],
     queryFn: () => getConnectorConfig(projectId, connector!.slug),
-    enabled: open && Boolean(connector),
+    enabled: open && Boolean(connector) && authorizationStrategy === 'project',
     staleTime: 30_000,
   });
-  const requestAuth = configQuery.data?.auth.type;
+  const requestAuth =
+    authorizationStrategy === 'user' ? connector?.requestAuthType : configQuery.data?.auth.type;
   const objectCredential = ['oauth1', 'hmac', 'aws_sigv4', 'mtls'].includes(requestAuth ?? '');
   const credentialExample =
     requestAuth === 'oauth1'
@@ -4872,20 +4943,39 @@ function SetCredentialModal({
       window.clearTimeout(expiryTimer);
     };
   }, [device, deviceProfileId, onOpenChange, onSaved, projectId]);
+  const resolveAuthorizationId = async () => {
+    if (profileId) return profileId;
+    if (authorizationStrategy === 'user') {
+      const authorization = await reconcileMemberConnectorAuthorization(projectId, {
+        connector_alias: connector!.slug,
+        label: connector!.name.trim() || connector!.slug,
+      });
+      return authorization.profile_id;
+    }
+    return (await ensureProjectConnectorProfile(projectId, connector!.slug)).profile_id;
+  };
   const save = useMutation({
     mutationFn: async () => {
       if (credentialType === 'static') {
+        if (authorizationStrategy === 'user') {
+          return updateConnectorAuthorizationCredential(projectId, await resolveAuthorizationId(), {
+            value,
+          });
+        }
         return setConnectorCredential(projectId, connector!.slug, value);
       }
       if (application.grant === 'client_credentials') {
-        return setConnectorCredential(
-          projectId,
-          connector!.slug,
-          buildOAuth2CredentialInput(oauth2),
-        );
+        const oauth2Input = buildOAuth2CredentialInput(oauth2);
+        if (authorizationStrategy === 'user') {
+          return updateConnectorAuthorizationCredential(
+            projectId,
+            await resolveAuthorizationId(),
+            oauth2Input,
+          );
+        }
+        return setConnectorCredential(projectId, connector!.slug, oauth2Input);
       }
-      const activeProfileId =
-        profileId ?? (await ensureProjectConnectorProfile(projectId, connector!.slug)).profile_id;
+      const activeProfileId = await resolveAuthorizationId();
       const resolvedApplication = application.discoveryUrl
         ? mergeOAuth2DiscoveryMetadata(
             application,
@@ -5026,7 +5116,7 @@ function SetCredentialModal({
                       });
                     }}
                   >
-                    <SelectTrigger id="connector-oauth2-grant" variant="popover">
+                    <SelectTrigger id="connector-oauth2-grant">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

@@ -46,7 +46,13 @@ export function parsePreviewSubdomain(host: string): { port: number; sandboxId: 
 // identity (the agent-server's auth gate verifies that header).
 
 type AuthState =
-  | { kind: 'principal'; userId: string; callerSessionId: string | null; expiresAt: number }
+  | {
+      kind: 'principal';
+      userId: string;
+      callerSessionId: string | null;
+      sandboxAuthored: boolean;
+      expiresAt: number;
+    }
   | { kind: 'public_share'; shareId: string; mode: string; expiresAt: number };
 
 // In-memory subdomain auth gate (see authenticatePreviewPrincipal / markAuthedSubdomain).
@@ -91,11 +97,16 @@ function markAuthedSubdomain(
   // Cached alongside the user because the cache is what later forwards get their
   // principal from — dropping it here would re-open the bypass on every cache hit.
   callerSessionId: string | null,
+  // Cached for the same reason as callerSessionId: every later forward reads
+  // its principal from here, so dropping it would let a sandbox-authored
+  // request extend its own deadline on each cache hit.
+  sandboxAuthored: boolean,
 ): void {
   authedSubdomains.set(key(sandboxId, port, req), {
     kind: 'principal',
     userId,
     callerSessionId,
+    sandboxAuthored,
     expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
   });
 }
@@ -220,11 +231,16 @@ export async function handleSubdomainRequest(
         },
       );
     }
-    markAuthedSubdomain(sandboxId, port, req, validatedUserId, principal.sessionId);
+    // On this path a non-null sessionId means the credential is BOUND to a
+    // session — i.e. it is the sandbox's own token (see PreviewPrincipal);
+    // every other branch returns sessionId: null.
+    const sandboxAuthored = principal.sessionId !== null;
+    markAuthedSubdomain(sandboxId, port, req, validatedUserId, principal.sessionId, sandboxAuthored);
     authed = {
       kind: 'principal',
       userId: validatedUserId,
       callerSessionId: principal.sessionId,
+      sandboxAuthored,
       expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
     };
   }
@@ -262,7 +278,12 @@ export async function handleSubdomainRequest(
       sandboxId,
       port,
       authed.kind === 'principal'
-        ? { kind: 'principal', userId: authed.userId, callerSessionId: authed.callerSessionId }
+        ? {
+            kind: 'principal',
+            userId: authed.userId,
+            callerSessionId: authed.callerSessionId,
+            sandboxAuthored: authed.sandboxAuthored,
+          }
         : { kind: 'public_share' },
       req.method,
       url.pathname,

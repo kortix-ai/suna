@@ -2,9 +2,12 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
+import {
+  CheckCircleIcon as GoCheckCircleFill,
+  WarningCircleIcon as HiOutlineExclamationCircle,
+  XCircleIcon as HiOutlineXCircle,
+} from '@phosphor-icons/react';
 import * as React from 'react';
-import { GoCheckCircleFill } from 'react-icons/go';
-import { HiOutlineExclamationCircle, HiOutlineXCircle } from 'react-icons/hi';
 import { toast } from 'sonner';
 
 type ToastOptions = {
@@ -12,12 +15,7 @@ type ToastOptions = {
   duration?: number;
   id?: string | number;
   position?:
-    | 'bottom-right'
-    | 'bottom-left'
-    | 'top-right'
-    | 'top-left'
-    | 'top-center'
-    | 'bottom-center';
+    'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'top-center' | 'bottom-center';
   button?: React.ReactNode;
 };
 
@@ -86,7 +84,7 @@ export const successToast = (message: string, options?: ToastOptions) => {
       <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <GoCheckCircleFill className="text-kortix-green size-5 shrink-0" />
+            <GoCheckCircleFill weight="fill" className="text-kortix-green size-5 shrink-0" />
 
             <ToastMessage
               message={message}

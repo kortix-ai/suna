@@ -44,6 +44,7 @@ import {
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -406,6 +407,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     required: ['slug', 'provider'],
     properties: {
       slug: SLUG_SCHEMA,
+      name: NON_EMPTY_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
       provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
       app: { type: 'string' },
@@ -417,6 +419,11 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       spec: { type: 'string' },
       platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
       credential: credentialSchema,
+      authorization_strategy: {
+        type: 'string',
+        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        default: 'project',
+      },
       agent_scope: agentScopeSchema,
       auth: {
         type: 'object',
@@ -521,9 +528,17 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       enabled: { type: 'boolean' },
       sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
-      // A concrete subset of `connectors` that must resolve to the launching
-      // user's OWN connection (a list of aliases — never 'all'/'none').
-      connectors_personal: { type: 'array', items: NON_EMPTY_STRING },
+      connectors_required: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        description: 'Connector profile slugs that must resolve before the session starts.',
+      },
+      connectors_personal: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        deprecated: true,
+        description: 'Deprecated input alias for connectors_required.',
+      },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
       kortix_cli: kortixCliGrantSetSchema(2),

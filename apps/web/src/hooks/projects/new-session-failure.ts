@@ -1,3 +1,5 @@
+import type { ConnectorGateProfile } from '@/stores/connector-gate-store';
+
 /**
  * How a failed session create resolves, keyed by the server's error code.
  *
@@ -19,6 +21,49 @@ export function resolveCreateFailure(
 ): 'upgrade' | 'silent' | 'connect' | 'toast' {
   if (code === 'subscription_required' || code === 'no_account') return 'upgrade';
   if (code === 'concurrent_session_limit') return 'silent';
-  if (code === 'CONNECTOR_CONNECTION_REQUIRED') return 'connect';
+  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED' || code === 'CONNECTOR_CONNECTION_REQUIRED') {
+    return 'connect';
+  }
   return 'toast';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isConnectorGateProfile(value: unknown): value is ConnectorGateProfile {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.slug === 'string' &&
+    value.slug.length > 0 &&
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    (value.authorization_strategy === 'project' || value.authorization_strategy === 'user')
+  );
+}
+
+export function getConnectorAuthorizationRequiredProfiles(
+  error: unknown,
+): ConnectorGateProfile[] | null {
+  if (!isRecord(error)) return null;
+
+  const rootCode = error.code;
+  const payloads = [error.data, error.details, error].filter(isRecord);
+  for (const payload of payloads) {
+    if (
+      rootCode !== 'CONNECTOR_AUTHORIZATION_REQUIRED' &&
+      payload.code !== 'CONNECTOR_AUTHORIZATION_REQUIRED'
+    ) {
+      continue;
+    }
+
+    const profiles = payload.connector_profiles;
+    if (Array.isArray(profiles) && profiles.length > 0 && profiles.every(isConnectorGateProfile)) {
+      return profiles;
+    }
+  }
+
+  return null;
 }

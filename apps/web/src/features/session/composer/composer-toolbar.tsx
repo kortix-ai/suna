@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Agent, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
-import { Paperclip } from 'lucide-react';
+import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
@@ -139,11 +139,13 @@ export function ComposerToolbar({
               className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
               aria-label="Attach files"
             >
-              <Paperclip className="h-4 w-4" strokeWidth={2} />
+              <Paperclip className="h-4 w-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p>
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
+            </p>
           </TooltipContent>
         </Tooltip>
 

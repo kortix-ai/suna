@@ -10,7 +10,8 @@
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/upload-limits.ts",
     "./runtime-versions": "./src/runtime-versions.ts",
-    "./sandbox": "./src/sandbox/index.ts"
+    "./sandbox": "./src/sandbox/index.ts",
+    "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

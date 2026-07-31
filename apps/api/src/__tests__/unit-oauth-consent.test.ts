@@ -9,6 +9,7 @@ import {
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
+const CLIENT_ID = '00000000-0000-4000-a000-000000000201';
 
 const insertedCodes: Array<Record<string, unknown>> = [];
 
@@ -34,7 +35,7 @@ mock.module('../shared/db', () => ({
           limit: async () => {
             if (table === oauthClients) {
               return [{
-                clientId: 'client_123',
+                clientId: CLIENT_ID,
                 name: 'Trusted Client',
                 redirectUris: ['https://client.example/callback'],
                 scopes: ['profile', 'machines:read'],
@@ -71,7 +72,7 @@ function createApp() {
 
 function authRequestUrl() {
   const url = new URL('http://api.example/oauth/authorize');
-  url.searchParams.set('client_id', 'client_123');
+  url.searchParams.set('client_id', CLIENT_ID);
   url.searchParams.set('redirect_uri', 'https://client.example/callback');
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'profile machines:read');
@@ -106,7 +107,7 @@ describe('OAuth authorization consent request binding', () => {
     });
     expect(metadata.status).toBe(200);
     expect(await metadata.json()).toMatchObject({
-      client_id: 'client_123',
+      client_id: CLIENT_ID,
       client_name: 'Trusted Client',
       scopes: ['profile', 'machines:read'],
     });
@@ -132,7 +133,7 @@ describe('OAuth authorization consent request binding', () => {
     expect(redirect.searchParams.get('code')).toBeTruthy();
     expect(insertedCodes).toHaveLength(1);
     expect(insertedCodes[0]).toMatchObject({
-      clientId: 'client_123',
+      clientId: CLIENT_ID,
       redirectUri: 'https://client.example/callback',
       scopes: ['profile', 'machines:read'],
       codeChallenge: 'challenge_123',

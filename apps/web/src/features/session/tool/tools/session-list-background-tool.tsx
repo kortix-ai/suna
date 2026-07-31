@@ -13,7 +13,7 @@ import {
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { Layers } from 'lucide-react';
+import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 

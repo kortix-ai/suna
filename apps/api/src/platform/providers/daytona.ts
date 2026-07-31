@@ -17,6 +17,7 @@ import {
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { providerAutoStopBackstopMinutes } from './index';
+import { classifyDaytonaState } from './daytona-state';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
@@ -103,6 +104,8 @@ import type {
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
 
+
+
 function isMissingSandboxError(error: unknown): boolean {
   const err = error as
     | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
@@ -128,11 +131,12 @@ function isMissingSandboxError(error: unknown): boolean {
  * local-dev and ephemeral-env sessions are the dominant leak source, and the
  * idle sweep can't see boxes it has no DB row for.
  *
- *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
- *    box is NEVER created persistent. BACKSTOP only: Daytona's idle signal is
- *    "no inbound requests", blind to local tool runs, so it must sit well above
- *    the reaper's activity-aware TTL (providerAutoStopBackstopMinutes) or it
- *    kills working boxes.
+ *  - autoStopInterval: idle → stop. CLAMPED to >= 1 so a box is NEVER created
+ *    persistent. BACKSTOP only: Daytona's idle signal is "no inbound requests",
+ *    blind to local tool runs, so it must sit well above the longest real turn or
+ *    it kills working boxes. Sized by providerAutoStopBackstopMinutes(), which is
+ *    that policy and nothing else — it used to double as the billing clamp's
+ *    grace, which is why it was pinned 12x too low to be safe here.
  *  - autoArchiveInterval: stopped → archived to cold storage after a few days
  *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
  *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
@@ -337,14 +341,13 @@ export class DaytonaProvider implements SandboxProvider {
     try {
       const daytona = getDaytona();
       const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-      const state = String(sandbox.state ?? '').toLowerCase();
-      if (state.includes('start') || state.includes('running') || state.includes('active')) {
+      const status = classifyDaytonaState(sandbox.state);
+      if (status === 'running') {
         runningStatusCache.set(externalId, Date.now());
         return 'running';
       }
       runningStatusCache.delete(externalId);
-      if (state.includes('stop') || state.includes('archive')) return 'stopped';
-      return 'unknown';
+      return status;
     } catch (err) {
       runningStatusCache.delete(externalId);
       if (isMissingSandboxError(err)) return 'removed';

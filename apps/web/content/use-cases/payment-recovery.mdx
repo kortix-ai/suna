@@ -100,7 +100,7 @@ Reaching the final notice does not trigger a cancellation, a refund, or a
 credit. The ladder tops out there and the account sits, flagged in the Slack
 summary, waiting for a person on the revenue team to decide the next step.
 Credentials for Stripe and email are encrypted in the Secrets Manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Close the loop the moment it's paid">
@@ -134,7 +134,7 @@ money or ends a subscription is out of its hands:
 - **Stops on payment.** The moment an invoice clears, the ledger closes it out
   and no further email goes out.
 - **Scoped secrets.** The Stripe credential is encrypted in the Secrets Manager
-  and injected into the sandbox at runtime, never exposed to the model or the
+  and injected into the sandbox at runtime, scoped to the agents you grant them to or the
   logs.
 - **Everything is code.** The ladder, the wait times, and the agent's grants are
   files in the repo, versioned and changed through a reviewed **change

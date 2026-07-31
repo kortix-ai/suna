@@ -6,16 +6,15 @@ Create a new Kortix project.
 kortix init my-project
 ```
 
-Makes `./my-project/`, runs `git init -b main`, drops the full OpenCode
-runtime scaffold at the repo root (`kortix.yaml`, `README.md`,
+Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
+project floor at the repo root (`kortix.yaml`, `README.md`,
 `.kortix/opencode/`, `.kortix/memory/MEMORY.md`), stages every file, and
 makes an initial commit.
 
 ## Usage
 
 ```sh
-kortix init                  # interactive flow: pick a name + template,
-                              # wire up coding agents, install marketplace skills
+kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
 kortix ship                  # create the cloud project (first run) + push your code
 kortix self-host start       # run your own Kortix Cloud from Docker images
@@ -23,10 +22,8 @@ kortix self-host start       # run your own Kortix Cloud from Docker images
 
 Scaffolding is explicit-only: `kortix init` is the one command that creates
 a project directory. An unknown subcommand (`kortix use`, `kortix inti`, …)
-errors with a suggestion — it never scaffolds. Init's choices: which coding
-agent(s) to wire (`--primary`, `--agents`), which starter template
-(`--template minimal|general-knowledge-worker`), and which marketplace
-skills to install (`--marketplace`).
+errors with a suggestion — it never scaffolds. Init asks which local coding
+agents to wire through `--primary` and `--agents`.
 
 Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
@@ -39,20 +36,37 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← project manifest (agents: map, triggers, sandbox)
+├── kortix.yaml                        ← v2 OpenCode manifest
 └── .kortix/
     ├── memory/MEMORY.md               ← project-wide memory for agents
     └── opencode/                      ← OpenCode native config dir
         ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
         ├── agents/{kortix,memory-reflector}.md
-        └── skills/kortix-system/SKILL.md (+ other bundled skills)
+        └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
 ```
 
-The coding agent(s) you wire up (`--primary`/`--agents`, default OpenCode)
-each get their native discovery directory symlinked straight at
-`.kortix/opencode/` — `.opencode` for OpenCode, `.claude` for Claude Code,
-`.agents` for Codex — so skills and agents stay shared from one source
-of truth. Codex and Cursor also get a root `AGENTS.md` pointer.
+The local coding tools you wire up (`--primary`/`--agents`, default Codex)
+receive native discovery links to the canonical `.kortix/opencode` source.
+OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
+`.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
+`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+
+The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
+
+Create a project with:
+
+```sh
+kortix init my-project --yes --no-git
+```
+
+Agents can retrieve the deployed platform manual from OpenCode:
+
+```sh
+kortix system-skills
+kortix system-skills get kortix-system --full
+```
+
+`kortix skills` is a permanent alias.
 
 After the scaffold lands, one commit is made:
 

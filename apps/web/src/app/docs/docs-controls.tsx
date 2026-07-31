@@ -4,10 +4,13 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
+import {
+  SidebarSimpleIcon as PanelLeftIcon,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import type { PageTree } from 'fumadocs-core/server';
 import { SidebarSeparator } from 'fumadocs-ui/components/layout/sidebar';
 import { useSearchContext, useSidebar } from 'fumadocs-ui/provider';
-import { PanelLeftIcon, Search } from 'lucide-react';
 
 // App-Button replacements for fumadocs' built-in sidebar chrome (search
 // toggles, collapse trigger, collapsed floating control) so the docs share

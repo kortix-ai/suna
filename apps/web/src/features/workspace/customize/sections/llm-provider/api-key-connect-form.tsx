@@ -11,8 +11,14 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { upsertProjectSecret } from '@kortix/sdk';
+import {
+  CaretLeftIcon as ChevronLeft,
+  ArrowSquareOutIcon as ExternalLink,
+  InfoIcon as Info,
+  ShieldCheckIcon as ShieldCheck,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ExternalLink, Info, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 

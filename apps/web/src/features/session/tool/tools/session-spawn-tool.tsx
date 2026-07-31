@@ -1,30 +1,21 @@
 'use client';
 import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { BasicTool, partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  partInput,
-  partStatus,
-} from '@/features/session/tool/shared/infrastructure';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useRuntimeMessages } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
-import {
-  Cpu,
-  ExternalLink,
-} from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  useMemo,
-  useState,
-} from 'react';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
+import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {

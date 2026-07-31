@@ -38,8 +38,15 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import type { ReviewVerdict } from '@kortix/sdk';
-import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
-import { ChevronDown, Layers, Search } from 'lucide-react';
+import {
+  CheckCircleIcon as CheckCircleSolid,
+  CaretDownIcon as ChevronDown,
+  TrayIcon as InboxSolid,
+  StackIcon as Layers,
+  MagnifyingGlassIcon as Search,
+  ShieldCheckIcon as ShieldCheckSolid,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
@@ -313,6 +320,8 @@ export function ReviewCenter({
   onAct,
   onBulkAct,
   onOpenSession,
+  onRecoverChange,
+  recoveringCrId,
   onRefresh,
   isLoading,
   isFetching,
@@ -327,6 +336,9 @@ export function ReviewCenter({
   onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
+  /** Connected mode: start a recovery session for a conflicted change. */
+  onRecoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
+  recoveringCrId?: string | null;
   /** Connected mode: force an immediate poll instead of waiting for the
    *  interval — the "Live" indicator doubles as this refresh affordance. */
   onRefresh?: () => void;
@@ -521,6 +533,8 @@ export function ReviewCenter({
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
     approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
     openSession: onOpenSession,
+    recoverChange: onRecoverChange,
+    recoveringCrId,
     connected,
     pendingId,
     pendingDecision,
@@ -734,7 +748,7 @@ export function ReviewCenter({
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="bg-kortix-base/15 flex size-7 items-center justify-center rounded-sm">
-                    <InboxSolid className="text-kortix-base size-4" />
+                    <InboxSolid weight="fill" className="text-kortix-base size-4" />
                   </span>
                   <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
                     Review Center
@@ -924,7 +938,10 @@ export function ReviewCenter({
                     className="overflow-hidden"
                   >
                     <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
-                      <ShieldCheckSolid className="text-kortix-green size-5 shrink-0" />
+                      <ShieldCheckSolid
+                        weight="fill"
+                        className="text-kortix-green size-5 shrink-0"
+                      />
                       <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
                         {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'}{' '}
                         can be approved together. Risky ones stay for you to decide.

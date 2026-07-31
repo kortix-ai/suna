@@ -76,14 +76,19 @@ try {
   writeFileSync(
     join(workdir, 'smoke.mjs'),
     [
-      "import { createKortix, ApiError, classifyTurn } from '@kortix/sdk';",
+      "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
       "import { createScopedKortix } from '@kortix/sdk/server';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
       "if (typeof classifyTurn !== 'function') throw new Error('classifyTurn is not a function');",
       "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
+      "if (typeof getSessionCostRecord !== 'function') throw new Error('getSessionCostRecord missing');",
+      "if (typeof listSessionCosts !== 'function') throw new Error('listSessionCosts missing');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
       "const k = createKortix({ backendUrl: 'http://smoke.test/v1', getToken: async () => null });",
       "if (typeof k.projects.list !== 'function') throw new Error('facade is not wired');",
+      "if (typeof k.billing.sessionCosts.list !== 'function') throw new Error('sessionCosts.list missing');",
+      "if (typeof k.billing.sessionCosts.get !== 'function') throw new Error('sessionCosts.get missing');",
+      "if (typeof k.session('project', 'session').cost !== 'function') throw new Error('session.cost missing');",
       "console.log('OK: @kortix/sdk imports and constructs from a packed tarball');",
     ].join('\n'),
   );

@@ -9,9 +9,9 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { Search } from 'lucide-react';
+import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 

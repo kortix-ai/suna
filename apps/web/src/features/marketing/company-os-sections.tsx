@@ -4,23 +4,23 @@ import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
-  AtSign,
-  Boxes,
-  FileCode2,
-  FileText,
-  Folder,
-  FolderTree,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  Layers,
-  Users,
-  Workflow,
-} from 'lucide-react';
+  AtIcon as AtSign,
+  CubeIcon as Boxes,
+  FileCodeIcon as FileCode2,
+  FileTextIcon as FileText,
+  FolderIcon as Folder,
+  TreeViewIcon as FolderTree,
+  GitBranchIcon as GitBranch,
+  GitMergeIcon as GitMerge,
+  GitPullRequestIcon as GitPullRequest,
+  StackIcon as Layers,
+  UsersIcon as Users,
+  FlowArrowIcon as Workflow,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
+const sectionShell = 'mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0';
 
 /* ================================================================== */
 /* Problem — 1% vs 99% (the video's cold open), big and stark          */
@@ -469,7 +469,7 @@ function RepoExplorer() {
                 onClick={() => node.fileId && setActiveId(node.fileId)}
                 style={{ paddingLeft: `${0.75 + node.depth * 1}rem` }}
                 className={cn(
-                  'flex w-full items-center gap-2 py-1.5 pr-3 text-left font-mono text-xs transition-colors duration-fast',
+                  'duration-fast flex w-full items-center gap-2 py-1.5 pr-3 text-left font-mono text-xs transition-colors',
                   isActive && 'bg-primary/[0.07] text-primary',
                   !isActive && isClickable && 'text-foreground/80 hover:bg-foreground/[0.04]',
                   !isClickable && 'text-muted-foreground/50 cursor-default',

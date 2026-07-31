@@ -8,7 +8,8 @@ import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
-import { capabilitiesForModel } from '../models/catalog-models';
+import { isModelEnabledForProject } from '../model-enablement';
+import { capabilitiesForModel, gatewayModelCatalog } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
@@ -16,6 +17,7 @@ import {
   codexDescriptor,
   livePricing,
   managedCandidates,
+  normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
 
@@ -78,6 +80,24 @@ export async function resolveCandidates(
 ): Promise<UpstreamDescriptor[]> {
   const effectiveModel = model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
+
+  // Per-project enablement: a model the project doesn't offer is refused before
+  // any provider-specific resolution, so it's uniformly unusable everywhere.
+  // Judged against everything the project could route — not the picker's
+  // narrowed projection — so a raw-API caller is held to the same set.
+  if (
+    !(await isModelEnabledForProject(
+      principal.projectId,
+      effectiveModel,
+      gatewayModelCatalog(principal.projectId),
+    ))
+  ) {
+    throw new GatewayResolutionError(
+      'model_disabled',
+      'This model is turned off for this project.',
+      'Re-enable it in the project model settings, or pick an enabled model.',
+    );
+  }
 
   if (provider === 'codex') {
     if (!principal.projectId) {
@@ -148,6 +168,15 @@ export async function resolveCandidates(
           ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
           : undefined;
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
+      // Bedrock invoke id: normalize a wrong-geography cross-region
+      // inference-profile prefix (e.g. a `jp.` pick that got stored as an
+      // account default / session pin on a us-east-1 box) to the endpoint's own
+      // region, so it stops 400ing "The provided model identifier is invalid."
+      // No-op for every other provider and for already-correct ids.
+      const invokeModelId =
+        byok.kind === 'bedrock'
+          ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion)
+          : resolvedModelId;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
@@ -158,17 +187,17 @@ export async function resolveCandidates(
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
-        resolvedModel: resolvedModelId,
+        resolvedModel: invokeModelId,
         // Bedrock-only: the id used to INVOKE stays the full cross-region
-        // inference-profile id (resolvedModel above) — only the id used to
-        // LOOK UP pricing gets the geography prefix stripped, since the
-        // models.dev catalog only knows the base model id. See
+        // inference-profile id (resolvedModel above, region-normalized) — only
+        // the id used to LOOK UP pricing gets the geography prefix stripped,
+        // since the models.dev catalog only knows the base model id. See
         // stripBedrockInferenceProfilePrefix's doc comment.
         pricing: livePricing(
           provider,
           byok.kind === 'bedrock'
-            ? stripBedrockInferenceProfilePrefix(resolvedModelId)
-            : resolvedModelId,
+            ? stripBedrockInferenceProfilePrefix(invokeModelId)
+            : invokeModelId,
         ),
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,

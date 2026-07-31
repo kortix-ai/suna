@@ -8,7 +8,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { ChevronLeft, ChevronRight, ExternalLink, Plus } from 'lucide-react';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  PlusIcon as Plus,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -279,7 +284,11 @@ function ProviderDetail({
                       <span className="text-foreground truncate text-sm font-medium">
                         {model.name}
                       </span>
-                      <ModelCapabilityIcons model={model} />
+                      <ModelCapabilityIcons
+                        reasoning={model.reasoning}
+                        toolCall={model.tool_call}
+                        vision={model.attachment}
+                      />
                     </div>
                     <div className="flex min-w-0 items-center gap-0.5">
                       <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">

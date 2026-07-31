@@ -237,12 +237,14 @@ A list of external tools an agent can call. The definition lives in git; credent
 
 ```yaml
 connectors:
-  - slug: gmail-work
+  - slug: gmail-read
+    name: Gmail read only
     provider: pipedream
     app: gmail
+    authorization_strategy: user
     policies:
-      - match: "*"
-        action: require_approval
+      - match: search_email
+        action: always_run
 ```
 
 | Field | Required | Notes |
@@ -250,9 +252,10 @@ connectors:
 | `slug` | yes | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors. |
 | `provider` | yes | `pipedream`, `mcp`, `openapi`, `postman`, `graphql`, `http`, or `channel`. |
 | `name` | no | Display name. Defaults to slug. |
+| `authorization_strategy` | no | `project` or `user`. Defaults to `project` when omitted. A project strategy uses active project authorizations. A user strategy uses only the acting member's authorization. |
 | `enabled` | no | Defaults to `true`. |
 | `credential` | no | Only `shared` is supported. The retired `per_user` mode is a hard error. |
-| `sensitive` | no | Defaults to `false`. `true` forces approval on every call to this connector, regardless of `policy.default_mode`. |
+| `sensitive` | no | Defaults to `false`. `true` makes `require_approval` the unmatched-action default, including reads. Explicit project and connector rules still resolve first. |
 
 Provider-specific fields:
 
@@ -271,7 +274,10 @@ Provider-specific fields:
 
 `connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none` (default). `oauth1` is restricted to `openapi`, `postman`, and `http` providers. `in` is `header` (default), `query`, or `cookie`. `name` is required when `type` is `custom` or `api_key`.
 
-`connectors.policies`: a list of `{match, action}` pairs. `match` is a glob over tool names. `action` is `always_run`, `require_approval`, or `block`.
+`connectors.policies`: a list of `{match, action}` pairs. `match` is a glob over
+tool names. `action` is `always_run`, `require_approval`, or `block`. Policies
+belong to the connector profile. Every authorization under that connector
+profile uses the same policies.
 
 `policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `allow_all` (default; every unmatched tool runs) or `risk` (require approval for write and destructive unmatched calls). Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
 
@@ -295,6 +301,7 @@ agents:
 
   release-bot:
     connectors: [github]
+    connectors_required: [github]
     kortix_cli: [project.cr.open]
     secrets: [GITHUB_AGENT_TOKEN]
 ```
@@ -304,13 +311,18 @@ agents:
 | *(map key)* | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Matches the `.md` filename it governs. |
 | `enabled` | `true` | `false` treats the agent as undeclared — the platform will not launch it. |
 | `connectors` | `none` | Which connector slugs this agent may call. `all` means every connector. |
-| `connectors_personal` | — | Subset of `connectors` that must resolve to the launching user's own connection (their member profile), not the shared project one. A session started with this agent auto-requires these; a missing one fails create with `CONNECTOR_CONNECTION_REQUIRED`. Interactive sessions only — backend/service-account sessions use `connector_bindings` instead. Must be a subset of `connectors`. |
+| `connectors_required` | `none` | Connector-profile slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_AUTHORIZATION_REQUIRED`. |
 | `secrets` | `none` | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`. |
 | `kortix_cli` | `none` | Which Kortix CLI and API actions this agent may perform. `all` means everything the launching user can do — an agent can never exceed its launcher. |
 | `skills` | `none` | Which skills this agent may load. |
 | `workspace` | — | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `skills` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
+
+`connectors_personal` remains a deprecated input alias for
+`connectors_required`. New manifests must use `connectors_required`. The
+connector profile's `authorization_strategy` decides whether the authorization
+is project-owned or member-owned.
 
 `kortix_cli` grants come from a fixed set of project-scoped actions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped actions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 

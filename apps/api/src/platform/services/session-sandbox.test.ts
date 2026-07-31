@@ -325,38 +325,16 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
-  test('ACP sessions require the current sandbox runtime identity', async () => {
+  test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
 
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      projectMetadata: { experimental: { acp_runtime: true } },
-    });
+    await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(imageRequests[0]).toMatchObject({
-      source: 'session-start',
-      requireCurrentRuntime: true,
-    });
-  });
-
-  test('REST sessions retain last-known-good runtime compatibility', async () => {
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      projectMetadata: { experimental: { acp_runtime: false } },
-    });
-    await opened;
-
-    expect(imageRequests[0]).toMatchObject({
-      source: 'session-start',
-      requireCurrentRuntime: false,
-    });
+    expect(imageRequests[0]).toMatchObject({ source: 'session-start' });
+    expect(imageRequests[0]).not.toHaveProperty('requireCurrentRuntime');
   });
 
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {

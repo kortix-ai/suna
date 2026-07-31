@@ -1,15 +1,15 @@
 'use client';
 
 import {
-  ArrowRight,
-  Boxes,
-  Clock,
-  Lock,
-  Mail,
-  PlayCircle,
-  Server,
-  ShieldCheck,
-} from 'lucide-react';
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  ClockIcon as Clock,
+  LockIcon as Lock,
+  EnvelopeIcon as Mail,
+  PlayCircleIcon as PlayCircle,
+  HardDrivesIcon as Server,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -31,7 +31,9 @@ const VALUE_PROPS = [
   {
     icon: <Server className="size-4" />,
     title: 'Deploy your way',
-    desc: 'Managed cloud, your private VPC, or fully on-prem / air-gapped.',
+    // ACCURACY: not "air-gapped" — `self-host start` pulls images from
+    // docker.io. Isolated topologies get scoped with us, not self-served.
+    desc: 'Managed cloud, your private VPC, or your own on-prem network.',
   },
   {
     icon: <Boxes className="size-4" />,

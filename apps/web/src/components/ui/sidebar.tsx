@@ -1,7 +1,7 @@
 'use client';
 
+import { SidebarSimpleIcon as PanelLeftIcon } from '@phosphor-icons/react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { PanelLeftIcon } from 'lucide-react';
 import { Slot } from 'radix-ui';
 import * as React from 'react';
 
@@ -269,11 +269,15 @@ function Sidebar({
       data-peek={peeking ? '' : undefined}
       data-slot="sidebar"
     >
-      {/* This is what handles the sidebar gap on desktop */}
+      {/* This is what handles the sidebar gap on desktop. Its width snaps —
+          it must NOT transition. This box is what pushes the content over, so
+          animating its width reflows the entire page subtree (resizable panel
+          group, virtualized message list) on every frame for the whole
+          duration. Docking is a one-frame layout change instead. */}
       <div
         data-slot="sidebar-gap"
         className={cn(
-          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear',
+          'relative w-(--sidebar-width) bg-transparent',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
@@ -286,7 +290,7 @@ function Sidebar({
         onPointerEnter={peekable ? peekEnter : undefined}
         onPointerLeave={peekable ? peekLeave : undefined}
         className={cn(
-          'fixed z-10 hidden w-(--sidebar-width) transition-[left,right,top,bottom,width,translate] duration-200 ease-linear motion-reduce:transition-none md:flex',
+          'fixed z-10 hidden w-(--sidebar-width) md:flex',
           // Peek-capable: the panel keeps one static position (flyout
           // geometry, below the shell's top-left toggle) and hides by
           // translating off-screen — hidden ↔ flyout is a compositor-only
@@ -295,11 +299,24 @@ function Sidebar({
           // lifecycle so the exit slide stays above the content headers.
           // Timing is asymmetric per CSS rules — the destination state's
           // duration governs, so enter runs 280ms and exit 220ms (~80%),
-          // both on the iOS drawer curve. Docking keeps the base linear
-          // timing to stay in sync with the sidebar-gap width.
+          // both on the iOS drawer curve.
+          //
+          // The transition lives HERE, not on the base, and covers transform
+          // only. Two consequences, both deliberate:
+          //   1. Docking (collapsed → expanded) lands on the branch below,
+          //      which declares no transition at all — and a transition is
+          //      read off the destination style, so top/bottom/left/width and
+          //      the h-auto → h-svh swap all snap in one frame. Those are
+          //      layout properties; gliding them was the whole jank, and the
+          //      height could never transition anyway, so it snapped mid-glide.
+          //   2. Undocking still slides: geometry snaps to the flyout card,
+          //      then transform carries it off-screen in 220ms on the
+          //      compositor. That is the cue for where the panel went — the
+          //      left edge is where hovering brings it back.
           peekable
             ? cn(
-                'top-13 bottom-2 left-2 z-40 h-auto ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
+                'top-13 bottom-2 left-2 z-40 h-auto',
+                'transition-transform ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform motion-reduce:transition-none',
                 peeking
                   ? 'translate-x-0 duration-[280ms]'
                   : '-translate-x-[calc(100%+2rem)] duration-[220ms]',
@@ -320,13 +337,15 @@ function Sidebar({
           data-slot="sidebar-inner"
           className={cn(
             'bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
-            // 200ms so the radius/shadow fade lands together with the 200ms
-            // dock morph when pinning — no trailing style change.
-            'transition-[border-radius,box-shadow] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
             // Gated on peekable (not peeking) so hidden ↔ flyout swaps no
             // styles at all — the panel slides in and out as a rigid card.
             // border-border, not border-sidebar-border: the sidebar token is
             // pure white in dark mode and reads as a glowing edge.
+            //
+            // No transition on the radius/shadow: peekable only flips at the
+            // dock moment, so this was purely the dock morph's fourth
+            // concurrent timeline. It now snaps with the geometry above, in
+            // the same frame.
             peekable && 'border-border overflow-hidden rounded-lg border shadow-xl',
           )}
         >

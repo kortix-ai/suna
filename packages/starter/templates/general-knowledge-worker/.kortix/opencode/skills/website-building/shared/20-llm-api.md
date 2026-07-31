@@ -34,7 +34,7 @@ For projects that need media generation inline in the backend, `shared/llm-api/`
 | `shared/llm-api/generate_video.py` | Text-to-video and image-to-video (OpenAI / Sora) | `await generate_video(prompt, image_bytes=..., duration=...)` | `OPENAI_API_KEY` (optional `OPENAI_BASE_URL`) |
 | `shared/llm-api/generate_audio.py` | Text-to-speech and multi-speaker dialogue (ElevenLabs) | `await generate_audio(text, voice=...)` / `await generate_dialogue(lines)` | `ELEVENLABS_API_KEY` |
 
-Models default to real provider names (`gpt-image-1`, `sora-2`, `eleven_multilingual_v2`) and are overridable per call or via env (`IMAGE_MODEL`, `VIDEO_MODEL`, `TTS_MODEL`). These same keys must be provisioned on the deploy host before publishing — local-only credentials do not travel to a standalone deployment. See `website-publishing/SKILL.md`.
+Models default to real provider names (`gpt-image-1`, `sora-2`, `eleven_multilingual_v2`) and are overridable per call or via env (`IMAGE_MODEL`, `VIDEO_MODEL`, `TTS_MODEL`). These same keys must be provisioned on the deploy host before publishing — local-only credentials do not travel to a standalone deployment. See the `web-publishing-and-deployments` skill.
 
 ## Local Development Pattern
 

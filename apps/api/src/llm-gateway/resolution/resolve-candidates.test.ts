@@ -80,6 +80,26 @@ mock.module('./descriptors', () => ({
   },
   stripBedrockInferenceProfilePrefix: (modelId: string) =>
     modelId.replace(/^(us-gov|us|eu|apac)\.(?=.)/, ''),
+  // Mirrors the real normalizeBedrockInferenceProfileRegion (descriptors.ts):
+  // rewrites a wrong-geography Anthropic inference-profile prefix to the
+  // endpoint region's geography (us-east-1 → us.); unit-tested directly in
+  // descriptors.test.ts.
+  normalizeBedrockInferenceProfileRegion: (modelId: string, region: string | null | undefined) => {
+    const r = (region?.trim() || 'us-east-1').toLowerCase();
+    const target = r.startsWith('us-gov-')
+      ? 'us-gov'
+      : r.startsWith('us-')
+        ? 'us'
+        : r.startsWith('eu-')
+          ? 'eu'
+          : r.startsWith('ap-')
+            ? 'apac'
+            : undefined;
+    if (!target) return modelId;
+    const m = modelId.match(/^(us-gov|us|eu|apac|jp|au)\.anthropic\.(.+)$/);
+    if (!m) return modelId;
+    return m[1] === target ? modelId : `${target}.anthropic.${m[2]}`;
+  },
   managedCandidates: (managed: { id: string }) => [
     {
       provider: 'kortix-managed',
@@ -120,6 +140,14 @@ mock.module('../models/managed-models', () => ({
 let capabilities = { reasoning: false, temperature: true };
 mock.module('../models/catalog-models', () => ({
   capabilitiesForModel: () => capabilities,
+  gatewayModelCatalog: () => ({}),
+}));
+
+let disabledModelId: string | null = null;
+mock.module('../model-enablement', () => ({
+  isModelEnabledForProject: async (_projectId: string | null | undefined, model: string) =>
+    model !== disabledModelId,
+  defaultEnabledFromCatalog: () => new Set<string>(),
 }));
 
 const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');
@@ -137,6 +165,7 @@ beforeEach(() => {
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     LLM_GATEWAY_BYOK_FALLBACK_MODEL: 'anthropic/claude-sonnet-4.6',
   });
+  disabledModelId = null;
   resolvedSecret = null;
   secretsByName = {};
   codexCredential = null;
@@ -150,6 +179,38 @@ beforeEach(() => {
   getCachedAccountTier.mockClear();
   getProjectSecretValue.mockClear();
   resolveCodexCredential.mockClear();
+});
+
+describe('resolveCandidates — per-project model enablement', () => {
+  test('a project-disabled model is rejected with model_disabled before provider resolution', async () => {
+    disabledModelId = 'anthropic/claude-sonnet-4.6';
+    // Set up an otherwise-servable BYOK model to prove the disable check wins.
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const promise = resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    await expect(promise).rejects.toBeInstanceOf(GatewayResolutionError);
+    await expect(promise).rejects.toMatchObject({ code: 'model_disabled' });
+  });
+
+  test('an enabled model resolves normally', async () => {
+    disabledModelId = 'codex/gpt-5.4';
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    expect(candidates.length).toBeGreaterThan(0);
+  });
 });
 
 describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
@@ -221,7 +282,9 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       kind: 'bedrock',
       baseUrl: 'https://bedrock-runtime.eu-west-1.amazonaws.com',
       apiKey: 'bedrock-bearer-key',
-      resolvedModel: 'us.anthropic.claude-opus-4-8',
+      // Region-normalized: a `us.` inference profile 400s on an eu-west-1
+      // endpoint, so the invoke id is rewritten to the endpoint's geography.
+      resolvedModel: 'eu.anthropic.claude-opus-4-8',
     });
     // The bearer token AND the region are each looked up under their own
     // AWS-standard secret name, project-wide (shared) only — there is no
@@ -246,8 +309,10 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
   // catalogs the BASE Bedrock model id, never the cross-region
   // inference-profile id the user actually requests — so the PRICING lookup
   // must strip the `us./eu./apac./us-gov.` prefix while `resolvedModel` (what
-  // actually gets invoked) keeps the full profile id untouched.
-  test('BYOK Bedrock: pricing lookup strips the cross-region inference-profile prefix, resolvedModel keeps it', async () => {
+  // actually gets invoked) keeps a full profile id. Here the requested `us.`
+  // profile is first region-normalized to `eu.` (eu-west-1 endpoint), then the
+  // pricing lookup strips THAT to the same base id.
+  test('BYOK Bedrock: resolvedModel is region-normalized, pricing still strips to the base id', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
     secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: 'eu-west-1' };
     const p = principal();
@@ -255,8 +320,22 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
 
-    expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-4-8' });
+    expect(candidates[0]).toMatchObject({ resolvedModel: 'eu.anthropic.claude-opus-4-8' });
     expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
+  });
+
+  // The Essentia incident, at the resolve-candidates layer: a session pinned to
+  // a `jp.` opus profile on a us-east-1 box must resolve to the `us.` invoke id
+  // so it stops 400ing "The provided model identifier is invalid."
+  test('BYOK Bedrock: a wrong-geography jp. pin on a us-east-1 box is normalized to us.', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: 'us-east-1' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/jp.anthropic.claude-opus-5');
+
+    expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-5' });
   });
 
   test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {

@@ -1,5 +1,8 @@
 # Daytona linux-vm (microVM) ⇒ non-declarative build: implications
 
+> **Current build-context scope.** The runtime layer includes the OpenCode REST
+> process and its version 2 config directory.
+
 **Question:** to switch Daytona sandboxes from `container` to `linux-vm` (microVM,
 ~35% faster create + no 21s create-spikes), we'd have to stop using Daytona's
 declarative Dockerfile builder ("not available for linux-vm or us-west-2" — per
