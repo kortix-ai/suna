@@ -8,7 +8,7 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
-import { listCostByProject } from '../../shared/cost-rollups';
+import { getCostSummary, listCostByProject } from '../../shared/cost-rollups';
 import {
   type CostSort,
   type CostWindow,
@@ -278,6 +278,45 @@ const ProjectCostPageSchema = z
 // `readonly CostSort[]` parameter.
 const PROJECT_COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
 
+const CostSummaryTotalsSchema = z
+  .object({
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    request_count: z.number(),
+    compute_seconds: z.number(),
+    session_count: z.number(),
+    project_count: z.number(),
+  })
+  .openapi('CostSummaryTotals');
+
+const CostSeriesPointSchema = z
+  .object({
+    day: z.string(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+  })
+  .openapi('CostSeriesPoint');
+
+const CostModelRowSchema = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    cost: z.number(),
+    request_count: z.number(),
+  })
+  .openapi('CostModelRow');
+
+const CostSummarySchema = z
+  .object({
+    totals: CostSummaryTotalsSchema,
+    previous: z.object({ total_cost: z.number() }).openapi('CostSummaryPrevious'),
+    series: z.array(CostSeriesPointSchema),
+    models: z.array(CostModelRowSchema),
+  })
+  .openapi('CostSummary');
+
 usageApp.openapi(
   createRoute({
     method: 'get',
@@ -512,6 +551,56 @@ usageApp.openapi(
           window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
           sort: parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc'),
           ...parseCostPagination({ limit: c.req.query('limit'), offset: c.req.query('offset') }),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof InvalidCostQueryError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-summary',
+    tags: ['usage'],
+    summary: 'Spend totals, daily series and model breakdown over a date window',
+    description:
+      'Scoped to the account, or to one project or session when project_id / session_id is ' +
+      'supplied. LLM is windowed on request time (created_at); compute is windowed on the ' +
+      'billing window start (started_at), never last_billed_at. Bounds are half-open ' +
+      '[from, to) and always UTC; an absent from/to defaults to the trailing 30 days. Day ' +
+      'buckets in `series` are UTC and gap days are zero-filled, never omitted. `previous` ' +
+      'covers the equally long window immediately before [from, to). The account-scoped ' +
+      '(no project_id / session_id) `totals.total_cost` covers ALL account spend in the ' +
+      'window, including compute cost not attributable to any project.',
+    ...auth,
+    request: {
+      query: z
+        .object({
+          account_id: z.string().optional(),
+          project_id: z.string().optional(),
+          session_id: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+        })
+        .openapi('CostSummaryQuery'),
+    },
+    responses: { 200: json(CostSummarySchema, 'Cost summary'), ...errors(400, 401, 403) },
+  }),
+  async (c) => {
+    try {
+      const projectId = c.req.query('project_id') || undefined;
+      const accountId = await resolveSessionCostAccountId(c, projectId);
+      return c.json(
+        await getCostSummary({
+          accountId,
+          projectId,
+          sessionId: c.req.query('session_id') || undefined,
+          window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
         }),
       );
     } catch (error) {

@@ -30,9 +30,18 @@ function renderJoinOn(record: QueryRecord | undefined, method: 'innerJoin' | 'le
   return new PgDialect().sqlToQuery(call.args[1] as SQL).sql;
 }
 
+// The mock records orderBy() without applying it, so the ORDER BY can only be
+// asserted by rendering it, same reasoning as renderWhere above.
+function renderOrderBy(record: QueryRecord | undefined): string[] {
+  const terms = record?.calls.find((call) => call.method === 'orderBy')?.args;
+  if (!terms?.length) throw new Error('query recorded no orderBy() call');
+  const dialect = new PgDialect();
+  return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
+}
+
 function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   const builder: Record<string, unknown> = {};
-  for (const method of ['innerJoin', 'leftJoin', 'where', 'groupBy']) {
+  for (const method of ['innerJoin', 'leftJoin', 'where', 'groupBy', 'orderBy', 'limit']) {
     builder[method] = (...args: unknown[]) => {
       record.calls.push({ method, args });
       return builder;
@@ -56,7 +65,14 @@ mock.module('./db', () => ({
   },
 }));
 
-const { listCostByProject, mergeProjectCostRows, sortProjectRows } = await import('./cost-rollups');
+const {
+  buildCostSeries,
+  getCostSummary,
+  listCostByProject,
+  mergeProjectCostRows,
+  previousWindow,
+  sortProjectRows,
+} = await import('./cost-rollups');
 
 const accountId = '00000000-0000-4000-a000-000000000001';
 
@@ -364,5 +380,329 @@ describe('listCostByProject', () => {
       offset: 0,
     });
     expect(page).toEqual({ projects: [], total: 0, limit: 25, offset: 0, next_offset: null });
+  });
+});
+
+describe('previousWindow', () => {
+  test('returns the equally long window immediately before', () => {
+    const previous = previousWindow({
+      from: new Date('2026-07-02T00:00:00.000Z'),
+      to: new Date('2026-07-09T00:00:00.000Z'),
+    });
+    expect(previous.from.toISOString()).toBe('2026-06-25T00:00:00.000Z');
+    expect(previous.to.toISOString()).toBe('2026-07-02T00:00:00.000Z');
+  });
+
+  test('crosses a month boundary correctly', () => {
+    const previous = previousWindow({
+      from: new Date('2026-07-01T00:00:00.000Z'),
+      to: new Date('2026-07-04T00:00:00.000Z'),
+    });
+    expect(previous.from.toISOString()).toBe('2026-06-28T00:00:00.000Z');
+    expect(previous.to.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  test('handles a single-day window', () => {
+    const previous = previousWindow({
+      from: new Date('2026-07-02T00:00:00.000Z'),
+      to: new Date('2026-07-03T00:00:00.000Z'),
+    });
+    expect(previous.from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(previous.to.toISOString()).toBe('2026-07-02T00:00:00.000Z');
+  });
+});
+
+describe('buildCostSeries', () => {
+  const window = {
+    from: new Date('2026-07-01T00:00:00.000Z'),
+    to: new Date('2026-07-04T00:00:00.000Z'),
+  };
+
+  test('emits one point per UTC day in the window', () => {
+    const series = buildCostSeries([], [], window);
+    expect(series.map((point) => point.day)).toEqual(['2026-07-01', '2026-07-02', '2026-07-03']);
+  });
+
+  test('fills days with no spend as zero rather than omitting them', () => {
+    const series = buildCostSeries([{ day: '2026-07-02', cost: 5 }], [], window);
+    expect(series[0]).toMatchObject({ day: '2026-07-01', total_cost: 0 });
+    expect(series[1]).toMatchObject({ day: '2026-07-02', llm_cost: 5, total_cost: 5 });
+    expect(series[2]).toMatchObject({ day: '2026-07-03', total_cost: 0 });
+  });
+
+  test('sums llm and compute on the same day', () => {
+    const series = buildCostSeries(
+      [{ day: '2026-07-03', cost: 2 }],
+      [{ day: '2026-07-03', cost: 3 }],
+      window,
+    );
+    expect(series[2]).toMatchObject({ llm_cost: 2, compute_cost: 3, total_cost: 5 });
+  });
+
+  test('emits exactly one point for a single-day window', () => {
+    const series = buildCostSeries([], [], {
+      from: new Date('2026-07-01T00:00:00.000Z'),
+      to: new Date('2026-07-02T00:00:00.000Z'),
+    });
+    expect(series).toEqual([{ day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 }]);
+  });
+
+  test('crosses a month boundary, keeping each day in its own UTC bucket', () => {
+    const series = buildCostSeries(
+      [{ day: '2026-07-31', cost: 1 }],
+      [{ day: '2026-08-01', cost: 2 }],
+      { from: new Date('2026-07-30T00:00:00.000Z'), to: new Date('2026-08-02T00:00:00.000Z') },
+    );
+    expect(series.map((point) => point.day)).toEqual(['2026-07-30', '2026-07-31', '2026-08-01']);
+    expect(series[1]).toMatchObject({ llm_cost: 1, total_cost: 1 });
+    expect(series[2]).toMatchObject({ compute_cost: 2, total_cost: 2 });
+  });
+});
+
+describe('getCostSummary', () => {
+  const window = {
+    from: new Date('2026-07-01T00:00:00.000Z'),
+    to: new Date('2026-07-08T00:00:00.000Z'),
+  };
+  const projectId = '00000000-0000-4000-a000-000000000002';
+  const sessionId = 'session-summary-test';
+
+  function llmTotalsRecord() {
+    return queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'llmCost' in query.fields,
+    );
+  }
+  function llmDailyRecord() {
+    return queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'day' in query.fields,
+    );
+  }
+  function modelsRecord() {
+    return queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'model' in query.fields,
+    );
+  }
+  function llmPriorRecord() {
+    return queryRecords.find(
+      (query) =>
+        query.table === gatewayRequestLogs &&
+        Object.keys(query.fields).length === 1 &&
+        'cost' in query.fields,
+    );
+  }
+  function computeTotalsRecord() {
+    return queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'computeCost' in query.fields,
+    );
+  }
+  function computeDailyRecord() {
+    return queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'day' in query.fields,
+    );
+  }
+  function computePriorRecord() {
+    return queryRecords.find(
+      (query) =>
+        query.table === sandboxComputeSessions &&
+        Object.keys(query.fields).length === 1 &&
+        'cost' in query.fields,
+    );
+  }
+
+  test('windows the LLM aggregate on created_at and the compute aggregate on started_at, never last_billed_at', async () => {
+    await getCostSummary({ accountId, window });
+
+    const llmWhere = renderWhere(llmTotalsRecord());
+    expect(llmWhere.sql).toContain('"created_at" >= $');
+    expect(llmWhere.sql).toContain('"created_at" < $');
+    expect(llmWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+
+    const computeWhere = renderWhere(computeTotalsRecord());
+    expect(computeWhere.sql).toContain('"started_at" >= $');
+    expect(computeWhere.sql).toContain('"started_at" < $');
+    expect(computeWhere.sql).not.toContain('last_billed_at');
+    expect(computeWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+  });
+
+  test('omits the project scope when unscoped, so compute totals cover unassigned spend too', async () => {
+    await getCostSummary({ accountId, window });
+
+    // Joining project_sessions unconditionally would inner-join away compute
+    // cost from sessions with no project_sessions row, undercounting the
+    // account-wide total that the "unassigned" row downstream depends on.
+    expect(computeTotalsRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
+    expect(computeDailyRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
+
+    const llmWhere = renderWhere(llmTotalsRecord());
+    expect(llmWhere.params).toHaveLength(3);
+  });
+
+  test('scopes every query to project_id when provided, joining compute through project_sessions', async () => {
+    await getCostSummary({ accountId, projectId, window });
+
+    const llmWhere = renderWhere(llmTotalsRecord());
+    expect(llmWhere.sql).toContain('"project_id" = $');
+    expect(llmWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+      projectId,
+    ]);
+
+    const computeRecord = computeTotalsRecord();
+    expect(computeRecord?.calls.map((call) => call.method)).toContain('innerJoin');
+    expect(renderJoinOn(computeRecord, 'innerJoin')).toBe(
+      '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
+    );
+    const computeWhere = renderWhere(computeRecord);
+    expect(computeWhere.sql).toContain('"project_sessions"."project_id" = $');
+    expect(computeWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+      projectId,
+    ]);
+  });
+
+  test('scopes to session_id on both sources without requiring a project_sessions join', async () => {
+    await getCostSummary({ accountId, sessionId, window });
+
+    const llmWhere = renderWhere(llmTotalsRecord());
+    expect(llmWhere.sql).toContain('"session_id" = $');
+    expect(llmWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+      sessionId,
+    ]);
+
+    const computeRecord = computeTotalsRecord();
+    expect(computeRecord?.calls.map((call) => call.method)).not.toContain('innerJoin');
+    const computeWhere = renderWhere(computeRecord);
+    expect(computeWhere.sql).toContain('"session_id" = $');
+    expect(computeWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+      sessionId,
+    ]);
+  });
+
+  test('the daily series is grouped and windowed the same as the totals', async () => {
+    await getCostSummary({ accountId, window });
+
+    expect(llmDailyRecord()?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
+    expect(renderWhere(llmDailyRecord()).params).toEqual(renderWhere(llmTotalsRecord()).params);
+
+    expect(computeDailyRecord()?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
+    expect(renderWhere(computeDailyRecord()).params).toEqual(
+      renderWhere(computeTotalsRecord()).params,
+    );
+  });
+
+  test('the model breakdown groups by provider and model, ordered by spend descending, limited to 10', async () => {
+    await getCostSummary({ accountId, window });
+
+    const record = modelsRecord();
+    expect(record?.calls.map((call) => call.method)).toEqual([
+      'where',
+      'groupBy',
+      'orderBy',
+      'limit',
+    ]);
+    expect(record?.calls.find((call) => call.method === 'groupBy')?.args).toEqual([
+      gatewayRequestLogs.provider,
+      gatewayRequestLogs.resolvedModel,
+    ]);
+    expect(renderOrderBy(record)[0]).toBe(
+      'sum("kortix"."gateway_request_logs"."final_cost_precise") desc',
+    );
+    expect(record?.calls.find((call) => call.method === 'limit')?.args).toEqual([10]);
+  });
+
+  test('the prior window is the equal-length window immediately before the current one', async () => {
+    await getCostSummary({ accountId, window });
+
+    const expectedPrevious = previousWindow(window);
+    expect(renderWhere(llmPriorRecord()).params).toEqual([
+      accountId,
+      expectedPrevious.from.toISOString(),
+      expectedPrevious.to.toISOString(),
+    ]);
+    expect(renderWhere(computePriorRecord()).params).toEqual([
+      accountId,
+      expectedPrevious.from.toISOString(),
+      expectedPrevious.to.toISOString(),
+    ]);
+  });
+
+  test('assembles totals, previous, series and models from the aggregate queries', async () => {
+    resultForQuery = (fields, table) => {
+      if (table === gatewayRequestLogs && 'llmCost' in fields) {
+        return [{ llmCost: '10', requestCount: 4, sessionCount: 2, projectCount: 1 }];
+      }
+      if (table === gatewayRequestLogs && 'day' in fields) {
+        return [{ day: '2026-07-02', cost: '10' }];
+      }
+      if (table === gatewayRequestLogs && 'model' in fields) {
+        return [
+          { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: '10', requestCount: 4 },
+        ];
+      }
+      if (table === gatewayRequestLogs && Object.keys(fields).length === 1 && 'cost' in fields) {
+        return [{ cost: '4' }];
+      }
+      if (table === sandboxComputeSessions && 'computeCost' in fields) {
+        return [{ computeCost: '5', computeSeconds: 900, sessionCount: 3 }];
+      }
+      if (table === sandboxComputeSessions && 'day' in fields) {
+        return [{ day: '2026-07-03', cost: '5' }];
+      }
+      if (
+        table === sandboxComputeSessions &&
+        Object.keys(fields).length === 1 &&
+        'cost' in fields
+      ) {
+        return [{ cost: '6' }];
+      }
+      return [];
+    };
+
+    const summary = await getCostSummary({
+      accountId,
+      window: {
+        from: new Date('2026-07-01T00:00:00.000Z'),
+        to: new Date('2026-07-04T00:00:00.000Z'),
+      },
+    });
+
+    expect(summary.totals).toEqual({
+      llm_cost: 10,
+      compute_cost: 5,
+      total_cost: 15,
+      request_count: 4,
+      compute_seconds: 900,
+      // The larger of the two sources' distinct session counts.
+      session_count: 3,
+      project_count: 1,
+    });
+    // 4 (llm prior) + 6 (compute prior).
+    expect(summary.previous).toEqual({ total_cost: 10 });
+    expect(summary.series).toEqual([
+      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 },
+      { day: '2026-07-02', llm_cost: 10, compute_cost: 0, total_cost: 10 },
+      { day: '2026-07-03', llm_cost: 0, compute_cost: 5, total_cost: 5 },
+    ]);
+    expect(summary.models).toEqual([
+      { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: 10, request_count: 4 },
+    ]);
   });
 });

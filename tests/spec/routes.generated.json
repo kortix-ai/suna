@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 516,
+  "count": 517,
   "routes": [
     {
       "method": "GET",
@@ -1989,6 +1989,10 @@
     {
       "method": "GET",
       "path": "/v1/usage/cost-by-project"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage/cost-summary"
     },
     {
       "method": "GET",

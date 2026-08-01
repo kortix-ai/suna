@@ -1,5 +1,5 @@
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
@@ -213,5 +213,315 @@ export async function listCostByProject(input: {
     limit: input.limit,
     offset: input.offset,
     next_offset: input.offset + page.length < merged.length ? input.offset + page.length : null,
+  };
+}
+
+export interface CostSeriesPoint {
+  day: string;
+  llm_cost: number;
+  compute_cost: number;
+  total_cost: number;
+}
+
+interface DailyCostRow {
+  day: string;
+  cost: number | string;
+}
+
+// The equally long window immediately before `window`: [from - span, from).
+// Half-open like every CostWindow. Pure so the boundary math (month/day
+// crossings, single-day windows) is unit-testable without a database.
+export function previousWindow(window: CostWindow): CostWindow {
+  const span = window.to.getTime() - window.from.getTime();
+  return {
+    from: new Date(window.from.getTime() - span),
+    to: new Date(window.from.getTime()),
+  };
+}
+
+// Gap days are emitted as zero, not omitted. A chart that silently skips
+// empty days compresses time and makes a spike look like a trend.
+export function buildCostSeries(
+  llmDays: DailyCostRow[],
+  computeDays: DailyCostRow[],
+  window: CostWindow,
+): CostSeriesPoint[] {
+  const llmByDay = new Map(llmDays.map((row) => [row.day, numberValue(row.cost)]));
+  const computeByDay = new Map(computeDays.map((row) => [row.day, numberValue(row.cost)]));
+
+  const points: CostSeriesPoint[] = [];
+  const cursor = new Date(
+    Date.UTC(window.from.getUTCFullYear(), window.from.getUTCMonth(), window.from.getUTCDate()),
+  );
+
+  while (cursor.getTime() < window.to.getTime()) {
+    const day = cursor.toISOString().slice(0, 10);
+    const llmCost = llmByDay.get(day) ?? 0;
+    const computeCost = computeByDay.get(day) ?? 0;
+    points.push({
+      day,
+      llm_cost: llmCost,
+      compute_cost: computeCost,
+      total_cost: Number((llmCost + computeCost).toFixed(10)),
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return points;
+}
+
+export interface CostSummaryTotals {
+  llm_cost: number;
+  compute_cost: number;
+  total_cost: number;
+  request_count: number;
+  compute_seconds: number;
+  session_count: number;
+  project_count: number;
+}
+
+export interface CostModelRow {
+  provider: string;
+  model: string;
+  cost: number;
+  request_count: number;
+}
+
+export interface CostSummary {
+  totals: CostSummaryTotals;
+  previous: { total_cost: number };
+  series: CostSeriesPoint[];
+  models: CostModelRow[];
+}
+
+// UTC day bucket for the LLM daily series, keyed off created_at (Date-mode).
+const LLM_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
+// UTC day bucket for the compute daily series, keyed off started_at. The
+// underlying column is timestamptz regardless of the client-side string
+// mode, so `at time zone 'UTC'` on the raw column is valid the same way.
+const COMPUTE_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${sandboxComputeSessions.startedAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
+
+// Seconds actually billed (last_billed_at - started_at, clamped to >= 0), not
+// raw wall time. Mirrors session-costs.ts's billedComputeSecondsExpression;
+// duplicated (not imported) to keep this task's edits inside the three files
+// it was scoped to (cost-rollups.ts / .test.ts / usage.ts) — flagged in the
+// task report as a candidate for consolidation.
+const billedComputeSecondsExpression = sql<number>`
+  greatest(
+    extract(
+      epoch from ${sandboxComputeSessions.lastBilledAt} - ${sandboxComputeSessions.startedAt}
+    ),
+    0
+  )
+`;
+
+interface ComputeTotalsRow {
+  computeCost: number | string;
+  computeSeconds: number | string;
+  sessionCount: number | string;
+}
+
+interface ComputeDailyRow {
+  day: string;
+  cost: number | string;
+}
+
+interface ComputePriorRow {
+  cost: number | string;
+}
+
+// Scoped, windowed spend totals, a gap-filled daily series, the top 10
+// models by spend, and the prior equal-length window's total for a period
+// delta. One function serves all three cost explorer levels: account-wide
+// when neither projectId nor sessionId is supplied, one project when
+// projectId is supplied, one session when sessionId is supplied.
+export async function getCostSummary(input: {
+  accountId: string;
+  projectId?: string;
+  sessionId?: string;
+  window: CostWindow;
+}): Promise<CostSummary> {
+  const { accountId, projectId, sessionId, window } = input;
+
+  const llmScope = (w: CostWindow) => {
+    const conditions = [
+      eq(gatewayRequestLogs.accountId, accountId),
+      // createdAt is a Date-mode timestamp, so the bounds are Date objects.
+      gte(gatewayRequestLogs.createdAt, w.from),
+      lt(gatewayRequestLogs.createdAt, w.to),
+    ];
+    if (projectId) conditions.push(eq(gatewayRequestLogs.projectId, projectId));
+    if (sessionId) conditions.push(eq(gatewayRequestLogs.sessionId, sessionId));
+    return and(...conditions);
+  };
+
+  // Compute rows carry no project_id of their own — reaching it means
+  // joining project_sessions (session_id is its primary key, as in
+  // listCostByProject above). The join is added only when scoping to one
+  // project: joining unconditionally would inner-join away compute cost from
+  // sessions with no project_sessions row, silently undercounting the
+  // account-wide total. This endpoint's totals.total_cost must cover ALL
+  // account spend in the window — the same constraint loadReconciliation in
+  // session-costs.ts enforces with a LEFT JOIN for the same reason.
+  const computeScope = (w: CostWindow) => {
+    const conditions = [
+      eq(sandboxComputeSessions.accountId, accountId),
+      // startedAt is declared mode:'string', so the bounds are ISO strings.
+      // Never last_billed_at — its only index is partial (WHERE state =
+      // 'active'), built for the biller, not for windowed reporting.
+      gte(sandboxComputeSessions.startedAt, w.from.toISOString()),
+      lt(sandboxComputeSessions.startedAt, w.to.toISOString()),
+    ];
+    if (sessionId) conditions.push(eq(sandboxComputeSessions.sessionId, sessionId));
+    if (projectId) conditions.push(eq(projectSessions.projectId, projectId));
+    return and(...conditions);
+  };
+
+  const computeTotalsFields = {
+    computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
+    computeSeconds: sql<number>`coalesce(sum(${billedComputeSecondsExpression}), 0)::float8`,
+    sessionCount: sql<number>`count(distinct ${sandboxComputeSessions.sessionId})::int`,
+  };
+  const computeDailyFields = {
+    day: COMPUTE_DAY_EXPRESSION,
+    cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
+  };
+  const computePriorFields = {
+    cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
+  };
+
+  // Each loader branches on whether the project_sessions join is needed and
+  // awaits inside the branch, rather than assigning a not-yet-awaited query
+  // built by a ternary — Drizzle's joined and unjoined builders are
+  // differently-typed chain objects, and unifying them at the ternary
+  // (instead of at the already-resolved Promise) is exactly the kind of
+  // ambiguity the brief's Step 5 pseudocode (`computeBase`) glossed over.
+  function loadComputeTotals(w: CostWindow): Promise<ComputeTotalsRow[]> {
+    if (projectId) {
+      return db
+        .select(computeTotalsFields)
+        .from(sandboxComputeSessions)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+        .where(computeScope(w));
+    }
+    return db.select(computeTotalsFields).from(sandboxComputeSessions).where(computeScope(w));
+  }
+
+  function loadComputeDaily(w: CostWindow): Promise<ComputeDailyRow[]> {
+    if (projectId) {
+      return db
+        .select(computeDailyFields)
+        .from(sandboxComputeSessions)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+        .where(computeScope(w))
+        .groupBy(COMPUTE_DAY_EXPRESSION);
+    }
+    return db
+      .select(computeDailyFields)
+      .from(sandboxComputeSessions)
+      .where(computeScope(w))
+      .groupBy(COMPUTE_DAY_EXPRESSION);
+  }
+
+  function loadComputePrior(w: CostWindow): Promise<ComputePriorRow[]> {
+    if (projectId) {
+      return db
+        .select(computePriorFields)
+        .from(sandboxComputeSessions)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+        .where(computeScope(w));
+    }
+    return db.select(computePriorFields).from(sandboxComputeSessions).where(computeScope(w));
+  }
+
+  const previous = previousWindow(window);
+
+  const [
+    llmTotalsRows,
+    llmDailyRows,
+    modelRows,
+    llmPriorRows,
+    computeTotalsRows,
+    computeDailyRows,
+    computePriorRows,
+  ] = await Promise.all([
+    db
+      .select({
+        llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        requestCount: sql<number>`count(*)::int`,
+        sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
+        projectCount: sql<number>`count(distinct ${gatewayRequestLogs.projectId})::int`,
+      })
+      .from(gatewayRequestLogs)
+      .where(llmScope(window)),
+    db
+      .select({
+        day: LLM_DAY_EXPRESSION,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+      })
+      .from(gatewayRequestLogs)
+      .where(llmScope(window))
+      .groupBy(LLM_DAY_EXPRESSION),
+    db
+      .select({
+        provider: gatewayRequestLogs.provider,
+        model: gatewayRequestLogs.resolvedModel,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        requestCount: sql<number>`count(*)::int`,
+      })
+      .from(gatewayRequestLogs)
+      .where(llmScope(window))
+      .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
+      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`))
+      .limit(10),
+    db
+      .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
+      .from(gatewayRequestLogs)
+      .where(llmScope(previous)),
+    loadComputeTotals(window),
+    loadComputeDaily(window),
+    loadComputePrior(previous),
+  ]);
+
+  const llmTotals = llmTotalsRows[0];
+  const computeTotals = computeTotalsRows[0];
+  const llmCost = numberValue(llmTotals?.llmCost);
+  const computeCost = numberValue(computeTotals?.computeCost);
+
+  const totals: CostSummaryTotals = {
+    llm_cost: llmCost,
+    compute_cost: computeCost,
+    total_cost: Number((llmCost + computeCost).toFixed(10)),
+    request_count: numberValue(llmTotals?.requestCount),
+    compute_seconds: numberValue(computeTotals?.computeSeconds),
+    // The larger of the two sources' distinct session counts — the same
+    // convention mergeProjectCostRows uses above, so a session with spend on
+    // only one side is never undercounted.
+    session_count: Math.max(
+      numberValue(llmTotals?.sessionCount),
+      numberValue(computeTotals?.sessionCount),
+    ),
+    // Sourced from gateway_request_logs.project_id alone: it is the only side
+    // that carries project_id without a join, and joining the compute side
+    // unconditionally would break the total_cost completeness constraint
+    // documented on computeScope above. This undercounts only in the edge
+    // case of a project with compute spend and zero LLM calls in the window.
+    project_count: numberValue(llmTotals?.projectCount),
+  };
+
+  const previousTotalCost = Number(
+    (numberValue(llmPriorRows[0]?.cost) + numberValue(computePriorRows[0]?.cost)).toFixed(10),
+  );
+
+  return {
+    totals,
+    previous: { total_cost: previousTotalCost },
+    series: buildCostSeries(llmDailyRows, computeDailyRows, window),
+    models: modelRows.map((row) => ({
+      provider: row.provider,
+      model: row.model,
+      cost: numberValue(row.cost),
+      request_count: numberValue(row.requestCount),
+    })),
   };
 }
