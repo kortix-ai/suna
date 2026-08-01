@@ -96,7 +96,7 @@ describe('SessionCostExplorerContent', () => {
     expect(html).toContain('owner@example.test');
     expect(html).toContain('Build service');
     expect(html).toContain('Unknown owner');
-    expect(html).toContain('$0.0000000042');
+    expect(html).toContain('&lt;$0.01');
     expect(html).toContain('aria-label="View cost details for session session-user"');
   });
 

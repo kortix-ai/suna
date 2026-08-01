@@ -18,7 +18,11 @@ import {
 } from '@/components/ui/table';
 import { EmptyState } from '@/features/layout/section/empty-state';
 
-import { formatSessionCostDuration, formatSessionCostUsd } from './session-cost-format';
+import {
+  formatSessionCostDuration,
+  formatSessionCostExactUsd,
+  formatSessionCostUsd,
+} from './session-cost-format';
 
 interface SessionCostDetailContentProps {
   detail: SessionCostDetail | undefined;
@@ -220,7 +224,7 @@ export function SessionCostDetailContent({
                         : formatSessionCostDuration(entry.compute_seconds)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums">
-                      {formatSessionCostUsd(entry.cost)}
+                      {formatSessionCostExactUsd(entry.cost)}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {formatTimestamp(ledgerTimestamp(entry))}
