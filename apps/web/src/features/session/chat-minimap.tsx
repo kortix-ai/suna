@@ -4,7 +4,6 @@ import { CubeIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
-import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import type { Turn } from '@/ui';
 
 import { MENU_PANEL } from '@/components/ui/menu-recipe';
@@ -53,10 +52,6 @@ function MinimapCard({ item }: { item: MinimapItem }) {
 }
 
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
-  // With the side panel open the panel body already pads the chat's right
-  // edge, so the rail sits flush (right-0); full-width chat keeps its own
-  // right-2 breathing room. Same store signal `session-layout` renders from.
-  const isSidePanelOpen = useIsSidePanelOpen();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // Which row the pointer (or keyboard focus) is on, and which row the card is
@@ -165,22 +160,23 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
   return (
     <nav
       aria-label="Jump to message"
-      className={cn(
-        'pointer-events-none absolute top-1/2 z-10 -translate-y-1/2',
-        isSidePanelOpen ? '-right-1' : 'right-2',
-      )}
+      // Desktop only. On phone and tablet the rail is a 3px pointer target
+      // sitting on top of the chat — there is no hover, and the gutter it needs
+      // does not exist.
+      className="pointer-events-none absolute top-1/2 left-2 z-10 hidden -translate-y-1/2 lg:block"
     >
+      {/* Preview opens toward the chat (right of the rail). */}
       <div
         aria-hidden
         className={cn(
-          'absolute top-0 right-full pr-1.5',
+          'absolute top-0 left-full pl-1.5',
           'transition-transform duration-200 ease-out motion-reduce:transition-none',
         )}
         style={{ transform: `translateY(calc(${dashCenterY(shownRow)}px - 50%))` }}
       >
         <div
           className={cn(
-            'origin-right transition-[opacity,transform,filter] duration-150 ease-out',
+            'origin-left transition-[opacity,transform,filter] duration-150 ease-out',
             'motion-reduce:transition-[opacity]',
             open
               ? 'scale-100 opacity-100 blur-none'
@@ -215,7 +211,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
               // user still needs a ring they can locate — it goes on the ROW,
               // because a ring around a 3px dash is unreadable.
               className={cn(
-                'flex cursor-pointer items-center justify-end rounded-sm px-3',
+                'hit-area-x-5 last:hit-area-b-3 first:hit-area-t-3 flex cursor-pointer items-center justify-start rounded-sm px-3',
                 'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
               )}
               onPointerEnter={() => focusRow(row)}

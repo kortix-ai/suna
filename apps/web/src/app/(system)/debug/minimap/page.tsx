@@ -83,7 +83,7 @@ export default function DebugMinimapPage() {
       <header className="border-b px-6 py-3">
         <h1 className="text-foreground text-sm font-medium">/debug/minimap</h1>
         <p className="text-muted-foreground text-xs">
-          Hover the rail on the right. The dash taper follows the pointer; the card glides.
+          Hover the rail on the left. The dash taper follows the pointer; the card glides.
         </p>
       </header>
 

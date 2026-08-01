@@ -68,10 +68,10 @@ export function truncate(text: string, maxLen: number): string {
  * This value IS the visible gap: the row is `DASH_THICKNESS` of dash and the
  * rest is breathing room, so shrinking the rail is one number, not two.
  */
-export const DASH_ROW_HEIGHT = 11;
+export const DASH_ROW_HEIGHT = 9;
 
 /** Dash thickness, in px. */
-export const DASH_THICKNESS = 3;
+export const DASH_THICKNESS = 2.9;
 
 export const DASH_WIDTH_MAX = 16;
 export const DASH_WIDTH_MIN = 6;
