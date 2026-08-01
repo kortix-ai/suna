@@ -498,6 +498,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|tunnel|permissions|:tunnelId|:permissionId",
   "POST|v1|tunnel|rpc|:tunnelId",
   "GET|v1|usage",
+  "GET|v1|usage|cost-by-project",
+  "GET|v1|usage|cost-summary",
   "GET|v1|usage|session-costs",
   "GET|v1|usage|session-costs|:sessionId",
   "GET|v1|user-roles",
