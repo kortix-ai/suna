@@ -8,6 +8,7 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
+import { listCostByProject } from '../../shared/cost-rollups';
 import {
   type CostSort,
   type CostWindow,
@@ -247,6 +248,36 @@ const SessionCostDetailQuerySchema = z
   })
   .openapi('SessionCostDetailQuery');
 
+const ProjectCostRowSchema = z
+  .object({
+    project_id: z.string(),
+    project_name: z.string(),
+    session_count: z.number(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    last_activity_at: z.string().nullable(),
+  })
+  .openapi('ProjectCostRow');
+
+const ProjectCostPageSchema = z
+  .object({
+    projects: z.array(ProjectCostRowSchema),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+    next_offset: z.number().nullable(),
+  })
+  .openapi('ProjectCostPage');
+
+// The route's allowed sorts — all four CostSort members. Unlike
+// SESSION_COST_SORTS, this includes name_asc: a project rollup has a name to
+// sort on, so sortProjectRows never hits its `never`-typed default branch.
+// `as const` (not `: readonly CostSort[]`) so the same array satisfies both
+// z.enum()'s non-empty-tuple requirement below and parseCostSort()'s
+// `readonly CostSort[]` parameter.
+const PROJECT_COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
+
 usageApp.openapi(
   createRoute({
     method: 'get',
@@ -439,6 +470,56 @@ usageApp.openapi(
       throw new HTTPException(404, { message: 'Session not found' });
     }
     return c.json(detail);
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-by-project',
+    tags: ['usage'],
+    summary: 'Roll up spend by project over a date window',
+    description:
+      'Groups LLM and billed compute spend by project. LLM is windowed on request time ' +
+      '(created_at); compute is windowed on the billing window start (started_at). Bounds ' +
+      'are half-open [from, to) and always UTC; an absent from/to defaults to the trailing ' +
+      '30 days. Paging happens in memory: an account has tens to hundreds of projects, not ' +
+      'the tens of thousands a session list can reach.',
+    ...auth,
+    request: {
+      query: z
+        .object({
+          account_id: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+          sort: z.enum(PROJECT_COST_SORTS).optional(),
+          limit: z.string().optional(),
+          offset: z.string().optional(),
+        })
+        .openapi('ProjectCostQuery'),
+    },
+    responses: {
+      200: json(ProjectCostPageSchema, 'Project spend rollup'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c) => {
+    try {
+      const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+      return c.json(
+        await listCostByProject({
+          accountId,
+          window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
+          sort: parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc'),
+          ...parseCostPagination({ limit: c.req.query('limit'), offset: c.req.query('offset') }),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof InvalidCostQueryError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
   },
 );
 
