@@ -3900,6 +3900,11 @@
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "内容検索"
     },
+    "componentsCommonErrorBoundary": {
+      "reload": "再読み込み",
+      "errorDetails": "エラーの詳細",
+      "copyDetails": "エラーの詳細をコピー"
+    },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "ファイルプレビュー:",
       "line122JsxAttrTitleOpenInNewTab": "新しいタブで開く",
