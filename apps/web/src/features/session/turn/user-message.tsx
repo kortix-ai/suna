@@ -480,9 +480,9 @@ function FileTileBody({ file, pending }: { file: NormalizedAttachment; pending?:
   return (
     <span className="flex size-full flex-col justify-between gap-1 p-2">
       {pending ? (
-        <Loading className="text-muted-foreground size-4 shrink-0" variant="spokes" />
+        <Loading className="text-muted-foreground size-5 shrink-0" variant="spokes" />
       ) : (
-        <Icon className="text-muted-foreground size-4 shrink-0" />
+        <Icon className="text-muted-foreground size-5 shrink-0" />
       )}
       <span className="text-foreground line-clamp-2 text-left text-xs leading-tight break-all">
         {file.filename}
@@ -630,7 +630,10 @@ function MessageAttachments({
                 e.stopPropagation();
                 if (file.path) openFileInComputer(file.path);
               }}
-              className={cn(TILE_SURFACE, canOpen && ATTACHMENT_INTERACTIVE)}
+              className={cn(
+                'border-border bg-background relative block h-20 min-w-40 shrink-0 overflow-hidden rounded-md border',
+                canOpen && ATTACHMENT_INTERACTIVE,
+              )}
             >
               <FileTileBody file={file} pending={pending || file.pending} />
             </button>
@@ -660,7 +663,7 @@ function UserMessageActions({
 }) {
   if (rewindDisabled) return null;
   return (
-    <div className=" flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+    <div className="flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
       <Hint label="Edit from here" side="bottom" align="center">
         <Button
           type="button"
@@ -1119,7 +1122,7 @@ export function UserMessage({
     // panel, not as something trailing off the end of a sentence.
     <div
       className={cn(
-        'ml-auto flex w-full flex-col  items-end gap-2 self-end',
+        'ml-auto flex w-full flex-col items-end gap-2 self-end',
         // showPlan ? 'max-w-full' : 'max-w-[80%]',
         'max-w-[80%]',
       )}
