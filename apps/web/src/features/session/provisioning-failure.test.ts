@@ -82,7 +82,21 @@ describe('pendingSessionPromptFromMetadata', () => {
     });
   });
 
-  test('rejects missing, cleared, empty, and malformed recovery copies', () => {
+  test('reads a file-only recovery copy with empty text', () => {
+    expect(
+      pendingSessionPromptFromMetadata({
+        pending_prompt: { text: '', attachment_names: ['parcel.geojson'] },
+      }),
+    ).toEqual({
+      text: '',
+      agent: null,
+      model: null,
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    });
+  });
+
+  test('rejects missing, cleared, content-free, and malformed recovery copies', () => {
     expect(pendingSessionPromptFromMetadata(undefined)).toBeNull();
     expect(pendingSessionPromptFromMetadata({ pending_prompt: null })).toBeNull();
     expect(pendingSessionPromptFromMetadata({ pending_prompt: [] })).toBeNull();

@@ -441,6 +441,21 @@ describe('pending session prompt contract', () => {
       }).pending_prompt,
     ).toEqual(pendingPrompt);
   });
+
+  test('accepts a file-only draft with an empty text field', () => {
+    const pendingPrompt = {
+      text: '',
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+
+    expect(() =>
+      SessionCreateInputSchema.strict().parse({ pending_prompt: { text: '' } }),
+    ).toThrow();
+  });
 });
 
 describe('ProjectSessionSandboxSchema', () => {

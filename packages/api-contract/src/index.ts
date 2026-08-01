@@ -668,7 +668,7 @@ export type UpdateConnectionProfileCredentialInput =
 
 export const PendingSessionPromptSchema = z
   .object({
-    text: z.string().min(1).max(1_000_000),
+    text: z.string().max(1_000_000),
     agent: z.string().min(1).nullable().optional(),
     model: z
       .object({ providerID: z.string().min(1), modelID: z.string().min(1) })
@@ -678,7 +678,15 @@ export const PendingSessionPromptSchema = z
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.text.trim().length > 0 || (value.attachment_names?.length ?? 0) > 0) return;
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['text'],
+      message: 'A pending prompt requires text or an attachment name.',
+    });
+  });
 export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
 
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */

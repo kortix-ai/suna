@@ -73,6 +73,7 @@ A user action is necessary after every terminal capacity rejection.
 ## Attachment rule
 
 Session metadata stores attachment names only.
+The contract accepts a file-only request with an empty text field.
 The current browser tab keeps the local `File` objects in the pending-files store.
 A page reload can remove the local file bytes.
 The capacity card tells the user to reattach files after a reload.

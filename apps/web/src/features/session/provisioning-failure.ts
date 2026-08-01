@@ -42,7 +42,7 @@ export function pendingSessionPromptFromMetadata(
   const value = metadata?.pending_prompt;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const prompt = value as Record<string, unknown>;
-  if (typeof prompt.text !== 'string' || prompt.text.trim().length === 0) return null;
+  if (typeof prompt.text !== 'string') return null;
   if (prompt.agent !== undefined && prompt.agent !== null && typeof prompt.agent !== 'string') {
     return null;
   }
@@ -68,6 +68,7 @@ export function pendingSessionPromptFromMetadata(
   ) {
     return null;
   }
+  if (prompt.text.trim().length === 0 && (prompt.attachment_names?.length ?? 0) === 0) return null;
   const parsedModel =
     model &&
     typeof model === 'object' &&
