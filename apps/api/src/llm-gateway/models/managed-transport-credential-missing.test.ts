@@ -54,6 +54,7 @@ mock.module('../../projects/secrets', () => ({
 
 mock.module('../../repositories/project-routing-policies', () => ({
   getProjectRoutingPolicy: async () => null,
+  setProjectModelOverrides: async () => undefined,
 }));
 
 mock.module('../credentials/codex', () => ({

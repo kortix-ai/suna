@@ -69,8 +69,8 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   const { isPending: accountStatePending } = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`
   // already applies plan entitlement (`freeManagedOnly`) and connected-BYOK
-  // filtering, then stamps `enabled` on every model it serves — the same answer
-  // the gateway enforces. This gate must read that flag.
+  // filtering, then stamps `enabled` on every model it serves. This gate must
+  // read that flag.
   //
   // *** BUG THIS FIXES (clicking a model in the picker did nothing) ***
   // This hook used to recompute entitlement with `hasUsableModel(models, {

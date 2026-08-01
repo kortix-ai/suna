@@ -80,7 +80,6 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -437,15 +436,10 @@ export function CommandPalette() {
   );
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
-  // Pass the store the opts it needs, or `isVisible` hides every gateway model
-  // (unless its provider is connected) and resolves an empty "latest" set — the
-  // same "0 shown" bug the Manage-models tab had. See useModelStore's opts doc.
-  const { connectedProviders } = useConnectedProviders(projectId ?? '', open && !!projectId);
-  const connectedProviderIds = useMemo(
-    () => new Set(connectedProviders.map((provider) => provider.id)),
-    [connectedProviders],
-  );
-  const modelStore = useModelStore(allModels, { connectedProviderIds, catalogModels: allModels });
+  // Only for the persisted selection state (session agent, per-agent model,
+  // recents) — model visibility is the server's `enabled` flag on each model,
+  // never a store heuristic.
+  const modelStore = useModelStore(allModels);
 
   const currentAgentName = useMemo(() => {
     if (!currentSessionId) return undefined;
@@ -637,17 +631,12 @@ export function CommandPalette() {
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Same rule as the session picker: only what the project OFFERS
+    // (server-resolved `enabled`, `/model-picker`). Searching does not resurface
+    // a disabled model — "Manage models" is where the full catalog lives.
     return allModels
       .filter((m) => {
-        if (
-          !q &&
-          !modelStore.isVisible({
-            providerID: m.providerID,
-            modelID: m.modelID,
-            provider: m.provider,
-          })
-        )
-          return false;
+        if (m.enabled === false) return false;
         return (
           !q ||
           (m.modelName || '').toLowerCase().includes(q) ||
@@ -656,7 +645,7 @@ export function CommandPalette() {
         );
       })
       .sort((a, b) => (a.modelName || '').localeCompare(b.modelName || ''));
-  }, [allModels, query, modelStore]);
+  }, [allModels, query]);
 
   const groupedModels = useMemo(() => {
     const groups = new Map<

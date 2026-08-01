@@ -178,10 +178,10 @@ export function ModelSelector({
   // ── Filtered + grouped models ──
 
   // The list is exactly what the project OFFERS. `enabled` is resolved by the
-  // server (and enforced by the gateway), so the picker applies no visibility
-  // rule of its own — a second, client-only filter here is precisely what made
-  // "Manage models" report 15 of 15 shown while this rendered 3. Turn a model
-  // on in "Manage models" and it appears here; there is nothing else to check.
+  // server (`/model-picker`), so the picker applies no visibility rule of its
+  // own — a second, client-only filter here is precisely what made "Manage
+  // models" report 15 of 15 shown while this rendered 3. Turn a model on in
+  // "Manage models" and it appears here; there is nothing else to check.
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return baseModels
