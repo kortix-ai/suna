@@ -3967,6 +3967,11 @@
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "content search"
     },
+    "componentsCommonErrorBoundary": {
+      "reload": "Reload",
+      "errorDetails": "Error details",
+      "copyDetails": "Copy error details"
+    },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "File Preview:",
       "line122JsxAttrTitleOpenInNewTab": "Open in new tab",

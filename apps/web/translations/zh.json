@@ -3896,6 +3896,11 @@
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "内容搜索"
     },
+    "componentsCommonErrorBoundary": {
+      "reload": "重新加载",
+      "errorDetails": "错误详情",
+      "copyDetails": "复制错误详情"
+    },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "文件预览：",
       "line122JsxAttrTitleOpenInNewTab": "在新标签页中打开",
