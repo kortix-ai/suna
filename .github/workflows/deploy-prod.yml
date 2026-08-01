@@ -783,9 +783,11 @@ jobs:
     # The shadow is dark: Cloudflare routes no user traffic to it. A wedged
     # shadow (e.g. logical replication stuck) must not block the release
     # artifacts for the PRIMARY region — that skipped the tag, GitHub Release,
-    # and VERSION sync on v0.10.16 through v0.12.0. Its failure still shows
-    # red on this job; verify-live-version reports shadow drift as a warning.
-    continue-on-error: true
+    # and VERSION sync on v0.10.16 through v0.12.0. Nothing `needs:` this job
+    # (verify-live-version deliberately does not), so its failure shows red
+    # here but blocks nothing; verify-live-version reports shadow drift as a
+    # warning. NOTE: `continue-on-error` is NOT valid on a reusable-workflow
+    # call job — GitHub rejects the whole file (startup_failure, zero jobs).
     permissions:
       contents: read
       id-token: write
@@ -1031,7 +1033,7 @@ jobs:
   # published.
   verify-live-version:
     name: Verify live version == v${{ needs.version.outputs.version }}
-    needs: [version, deploy-ecs, deploy-us-shadow, deploy-api, deploy-gateway]
+    needs: [version, deploy-ecs, deploy-api, deploy-gateway]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
