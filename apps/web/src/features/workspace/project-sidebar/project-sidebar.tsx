@@ -66,6 +66,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
+import { ProjectSwitcher } from './project-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -180,17 +181,21 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     >
       <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
-            single layout. The project switcher used to own this row; the
-            sidebar toggle took its place, so the collapse control sits inside
-            the thing it collapses and the session header no longer has to
-            carry a toggle while the panel is docked open. */}
-        <div className="flex w-full items-center justify-between gap-1">
-          <Button type="button" variant="ghost" size="icon" asChild>
-            <Link href={`/projects/${projectId}`}>
-              <Icon.Kortix className="text-foreground size-4.5" />
-            </Link>
-          </Button>
-          <div className="flex items-center gap-0.5">
+            single layout. Three controls on one 240px row, all 32px tall: the
+            merged brand/switcher control, search, and the panel's own collapse
+            toggle — so the collapse control sits inside the thing it collapses
+            and the session header no longer has to carry a toggle while the
+            panel is docked open.
+
+            The Kortix mark used to be a separate button sitting beside the
+            switcher. Same subject, two mismatched controls, and dead space
+            between them. It is one segmented control now (see
+            ProjectSwitcher): the mark still links to the project's home, the
+            name still opens the switcher, and the whole row between them is
+            live instead of inert. */}
+        <div className="flex w-full items-center gap-1">
+          <ProjectSwitcher variant="sidebar" className="min-w-0" />
+          <div className="flex shrink-0 items-center gap-0.5 ml-auto">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
                 too: there is no keystroke to fall back on there. */}
@@ -212,7 +217,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
-                className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
                 <MagnifyingGlassIcon className="size-4" />
               </Button>
@@ -241,7 +246,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
-                  className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                  className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
                 >
                   <PanelLeft className="cn-rtl-flip size-4" />
                 </Button>
