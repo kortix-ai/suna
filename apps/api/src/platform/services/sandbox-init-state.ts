@@ -110,6 +110,7 @@ export function buildSandboxInitAttemptMetadata(
   status: Extract<SandboxInitStatus, 'provisioning' | 'retrying'>,
   provisioningStage?: string | null,
   provisioningMessage?: string | null,
+  maxAttempts = SANDBOX_INIT_MAX_ATTEMPTS,
 ): Record<string, unknown> {
   const now = new Date().toISOString();
   const next = stripSandboxInitFailureMetadata(metadata);
@@ -117,7 +118,7 @@ export function buildSandboxInitAttemptMetadata(
     ...next,
     initStatus: status,
     initAttempts: attempt,
-    initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+    initMaxAttempts: maxAttempts,
     lastInitError: null,
     initUpdatedAt: now,
     initStartedAt: typeof next.initStartedAt === 'string' ? next.initStartedAt : now,
@@ -131,6 +132,7 @@ export function buildSandboxInitSuccessMetadata(
   metadata: Record<string, unknown> | null | undefined,
   resultMetadata: Record<string, unknown>,
   attempt: number,
+  maxAttempts = SANDBOX_INIT_MAX_ATTEMPTS,
 ): Record<string, unknown> {
   const now = new Date().toISOString();
   return {
@@ -138,7 +140,7 @@ export function buildSandboxInitSuccessMetadata(
     ...resultMetadata,
     initStatus: 'ready' as SandboxInitStatus,
     initAttempts: attempt,
-    initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+    initMaxAttempts: maxAttempts,
     lastInitError: null,
     initSucceededAt: now,
     initUpdatedAt: now,
@@ -151,6 +153,7 @@ export function buildSandboxInitFailureMetadata(
   error: unknown,
   attempt: number,
   willRetry: boolean,
+  maxAttempts = SANDBOX_INIT_MAX_ATTEMPTS,
 ): Record<string, unknown> {
   const message = errorMessage(error);
   const now = new Date().toISOString();
@@ -160,7 +163,7 @@ export function buildSandboxInitFailureMetadata(
       ...next,
       initStatus: 'retrying' as SandboxInitStatus,
       initAttempts: attempt,
-      initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+      initMaxAttempts: maxAttempts,
       lastInitError: message,
       initFailedAt: now,
       initUpdatedAt: now,
@@ -172,7 +175,7 @@ export function buildSandboxInitFailureMetadata(
     ...next,
     initStatus: 'failed' as SandboxInitStatus,
     initAttempts: attempt,
-    initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+    initMaxAttempts: maxAttempts,
     lastInitError: message,
     initFailedAt: now,
     initUpdatedAt: now,
@@ -187,8 +190,13 @@ export async function retrySandboxProvisionCreate(
   provider: SandboxProvider,
   createOpts: CreateSandboxOpts,
   hooks: {
-    onAttemptStart?: (attempt: number) => Promise<void> | void;
-    onAttemptFailure?: (attempt: number, error: unknown, willRetry: boolean) => Promise<void> | void;
+    onAttemptStart?: (attempt: number, maxAttempts: number) => Promise<void> | void;
+    onAttemptFailure?: (
+      attempt: number,
+      error: unknown,
+      willRetry: boolean,
+      maxAttempts: number,
+    ) => Promise<void> | void;
   } = {},
   // FIX-A: how a single attempt boots. Defaults to the provider's name-based
   // create(); the boot path passes a createFromExternalId-backed fn to boot the
@@ -199,8 +207,9 @@ export async function retrySandboxProvisionCreate(
   let lastError: unknown;
   // Outer bound is the longest patience-window we'd extend for any retry class.
   const HARD_CAP = Math.max(SNAPSHOT_BUILDING_MAX_ATTEMPTS, PROVIDER_CAPACITY_MAX_ATTEMPTS);
+  let currentMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
   for (let attempt = 1; attempt <= HARD_CAP; attempt++) {
-    await hooks.onAttemptStart?.(attempt);
+    await hooks.onAttemptStart?.(attempt, currentMaxAttempts);
     try {
       const result = await createFn(createOpts);
       return { result, attempts: attempt };
@@ -214,7 +223,7 @@ export async function retrySandboxProvisionCreate(
       // likewise non-retryable here — fail fast so the boot path falls back to a
       // name-boot immediately, rather than burning retries on an id that is gone.
       if (error instanceof WarmRuntimeUnavailableError || error instanceof SandboxTemplateNotFoundError) {
-        await hooks.onAttemptFailure?.(attempt, error, false);
+        await hooks.onAttemptFailure?.(attempt, error, false, currentMaxAttempts);
         throw error;
       }
       const snapshotStillBuilding = isSnapshotStillBuilding(error);
@@ -224,8 +233,9 @@ export async function retrySandboxProvisionCreate(
         : capacityLimited
           ? PROVIDER_CAPACITY_MAX_ATTEMPTS
           : SANDBOX_INIT_MAX_ATTEMPTS;
+      currentMaxAttempts = maxAttempts;
       const willRetry = attempt < maxAttempts;
-      await hooks.onAttemptFailure?.(attempt, error, willRetry);
+      await hooks.onAttemptFailure?.(attempt, error, willRetry, maxAttempts);
       if (!willRetry) throw error;
       // Generic retries use exponential backoff from RETRY_DELAY_BASE_MS,
       // capped at RETRY_DELAY_MAX_MS. Snapshot-building and provider-capacity

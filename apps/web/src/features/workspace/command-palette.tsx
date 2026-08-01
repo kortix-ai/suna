@@ -436,6 +436,9 @@ export function CommandPalette() {
   );
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
+  // Only for the persisted selection state (session agent, per-agent model,
+  // recents) — model visibility is the server's `enabled` flag on each model,
+  // never a store heuristic.
   const modelStore = useModelStore(allModels);
 
   const currentAgentName = useMemo(() => {
@@ -628,17 +631,12 @@ export function CommandPalette() {
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Same rule as the session picker: only what the project OFFERS
+    // (server-resolved `enabled`, `/model-picker`). Searching does not resurface
+    // a disabled model — "Manage models" is where the full catalog lives.
     return allModels
       .filter((m) => {
-        if (
-          !q &&
-          !modelStore.isVisible({
-            providerID: m.providerID,
-            modelID: m.modelID,
-            provider: m.provider,
-          })
-        )
-          return false;
+        if (m.enabled === false) return false;
         return (
           !q ||
           (m.modelName || '').toLowerCase().includes(q) ||
@@ -647,7 +645,7 @@ export function CommandPalette() {
         );
       })
       .sort((a, b) => (a.modelName || '').localeCompare(b.modelName || ''));
-  }, [allModels, query, modelStore]);
+  }, [allModels, query]);
 
   const groupedModels = useMemo(() => {
     const groups = new Map<

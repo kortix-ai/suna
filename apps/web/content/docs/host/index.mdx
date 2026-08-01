@@ -86,6 +86,25 @@ Any signed-in user can still join by invite or SSO. Opt out with
 admin-only default with `--restrict-account-creation`.
 </Callout>
 
+Self-hosted instances do not start a warm session when a user opens a project.
+This setting protects fixed sandbox capacity. Enable warm sessions with:
+
+```sh
+kortix self-host env set KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED=true
+```
+
+The setting changes only the project index. A prompt still starts a session.
+
+Each API container has a 640 MiB memory limit by default.
+Keep this default on an 8 GiB host.
+Use a 1 GiB limit on a 16 GiB host when API traffic reaches the default limit:
+
+```sh
+kortix self-host env set KORTIX_API_MEMORY_LIMIT=1024m
+```
+
+Confirm the applied limit with `docker stats --no-stream`.
+
 ## Updates
 
 Every instance updates itself automatically. Pin an exact version instead:

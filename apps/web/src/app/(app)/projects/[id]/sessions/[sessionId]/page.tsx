@@ -12,9 +12,9 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { provisioningFailurePresentation } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
-import { useConnectorGateOnSend } from '@/features/session/use-connector-gate-on-send';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
@@ -167,14 +167,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
-  });
-  // A turn refused because a required connector has no usable connection opens
-  // the connect gate here, in the session, rather than dying as a generic error.
-  useConnectorGateOnSend({
-    projectId,
-    pending: session.pending,
-    sendError: session.sendError,
-    resend: (text) => session.send(text),
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -482,13 +474,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       if (sandbox?.status === 'error') {
+        const failure = provisioningFailurePresentation(meta, sandboxLabel ?? 'session');
         return (
           <InlineSessionError
-            title={`Couldn't start ${sandboxLabel ?? 'session'}`}
-            message={
-              (meta.provisioningError as string) ||
-              (meta.errorMessage as string) ||
-              'Something went wrong while provisioning this session.'
+            title={failure.title}
+            message={failure.message}
+            action={
+              failure.retryable ? (
+                <RestartSessionButton restart={restart} onRestart={handleRestart} />
+              ) : undefined
             }
           />
         );

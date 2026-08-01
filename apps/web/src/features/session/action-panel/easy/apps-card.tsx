@@ -20,9 +20,9 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
-import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { useSyncExternalStore } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { PanelCard } from './panel-card';

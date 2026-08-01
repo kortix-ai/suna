@@ -117,6 +117,11 @@ export const ProjectSchema = z.object({
   manifest_path: z.string(),
   status: z.enum(['active', 'archived']),
   metadata: JsonObjectSchema,
+  /** Per-project emoji shown on the project card, or null when unset/invalid. */
+  icon: z.string().nullable(),
+  /** A named glyph + colour, the alternative to `icon`. At most one of the two
+   *  is ever set — the API deletes the other whenever either is written. */
+  icon_glyph: z.object({ name: z.string(), color: z.string() }).nullable(),
   last_opened_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
