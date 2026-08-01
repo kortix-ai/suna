@@ -3760,6 +3760,20 @@ Final SDK gates:
 
 ---
 
+### 2026-08-01 — session `e2b-capacity-fast-fail` (claim)
+
+Claimed the additive provider-neutral session-start capacity failure contract.
+The API will stop retrying deterministic provider capacity errors.
+The SDK will expose the terminal failure without removing or renaming any public field.
+The web will preserve the pending prompt and show Retry, Copy Prompt, and Delete actions.
+
+Work follows RED -> GREEN -> REFACTOR.
+The full SDK typecheck, test, and packed-install smoke gates are required.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-07-29 — session `acp-runtime-adapters` multi-harness starter claim
 
 Claimed the additive `acp-multi-harness` starter input.
