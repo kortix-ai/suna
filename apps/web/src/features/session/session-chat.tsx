@@ -153,6 +153,7 @@ import {
   isToolPart,
   shouldShowToolPart,
 } from '@/ui';
+import { updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type KortixSendError,
@@ -2017,6 +2018,18 @@ export function SessionChat({
           id: Date.now(),
         });
       },
+      onSuccess: () => {
+        // Both ids are optional on this component (a session can render
+        // outside the /projects/:id/sessions/:id route), and there is no
+        // pending prompt to clear when there is no project session — so the
+        // guard is the honest form of the call, not just a type appeasement.
+        if (!projectId || !projectSessionId) return;
+        void updateProjectSession(projectId, projectSessionId, {
+          metadata: { pending_prompt: null },
+        }).catch((error) => {
+          console.warn('[session-chat] failed to clear the acknowledged pending prompt', error);
+        });
+      },
     });
 
     return () => handle.cancel();
@@ -2030,6 +2043,8 @@ export function SessionChat({
     localModelVisible,
     localVariantSet,
     lockedAgentName,
+    projectId,
+    projectSessionId,
     session?.directory,
   ]);
 

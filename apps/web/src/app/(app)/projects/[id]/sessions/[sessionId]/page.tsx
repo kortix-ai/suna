@@ -2,17 +2,27 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
+import {
+  ArrowCounterClockwiseIcon as RotateCcw,
+  CopyIcon as Copy,
+  TrashIcon as Trash,
+} from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
-import { provisioningFailurePresentation } from '@/features/session/provisioning-failure';
+import {
+  pendingSessionPromptFromMetadata,
+  provisioningFailurePresentation,
+  startStashFromPendingSessionPrompt,
+} from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -33,6 +43,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
 import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -64,6 +75,7 @@ import {
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
+  writeStartStash,
 } from '@kortix/sdk/react';
 
 /**
@@ -116,6 +128,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -152,6 +166,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
+  const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
+  const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
+  const pendingAttachmentCount = pendingPrompt?.attachment_names?.length ?? 0;
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -192,6 +209,24 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const handleRestart = () => {
     setResumeAttempts(0);
     restart.restart();
+  };
+  const handleCapacityRetry = () => {
+    if (pendingPrompt) {
+      writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
+    }
+    handleRestart();
+  };
+  const copyPendingPrompt = async () => {
+    if (!pendingPrompt) {
+      errorToast('No saved prompt is available.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pendingPrompt.text);
+      successToast('Prompt copied');
+    } catch {
+      errorToast('Could not copy the prompt.');
+    }
   };
   useEffect(() => {
     if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
@@ -474,13 +509,72 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       if (sandbox?.status === 'error') {
-        const failure = provisioningFailurePresentation(meta, sandboxLabel ?? 'session');
+        const failure = provisioningFailurePresentation(
+          session.failure
+            ? {
+                ...meta,
+                failureCategory: session.failure.category,
+                errorMessage: session.failure.message,
+              }
+            : meta,
+          sandboxLabel ?? 'session',
+        );
         return (
           <InlineSessionError
             title={failure.title}
             message={failure.message}
             action={
-              failure.retryable ? (
+              failure.isCapacity ? (
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-muted-foreground text-xs">
+                    {pendingPrompt ? 'Your prompt is saved.' : 'No prompt was attached.'}
+                  </p>
+                  {pendingAttachmentCount > 0 ? (
+                    <p className="text-muted-foreground/70 text-xs">
+                      {pendingAttachmentCount}{' '}
+                      {pendingAttachmentCount === 1
+                        ? 'attachment is listed. Reattach it after a reload.'
+                        : 'attachments are listed. Reattach them after a reload.'}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCapacityRetry}
+                      disabled={restart.isPending}
+                      aria-busy={restart.isPending}
+                    >
+                      {restart.isPending ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : (
+                        <RotateCcw className="size-3.5 shrink-0" />
+                      )}
+                      {restart.isPending ? 'Retrying…' : 'Retry'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void copyPendingPrompt()}
+                      disabled={!pendingPrompt}
+                    >
+                      <Copy className="size-3.5 shrink-0" />
+                      Copy prompt
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash className="size-3.5 shrink-0" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ) : failure.retryable ? (
                 <RestartSessionButton restart={restart} onRestart={handleRestart} />
               ) : undefined
             }
@@ -562,7 +656,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     );
   })();
 
-  return <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>;
+  return (
+    <>
+      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      <SessionDeleteModal
+        projectId={projectId}
+        sessionId={sessionId}
+        sessionLabel={
+          currentProjectSession ? sessionDisplayLabel(currentProjectSession) : 'Failed session'
+        }
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => router.push(`/projects/${projectId}`)}
+      />
+    </>
+  );
 }
 
 function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {

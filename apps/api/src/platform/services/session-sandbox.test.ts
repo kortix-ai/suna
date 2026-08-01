@@ -375,6 +375,30 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(false);
   });
 
+  test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
+    providerCreateErrors.e2b = 'Maximum number of concurrent E2B sandboxes reached';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await failed;
+
+    expect(providerCreateCalls).toBe(1);
+    const terminal = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'error' &&
+        (call.updates.metadata as Record<string, unknown>)?.failureCategory === 'provider-capacity',
+    );
+    expect(terminal?.updates.metadata).toMatchObject({
+      initAttempts: 1,
+      initMaxAttempts: 1,
+      failureCategory: 'provider-capacity',
+      errorMessage: 'The sandbox provider is at capacity right now. Try again in a minute.',
+    });
+  });
+
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
     providerFallbackEnabled = true;
     providerCreateErrors.e2b = 'E2B unavailable';

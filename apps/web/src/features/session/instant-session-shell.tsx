@@ -18,7 +18,6 @@ import type { Command } from '@kortix/sdk/react';
 import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
@@ -59,7 +58,6 @@ export function InstantSessionShell({
   onSubmit?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
   // Once ready, we drop boot mode so nothing is stuck on "Connecting" — even with
   // no message sent.
@@ -194,13 +192,6 @@ export function InstantSessionShell({
         sessionTitle={tI18nHardcoded.raw(
           'autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00',
         )}
-        isSidePanelOpen={isSidePanelOpen}
-        onToggleSidePanel={() => {
-          const s = useKortixComputerStore.getState();
-          s.setActiveSession(sessionId);
-          if (s.isSidePanelOpen) s.closeSidePanel();
-          else s.openSidePanel();
-        }}
       />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">

@@ -1,4 +1,10 @@
-import { chatEventDedup, chatInstalls, chatThreads, projects } from '@kortix/db';
+import {
+  chatChannelBindings,
+  chatEventDedup,
+  chatInstalls,
+  chatThreads,
+  projects,
+} from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import {
@@ -149,6 +155,24 @@ async function createThreadSession(
     .limit(1);
   if (!project) return;
 
+  // An AgentMail inbox is a first-class channel. Its binding selects the
+  // concrete project agent exactly like Slack and Teams bindings do. Older
+  // installs have no binding row and fall through to the project default.
+  const [selection] = await db
+    .select({
+      agentName: chatChannelBindings.agentName,
+      opencodeModel: chatChannelBindings.opencodeModel,
+    })
+    .from(chatChannelBindings)
+    .where(
+      and(
+        eq(chatChannelBindings.projectId, projectId),
+        eq(chatChannelBindings.platform, 'email'),
+        eq(chatChannelBindings.workspaceId, inboxId),
+      ),
+    )
+    .limit(1);
+
   const userId = await emailSessionLifecycle.resolveProjectAutomationActor(project.accountId);
   if (!userId) {
     console.warn('[email-webhook] no actor for project', projectId);
@@ -192,7 +216,8 @@ async function createThreadSession(
     requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
-      agent_name: 'default',
+      agent_name: selection?.agentName || 'default',
+      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       connector_bindings: {
         email: { authorization_id: emailProfileId },
       },

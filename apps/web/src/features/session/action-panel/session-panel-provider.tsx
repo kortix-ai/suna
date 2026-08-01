@@ -30,6 +30,7 @@ import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { track } from '@/lib/track';
+import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -330,6 +331,38 @@ export function SessionPanelProvider({
   const { getServiceUrl } = useSandboxProxy();
 
   /**
+   * "Send to agent" for a stopped app — surfaced from the AppPreview's
+   * "Couldn't load" error state (the screen that says the app on port N may
+   * not be running, next to Retry), in the same shape as the merge-conflict
+   * "Solve with agent" affordance. A dead/empty app is the one state where
+   * opening the app shows the user nothing useful, so the one thing they can
+   * still do is ask the agent to bring it back. Hands the session composer a
+   * starter prompt naming the app and its port, and steps out of the way.
+   * The composer is disabled while the sandbox sleeps, but the prefill is
+   * held in the store and lands the instant the box is awake — which is
+   * exactly the moment the app would be reachable again. Persistent
+   * apps/artifacts will replace this; until then it's the bridge.
+   *
+   * Arrived from main while this file was being extracted out of
+   * `easy-panel.tsx`; it lives here now because `handleOpenOutput` does.
+   */
+  const sendAppToAgent = useCallback(
+    (app: OutputItem) => {
+      track('app_send_to_agent_clicked', { kind: app.kind });
+      const port = parseLocalhostUrl(app.url)?.port;
+      const portHint = port ? ` on port ${port}` : '';
+      useSessionComposerPrefillStore
+        .getState()
+        .setPrefill(
+          sessionId,
+          `The app \`${app.name}\`${portHint} isn’t running anymore. Go start it again.`,
+        );
+      closeDetail();
+    },
+    [sessionId, closeDetail],
+  );
+
+  /**
    * Opening an output shows the THING, not the machinery around it: a running
    * app opens as the app, a file opens as that one file — never the file
    * manager, which is a filing cabinet in answer to "show me the page".
@@ -426,6 +459,7 @@ export function SessionPanelProvider({
               }
               onClose={closeDetail}
               onAskForChanges={askForChanges}
+              onSendToAgent={() => sendAppToAgent(output)}
             />
           ),
         });
@@ -461,7 +495,16 @@ export function SessionPanelProvider({
       });
       setPanelSplit(split);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit, projectId, projectSessionId],
+    [
+      sessionId,
+      getServiceUrl,
+      closeDetail,
+      openDetail,
+      setPanelSplit,
+      projectId,
+      projectSessionId,
+      sendAppToAgent,
+    ],
   );
 
   const outcome = useMemo(
