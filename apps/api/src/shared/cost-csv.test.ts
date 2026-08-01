@@ -71,6 +71,26 @@ describe('toCsv', () => {
   test('renders a zero number as 0, not empty', () => {
     expect(toCsv(['count'], [[0]])).toBe('count\r\n0');
   });
+
+  test('renders a negative number unquoted and un-neutralised, not as formula-injection text', () => {
+    expect(toCsv(['v'], [[-1.5]])).toBe('v\r\n-1.5');
+  });
+
+  test('still neutralises a negative-looking value that arrives as a string, not a number', () => {
+    expect(toCsv(['v'], [['-1.5']])).toBe(`v\r\n"'-1.5"`);
+  });
+
+  test.each([
+    ['space', ' =SUM(A1)'],
+    ['tab', '\t=SUM(A1)'],
+    ['non-breaking space', ' =SUM(A1)'],
+  ])('neutralises and quotes a formula prefix behind leading whitespace: %s', (_label, value) => {
+    expect(toCsv(['v'], [[value]])).toBe(`v\r\n"'${value}"`);
+  });
+
+  test('neutralising a formula prefix still doubles an embedded double quote in the same value', () => {
+    expect(toCsv(['v'], [['=say "hi"']])).toBe(`v\r\n"'=say ""hi"""`);
+  });
 });
 
 describe('CSV_ROW_CAP', () => {

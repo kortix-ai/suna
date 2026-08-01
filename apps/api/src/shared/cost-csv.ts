@@ -12,17 +12,40 @@ const NEEDS_QUOTING = /["\r\n,]/;
 // whoever pulls this cost export is a CSV/formula injection vector, not a
 // hypothetical. Prefixing with an apostrophe keeps the cell text in every
 // major spreadsheet application without changing what a human reads.
-const FORMULA_PREFIX = /^[=+\-@]/;
+//
+// `\s*` before the trigger character, not just `^[=+\-@]`: several
+// spreadsheet CSV importers strip leading whitespace before checking for a
+// formula prefix, so " =cmd|...!A0" (leading space) is exactly as live an
+// injection as "=cmd|...!A0" — anchoring on literal string start alone would
+// let that variant through unneutralised and unquoted. `\s` already covers
+// tab, CR, LF, vertical tab, form feed and non-breaking space (the realistic
+// bypass variants); no need to hand-roll a wider character class.
+const FORMULA_PREFIX = /^\s*[=+\-@]/;
 
 function encodeField(value: string | number | null): string {
   if (value === null || value === undefined) return '';
-  const raw = String(value);
-  const neutralised = FORMULA_PREFIX.test(raw);
-  const text = neutralised ? `'${raw}` : raw;
+  // A number can never BE a formula — only a string can. -1.5 rendered via
+  // String() starts with "-", which looks like a formula trigger but is
+  // legitimate signed money; neutralising it would corrupt the export's
+  // numeric columns into apostrophe-prefixed text a finance user can no
+  // longer sum in Excel. Money fields are typed `number` end to end (no
+  // caller passes a numeric value as a string), so this exemption never
+  // reopens the injection surface — only genuine string values run the
+  // formula check below.
+  if (typeof value === 'number') {
+    const text = String(value);
+    return NEEDS_QUOTING.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+  const neutralised = FORMULA_PREFIX.test(value);
+  // The apostrophe is prepended to the ORIGINAL value, leading whitespace
+  // included — stripping that whitespace here would let the cell round-trip
+  // back to a formula-looking string once re-opened and re-saved elsewhere.
+  const text = neutralised ? `'${value}` : value;
   // A neutralised value is always quoted, even if the apostrophe alone would
   // already stop spreadsheet software from evaluating it as a formula —
-  // quoting removes any doubt that the leading apostrophe survives as inert
-  // text rather than being reinterpreted.
+  // quoting removes any doubt that the leading apostrophe (and any leading
+  // whitespace before it) survives as inert text rather than being
+  // reinterpreted.
   if (!neutralised && !NEEDS_QUOTING.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
 }

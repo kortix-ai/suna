@@ -8,6 +8,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
 let authType = 'supabase';
 let sandboxId: string | null = null;
 let listInput: Record<string, unknown> | null = null;
+let resolveAccountDenied = false;
 
 interface TestContext {
   set(key: string, value: unknown): void;
@@ -41,7 +42,12 @@ mock.module('../../middleware/auth', () => ({
 }));
 
 mock.module('../../shared/resolve-account', () => ({
-  resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
+  resolveScopedAccountId: async (c: TestContext) => {
+    if (resolveAccountDenied) {
+      throw new HTTPException(403, { message: 'Forbidden' });
+    }
+    return c.req.query('account_id') || ACCOUNT_ID;
+  },
 }));
 
 // projects/lib/access.ts is a real module usage.ts also imports (for the
@@ -108,6 +114,7 @@ beforeEach(() => {
   authType = 'supabase';
   sandboxId = null;
   listInput = null;
+  resolveAccountDenied = false;
   projectsToReturn = [project];
 });
 
@@ -191,6 +198,23 @@ describe('GET /v1/usage/cost-by-project', () => {
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();
   });
+
+  // accountId resolves before window/sort/pagination are parsed (in that
+  // order, inside one try block) — same order the route used before
+  // format=csv existed. A request that is both unauthorized AND carries a
+  // malformed window must still 403, not 400: an unauthorized caller should
+  // not learn which of their parameters was invalid before finding out they
+  // cannot access the account at all.
+  test('resolves account access before validating the window: 403 wins over 400', async () => {
+    resolveAccountDenied = true;
+
+    const response = await createTestApp().request(
+      '/v1/usage/cost-by-project?from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z',
+    );
+
+    expect(response.status).toBe(403);
+    expect(listInput).toBeNull();
+  });
 });
 
 describe('GET /v1/usage/cost-by-project?format=csv', () => {
@@ -261,11 +285,29 @@ describe('GET /v1/usage/cost-by-project?format=csv', () => {
     expect(listInput).toBeNull();
   });
 
+  test('rejects invalid pagination before querying costs, like the JSON path', async () => {
+    const response = await createTestApp().request('/v1/usage/cost-by-project?format=csv&limit=101');
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
   test('preserves the account-wide sandbox-token rejection on the CSV path too', async () => {
     authType = 'apiKey';
     sandboxId = '00000000-0000-4000-a000-000000000099';
 
     const response = await createTestApp().request('/v1/usage/cost-by-project?format=csv');
+
+    expect(response.status).toBe(403);
+    expect(listInput).toBeNull();
+  });
+
+  test('resolves account access before validating the window on the CSV path too: 403 wins over 400', async () => {
+    resolveAccountDenied = true;
+
+    const response = await createTestApp().request(
+      '/v1/usage/cost-by-project?format=csv&from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z',
+    );
 
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();

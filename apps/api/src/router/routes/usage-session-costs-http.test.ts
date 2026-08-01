@@ -340,6 +340,22 @@ describe('GET /v1/usage/session-costs?format=csv', () => {
   });
 
   test('renders a header row and one data row per session', async () => {
+    // Four distinct, non-zero values for the four numeric columns — not the
+    // shared `summary` fixture's all-zero fields. An exact-string assertion
+    // over an all-zero row would still pass if the row mapping in usage.ts
+    // swapped, say, llm_cost and compute_cost; distinct values make a column
+    // swap actually change the expected output.
+    sessionsToReturn = [
+      {
+        ...summary,
+        request_count: 7,
+        llm_cost: 1.25,
+        compute_cost: 0.75,
+        total_cost: 2,
+        last_activity_at: '2026-07-01T12:00:00.000Z',
+      },
+    ];
+
     const response = await createTestApp().request(
       `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&format=csv`,
     );
@@ -347,7 +363,7 @@ describe('GET /v1/usage/session-costs?format=csv', () => {
     expect(await response.text()).toBe(
       'session_id,project_name,owner,status,requests,llm_cost_usd,compute_cost_usd,' +
         'total_cost_usd,last_activity_at\r\n' +
-        `${SESSION_ID},Project One,,stopped,0,0,0,0,`,
+        `${SESSION_ID},Project One,,stopped,7,1.25,0.75,2,2026-07-01T12:00:00.000Z`,
     );
   });
 
@@ -369,6 +385,13 @@ describe('GET /v1/usage/session-costs?format=csv', () => {
     const response = await createTestApp().request(
       '/v1/usage/session-costs?format=csv&from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z',
     );
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
+  test('rejects invalid pagination before querying costs, like the JSON path', async () => {
+    const response = await createTestApp().request('/v1/usage/session-costs?format=csv&limit=101');
 
     expect(response.status).toBe(400);
     expect(listInput).toBeNull();

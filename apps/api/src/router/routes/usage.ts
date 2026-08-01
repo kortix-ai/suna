@@ -618,13 +618,21 @@ usageApp.openapi(
     let limit: number;
     let offset: number;
     try {
+      // accountId resolves FIRST, exactly as it did before format=csv existed
+      // — resolveScopedAccountId can throw HTTPException(403), which this
+      // catch block does not intercept (it only maps InvalidCostQueryError to
+      // 400) and lets propagate as-is. Parsing window/sort/pagination first
+      // would let an invalid window on a request the caller cannot access
+      // surface as 400 instead of 403 — telling an unauthorized caller which
+      // of their parameters was malformed. Authorization must be decided
+      // before input validation, not after.
+      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
       window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
       sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
       ({ limit, offset } = parseCostPagination({
         limit: c.req.query('limit'),
         offset: c.req.query('offset'),
       }));
-      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
     } catch (error) {
       if (error instanceof InvalidCostQueryError) {
         throw new HTTPException(400, { message: error.message });
