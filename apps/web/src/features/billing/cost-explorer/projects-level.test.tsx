@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { CostSummary, ProjectCostPage } from '@kortix/sdk';
 
+import { TooltipProvider } from '@/components/ui/tooltip';
+
 import {
   buildProjectTableRows,
+  hasRecentSpendSignal,
   isProjectRowClickable,
   ProjectsLevelContent,
   type ProjectTableRow,
@@ -229,6 +232,58 @@ describe('buildProjectTableRows', () => {
       last_activity_at: null,
     });
   });
+
+  // Boundary cases right at the tolerance threshold, nearer to zero than the
+  // existing -1 and 0.1+0.2 cases — the guard is `<=`, so the exact
+  // threshold value itself must still be omitted.
+  test('omits the unassigned row when the difference is exactly at the tolerance boundary (0.005)', () => {
+    const rows = buildProjectTableRows(
+      {
+        projects: [
+          {
+            project_id: 'p1',
+            project_name: 'Main',
+            session_count: 1,
+            llm_cost: 100,
+            compute_cost: 0,
+            total_cost: 100,
+            last_activity_at: null,
+          },
+        ],
+        total: 1,
+        limit: 25,
+        offset: 0,
+        next_offset: null,
+      },
+      summaryWithTotal(100.005),
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  test('includes the unassigned row just above the tolerance boundary (0.006)', () => {
+    const rows = buildProjectTableRows(
+      {
+        projects: [
+          {
+            project_id: 'p1',
+            project_name: 'Main',
+            session_count: 1,
+            llm_cost: 100,
+            compute_cost: 0,
+            total_cost: 100,
+            last_activity_at: null,
+          },
+        ],
+        total: 1,
+        limit: 25,
+        offset: 0,
+        next_offset: null,
+      },
+      summaryWithTotal(100.006),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.total_cost).toBe(0.006);
+  });
 });
 
 // ── Pure function: isProjectRowClickable ────────────────────────────────────
@@ -261,11 +316,51 @@ describe('isProjectRowClickable', () => {
   });
 });
 
+// ── Pure function: hasRecentSpendSignal ─────────────────────────────────────
+// A data question, not a UI-state proxy. Directly encodes the two false
+// results the range-preset heuristic produced before this fix:
+//   1. genuine history, but the *current* window is quiet — must not read
+//      "no spend recorded yet" just because `previous.total_cost` is real.
+//   2. a brand-new account looking at a non-default window — must not read
+//      "no spend in this range" (and offer a dead-end reset) just because
+//      neither figure is real.
+
+describe('hasRecentSpendSignal', () => {
+  test('no summary yet — no signal', () => {
+    expect(hasRecentSpendSignal(undefined)).toBe(false);
+  });
+
+  test('both totals zero — no signal (a genuinely new account)', () => {
+    expect(hasRecentSpendSignal(summaryWithTotal(0))).toBe(false);
+  });
+
+  test('the current window has spend — signal', () => {
+    expect(hasRecentSpendSignal(summaryWithTotal(12.5))).toBe(true);
+  });
+
+  test('the current window is quiet but the previous window had spend — signal', () => {
+    const summary: CostSummary = { ...summaryWithTotal(0), previous: { total_cost: 42 } };
+    expect(hasRecentSpendSignal(summary)).toBe(true);
+  });
+
+  test('both windows have spend — signal', () => {
+    const summary: CostSummary = { ...summaryWithTotal(5), previous: { total_cost: 5 } };
+    expect(hasRecentSpendSignal(summary)).toBe(true);
+  });
+});
+
 // ── Component: ProjectsLevelContent ─────────────────────────────────────────
 // Presentational only — mirrors the SessionCostExplorerContent /
 // SessionCostExplorer split in session-cost-explorer.tsx, so the whole
 // render contract is testable with plain props and renderToStaticMarkup,
 // with no react-query or Supabase wiring needed.
+//
+// `TooltipProvider` is supplied here, in the test harness — not inside the
+// shipped component. The real app tree already has exactly one, at the
+// root layout (`app/layout.tsx`, wrapping `children`), which is where
+// `ProjectsLevel` actually mounts; a second one in this component would be
+// redundant there. It is only `renderToStaticMarkup`'s isolation — no
+// ancestor tree at all — that needs one supplied for `Hint` to not throw.
 
 const noop = () => {};
 
@@ -285,6 +380,25 @@ function baseContentProps(overrides: Partial<Parameters<typeof ProjectsLevelCont
     onNextPage: noop,
     ...overrides,
   };
+}
+
+function renderContent(overrides: Partial<Parameters<typeof ProjectsLevelContent>[0]> = {}): string {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <ProjectsLevelContent {...baseContentProps(overrides)} />
+    </TooltipProvider>,
+  );
+}
+
+/** Extracts the `<tfoot>...</tfoot>` block so footer assertions are scoped
+ *  to the footer specifically, rather than to "somewhere in the whole page"
+ *  — the summary tiles above the table render the account-wide totals too,
+ *  and a loose substring check could pass by matching those instead of the
+ *  footer this task's reconciliation is actually about. */
+function extractFooterHtml(html: string): string {
+  const match = html.match(/<tfoot[^>]*>[\s\S]*?<\/tfoot>/);
+  if (!match) throw new Error('expected a <tfoot> in the rendered output');
+  return match[0];
 }
 
 const twoProjectPage: ProjectCostPage = {
@@ -316,61 +430,57 @@ const twoProjectPage: ProjectCostPage = {
 
 describe('ProjectsLevelContent', () => {
   test('shows a loading skeleton, never a spinner icon, while projects have not loaded', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent {...baseContentProps({ isProjectsLoading: true })} />,
-    );
+    const html = renderContent({ isProjectsLoading: true });
     expect(html).toContain('aria-label="Loading projects"');
     expect(html).not.toContain('animate-spin');
     expect(html).not.toContain('No spend');
   });
 
   test('renders the project error inline without losing the shell (range picker still present)', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({ projectsError: new Error('projects-error-marker') })}
-      />,
-    );
+    const html = renderContent({ projectsError: new Error('projects-error-marker') });
     expect(html).toContain('projects-error-marker');
     expect(html).toContain('Last 30 days');
   });
 
-  test('empty state on the default 30d preset reads "no spend recorded yet" with no reset action', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({
-          page: { projects: [], total: 0, limit: 25, offset: 0, next_offset: null },
-          summary: summaryWithTotal(0),
-        })}
-      />,
-    );
-    expect(html).toContain('No spend recorded yet');
-    expect(html).not.toContain('No spend in this range');
-    expect(html).not.toContain('Reset range');
-  });
-
-  // The structural claim here is the *distinction* itself — swapping the two
-  // copies for each other, or always/never showing the reset action, would
-  // still pass a test that only checked one branch. Both branches are
-  // asserted from the same describe block on purpose.
-  test('empty state on a non-default preset reads "no spend in this range" and offers a reset', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({
-          range: { ...baseRange, preset: '7d' },
-          page: { projects: [], total: 0, limit: 25, offset: 0, next_offset: null },
-          summary: summaryWithTotal(0),
-        })}
-      />,
-    );
+  // Scenario 1 from the fix-round review: the account has genuine spend
+  // history (the *previous* window had real spend), but the *current*
+  // default 30d window happens to be quiet. Before this fix, the branch
+  // keyed on `range.preset !== '30d'` — since this is the default preset, it
+  // always read "no spend recorded yet" here, which is false: the account
+  // has history, the user just isn't looking at it. This is on the default
+  // preset specifically, to prove the preset itself no longer drives the
+  // decision.
+  test('a quiet default-range window with a real previous-window total reads "no spend in this range", not "no spend recorded yet"', () => {
+    const summary: CostSummary = { ...summaryWithTotal(0), previous: { total_cost: 42 } };
+    const html = renderContent({
+      range: baseRange, // preset: '30d', the default
+      page: { projects: [], total: 0, limit: 25, offset: 0, next_offset: null },
+      summary,
+    });
     expect(html).toContain('No spend in this range');
     expect(html).not.toContain('No spend recorded yet');
     expect(html).toContain('Reset range');
   });
 
+  // Scenario 2 from the fix-round review: a brand-new account (no signal in
+  // either window) looking at a non-default range. Before this fix, the
+  // branch keyed on the preset alone — any non-default preset always read
+  // "no spend in this range" and offered a reset that could not help, since
+  // there was nothing to reset to. This is on a non-default preset
+  // specifically, to prove the preset itself no longer drives the decision.
+  test('a non-default range with no spend signal in either window reads "no spend recorded yet", not "no spend in this range"', () => {
+    const html = renderContent({
+      range: { ...baseRange, preset: '7d' },
+      page: { projects: [], total: 0, limit: 25, offset: 0, next_offset: null },
+      summary: summaryWithTotal(0),
+    });
+    expect(html).toContain('No spend recorded yet');
+    expect(html).not.toContain('No spend in this range');
+    expect(html).not.toContain('Reset range');
+  });
+
   test('renders the column headers in order: Project, Sessions, LLM, Compute, Total', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent {...baseContentProps({ page: twoProjectPage })} />,
-    );
+    const html = renderContent({ page: twoProjectPage });
     const projectIndex = html.indexOf('>Project<');
     const sessionsIndex = html.indexOf('>Sessions<');
     const llmIndex = html.indexOf('>LLM<');
@@ -385,11 +495,7 @@ describe('ProjectsLevelContent', () => {
   });
 
   test('renders project rows in the order the page provides, with unassigned always last', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({ page: twoProjectPage, summary: summaryWithTotal(20) })}
-      />,
-    );
+    const html = renderContent({ page: twoProjectPage, summary: summaryWithTotal(20) });
     const alphaIndex = html.indexOf('Alpha');
     const betaIndex = html.indexOf('Beta');
     const unassignedIndex = html.indexOf('Unassigned');
@@ -400,9 +506,7 @@ describe('ProjectsLevelContent', () => {
   });
 
   test('a real project row is clickable — cursor-pointer and hover:bg-accent on its <tr>', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent {...baseContentProps({ page: twoProjectPage })} />,
-    );
+    const html = renderContent({ page: twoProjectPage });
     const rowMatch = html.match(/<tr[^>]*>(?:(?!<\/tr>).)*Alpha(?:(?!<\/tr>).)*<\/tr>/);
     expect(rowMatch).not.toBeNull();
     expect(rowMatch![0]).toContain('cursor-pointer');
@@ -414,48 +518,87 @@ describe('ProjectsLevelContent', () => {
   // bypassing isProjectRowClickable or by a copy/paste of the real-row
   // className), this must fail.
   test('the unassigned row is not clickable — no cursor-pointer on its <tr>, and it carries the reason as an aria-label', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({ page: twoProjectPage, summary: summaryWithTotal(20) })}
-      />,
-    );
+    const html = renderContent({ page: twoProjectPage, summary: summaryWithTotal(20) });
     const rowMatch = html.match(/<tr[^>]*>(?:(?!<\/tr>).)*Unassigned(?:(?!<\/tr>).)*<\/tr>/);
     expect(rowMatch).not.toBeNull();
     expect(rowMatch![0]).not.toContain('cursor-pointer');
     expect(rowMatch![0]).toContain('Spend recorded against sessions that no longer exist.');
   });
 
-  // The reconciliation this task exists to deliver: the rendered footer
-  // total must equal the sum of the rendered rows, unassigned included. This
-  // is computed independently from the row values actually present in the
-  // HTML output, not merely re-asserting the same summary figure back at
-  // itself.
-  test('the footer total equals the sum of the rendered rows, including unassigned', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({ page: twoProjectPage, summary: summaryWithTotal(20) })}
-      />,
-    );
+  // The reconciliation this task exists to deliver: the rendered footer must
+  // equal the sum of the rendered rows, unassigned included — on all four
+  // numeric columns, not just Total. This is computed independently from the
+  // row values actually present in the HTML output, not merely re-asserting
+  // the same summary figure back at itself.
+  //
+  // NOTE on why this alone is not sufficient: on this fixture (first page,
+  // unassigned computed as `summary.totals.total_cost - attributed`), the
+  // rows' own total and `summary.totals.total_cost` are mathematically
+  // identical by construction — Alpha $10 + Beta $3.25 + Unassigned $6.75
+  // *is* $20, the fixture's own total. A footer that silently read
+  // `summary.totals.total_cost` instead of summing the rendered rows would
+  // still pass this test. The next test below is what actually
+  // distinguishes the two: a page where they diverge.
+  test('the footer reconciles on all four numeric columns, including unassigned', () => {
+    const html = renderContent({ page: twoProjectPage, summary: summaryWithTotal(20) });
     // Alpha: $10.00, Beta: $3.25, Unassigned: $20 - 13.25 = $6.75.
     expect(html).toContain('$10.00');
     expect(html).toContain('$3.25');
     expect(html).toContain('$6.75');
 
-    const dollarAmounts = html.match(/\$[\d,]+\.\d{2}/g) ?? [];
-    // Footer must be the *last* dollar figure printed (it follows every row
-    // in document order), and it must equal the sum of every row total.
-    const footerValue = Number(dollarAmounts[dollarAmounts.length - 1]!.replace(/[$,]/g, ''));
-    expect(footerValue).toBe(20);
+    const footerHtml = extractFooterHtml(html);
+    // Sessions: 4 + 2 + 0 (unassigned) = 6.
+    expect(footerHtml).toContain('>6<');
+    // LLM: $6 + $3 + $0 (unassigned) = $9.00.
+    expect(footerHtml).toContain('$9.00');
+    // Compute: $4 + $0.25 + $0 (unassigned) = $4.25.
+    expect(footerHtml).toContain('$4.25');
+    // Total: $10 + $3.25 + $6.75 (unassigned) = $20.00 — the account total.
+    expect(footerHtml).toContain('$20.00');
+  });
+
+  // The test that actually proves the footer sums the *rendered rows*,
+  // rather than re-reading `summary.totals.total_cost` — see the note above.
+  // On a page after the first, `buildProjectTableRows` never appends an
+  // unassigned row (guard 1), so `rows` is a small subset of the account,
+  // while `summary.totals.total_cost` stays account-wide and much larger.
+  // The two computations diverge here, which is the only way this
+  // assertion can fail a footer that reads from the wrong source.
+  test('on a page after the first, the footer sums the rendered rows — not the account-wide summary total', () => {
+    const html = renderContent({
+      page: {
+        projects: [
+          {
+            project_id: 'p26',
+            project_name: 'Page 2 project',
+            session_count: 3,
+            llm_cost: 2.5,
+            compute_cost: 1.5,
+            total_cost: 4,
+            last_activity_at: null,
+          },
+        ],
+        total: 40,
+        limit: 25,
+        offset: 25,
+        next_offset: null,
+      },
+      // Deliberately far from the page's own total (4) — if the footer ever
+      // read this figure instead of summing `rows`, the assertions below
+      // would see 999, not 4.
+      summary: summaryWithTotal(999),
+    });
+
+    const footerHtml = extractFooterHtml(html);
+    expect(footerHtml).toContain('>3<');
+    expect(footerHtml).toContain('$2.50');
+    expect(footerHtml).toContain('$1.50');
+    expect(footerHtml).toContain('$4.00');
+    expect(footerHtml).not.toContain('999');
   });
 
   test('pagination caption and Previous/Next disabled state reflect the page', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({
-          page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 },
-        })}
-      />,
-    );
+    const html = renderContent({ page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 } });
     expect(html).toContain('Showing 1-2 of 30 projects');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);
@@ -468,13 +611,7 @@ describe('ProjectsLevelContent', () => {
   });
 
   test('Previous is enabled and Next is disabled on the last page', () => {
-    const html = renderToStaticMarkup(
-      <ProjectsLevelContent
-        {...baseContentProps({
-          page: { ...twoProjectPage, total: 27, offset: 25, next_offset: null },
-        })}
-      />,
-    );
+    const html = renderContent({ page: { ...twoProjectPage, total: 27, offset: 25, next_offset: null } });
     expect(html).toContain('Showing 26-27 of 27 projects');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);

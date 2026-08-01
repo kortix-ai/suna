@@ -19,7 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { COST_PAGE_SIZE, useCostByProject, useCostSummary } from '@/hooks/billing/use-cost-explorer';
 
@@ -28,9 +27,7 @@ import { formatSessionCostUsd } from '../session-cost-format';
 
 /** The whole explorer's default landing preset (`parseExplorerState` in the
  *  forthcoming explorer shell — see the plan's Task 15 — defaults new URL
- *  state to it too). Used here only to pick the right empty-state copy: a
- *  non-default preset with zero rows means the user filtered the data away;
- *  the default preset with zero rows means the account has no history yet. */
+ *  state to it too). Used here only as the target `onResetRange` resets to. */
 const DEFAULT_RANGE_PRESET = '30d';
 
 const UNASSIGNED_LABEL = 'Unassigned';
@@ -101,6 +98,34 @@ export function isProjectRowClickable(
   return row.project_id !== null;
 }
 
+/**
+ * Whether there is a data signal that this account has real spend history,
+ * even though the current page shows zero rows. Drives the empty-state copy:
+ * a signal means "you're just not looking at it right now" (offer a reset),
+ * no signal means "this account has never spent anything" (nothing to reset
+ * to). This is a data question, not a UI-state guess — it does not look at
+ * which range preset happens to be selected.
+ *
+ * Two components, either sufficient:
+ *  - The current window itself has spend. Normally this is impossible to
+ *    see as "zero rows" on the first page — a positive `totals.total_cost`
+ *    with no attributed projects would itself become the Unassigned row via
+ *    `buildProjectTableRows` — but it is a real, if defensive, signal on a
+ *    paginated page slice beyond the first, where the account-wide total is
+ *    independent of which page came back empty.
+ *  - The immediately preceding window of equal length had spend — the same
+ *    `previous.total_cost` figure the period-over-period delta tile already
+ *    computes, from the `useCostSummary` call this component already makes.
+ *    No extra request.
+ *
+ * Still imperfect: spend older than two windows back is invisible to this
+ * check, so a truly quiet two-window stretch on an account with real history
+ * further back still reads as "no spend recorded yet".
+ */
+export function hasRecentSpendSignal(summary: CostSummary | undefined): boolean {
+  return (summary?.totals.total_cost ?? 0) > 0 || (summary?.previous.total_cost ?? 0) > 0;
+}
+
 function sumBy(rows: ProjectTableRow[], pick: (row: ProjectTableRow) => number): number {
   return rows.reduce((sum, row) => sum + pick(row), 0);
 }
@@ -164,8 +189,8 @@ export function ProjectsLevelContent({
       </div>
     );
   } else if (rows.length === 0) {
-    const isFiltered = range.preset !== DEFAULT_RANGE_PRESET;
-    tableSlot = isFiltered ? (
+    const hasSpendSignal = hasRecentSpendSignal(summary);
+    tableSlot = hasSpendSignal ? (
       <EmptyState
         size="sm"
         icon={ReceiptText}
@@ -187,45 +212,43 @@ export function ProjectsLevelContent({
     );
   } else {
     tableSlot = (
-      <TooltipProvider delayDuration={300}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Project</TableHead>
-              <TableHead className="text-right">Sessions</TableHead>
-              <TableHead className="text-right">LLM</TableHead>
-              <TableHead className="text-right">Compute</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <ProjectRow
-                key={row.project_id ?? UNASSIGNED_LABEL}
-                row={row}
-                onSelectProject={onSelectProject}
-              />
-            ))}
-          </TableBody>
-          <TableFooter>
-            <TableRow>
-              <TableCell className="font-medium">Total</TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {formatSessionCostUsd(sumBy(rows, (row) => row.llm_cost))}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {formatSessionCostUsd(sumBy(rows, (row) => row.compute_cost))}
-              </TableCell>
-              <TableCell className="text-right font-mono font-medium tabular-nums">
-                {formatSessionCostUsd(sumBy(rows, (row) => row.total_cost))}
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
-      </TooltipProvider>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Project</TableHead>
+            <TableHead className="text-right">Sessions</TableHead>
+            <TableHead className="text-right">LLM</TableHead>
+            <TableHead className="text-right">Compute</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <ProjectRow
+              key={row.project_id ?? UNASSIGNED_LABEL}
+              row={row}
+              onSelectProject={onSelectProject}
+            />
+          ))}
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell className="font-medium">Total</TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {formatSessionCostUsd(sumBy(rows, (row) => row.llm_cost))}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {formatSessionCostUsd(sumBy(rows, (row) => row.compute_cost))}
+            </TableCell>
+            <TableCell className="text-right font-mono font-medium tabular-nums">
+              {formatSessionCostUsd(sumBy(rows, (row) => row.total_cost))}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
+      </Table>
     );
   }
 
