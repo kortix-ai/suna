@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { stripTags } from '@/test-utils/strip-tags';
 import { EntityAvatar } from '../../../components/ui/entity-avatar';
 
 /**
@@ -84,7 +85,7 @@ describe('project switcher: what those props render', () => {
   const rowTile = (project: { name: string; icon?: string | null }) =>
     renderToStaticMarkup(<EntityAvatar label={project.name} emoji={project.icon} size="sm" />);
 
-  const textOf = (html: string) => html.replace(/<[^>]*>/g, '');
+  const textOf = (html: string) => stripTags(html);
 
   test('a project with an icon shows that icon, not its initial', () => {
     expect(textOf(rowTile({ name: 'Turtle Shop', icon: '🐢' }))).toBe('🐢');

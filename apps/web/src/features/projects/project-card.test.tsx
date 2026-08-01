@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { stripTags } from '@/test-utils/strip-tags';
 import ProjectCard from './project-card';
 
 const noop = () => {};
@@ -67,7 +68,7 @@ function tileOf(html: string): string {
 }
 
 /** What a sighted user reads inside the tile. */
-const tileTextOf = (html: string) => tileOf(html).replace(/<[^>]*>/g, '');
+const tileTextOf = (html: string) => stripTags(tileOf(html));
 
 describe('ProjectCard — the project’s own icon', () => {
   test('a project that set an icon shows that icon on its card', () => {

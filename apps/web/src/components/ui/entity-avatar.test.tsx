@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { stripTags } from '@/test-utils/strip-tags';
 import { EntityAvatar, type EntityAvatarSize } from './entity-avatar';
 
 const render = (props: Parameters<typeof EntityAvatar>[0]) =>
@@ -16,7 +17,7 @@ const render = (props: Parameters<typeof EntityAvatar>[0]) =>
  * WHOLE text with `toBe` (rather than `toContain`) is what makes a test fail
  * when two faces render at once instead of one replacing the other.
  */
-const textOf = (html: string) => html.replace(/<[^>]*>/g, '');
+const textOf = (html: string) => stripTags(html);
 
 /** The class list on the tile itself. The outer span is the first element in
  *  the markup, so a non-global match cannot pick up the inner emoji span. */
