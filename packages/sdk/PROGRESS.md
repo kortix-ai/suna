@@ -4896,3 +4896,32 @@ session event and agent action carried the same project and session identifiers.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-02 — session `cost-explorer-sdk-clients` (claim)
+
+Claiming Task 8 of the `2026-08-01-cost-explorer-ux` plan (spec/plan live under
+`.superpowers/sdd/2026-08-01-cost-explorer-ux/`, not under `docs/superpowers/` —
+this plan predates and is unrelated to the OpenCode ACP canary NOW table above,
+so this is logged here rather than inserted into that table).
+
+Scope: `packages/sdk/src/core/rest/projects-client/session-costs.ts` (+ test) and
+its barrel `index.ts` — add `listCostByProject`, `getCostSummary`,
+`costExportUrl`, and extend `ListSessionCostsOptions` with `from`/`to`/`sort`/
+`ownerId`. Wraps `GET /v1/usage/cost-by-project`, `GET /v1/usage/cost-summary`,
+and the extended `GET /v1/usage/session-costs` (Tasks 4–7, already merged to this
+branch). Purely additive — no existing export renamed or removed.
+
+Measured baseline before any change:
+
+```
+pnpm --filter @kortix/sdk test
+→ 1357 pass, 2 skip, 0 fail, 5873 expect() calls, across 116 files [16.84s]
+```
+
+(Neither of the two baseline numbers this file cites elsewhere — 1069, 1046 —
+matches what actually runs today. Recording the real measured number per the
+task brief's instruction not to trust either stale figure.)
+
+**Status:** IN PROGRESS.
