@@ -6,6 +6,7 @@ import {
   type KortixProject,
   type ProjectInput,
   type ProvisionProjectInput,
+  createProjectRepo,
   getProject,
   getProjectDetail,
   provisionProject,
@@ -50,6 +51,34 @@ test('CreateProjectRepoInput accepts an optional icon_glyph', () => {
   };
 
   expect(createInput.icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
+});
+
+test('createProjectRepo sends icon_glyph on the wire, same as provision and link-repository', async () => {
+  // The type-level test above only proves `CreateProjectRepoInput` accepts the
+  // field on a locally-built object — it stays green even if `createProjectRepo`
+  // silently dropped `icon_glyph` before POSTing. This asserts what actually
+  // reaches `fetch`, matching the wire assertion `provisionProject` gets
+  // ("icon_glyph is sent on provision", above) and `linkRepository` gets
+  // (github.test.ts, "sends the icon_glyph in the request body when linking a
+  // repository").
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await createProjectRepo({
+    account_id: 'acc-1',
+    name: 'support-agent',
+    icon_glyph: { name: 'Rocket', color: 'blue' },
+  });
+
+  expect(sentBody).toMatchObject({ icon_glyph: { name: 'Rocket', color: 'blue' } });
 });
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {
