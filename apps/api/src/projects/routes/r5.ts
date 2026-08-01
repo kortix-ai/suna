@@ -352,6 +352,12 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
+  // Absolute and traversal paths can never resolve inside the repo tree —
+  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // image, not the project repo. Answer like any other missing file.
+  if (path.startsWith('/') || path.includes('..')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -403,6 +409,12 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
+  // Absolute and traversal paths can never resolve inside the repo tree —
+  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // image, not the project repo. Answer like any other missing file.
+  if (path.startsWith('/') || path.includes('..')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
