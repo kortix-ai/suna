@@ -13,20 +13,30 @@
  * Both normalizers (`normalizeProjectIcon`, `normalizeProjectGlyph`) collapse
  * BOTH invalid input and an explicit `null` to `null`, so only the request
  * BODY — not the normalizer's return value — can tell "clear it" apart from
- * "malformed, leave it alone":
+ * "malformed, leave it alone". Resolution is by VALIDITY, not by key
+ * presence, so a PATCH agrees with the three create paths on every shared
+ * input, including a body that carries both keys:
  *
- *   | request              | metadata write                              |
- *   |-----------------------|---------------------------------------------|
- *   | key absent             | none — the stored value is untouched        |
- *   | `icon: "🚀"`           | merge `{ icon }`,       delete `icon_glyph`  |
- *   | `icon: null`           | delete the `icon` key                        |
- *   | `icon: garbage`        | none                                         |
- *   | `icon_glyph: {...}`    | merge `{ icon_glyph }`, delete `icon`        |
- *   | `icon_glyph: null`     | delete the `icon_glyph` key                  |
- *   | `icon_glyph: garbage`  | none                                         |
+ *   | request                                          | metadata write                     |
+ *   |---------------------------------------------------|-------------------------------------|
+ *   | neither key present                                | none — the stored value is untouched |
+ *   | `icon_glyph` valid                                 | merge `{ icon_glyph }`, delete `icon` |
+ *   | `icon_glyph` invalid, `icon` valid                 | merge `{ icon }`,       delete `icon_glyph` |
+ *   | `icon_glyph: null`, `icon` valid                   | merge `{ icon }`,       delete `icon_glyph` |
+ *   | `icon` valid alone                                 | merge `{ icon }`,       delete `icon_glyph` |
+ *   | `icon: null` alone                                 | delete the `icon` key |
+ *   | `icon_glyph: null` alone (no valid icon)           | delete the `icon_glyph` key |
+ *   | `icon: null` AND `icon_glyph: null` (both explicit) | delete BOTH keys |
+ *   | `icon` invalid alone                               | none |
+ *   | both invalid, neither explicitly `null`            | none |
  *
  * `icon_glyph` is checked FIRST, so a request carrying both valid values
- * resolves the same way the three create paths resolve it: the glyph wins.
+ * resolves the same way the three create paths resolve it: the glyph wins —
+ * and it wins on VALIDITY, not on which key the body happens to name, so an
+ * invalid/absent glyph never blocks a valid `icon` from being written. Only
+ * an explicit `null` on a key clears THAT key; a malformed value must never
+ * wipe a choice the user made. Both keys `null` in the SAME request reads as
+ * "clear the icon entirely" and clears both, rather than privileging one key.
  *
  * This file drives the REAL `r5.ts` Hono handler (`projectsApp.request(...)`)
  * and asserts on the SQL the update actually SETs, serialized through
@@ -240,14 +250,47 @@ describe('PATCH /:projectId — both keys present, the glyph wins', () => {
     expect(params).toEqual(['icon', '{"icon_glyph":{"name":"Star","color":"red"}}']);
   });
 
-  test('a valid emoji with a malformed glyph writes NO metadata — icon_glyph wins the check, not the write', async () => {
-    // `icon_glyph` is checked FIRST regardless of validity: a malformed glyph
-    // short-circuits the whole block, so a syntactically valid `icon` sitting
-    // alongside it is never reached. This is the same "glyph wins" precedence,
-    // just visible on the failure path instead of the success path.
+  test('a valid emoji with a malformed glyph falls through to the emoji, same as the create paths', async () => {
+    // `icon_glyph` is checked first, but by VALIDITY, not by key presence: a
+    // malformed glyph does not win the check, it just fails to be a valid
+    // glyph, so the handler falls through to the (valid) `icon`. Before this
+    // fix, `icon_glyph` winning on key presence alone made this request write
+    // NO metadata at all — a silent lost write, and a disagreement with
+    // /provision, /create-repo, and /link-repository, which all resolve this
+    // exact body to `{ icon }` via `iconGlyph ? … : icon ? { icon } : {}`.
     const res = await patch({ icon: '🚀', icon_glyph: { name: 'Skull', color: 'red' } });
 
     expect(res.status).toBe(200);
-    expect('metadata' in lastSet()).toBe(false);
+    const { params } = metadataQuery();
+    expect(params).toEqual(['icon_glyph', '{"icon":"🚀"}']);
+  });
+
+  test('an explicit icon_glyph: null with a valid icon falls through to the emoji', async () => {
+    // Same fall-through, from the OTHER shape of "no valid glyph": an explicit
+    // null rather than garbage. Before this fix this also wrote nothing.
+    const res = await patch({ icon: '🚀', icon_glyph: null });
+
+    expect(res.status).toBe(200);
+    const { params } = metadataQuery();
+    expect(params).toEqual(['icon_glyph', '{"icon":"🚀"}']);
+  });
+});
+
+describe('PATCH /:projectId — both keys explicitly null clears both', () => {
+  test('icon: null AND icon_glyph: null deletes both keys in one statement', async () => {
+    // Neither side resolves to a value worth storing, and BOTH keys carry an
+    // explicit null — the deliberate decision for this ambiguous case: it
+    // reads as "clear the icon entirely" rather than privileging one key's
+    // deletion over the other's.
+    returningRow = projectRow({ metadata: {} });
+
+    const res = await patch({ icon: null, icon_glyph: null });
+
+    expect(res.status).toBe(200);
+    const { sql, params } = metadataQuery();
+    expect(sql).toBe(
+      `((coalesce("kortix"."projects"."metadata", '{}'::jsonb) - $1) - $2) || $3::jsonb`,
+    );
+    expect(params).toEqual(['icon_glyph', 'icon', '{}']);
   });
 });
