@@ -49,11 +49,35 @@ export function resolvePreset(
   return { preset, from, to };
 }
 
+/**
+ * Turn a calendar day selection into a half-open UTC window: `from` is the
+ * start of `startDay`, `to` is the start of the day *after* `endDay`, so the
+ * end day the user clicked is fully covered under `[from, to)`.
+ *
+ * `startDay`/`endDay` are the `Date` objects `react-day-picker` hands back —
+ * local midnight on the clicked calendar day. Reading their *local* calendar
+ * parts (`getFullYear`/`getMonth`/`getDate`) and rebuilding the instant with
+ * `Date.UTC` is what makes the result independent of the host's timezone;
+ * calling `.toISOString()` on the picked `Date` directly would instead bake
+ * in the host's UTC offset (see the test file for a worked example).
+ */
+export function toUtcDayRange(startDay: Date, endDay: Date): CostRange {
+  const from = new Date(
+    Date.UTC(startDay.getFullYear(), startDay.getMonth(), startDay.getDate()),
+  ).toISOString();
+  const to = new Date(
+    Date.UTC(endDay.getFullYear(), endDay.getMonth(), endDay.getDate() + 1),
+  ).toISOString();
+  return { preset: 'custom', from, to };
+}
+
 /** Human label for the trigger button: the preset name, or both dates for a custom range. */
 export function formatRangeLabel(range: CostRange): string {
   if (range.preset !== 'custom') return PRESET_LABELS[range.preset];
   const from = new Date(range.from);
-  const to = new Date(range.to);
+  // `to` is the exclusive day-after boundary (half-open [from, to)) — the
+  // last inclusive calendar day the user clicked is one day earlier.
+  const to = new Date(new Date(range.to).getTime() - 86_400_000);
   const day = (value: Date) =>
     value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   return `${day(from)} – ${day(to)}, ${to.getUTCFullYear()}`;
@@ -62,7 +86,6 @@ export function formatRangeLabel(range: CostRange): string {
 interface DateRangePickerProps {
   value: CostRange;
   onChange: (next: CostRange) => void;
-  className?: string;
 }
 
 /**
@@ -70,7 +93,7 @@ interface DateRangePickerProps {
  * sessions, session). A Popover holding a preset row above a range Calendar;
  * both paths resolve to concrete UTC ISO bounds before calling `onChange`.
  */
-export function DateRangePicker({ value, onChange, className }: DateRangePickerProps) {
+export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
 
   const selected: DateRange = {
@@ -85,19 +108,14 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
 
   const handleCalendarSelect = (range: DateRange | undefined) => {
     if (!range?.from || !range?.to) return;
-    onChange({ preset: 'custom', from: range.from.toISOString(), to: range.to.toISOString() });
+    onChange(toUtcDayRange(range.from, range.to));
     setOpen(false);
   };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn('gap-1.5 font-normal', className)}
-        >
+        <Button type="button" variant="outline" size="sm" className="gap-1.5 font-normal">
           <IconCalendar className="size-3.5 shrink-0" />
           <span>{formatRangeLabel(value)}</span>
           <IconChevronDown
