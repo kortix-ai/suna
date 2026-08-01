@@ -21,17 +21,20 @@ export interface GlyphSelection {
 
 /**
  * Glyph grid for picking a project icon. Same geometry contract as
- * `emoji-picker.tsx` on purpose: a 368px fixed height, 9 columns of `size-8`
- * cells in rows padded `px-1.5`. `project-icon-field.tsx` sizes the popover to
- * that exact width (9 * 8 + 2 * 1.5 spacing units); a different column count or
- * a different fixed height changes the popover's geometry the moment the Icon
+ * `emoji-picker.tsx` on purpose: `h-[368px]`, 9 columns of `size-8` cells in
+ * rows padded `px-1.5`. `project-icon-field.tsx` sizes the popover to that
+ * exact width (9 * 8 + 2 * 1.5 spacing units); a different column count or a
+ * different fixed height changes the popover's geometry the moment the Icon
  * tab is selected, so both numbers are copied here, not re-derived.
  *
- * (The literal `h-[...px]` class name is deliberately not spelled out again in
- * this comment: glyph-picker.test.tsx's height check does a plain, unstripped
- * `readFileSync(...).match(/h-\[(\d+)px\]/)` against this whole file, and a
- * SECOND occurrence of that exact pattern up here would match first — turning
- * a mutated height on the real element below into a silent test survivor.)
+ * glyph-picker.test.tsx checks those same four literals — `size-8`, `px-1.5`,
+ * `grid-cols-9`, `h-[368px]` — but never against THIS raw, commented file: the
+ * three grid classes are asserted against `renderToStaticMarkup` output (real
+ * shipped DOM, no comments exist there at all), and the height comparison
+ * strips every block and line comment out of both this file and
+ * emoji-picker.tsx before matching. A doc comment repeating these class
+ * names — like this one — is deliberately safe to write and cannot make
+ * either test pass or fail.
  *
  * The grid IS the colour preview: every cell paints in `color`, not just the
  * one the user last picked. Clicking a swatch re-tints the whole grid and

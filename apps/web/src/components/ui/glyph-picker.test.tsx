@@ -4,6 +4,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PROJECT_GLYPH_GROUPS } from '@kortix/shared';
 import { GlyphPicker } from './glyph-picker';
 
+/**
+ * Block and line comments stripped out, same as emoji-picker.test.tsx's own
+ * `code` variable. glyph-picker.tsx's file-header docstring deliberately
+ * names `size-8`, `px-1.5`, `grid-cols-9`, and `h-[368px]` in prose — reading
+ * this instead of raw `source` is what stops a comment edit from ever
+ * flipping the height check below, the way an earlier, unstripped version of
+ * this same test once did.
+ */
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 describe('GlyphPicker', () => {
   test('renders every catalogue glyph', () => {
     const html = renderToStaticMarkup(
@@ -52,17 +63,26 @@ describe('GlyphPicker', () => {
   });
 
   test('the grid geometry matches the emoji grid', () => {
-    // Read from source, so a drift in either file fails rather than silently
-    // changing the popover width on tab switch.
-    const source = readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('size-8');
-    expect(source).toContain('px-1.5');
-    expect(source).toMatch(/grid-cols-9/);
+    // Asserted against RENDERED markup, not source: the file's own doc
+    // comment names these same three classes (deliberately — see the
+    // stripComments note above), and rendered output contains no comments at
+    // all, so only the real, shipped DOM can make this pass.
+    const html = renderToStaticMarkup(
+      <GlyphPicker color="blue" onColorChange={() => {}} onGlyphSelect={() => {}} />,
+    );
+    expect(html).toContain('size-8');
+    expect(html).toContain('px-1.5');
+    expect(html).toMatch(/grid-cols-9/);
   });
 
   test('is the same fixed height as the emoji picker', () => {
-    const glyph = readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8');
-    const emoji = readFileSync(new URL('./emoji-picker.tsx', import.meta.url), 'utf8');
+    // Comment-stripped source: EmojiPicker can't be rendered here the way
+    // GlyphPicker is above (frimousse needs a self-hosted emoji dataset over
+    // the network), so this still has to read source — but with every
+    // comment removed first, so a doc comment naming `h-[368px]` (in either
+    // file) can't feed the regex ahead of the real element.
+    const glyph = stripComments(readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'));
+    const emoji = stripComments(readFileSync(new URL('./emoji-picker.tsx', import.meta.url), 'utf8'));
     const height = /h-\[(\d+)px\]/;
     expect(glyph.match(height)?.[1]).toBe(emoji.match(height)?.[1]);
   });
