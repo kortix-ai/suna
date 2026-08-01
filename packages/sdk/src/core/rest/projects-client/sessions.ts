@@ -90,7 +90,14 @@ export type SessionConnectorBindingInput =
     };
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
-/** Public body for POST /projects/:projectId/sessions. */
+/**
+ * Public body for POST /projects/:projectId/sessions.
+ *
+ * Session create immediately begins runtime provisioning; it is not a deferred
+ * metadata-only create. Callers that rotate project secrets or connector
+ * credentials for the new session must await those writes before creating it.
+ * The later `/start` call is an idempotent readiness/resume operation.
+ */
 export interface CreateProjectSessionInput {
   base_ref?: string;
   agent_name?: string;
@@ -273,6 +280,14 @@ export async function revokeSessionPublicShare(
   );
 }
 
+/**
+ * Create a session and immediately kick its runtime provisioning.
+ *
+ * Await any project-secret or connector-credential mutations that the runtime
+ * must observe before calling this function. `startProjectSession` does not
+ * establish a commit barrier for writes raced against this request; it only
+ * provisions/resumes idempotently and reports readiness.
+ */
 export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
   const session = unwrap(
     await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),

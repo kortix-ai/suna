@@ -102,6 +102,24 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   return c.json(error.body, error.status as any);
 }
 
+/**
+ * Resolve the concrete agent stored on a new session.
+ *
+ * A v2 manifest is durable project truth. `project.metadata.default_agent` is
+ * only a read mirror and can lag an external git push, so it must never
+ * override the manifest value. The mirror remains the legacy fallback for v1
+ * projects, whose manifests do not declare a top-level default.
+ */
+export function resolveSessionAgentName(input: {
+  requestedAgent: string | null;
+  manifestDefaultAgent: string | null;
+  mirroredDefaultAgent: string | null;
+}): string {
+  const explicit =
+    input.requestedAgent && input.requestedAgent !== 'default' ? input.requestedAgent : null;
+  return explicit ?? input.manifestDefaultAgent ?? input.mirroredDefaultAgent ?? 'default';
+}
+
 export async function countActiveProjectSessions(accountId: string): Promise<number> {
   const [row] = await db
     .select({ activeCount: sql<number>`count(*)::int` })
@@ -658,20 +676,22 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  const loadedAgents = await loadProjectAgents(project, {
+    forceRefresh: true,
+    rethrowReadErrors: true,
+  });
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
   const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
-  const projectDefaultAgent = normalizeString(
+  const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
-  const agentName =
-    (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
-    projectDefaultAgent ??
-    'default';
-  const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: true,
-    rethrowReadErrors: true,
+  const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
+  const agentName = resolveSessionAgentName({
+    requestedAgent,
+    manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
+    mirroredDefaultAgent,
   });
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
