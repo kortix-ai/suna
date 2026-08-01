@@ -194,7 +194,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             name still opens the switcher, and the whole row between them is
             live instead of inert. */}
         <div className="flex w-full items-center gap-1">
-          <ProjectSwitcher variant="sidebar" className="min-w-0" />
+          <ProjectSwitcher variant="sidebar" className="min-w-0 flex-1" />
           <div className="flex shrink-0 items-center gap-0.5 ml-auto">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile

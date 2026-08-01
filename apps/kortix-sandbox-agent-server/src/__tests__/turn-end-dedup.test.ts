@@ -68,8 +68,7 @@ afterEach(() => {
   }
 })
 
-function slackEnv(apiUrl: string) {
-  process.env.SLACK_CHANNEL_ID = 'C123'
+function sessionEnv(apiUrl: string) {
   process.env.KORTIX_PROJECT_ID = 'proj_1'
   process.env.KORTIX_SESSION_ID = 'sess_1'
   process.env.KORTIX_SANDBOX_TOKEN = 'tok'
@@ -80,7 +79,7 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
   test('two idle relays for the SAME completed turn finalize once', async () => {
     let completedAt = 1000
     const m = startMocks(() => completedAt)
-    slackEnv(m.baseUrl)
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -96,7 +95,7 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
   test('a NEW turn (new completed timestamp) relays again', async () => {
     let completedAt = 1000
     const m = startMocks(() => completedAt)
-    slackEnv(m.baseUrl)
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -109,9 +108,21 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     }
   })
 
-  test('no-op outside Slack (no relay context)', async () => {
+  test('relays a web session without Slack metadata', async () => {
     const m = startMocks(() => 1000)
-    // deliberately NOT calling slackEnv → no SLACK_* env
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('does not relay without sandbox callback identity', async () => {
+    const m = startMocks(() => 1000)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -128,7 +139,7 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
   test('a failed relay does not suppress a later successful relay of the same turn', async () => {
     let ok = false // first relay attempt(s) hit a 503 outage
     const m = startMocks(() => 1000, () => ok)
-    slackEnv(m.baseUrl)
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {

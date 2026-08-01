@@ -57,6 +57,7 @@ import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
+import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -929,30 +930,11 @@ export async function provisionSessionSandbox(opts: {
         }
       }
 
-      // Provider-capacity errors (Daytona "No available runners", rate limits)
-      // are transient outages, not session failures. Log them as a warning so
-      // they don't read as code bugs in the console, and present a friendly
-      // message to the user instead of the SDK stack trace.
-      const isCapacity = /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
-      // Git auth / repo-access failures. These are NOT a provider fault — the
-      // sandbox provider is fine; we couldn't clone the project's repo. Reporting
-      // them as "Provisioning failed via daytona" actively misdirects debugging
-      // (it reads as a Daytona outage), so categorize + surface them as a git
-      // problem with an actionable message.
-      const isGitAuth =
-        /could not read Username|terminal prompts disabled|Authentication failed|fatal: could not read|Invalid username or password|remote: Repository not found|HTTP 401|HTTP 403|access denied|Permission denied \(publickey\)/i.test(
-          bgMessage,
-        );
-      const failureCategory: 'provider-capacity' | 'git-auth' | null = isCapacity
-        ? 'provider-capacity'
-        : isGitAuth
-          ? 'git-auth'
-          : null;
-      const userMessage = isCapacity
-        ? 'The sandbox provider is at capacity right now. Try again in a minute.'
-        : isGitAuth
-          ? "Couldn't access the project's Git repository (authentication failed). Check the project's Git credentials and try again."
-          : `Provisioning failed via ${providerName}.`;
+      // Keep provider SDK text in diagnostic metadata. Show one stable contract
+      // for E2B, Daytona, Platinum, and future providers.
+      const failure = classifySandboxProvisioningFailure(bgErr);
+      const { isCapacity, isGitAuth, userMessage } = failure;
+      const failureCategory = failure.category;
       if (isCapacity) {
         console.warn(
           `[session-sandbox] provider at capacity for ${sandbox.sandboxId} after retries — bouncing session:`,
