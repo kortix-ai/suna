@@ -1,14 +1,14 @@
 'use client';
 
-import { CheckIcon as Check, LinkSimpleIcon as Link2 } from '@phosphor-icons/react';
+import { CheckIcon as Check, LinkSimpleIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { cn } from '@/lib/utils';
+import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 
 export function PublicShareLinkButton({
   projectId,
@@ -65,7 +65,7 @@ export function PublicShareLinkButton({
                 {share.copied ? (
                   <Check className={cn(iconClassName, 'text-kortix-green')} />
                 ) : (
-                  <Link2 className={iconClassName} />
+                  <LinkSimpleIcon className={iconClassName} />
                 )}
               </motion.span>
             </AnimatePresence>

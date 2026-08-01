@@ -660,7 +660,7 @@ function UserMessageActions({
 }) {
   if (rewindDisabled) return null;
   return (
-    <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+    <div className=" flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
       <Hint label="Edit from here" side="bottom" align="center">
         <Button
           type="button"

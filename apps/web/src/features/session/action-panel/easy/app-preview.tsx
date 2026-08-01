@@ -44,7 +44,7 @@ import {
   CheckIcon as Check,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
-  LinkIcon,
+  LinkSimpleIcon,
   ArrowsOutSimpleIcon as Maximize2,
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
@@ -404,7 +404,7 @@ export function AppPreview({
                   {copied ? (
                     <Check className="text-kortix-green size-4" />
                   ) : (
-                    <LinkIcon className="size-4" />
+                    <LinkSimpleIcon className="size-4" />
                   )}
                 </motion.span>
               </AnimatePresence>

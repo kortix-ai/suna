@@ -1297,7 +1297,7 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="group/turn space-y-3">
+    <div className="group/turn space-y-2.5">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
