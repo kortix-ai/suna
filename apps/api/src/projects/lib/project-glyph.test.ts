@@ -6,6 +6,7 @@
  * normalizes to null before it can reach a React tree.
  */
 import { describe, expect, test } from 'bun:test';
+import { PROJECT_GLYPH_COLORS } from '@kortix/shared';
 import { normalizeProjectGlyph } from './project-glyph';
 
 describe('normalizeProjectGlyph — accepts', () => {
@@ -17,7 +18,12 @@ describe('normalizeProjectGlyph — accepts', () => {
   });
 
   test('every colour in the palette', () => {
-    for (const color of ['grey', 'red', 'orange', 'yellow', 'lime', 'blue', 'purple', 'magenta']) {
+    // Iterated from the catalogue rather than a hand-written array. A literal
+    // list here would both drift from the palette silently and widen `color`
+    // to `string`, which does not satisfy `ProjectGlyph`'s literal union —
+    // `bun test` never noticed because it does not typecheck, but the API's
+    // `tsc` gate did.
+    for (const color of PROJECT_GLYPH_COLORS) {
       expect(normalizeProjectGlyph({ name: 'Circle', color })).toEqual({ name: 'Circle', color });
     }
   });
