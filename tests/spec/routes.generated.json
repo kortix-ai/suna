@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 515,
+  "count": 516,
   "routes": [
     {
       "method": "GET",
@@ -1497,6 +1497,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-enablement"
     },
     {
       "method": "GET",

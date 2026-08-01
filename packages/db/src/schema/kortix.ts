@@ -972,16 +972,26 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column; every model is served. Retained INERT (not dropped) so
-     * a mixed-version rollout can't hit a missing column on the gateway's hot
-     * path — a later contract migration drops it. Do not add new readers.
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. Display-only: it decides what the session picker
+     * and "Manage models" OFFER; the gateway never refuses a request over it
+     * (enforcement 400'd in-use models — the #5932 revert).
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
      */
     modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column. Retained INERT (not dropped) for the same mixed-version
-     * reason as `modelOverrides`; a later contract migration drops it.
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
      */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),

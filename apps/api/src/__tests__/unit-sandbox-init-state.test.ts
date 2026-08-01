@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
   deriveSandboxHealthStatus,
@@ -21,6 +22,16 @@ describe('sandbox init state helpers', () => {
     expect(meta.initStatus).toBe('failed');
     expect(meta.lastInitError).toBe('boom');
     expect(meta.errorMessage).toBe('Initialization failed after 3 attempts. Reinitialize to retry.');
+  });
+
+  test('records the active capacity retry limit in retry metadata', () => {
+    const attempt = buildSandboxInitAttemptMetadata({}, 18, 'retrying', null, null, 30);
+    const failure = buildSandboxInitFailureMetadata({}, new Error('rate limit'), 18, true, 30);
+    const success = buildSandboxInitSuccessMetadata({}, {}, 18, 30);
+
+    expect(attempt.initMaxAttempts).toBe(30);
+    expect(failure.initMaxAttempts).toBe(30);
+    expect(success.initMaxAttempts).toBe(30);
   });
 
   test('marks successful initialization as ready', () => {

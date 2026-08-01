@@ -4896,3 +4896,39 @@ session event and agent action carried the same project and session identifiers.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+### 2026-08-01 — session `model-enablement` (re-land server-side model enablement, display-only)
+
+Un-reverted `6c168ee2a` (#5932) minus the gateway-enforcement half. SDK changes:
+
+- Restored `model-enablement.ts` REST client + `useModelEnablement` hook +
+  `ProjectLlmCatalogResponse.{modelOverrides,usingDefaults,defaultModel}` and
+  the barrel exports; surface snapshots regenerated.
+- New export `isOfferedModel(models, key)` (`react/model-flatten.ts`) — THE
+  predicate for "may this key be offered?": in-catalog AND server `enabled !==
+  false`. Test-first (RED: missing export → GREEN).
+- `useOpenCodeLocal`: `isModelValid` now delegates to `isOfferedModel` instead
+  of `useModelStore.isVisible`; dropped the project-secrets query +
+  `connectedProviderIds`/`freeTier` store plumbing (the server already resolves
+  entitlement/connection into `enabled`); `local.model.visible` now returns the
+  server answer; removed the localStorage `setVisibility(model, true)` write on
+  pick. `UseOpenCodeLocalOptions.freeTier` kept but `@deprecated`/inert.
+- `useModelStore` keeps its full export surface (npm contract). Its visibility
+  half (`isVisible`, `setVisibility`, `resetVisibility`, `isLatest`,
+  `computeLatestSet`, `hasUsableModel`, `isDefaultVisible`, `userPrefs`) now has
+  ZERO repo consumers — backlog: deprecate + delete in the next breaking cycle.
+
+Second fix found by live UI verification: the session picker renders from the
+gateway provider list (`['project-providers', :id, 'gateway']`, staleTime
+Infinity + localStorage seed) — a SECOND cache of the `/model-picker` payload —
+so a toggle wrote through `['project-model-picker']` and the open composer
+never updated. New export `applyEnablementToProviderList(providers, overrides)`
+(`react/provider-selection.ts`, test-first) restamps `enabled` on that shape;
+`useModelEnablement` now optimistically updates + invalidates BOTH keys
+(rollback on error covers both). Verified live in Chromium: toggle off →
+picker hides the model (7 options), toggle on → reappears (8) with no reload.
+
+Gates: `typecheck` exit 0 · `bun test --isolate src` → **1367 pass, 2 skip,
+0 fail** · `smoke:install` OK.
+
+**SDK package shippable to production: YES.**
