@@ -25,11 +25,40 @@ describe('GlyphPicker', () => {
     expect(buttons).toHaveLength(64);
   });
 
-  test('renders a header for each of the 8 groups', () => {
+  test('renders one continuous grid, not one sub-grid per category', () => {
+    // This picker used to render 8 sticky category headers (`Objects`,
+    // `Shapes`, ... `Symbols`) with a `grid-cols-9` sub-grid under each.
+    // Review feedback dropped the grouping; this pins both halves of that:
+    // none of the category labels render as a heading, and there is exactly
+    // one `grid-cols-9` grid, not eight. `PROJECT_GLYPH_GROUPS` still exists
+    // (it is the ordering source `PROJECT_GLYPH_NAMES` flattens from) so this
+    // reads its labels directly off the shared catalogue rather than
+    // hardcoding them, and would fail if grouping ever came back.
     const html = renderToStaticMarkup(
       <GlyphPicker color="blue" onColorChange={() => {}} onGlyphSelect={() => {}} />,
     );
-    for (const group of PROJECT_GLYPH_GROUPS) expect(html).toContain(group.label);
+    // Word-boundary match, not plain `toContain`: the Arrows group's own
+    // `ArrowsClockwise` glyph name contains "Arrows" as a substring, so a bare
+    // `toContain('Arrows')` would fail even with headers correctly removed.
+    for (const group of PROJECT_GLYPH_GROUPS) {
+      expect(html).not.toMatch(new RegExp(`\\b${group.label}\\b`));
+    }
+    const grids = html.match(/grid-cols-9/g) ?? [];
+    expect(grids).toHaveLength(1);
+  });
+
+  test('the colour row sits before the glyph grid in DOM order', () => {
+    // The colour row moved from a footer below the grid to a header row
+    // directly under search. Asserted on markup order, not just presence, so
+    // a regression that keeps the row but puts it back at the bottom fails.
+    const html = renderToStaticMarkup(
+      <GlyphPicker color="blue" onColorChange={() => {}} onGlyphSelect={() => {}} />,
+    );
+    const swatchIndex = html.indexOf('data-swatch="');
+    const glyphIndex = html.indexOf('data-glyph="');
+    expect(swatchIndex).toBeGreaterThan(-1);
+    expect(glyphIndex).toBeGreaterThan(-1);
+    expect(swatchIndex).toBeLessThan(glyphIndex);
   });
 
   test('the whole grid paints in the selected colour', () => {

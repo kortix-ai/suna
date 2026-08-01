@@ -300,8 +300,11 @@ export function ProjectIconField({
         including the `truncate`d active-emoji label in its footer, whose
         intrinsic width is the full untruncated string.
 
-        p-0 because the picker owns its own padding (p-2 search, px-1.5 rows,
-        px-2 footer); PopoverContent's default p-4 would inset it a second time.
+        p-0 because each picker owns its own padding — `p-2` around the search
+        field, `px-1.5` on the grid rows, and EmojiPicker's own `px-2` footer
+        (GlyphPicker has none; its colour row sits inside the search's `p-2`
+        block instead) — PopoverContent's default p-4 would inset it a second
+        time.
 
         Radix gives the content role="dialog"; without a label it is announced
         as an unnamed one.
