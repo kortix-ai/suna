@@ -6,7 +6,7 @@ import { billingDialogArgs, resolveBillingState } from '@/lib/billing/billing-ga
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { AlertTriangle, CreditCard } from 'lucide-react';
+import { WarningIcon as AlertTriangle, CreditCardIcon as CreditCard } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 /** Warn once the wallet drops below this (dollars). Negative/zero is always a

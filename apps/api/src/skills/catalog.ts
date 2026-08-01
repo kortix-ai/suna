@@ -6,8 +6,8 @@
  * CLI). Until now they were only reachable two ways: scaffolded into a project's
  * git tree by `kortix init`, or baked into the sandbox image at
  * `/opt/kortix/managed-skills` and overlaid per session. Both require being
- * *inside* Kortix. An agent in OpenCode, Claude Code, Codex, or Pi holding only
- * the `kortix` binary and a token had no way to read them.
+ * *inside* Kortix. An OpenCode agent holding only the `kortix` binary and a
+ * token had no way to read them.
  *
  * SOURCE OF TRUTH: `@kortix/starter`. This module runs the exact same extraction
  * as `packages/starter/scripts/write-managed-skills.ts` (the script that bakes the

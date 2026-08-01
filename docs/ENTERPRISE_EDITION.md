@@ -64,8 +64,10 @@ Nothing else in the product is currently entitlement-gated. Categories common
 elsewhere in this space (HA/clustering, dedicated single-tenant infra,
 white-labeling, LDAP, tiered data retention, air-gap-specific code) aren't yet
 built as Kortix features at all, so there's nothing to gate — self-hosting the
-whole product already *is* your air-gapped, dedicated, single-tenant
-deployment. If/when any of those become real product surfaces, they get a new
+whole product already *is* your dedicated, single-tenant deployment in your own
+VPC or your own on-prem network. It is **not** air-gapped: `kortix self-host
+start` pulls images from docker.io and reaches a sandbox provider over egress.
+If/when any of those become real product surfaces, they get a new
 `TierEntitlements` key here, not a separate mechanism.
 
 ## Adding a new gate

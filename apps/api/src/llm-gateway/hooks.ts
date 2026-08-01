@@ -22,7 +22,7 @@ import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconcili
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
-import { recordUsageEvent, resolveSessionOriginRef } from '../shared/usage-events';
+import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
@@ -239,16 +239,6 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
 
-  // KaaB attribution. Safe on THIS path only: the gateway principal's sessionId
-  // comes from the executor token (minted server-side with sessionId =
-  // sandboxId = the project session id), so a caller cannot name someone else's
-  // session and bill them. Best-effort — a lookup failure must never lose the
-  // usage row, which is the billing record.
-  const originRef =
-    pureHoldRefund || !event.sessionId
-      ? null
-      : await resolveSessionOriginRef(event.accountId, event.sessionId).catch(() => null);
-
   const usageEventId = pureHoldRefund
     ? null
     : await recordUsageEvent({
@@ -256,7 +246,6 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         actorUserId: event.actorUserId,
         projectId: event.projectId ?? null,
         sessionId: event.sessionId ?? null,
-        originRef,
         provider: event.provider,
         model: event.model,
         route: '/v1/llm/chat/completions',

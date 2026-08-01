@@ -26,7 +26,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Item,
   ItemActions,
@@ -35,6 +34,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -71,19 +71,21 @@ import {
 import { useDebounce } from '@/hooks/use-debounce';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { CheckCircleSolid } from '@mynaui/icons-react';
+import {
+  CubeIcon as Boxes,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDown,
+  ArrowSquareOutIcon as ExternalLink,
+  GithubLogoIcon as Github,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { RepositoryPicker } from './github-import-pickers';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
-import {
-  startProjectOnboardingSession,
-  startTemplateSetupSession,
-} from './template-setup-session';
+import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -99,7 +101,10 @@ const managedProjectSchema = z.object({
       z
         .string()
         .min(1, 'Project name is required')
-        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+        .max(
+          PROJECT_NAME_MAX_LENGTH,
+          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+        ),
     ),
 });
 
@@ -334,7 +339,8 @@ export const ProjectCreateModal = ({
         const gitSettingsAccountId =
           effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (
@@ -1192,7 +1198,7 @@ function RepositoryOptions({
         <div className="space-y-1.5 pb-0.5">
           {collapsible ? <Label>Repository source</Label> : null}
           <Tabs value={repositoryMode} onValueChange={onModeChange}>
-            <TabsList type="secondary" className="w-full" aria-label="Repository source">
+            <TabsList className="w-full" aria-label="Repository source">
               <TabsTrigger value="managed" size="sm">
                 Kortix managed
               </TabsTrigger>
@@ -1269,7 +1275,12 @@ function TemplatePicker({
         </div>
       </ModalBody>
       <ModalFooter>
-        <Button type="button" variant="outline-ghost" className="w-full sm:w-auto" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="outline-ghost"
+          className="w-full sm:w-auto"
+          onClick={onCancel}
+        >
           Back
         </Button>
       </ModalFooter>

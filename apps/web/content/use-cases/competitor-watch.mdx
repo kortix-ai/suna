@@ -82,7 +82,7 @@ model, the agent can:
 The agent only reads public pages and writes to one Slack channel, so its scope
 is narrow by design. It has no access to internal systems and takes no action
 beyond posting. Any credentials it needs are encrypted in the secrets manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each run report">
@@ -106,10 +106,10 @@ a dozen sites.
 
 Even a read-only agent runs with the same controls as the rest of the platform:
 
-- **Isolation.** Each run executes in its own microVM sandbox, and only the Slack
-  summary it's explicitly allowed to send leaves the sandbox.
+- **Isolation.** Each run executes in its own isolated sandbox, and only the Slack
+  summary it's explicitly allowed to send is written back out.
 - **Scoped secrets.** Any credential the agent uses is encrypted in the secrets
-  manager and injected into the sandbox at runtime, never exposed to the model or
+  manager and injected into the sandbox at runtime, scoped to the agents you grant them to or
   the logs.
 - **Human approval gates.** The agent's only external action is posting a summary;
   anything beyond that scope would require a person to approve.

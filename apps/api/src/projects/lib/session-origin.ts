@@ -1,9 +1,8 @@
 // Session ORIGIN — the policy class of a session, orthogonal to its surface
 // (SessionInvocationSource, which says ui/slack/cron/...). Origin answers "who
 // started this and what may they override": a human member (`user`), an event
-// or schedule (`trigger`/`schedule`), a wrapper's server-to-server backend
-// (`backend`, a service-account vouching for its own end-user), or an internal
-// system flow (`system`).
+// or schedule (`trigger`/`schedule`), a server-to-server caller (`backend`), or
+// an internal system flow (`system`).
 //
 // Origin is DERIVED from the caller's token kind + invocation source — it is
 // NEVER read from the request body, so a caller can't claim `backend` to unlock
@@ -22,8 +21,7 @@ export type SessionOverrideField =
   | 'model'
   | 'agent'
   | 'skills'
-  | 'runtime_context'
-  | 'origin_ref';
+  | 'runtime_context';
 
 /**
  * Derive the session origin from the authenticated caller's token kind
@@ -40,15 +38,14 @@ export type SessionOverrideField =
  *     `user`. This is the SECURITY-CRITICAL exclusion: the executor PAT
  *     injected into every sandbox (KORTIX_CLI_TOKEN, minted with
  *     sessionId=sandboxId; its agent grant is NULL for a v1/default agent or an
- *     ungoverned project) must never resolve `backend`, so a prompt-injectable
- *     in-sandbox agent can't vouch for a phantom end-user via origin_ref.
+ *     ungoverned project) must never resolve `backend`.
  *     Keyed on session-binding, NOT on the agent grant alone — a null grant is
  *     the common case and would fail open.
  *  3. The programmatic customer credentials are `backend`: a service-account
  *     bearer (`service_account`), the personal/account API token the app
  *     labels "API key" (`pat`), and a dedicated account API key
  *     (`apiKey` + apiKeyType `user`). All resolve to backend so they may set
- *     backend-only overrides (origin_ref, and later secrets).
+ *     backend-only overrides.
  *  4. Everything else — a human web/SAML session (`supabase`) and, critically,
  *     the INTERNAL sandbox key (`apiKey` + apiKeyType `sandbox`, injected as
  *     KORTIX_TOKEN) — is `user`. The sandbox exclusion uses the POSITIVE
@@ -87,15 +84,10 @@ export function resolveSessionOrigin(input: {
  * account, or the account API key / PAT — see resolveSessionOrigin).
  * Everything else stays as open as today — a project member can already pass
  * connectors/model/agent/runtime_context, so gating those would be a
- * regression. The two backend-only fields are genuinely new/sensitive:
- *  - `origin_ref`: vouching for a wrapper's end-user — ATTRIBUTION only (recorded
- *    on the session + surfaced to the sandbox as KORTIX_ORIGIN_REF so the agent
- *    knows who it acts for). Per-user CONNECTORS are passed separately by
- *    reference via connector_bindings; origin_ref is not itself an auth
- *    principal. Only a backend may assert who its user is.
- *  - `secrets`: injecting a secret bundle by reference (a later phase).
+ * regression. `secrets` remains backend-only because it selects a secret bundle
+ * for sandbox injection.
  */
-const BACKEND_ONLY_FIELDS: ReadonlySet<SessionOverrideField> = new Set(['origin_ref', 'secrets']);
+const BACKEND_ONLY_FIELDS: ReadonlySet<SessionOverrideField> = new Set(['secrets']);
 
 /**
  * Whether a session of the given origin may set the given override field.

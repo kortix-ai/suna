@@ -1,14 +1,14 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { useSyncStore } from '../stores/sync-store';
 import { getClient } from '../../core/runtime/client';
-import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
 import {
   SessionSyncController,
-  loadCompleteSessionHistory,
   type SessionSyncPage,
   type SessionSyncReason,
   type SessionSyncTelemetryEvent,
+  loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
+import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -48,6 +48,27 @@ function runtimeScopeKey(runtimeScope?: string): string {
 
 function controllerKey(sessionId: string, runtimeScope?: string): string {
   return `${runtimeScopeKey(runtimeScope)}\n${sessionId}`;
+}
+
+function findExistingSessionEntry(
+  sessionId: string,
+  runtimeScope?: string,
+): RegistryEntry | undefined {
+  const exact = controllers.get(controllerKey(sessionId, runtimeScope));
+  if (exact) return exact;
+
+  // During a React runtime switch, the framework-free current-runtime store can
+  // be briefly unbound while the session's sandbox-scoped controller remains
+  // mounted. Reuse that controller only when the wire id has one unambiguous
+  // owner. Never route across multiple sandboxes that contain the same id.
+  if (runtimeScopeKey(runtimeScope) !== 'none') return undefined;
+  let match: RegistryEntry | undefined;
+  for (const entry of controllers.values()) {
+    if (entry.sessionId !== sessionId) continue;
+    if (match) return undefined;
+    match = entry;
+  }
+  return match;
 }
 
 export async function readSessionMessagePage(
@@ -209,11 +230,20 @@ export function reconcileSessionTail(
 }
 
 export function beginSessionPromptObservation(sessionId: string, runtimeScope?: string): void {
+  const existing = findExistingSessionEntry(sessionId, runtimeScope);
+  if (existing) {
+    existing.controller.beginPromptObservation();
+    return;
+  }
+  const hasAmbiguousOwner = [...controllers.values()].some(
+    (entry) => entry.sessionId === sessionId,
+  );
+  if (runtimeScopeKey(runtimeScope) === 'none' && hasAmbiguousOwner) return;
   getSessionSyncController(sessionId, undefined, runtimeScope).beginPromptObservation();
 }
 
 export function endSessionPromptObservation(sessionId: string, runtimeScope?: string): void {
-  controllers.get(controllerKey(sessionId, runtimeScope))?.controller.endPromptObservation();
+  findExistingSessionEntry(sessionId, runtimeScope)?.controller.endPromptObservation();
 }
 
 export function loadSessionTranscriptMessages(
@@ -226,8 +256,9 @@ export function loadSessionTranscriptMessages(
 
 export function noteSessionSyncEvent(event: {
   type?: string;
-  properties: unknown;
+  properties?: unknown;
 }): void {
+  if (!event.properties || typeof event.properties !== 'object') return;
   const properties = event.properties as Record<string, unknown>;
   const info = properties.info as { sessionID?: string; role?: string } | undefined;
   const part = properties.part as { sessionID?: string } | undefined;
@@ -236,7 +267,7 @@ export function noteSessionSyncEvent(event: {
     info?.sessionID ||
     part?.sessionID;
   if (!sessionId) return;
-  const controller = controllers.get(controllerKey(sessionId))?.controller;
+  const controller = findExistingSessionEntry(sessionId)?.controller;
   if (!controller) return;
   controller.noteActivity();
 

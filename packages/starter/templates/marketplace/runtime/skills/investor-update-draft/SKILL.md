@@ -114,8 +114,7 @@ yourself.
   month's figures from the update it wrote rather than assuming anything
   carried over.
 - **Scoped secrets.** Postgres, Stripe, and document access are brokered
-  server-side through connectors; no raw credential is ever shown to the
-  model or written to logs.
+  server-side through connectors; no raw credential is ever pasted into chat.
 - **The founder sends, not the agent.** The agent's job ends at a finished
   draft. It never emails, messages, or publishes the update to investors.
 </guardrails>

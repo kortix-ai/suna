@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -28,8 +28,12 @@ import {
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
 } from '@/features/session/session-surface';
-import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
+import {
+  isDormantSessionWithoutRuntime,
+  isUnmaterializedSessionFailure,
+} from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import {
   billingDialogArgs,
@@ -49,14 +53,12 @@ import {
   formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
-  restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
-  clearRuntimeEnsureGuard,
   migrateStash,
   readStartStash,
   useRuntimeConnectionStore,
@@ -113,8 +115,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
-  const forceAcp = searchParams.has('acp');
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -166,7 +166,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
-    runtimeTransport: forceAcp ? 'acp' : undefined,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -184,13 +183,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const sandboxResumable = isSandboxResumable(sandbox);
   const MAX_AUTO_RESUME = 3;
   const [resumeAttempts, setResumeAttempts] = useState(0);
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId, sessionId),
-    onSuccess: () => {
-      setResumeAttempts(0);
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
-    },
-  });
+  // ONE restart behavior for every card on this route: optimistic exit from the
+  // terminal state, a real pending state, and a SURFACED failure.
+  const restart = useRestartProjectSession(projectId, sessionId);
+  // A manual restart re-arms auto-resume: the box the user just asked us to
+  // reboot deserves the same wake attempts a fresh open would get.
+  const handleRestart = () => {
+    setResumeAttempts(0);
+    restart.restart();
+  };
   useEffect(() => {
     if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
     // First attempt fires immediately (match the refresh); back off after that.
@@ -292,14 +293,20 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
+  // terminal stage together with a typed `/start` error and a transient
+  // OpenCode REST error, so a still-provisioning session used to be classified
+  // as a hard provisioning failure. See session-terminal-state.ts.
+  const terminalState = {
+    stage: session.stage ?? null,
+    retriable: session.retriable,
+    hasStartError: !!session.startError,
+    sandboxStatus: sandbox?.status,
+  };
   const unmaterializedFailure =
-    !authLoading &&
-    !!user &&
-    isUnmaterializedSessionFailure({
-      phase: session.phase,
-      hasStartError: !!session.startError,
-      sandboxStatus: sandbox?.status,
-    });
+    !authLoading && !!user && isUnmaterializedSessionFailure(terminalState);
+  const dormantWithoutRuntime =
+    !authLoading && !!user && isDormantSessionWithoutRuntime(terminalState);
   const sessionContentAvailable = canMountSessionChat({
     switched: session.switched,
     opencodeSessionId: session.opencodeSessionId,
@@ -320,7 +327,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   }, [sessionId]);
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (sessionContentAvailable || session.startError || unmaterializedFailure || fatal || gated) {
+    if (
+      sessionContentAvailable ||
+      session.startError ||
+      unmaterializedFailure ||
+      dormantWithoutRuntime ||
+      fatal ||
+      gated
+    ) {
       completeSessionSwitch(sessionId);
     }
   }, [
@@ -329,6 +343,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     sessionContentAvailable,
     session.startError,
     unmaterializedFailure,
+    dormantWithoutRuntime,
     fatal,
     gated,
     completeSessionSwitch,
@@ -433,22 +448,24 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       return (
         <InlineSessionError
           title="Couldn't start session"
-          message="The session failed before its computer was created. Restart the session to try again."
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => restartMutation.mutate()}
-              disabled={restartMutation.isPending}
-            >
-              {restartMutation.isPending ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <RotateCcw className="size-3.5 shrink-0" />
-              )}
-              Restart session
-            </Button>
-          }
+          message="Provisioning this session's computer failed. Restart the session to try again."
+          detail={restart.errorMessage ?? undefined}
+          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
+        />
+      );
+    }
+
+    // Stopped, with no sandbox row to describe — the `fatal` branch below reads
+    // `sandbox.status`, which does not exist here, so this state used to fall
+    // into the FAILURE card above and claim a session that merely stopped had
+    // failed before it ever got a computer.
+    if (dormantWithoutRuntime) {
+      return (
+        <InlineSessionError
+          title="This session is stopped"
+          message="Its computer was released. Restart the session to bring it back."
+          detail={restart.errorMessage ?? undefined}
+          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
         />
       );
     }
@@ -482,21 +499,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           message={tI18nHardcoded.raw(
             'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
           )}
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => restartMutation.mutate()}
-              disabled={restartMutation.isPending}
-            >
-              {restartMutation.isPending ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <RotateCcw className="size-3.5 shrink-0" />
-              )}
-              Restart session
-            </Button>
-          }
+          detail={restart.errorMessage ?? undefined}
+          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
         />
       );
     }
@@ -566,6 +570,39 @@ function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) 
   return <>{children}</>;
 }
 
+/* ─── The one Restart control ──────────────────────────────────────────── */
+
+/**
+ * Every terminal card on this route offers the same restart, so it renders from
+ * one component: a real pending state (spinner + label + disabled, so a second
+ * click cannot fire a second reboot) and no bespoke copy to drift.
+ */
+function RestartSessionButton({
+  restart,
+  onRestart,
+}: {
+  restart: { isPending: boolean };
+  onRestart: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={onRestart}
+      disabled={restart.isPending}
+      aria-busy={restart.isPending}
+    >
+      {restart.isPending ? (
+        <Loading className="size-3.5 shrink-0" />
+      ) : (
+        <RotateCcw className="size-3.5 shrink-0" />
+      )}
+      {restart.isPending ? 'Restarting…' : 'Restart session'}
+    </Button>
+  );
+}
+
 /* ─── Inline error card (used inside the project shell) ────────────────── */
 
 function InlineSessionError({
@@ -626,27 +663,7 @@ function ActiveSessionChat({
   const sessionsListed = sessionState.runtimeSessionsListed;
   const runtimeError = sessionState.runtimeError;
 
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId, sessionId),
-    onMutate: () => {
-      queryClient.setQueryData(sessionStartKey(projectId, sessionId), {
-        stage: 'provisioning',
-        retriable: true,
-        sandbox: null,
-        opencode_session_id: null,
-        reason: 'restart_requested',
-      });
-    },
-    onSuccess: () => {
-      clearRuntimeEnsureGuard();
-      queryClient.removeQueries({ queryKey: ['opencode'] });
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
-      queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
-      });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-    },
-  });
+  const restart = useRestartProjectSession(projectId, sessionId);
 
   const selectedOpenCodeSessionId = searchParams.get('oc');
   const selectedSession = selectedOpenCodeSessionId
@@ -743,49 +760,20 @@ function ActiveSessionChat({
         message={tHardcodedUi.raw(
           'appProjectsIdSessionsSessionidPage.line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid',
         )}
-        detail={runtimeBootError}
-        action={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => restartMutation.mutate()}
-            disabled={restartMutation.isPending}
-          >
-            {restartMutation.isPending ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <RotateCcw className="size-3.5 shrink-0" />
-            )}
-            {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}
-          </Button>
-        }
+        detail={restart.errorMessage ?? runtimeBootError}
+        action={<RestartSessionButton restart={restart} onRestart={restart.restart} />}
       />
     );
   }
 
   if (runtimeError) {
     const formatted = formatRuntimeError(runtimeError);
-    const restartError = restartMutation.error ? formatRuntimeError(restartMutation.error) : null;
     return (
       <InlineSessionError
         title={formatted.title}
         message={formatted.message}
-        detail={restartError?.message ?? formatted.detail}
-        action={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => restartMutation.mutate()}
-            disabled={restartMutation.isPending}
-          >
-            {restartMutation.isPending ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <RotateCcw className="size-3.5 shrink-0" />
-            )}
-            {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}
-          </Button>
-        }
+        detail={restart.errorMessage ?? formatted.detail}
+        action={<RestartSessionButton restart={restart} onRestart={restart.restart} />}
       />
     );
   }
@@ -805,6 +793,7 @@ function ActiveSessionChat({
         <SessionChat
           key={chatSessionId}
           sessionId={chatSessionId}
+          projectSessionId={sessionId}
           projectId={projectId}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />

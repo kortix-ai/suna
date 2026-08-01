@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { isRich } from './file-preview';
+import { getFileCategory } from '@/features/file-viewer';
+import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
 const SHARE_CONTEXT = { projectId: 'p1', sessionId: 's1' };
@@ -66,6 +67,49 @@ describe('FilePreview routing', () => {
     // And the text path is unchanged.
     expect(isRich('page.html')).toBe(false);
     expect(isRich('notes.md')).toBe(false);
+  });
+
+  // ─── `reportsIntrinsicSize` decides whether opening a file HOLDS the panel's
+  // current width (a ratio is coming) or clears it. It has to name exactly the
+  // renderers that call `usePreviewFit().report()` — today PdfViewer,
+  // ImageRenderer, VideoRenderer. Claiming one that never reports strands the
+  // previous document's width on screen. ──
+  test('claims exactly the categories whose renderer reports a size', () => {
+    expect(reportsIntrinsicSize('report.pdf')).toBe(true);
+    expect(reportsIntrinsicSize('photo.png')).toBe(true);
+    expect(reportsIntrinsicSize('scan.jpeg')).toBe(true);
+    expect(reportsIntrinsicSize('shot.webp')).toBe(true);
+    expect(reportsIntrinsicSize('clip.mp4')).toBe(true);
+    expect(reportsIntrinsicSize('clip.mov')).toBe(true);
+  });
+
+  test('excludes audio, which is rich but has no shape to report', () => {
+    // It renders a transport bar. Holding a ratio for it would leave the last
+    // document's width behind an audio player.
+    expect(isRich('voice.mp3')).toBe(true);
+    expect(reportsIntrinsicSize('voice.mp3')).toBe(false);
+    expect(reportsIntrinsicSize('voice.wav')).toBe(false);
+  });
+
+  test('excludes svg, whose ImageRenderer sits outside the fit provider', () => {
+    // Category `image`, but `isRich` sends it to FileViewer — where
+    // `usePreviewFit()` is null and nothing is ever reported.
+    expect(getFileCategory('logo.svg')).toBe('image');
+    expect(reportsIntrinsicSize('logo.svg')).toBe(false);
+  });
+
+  test('excludes every rich format that renders a document, not a picture', () => {
+    for (const name of ['deck.pptx', 'sheet.xlsx', 'data.csv', 'doc.docx', 'store.sqlite']) {
+      expect(isRich(name)).toBe(true);
+      expect(reportsIntrinsicSize(name)).toBe(false);
+    }
+  });
+
+  test('excludes the text path entirely', () => {
+    expect(reportsIntrinsicSize('notes.md')).toBe(false);
+    expect(reportsIntrinsicSize('page.html')).toBe(false);
+    expect(reportsIntrinsicSize('main.ts')).toBe(false);
+    expect(reportsIntrinsicSize('notes.txt')).toBe(false);
   });
 });
 

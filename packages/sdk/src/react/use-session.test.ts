@@ -4,36 +4,14 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
 // `promptOpenCodeMessage` run for real, matching session.test.ts's approach of
 // stubbing the boundary rather than the wrapper.
-let permissionReplyImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let questionReplyImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let questionRejectImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let sessionPromptImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let sessionRevertImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let sessionUnrevertImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
+let permissionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
+  async () => ({ data: {} });
+let questionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
+  async () => ({ data: {} });
+let questionRejectImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
+  async () => ({ data: {} });
+let sessionPromptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
+  async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
   constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
@@ -50,42 +28,35 @@ mock.module('../core/runtime/client', () => ({
       reply: (args: unknown) => questionReplyImpl(args),
       reject: (args: unknown) => questionRejectImpl(args),
     },
-    session: {
-      promptAsync: (args: unknown) => sessionPromptImpl(args),
-      revert: (args: unknown) => sessionRevertImpl(args),
-      unrevert: (args: unknown) => sessionUnrevertImpl(args),
-    },
+    session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
   }),
 }));
 
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import {
+  getSessionSyncController,
+  resetSessionSyncControllers,
+} from '../browser/session-sync/session-sync-registry';
 import { BillingError } from '../core/http/api/errors';
+import { setCurrentRuntime } from '../core/session/current-runtime';
 import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
 import {
   answerQuestion,
   rejectQuestion,
   answerPermission,
+  beginRestPromptObservation,
+  sendRestPromptWithObservation,
   classifySendError,
   buildSessionCommandInput,
-  beginRestPromptObservation,
-  endRestPromptObservation,
-  rewindOpenCodeSession,
-  restoreOpenCodeSessionRewind,
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
+  shouldPollSessionStart,
+  SESSION_START_POLL_OPTIONS,
+  SESSION_START_POLL_MS,
 } from './use-session';
-import {
-  refreshSessionTitleQueryUntilResolved,
-  syncAcpSessionTitleQuery,
-} from './session-title-sync';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
-import { useSyncStore } from '../browser/stores/sync-store';
-import {
-  getSessionSyncController,
-  resetSessionSyncControllers,
-} from '../browser/session-sync/session-sync-registry';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
   useOpenCodePendingStore.getState().addQuestion({
@@ -108,158 +79,47 @@ function seedPermission(id: string, sessionID = 'sess-1') {
 
 beforeEach(() => {
   resetSessionSyncControllers();
+  setCurrentRuntime(null);
   useOpenCodePendingStore.getState().clear();
   permissionReplyImpl = async () => ({ data: {} });
   questionReplyImpl = async () => ({ data: {} });
   questionRejectImpl = async () => ({ data: {} });
   sessionPromptImpl = async () => ({ data: {} });
-  sessionRevertImpl = async () => ({ data: {} });
-  sessionUnrevertImpl = async () => ({ data: {} });
 });
 
-describe('OpenCode session rewind', () => {
-  test('stages and restores history on the same canonical session', async () => {
-    const calls: unknown[] = [];
-    sessionRevertImpl = async (args) => {
-      calls.push(args);
-      return { data: { id: 'oc-session' } };
-    };
-    sessionUnrevertImpl = async (args) => {
-      calls.push(args);
-      return { data: { id: 'oc-session' } };
-    };
+describe('REST prompt observation scope', () => {
+  test('targets the selected sandbox when two runtimes contain the same OpenCode id', () => {
+    const sessionId = 'shared-session';
+    const runtimeA = getSessionSyncController(sessionId, undefined, 'runtime-a');
+    const runtimeB = getSessionSyncController(sessionId, undefined, 'runtime-b');
 
-    await rewindOpenCodeSession('oc-session', 'msg_user_2');
-    await restoreOpenCodeSessionRewind('oc-session');
+    beginRestPromptObservation(sessionId, 'runtime-b');
 
-    expect(calls).toEqual([
-      { sessionID: 'oc-session', messageID: 'msg_user_2' },
-      { sessionID: 'oc-session' },
-    ]);
+    expect(runtimeA.getSnapshot().isPromptObservedBusy).toBe(false);
+    expect(runtimeB.getSnapshot().isPromptObservedBusy).toBe(true);
   });
 
-  test('does not stage local rewind state when OpenCode rejects the request', async () => {
-    sessionRevertImpl = async () => ({
-      error: { data: { message: 'message not found' } },
-      response: new Response(null, { status: 404 }),
-    });
+  test('keeps observation active after an accepted sendParts prompt', async () => {
+    const sessionId = 'send-parts-session';
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
 
-    await expect(rewindOpenCodeSession('oc-session', 'missing')).rejects.toThrow(
-      'message not found',
-    );
-  });
-});
+    await sendRestPromptWithObservation(sessionId, 'runtime-a', async () => {});
 
-describe('ACP session title synchronization', () => {
-  test('refetches the matching Kortix list and detail queries for a real title', async () => {
-    const calls: unknown[] = [];
-    const queryClient = {
-      refetchQueries: (input: unknown) => {
-        calls.push(input);
-        return Promise.resolve();
-      },
-    };
-
-    syncAcpSessionTitleQuery(
-      queryClient as Parameters<typeof syncAcpSessionTitleQuery>[0],
-      'project-1',
-      'session-1',
-      { title: 'Research Marko Kraemer' },
-    );
-    await Promise.resolve();
-
-    expect(calls).toEqual([
-      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
-      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
-    ]);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
   });
 
-  test('does not refetch for missing or placeholder ACP titles', async () => {
-    const calls: unknown[] = [];
-    const queryClient = {
-      refetchQueries: (input: unknown) => {
-        calls.push(input);
-        return Promise.resolve();
-      },
-    };
+  test('ends observation when a sendParts prompt is rejected', async () => {
+    const sessionId = 'failed-send-parts-session';
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+    const rejection = new Error('prompt rejected');
 
-    const titleQueryClient = queryClient as Parameters<typeof syncAcpSessionTitleQuery>[0];
-    syncAcpSessionTitleQuery(titleQueryClient, 'project-1', 'session-1', null);
-    syncAcpSessionTitleQuery(titleQueryClient, 'project-1', 'session-1', {
-      title: 'New session - 2026-07-28',
-    });
-    await Promise.resolve();
+    await expect(
+      sendRestPromptWithObservation(sessionId, 'runtime-a', async () => {
+        throw rejection;
+      }),
+    ).rejects.toBe(rejection);
 
-    expect(calls).toEqual([]);
-  });
-});
-
-describe('bounded session title refresh', () => {
-  test('refetches authoritative session queries until a generated title appears', async () => {
-    const calls: Array<{ queryKey: string[]; type: string }> = [];
-    let title: string | null = null;
-    const queryClient = {
-      getQueryData: (queryKey: string[]) => {
-        if (queryKey[0] === 'project-sessions') {
-          return [{ session_id: 'session-1', name: title, custom_name: null }];
-        }
-        return { session_id: 'session-1', name: title, custom_name: null };
-      },
-      refetchQueries: (input: { queryKey: string[]; type: string }) => {
-        calls.push(input);
-        if (
-          input.queryKey[0] === 'project-sessions' &&
-          calls.filter((call) => call.queryKey[0] === 'project-sessions').length === 2
-        ) {
-          title = 'Research Marko Kraemer';
-        }
-        return Promise.resolve();
-      },
-    };
-
-    const resolved = await refreshSessionTitleQueryUntilResolved(
-      queryClient as Parameters<typeof refreshSessionTitleQueryUntilResolved>[0],
-      'project-1',
-      'session-1',
-      {
-        delaysMs: [0, 0],
-        sleep: async () => {},
-      },
-    );
-
-    expect(resolved).toBe(true);
-    expect(calls).toEqual([
-      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
-      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
-      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
-      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
-    ]);
-  });
-
-  test('does not refetch when the cache already contains a generated title', async () => {
-    const calls: unknown[] = [];
-    const queryClient = {
-      getQueryData: () => [
-        { session_id: 'session-1', name: 'Research Marko Kraemer', custom_name: null },
-      ],
-      refetchQueries: (input: unknown) => {
-        calls.push(input);
-        return Promise.resolve();
-      },
-    };
-
-    const resolved = await refreshSessionTitleQueryUntilResolved(
-      queryClient as Parameters<typeof refreshSessionTitleQueryUntilResolved>[0],
-      'project-1',
-      'session-1',
-      {
-        delaysMs: [0],
-        sleep: async () => {},
-      },
-    );
-
-    expect(resolved).toBe(true);
-    expect(calls).toEqual([]);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
   });
 });
 
@@ -309,9 +169,7 @@ describe('rejectQuestion', () => {
     seedQuestion('q1');
     questionRejectImpl = async () => ({ error: { message: 'nope' } });
 
-    await expect(rejectQuestion('q1')).rejects.toMatchObject({
-      kind: 'runtime-error',
-    });
+    await expect(rejectQuestion('q1')).rejects.toMatchObject({ kind: 'runtime-error' });
     expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
@@ -327,23 +185,15 @@ describe('answerPermission', () => {
 
     await answerPermission('p1', 'once', 'go ahead');
 
-    expect(captured).toEqual({
-      requestID: 'p1',
-      reply: 'once',
-      message: 'go ahead',
-    });
+    expect(captured).toEqual({ requestID: 'p1', reply: 'once', message: 'go ahead' });
     expect(useOpenCodePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
     seedPermission('p1');
-    permissionReplyImpl = async () => ({
-      error: { message: 'denied by server' },
-    });
+    permissionReplyImpl = async () => ({ error: { message: 'denied by server' } });
 
-    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
-      kind: 'runtime-error',
-    });
+    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({ kind: 'runtime-error' });
     expect(useOpenCodePendingStore.getState().permissions['p1']).toBeDefined();
   });
 });
@@ -362,10 +212,7 @@ describe('classifySendError', () => {
   });
 
   test('classifies a 402-shaped error as billing', () => {
-    const err = new Error('Payment Required') as Error & {
-      status?: number;
-      data?: unknown;
-    };
+    const err = new Error('Payment Required') as Error & { status?: number; data?: unknown };
     err.status = 402;
     err.data = { message: 'Insufficient credits. Balance: $-0.06' };
 
@@ -413,24 +260,6 @@ describe('classifySendError', () => {
 });
 
 describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
-  test('REST prompt observation keeps reconciliation busy until completion', () => {
-    const sessionId = 'sess-rest-observation';
-    const controller = getSessionSyncController(sessionId);
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-
-    beginRestPromptObservation(sessionId);
-    expect(useSyncStore.getState().sessionStatus[sessionId]).toEqual({
-      type: 'busy',
-    });
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    endRestPromptObservation(sessionId);
-    expect(useSyncStore.getState().sessionStatus[sessionId]).toEqual({
-      type: 'idle',
-    });
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
-  });
-
   test('a send failure with a 402-shaped error clears pending and yields a billing sendError', async () => {
     sessionPromptImpl = async () => ({
       error: { data: { message: 'Insufficient credits. Balance: $-0.06' } },
@@ -527,5 +356,105 @@ describe('shouldRetrySessionStart', () => {
     expect(shouldRetrySessionStart(0, transient, 'x')).toBe(true);
     expect(shouldRetrySessionStart(2, transient, 'x')).toBe(true);
     expect(shouldRetrySessionStart(3, transient, 'x')).toBe(false);
+  });
+});
+
+describe('shouldPollSessionStart', () => {
+  const at = (stage: string) => ({ stage }) as never;
+
+  test('keeps polling while the box is still coming up', () => {
+    expect(shouldPollSessionStart(null, at('provisioning'))).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, at('starting'))).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a null payload (transient transport failure) still polls — the box did not go away', () => {
+    expect(shouldPollSessionStart(null, null)).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, undefined)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('stops on every terminal stage', () => {
+    expect(shouldPollSessionStart(null, at('ready'))).toBe(false);
+    expect(shouldPollSessionStart(null, at('failed'))).toBe(false);
+    expect(shouldPollSessionStart(null, at('stopped'))).toBe(false);
+  });
+
+  test('stops on a terminal client error, which polling cannot fix', () => {
+    const err = new SessionStartError('gone', { status: 403, terminal: true });
+    expect(shouldPollSessionStart(err, at('provisioning'))).toBe(false);
+  });
+});
+
+describe('SESSION_START_POLL_OPTIONS', () => {
+  test('keeps interval fetches active while the document is hidden', () => {
+    expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
+  });
+});
+
+describe('classifySendError — connector refusals', () => {
+  const profile = {
+    id: '11111111-1111-4111-a111-111111111111',
+    slug: 'gmail',
+    name: 'Gmail',
+    authorization_strategy: 'project' as const,
+  };
+  const refusal = (data: Record<string, unknown>) =>
+    Object.assign(new Error('Failed to send message'), { status: 409, data });
+
+  test('a required-connector 409 is its own kind, not a generic runtime error', () => {
+    // It used to collapse into `runtime-error`, so a host could only say
+    // "something went wrong" for the one failure with an obvious remedy — and the
+    // platform had already refused the turn before the sandbox saw it.
+    const result = classifySendError(
+      refusal({
+        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+        message: 'Connect the required connector profiles before continuing this session.',
+        connector_profiles: [profile],
+      }),
+    );
+
+    expect(result.kind).toBe('connector');
+    expect(result.connectors).toEqual([profile]);
+    expect(result.message).toBe(
+      'Connect the required connector profiles before continuing this session.',
+    );
+  });
+
+  test('classification keys on the CODE, never the prose', () => {
+    // The message is written for humans and will be reworded.
+    expect(
+      classifySendError(refusal({ message: 'Connect the required connector profiles.' })).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('a refusal naming no usable profile stays generic', () => {
+    // A connect prompt that cannot say WHICH connector is worse than the generic
+    // error it replaced.
+    expect(
+      classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind,
+    ).toBe('runtime-error');
+    expect(
+      classifySendError(
+        refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED', connector_profiles: [{ id: 'x' }] }),
+      ).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('an unknown authorization strategy is dropped rather than guessed', () => {
+    // The strategy decides whether a connect button can help at all; inventing
+    // one would offer a button that 409s.
+    expect(
+      classifySendError(
+        refusal({
+          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+          connector_profiles: [{ ...profile, authorization_strategy: 'workspace' }],
+        }),
+      ).kind,
+    ).toBe('runtime-error');
+  });
+
+  test('billing still wins — a 402 is not a connector problem', () => {
+    expect(classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind).not.toBe(
+      'billing',
+    );
   });
 });

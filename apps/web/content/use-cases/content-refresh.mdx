@@ -121,8 +121,7 @@ tightly bounded:
 - **Isolation.** Every run happens in its own sandbox, on its own branch. The
   live content branch is never touched directly.
 - **Scoped secrets.** The `GH_TOKEN` used by the `gh` CLI is encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only search data.** Search Console access is read-only; the agent
   can see decay signals but cannot change anything in Search Console itself.
 - **Everything is code.** The rotation ledger, the refresh rules, and the

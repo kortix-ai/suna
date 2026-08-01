@@ -5,7 +5,6 @@ description: >-
   inaccurate, rewrites the affected pages to match the code, and opens a
   reviewable PR — never merging, never editing code.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

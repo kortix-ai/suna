@@ -8,28 +8,27 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Pencil,
-  Reply,
-  RotateCcw,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowDownIcon as ArrowDown,
+  BrainIcon as Brain,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  StackIcon as Layers,
+  PencilSimpleIcon,
+  ArrowBendUpLeftIcon as Reply,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ScissorsIcon as Scissors,
+  MagnifyingGlassIcon as Search,
+  TerminalIcon as Terminal,
+  TimerIcon as Timer,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -46,6 +45,7 @@ import {
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
+import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
@@ -60,11 +60,18 @@ import {
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
+import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { SessionTurnMeta } from './session-turn-meta';
+import {
+  sessionTurnDurationMs,
+  sessionTurnEndedAt,
+  sessionTurnSpan,
+} from './session-turn-meta-rows';
 
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -136,9 +143,7 @@ import {
   type Turn,
   collectTurnParts,
   findLastTextPart,
-  formatCost,
   formatDuration,
-  formatTokens,
   getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
@@ -205,6 +210,7 @@ import {
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { resolveSessionContentState } from './session-load-state';
 import { shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
@@ -1951,7 +1957,7 @@ function GroupedReasoningCard({
 
           <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
           {reasoningStreaming && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -2136,9 +2142,7 @@ function SameToolGroup({
               {durationLabel}
             </span>
           )}
-          {anyRunning && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
-          )}
+          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
           <ChevronRight
             className={cn(
               'size-3 flex-shrink-0 transition-transform',
@@ -2180,7 +2184,7 @@ function SameToolGroup({
                       </span>
                     )}
                     {running && (
-                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
+                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
                     )}
                   </div>
                 );
@@ -2785,21 +2789,19 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  const [duration, setDuration] = useState('');
+  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
+  // where it called setDuration on mount and forced every completed turn in the
+  // transcript through a second render for a number that never changes. The
+  // early return below is what removes that pass. A settled turn's duration is
+  // now SessionTurnMeta's job, from turnDurationMs.
+  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
+  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
+  const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
-    const startTime = (turn.userMessage.info as any)?.time?.created;
-    if (!startTime) return;
-
-    if (!working) {
-      const lastMsg = turn.assistantMessages[turn.assistantMessages.length - 1];
-      const endTime =
-        (lastMsg?.info as any)?.time?.completed ||
-        (lastMsg?.info as any)?.time?.created ||
-        startTime;
-      setDuration(formatDuration(endTime - startTime));
-      return;
-    }
-    const update = () => setDuration(formatDuration(Date.now() - startTime));
+    if (!working) return;
+    const { startedAt } = sessionTurnSpan(turn);
+    if (startedAt == null) return;
+    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -2938,7 +2940,7 @@ function SessionTurn({
                   disabled={rewindDisabled}
                   onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
                 >
-                  <Pencil className="size-3.5" />
+                  <PencilSimpleIcon className="size-3.5" />
                 </Button>
               </Hint>
               <Tooltip>
@@ -3330,26 +3332,17 @@ function SessionTurn({
               secondsLeft={retrySecondsLeft}
             />
           )}
-          <div
-            className={cn(
-              'flex items-center gap-2 py-1 text-xs transition-colors',
-              'text-muted-foreground',
-            )}
-          >
-            <span className="relative flex size-3">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-            </span>
-            {retryInfo ? (
-              <span className="text-muted-foreground/70">
-                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
-              </span>
-            ) : (
-              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
-            )}
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </div>
+          <SessionBusyIndicator
+            statusText={throttledStatus || undefined}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+            elapsed={liveDuration}
+          />
         </div>
       )}
 
@@ -3358,22 +3351,18 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only) ── */}
+      {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-          {/* Duration & cost */}
-          {duration && (
-            <span className="text-muted-foreground/50 mr-1 text-xs">
-              {duration}
-              {costInfo && (
-                <>
-                  {' '}
-                  · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
-                </>
-              )}
-            </span>
-          )}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
+              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
+              different kinds on one dot-separated line, which reads as a list of
+              comparable things and is not one. They are a labelled list inside
+              `SessionTurnMeta` now. `focus-within` because a keyboard user could
+              otherwise tab into — and open — a control at `opacity-0`. The
+              `data-state=open` case is the pointer one: the popover is portalled
+              and takes focus, so without it the ⋯ would fade out from under its
+              own open panel the moment the pointer left the turn. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
@@ -3382,6 +3371,7 @@ function SessionTurn({
             </TooltipTrigger>
             <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
           </Tooltip>
+          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
         </div>
       )}
 
@@ -3400,6 +3390,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Durable Kortix project session id used by project-session APIs. */
+  projectSessionId?: string;
   /** Complete SDK state for the root session. Omit for a read-only child session. */
   sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
@@ -3418,6 +3410,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  projectSessionId,
   sessionState,
   projectId,
   boundAgentName,
@@ -3651,6 +3644,11 @@ export function SessionChat({
     description?: string;
   } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
+  // The last prompt handed to the runtime, verbatim. Only read by the
+  // connector-refusal card, to re-send exactly what was refused.
+  const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
+    null,
+  );
   const [failedStartDraft, setFailedStartDraft] = useState<{
     text: string;
     files: AttachedFile[];
@@ -4789,6 +4787,11 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
+      // Kept so a turn refused for a missing connector can be re-sent verbatim
+      // once the account is connected. Without it the user connects, the card
+      // retries, and re-sends nothing — losing the message they typed, which is
+      // a worse outcome than the refusal they started with.
+      lastSubmittedRef.current = { parts: mappedParts, options };
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
       const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
@@ -5236,6 +5239,19 @@ export function SessionChat({
   }, []);
 
   const chatCommands = useMemo(() => commands || [], [commands]);
+  const sessionScopeAgentName = lockedAgentName ?? local.agent.current?.name;
+
+  const chatToolbarSlot = useMemo(
+    () =>
+      projectId && projectSessionId ? (
+        <SessionScopeToolbar
+          projectId={projectId}
+          sessionId={projectSessionId}
+          agentName={sessionScopeAgentName}
+        />
+      ) : undefined,
+    [projectId, projectSessionId, sessionScopeAgentName],
+  );
 
   const chatInputSlot = useMemo(
     () => (
@@ -5324,20 +5340,24 @@ export function SessionChat({
   // This eliminates the loader for empty sessions entirely: instead of
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
-  const hasMessages = messages && messages.length > 0;
+  const hasMessages = Boolean(messages?.length);
   // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
   // the runtime is connected AND the session lookup has actually run and come
   // back empty. While the runtime is still connecting (the query is disabled and
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const sessionResolved = runtimeReady && sessionFetched;
   const composerReadiness = sessionComposerReadiness({ runtimeReady });
-  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  const { isNotFound, isDataLoading } = resolveSessionContentState({
+    runtimeReady,
+    sessionFetched,
+    hasRuntimeSession: Boolean(session),
+    hasMessages,
+    hasOptimisticPrompt: Boolean(optimisticPrompt),
+  });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const isDataLoading = !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
@@ -5635,6 +5655,27 @@ export function SessionChat({
 
                 {/* Busy indicator when no turns yet but session is busy */}
                 {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                {/* A turn refused for a missing connector renders HERE — after
+                    the last turn, directly under the message that triggered it —
+                    rather than as a one-line pill. It is the one failure with a
+                    button that fixes it. */}
+                <ConnectorRequiredNotice
+                  error={sessionState?.sendError}
+                  projectId={projectId}
+                  resend={
+                    sessionState && lastSubmittedRef.current
+                      ? () => {
+                          const last = lastSubmittedRef.current;
+                          if (!last) return;
+                          void sessionState.sendParts(
+                            last.parts as Parameters<typeof sessionState.sendParts>[0],
+                            last.options as Parameters<typeof sessionState.sendParts>[1],
+                          );
+                        }
+                      : undefined
+                  }
+                  className="mt-2"
+                />
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of
@@ -5790,6 +5831,7 @@ export function SessionChat({
             questionCanAct={questionAction.canAct}
             onQuestionAction={handleQuestionAction}
             inputSlot={chatInputSlot}
+            toolbarSlot={chatToolbarSlot}
             // The shell can now render on a cached transcript alone, i.e. before
             // the sandbox answers — so sending has to be gated separately from
             // reading. See sessionComposerReadiness.

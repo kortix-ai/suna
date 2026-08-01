@@ -81,7 +81,7 @@ model, the agent can:
 The agent is **read-mostly by default**: it investigates freely, but writes are
 scoped. Refunds, plan changes, and anything touching a customer's money or
 account stop at a **human approval gate**. Credentials are encrypted in the
-secrets manager and injected at runtime, never shown to the model or written to
+secrets manager and injected at runtime, scoped to the agents you grant them to or written to
 logs.
 
 </Step>
@@ -108,12 +108,11 @@ behavior or files a bug report for engineering.
 Giving an agent access to the codebase, Stripe, and the support inbox is a
 security question as much as a product one. The controls on Kortix:
 
-- **Isolation.** Each thread runs in its own microVM sandbox on its own branch. A
+- **Isolation.** Each thread runs in its own isolated sandbox on its own branch. A
   session can install, run, and experiment to reproduce a bug, and only what it's
-  explicitly allowed to send leaves the sandbox.
+  explicitly allowed to send is written back out.
 - **Scoped secrets.** The Plain, Stripe, and GitHub credentials are encrypted in
-  the secrets manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gates.** Irreversible actions (money, account state) require a
   person to approve.
 - **Everything is code.** The agent's persona, skills, and permissions are files

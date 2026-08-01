@@ -31,6 +31,13 @@ export const CLI_EXECUTOR_RUNTIME_FILES = [
   'src/api/auth.ts',
   'src/api/client.ts',
   'src/api/config.ts',
+  // The CLI's one seam onto `@kortix/sdk`. `src/api/client.ts` imports it, so
+  // every in-sandbox `kortix executor` call resolves its transport through this
+  // file — a change to it changes the executor's behavior and MUST move the
+  // snapshot's runtime identity. Left out, an edit here shipped a stale binary
+  // under an unchanged snapshot name (apps/api/src/snapshots/__tests__/cli-executor-closure.test.ts
+  // is the guard that catches it).
+  'src/api/sdk.ts',
   'src/api/sandbox-env.ts',
   'src/project-link.ts',
 ] as const;

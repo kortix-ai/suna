@@ -1,12 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  ConnectionProfileMetadataSchema,
-  ConnectionProfileSchema,
-  ReconcileConnectionProfileInputSchema,
-  UpdateConnectionProfileCredentialInputSchema,
+  ConnectorAuthorizationMetadataSchema,
+  ConnectorAuthorizationSchema,
+  ReconcileConnectorAuthorizationInputSchema,
+  UpdateConnectorAuthorizationCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
-  executorConnectionPolicies,
   executorConnectionProfiles,
   executorConnectors,
   projectSessions,
@@ -69,14 +68,13 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
 } from '../../executor/pipedream';
-import { isValidMatcher } from '../../executor/policy';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import {
@@ -84,17 +82,13 @@ import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
-import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import {
-  getProjectRoutingPolicy,
-  setProjectModelOverrides,
-} from '../../repositories/project-routing-policies';
+import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import {
   assertProjectCapability,
@@ -103,6 +97,12 @@ import {
 } from '../lib/access';
 import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import {
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
+  type ConnectorAuthorizationOwnerType,
+  type ConnectorAuthorizationStrategy,
+} from '../lib/connector-authorization-strategy';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -165,17 +165,18 @@ interface SlackAuthTest {
   error?: string;
 }
 
-const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
+// Keep the existing OpenAPI component id for generated-client compatibility.
+const ConnectorAuthorizationViewSchema = ConnectorAuthorizationSchema.openapi('ConnectionProfile');
 
 /**
- * The owner/admin ROSTER shape — deliberately narrower than ConnectionProfile.
+ * The owner/admin roster shape is narrower than ConnectorAuthorization.
  * It answers "who has connected this connector, and does it still work?" and
  * nothing else. `label` and `metadata` are omitted on purpose: they are a
  * member's own annotations on a PRIVATE connection and can carry personal
  * identifiers (an email, an inbox id, a workspace id), which a peer manager has
  * no need to see. Credentials are never in any profile shape.
  */
-const ConnectionRosterEntrySchema = z
+const ConnectorAuthorizationRosterEntrySchema = z
   .object({
     profile_id: z.string().uuid(),
     connector_alias: z.string(),
@@ -208,10 +209,18 @@ function serializeConnectionProfile(row: {
 }
 
 function mayReadConnectionProfile(
-  profile: { profileId: string; ownerType: string; ownerId: string | null; isDefault: boolean },
+  profile: {
+    profileId: string;
+    ownerType: ConnectorAuthorizationOwnerType;
+    ownerId: string | null;
+    isDefault: boolean;
+    metadata: Record<string, unknown>;
+    authorizationStrategy: ConnectorAuthorizationStrategy;
+    providerType: string;
+    connectorConfig: Record<string, unknown>;
+  },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
-  mayManageSystemProfiles: boolean,
   /** Profile ids the CALLER'S session is bound to, or null when the caller is
    *  not session-bound. See connector-profile-visibility.ts: a sandbox's token
    *  carries the WRAPPER's user id, so without this every end-user's agent could
@@ -219,27 +228,57 @@ function mayReadConnectionProfile(
   sessionBoundProfileIds: ReadonlySet<string> | null,
 ): boolean {
   if (!sessionMayEnumerateProfile(profile, sessionBoundProfileIds)) return false;
-  if (profile.ownerType === 'member') {
-    return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
-  }
-  // EVERY project-owned connection is readable by the project, not just the
-  // default one — a connector can now hold several TEAM connections (support@,
-  // sales@) and members must be able to see and pick between them. This is
-  // metadata only (label/status/owner); credentials are never in this shape.
-  if (profile.ownerType === 'project') return true;
-  return mayManageSystemProfiles;
+  return connectorAuthorizationMatchesStrategy({
+    strategy: profile.authorizationStrategy,
+    ownerType: profile.ownerType,
+    ownerId: profile.ownerId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: profile.providerType,
+      platform:
+        typeof profile.connectorConfig.platform === 'string'
+          ? profile.connectorConfig.platform
+          : null,
+      ownerType: profile.ownerType,
+      ownerId: profile.ownerId,
+      metadata: profile.metadata,
+    }),
+  });
 }
 
 function mayMutateConnectionProfile(
-  profile: { ownerType: string; ownerId: string | null },
+  profile: {
+    ownerType: ConnectorAuthorizationOwnerType;
+    ownerId: string | null;
+    metadata: Record<string, unknown>;
+    authorizationStrategy: ConnectorAuthorizationStrategy;
+    providerType: string;
+    connectorConfig: Record<string, unknown>;
+  },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemProfiles: boolean,
 ): boolean {
-  if (profile.ownerType === 'member') {
-    return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
-  }
-  return mayManageSystemProfiles;
+  const strategyMatches = connectorAuthorizationMatchesStrategy({
+    strategy: profile.authorizationStrategy,
+    ownerType: profile.ownerType,
+    ownerId: profile.ownerId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: profile.providerType,
+      platform:
+        typeof profile.connectorConfig.platform === 'string'
+          ? profile.connectorConfig.platform
+          : null,
+      ownerType: profile.ownerType,
+      ownerId: profile.ownerId,
+      metadata: profile.metadata,
+    }),
+  });
+  if (!strategyMatches) return false;
+  return profile.authorizationStrategy === 'user' || mayManageSystemProfiles;
 }
 
 async function reconcileConnectionProfileRow(input: {
@@ -299,11 +338,11 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/connector-profiles',
     tags: ['connectors'],
-    summary: 'List connection profiles',
+    summary: 'List connector authorizations',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.object({ profiles: z.array(ConnectionProfileViewSchema) }), 'Profiles'),
+      200: json(z.object({ profiles: z.array(ConnectorAuthorizationViewSchema) }), 'Profiles'),
       ...errors(403, 404),
     },
   }),
@@ -329,13 +368,6 @@ projectsApp.openapi(
         );
       sessionBoundProfileIds = new Set(bound.map((row) => row.profileId));
     }
-    const mayManageSystemProfiles = await projectCapabilityAllowed(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
-    );
     const rows = await db
       .select({
         profileId: executorConnectionProfiles.profileId,
@@ -346,6 +378,9 @@ projectsApp.openapi(
         status: executorConnectionProfiles.status,
         isDefault: executorConnectionProfiles.isDefault,
         metadata: executorConnectionProfiles.metadata,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
+        providerType: executorConnectors.providerType,
+        connectorConfig: executorConnectors.config,
       })
       .from(executorConnectionProfiles)
       .innerJoin(
@@ -360,7 +395,6 @@ projectsApp.openapi(
             profile,
             loaded.userId,
             actingPrincipalIsServiceAccount,
-            mayManageSystemProfiles,
             sessionBoundProfileIds,
           ),
         )
@@ -374,11 +408,14 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/connector-profiles/all',
     tags: ['connectors'],
-    summary: "List EVERY member's connection profile (owner/admin, read-only roster)",
+    summary: "List every member's connector authorization",
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.object({ profiles: z.array(ConnectionRosterEntrySchema) }), 'Profiles'),
+      200: json(
+        z.object({ profiles: z.array(ConnectorAuthorizationRosterEntrySchema) }),
+        'Authorization roster',
+      ),
       ...errors(403, 404),
     },
   }),
@@ -404,7 +441,10 @@ projectsApp.openapi(
     );
     if (!mayManage) {
       return c.json(
-        { error: 'You do not have permission to view all connection profiles', code: 'FORBIDDEN' },
+        {
+          error: 'You do not have permission to view all connector authorizations',
+          code: 'FORBIDDEN',
+        },
         403,
       );
     }
@@ -439,7 +479,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/connector-profiles/me',
     tags: ['connectors'],
-    summary: 'Idempotently create or reconcile the calling member connection profile',
+    summary: "Create or reconcile the calling member's connector authorization",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -450,7 +490,7 @@ projectsApp.openapi(
               .object({
                 connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
                 label: z.string().trim().min(1).max(255),
-                metadata: ConnectionProfileMetadataSchema.optional(),
+                metadata: ConnectorAuthorizationMetadataSchema.optional(),
               })
               .strict(),
           },
@@ -458,8 +498,8 @@ projectsApp.openapi(
       },
     },
     responses: {
-      200: json(ConnectionProfileViewSchema, 'Reconciled profile'),
-      201: json(ConnectionProfileViewSchema, 'Created profile'),
+      200: json(ConnectorAuthorizationViewSchema, 'Reconciled authorization'),
+      201: json(ConnectorAuthorizationViewSchema, 'Created authorization'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -468,7 +508,10 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (c.get('authType') === 'service_account') {
-      return c.json({ error: 'Only human members can reconcile personal connector profiles' }, 403);
+      return c.json(
+        { error: 'Only human members can reconcile user connector authorizations' },
+        403,
+      );
     }
     const body = await readBody(c);
     const connectorAlias = canonicalConnectorAlias(
@@ -486,6 +529,7 @@ projectsApp.openapi(
       .select({
         connectorId: executorConnectors.connectorId,
         providerType: executorConnectors.providerType,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
       })
       .from(executorConnectors)
       .where(
@@ -500,6 +544,15 @@ projectsApp.openapi(
     if (connector.providerType === 'channel') {
       return c.json(
         { error: 'Channel profiles are reconciled from verified channel installations' },
+        409,
+      );
+    }
+    if (connector.authorizationStrategy !== 'user') {
+      return c.json(
+        {
+          error: 'This connector uses project-owned authorizations',
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
         409,
       );
     }
@@ -525,15 +578,19 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/connector-profiles',
     tags: ['connectors'],
-    summary: 'Idempotently create or reconcile a connection profile',
+    summary: 'Create or reconcile a connector authorization',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: ReconcileConnectionProfileInputSchema } } },
+      body: {
+        content: {
+          'application/json': { schema: ReconcileConnectorAuthorizationInputSchema },
+        },
+      },
     },
     responses: {
-      200: json(ConnectionProfileViewSchema, 'Reconciled profile'),
-      201: json(ConnectionProfileViewSchema, 'Created profile'),
+      200: json(ConnectorAuthorizationViewSchema, 'Reconciled authorization'),
+      201: json(ConnectorAuthorizationViewSchema, 'Created authorization'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -554,7 +611,10 @@ projectsApp.openapi(
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
     if (ownerType === 'member' && c.get('authType') === 'service_account') {
-      return c.json({ error: 'Only human members can reconcile personal connector profiles' }, 403);
+      return c.json(
+        { error: 'Only human members can reconcile user connector authorizations' },
+        403,
+      );
     }
     // Backwards-compatible manager path: a submitted member owner is always
     // rewritten to the caller. Managers may create their own member profile,
@@ -589,6 +649,7 @@ projectsApp.openapi(
       .select({
         connectorId: executorConnectors.connectorId,
         providerType: executorConnectors.providerType,
+        authorizationStrategy: executorConnectors.authorizationStrategy,
       })
       .from(executorConnectors)
       .where(
@@ -606,12 +667,30 @@ projectsApp.openapi(
         409,
       );
     }
+    const normalizedOwnerId = ownerType === 'project' ? null : ownerId;
+    if (
+      !connectorAuthorizationMatchesStrategy({
+        strategy: connector.authorizationStrategy,
+        ownerType: ownerType as ConnectorAuthorizationOwnerType,
+        ownerId: normalizedOwnerId,
+        actingUserId: loaded.userId,
+        actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
+      })
+    ) {
+      return c.json(
+        {
+          error: `This connector uses ${connector.authorizationStrategy}-owned authorizations`,
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
+      );
+    }
     const { profile, created } = await reconcileConnectionProfileRow({
       accountId: loaded.row.accountId,
       projectId,
       connectorId: connector.connectorId,
       ownerType: ownerType as 'project' | 'agent' | 'member' | 'subject' | 'external',
-      ownerId: ownerType === 'project' ? null : ownerId,
+      ownerId: normalizedOwnerId,
       label,
       metadata,
       createdBy: loaded.userId,
@@ -628,7 +707,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
       method: 'put',
       path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
       tags: ['connectors'],
-      summary: `${operation} connection profile`,
+      summary: `${operation} connector authorization`,
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
@@ -637,7 +716,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
             'application/json': {
               schema:
                 operation === 'credential'
-                  ? UpdateConnectionProfileCredentialInputSchema
+                  ? UpdateConnectorAuthorizationCredentialInputSchema
                   : z.object({}).strict(),
             },
           },
@@ -666,8 +745,20 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           connectorId: executorConnectionProfiles.connectorId,
           ownerType: executorConnectionProfiles.ownerType,
           ownerId: executorConnectionProfiles.ownerId,
+          metadata: executorConnectionProfiles.metadata,
+          authorizationStrategy: executorConnectors.authorizationStrategy,
+          providerType: executorConnectors.providerType,
+          connectorConfig: executorConnectors.config,
         })
         .from(executorConnectionProfiles)
+        .innerJoin(
+          executorConnectors,
+          and(
+            eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+            eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
+            eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+          ),
+        )
         .where(
           and(
             eq(executorConnectionProfiles.profileId, profileId),
@@ -689,7 +780,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
       }
       if (operation === 'credential') {
         const body = await readBody(c);
-        const parsed = UpdateConnectionProfileCredentialInputSchema.safeParse(body);
+        const parsed = UpdateConnectorAuthorizationCredentialInputSchema.safeParse(body);
         if (!parsed.success) {
           return c.json(
             {
@@ -765,8 +856,8 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       tags: ['connectors'],
       summary:
         operation === 'connect'
-          ? 'Start Pipedream OAuth for a connection profile'
-          : 'Finalize Pipedream OAuth for a connection profile',
+          ? 'Start Pipedream OAuth for a connector authorization'
+          : 'Finalize Pipedream OAuth for a connector authorization',
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
@@ -810,9 +901,11 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           ownerType: executorConnectionProfiles.ownerType,
           ownerId: executorConnectionProfiles.ownerId,
           isDefault: executorConnectionProfiles.isDefault,
+          metadata: executorConnectionProfiles.metadata,
           connectorAlias: executorConnectors.slug,
           providerType: executorConnectors.providerType,
           connectorConfig: executorConnectors.config,
+          authorizationStrategy: executorConnectors.authorizationStrategy,
         })
         .from(executorConnectionProfiles)
         .innerJoin(
@@ -941,7 +1034,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(TriggerSchema, 'The created trigger'),
-      ...errors(400, 404, 409),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -1003,7 +1096,7 @@ projectsApp.openapi(
     const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
     const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
     if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
+      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
     }
     await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
 
@@ -1089,7 +1182,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'OK'),
-      ...errors(400, 404),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -1155,7 +1248,7 @@ projectsApp.openapi(
       const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
       const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
       if ('error' in result) {
-        return c.json({ error: result.error }, result.status as 400 | 502);
+        return c.json({ error: result.error }, result.status as 400 | 409 | 502);
       }
       await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
     }
@@ -1178,7 +1271,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'OK'),
-      ...errors(400, 404),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -1211,7 +1304,7 @@ projectsApp.openapi(
     const next = removeTriggerFromManifest(manifest, slug);
     const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
     if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
+      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
     }
 
     // Drop runtime state too — a re-created trigger of the same slug should
@@ -1452,9 +1545,10 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
+    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl, enabled }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -1477,7 +1571,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    const mode = teamsMode(baseUrl, {
+      enabled: teamsChannelEnabled(loaded.row.metadata),
+      projectId,
+      byoAppId,
+    });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -1506,13 +1604,14 @@ projectsApp.openapi(
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
   }),
   async (c: any) => {
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
     // Slack (r4 slack/connect) and email connect twins.
+    // Authz before the feature-flag check so an unauthorized caller never gets a
+    // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -1520,6 +1619,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1655,7 +1755,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -2652,15 +2752,10 @@ projectsApp.openapi(
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
-    // What `auto` resolves to for this project. Served below so the client can
-    // LOCK its switch instead of offering a toggle that always 409s.
-    const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
-    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
-      config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefaultModelId(),
       routing?.visionModel,
       ...(routing?.defaultFallback?.models ?? []),
       ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
@@ -2670,103 +2765,7 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    // Server-owned per-project enablement, resolved HERE and stamped onto each
-    // model so every client renders the same answer the gateway enforces. The
-    // session picker shows the enabled ones; "Manage models" shows them all and
-    // switches on this flag. Neither re-derives it.
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
-    return c.json({
-      models: Object.fromEntries(
-        Object.entries(models).map(([id, model]) => [
-          id,
-          { ...model, enabled: enabled.get(id) ?? true },
-        ]),
-      ),
-      // The stored EXCEPTIONS, so a client toggling one model can PUT the
-      // merged map back without having to reconstruct it by diffing the
-      // resolved flags against a default it would have to recompute.
-      modelOverrides: routing?.modelOverrides ?? {},
-      // The model `auto` resolves to. It cannot be turned off (that would break
-      // every default request — the PUT refuses it with 409), so the client
-      // renders its switch as locked rather than letting the user click into an
-      // error.
-      defaultModel: effectiveDefault || undefined,
-      // True while the project has made no exceptions at all — the only thing
-      // "reset to defaults" has left to act on, and not derivable from the
-      // `enabled` flags alone (they look identical either way).
-      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
-    });
-  },
-);
-
-// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
-// Replace the project's EXCEPTIONS to the default model set (the newest model
-// per family). Authoritative: the gateway refuses anything not effectively
-// enabled on every surface. An empty object restores the pure default. Refuses
-// to turn off the project's own default model (that would break every `auto`
-// request).
-const modelEnablementBody = z.object({
-  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
-});
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/model-enablement',
-    tags: ['projects'],
-    summary: 'PUT /:projectId/model-enablement',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: modelEnablementBody } } },
-    },
-    responses: {
-      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const accountId = loaded.row.accountId as string;
-    const userId = c.get('userId') as string;
-
-    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) {
-      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    }
-    const modelOverrides: Record<string, boolean> = {};
-    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
-      const wire = toWireModel(model.trim());
-      if (wire) modelOverrides[wire] = enabled;
-    }
-
-    // A project must never turn off the model its own `auto` resolves to. Only
-    // an explicit `false` can do that — omitting it leaves the default in
-    // charge, which always offers the current one.
-    const defaults = await getAccountModelDefaults(accountId, projectId);
-    const effectiveDefault =
-      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
-    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
-      return c.json(
-        {
-          error: 'Cannot disable the project default model — change the default first.',
-          code: 'cannot_disable_default',
-        },
-        409,
-      );
-    }
-
-    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
-    return c.json({ ok: true, modelOverrides });
+    return c.json({ models });
   },
 );
 
@@ -2854,11 +2853,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefault: platformDefaultModelId(),
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
+      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
       resolvedSource: resolved.source,
       freeTier,
     });
@@ -3257,151 +3256,5 @@ projectsApp.openapi(
       },
       202,
     );
-  },
-);
-
-/* ─── Per-CONNECTION permissions ────────────────────────────────────────────
- *
- * One connector can hold several connections (support@, sales@, a member's own
- * mailbox) that warrant DIFFERENT permissions. These rules are keyed by
- * profile_id and are evaluated between the project and connector scopes: a
- * project rule still wins (the admin guardrail), but the connection beats the
- * connector default.
- *
- * Authority is the SAME rule as every other profile mutation
- * (mayMutateConnectionProfile): a member may set rules on their OWN connection;
- * a team/external connection needs project.connector_profiles.manage. That
- * stops a member widening a shared connection past the team baseline, and a
- * miss returns 404 rather than 403 so profile existence is not disclosed.
- */
-const ConnectionPolicyRuleSchema = z.object({
-  match: z.string().min(1).max(512),
-  action: z.enum(['always_run', 'require_approval', 'block']),
-});
-
-async function loadMutableConnectionProfile(c: any, projectId: string, profileId: string) {
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return null;
-  const mayManageSystemProfiles = await projectCapabilityAllowed(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
-  );
-  const [profile] = await db
-    .select({
-      profileId: executorConnectionProfiles.profileId,
-      ownerType: executorConnectionProfiles.ownerType,
-      ownerId: executorConnectionProfiles.ownerId,
-    })
-    .from(executorConnectionProfiles)
-    .where(
-      and(
-        eq(executorConnectionProfiles.profileId, profileId),
-        eq(executorConnectionProfiles.projectId, projectId),
-        eq(executorConnectionProfiles.accountId, loaded.row.accountId),
-      ),
-    )
-    .limit(1);
-  if (!profile) return null;
-  if (
-    !mayMutateConnectionProfile(
-      profile,
-      loaded.userId,
-      c.get('authType') === 'service_account',
-      mayManageSystemProfiles,
-    )
-  ) {
-    return null;
-  }
-  return profile;
-}
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/connector-profiles/{profileId}/policies',
-    tags: ['connectors'],
-    summary: "Read one connection's tool-call policies",
-    ...auth,
-    request: { params: z.object({ projectId: z.string(), profileId: z.string().uuid() }) },
-    responses: {
-      200: json(z.object({ policies: z.array(ConnectionPolicyRuleSchema) }), 'Connection policies'),
-      ...errors(403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const profileId = c.req.param('profileId');
-    const profile = await loadMutableConnectionProfile(c, projectId, profileId);
-    if (!profile) return c.json({ error: 'Not found' }, 404);
-    const rows = await db
-      .select()
-      .from(executorConnectionPolicies)
-      .where(eq(executorConnectionPolicies.profileId, profileId))
-      .orderBy(executorConnectionPolicies.position);
-    return c.json({ policies: rows.map((r) => ({ match: r.match, action: r.action })) });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/connector-profiles/{profileId}/policies',
-    tags: ['connectors'],
-    summary: "Replace one connection's tool-call policies",
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ policies: z.array(ConnectionPolicyRuleSchema) }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean() }), 'Replaced'),
-      ...errors(400, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const profileId = c.req.param('profileId');
-    const profile = await loadMutableConnectionProfile(c, projectId, profileId);
-    if (!profile) return c.json({ error: 'Not found' }, 404);
-
-    const body = await readBody(c);
-    const parsed = z.object({ policies: z.array(ConnectionPolicyRuleSchema) }).safeParse(body);
-    if (!parsed.success) {
-      return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid policies' }, 400);
-    }
-    // Same matcher validation as the connector scope — an invalid glob/regex
-    // must be rejected at WRITE time, never left to blow up in the call gate.
-    const bad = parsed.data.policies.find((p) => !isValidMatcher(p.match));
-    if (bad) {
-      return c.json({ error: `invalid match pattern: ${bad.match}`, code: 'INVALID_MATCHER' }, 400);
-    }
-
-    // Replace, never merge: the editor sends the full list, so a rule the user
-    // deleted must disappear rather than linger.
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(executorConnectionPolicies)
-        .where(eq(executorConnectionPolicies.profileId, profileId));
-      if (parsed.data.policies.length > 0) {
-        await tx.insert(executorConnectionPolicies).values(
-          parsed.data.policies.map((p, index) => ({
-            profileId,
-            match: p.match,
-            action: p.action,
-            position: index,
-          })),
-        );
-      }
-    });
-    return c.json({ ok: true });
   },
 );

@@ -86,7 +86,7 @@ through the `gh` CLI.
 The agent never removes a flag still in partial rollout or an active experiment —
 those are reported, not touched. It never pushes to the default branch and never
 merges its own PR. The GitHub token is injected into the sandbox at runtime and
-never exposed to the model or written to logs.
+scoped to the agents you grant them to.
 
 </Step>
 <Step title="Open the cleanup PR">
@@ -122,7 +122,7 @@ allowed to remove, and what it must leave alone:
   sandbox on the cleanup branch. A failing removal is dropped and logged, never
   pushed for a human to untangle.
 - **Scoped, ephemeral access.** The GitHub token is encrypted in the Secrets
-  Manager and injected into the sandbox at runtime — never shown to the model,
+  Manager and injected into the sandbox at runtime — scoped to the agents you grant them to,
   never written to disk or logs.
 - **Everything is code.** The classification rules, the ledger, and the agent's
   permissions are files in the repo, versioned and changed through a reviewed

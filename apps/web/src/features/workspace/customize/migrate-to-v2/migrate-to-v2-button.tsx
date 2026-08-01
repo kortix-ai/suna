@@ -11,7 +11,7 @@
 import type { ButtonProps } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { ArrowUpCircle } from 'lucide-react';
+import { ArrowCircleUpIcon as ArrowUpCircle } from '@phosphor-icons/react';
 
 import { useProjectManifestVersion } from './manifest-version';
 import { useMigrateToV2 } from './use-migrate-to-v2';
@@ -36,8 +36,18 @@ export function MigrateToV2ButtonView({
 }) {
   if (!visible) return null;
   return (
-    <Button size={size} variant={variant} className={className} disabled={pending} onClick={onClick}>
-      {pending ? <Loading className="size-3.5 shrink-0" /> : <ArrowUpCircle className="size-3.5 shrink-0" />}
+    <Button
+      size={size}
+      variant={variant}
+      className={className}
+      disabled={pending}
+      onClick={onClick}
+    >
+      {pending ? (
+        <Loading className="size-3.5 shrink-0" />
+      ) : (
+        <ArrowUpCircle className="size-3.5 shrink-0" />
+      )}
       Migrate to v2
     </Button>
   );

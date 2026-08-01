@@ -98,7 +98,7 @@ The agent assigns and notifies strictly per the routing rules. It never
 deletes or merges a lead record under any circumstance, and it never guesses
 an owner for a lead that's ambiguous or doesn't match the rules — that lead
 goes to a human instead. Credentials are encrypted in the Secrets Manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Assign, notify, and escalate">
@@ -133,8 +133,7 @@ escalation path is explicit:
   a dedicated Slack channel for a person to assign. The agent never invents a
   fallback owner.
 - **Scoped secrets.** The HubSpot credential is encrypted in the Secrets
-  Manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Everything is code.** The territory map, segment rules, round-robin pool,
   and intent-scoring criteria are files in the repo, versioned and changed
   through a reviewed **change request** rather than a CRM workflow builder.

@@ -91,7 +91,7 @@ The agent is **read-mostly**: it reads Stripe and the ledger, and the only write
 it makes are reminder emails and status notes. Anything sensitive — a large
 balance, a disputed invoice, or an account heading to legal — stops at a **human
 approval gate** before it sends. Credentials are encrypted in the Secrets Manager
-and injected at runtime, never shown to the model or written to logs.
+and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let the list work itself each morning">
@@ -117,12 +117,11 @@ and marks it settled.
 The agent sends email on our behalf and touches invoice state, so the access is
 scoped and contained:
 
-- **Isolation.** Every run happens in its own per-task microVM sandbox. The
+- **Isolation.** Every run happens in its own per-task isolated sandbox. The
   session reads Stripe and the ledger and can send only the reminders and status
-  notes it's scoped to; nothing else leaves the sandbox.
+  notes it's scoped to; nothing else is written back out.
 - **Scoped secrets.** The Stripe, email, and ledger credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** A large balance, a disputed invoice, or an account
   heading to legal stops for a person to approve before any email goes out.
 - **Everything is code.** The agent's configuration, skills, and per-system

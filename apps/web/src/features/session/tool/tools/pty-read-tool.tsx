@@ -3,26 +3,19 @@
 import { PreWithPaths } from '@/components/common/clickable-path';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/ui/status';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Terminal,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { stripAnsi } from '@/ui';
+import { TerminalIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  stripAnsi,
-} from '@/ui';
-
+import { useMemo } from 'react';
 
 export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -107,4 +100,3 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
   );
 }
 ToolRegistry.register('pty_read', PtyReadTool);
-

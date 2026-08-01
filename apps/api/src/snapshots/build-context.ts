@@ -12,7 +12,7 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,7 @@ import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
@@ -348,8 +349,11 @@ export async function stageWarmRepoCheckout(
   await assertCheckoutHasNoCredentials(dest);
   const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_ARCHIVE);
   await rm(stagedGit, { force: true });
-  await execFileAsyncBC('tar', ['-cf', stagedGit, '-C', dest, '.git'], {
-    env: plainEnv,
+  // Apple-metadata-free: this archive is extracted INSIDE the image, so leaked
+  // xattrs land as `._*` sidecars in `.git` (`.git/objects/pack/._pack-*.idx`
+  // makes git log `index file … is too small`). See staging-tar.ts.
+  await execFileAsyncBC('tar', stagingTarArgs(['-cf', stagedGit], ['-C', dest, '.git']), {
+    env: stagingTarEnv(plainEnv),
     timeout: 300_000,
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -776,6 +780,8 @@ async function stageScaffoldRepo(contextDir: string): Promise<void> {
   await g(['config', 'user.email', 'noreply@kortix.ai'], work);
   await g(['add', '-A'], work);
   await g(['commit', '-m', 'chore: scaffold Kortix project'], work);
-  await g(['clone', '--bare', '-q', work, join(contextDir, 'scaffold.git')], contextDir);
+  const scaffoldGit = join(contextDir, 'scaffold.git');
+  await rename(join(work, '.git'), scaffoldGit);
+  await g(['--git-dir', scaffoldGit, 'config', 'core.bare', 'true'], contextDir);
   await rm(work, { recursive: true, force: true });
 }

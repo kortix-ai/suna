@@ -109,4 +109,4 @@ the legacy flat routes that derive the project from an in-sandbox session token.
 
 ## License
 
-Elastic License 2.0 - see the repository.
+See the `LICENSE` file in the repository.

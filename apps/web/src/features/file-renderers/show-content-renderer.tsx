@@ -30,6 +30,7 @@ import { TextWithPaths } from '@/components/common/clickable-path';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import Loading from '@/components/ui/loading';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
@@ -41,17 +42,16 @@ import { isHeicFile } from '@/lib/utils/heic-convert';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
+  WarningIcon as AlertTriangle,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
   FileIcon,
-  FileText,
-  FileWarning,
-  Globe,
-  Loader2,
-  Music,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  FileXIcon as FileWarning,
+  GlobeIcon as Globe,
+  MusicNotesIcon as Music,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
 import { ViewerFrame } from './shared/viewer-frame';
@@ -129,7 +129,7 @@ const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
 function RendererFallback({ className }: { className?: string }) {
   return (
     <div className={cn('flex items-center justify-center', className || 'h-[420px]')}>
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }

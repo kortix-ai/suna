@@ -45,9 +45,15 @@ import {
 import { APP_ROOT } from './harness';
 
 const SRC_ROOT = join(APP_ROOT, 'src');
+const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
+  `${['end', 'user', 'ref'].join('_')}|${['origin', 'ref'].join('_')}`,
+);
 
 /** The snippet builder and its renderer quote calls; see the header. */
-const NOT_APP_BEHAVIOUR = ['src/lib/call-snippets.ts', 'src/components/dev/call-snippet.tsx'];
+const NOT_APP_BEHAVIOUR = [
+  'src/lib/call-snippets.ts',
+  'src/components/dev/call-snippet.tsx',
+];
 
 // ── Reading the app's own source ─────────────────────────────────────────────
 
@@ -89,7 +95,11 @@ function skipCall(src: string, i: number): number {
 }
 
 /** Walk one `.a.b(…).c(…)` chain, collapsing every argument list to `()`. */
-function chainFrom(src: string, start: number, base: string): { sig: string; end: number } {
+function chainFrom(
+  src: string,
+  start: number,
+  base: string,
+): { sig: string; end: number } {
   let i = start;
   let sig = base;
   for (;;) {
@@ -138,9 +148,15 @@ export function callSignatures(source: string): string[] {
   const anchor = /(?<![\w$.])kortix(?![\w$])/g;
   let match: RegExpExecArray | null;
   while ((match = anchor.exec(src))) {
-    const { sig, end } = chainFrom(src, match.index + 'kortix'.length, 'kortix');
+    const { sig, end } = chainFrom(
+      src,
+      match.index + 'kortix'.length,
+      'kortix',
+    );
     signatures.push(sig);
-    const assignment = HANDLE_ASSIGNMENT.exec(src.slice(Math.max(0, match.index - 120), match.index));
+    const assignment = HANDLE_ASSIGNMENT.exec(
+      src.slice(Math.max(0, match.index - 120), match.index),
+    );
     if (assignment) handles.set(assignment[1], sig);
     anchor.lastIndex = Math.max(anchor.lastIndex, end);
   }
@@ -155,11 +171,13 @@ export function callSignatures(source: string): string[] {
     }
   }
 
-  return signatures
-    .map((sig) => sig.replace(PROMISE_TAIL, ''))
-    // Only actual calls: a bare `kortix.project().git` is a doc comment or a
-    // property read, not a request.
-    .filter((sig) => sig.endsWith('()'));
+  return (
+    signatures
+      .map((sig) => sig.replace(PROMISE_TAIL, ''))
+      // Only actual calls: a bare `kortix.project().git` is a doc comment or a
+      // property read, not a request.
+      .filter((sig) => sig.endsWith('()'))
+  );
 }
 
 /** Signature -> the files that make that call. */
@@ -196,7 +214,9 @@ const REASONS = {
 type Reason = keyof typeof REASONS;
 
 /** The snippet ids a verdict names — none, when the verdict is a reason. */
-function snippetIds(verdict: CallSnippetId | CallSnippetId[] | Reason): CallSnippetId[] {
+function snippetIds(
+  verdict: CallSnippetId | CallSnippetId[] | Reason,
+): CallSnippetId[] {
   if (Array.isArray(verdict)) return verdict;
   return verdict in REASONS ? [] : [verdict as CallSnippetId];
 }
@@ -213,20 +233,19 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Shown, with the control that performs it ───────────────────────────────
   'kortix.projects.provision()': 'project.provision',
   'kortix.projects.list()': 'project.provision',
-  'kortix.project().connectors.profiles.list()': 'connections.list',
+  'kortix.project().connectors.authorizations.list()': 'connections.list',
   'kortix.project().sessions.create()': 'session.create',
   'kortix.session().changeModel()': 'session.model',
+  'kortix.session().scope()': 'session.rescope',
   'kortix.session().rescope()': 'session.rescope',
   'kortix.project().sessions.list()': 'sessions.list',
   'kortix.session().restart()': 'session.delete',
   'kortix.session().delete()': 'session.delete',
-  // One call, two snippets: the same rollup grouped per end-user and narrowed
-  // to one. `/api/usage` makes both, and they answer different questions.
-  'kortix.billing.usageRollup()': ['usage.byEndUser', 'usage.forEndUser'],
-  'kortix.project().gateway.sessions()': 'usage.projectSessions',
+  'kortix.billing.sessionCosts.list()': 'session.costs',
   'kortix.project().approvals.resolve()': 'approval.resolve',
   'kortix.project().secrets.upsert()': 'secret.upsert',
   'kortix.project().secrets.remove()': 'secret.delete',
+  'kortix.project().setupLinks.requestConnector()': 'connector.connect-link',
 
   // ── Account administration ────────────────────────────────────────────────
   'kortix.accounts.create()': 'account-admin',
@@ -321,18 +340,17 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
  * `kortix.…` calls at all. Each carries a marker that must still be in the
  * source, so an entry cannot outlive the thing it claims the app does.
  */
-const OFF_CHAIN_ACTIONS: { id: CallSnippetId; file: string; marker: string; why: string }[] = [
+const OFF_CHAIN_ACTIONS: {
+  id: CallSnippetId;
+  file: string;
+  marker: string;
+  why: string;
+}[] = [
   {
     id: 'session.prompt',
     file: 'src/components/workbench/workbench-tabs.tsx',
     marker: 'onSend={c.send}',
     why: 'A prompt goes through the `useSession` hook, which owns the runtime transport.',
-  },
-  {
-    id: 'session.idempotentCreate',
-    file: 'src/app/api/usage/route.ts',
-    marker: "headers.set('idempotency-key'",
-    why: 'No SDK method carries the header, so the probe builds the request itself.',
   },
 ];
 
@@ -343,9 +361,7 @@ describe('every snippet builds', () => {
     const full = {
       projectId: 'p1',
       sessionId: 's1',
-      endUserRef: 'someone@example.com',
       projectName: 'Acme workspace',
-      idempotencyKey: 'lumen-probe-abc',
       executionId: 'exec_1',
       agent: 'support',
       model: 'anthropic/claude-sonnet-4-5',
@@ -388,7 +404,11 @@ describe('the panel covers every KaaB action this app performs', () => {
     for (const [signature, verdict] of Object.entries(ACTIONS)) {
       for (const id of snippetIds(verdict)) {
         const snippet = callSnippet(id, { projectId: 'p1', sessionId: 's1' });
-        expect({ signature, id, printed: callSignatures(snippet.sdk).includes(signature) }).toEqual({
+        expect({
+          signature,
+          id,
+          printed: callSignatures(snippet.sdk).includes(signature),
+        }).toEqual({
           signature,
           id,
           printed: true,
@@ -401,7 +421,10 @@ describe('the panel covers every KaaB action this app performs', () => {
     for (const action of OFF_CHAIN_ACTIONS) {
       expect(CALL_SNIPPET_IDS).toContain(action.id);
       const source = readFileSync(join(APP_ROOT, action.file), 'utf8');
-      expect({ file: action.file, present: source.includes(action.marker) }).toEqual({
+      expect({
+        file: action.file,
+        present: source.includes(action.marker),
+      }).toEqual({
         file: action.file,
         present: true,
       });
@@ -437,7 +460,6 @@ describe('the new coverage does not weaken the two rules', () => {
   test('no snippet renders a bearer that is not the placeholder', () => {
     const text = callSnippets({
       projectId: 'p1',
-      endUserRef: 'someone@example.com',
       secret: { identifier: 'STRIPE_KEY', name: 'STRIPE_SECRET_KEY' },
     })
       .map((s) => `${s.sdk}\n${renderHttp(s.http)}\n${s.notes.join('\n')}`)
@@ -445,29 +467,13 @@ describe('the new coverage does not weaken the two rules', () => {
     expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
   });
 
-  test('a request that CARRIES an end_user_ref always names it as server-injected', () => {
-    // Stronger than checking the three snippets that have one today: any future
-    // snippet that puts an end_user_ref on the wire is caught. `group_by=
-    // end_user_ref` is not a carried value, so it correctly does not match.
-    const carries = /"end_user_ref"\s*:|[?&]end_user_ref=/;
-    for (const snippet of callSnippets({ projectId: 'p1', endUserRef: 'someone@example.com' })) {
-      if (!carries.test(renderHttp(snippet.http))) continue;
-      expect({ id: snippet.id, injected: snippet.serverInjected.includes('end_user_ref') }).toEqual({
-        id: snippet.id,
-        injected: true,
-      });
-      // The SDK block is the BROWSER's call for most snippets, and there it must
-      // never look like the place the ref is chosen.
-      //
-      // But some blocks are the SERVER route's own code, where stamping the ref
-      // is precisely that layer's job. Applying this blanket assertion to those
-      // forced `end_user_ref` to be DELETED from a block explicitly labelled as
-      // `src/app/api/usage/route.ts` — teaching a wrapper author to build a
-      // server route that omits it, i.e. exactly the forgery this rule exists to
-      // prevent. The over-broad test caused the defect it was meant to catch.
-      if (!snippet.serverSideBlock) {
-        expect(snippet.sdk).not.toContain('end_user_ref');
-      }
-    }
+  test('no snippet renders upstream customer attribution fields', () => {
+    const text = callSnippets({ projectId: 'p1' })
+      .map(
+        (snippet) =>
+          `${snippet.sdk}\n${renderHttp(snippet.http)}\n${snippet.notes.join('\n')}`,
+      )
+      .join('\n');
+    expect(text).not.toMatch(REMOVED_ATTRIBUTION_PATTERN);
   });
 });

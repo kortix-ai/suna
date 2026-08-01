@@ -13,7 +13,7 @@ import { OutputBlock, ToolField, ToolSection } from '@/features/session/tool/sha
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
-import { Search } from 'lucide-react';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 

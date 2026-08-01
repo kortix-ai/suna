@@ -6,37 +6,43 @@ import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
-import {
-  useModelDefaults,
-  useModelEnablement,
-  useProjectModels,
-  wireToModelKey,
-} from '@kortix/sdk/react';
-import { Star } from 'lucide-react';
+import { useModelStore, useProjectModels } from '@kortix/sdk/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { ModelIdCopyButton } from './model-id-copy-button';
 import { buildModelGroups } from './model-rows';
+import { useConnectedProviders } from './use-connected-providers';
 import { formatPricePerMillion, formatTokenCount } from './utils';
 
 export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
-  // The SAME server list the session picker renders (`GET /model-picker`), so
-  // the two views can never show different models — and each model's `enabled`
-  // flag is resolved server-side and enforced by the gateway, so a switch here
-  // is the one and only thing deciding whether it appears there.
+  // The SAME connection-aware server list the session picker renders
+  // (`GET /model-picker`), so the two views can never show different models.
+  // Visibility is a CLIENT-side preference persisted in localStorage — the
+  // switch here decides whether a model is offered in this browser's picker,
+  // not a server-enforced enablement.
   const models = useProjectModels(projectId);
-  const enablement = useModelEnablement(projectId);
-  // Setting the project default from here is what makes the locked row
-  // actionable: the only way to turn the default off is to make something else
-  // the default, so the control for that belongs on the same screen.
-  const defaults = useModelDefaults(projectId);
+  // `useModelStore` hides a gateway model unless its upstream provider is
+  // connected, and resolves the "latest per family" default set from the FULL
+  // catalog — so BOTH `connectedProviderIds` and `catalogModels` must be passed
+  // or the tab renders "0 of N shown" (every model hidden) even though the
+  // session picker shows them. See useModelStore's opts doc comment.
+  const { connectedProviders } = useConnectedProviders(projectId, true);
+  const connectedProviderIds = useMemo(
+    () => new Set(connectedProviders.map((provider) => provider.id)),
+    [connectedProviders],
+  );
+  const modelStore = useModelStore(models, { connectedProviderIds, catalogModels: models });
 
   const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
-  const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
+  const enabledCount = useMemo(
+    () => models.filter((model) => modelStore.isVisible(model)).length,
+    [models, modelStore],
+  );
+  const hasOverrides = modelStore.userPrefs.length > 0;
 
   if (models.length === 0) {
     return (
@@ -70,13 +76,12 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
               'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
             )}
           </p>
-          {!enablement.usingDefaults && (
+          {hasOverrides && (
             <Button
               variant="ghost"
               size="sm"
-              disabled={enablement.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => void enablement.resetToDefaults()}
+              onClick={() => modelStore.resetVisibility()}
             >
               {tHardcodedUi.raw(
                 'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
@@ -95,27 +100,21 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
             </div>
             <div className="bg-popover overflow-hidden rounded-md border">
               {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
-                const enabled = !!model.enabled;
-                // `auto` resolves to this one, so turning it off would break
-                // every default request — the server refuses it with a 409.
-                // Lock the switch and say why instead of letting the click
-                // become a failed action.
-                const isProjectDefault = wireId === enablement.defaultModel;
+                const visible = modelStore.isVisible(model);
                 const ctx = formatTokenCount(model.contextWindow);
                 const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
                 const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
                 return (
-                  // A plain row, NOT a <label>: it holds three controls (copy
-                  // id, set-as-default, the switch) and a label binds to the
-                  // FIRST labelable one — the copy button — so "click the row
-                  // to toggle" never did what it looked like. Each control
-                  // carries its own accessible name instead.
+                  // A plain row, NOT a <label>: a <label> binds to the first
+                  // labelable control, and the Radix Switch renders a button, so
+                  // wrapping the row never associated cleanly. The Switch carries
+                  // its own accessible name instead.
                   <div
                     key={wireId}
                     className={cn(
                       'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
                       i > 0 && 'border-border border-t',
-                      !enabled && 'opacity-60',
+                      !visible && 'opacity-60',
                     )}
                   >
                     <div className="min-w-0 flex-1 space-y-1">
@@ -129,7 +128,6 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. */}
                         {isRollingAlias && <Tag>latest</Tag>}
-                        {isProjectDefault && <Tag>project default</Tag>}
                       </div>
                       <div className="flex min-w-0 items-center gap-0.5">
                         <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
@@ -148,31 +146,10 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         </InlineMeta>
                       )}
                     </div>
-                    {!isProjectDefault && enabled && (
-                      <button
-                        type="button"
-                        disabled={defaults.isUpdating}
-                        title={`Make ${model.modelName} this project's default model`}
-                        onClick={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
-                        className="text-muted-foreground/50 hover:text-foreground hover:bg-muted mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Star className="size-3.5" />
-                      </button>
-                    )}
                     <Switch
-                      checked={enabled}
-                      disabled={enablement.isUpdating || isProjectDefault}
-                      aria-label={
-                        isProjectDefault
-                          ? `${model.modelName} is this project's default model and cannot be turned off`
-                          : `Offer ${model.modelName}`
-                      }
-                      title={
-                        isProjectDefault
-                          ? "This project's default model — set a different default to turn it off."
-                          : undefined
-                      }
-                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                      checked={visible}
+                      aria-label={`Offer ${model.modelName}`}
+                      onCheckedChange={(next) => modelStore.setVisibility(model, next)}
                       className="mt-0.5 shrink-0"
                     />
                   </div>

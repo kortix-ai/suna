@@ -42,24 +42,22 @@ import {
   listProjectSnapshots,
 } from '@kortix/sdk';
 import {
-  CheckCircleSolid,
-  DangerTriangleSolid,
-  SparklesSolid,
-  XCircleSolid,
-} from '@mynaui/icons-react';
+  CheckCircleIcon as CheckCircleSolid,
+  CaretDownIcon as ChevronDown,
+  ShippingContainerIcon as Container,
+  PencilSimpleIcon as Edit3,
+  FileCodeIcon as FileCode,
+  PackageIcon as Package,
+  PlusIcon as Plus,
+  ArrowClockwiseIcon as RefreshCw,
+  SparkleIcon as SparklesSolid,
+  TrashIcon as Trash2,
+  WarningIcon as DangerTriangleSolid,
+  XCircleIcon as XCircleSolid,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ChevronDown,
-  Container,
-  Edit3,
-  FileCode,
-  Package,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { type ReactNode, useState } from 'react';
+import { type ComponentType, type ReactNode, useState } from 'react';
 import {
   type SandboxProvider,
   type SandboxProviderMode,
@@ -75,6 +73,15 @@ const TEMPLATE_SKELETON_ROWS = [
   'sandbox-template-skeleton-4',
   'sandbox-template-skeleton-5',
 ] as const;
+
+/** Build-status tile icons render solid/fill — a filled status glyph inside
+ *  the colored tile, distinct from the app's default outline weight. */
+const CheckCircleFilled = ({ className }: { className?: string }) => (
+  <CheckCircleSolid className={className} weight="fill" />
+);
+const XCircleFilled = ({ className }: { className?: string }) => (
+  <XCircleSolid className={className} weight="fill" />
+);
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
@@ -104,7 +111,7 @@ const BUILD_STATUS_TILE: Record<
     badgeVariant: 'success' | 'warning' | 'destructive';
     tileBg: string;
     iconColor: string;
-    Icon: typeof CheckCircleSolid;
+    Icon: ComponentType<{ className?: string }>;
   }
 > = {
   ready: {
@@ -112,7 +119,7 @@ const BUILD_STATUS_TILE: Record<
     badgeVariant: 'success',
     tileBg: 'bg-kortix-green/15',
     iconColor: 'text-kortix-green',
-    Icon: CheckCircleSolid,
+    Icon: CheckCircleFilled,
   },
   building: {
     label: 'building',
@@ -126,7 +133,7 @@ const BUILD_STATUS_TILE: Record<
     badgeVariant: 'destructive',
     tileBg: 'bg-kortix-red/15',
     iconColor: 'text-kortix-red',
-    Icon: XCircleSolid,
+    Icon: XCircleFilled,
   },
 };
 
@@ -358,9 +365,9 @@ function SandboxStatusBanner({
           )}
         >
           {blocked ? (
-            <XCircleSolid className="size-6 shrink-0" />
+            <XCircleSolid weight="fill" className="size-6 shrink-0" />
           ) : (
-            <DangerTriangleSolid className="size-6 shrink-0" />
+            <DangerTriangleSolid weight="fill" className="size-6 shrink-0" />
           )}
         </span>
         <div className="min-w-0 flex-1 space-y-2">

@@ -472,8 +472,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
     const google = getProviderGuide('google')!;
     const basic = google.steps.find((s) => s.id === 'basic-saml')!;
     const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
-      | { acsLabel?: string; acsFirst?: boolean }
-      | undefined;
+      { acsLabel?: string; acsFirst?: boolean } | undefined;
     expect(sp?.acsLabel).toBe('ACS URL');
     expect(sp?.acsFirst).toBe(true);
   });

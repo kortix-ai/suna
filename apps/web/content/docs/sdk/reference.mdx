@@ -30,7 +30,7 @@ kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
+kortix.runtime(); // OpenCode REST compatibility client
 ```
 
 ### Accounts — `kortix.accounts`
@@ -54,11 +54,20 @@ kortix.runtime(); // OpenCode REST compatibility client — not harness-neutral
 | `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
-`accounts.audit` is the enterprise audit log.
+`accounts.audit` is the enterprise reconstruction log. It combines authenticated
+API requests with semantic session, executor, approval, and computer events.
 
 | method | what |
 | --- | --- |
-| `audit.log(...)` · `audit.export(...)` · `audit.webhooks.list/create/update/remove(...)` | audit events · CSV/JSONL export · manage SIEM webhooks |
+| `audit.log(accountId, filters?)` | list events by project, session, actor, source, outcome, request, correlation, resource, action, or time |
+| `audit.export(accountId, filters?)` | export the same filtered event stream as CSV or JSONL |
+| `audit.webhooks.list/create/update/remove(...)` | manage signed SIEM webhooks for the centralized stream |
+
+Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
+`request_id`, `trace_id`, and `correlation_id` when the action supplies them.
+The API does not store request bodies, prompts, secrets, credentials, or raw
+connector arguments in the centralized event. Executor events can include a
+bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
 
@@ -109,11 +118,17 @@ the customer portal, and credit purchases are Stripe flows, app-owned.
 | `accountState(accountId?)` · `accountStateMinimal(accountId?)` | full · minimal billing state |
 | `transactions(params?)` · `transactionsSummary(params?)` | history · summarized totals |
 | `creditBreakdown(accountId?)` · `usageHistory(params?)` | credit balance by source · usage over time |
+| `sessionCosts.list(options?)` · `sessionCosts.get(sessionId, options?)` | paginated session-cost records · one detailed session ledger |
 | `tierConfigurations()` | available plan tiers |
 | `checkout.createSession(input)` · `checkout.confirmSession(sessionId, accountId?)` | start · confirm a Stripe Checkout session |
 | `subscription.createPortalSession(...)` · `subscription.cancel(...)` · `subscription.reactivate(...)` | open the customer portal · cancel · reactivate |
 | `subscription.scheduleDowngrade(...)` · `cancelScheduledChange(...)` · `prorationPreview(...)` | schedule · cancel · preview a plan change |
 | `credits.purchase(input)` · `credits.autoTopupSettings(...)` · `credits.configureAutoTopup(...)` | one-off purchase · read · configure auto-topup |
+
+`sessionCosts.list()` accepts `accountId`, `projectId`, `limit`, and `offset`.
+Each row combines finalized LLM cost and billed sandbox compute cost.
+`sessionCosts.get()` adds model usage and the discriminated LLM/compute ledger.
+The list includes a reconciliation total for cost without a session.
 
 ### Sandbox shares — `kortix.sandboxShares`
 
@@ -213,11 +228,12 @@ agent, a skill, a secret) instead of the whole project.
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
+| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` authorization ownership |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
-| `profiles.list()` · `profiles.reconcile(input)` | server-side identities (manager-only) · create/update one |
-| `profiles.updateCredential(profileId, input)` | rotate a profile's credential |
-| `profiles.revoke(profileId)` · `profiles.activate(profileId)` | deny · restore the identity live |
+| `authorizations.list()` · `authorizations.reconcile(input)` | list · create/update connected accounts |
+| `authorizations.updateCredential(authorizationId, input)` | rotate an authorization credential |
+| `authorizations.revoke(authorizationId)` · `authorizations.activate(authorizationId)` | deny · restore an authorization live |
 
 `p.connectors.discover` browses the direct-integration catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
@@ -232,9 +248,13 @@ returns OAuth apps only. Connect API-key apps directly instead.
 | --- | --- |
 | `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
 
-A connector is how a session reaches an external tool; `profiles` select the
-identity it uses (`connector_bindings: { alias: { profile_id } }` at session
-create). Credentials stay encrypted and resolve per request.
+A connector profile defines the tool, provider app, authorization strategy, and
+policies. `authorizations` stores its connected accounts. A session can select
+one with `connector_bindings: { alias: { authorization_id } }`. Credentials
+stay encrypted and resolve per request.
+
+The deprecated `profiles` facade aliases `authorizations`. New code uses
+authorization terminology.
 
 #### `p.policies` — project policies
 
@@ -317,6 +337,11 @@ A change request (CR) is how a session's work merges into the default branch.
 The session handle is the heart of the runtime — see
 [Sessions](/docs/sdk/sessions).
 
+`create(input)` accepts `connector_bindings` keyed by connector-profile slug.
+Each value names an `authorization_id`. It also accepts `secrets` for
+backend-origin secret narrowing and `require_connectors` for mandatory
+connector profiles.
+
 #### `p.approvals` — the executor approval inbox
 
 Pending executor-gated actions awaiting a decision — backs the
@@ -393,8 +418,8 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 
 ### Escape hatch
 
-`kortix.runtime()` returns the typed OpenCode REST compatibility client for the
-active sandbox. It is not a harness-neutral ACP client.
+`kortix.runtime()` returns the typed OpenCode REST client for the active
+sandbox.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
@@ -428,8 +453,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | --- | --- |
 | Files | Workspace file operations: list, read, search, write |
 | Session runtime | Health probe and preview/proxy URL builders |
-| ACP | Harness-neutral client, projection, and session controller for OpenCode, Claude Code, Codex, and Pi |
-| OpenCode client | The typed OpenCode v2 client and its full type surface |
+| OpenCode client | The typed OpenCode REST client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
 | Projects REST | The raw REST functions the facade wraps |
 | API client | `backendApi`, the low-level typed HTTP client |

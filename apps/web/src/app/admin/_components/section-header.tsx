@@ -1,9 +1,9 @@
 'use client';
 
-import type { LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';
+import type { Icon as LucideIcon } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 
 export function SectionHeader({
   icon: Icon,
@@ -17,17 +17,17 @@ export function SectionHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex items-start gap-3 min-w-0">
+    <div className="border-border/60 flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
         <EntityAvatar icon={Icon} size="lg" className="hidden sm:inline-flex" />
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
           {description && (
-            <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">{description}</p>
+            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">{description}</p>
           )}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
@@ -50,19 +50,14 @@ const TONE_STYLES: Record<NonNullable<StatPillProps['tone']>, string> = {
 
 export function StatPill({ label, value, hint, tone = 'default', className }: StatPillProps) {
   return (
-    <div
-      className={cn(
-        'rounded-2xl border border-border/60 bg-card p-4 min-w-0',
-        className,
-      )}
-    >
-      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+    <div className={cn('border-border/60 bg-card min-w-0 rounded-2xl border p-4', className)}>
+      <div className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
         {label}
       </div>
-      <div className={cn('mt-1 text-2xl font-semibold tracking-tight truncate', TONE_STYLES[tone])}>
+      <div className={cn('mt-1 truncate text-2xl font-semibold tracking-tight', TONE_STYLES[tone])}>
         {value}
       </div>
-      {hint && <div className="mt-0.5 text-xs text-muted-foreground truncate">{hint}</div>}
+      {hint && <div className="text-muted-foreground mt-0.5 truncate text-xs">{hint}</div>}
     </div>
   );
 }
@@ -81,7 +76,7 @@ export function SectionContainer({
   className?: string;
 }) {
   return (
-    <div className={cn('mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6', className)}>
+    <div className={cn('mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8', className)}>
       {children}
     </div>
   );

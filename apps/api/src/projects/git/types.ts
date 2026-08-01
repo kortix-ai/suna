@@ -1,5 +1,8 @@
 // Shared types for the git-backed-project operations module.
-// Pure leaf module: no runtime imports, only type declarations.
+// Pure leaf module: no runtime imports, only type declarations (the
+// manifest-verdict import below is `import type`, so it erases at build).
+
+import type { ProjectManifestVerdict } from '../lib/manifest-verdict';
 
 export interface GitBackedProject {
   projectId: string;
@@ -22,6 +25,9 @@ export interface ProjectConfigSummary {
   signals: Record<string, boolean>;
   manifest_raw: string | null;
   manifest: Record<string, unknown>;
+  /** Server-decided manifest version verdict — the only thing a client may read
+   *  to decide whether to offer an upgrade. See `../lib/manifest-verdict`. */
+  manifest_version: ProjectManifestVerdict;
   env: { required: string[]; optional: string[] };
   open_code_raw: string | null;
   open_code_default_agent: string | null;
@@ -34,9 +40,6 @@ export interface ProjectConfigSummary {
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
     sandbox?: string | null;
-    runtime?: string | null;
-    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
-    native_agent?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`

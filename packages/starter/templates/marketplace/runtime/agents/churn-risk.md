@@ -5,7 +5,6 @@ description: >-
   posts a ranked at-risk list with reasons and a suggested next step to
   {{alert_channel}}. Never writes to any customer system.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

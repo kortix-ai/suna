@@ -116,12 +116,12 @@ what it can do on its own is narrow:
   connector to LinkedIn, X, Instagram, or any other platform. Publishing
   isn't blocked by a rule — the capability doesn't exist in this agent's
   scope.
-- **Draft only.** The only output that leaves the sandbox is a Slack message
+- **Draft only.** The only output that is written back out is a Slack message
   containing drafts. Nothing is scheduled, queued, or posted anywhere.
-- **Isolation.** Every run happens in its own microVM sandbox, torn down when
+- **Isolation.** Every run happens in its own isolated sandbox, torn down when
   the run ends.
 - **Scoped secrets.** The Notion connector is brokered server-side; no raw
-  token is ever shown to the model or written to logs.
+  token enters the sandbox at all.
 - **Everything is code.** The platform playbook, the lookahead window, and
   the agent's permissions are files in the repo, changed through a reviewed
   **change request** rather than a dashboard setting.

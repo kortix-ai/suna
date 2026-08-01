@@ -104,7 +104,7 @@ diff against; the whole list is recomputed and reposted every day.
   prior day's list.
 - **Scoped secrets.** Postgres and Stripe access is brokered server-side
   through connectors; the Plain API key is injected as an environment
-  variable. No raw credential is ever shown to the model or written to logs.
+  variable. No raw credential is ever pasted into chat.
 - **People decide, not the agent.** The list flags risk and suggests a next
   step; a human on customer success decides whether and how to act.
 </guardrails>

@@ -24,7 +24,11 @@ import {
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import { cn } from '@/lib/utils';
-import { Check, ShieldAlert, X } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  ShieldWarningIcon as ShieldAlert,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -126,7 +130,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     onClick={() => decide(a.execution_id, 'deny')}
                   >
                     {b === 'deny' ? (
-                      <Loading className="size-3 animate-spin" />
+                      <Loading className="size-3" />
                     ) : (
                       <X className="size-3" />
                     )}
@@ -139,7 +143,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     onClick={() => decide(a.execution_id, 'approve')}
                   >
                     {b === 'approve' ? (
-                      <Loading className="size-3 animate-spin" />
+                      <Loading className="size-3" />
                     ) : (
                       <Check className="size-3" />
                     )}

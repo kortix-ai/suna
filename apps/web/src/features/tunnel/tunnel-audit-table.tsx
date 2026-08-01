@@ -6,12 +6,18 @@ import { useTranslations } from 'next-intl';
  * TunnelAuditTable — paginated audit log viewer for tunnel operations.
  */
 
-import React, { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useTunnelAuditLogs } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
+import {
+  CheckCircleIcon as CheckCircle2,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  XCircleIcon as XCircle,
+} from '@phosphor-icons/react';
+import { useState } from 'react';
 
 interface TunnelAuditTableProps {
   tunnelId: string;
@@ -23,11 +29,19 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
   const { data, isLoading } = useTunnelAuditLogs(tunnelId, page);
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line23JsxTextLoadingAuditLogs')}</div>;
+    return (
+      <div className="text-muted-foreground text-sm">
+        {tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line23JsxTextLoadingAuditLogs')}
+      </div>
+    );
   }
 
   if (!data || data.data.length === 0) {
-    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line27JsxTextNoAuditLogsYet')}</div>;
+    return (
+      <div className="text-muted-foreground text-sm">
+        {tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line27JsxTextNoAuditLogsYet')}
+      </div>
+    );
   }
 
   const { data: logs, pagination } = data;
@@ -46,29 +60,29 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
           >
             {/* Status Icon */}
             {log.success ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
             ) : (
-              <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+              <XCircle className="h-4 w-4 shrink-0 text-red-500" />
             )}
 
             {/* Operation */}
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <span className="font-mono text-xs">{log.operation}</span>
               {log.durationMs && (
-                <span className="ml-2 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3 inline mr-0.5" />
+                <span className="text-muted-foreground ml-2 text-xs">
+                  <Clock className="mr-0.5 inline h-3 w-3" />
                   {log.durationMs}ms
                 </span>
               )}
             </div>
 
             {/* Capability Badge */}
-            <Badge variant="secondary" className="text-xs shrink-0">
+            <Badge variant="secondary" className="shrink-0 text-xs">
               {log.capability}
             </Badge>
 
             {/* Timestamp */}
-            <span className="text-xs text-muted-foreground shrink-0">
+            <span className="text-muted-foreground shrink-0 text-xs">
               {new Date(log.createdAt).toLocaleTimeString()}
             </span>
           </div>
@@ -78,7 +92,7 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
       {/* Pagination */}
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
           </span>
           <div className="flex gap-1">

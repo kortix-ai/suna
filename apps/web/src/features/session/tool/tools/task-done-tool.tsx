@@ -3,7 +3,7 @@
 import { BasicTool, partInput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
 export function TaskDoneTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { getFileIcon } from '@/features/project-files';
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import { XIcon as X } from '@phosphor-icons/react';
 
 import type { AttachedFile } from './types';
 

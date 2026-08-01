@@ -109,8 +109,7 @@ so there is nothing else to update before finishing.
   week's numbers and the trailing comparison from the current database state
   rather than assuming anything from a prior report.
 - **Scoped secrets.** Postgres and Slack access are brokered server-side
-  through connectors; no raw credential is ever shown to the model or written
-  to logs.
+  through connectors; no raw credential is ever pasted into chat.
 - **Report, don't act.** Notable moves get called out with plain-language
   commentary; deciding what to do about them belongs to the team reading the
   report, not the agent.

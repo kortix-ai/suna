@@ -1,13 +1,14 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { cn } from '@/lib/utils';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
-import { Check, ChevronRight, Clock, ExternalLink, Loader2, MessageCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  ChatCircleIcon as MessageCircle,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { stripAnsi } from '@/ui';
+import { useEffect, useState } from 'react';
 
 export function formatBashOutput(rawOutput: string): {
   content: string;
@@ -245,9 +246,7 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             </span>
             <span className="text-muted-foreground/50 ml-auto text-xs">#{msg.index}</span>
             {msg.cost > 0 && (
-              <span className="text-muted-foreground/50 text-xs">
-                ${msg.cost.toFixed(4)}
-              </span>
+              <span className="text-muted-foreground/50 text-xs">${msg.cost.toFixed(4)}</span>
             )}
           </div>
           <div className="px-2.5 py-1.5">
@@ -289,4 +288,3 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
     </div>
   );
 }
-

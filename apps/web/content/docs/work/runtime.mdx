@@ -3,7 +3,7 @@ title: Runtime & sandbox
 description: Sandbox lifecycle, injected environment, token families, and the image a session boots from.
 ---
 
-A session runs in an isolated sandbox on Daytona, Platinum, or E2B Cloud. The project can use OpenCode REST or ACP with OpenCode, Claude Code, Codex, or Pi.
+A session runs in an isolated sandbox on Daytona, Platinum, or E2B Cloud, built from a layered image. This page is the reference for the sandbox lifecycle, the environment Kortix injects at boot, the token families, and the sandbox image itself. For the session concept, see [Sessions](/docs/work/sessions).
 
 ## Sandbox lifecycle
 
@@ -32,10 +32,7 @@ Kortix enforces a concurrent-session limit per account. Exceeding your tier's li
 
 ### Active-turn protection
 
-While an agent turn is active, the sandbox daemon renews a short execution
-lease with the API every 60 seconds. The lease blocks the idle reaper. Each
-renewal also touches the provider, so the provider cannot hibernate the sandbox
-mid-turn. An idle or failed turn releases the lease.
+While an OpenCode turn is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 60 seconds. The lease blocks the idle reaper. Each renewal also touches the provider, so the provider's own inactivity timer cannot hibernate the sandbox mid-run. `session.idle` and `session.error` release the lease.
 
 An open dashboard tab, preview, SSE connection, or health poll does not create a lease. A passive tab cannot keep an idle sandbox alive.
 
@@ -50,10 +47,7 @@ An open dashboard tab, preview, SSE connection, or health poll does not create a
 
 ```
 /workspace                       ← WORKDIR. The project repo is cloned here.
-/workspace/.kortix/              ← Repo-internal Kortix folder and OpenCode config.
-/workspace/.claude/              ← Default Claude Code config directory.
-/workspace/.codex/               ← Default Codex config directory.
-/workspace/.pi/                  ← Default Pi config directory.
+/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
@@ -76,12 +70,6 @@ Kortix injects these variables at boot, alongside your project's [secrets](/docs
 | `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
 | `KORTIX_API_URL` | The platform API base (`.../v1`). |
 | `KORTIX_AGENT_NAME` | The agent the session was created with. |
-| `KORTIX_ACP_SERVER_ID` | Sandbox ACP process key. Equal to `KORTIX_SESSION_ID` for new managed ACP sessions. |
-| `KORTIX_RUNTIME_NAME` | Immutable v3 runtime profile name. |
-| `KORTIX_RUNTIME_HARNESS` | `opencode`, `claude`, `codex`, or `pi`. |
-| `KORTIX_RUNTIME_CONFIG_DIR` | Repo-relative config directory for the selected harness. |
-| `KORTIX_NATIVE_AGENT` | Optional immutable harness-native agent or mode. |
-| `KORTIX_COMPILED_RUNTIME_PLAN` | Immutable compiled v3 runtime and logical-agent plan. |
 | `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
 | `KORTIX_INITIAL_PROMPT` | The first prompt, when a trigger spawned the session. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
@@ -120,34 +108,16 @@ The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git
 
 ## The agent runtime
 
-Projects without the **ACP & Multi-Harness** experiment use OpenCode REST. The daemon launches `opencode serve` on `127.0.0.1:4096`.
-
-Enabled projects use ACP. The daemon starts the selected harness from the immutable runtime plan. The supported harnesses are OpenCode, Claude Code, Codex, and Pi.
-
-The runtime uses three session identifiers.
-
-| Identifier | Lifetime |
-|---|---|
-| `project_session_id` | Durable Kortix session. |
-| `acp_server_id` | Sandbox process key. |
-| `acp_session_id` | Harness-native conversation identifier. |
-
-New managed sessions set `acp_server_id` equal to `project_session_id`. ACP JSON-RPC calls use `acp_session_id`. Legacy OpenCode ACP sessions keep their canonical OpenCode session identifier.
-
-Restart and resume reuse the stored compiled runtime plan. They do not recompile a changed manifest into an existing session.
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child. It fronts the OpenCode REST
-compatibility process and the ACP process registry on `KORTIX_SERVICE_PORT`
-(`8000`). Every route outside `/kortix/*` requires the HMAC-signed
-`X-Kortix-User-Context` header, validated against `KORTIX_SANDBOX_TOKEN`.
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_SANDBOX_TOKEN`.
 
 | Path | Purpose |
 | --- | --- |
-| `GET /kortix/health` | Liveness check. Reports runtime, harness, ACP process identity, repo, branch, and commit. |
-| `/kortix/acp/:acp_server_id` | ACP JSON-RPC POST endpoint and SSE event stream. |
-| `POST /kortix/refresh` | Re-pull the session branch and refresh the compatibility runtime. |
+| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
+| `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/kortix/pty` | Backs the in-dashboard terminal. |
@@ -162,7 +132,7 @@ Every sandbox boots from an image built in two layers. Your Dockerfile defines t
 
 ```
 ┌─────────────────────────────────────────┐
-│  Kortix runtime layer (added on top)    │  ← four harness paths + kortix-agent
+│  Kortix runtime layer (added on top)    │  ← opencode + kortix-agent + entrypoint
 ├─────────────────────────────────────────┤
 │  Your Dockerfile                        │  ← .kortix/Dockerfile
 └─────────────────────────────────────────┘
@@ -193,8 +163,7 @@ Kortix appends this layer on top of your Dockerfile's final stage.
 - pnpm-managed Node.js and npm, plus uv-managed Python 3.
 - A document-tools floor: LibreOffice, Pandoc, and OCR tools.
 - An exact uv-managed Python version exposed as `python` and `python3`. Use `uv run --with <package>` for third-party dependencies.
-- OpenCode, Claude Code ACP, Codex ACP, Pi ACP, and the pinned Pi harness.
-- The `bun` runtime and `agent-browser` with a baked Chromium build.
+- `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
 - The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
 - `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.
 

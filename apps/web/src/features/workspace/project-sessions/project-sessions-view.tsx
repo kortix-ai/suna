@@ -36,6 +36,7 @@ import {
   sessionLastActivityAt,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
@@ -45,28 +46,28 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import {
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ArrowSquareOutIcon as ExternalLink,
+  CalendarDotsIcon as CalendarClock,
+  CaretDownIcon as ChevronDown,
+  ChatIcon as MessageSquare,
+  DotsThreeIcon as MoreHorizontal,
+  EnvelopeIcon as Mail,
+  GitBranchIcon as GitBranch,
+  MagnifyingGlassIcon as Search,
+  PencilSimpleIcon,
+  PlusIcon as Plus,
+  ShareNetworkIcon as Share,
+  SquareIcon as Square,
+  TrashIcon,
+  WarningIcon as AlertTriangle,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import {
-  AlertTriangle,
-  CalendarClock,
-  ChevronDown,
-  ExternalLink,
-  GitBranch,
-  Mail,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  RotateCcw,
-  Search,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import type { IconType } from 'react-icons/lib';
+import { useMemo, useState, type ComponentType } from 'react';
 
 import {
   filterProjectSessions,
@@ -77,7 +78,7 @@ import {
   type ProjectSessionsFilter,
 } from './project-sessions-helpers';
 
-const SOURCE_ICONS: Record<SessionSourceKind, LucideIcon | IconType> = {
+const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string }>> = {
   chat: MessageSquare,
   slack: Icon.Slack,
   telegram: Icon.Telegram,
@@ -355,7 +356,7 @@ function SessionRow({
                   <DropdownMenuContent align="end" className="w-44">
                     {hasLifecycleActions ? (
                       <DropdownMenuItem onSelect={() => onRename(session.session_id, title)}>
-                        <Pencil />
+                        <PencilSimpleIcon />
                         Rename
                       </DropdownMenuItem>
                     ) : null}
@@ -384,11 +385,8 @@ function SessionRow({
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => onDelete(session.session_id, title)}
-                      >
-                        <TrashSolid />
+                      <DropdownMenuItem onSelect={() => onDelete(session.session_id, title)}>
+                        <TrashIcon />
                         Delete
                       </DropdownMenuItem>
                     ) : null}
@@ -413,6 +411,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     null,
   );
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
     queryKey: ['project-session-inventory', projectId],
@@ -461,6 +460,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       variant="secondary"
       className="gap-1.5"
       onClick={() => newSession()}
+      disabled={creatingSession}
+      aria-busy={creatingSession}
     >
       <Plus className="size-4 shrink-0" />
       New session
@@ -528,7 +529,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             title="No sessions yet"
             description="Start a session to give this project its first task."
             action={
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => newSession()}
+                disabled={creatingSession}
+                aria-busy={creatingSession}
+              >
                 <Plus className="size-3.5 shrink-0" />
                 New session
               </Button>

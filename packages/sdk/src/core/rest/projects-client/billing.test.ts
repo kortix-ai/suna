@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { UsageBreakdownItem, UsageQueryOptions } from './billing';
 import {
   cancelScheduledChange,
   cancelSubscription,
@@ -44,6 +45,12 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
+
+type IsNever<T> = [T] extends [never] ? true : false;
+type UsageAttributionKey<T> = Extract<
+  keyof T,
+  `${'end_user' | 'origin'}_${'ref'}` | `${'endUser' | 'origin'}Ref`
+>;
 
 test('getAccountState hits /billing/account-state and returns the parsed body', async () => {
   const state = { ...getDefaultAccountState(), subscription: { ...getDefaultAccountState().subscription, tier_key: 'pro' } };
@@ -207,33 +214,17 @@ test('getUsageRollup GETs /usage with no query when unfiltered', async () => {
   expect(last().method).toBe('GET');
 });
 
-test('getUsageRollup groups by end_user_ref so spend is attributable per end-user', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      data: { total_cost: 3, count: 2 },
-      breakdown: [
-        { end_user_ref: 'user-a', cost: 2, count: 1 },
-        { end_user_ref: 'user-b', cost: 1, count: 1 },
-      ],
-    },
-  };
-  const result = await getUsageRollup({ groupBy: 'end_user_ref', start: '2026-07-01' });
-  expect(last().url).toContain('group_by=end_user_ref');
-  expect(last().url).toContain('start=2026-07-01');
-  expect(result.breakdown?.map((b) => b.end_user_ref)).toEqual(['user-a', 'user-b']);
+test('usage contracts omit usage attribution keys and grouping dimensions', () => {
+  type GroupBy = NonNullable<UsageQueryOptions['groupBy']>;
+  const breakdown: IsNever<UsageAttributionKey<UsageBreakdownItem>> = true;
+  const options: IsNever<UsageAttributionKey<UsageQueryOptions>> = true;
+  const groups: IsNever<Extract<GroupBy, `${'end_user' | 'origin'}_${'ref'}`>> = true;
+
+  expect([breakdown, options, groups]).toEqual([true, true, true]);
 });
 
-test('getUsageRollup narrows to one end-user via endUserRef', async () => {
-  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
-  await getUsageRollup({ endUserRef: 'user-a' });
-  expect(last().url).toContain('end_user_ref=user-a');
-  expect(last().url).not.toContain('group_by');
-});
-
-test('the deprecated originRef option still works, mapped to the new param', async () => {
-  // Live callers pinned to the old option must keep functioning after the rename.
-  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
-  await getUsageRollup({ originRef: 'legacy-user' });
-  expect(last().url).toContain('end_user_ref=legacy-user');
+test('getUsageRollup serializes only supported grouping dimensions', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup({ groupBy: 'customer' } as unknown as UsageQueryOptions);
+  expect(last().url).toBe('http://test.local/usage');
 });

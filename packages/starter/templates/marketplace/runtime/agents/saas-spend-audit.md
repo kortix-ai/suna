@@ -7,7 +7,6 @@ description: >-
   Recommends cancellations and downgrades only — never cancels, pauses, or
   modifies a subscription itself.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

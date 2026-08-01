@@ -11,22 +11,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, Lock, ShieldCheck } from 'lucide-react';
+import {
+  RobotIcon as Bot,
+  LockIcon as Lock,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { GrantSetField, KortixCliField } from './grant-mode-field';
-import { prunePersonalConnectors } from './connectors-personal';
+import { pruneRequiredConnectors } from './connectors-personal';
 import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
 import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk';
 
 /**
- * Marks one granted connector as PERSONAL — the session must run on the
- * launching user's own connected account, not the project's shared one. Renders
- * beside the connector row (see GrantSetField's `rowAccessory`), because the row
- * itself is a button and cannot nest one.
+ * Marks one granted connector profile as required before session start.
  */
-function PersonalConnectorToggle({
+function RequiredConnectorToggle({
   active,
   onToggle,
 }: {
@@ -37,14 +38,14 @@ function PersonalConnectorToggle({
     <Hint
       label={
         active
-          ? 'Runs on each user\u2019s OWN connected account. Anyone who hasn\u2019t connected it can\u2019t start a session with this agent.'
-          : 'Use the project\u2019s shared connection. Click to require each user\u2019s own account instead.'
+          ? 'Required before session start. The connector profile authorization strategy selects the valid authorization.'
+          : 'Optional at session start. Click to require this connector profile.'
       }
     >
       <button
         type="button"
         aria-pressed={active}
-        aria-label={active ? 'Personal connection required' : 'Use the shared connection'}
+        aria-label={active ? 'Required before session start' : 'Optional at session start'}
         onClick={onToggle}
         className={cn(
           'flex size-7 shrink-0 items-center justify-center rounded transition-[color,background-color,transform] active:scale-[0.96]',
@@ -120,8 +121,8 @@ export function KortixLayerFields({
       <section className="space-y-4">
         <SectionHeader icon={ShieldCheck} title="Governance" />
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed text-pretty">
-          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing
-          until you grant it.
+          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing until
+          you grant it.
         </p>
         <FieldRow label="Skills">
           <GrantSetField
@@ -137,12 +138,9 @@ export function KortixLayerFields({
             value={draft.connectors}
             onChange={(v: AgentGrantSetV2) => {
               set('connectors', v);
-              // Narrowing the grant must drop any personal entry that just lost
-              // it — see prunePersonalConnectors for why an invalid pair is not
-              // merely untidy but unloadable.
-              const pruned = prunePersonalConnectors(draft.connectors_personal, v);
-              if (pruned?.length !== draft.connectors_personal?.length) {
-                set('connectors_personal', pruned);
+              const pruned = pruneRequiredConnectors(draft.connectors_required, v);
+              if (pruned?.length !== draft.connectors_required?.length) {
+                set('connectors_required', pruned);
               }
             }}
             options={connectorOptions}
@@ -150,26 +148,23 @@ export function KortixLayerFields({
             emptyLabel="No connectors in this project yet."
             rowAccessory={(id, isSelected) =>
               isSelected ? (
-                <PersonalConnectorToggle
-                  active={draft.connectors_personal?.includes(id) === true}
+                <RequiredConnectorToggle
+                  active={draft.connectors_required?.includes(id) === true}
                   onToggle={() => {
-                    const current = draft.connectors_personal ?? [];
+                    const current = draft.connectors_required ?? [];
                     const next = current.includes(id)
                       ? current.filter((a) => a !== id)
                       : [...current, id];
-                    set('connectors_personal', next.length ? next : undefined);
+                    set('connectors_required', next.length ? next : undefined);
                   }}
                 />
               ) : null
             }
           />
-          {draft.connectors === 'all' && draft.connectors_personal?.length ? (
-            // With an 'all' grant there are no rows to hang toggles on, but a
-            // personal set is still legal (the subset rule is trivially met).
-            // Show it rather than hiding a live setting the user can't see.
+          {draft.connectors === 'all' && draft.connectors_required?.length ? (
             <p className="text-muted-foreground/60 mt-1.5 text-[11px]">
-              Personal (your own account):{' '}
-              <span className="font-mono">{draft.connectors_personal.join(', ')}</span> — switch to
+              Required before session start:{' '}
+              <span className="font-mono">{draft.connectors_required.join(', ')}</span> — switch to
               Pick to change.
             </p>
           ) : null}
@@ -184,7 +179,10 @@ export function KortixLayerFields({
           />
         </FieldRow>
         <FieldRow label="Kortix CLI">
-          <KortixCliField value={draft.kortix_cli} onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)} />
+          <KortixCliField
+            value={draft.kortix_cli}
+            onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
+          />
         </FieldRow>
         <FieldRow label="Workspace" hint="git boundary (enforced in a later phase)">
           <div className="space-y-1.5">
@@ -195,7 +193,9 @@ export function KortixLayerFields({
               allowUnset
             />
             <p className="text-muted-foreground/60 text-[11px]">
-              {draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Inherits the project default.'}
+              {draft.workspace
+                ? WORKSPACE_MODE_HELP[draft.workspace]
+                : 'Inherits the project default.'}
             </p>
           </div>
         </FieldRow>

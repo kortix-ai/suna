@@ -25,7 +25,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { ArrowUpCircle, CircleCheckBig } from 'lucide-react';
+import {
+  ArrowCircleUpIcon as ArrowUpCircle,
+  CheckCircleIcon as CircleCheckBig,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import CustomizeSectionWrapper from '../sections/component/section-wrapper';
@@ -79,7 +82,7 @@ export function UpgradesViewContent({
             {upgrades.map((upgrade: ProjectUpgrade) => (
               <li
                 key={upgrade.id}
-                className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors hover:border-kortix-base/45 hover:bg-kortix-base/[0.09]"
+                className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 hover:border-kortix-base/45 hover:bg-kortix-base/[0.09] flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors"
               >
                 <span className="bg-kortix-base/15 ring-kortix-base/25 flex size-9 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset">
                   <ArrowUpCircle className="text-kortix-base size-5" />

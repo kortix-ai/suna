@@ -15,12 +15,20 @@
  *   active panel session via that same helper, then opens the panel.
  */
 
+import { MOBILE_BREAKPOINT } from '@/hooks/utils/use-mobile';
 import { track } from '@/lib/track';
 import {
   type QuickView,
   type QuickViewTarget,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
+
+/** Same cutoff as `useIsMobile`, readable outside a component. This is a
+ *  plain function (palette handlers, header onClick), so it checks the
+ *  viewport directly instead of taking a hook value it has no way to call. */
+function isMobileViewport(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT;
+}
 import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
@@ -32,6 +40,17 @@ export function openSessionQuickView(
    *  it here instead of writing `viewBySession`, which only Advanced reads. */
   target?: QuickViewTarget,
 ): void {
+  // Mobile: the tool gets its own top-level drawer (`MobileToolDrawer`),
+  // never the panel sheet — opening the Easy/Advanced panel just to host a
+  // terminal meant two stacked sheets and an Easy home the user never asked
+  // for behind the close button. The panel toggle still opens the panel;
+  // this path is only the "show me this one tool" intent.
+  if (isMobileViewport()) {
+    useKortixComputerStore.getState().openMobileTool(view);
+    track('panel_opened', { source, surface: 'mobile-tool', view });
+    return;
+  }
+
   const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
   const panelMode = useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
 

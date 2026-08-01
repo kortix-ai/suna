@@ -1596,9 +1596,9 @@
       "checklistAuditTitle": "Export d'audit complet",
       "checklistAuditDescription": "Diffusez chaque action des agents vers votre SIEM.",
       "checklistSandboxesTitle": "Sandboxes isolés",
-      "checklistSandboxesDescription": "Every session runs in an ephemeral VM with server-side credential resolution.",
+      "checklistSandboxesDescription": "Chaque session s'exécute sur sa propre machine isolée.",
       "checklistSecretsTitle": "Secrets chiffrés",
-      "checklistSecretsDescription": "Injectés à l'exécution via le proxy de tokens, jamais visibles par le modèle.",
+      "checklistSecretsDescription": "Les identifiants des connecteurs sont résolus côté serveur et n'entrent jamais dans la machine. Un secret d'exécution n'atteint une session que via le rôle de la personne qui l'a lancée et l'autorisation accordée à l'agent.",
       "deploymentEyebrow": "Déploiement",
       "deploymentTitle": "Vos données n'ont jamais à sortir.",
       "deploymentDescription": "Kortix est open source. Le même stack s'exécute partout — et tout vous appartient : chaque configuration, chaque conversation, chaque octet de contexte. Aucun verrouillage des données, jamais.",
@@ -1646,7 +1646,7 @@
       "onboardingProcessTitle": "Un parcours clair de la revue de sécurité au premier agent en production.",
       "architectureEyebrow": "Conçu pour passer à l'échelle",
       "architectureTitle": "L'isolation par défaut. La montée en charge sans limites.",
-      "architectureDescription": "Chaque session s'exécute dans sa propre VM isolée, sur sa propre branche Git. Faites tourner des centaines de milliers d'agents en parallèle — rien n'entre en collision, chaque changement est réintégré via une demande de changement vérifiable.",
+      "architectureDescription": "Chaque session s'exécute sur sa propre machine isolée, sur sa propre branche Git. Faites tourner des centaines de milliers d'agents en parallèle — rien n'entre en collision, chaque changement est réintégré via une demande de changement vérifiable.",
       "architectureSandboxTitle": "Une sandbox par session",
       "architectureSandboxDescription": "Chaque agent reçoit une machine isolée avec un clone propre de main. Aucun état partagé, aucune contamination croisée.",
       "architectureBranchTitle": "Une branche par agent",
@@ -4652,10 +4652,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "Votre menu",
-      "line213JsxAttrLabelUserSettings": "Paramètres utilisateur",
+      "line213JsxAttrLabelUserSettings": "Préférences",
       "line253JsxAttrLabelLogOut": "Se déconnecter",
       "line142JsxAttrAriaLabelYourMenu": "Votre menu",
-      "line209JsxAttrLabelUserSettings": "Paramètres utilisateur",
+      "line209JsxAttrLabelUserSettings": "Préférences",
       "line248JsxAttrLabelLogOut": "Se déconnecter"
     },
     "componentsMaintenanceMaintenancePage": {

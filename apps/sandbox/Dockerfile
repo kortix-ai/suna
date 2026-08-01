@@ -93,7 +93,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
-    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/kortix \
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
     && chmod 0440 /etc/sudoers.d/kortix \
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
@@ -173,20 +173,6 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version
-
-RUN CLAUDE_AGENT_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeAgentAcp)")" \
-    && CODEX_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexAcp)")" \
-    && PI_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piAcp)")" \
-    && PI_CODING_AGENT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piCodingAgent)")" \
-    && pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
-    && command -v claude-agent-acp \
-    && command -v codex-acp \
-    && command -v pi-acp \
-    && command -v pi \
-    && claude-agent-acp --version \
-    && codex-acp --version \
-    && pi-acp --help >/dev/null \
-    && pi --version
 
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \

@@ -190,6 +190,21 @@ mock.module('../shared/db', () => {
   };
 });
 
+// IAM — a prompt that switches to a CONCRETE agent is authorized for
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// The real engine issues an `innerJoin` this file's `db` stub does not build, so
+// leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
+// agent-switch assertion answer 502 instead of the 204 it is about.
+//
+// This file's subject is proxy FORWARDING, so the gate is held open here and the
+// gate itself — 403-before-re-mint, the requested agent as the resource, the
+// non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
+// in sandbox-proxy/routes/preview-agent-authz.test.ts.
+mock.module('../iam', () => ({
+  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  authorize: async () => ({ allowed: true, reason: 'project_role' }),
+}));
+
 mock.module('../shared/preview-ownership', () => ({
   // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
@@ -893,130 +908,6 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(204);
     expect(mockTitleCalls).toEqual([]);
-  });
-
-  test('titles from an accepted ACP session prompt', async () => {
-    mockFetchResponses = [{ status: 202, body: '' }];
-    const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-3',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-      }),
-    });
-
-    expect(res.status).toBe(202);
-    expect(mockTitleCalls).toHaveLength(1);
-    expect(mockTitleCalls[0]!.firstPromptText).toBe('Research Marko');
-  });
-
-  test('titles a MANAGED ACP prompt, whose harness sessionId differs from the route id', async () => {
-    // The route id is the ACP SERVER binding (the project session); the
-    // envelope's params.sessionId is the harness-issued session, which
-    // persistAcpSessionIdentity forbids from equalling it. Requiring the two to
-    // match made every managed ACP prompt invisible to this hook.
-    mockFetchResponses = [{ status: 202, body: '' }];
-    const app = createProxyTestApp();
-
-    const res = await app.request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/${mockDbSandbox.sessionId}`,
-      {
-        method: 'POST',
-        headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'prompt-5',
-          method: 'session/prompt',
-          params: {
-            sessionId: 'acp_harness_session_9',
-            prompt: [{ type: 'text', text: 'Research Marko' }],
-          },
-        }),
-      },
-    );
-
-    expect(res.status).toBe(202);
-    expect(mockTitleCalls).toHaveLength(1);
-    expect(mockTitleCalls[0]!.firstPromptText).toBe('Research Marko');
-  });
-
-  test('a rejected ACP session prompt is not titled', async () => {
-    mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
-    const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-4',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-      }),
-    });
-
-    expect(res.status).toBe(502);
-    expect(mockTitleCalls).toEqual([]);
-  });
-
-  test('schedules a deferred opencode_sessions snapshot sync after an accepted ACP session prompt', async () => {
-    mockFetchResponses = [{ status: 202, body: '' }];
-    const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-1',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-      }),
-    });
-
-    expect(res.status).toBe(202);
-    expect(mockSnapshotSyncCalls).toEqual([
-      {
-        sessionId: mockDbSandbox.sessionId,
-        projectId: TEST_PROJECT_ID,
-        externalId: TEST_SANDBOX_ID,
-        userId: TEST_USER_ID,
-      },
-    ]);
-  });
-
-  test('does not retry an ACP session prompt after an ambiguous upstream 502', async () => {
-    mockFetchResponses = [
-      { status: 502, body: 'bad gateway' },
-      { status: 202, body: '' },
-    ];
-    const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-2',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-      }),
-    });
-
-    expect(res.status).toBe(502);
-    expect(mockFetchCalls).toHaveLength(1);
-    expect(mockSnapshotSyncCalls).toEqual([]);
   });
 
   test('allows prompt_async when requested agent matches the session-bound token agent', async () => {

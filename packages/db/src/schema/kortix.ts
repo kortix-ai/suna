@@ -700,13 +700,37 @@ export const projectSessions = kortixSchema.table(
     // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
     // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
     secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
+    // Connector aliases this session REQUIRES, independent of whether anything is
+    // connected to them yet.
+    //
+    // A binding row cannot express this: `profile_id` is NOT NULL, so a binding is
+    // "use THIS connection", never "this session needs Gmail and has none". That
+    // gap is why the UI had to grey out an unconnected connector — there was
+    // nowhere to record the intent — and why `require_connectors` on create was
+    // read, enforced once, and then forgotten, leaving every later prompt and
+    // every warm-claim re-check blind to what the caller actually asked for.
+    //
+    // Checked as a UNION with the running agent's manifest `connectors_required`
+    // and the session's binding rows (see projects/lib/prompt-connector-preflight.ts),
+    // so this column narrows nothing and only ever ADDS a requirement.
+    // null/absent = the caller declared none.
+    requiredConnectors: jsonb('required_connectors').$type<string[]>(),
+    // Distinguishes omitted connector_bindings from an explicit replacement.
+    connectorBindingsConfigured: boolean('connector_bindings_configured')
+      .default(false)
+      .notNull(),
     // When a session sets `connector_bindings`, binding ANY alias normally
     // suppresses the project-default fallback for every OTHER (unbound) alias —
     // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
     // out: unbound aliases keep resolving to the project DEFAULT profile, so a
     // caller can override just one connector (e.g. a user's own Gmail) without
     // re-binding the rest. Only ever inherits the project default — never another
-    // owner's profile — so it is safe for any origin. Set at create, immutable after.
+    // owner's profile — so it is safe for any origin.
+    //
+    // Set at create AND changeable by `PUT /sessions/{id}/scope`. It used to say
+    // "immutable after", which stopped being true when the re-scope route landed
+    // and silently forced it to false on every binding change — quietly cutting
+    // off project-default fallback for a session that had been relying on it.
     connectorBindingsInheritUnbound: boolean('connector_bindings_inherit_unbound')
       .default(false)
       .notNull(),
@@ -948,26 +972,16 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
     /**
-     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
-     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
-     * — the newest model per family is on, and this records only what an admin
-     * deliberately changed. The gateway refuses anything not effectively
-     * enabled everywhere (chat, Slack, triggers, API); the picker and "Manage
-     * models" render from the same answer.
-     *
-     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
-     * set freezes the moment it's written, so every later catalog addition (a
-     * newly connected provider, next month's Claude) lands OFF and needs a
-     * manual click. Overrides let the default keep tracking "the latest"
-     * forever while still honouring explicit choices. It also removes the
-     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
-     * opt-out list unable to express the default at all.
+     * @deprecated Server-side per-project model enablement was reverted. Nothing
+     * reads this column; every model is served. Retained INERT (not dropped) so
+     * a mixed-version rollout can't hit a missing column on the gateway's hot
+     * path — a later contract migration drops it. Do not add new readers.
      */
     modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
     /**
-     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
-     * release so a mixed-version rollout can't hit a missing column on the
-     * gateway's hot path; the contract migration drops it.
+     * @deprecated Server-side per-project model enablement was reverted. Nothing
+     * reads this column. Retained INERT (not dropped) for the same mixed-version
+     * reason as `modelOverrides`; a later contract migration drops it.
      */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
@@ -1055,44 +1069,6 @@ export const projectSessionPublicShares = kortixSchema.table(
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
     index('idx_project_session_public_shares_project').on(table.projectId),
-  ],
-);
-
-/**
- * Durable, lossless ACP JSON-RPC envelope log.
- *
- * `ordinal` is the client-facing stream cursor. `upstreamEventId` is scoped by
- * `runtimeInstanceId` because every harness process starts its own event
- * sequence. This keeps retries idempotent without treating a restarted harness
- * as the previous process.
- */
-export const acpSessionEnvelopes = kortixSchema.table(
-  'acp_session_envelopes',
-  {
-    ordinal: bigint('ordinal', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
-    eventId: uuid('event_id').defaultRandom().notNull(),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    runtimeInstanceId: text('runtime_instance_id').notNull(),
-    direction: varchar('direction', { length: 32 }).notNull(),
-    upstreamEventId: bigint('upstream_event_id', { mode: 'number' }),
-    envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_acp_session_envelopes_event_id').on(table.eventId),
-    uniqueIndex('idx_acp_session_envelopes_upstream_event')
-      .on(table.sessionId, table.direction, table.runtimeInstanceId, table.upstreamEventId)
-      .where(sql`${table.upstreamEventId} IS NOT NULL`),
-    index('idx_acp_session_envelopes_session_ordinal').on(table.sessionId, table.ordinal),
-    check(
-      'acp_session_envelopes_direction_check',
-      sql`${table.direction} IN ('client_to_agent', 'agent_to_client')`,
-    ),
   ],
 );
 
@@ -2397,10 +2373,20 @@ export const auditEvents = kortixSchema.table(
   {
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+    projectId: uuid('project_id'),
+    sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    actorType: text('actor_type'),
+    source: text('source'),
+    outcome: text('outcome'),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
+    httpStatus: integer('http_status'),
+    durationMs: integer('duration_ms'),
+    requestId: text('request_id'),
+    traceId: text('trace_id'),
+    correlationId: text('correlation_id'),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
     ip: text('ip'),
@@ -2412,6 +2398,18 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    index('idx_audit_events_account_project_time').on(
+      table.accountId,
+      table.projectId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_account_session_time').on(
+      table.accountId,
+      table.sessionId,
+      table.occurredAt,
+    ),
+    index('idx_audit_events_request').on(table.requestId),
+    index('idx_audit_events_correlation').on(table.correlationId),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
@@ -3987,6 +3985,11 @@ export const executorCredentialModeEnum = kortixSchema.enum('executor_credential
   'per_user',
 ]);
 
+export const executorConnectorAuthorizationStrategyEnum = kortixSchema.enum(
+  'executor_connector_authorization_strategy',
+  ['project', 'user'],
+);
+
 export const executorConnectors = kortixSchema.table(
   'executor_connectors',
   {
@@ -4023,6 +4026,12 @@ export const executorConnectors = kortixSchema.table(
      *  doc comment for why `per_user` is gone but the enum literal lingers. A
      *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
+    /** Exclusive authorization owner model for this connector profile. */
+    authorizationStrategy: executorConnectorAuthorizationStrategyEnum(
+      'authorization_strategy',
+    )
+      .default('project')
+      .notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
     manifestHash: varchar('manifest_hash', { length: 64 }),
     status: executorConnectorStatusEnum('status').default('active').notNull(),
@@ -4098,8 +4107,8 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.profileId,
     ),
     // A connector may hold MANY connections (e.g. support@ and sales@ for the
-    // team, plus each member's own). The default marker is therefore scoped PER
-    // OWNER, not per connector: exactly one team default, and at most one default
+    // project, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one project default, and at most one default
     // per member/agent/external owner. Split into two partial indexes so the
     // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
     // is still capped at one.
@@ -4117,7 +4126,7 @@ export const executorConnectionProfiles = kortixSchema.table(
       .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
     // Project-owned rows carry owner_id NULL, so the index above (partial on
-    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // owner_id IS NOT NULL) can't dedupe them. Several project connections per
     // connector are allowed, distinguished by label — this keeps that set unique.
     uniqueIndex('idx_executor_connection_profiles_project_label')
       .on(table.connectorId, table.label)
@@ -4415,21 +4424,11 @@ export const executorConnectorPolicies = kortixSchema.table(
 );
 
 /**
- * Per-CONNECTION tool-call policies, keyed by profile_id.
+ * Legacy authorization-policy storage.
  *
- * One connector can hold several connections — support@, sales@, a member's own
- * mailbox — and they often warrant DIFFERENT permissions. Connector-scoped rules
- * cannot express that: they are keyed by the connector, so every connection under
- * it shares one policy.
- *
- * Deliberately NOT in executor_connector_policies: sync.ts deletes every row for
- * a connector and re-inserts from the manifest on each manifest write, so a
- * DB-authored row there would be destroyed. Deliberately NOT in the manifest
- * either: a member's private connection can never appear in git, and profile
- * uuids are not portable across projects.
- *
- * Evaluated AFTER project rules (which remain un-overridable) and BEFORE
- * connector rules, so the more specific scope wins over the connector default.
+ * The runtime does not read or write this table. Connector-profile policies
+ * live in executor_connector_policies. Keep this table until a later contract
+ * migration removes the stored rows and physical schema.
  */
 export const executorConnectionPolicies = kortixSchema.table(
   'executor_connection_policies',

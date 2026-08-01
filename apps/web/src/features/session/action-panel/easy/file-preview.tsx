@@ -20,7 +20,9 @@ import {
   type FileCategory,
   FileContentRenderer,
   FileSourceProvider,
+  PreviewFitProvider,
   getFileCategory,
+  isUsableIntrinsicSize,
 } from '@/features/file-viewer';
 import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
@@ -28,18 +30,22 @@ import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
+import {
+  useIsExpanded,
+  useKortixComputerStore,
+  useToggleExpanded,
+} from '@/stores/kortix-computer-store';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  Check,
-  Copy,
-  FileWarning,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  Presentation,
-} from 'lucide-react';
-import { useState, useSyncExternalStore } from 'react';
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  FileXIcon as FileWarning,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+  PresentationIcon as Presentation,
+} from '@phosphor-icons/react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton, isSvg } from './file-viewer';
 import { type ShareContext, ShareFileButton } from './viewer-actions';
@@ -266,9 +272,51 @@ const RICH_CATEGORIES = new Set<FileCategory>([
  *
  * Exported for tests: which path a file takes decides whether its source is
  * ever fetched, and that is worth pinning without mounting the whole preview.
+ *
+ * Paired with `reportsIntrinsicSize` directly below — that predicate depends on
+ * this one to keep `.svg` out, so the two must be read together.
  */
 export function isRich(fileName: string): boolean {
   return RICH_CATEGORIES.has(getFileCategory(fileName)) && !isSvg(fileName);
+}
+
+/**
+ * The categories whose renderer actually calls `usePreviewFit().report()`, and
+ * therefore the files whose ratio the panel can expect to arrive: `PdfViewer`,
+ * `ImageRenderer`, `VideoRenderer`. That is the entire list today.
+ *
+ * This set is a MIRROR of which renderers hold a `usePreviewFit` call, and
+ * nothing in the type system ties the two together — a renderer that gains or
+ * loses the hook silently falsifies this. It lives here, one function below
+ * `isRich`, precisely so the two shape decisions about the same file are read
+ * and changed in one place. If you add a category, confirm the renderer
+ * reports; if you remove `usePreviewFit` from a renderer, remove it here.
+ */
+const MEASURING_CATEGORIES = new Set<FileCategory>(['pdf', 'image', 'video']);
+
+/**
+ * Whether opening this file will produce a measurement — what lets
+ * `openDetail` hold the outgoing ratio instead of clearing it (see `Detail`'s
+ * `measures`).
+ *
+ * Two exclusions carry the whole correctness of this:
+ *
+ * - **`audio` is rich but shapeless.** It renders a transport bar, not a
+ *   document, and reports nothing. Including it would strand the previous
+ *   document's width behind an audio player.
+ * - **`.svg` is category `image` and still excluded**, because `isRich` sends
+ *   it down the text path to `FileViewer`, whose `ImageRenderer` sits OUTSIDE
+ *   the `<PreviewFitProvider>` — so its `usePreviewFit()` is `null` and it
+ *   never reports. Delegating to `isRich` rather than re-testing the extension
+ *   means that stays true even if the SVG routing changes.
+ *
+ * The non-rich binary `<img>` fallback also reports, but nothing in a filename
+ * predicts that branch (it turns on the server's mime type), so it is
+ * deliberately not claimed here. Being wrong in that direction costs one extra
+ * glide; being wrong in the other leaves a stale width on screen.
+ */
+export function reportsIntrinsicSize(fileName: string): boolean {
+  return isRich(fileName) && MEASURING_CATEGORIES.has(getFileCategory(fileName));
 }
 
 export function FilePreview({
@@ -304,6 +352,19 @@ export function FilePreview({
 }) {
   const rich = isRich(fileName);
 
+  // Opening at fit-to-page is PDF-only. It is the one renderer here whose zoom
+  // is a real mode rather than a scaled stage, so it can meet the fitted column
+  // at exactly one page wide; every other category ignores the prop. Derived
+  // from the category, not the extension, so `.PDF` and `.pdf` agree.
+  const isPdf = getFileCategory(fileName) === 'pdf';
+
+  // The panel's width for this document. A renderer reports the intrinsic size
+  // it decoded; `session-layout` turns the ratio into a split (see
+  // `resolveSideSize`). Only the branches that actually SHOW a document report:
+  // the loading, error, and text branches keep today's width, because a spinner
+  // and a paragraph have no shape of their own to honor.
+  const setPanelAspect = useKortixComputerStore((s) => s.setPanelAspect);
+
   const sandboxAlive = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
     getSandboxAliveSnapshot,
@@ -313,6 +374,27 @@ export function FilePreview({
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
   const { data, isLoading, isError } = useFileContent(path, { enabled: !rich });
+
+  // A file that cannot be opened has no shape, and `openDetail` no longer
+  // clears the ratio on the way in for anything that CAN measure (see
+  // `reportsIntrinsicSize`) — so a dead or renamed PDF would otherwise show
+  // "This file couldn't be opened" at the previous document's width. Both
+  // failure paths clear it: this one for the non-rich branch below, and
+  // `onStatusChange` for the rich branch, where a not-found is handled inside
+  // `FileContentRenderer` and never reaches this component's own error state.
+  const failedToOpen = !rich && !isLoading && (isError || !data);
+  useEffect(() => {
+    if (failedToOpen) setPanelAspect(null);
+  }, [failedToOpen, setPanelAspect]);
+
+  // Stable identity: `FileContentRenderer` keeps this in an effect's
+  // dependency array, and an inline arrow would re-run it on every render.
+  const handleStatusChange = useCallback(
+    (status: 'loading' | 'ready' | 'error') => {
+      if (status === 'error') setPanelAspect(null);
+    },
+    [setPanelAspect],
+  );
 
   if (rich) {
     return (
@@ -326,7 +408,28 @@ export function FilePreview({
         onPresent={onPresent}
       >
         <FileSourceProvider value={workspaceFileSource}>
-          <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
+          {/* Inside the source provider, not around it: a renderer that
+              measures also fetches, and nesting this way means it never has to
+              choose which context it is allowed to have. */}
+          {/* `onUnmeasurable` is the other half of holding a ratio across a
+              nav (see `Detail.measures`): a file that fetches fine and cannot
+              be RENDERED — a corrupt PDF, bytes that are not the image they
+              claim — reports 'ready' and no size, so without this the panel
+              would sit at the previous document's width behind a broken
+              preview. Only the renderer can tell those apart from "still
+              decoding". */}
+          <PreviewFitProvider
+            onMeasure={({ width, height }) => setPanelAspect(width / height)}
+            onUnmeasurable={() => setPanelAspect(null)}
+          >
+            <FileContentRenderer
+              filePath={path}
+              showHeader={false}
+              className="h-full"
+              fitOnOpen={isPdf}
+              onStatusChange={handleStatusChange}
+            />
+          </PreviewFitProvider>
         </FileSourceProvider>
       </PreviewShell>
     );
@@ -396,6 +499,15 @@ export function FilePreview({
               src={`data:${data.mimeType};base64,${data.content}`}
               alt={name}
               className="max-w-full rounded-md"
+              onLoad={(e) => {
+                // The same measurement the rich renderers publish through
+                // <PreviewFitProvider>, minus the context — here the <img> IS
+                // the renderer, so there is nothing to provide it to. Guarded
+                // by the very predicate that context uses, so the two paths
+                // cannot disagree about what a usable size is.
+                const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+                if (isUsableIntrinsicSize({ width, height })) setPanelAspect(width / height);
+              }}
             />
           </div>
         ) : (

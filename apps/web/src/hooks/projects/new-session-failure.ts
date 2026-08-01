@@ -1,3 +1,5 @@
+import type { ConnectorGateProfile } from '@/stores/connector-gate-store';
+
 /**
  * How a failed session create resolves, keyed by the server's error code.
  *
@@ -19,6 +21,55 @@ export function resolveCreateFailure(
 ): 'upgrade' | 'silent' | 'connect' | 'toast' {
   if (code === 'subscription_required' || code === 'no_account') return 'upgrade';
   if (code === 'concurrent_session_limit') return 'silent';
-  if (code === 'CONNECTOR_CONNECTION_REQUIRED') return 'connect';
+  // One code, not two. `CONNECTOR_CONNECTION_REQUIRED` was also listed here and
+  // the API has never emitted it — a dead branch that cost nothing only because
+  // the live code sits beside it.
+  //
+  // `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` deliberately does NOT open the gate.
+  // It means the project has no such connector at all, so the gate would ask
+  // someone to connect an account to something that does not exist; the toast is
+  // the honest outcome until a project owner adds it.
+  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED') return 'connect';
   return 'toast';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isConnectorGateProfile(value: unknown): value is ConnectorGateProfile {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.slug === 'string' &&
+    value.slug.length > 0 &&
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    (value.authorization_strategy === 'project' || value.authorization_strategy === 'user')
+  );
+}
+
+export function getConnectorAuthorizationRequiredProfiles(
+  error: unknown,
+): ConnectorGateProfile[] | null {
+  if (!isRecord(error)) return null;
+
+  const rootCode = error.code;
+  const payloads = [error.data, error.details, error].filter(isRecord);
+  for (const payload of payloads) {
+    if (
+      rootCode !== 'CONNECTOR_AUTHORIZATION_REQUIRED' &&
+      payload.code !== 'CONNECTOR_AUTHORIZATION_REQUIRED'
+    ) {
+      continue;
+    }
+
+    const profiles = payload.connector_profiles;
+    if (Array.isArray(profiles) && profiles.length > 0 && profiles.every(isConnectorGateProfile)) {
+      return profiles;
+    }
+  }
+
+  return null;
 }

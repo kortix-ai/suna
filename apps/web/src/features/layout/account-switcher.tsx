@@ -21,18 +21,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
-import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import {
-  CheckCircleSolid,
-  ChevronsUpDown,
-  CogOneSolid,
-  CreditCardSolid,
-  Search,
-} from '@mynaui/icons-react';
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDown,
+  GearSixIcon as CogOneSolid,
+  CreditCardIcon as CreditCardSolid,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { Icon } from '../icon/icon';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
@@ -191,7 +191,12 @@ export function AccountSwitcher({
                   <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
                     {itemLabel}
                   </span>
-                  {active && <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />}
+                  {active && (
+                    <CheckCircleSolid
+                      weight="fill"
+                      className="text-kortix-green size-3.5 shrink-0"
+                    />
+                  )}
                 </DropdownMenuItem>
               );
             })
@@ -207,7 +212,7 @@ export function AccountSwitcher({
               router.push(`/accounts/${activeAccount.account_id}`);
             }}
           >
-            <CogOneSolid className="size-3.5" />
+            <CogOneSolid weight="fill" className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">
               {tI18nHardcoded.raw(
                 'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
@@ -244,7 +249,7 @@ export function AccountSwitcher({
               )
             }
           >
-            <CreditCardSolid className="size-3.5" />
+            <CreditCardSolid weight="fill" className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">Billing</span>
           </DropdownMenuItem>
         )}

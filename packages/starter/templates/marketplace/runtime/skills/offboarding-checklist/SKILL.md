@@ -107,8 +107,7 @@ pending approval is listed as pending, not as done.
   otherwise. Deactivation/suspension is the terminal state the agent can
   reach; an actual deletion is a human decision made outside this workflow.
 - **Scoped, brokered credentials.** Okta, Google Workspace, Google Drive, and
-  GitHub access is injected into the sandbox at runtime and never exposed to
-  the model or written to logs.
+  GitHub access is injected into the sandbox at runtime, scoped to this agent's grant.
 - **Independent cases, no cross-run memory.** Each run is independent and can
   contain more than one departure — don't infer anything about today's
   departures from a previous session's state beyond what's recorded on each

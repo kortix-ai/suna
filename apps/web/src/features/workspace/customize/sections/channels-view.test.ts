@@ -93,8 +93,12 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
     expect(channelsSource).toContain('useDisconnectTeams');
   });
 
-  test('keeps the Teams row behind the channel feature flag', () => {
-    expect(channelsSource).toContain('if (mode && !mode.enabled) return null;');
+  test('keeps Teams behind the per-project `teams` experimental flag, exactly like Email', () => {
+    expect(channelsSource).toContain("projectQuery.data?.experimental?.teams === true");
+    expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);
+    expect(channelsSource).toMatch(/teamsChannelEnabled \? \([\s\S]{0,200}<TeamsChannelPanel/);
+    // One gate only — the old `mode.enabled` row check is gone.
+    expect(channelsSource).not.toContain('if (mode && !mode.enabled) return null;');
   });
 
   test('offers one-click Install / Add to Teams / Disconnect in the row', () => {
@@ -113,11 +117,13 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
 describe('Channels view — the table must not overflow its card', () => {
   test('workspace values truncate (a long tenant id / workspace must not stretch the table)', () => {
     expect(channelsSource).toMatch(/max-w-\[240px\] truncate/);
-    expect((channelsSource.match(/max-w-\[240px\] truncate/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect((channelsSource.match(/max-w-\[240px\] truncate/g) ?? []).length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   test('the actions column hugs its content instead of a fixed width that clips the buttons', () => {
-    expect(channelsSource).toContain('w-[1%] whitespace-nowrap text-right');
+    expect(channelsSource).toContain('w-[1%] text-right whitespace-nowrap');
     expect(channelsSource).not.toContain('<TableHead className="w-[120px]">');
   });
 });

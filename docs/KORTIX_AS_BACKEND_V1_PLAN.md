@@ -1,11 +1,15 @@
 # Kortix as a Backend (KaaB) — v1 Plan
 
-Status: Draft for review · rev 2 (verified against current `main`)
+Status: Historical and superseded
+
+> This document records the original v1 design. It is not current API
+> guidance. The product removed customer-reference usage attribution,
+> per-reference limits, and customer-reference connector selection. Use
+> [Drive Kortix as a Backend](./KORTIX_AS_A_BACKEND_GUIDE.md) for the current
+> session, connector authorization, scope, and cost contracts.
 
 > **Historical runtime scope.** This plan uses the published
-> `opencode_model` compatibility name and the v2 OpenCode REST path. The current
-> v3 runtime contract selects OpenCode, Claude Code, Codex, or Pi through
-> `agents.<name>.runtime`.
+> `opencode_model` compatibility name and the OpenCode REST path.
 
 ## 0. TL;DR
 

@@ -6,6 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Typed unified session-cost reads through
+  `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
+  combines finalized LLM and compute costs, model usage, and ledger entries.
 - `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
   `kortix.project(id).modelPicker()` for the compact, connection-aware selector
   catalog; the existing `llmCatalog` remains the complete runtime catalog.

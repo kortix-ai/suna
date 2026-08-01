@@ -15,7 +15,12 @@
  */
 
 import type { SessionPublicShare } from '@kortix/sdk';
-import { Check, FileText, Globe, Link2 } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  LinkSimpleIcon as Link2,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

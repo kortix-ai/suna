@@ -14,7 +14,7 @@ const ART = [
   '   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═╝',
 ];
 
-const TAGLINE = 'The operating system for AI workers';
+const TAGLINE = 'The open-source AI Management System';
 
 function colorize(s: string): string {
   return process.stdout.isTTY === true ? s : stripAnsi(s);

@@ -21,15 +21,12 @@
 
 import { getRequestSession } from '@/server/auth';
 import { buildUpstreamPath } from '@/server/upstream-path';
-import {
-  injectEndUserRef,
-  isSessionCreate,
-  isSessionList,
-  scopeSessionListToEndUser,
-} from '@/server/end-user';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
+import {
+  recordRuntimeProject,
+  resolveRuntimeProject,
+} from '@/server/runtime-access';
 import { addOwnedProject, isOwner, listOwnedProjects } from '@/server/users';
 import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
@@ -38,17 +35,26 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function upstreamBase(): string {
-  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(/\/+$/, '');
+  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(
+    /\/+$/,
+    '',
+  );
 }
 
 function jsonError(status: number, error: string, extraHeaders?: HeadersInit) {
   return Response.json({ error }, { status, headers: extraHeaders });
 }
 
-async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+async function handle(
+  req: NextRequest,
+  ctx: { params: Promise<{ path?: string[] }> },
+) {
   const apiKey = process.env.KORTIX_API_KEY;
   if (!apiKey) {
-    return jsonError(500, 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).');
+    return jsonError(
+      500,
+      'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).',
+    );
   }
 
   const session = getRequestSession(req);
@@ -69,49 +75,18 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
   const upstreamPath = built.path;
 
-  const policy = evaluatePolicy(req.method, upstreamPath, (projectId) =>
-    isOwner(session.userId, projectId),
+  const policy = evaluatePolicy(
+    req.method,
+    upstreamPath,
+    (projectId) => isOwner(session.userId, projectId),
     resolveRuntimeProject,
   );
   if (!policy.allow) return jsonError(policy.status, policy.reason);
 
-  const url = new URL(req.url);
-  // The session list is scoped to the signed-in end-user server-side; without
-  // this the browser sees (and can ask for) every OTHER Lumen user's sessions.
-  let upstreamSearch = url.search;
-  if (isSessionList(req.method, upstreamPath)) {
-    const scoped = scopeSessionListToEndUser(url.search, session.userId);
-    if (scoped.action === 'reject') return jsonError(403, scoped.reason);
-    upstreamSearch = scoped.search;
-  }
-  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${upstreamSearch}`;
-
-  // Kortix-as-a-Backend: every upstream call carries ONE credential (the
-  // wrapper's API key), so upstream cannot tell Lumen's users apart by itself.
-  // Stamp the authenticated user onto session creates so per-end-user usage,
-  // idempotency-replay protection and the per-end-user cap all key on a value
-  // the browser cannot forge.
-  let forwardRequest: NextRequest | Request = req;
-  if (isSessionCreate(req.method, upstreamPath)) {
-    let parsed: unknown = null;
-    try {
-      parsed = await req.clone().json();
-    } catch {
-      parsed = null;
-    }
-    const decision = injectEndUserRef(parsed, session.userId);
-    if (decision.action === 'reject') return jsonError(403, decision.reason);
-    if (decision.action === 'inject') {
-      forwardRequest = new Request(req.url, {
-        method: req.method,
-        headers: req.headers,
-        body: JSON.stringify(decision.body),
-      });
-    }
-  }
+  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${new URL(req.url).search}`;
 
   const upstreamRes = await forwardKortixRequest({
-    request: forwardRequest as NextRequest,
+    request: req,
     upstreamUrl,
     token: apiKey,
   });
@@ -136,7 +111,10 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
       // through unchanged rather than risk mangling it.
       return new Response(text, {
         status: upstreamRes.status,
-        headers: { 'content-type': upstreamRes.headers.get('content-type') ?? 'text/plain' },
+        headers: {
+          'content-type':
+            upstreamRes.headers.get('content-type') ?? 'text/plain',
+        },
       });
     }
 
@@ -146,14 +124,17 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
     }
 
     if (policy.recordRuntimeProjectId && upstreamRes.ok) {
-      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)?.sandbox
-        ?.external_id;
-      if (runtimeId) recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
+      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)
+        ?.sandbox?.external_id;
+      if (runtimeId)
+        recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
     }
 
     if (policy.filterProjectsList && Array.isArray(body)) {
       const owned = new Set(listOwnedProjects(session.userId));
-      body = body.filter((item) => owned.has((item as { project_id?: string })?.project_id ?? ''));
+      body = body.filter((item) =>
+        owned.has((item as { project_id?: string })?.project_id ?? ''),
+      );
     }
 
     return Response.json(body, { status: upstreamRes.status });
@@ -163,4 +144,10 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   return upstreamRes;
 }
 
-export { handle as DELETE, handle as GET, handle as PATCH, handle as POST, handle as PUT };
+export {
+  handle as DELETE,
+  handle as GET,
+  handle as PATCH,
+  handle as POST,
+  handle as PUT,
+};

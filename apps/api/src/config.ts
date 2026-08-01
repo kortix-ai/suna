@@ -150,10 +150,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // Per-project model enablement: when on, the gateway rejects a model a project
-  // has disabled and the picker hides it. On by default (empty disabled-set =
-  // no behavior change); kill-switch drops back to catalog-only gating.
-  MODEL_ENABLEMENT_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -251,10 +247,6 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // OpenCode client transport. REST remains the default until the project
-  // experimental flag enables ACP after parity verification.
-  KORTIX_OPENCODE_TRANSPORT: z.enum(['acp', 'rest']).default('rest'),
-
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
   // added for a future per-agent executor-token auth model that isn't built yet,
@@ -264,17 +256,13 @@ const envSchema = z.object({
   // the executor token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
 
-  // The NARROWER lock that IS on by default: refuse only an in-session agent
-  // switch that would change which project SECRETS are in scope. Ordinary
-  // switching between agents with the same `secrets` grant stays free, so this
-  // doesn't reintroduce the false-positives that gated the name-based lock
-  // above off. It exists because a sandbox's env is provisioned for ONE grant:
-  // re-scoping it on a later turn cannot un-read what the previous agent
-  // already pulled into the box's tmpfs env file, its shells, and its context.
-  // Turning it off degrades to re-scoping onto the running agent's grant — it
-  // never restores the old behavior of resolving from the session's stale
-  // create-time agent. See projects/lib/secret-grant.ts.
-  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolTrue,
+  // Optional strict lock for operators that require one immutable secret grant
+  // per sandbox. OFF by default: an in-session agent switch re-resolves the
+  // running agent's grant, replaces the OpenCode env, and re-mints the session
+  // token's connector/Kortix-CLI grant before the prompt is forwarded. Enabling
+  // this flag refuses only switches whose secret grants differ. See
+  // projects/lib/secret-grant.ts.
+  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolFalse,
 
   // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
   // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
@@ -335,7 +323,8 @@ const envSchema = z.object({
     'https://login.botframework.com/v1/.well-known/openidconfiguration',
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
-  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  // Whether the Teams channel is offered is NOT an operator env var — it is the
+  // per-project `teams` experimental feature (experimental/features.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -488,10 +477,13 @@ const envSchema = z.object({
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
 
-  // ── E2B Cloud — sandbox provisioning (conditional: required if enabled) ──
+  // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
+  // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
+  // E2B Cloud. A self-hosted deployment uses its own base domain.
   // E2B_TEMPLATE is an optional ready fallback template. Project-specific
   // templates built by the shared snapshot system take precedence.
   E2B_API_KEY: optStr,
+  E2B_DOMAIN: optStrDefault('e2b.dev'),
   E2B_TEMPLATE: optStr,
 
   // ── Local Docker — EXPERIMENTAL sandbox provider (same-machine only) ────
@@ -588,14 +580,6 @@ const envSchema = z.object({
   TUNNEL_MAX_WS_MESSAGE_SIZE: optInt(5 * 1024 * 1024),
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
-  /** Max LIVE sessions one Kortix-as-a-Backend end-user (origin_ref) may hold.
-   *  0 / unset = disabled, which is the default: the account-wide cap still
-   *  applies. Opt-in because the right number is wrapper-specific. */
-  KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: optInt(0),
-  /** Per-END-USER spend ceiling in USD over a rolling window. 0/unset = off. */
-  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: optNum(0),
-  /** The rolling window the spend ceiling is measured over. */
-  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: optInt(30),
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
@@ -910,7 +894,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  MODEL_ENABLEMENT_ENABLED: env.MODEL_ENABLEMENT_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
@@ -960,7 +943,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
@@ -990,7 +972,6 @@ export const config = {
   MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
   MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
   TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
-  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
   TEAMS_APP_NAME: env.TEAMS_APP_NAME,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
@@ -1055,6 +1036,7 @@ export const config = {
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,
+  E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
   LOCAL_DOCKER_NETWORK: env.LOCAL_DOCKER_NETWORK,
   LOCAL_DOCKER_SOCKET_PATH: env.LOCAL_DOCKER_SOCKET_PATH,
@@ -1132,9 +1114,6 @@ export const config = {
   TUNNEL_RATE_LIMIT_WS_CONNECT: env.TUNNEL_RATE_LIMIT_WS_CONNECT,
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
-  KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: env.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT,
-  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: env.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD,
-  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: env.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS,
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,

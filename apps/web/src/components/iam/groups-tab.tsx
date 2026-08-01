@@ -5,8 +5,14 @@ import { useTranslations } from 'next-intl';
 // Groups tab on the account page. List + create + delete + navigate to
 // detail. Mirrors Cloudflare's "User Groups" surface.
 
+import {
+  DotsThreeIcon as MoreHorizontal,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 

@@ -3,8 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { MessageWithParts, ProviderListResponse, RuntimeAgent } from '@kortix/sdk/react';
-import { Paperclip } from 'lucide-react';
+import type { Agent, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
+import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
@@ -39,7 +39,7 @@ export interface ComposerToolbarProps {
 
   /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
    *  session-chat-input.tsx) — this component does no further filtering. */
-  agents: RuntimeAgent[];
+  agents: Agent[];
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
   agentSelectorLocked: boolean;
@@ -139,7 +139,7 @@ export function ComposerToolbar({
               className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
               aria-label="Attach files"
             >
-              <Paperclip className="h-4 w-4" strokeWidth={2} />
+              <Paperclip className="h-4 w-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">

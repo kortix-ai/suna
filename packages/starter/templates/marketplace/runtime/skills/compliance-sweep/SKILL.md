@@ -133,7 +133,7 @@ saying so; don't skip the post just because the sweep is clean.
   carried between sweeps is the policy file itself, and that's authored by a
   human, not written by this skill.
 - **Scoped, brokered secrets.** AWS access is read-only and brokered
-  server-side; never surfaced to you or written to logs.
+  server-side; scoped to this agent's grant.
 - **File everything the policy flags.** A finding you'd personally wave through
   still gets filed as written — this skill checks the policy, not intent.
 </guardrails>

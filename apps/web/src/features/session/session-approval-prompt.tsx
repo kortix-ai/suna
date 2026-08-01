@@ -38,7 +38,10 @@ import {
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import type { SessionAuditAction } from '@kortix/sdk';
-import { ExternalLink, ShieldAlert } from 'lucide-react';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 
 /** Fields that answer "what does this touch?" — surfaced first, in this order. */
@@ -90,7 +93,7 @@ export function SessionApprovalPrompt() {
 
   return (
     <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
         <ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
         <span className="text-foreground text-xs font-semibold tracking-tight">
           {pending.length === 1
@@ -99,7 +102,7 @@ export function SessionApprovalPrompt() {
         </span>
         <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
       </div>
-      <ul className="divide-amber-500/15 divide-y">
+      <ul className="divide-y divide-amber-500/15">
         {pending.map((a) => {
           const summary = argsSummary(a);
           return (

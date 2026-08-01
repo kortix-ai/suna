@@ -19,6 +19,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
+  normalizeRequiredConnectorAliases,
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
@@ -82,6 +83,42 @@ describe('readAgentBlockV2', () => {
     if (!read.ok) return;
     expect(read.schemaVersion).toBe(1);
     expect(read.block).toBeNull();
+  });
+
+  test('normalizes the deprecated input alias in the response block', () => {
+    const read = readAgentBlockV2(
+      v2Manifest(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    connectors: [gmail]
+    connectors_personal: [gmail]
+`),
+      'support',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.block?.connectors_required).toEqual(['gmail']);
+    expect(read.block).not.toHaveProperty('connectors_personal');
+  });
+
+  test('rejects conflicting aliases instead of returning an ambiguous block', () => {
+    const read = readAgentBlockV2(
+      v2Manifest(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+    connectors_personal: [slack]
+`),
+      'support',
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.error).toContain('must match');
   });
 });
 
@@ -276,15 +313,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
   });
 });
 
-/**
- * The PUT /agents/:name/config route accepts `connectors_personal` and then
- * re-parses the RESULT through `extractAgents` before committing. That guard
- * matters because `validateManifest` (which applyAgentBlockV2 gates on) does not
- * inspect `connectors_personal` at all — only the agent parser enforces the
- * subset rule, and a block that violates it fails to parse, which would break
- * session-create for that agent.
- */
-describe('connectors_personal — the guard the config route commits behind', () => {
+describe('connectors_required — the config route validation gate', () => {
   const manifestWith = (connectors: string[]) =>
     parseManifestString(
       ['kortix_version: 2', 'default_agent: support', 'agents:', '  support:', `    connectors: [${connectors.join(', ')}]`, ''].join('\n'),
@@ -296,28 +325,44 @@ describe('connectors_personal — the guard the config route commits behind', ()
     const manifest = manifestWith(['gmail', 'slack']);
     const applied = applyAgentBlockV2(manifest, 'support', {
       connectors: ['gmail', 'slack'],
-      connectors_personal: ['gmail'],
+      connectors_required: ['gmail'],
     } as never);
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     const parsed = extractAgents({ ...manifest, raw: applied.raw });
     expect(parsed.errors).toEqual([]);
-    expect(parsed.specs.find((s) => s.name === 'support')?.connectorsPersonal).toEqual(['gmail']);
+    expect(parsed.specs.find((s) => s.name === 'support')?.connectorsRequired).toEqual(['gmail']);
   });
 
-  test('a NON-subset is caught by the re-parse (applyAgentBlockV2 alone would let it through)', () => {
+  test('grant narrowing prunes required connectors before serialization', () => {
     const manifest = manifestWith(['gmail']);
     const applied = applyAgentBlockV2(manifest, 'support', {
       connectors: ['gmail'],
-      connectors_personal: ['slack'],
+      connectors_required: ['slack'],
     } as never);
-    // The schema validator does NOT know about connectors_personal, so the apply
-    // itself succeeds — this is exactly why the route needs the extra guard.
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    const parsed = extractAgents({ ...manifest, raw: applied.raw });
-    const problem = parsed.errors.find((e) => e.name === 'support');
-    expect(problem).toBeDefined();
-    expect(problem?.error).toContain('subset of connectors');
+    const block = (applied.raw.agents as Record<string, Record<string, unknown>>).support;
+    expect(block).not.toHaveProperty('connectors_required');
+  });
+
+  test('the deprecated alias is imported and serialized as canonical', () => {
+    const manifest = manifestWith(['gmail']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail'],
+      connectors_personal: ['gmail'],
+    } as never);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const block = (applied.raw.agents as Record<string, Record<string, unknown>>).support;
+    expect(block.connectors_required).toEqual(['gmail']);
+    expect(block).not.toHaveProperty('connectors_personal');
+  });
+
+  test('an explicit empty list survives request normalization so scope can clear it', () => {
+    const normalized = normalizeRequiredConnectorAliases({ connectors_required: [] });
+    expect(normalized.ok).toBe(true);
+    if (!normalized.ok) return;
+    expect(normalized.block.connectors_required).toEqual([]);
   });
 });

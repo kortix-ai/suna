@@ -7,9 +7,9 @@ import {
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
+  buildSessionTitleRequestBody,
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
-  promptInfoFromEnvelope,
   sanitizeGeneratedTitle,
   titleSourceForCreate,
 } from '../projects/session-title-generate';
@@ -53,6 +53,18 @@ describe('sanitizeGeneratedTitle', () => {
   });
 });
 
+describe('buildSessionTitleRequestBody', () => {
+  it('reserves enough output tokens for reasoning-capable fallback models', () => {
+    const body = buildSessionTitleRequestBody(
+      'glm-5.2',
+      'Please set up the MS Graph OAuth2 connector',
+    );
+
+    expect(body.max_tokens).toBeGreaterThanOrEqual(256);
+    expect(body.stream).toBe(false);
+  });
+});
+
 describe('extractPromptInfo', () => {
   it('reads REST { parts } text blocks and the kortix-namespace model', () => {
     const body = bodyOf({
@@ -65,21 +77,6 @@ describe('extractPromptInfo', () => {
     expect(extractPromptInfo(body, headers())).toEqual({
       text: 'hello\nworld',
       model: 'codex/gpt-5.6-sol',
-    });
-  });
-
-  it('reads ACP { params: { prompt, model } }', () => {
-    const body = bodyOf({
-      method: 'session/prompt',
-      params: {
-        sessionId: 'x',
-        prompt: [{ type: 'text', text: 'set up connector' }],
-        model: { providerID: 'kortix', modelID: 'glm-5.2' },
-      },
-    });
-    expect(extractPromptInfo(body, headers())).toEqual({
-      text: 'set up connector',
-      model: 'glm-5.2',
     });
   });
 
@@ -108,36 +105,6 @@ describe('extractPromptInfo', () => {
     expect(
       extractPromptInfo(bodyOf({ parts: [{ type: 'text', text: 'x' }] }), headers('text/plain')),
     ).toEqual({ text: null, model: null });
-  });
-});
-
-describe('promptInfoFromEnvelope', () => {
-  it('matches extractPromptInfo over the same envelope, parsed vs encoded', () => {
-    const envelope = {
-      method: 'session/prompt',
-      params: {
-        sessionId: 'x',
-        prompt: [
-          { type: 'text', text: 'first' },
-          { type: 'image', url: 'x' },
-          { type: 'text', text: 'second' },
-        ],
-        model: { providerID: 'kortix', modelID: 'glm-5.2' },
-      },
-    };
-    expect(promptInfoFromEnvelope(envelope)).toEqual({ text: 'first\nsecond', model: 'glm-5.2' });
-    expect(promptInfoFromEnvelope(envelope)).toEqual(
-      extractPromptInfo(bodyOf(envelope), headers()),
-    );
-  });
-
-  it('is null-safe for non-object and prompt-less envelopes', () => {
-    expect(promptInfoFromEnvelope(null)).toEqual({ text: null, model: null });
-    expect(promptInfoFromEnvelope('nope')).toEqual({ text: null, model: null });
-    expect(promptInfoFromEnvelope({ method: 'session/cancel' })).toEqual({
-      text: null,
-      model: null,
-    });
   });
 });
 

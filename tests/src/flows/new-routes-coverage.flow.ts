@@ -411,16 +411,11 @@ flow(
   {
     domain: 'coverage',
     routes: [
-      'GET /v1/projects/:projectId/connector-profiles/:profileId/policies',
       'GET /v1/projects/:projectId/connector-profiles/all',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId/acp',
-      'GET /v1/projects/:projectId/sessions/:sessionId/acp',
-      'GET /v1/projects/:projectId/sessions/:sessionId/acp/transcript',
-      'POST /v1/projects/:projectId/sessions/:sessionId/acp',
+      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
-      'PUT /v1/projects/:projectId/connector-profiles/:profileId/policies',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/acp-identity',
       'PUT /v1/projects/:projectId/sessions/:sessionId/model',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
     ],
   },
   async (ctx) => {
@@ -429,12 +424,7 @@ flow(
     const profileParams = { ...projectParams, profileId: ZERO_UUID };
     const sessionParams = { ...projectParams, sessionId: ZERO_UUID };
 
-    await ctx.step('unknown project hides connector profile reads', async () => {
-      const policies = await owner.get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/policies',
-        { params: profileParams },
-      );
-      policies.status(404);
+    await ctx.step('unknown project hides the connector authorization roster', async () => {
       const roster = await owner.get('/v1/projects/:projectId/connector-profiles/all', {
         params: projectParams,
       });
@@ -448,53 +438,26 @@ flow(
         { params: profileParams },
       );
       makeDefault.status(404);
-      const policies = await owner.put(
-        '/v1/projects/:projectId/connector-profiles/:profileId/policies',
-        { policies: [] },
-        { params: profileParams },
-      );
-      policies.status(404);
     });
 
-    await ctx.step('unknown project blocks ACP identity and model mutations', async () => {
-      const identity = await owner.put(
-        '/v1/projects/:projectId/sessions/:sessionId/acp-identity',
-        {
-          acp_server_id: ZERO_UUID,
-          runtime_harness: 'codex',
-          acp_session_id: 'codex-native-1',
-        },
+    await ctx.step('unknown project blocks session scope reads and mutations', async () => {
+      const scopeRead = await owner.get(
+        '/v1/projects/:projectId/sessions/:sessionId/scope',
         { params: sessionParams },
       );
-      identity.status(404);
+      scopeRead.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
         { opencode_model: 'openai/gpt-5' },
         { params: sessionParams },
       );
       model.status(404);
-    });
-
-    await ctx.step('unknown project hides managed ACP routes', async () => {
-      const stream = await owner.get('/v1/projects/:projectId/sessions/:sessionId/acp', {
-        params: sessionParams,
-      });
-      stream.status(404);
-      const transcript = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/acp/transcript',
+      const scope = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/scope',
+        { secrets: [] },
         { params: sessionParams },
       );
-      transcript.status(404);
-      const prompt = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/acp',
-        { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: {} },
-        { params: sessionParams },
-      );
-      prompt.status(404);
-      const close = await owner.del('/v1/projects/:projectId/sessions/:sessionId/acp', {
-        params: sessionParams,
-      });
-      close.status(404);
+      scope.status(404);
     });
   },
 );

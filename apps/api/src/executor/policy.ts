@@ -306,14 +306,6 @@ export interface EffectiveResolveInput {
   /** Connector-relative path, e.g. `charges.create` — matched against connector policies. */
   relPath: string;
   projectPolicies: Policy[];
-  /**
-   * Rules for the specific CONNECTION in play (executor_connection_policies,
-   * keyed by profile_id). One connector can hold several connections that
-   * warrant different permissions — support@ read-only while sales@ may send —
-   * which a connector-keyed rule cannot express. Omit for call sites with no
-   * connection in hand; behaviour is then exactly as before.
-   */
-  connectionPolicies?: Policy[];
   connectorPolicies: Policy[];
   risk: Risk;
   /** Project setting from `policy.default_mode` in kortix.yaml. */
@@ -334,14 +326,13 @@ export interface EffectiveResolveInput {
 export interface EffectiveResolveResult {
   action: PolicyAction;
   /** Why this action — which scope decided. Useful for explainability + audit. */
-  source: 'project' | 'connection' | 'connector' | 'risk_default' | 'allow_all';
+  source: 'project' | 'connector' | 'risk_default' | 'allow_all';
 }
 
 /**
  * Resolve the effective action across both scopes + the risk-derived default.
  *   1. project `[[policies]]` (first match wins) → if hit, return.
- *   2. the CONNECTION's own rules (first match wins) → if hit, return.
- *   3. connector `[[connectors.policies]]` (first match wins) → if hit, return.
+ *   2. connector `[[connectors.policies]]` (first match wins) → if hit, return.
  *   3. `defaultMode = risk` → action from risk class.
  *   4. `defaultMode = allow_all` → always_run.
  *
@@ -354,17 +345,6 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
 
   const projectHit = firstMatchOrNull(input.fullPath, input.projectPolicies, args, argsAvailable);
   if (projectHit) return { action: projectHit, source: 'project' };
-
-  // The connection is MORE specific than the connector, so it wins over the
-  // connector default — but still loses to a project rule above, which keeps the
-  // admin guardrail un-overridable.
-  const connectionHit = firstMatchOrNull(
-    input.relPath,
-    input.connectionPolicies ?? [],
-    args,
-    argsAvailable,
-  );
-  if (connectionHit) return { action: connectionHit, source: 'connection' };
 
   const connectorHit = firstMatchOrNull(
     input.relPath,

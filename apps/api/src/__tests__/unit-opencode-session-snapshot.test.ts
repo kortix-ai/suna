@@ -41,6 +41,14 @@ function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
   } as unknown as ProjectSessionRow;
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for snapshot sync');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe('syncOpencodeSessionSnapshot', () => {
   it('MERGES opencode_sessions in-SQL and never rewrites the rest of metadata', async () => {
     dbUpdates.length = 0;
@@ -115,7 +123,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
     // A second schedule while the first is in flight is deduped.
     scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
     expect(pendingSnapshotSyncs()).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await waitFor(() => calls.length === 2 && pendingSnapshotSyncs() === 0);
     expect(calls).toEqual(['s', 's']);
     expect(pendingSnapshotSyncs()).toBe(0);
   });
@@ -134,7 +142,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
             },
           },
         );
-        await new Promise((resolve) => setTimeout(resolve, 15));
+        await waitFor(() => pendingSnapshotSyncs() === 0);
       })(),
     ).resolves.toBeUndefined();
   });

@@ -13,25 +13,25 @@ import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight,
-  Boxes,
-  Check,
-  Copy,
-  Cpu,
-  FileCode2,
-  GitBranch,
-  GitPullRequest,
-  KeyRound,
-  Plug,
-  Server,
-  Terminal as TerminalIcon,
-  Workflow,
-} from 'lucide-react';
+  CheckIcon as AiOutlineCheck,
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  CpuIcon as Cpu,
+  FileCodeIcon as FileCode2,
+  GitBranchIcon as GitBranch,
+  GitPullRequestIcon as GitPullRequest,
+  ArrowRightIcon as HiArrowRight,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  HardDrivesIcon as Server,
+  TerminalIcon,
+  FlowArrowIcon as Workflow,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
-import { AiOutlineCheck } from 'react-icons/ai';
-import { HiArrowRight } from 'react-icons/hi';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';
@@ -157,7 +157,8 @@ const MENTAL_MODEL = [
   {
     icon: Server,
     title: 'You own the stack',
-    desc: 'Open and source-available. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.',
+    // ACCURACY: say "open source" and stop — never characterise the licence.
+    desc: 'Open source. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.',
   },
 ];
 
@@ -220,7 +221,8 @@ const RUNS_ANYWHERE = [
   {
     icon: Server,
     title: 'Self-host anywhere',
-    desc: 'A laptop, a VPS, your own VPC, or fully air-gapped — the exact same stack as Kortix cloud.',
+    // ACCURACY: not "air-gapped" — `self-host start` pulls images from docker.io.
+    desc: 'A laptop, a VPS, or your own VPC — the exact same stack as Kortix cloud.',
   },
   {
     icon: Cpu,
@@ -300,7 +302,7 @@ function Step({
       <span className="hidden lg:flex">
         <span className={cn('sticky top-40 z-10 shrink-0', badgeClass)}>{n}</span>
       </span>
-      <div className="grid w-full max-w-6xl min-w-0 flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-14">
+      <div className="grid w-full max-w-7xl min-w-0 flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-14">
         <Reveal className={cn(flip && 'min-h-0 flex-1 grow space-y-5 lg:order-2')}>
           <div className="flex items-center gap-3.5 lg:hidden">
             <span className={cn(badgeClass)}>{n}</span>
@@ -560,7 +562,7 @@ export default function DevelopersPage() {
         <div className="absolute inset-0 z-0 mask-y-to-95%">
           <KortixLetterField seed={3382} />
         </div>
-        <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-0">
+        <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-0">
           <section className="w-full">
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
               {tI18nHardcoded.raw(
@@ -622,7 +624,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -658,7 +660,7 @@ export default function DevelopersPage() {
       </section>
 
       <section className="flex flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
-        <div className="mx-auto w-full max-w-6xl">
+        <div className="mx-auto w-full max-w-7xl">
           <Reveal>
             <div className="mb-8 max-w-2xl">
               <Eyebrow>
@@ -898,7 +900,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -960,7 +962,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Scalability */}
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal>
             <Eyebrow>Scale</Eyebrow>
@@ -1050,7 +1052,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Connectors */}
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-2">
             <Eyebrow>Connectors</Eyebrow>
@@ -1087,7 +1089,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-2 max-w-2xl">
             <Eyebrow>
@@ -1154,7 +1156,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
+      <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0">
         <Reveal>
           <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
             <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">

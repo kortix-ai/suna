@@ -6,8 +6,16 @@
 // rotation = disable + create new.
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  DotsThreeIcon as MoreHorizontal,
+  PauseCircleIcon as PauseCircle,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, MoreHorizontal, PauseCircle, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -96,8 +104,8 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">Service accounts</p>
           <p className="text-muted-foreground text-xs">
-            Machine identities for CI/CD and integrations. Attach policies just like a member —
-            pick the service account as the principal when creating a policy.
+            Machine identities for CI/CD and integrations. Attach policies just like a member — pick
+            the service account as the principal when creating a policy.
           </p>
         </div>
         {canManage && (
@@ -168,10 +176,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                             Disable
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem
-                          onClick={() => setDeleteTarget(sa)}
-                          variant="destructive"
-                        >
+                        <DropdownMenuItem onClick={() => setDeleteTarget(sa)}>
                           <Trash2 className="size-3.5 shrink-0" />
                           Delete permanently
                         </DropdownMenuItem>
@@ -281,8 +286,8 @@ function CreateServiceAccountDialog({
         <ModalHeader>
           <ModalTitle>New service account</ModalTitle>
           <ModalDescription>
-            A bearer token will be shown once after creation. Attach policies to it from the
-            member detail view (it appears under the Token principal type).
+            A bearer token will be shown once after creation. Attach policies to it from the member
+            detail view (it appears under the Token principal type).
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="space-y-4">
@@ -368,7 +373,11 @@ function ShowBearerDialog({
           </div>
           <div className="flex items-center justify-between gap-2">
             <Button size="sm" variant="outline" onClick={copy} className="gap-1.5">
-              {copied ? <Check className="size-3.5 shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
+              {copied ? (
+                <Check className="size-3.5 shrink-0" />
+              ) : (
+                <Copy className="size-3.5 shrink-0" />
+              )}
               {copied ? 'Copied' : 'Copy'}
             </Button>
             <Link

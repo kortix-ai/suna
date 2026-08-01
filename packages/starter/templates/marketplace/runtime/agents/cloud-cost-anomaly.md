@@ -6,7 +6,6 @@ description: >-
   alerts {{alert_channel}} with the delta. Read-only and alert-only — never
   modifies or deletes a resource or changes a budget.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

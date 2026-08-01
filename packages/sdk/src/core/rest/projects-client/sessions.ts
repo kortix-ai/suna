@@ -4,8 +4,6 @@ import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 
-type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
-
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
@@ -31,11 +29,6 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
-  runtime_transport?: 'acp' | 'rest';
-  runtime_harness?: SessionRuntimeHarness;
-  native_agent?: string | null;
-  acp_server_id?: string | null;
-  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.
@@ -62,10 +55,6 @@ export interface ProjectSession {
    *  token kind, not the surface. A backend (PAT/service-account) create is
    *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
   origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
-  /** The wrapper's end-user this session acts for (backend origin only). */
-  end_user_ref?: string | null;
-  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
-  origin_ref?: string | null;
   /** The per-session secrets allowlist that was applied (identifiers); null = none. */
   secrets_allowlist?: string[] | null;
   sharing?: ConnectorSharing | null;
@@ -85,9 +74,21 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  profile_id: string;
+  authorization_id: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
+export type SessionConnectorBindingInput =
+  | {
+      authorization_id: string;
+      /** @deprecated Use `authorization_id`. Equal dual IDs remain accepted. */
+      profile_id?: string;
+    }
+  | {
+      authorization_id?: never;
+      /** @deprecated Use `authorization_id`. */
+      profile_id: string;
+    };
+export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
 /** Public body for POST /projects/:projectId/sessions. */
 export interface CreateProjectSessionInput {
@@ -105,41 +106,19 @@ export interface CreateProjectSessionInput {
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
-  /** Logical connector alias -> active profile available to the caller: their
-   * own member profile, a project default, or an operator-managed profile when
-   * the caller holds the management capability. */
-  connector_bindings?: SessionConnectorBindings;
+  /** Logical connector alias -> active authorization available to the caller. */
+  connector_bindings?: SessionConnectorBindingsInput;
   /**
-   * When `connector_bindings` is set, binding any alias normally disables the
-   * project-default fallback for every OTHER (unbound) alias ("all-or-nothing").
-   * `inherit_unbound: true` keeps that fallback, so you can override just one
-   * connector (e.g. a user's own account) without re-binding the rest. Only ever
-   * inherits the project default — never another owner's profile.
+   * When `connector_bindings` is set, unbound aliases fail closed.
+   * `inherit_unbound: true` keeps strategy-based default resolution for them.
    */
   inherit_unbound?: boolean;
   /**
-   * Interactive-only: connectors the acting user must have connected themselves
-   * for this session (by alias, e.g. `['gmail']`). The server resolves each to
-   * the caller's OWN member profile; if one isn't connected, create fails with a
-   * structured `CONNECTOR_CONNECTION_REQUIRED` naming the connector so a UI can
-   * prompt a connect. Implies `inherit_unbound`. Rejected for backend / service-
-   * account tokens (they have no single "current user" — use `connector_bindings`).
+   * Connector profiles that must resolve a strategy-compatible authorization
+   * before provisioning. Missing authorizations return
+   * `CONNECTOR_AUTHORIZATION_REQUIRED`.
    */
   require_connectors?: string[];
-  /**
-   * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
-   * bearer). The wrapper's opaque end-user this session acts for; recorded on the
-   * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend
-   * caller supplying it is rejected 403. Attribution only — pass the user's
-   * connectors via connector_bindings.
-   */
-  /** Your opaque handle for the END-USER this session acts for. Backend origin only. */
-  end_user_ref?: string;
-  /**
-   * @deprecated Renamed to `end_user_ref`. Still accepted; sending both is fine
-   * only if they agree (disagreeing values are rejected 400).
-   */
-  origin_ref?: string;
   /**
    * Kortix-as-a-Backend (backend-origin callers only). Narrow which project
    * secrets (by identifier) this session's sandbox receives, from the agent's
@@ -178,20 +157,13 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
-/**
- * @param options.scope - `project` asks for the manager-only full inventory.
- * @param options.end_user_ref - Kortix-as-a-Backend: return only the sessions
- *   this wrapper created for ONE of its end-users. Filtered server-side, so a
- *   wrapper never has to fetch the whole project to answer "show me this
- *   customer's sessions".
- */
+/** @param options.scope - `project` asks for the manager-only full inventory. */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project'; end_user_ref?: string },
+  options?: { scope?: 'visible' | 'project' },
 ) {
   const params = new URLSearchParams();
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
-  if (options?.end_user_ref) params.set('end_user_ref', options.end_user_ref);
   const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
@@ -319,7 +291,10 @@ export async function createProjectSession(projectId: string, input?: CreateProj
 
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
+    await backendApi.post<WarmProjectSessionResult>(
+      `/projects/${projectId}/sessions/warm`,
+      {},
+    ),
   );
   markSessionFresh(result.session.session_id);
   return result;
@@ -330,9 +305,11 @@ export async function claimWarmProjectSession(
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
-      showErrors: false,
-    }),
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions/warm/claim`,
+      input,
+      { showErrors: false },
+    ),
   );
   markSessionFresh(session.session_id);
   return session;
@@ -558,12 +535,26 @@ export interface SessionScopeInput {
    */
   secrets?: string[] | null;
   /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
-  connector_bindings?: Record<string, { profile_id: string }>;
+  connector_bindings?: SessionConnectorBindingsInput;
+  /**
+   * FULL new list of connector aliases this session REQUIRES — REPLACES the
+   * previous one. Omit to leave untouched.
+   *
+   * Unlike `connector_bindings`, an alias here needs nothing connected to it:
+   * that is the point. A binding says "use THIS connection" and must carry an
+   * authorization id, so it cannot express "this session needs Gmail and has
+   * none". Naming an alias here makes the next turn stop with
+   * `CONNECTOR_AUTHORIZATION_REQUIRED` and a connect prompt instead of letting
+   * the agent discover the gap mid-answer.
+   */
+  require_connectors?: string[] | null;
 }
 
-export interface SessionScopeResult {
+export interface SessionScope {
   secrets_allowlist: string[] | null;
-  connector_bindings: Record<string, { profile_id: string }>;
+  /** Aliases this session requires, connected or not. See `require_connectors`. */
+  required_connectors: string[] | null;
+  connector_bindings: SessionConnectorBindings;
   dropped_secrets: string[];
   added_secrets: string[];
   dropped_bindings: string[];
@@ -578,6 +569,20 @@ export interface SessionScopeResult {
   detail: string;
 }
 
+/** @deprecated Use `SessionScope`. */
+export type SessionScopeResult = SessionScope;
+
+export async function getProjectSessionScope(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionScope> {
+  return unwrap(
+    await backendApi.get<SessionScope>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+    ),
+  );
+}
+
 /**
  * Re-scope a RUNNING session. Set semantics: what you send replaces what was
  * there, and takes effect from the next prompt.
@@ -586,22 +591,40 @@ export async function setProjectSessionScope(
   projectId: string,
   sessionId: string,
   scope: SessionScopeInput,
-): Promise<SessionScopeResult> {
+): Promise<SessionScope> {
   return unwrap(
-    await backendApi.put<SessionScopeResult>(
+    await backendApi.put<SessionScope>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
       scope,
     ),
   );
 }
 
+export interface SessionModelChangeResult {
+  opencode_model: string;
+  /** True only when a LIVE sandbox took the new model. */
+  applied_live: boolean;
+  /**
+   * `true` when a live push was required and FAILED: the model is stored, but
+   * the running harness still answers from the OLD one.
+   *
+   * Check this, never `!applied_live`, before telling a user the change landed.
+   * `applied_live: false` is also the ordinary answer for a session with no live
+   * sandbox, where the stored value IS the mechanism and the next start reads
+   * it. Treating the two the same is how a `502` env-sync failure got reported
+   * as "saved — applies when this session next starts".
+   */
+  push_failed?: true;
+  detail?: string;
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
   opencodeModel: string,
-): Promise<{ opencode_model: string; applied_live: boolean; detail?: string }> {
+): Promise<SessionModelChangeResult> {
   return unwrap(
-    await backendApi.put<{ opencode_model: string; applied_live: boolean; detail?: string }>(
+    await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
     ),

@@ -1,11 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TriggerList } from '@kortix/api-contract';
-import {
-  executorConnectors,
-  projectSessions,
-  projectTriggerRuntime,
-  projects,
-} from '@kortix/db';
+import { executorConnectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -13,7 +8,7 @@ import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
-import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
+import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
   drainSessionLifecycleQueue,
@@ -120,10 +115,7 @@ export function verifyWebhookToken(token: string | null, secret: string): boolea
 // Pure payload helpers live in ./trigger-payload (no config/db imports, so they
 // stay unit-testable without booting the server env). Re-exported here because
 // this module has always been their import site.
-import {
-  renderPromptTemplate,
-  renderSessionKey,
-} from './trigger-payload';
+import { renderPromptTemplate, renderSessionKey } from './trigger-payload';
 
 export {
   isPlainPayloadObject,
@@ -142,9 +134,6 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
     return { raw: rawBody };
   }
 }
-
-
-
 
 export function webhookPayload(c: Context, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
@@ -330,10 +319,7 @@ export async function mapWithConcurrency<T, R>(
   worker: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   if (items.length === 0) return [];
-  const concurrency = Math.max(
-    1,
-    Math.min(items.length, Math.floor(configuredConcurrency) || 1),
-  );
+  const concurrency = Math.max(1, Math.min(items.length, Math.floor(configuredConcurrency) || 1));
   const results = new Array<R>(items.length);
   let nextIndex = 0;
 
@@ -543,8 +529,7 @@ async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
     .orderBy(projects.projectId)
     .limit(limit);
 
-  manifestCatalogCursor =
-    rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
+  manifestCatalogCursor = rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
   return rows;
 }
 
@@ -569,8 +554,7 @@ async function selectManifestDiscoveryProjects(): Promise<ProjectRow[]> {
     .orderBy(projects.projectId)
     .limit(limit);
 
-  manifestDiscoveryCursor =
-    rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
+  manifestDiscoveryCursor = rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
   return rows;
 }
 
@@ -880,8 +864,6 @@ export async function findKeyedTriggerSession(
   return row ?? null;
 }
 
-
-
 /**
  * Durable prompt hand-off into an EXISTING session (`session_mode` pinned /
  * reuse). The direct in-process continueSession() call this replaces was the
@@ -1015,7 +997,11 @@ export async function fireGitTrigger(input: {
         idempotencyKey: input.idempotencyKey ?? null,
       });
       if (outcome === 'queued') {
-        return { status: 'queued', sessionId: keyed.sessionId, reason: 'prompt queued for delivery' };
+        return {
+          status: 'queued',
+          sessionId: keyed.sessionId,
+          reason: 'prompt queued for delivery',
+        };
       }
       // Unusable session for this key → fall through and create a fresh one,
       // which becomes the canonical session for the key going forward.
@@ -1038,7 +1024,11 @@ export async function fireGitTrigger(input: {
         // The prompt is durably queued (drain retries until delivered or
         // dead-letters loudly) — treat as a successful fire so the scheduler
         // records last_fired_at and doesn't immediately create a dupe.
-        return { status: 'queued', sessionId: reusable.sessionId, reason: 'prompt queued for delivery' };
+        return {
+          status: 'queued',
+          sessionId: reusable.sessionId,
+          reason: 'prompt queued for delivery',
+        };
       }
       // outcome === 'no-session' | 'failed' → canonical session is unusable;
       // fall through to create a fresh one below.
@@ -1498,7 +1488,8 @@ export function parseTriggerDraft(
   // An EXPLICIT keyed mode with no key is still an error — nothing to bucket by.
   if (sessionMode === 'keyed' && !sessionKeyRaw) {
     return {
-      error: 'session_mode "keyed" requires a session_key template (e.g. "{{ body.data.chat_jid }}")',
+      error:
+        'session_mode "keyed" requires a session_key template (e.g. "{{ body.data.chat_jid }}")',
     };
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
@@ -1546,8 +1537,8 @@ export function parseTriggerDraft(
         secretEnv: null,
         sessionMode,
         pinnedSessionId,
-      sessionKey,
-      filter,
+        sessionKey,
+        filter,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1635,7 +1626,10 @@ export function slugify(input: string): string {
   );
 }
 
-export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST_FILENAME): GitTriggerSpec {
+export function draftToSpec(
+  draft: TriggerDraft,
+  manifestPath: string = MANIFEST_FILENAME,
+): GitTriggerSpec {
   return {
     slug: draft.slug,
     // Use the ACTUAL manifest path so a YAML project's trigger spec reports
@@ -1682,8 +1676,21 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
  * with zero writes needed on EITHER path, not just this edit one (see that
  * function's doc comment for why the two must stay in sync).
  */
-export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
-  const existing = await readManifest(await withProjectGitAuth(project));
+type ManifestProject = ProjectRow & {
+  gitAuthToken?: string | null;
+  gitAuthHeaders?: Record<string, string>;
+};
+
+function hasResolvedGitAuth(project: ManifestProject): project is ProjectRow & {
+  gitAuthToken: string | null;
+  gitAuthHeaders?: Record<string, string>;
+} {
+  return 'gitAuthToken' in project || 'gitAuthHeaders' in project;
+}
+
+export async function loadManifestForEdit(project: ManifestProject): Promise<ParsedManifest> {
+  const gitProject = hasResolvedGitAuth(project) ? project : await withProjectGitAuth(project);
+  const existing = await readManifest(gitProject);
   if (existing) return existing;
   return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
 }
@@ -1723,34 +1730,42 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
  * `.md` behavior-file writes. One file, one commit per call.
  */
 export async function commitRepoFile(
-  project: ProjectRow,
+  project: ManifestProject,
   path: string,
   content: string,
   message: string,
+  expectedFileRevision?: string | null,
+  expectedCandidatePaths?: readonly string[],
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const branch = project.defaultBranch;
 
   // GitHub repos: commit through the Contents API (App / PAT auth) — the
   // lightweight single-file path that doesn't need a full clone.
   const repo = parseGitHubRepoUrl(project.repoUrl);
-  if (repo) {
+  if (repo && expectedFileRevision === undefined) {
     let auth: GitHubAuthContext | undefined;
-    try {
-      auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
-    } catch (err) {
-      return {
-        error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
-        status: 502,
-      };
+    if (hasResolvedGitAuth(project)) {
+      auth = project.gitAuthToken
+        ? { token: project.gitAuthToken, source: 'project_credential' }
+        : undefined;
+    } else {
+      try {
+        auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
+      } catch (err) {
+        return {
+          error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
+          status: 502,
+        };
+      }
     }
-    const existingSha = await getFileSha({
-      owner: repo.owner,
-      repo: repo.repo,
-      path,
-      branch,
-      auth,
-    });
     try {
+      const existingSha = await getFileSha({
+        owner: repo.owner,
+        repo: repo.repo,
+        path,
+        branch,
+        auth,
+      });
       await commitFile({
         owner: repo.owner,
         repo: repo.repo,
@@ -1776,11 +1791,24 @@ export async function commitRepoFile(
   // not a GitHub URL", which broke every connector and trigger manifest edit
   // on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
   // GitHub-fast-path / git-CLI-fallback split.
-  let gitProject: ProjectRow & { gitAuthToken: string | null };
-  try {
-    gitProject = await withProjectGitAuth(project);
-  } catch (err) {
-    return { error: `Git auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+  let gitProject: ProjectRow & {
+    gitAuthToken: string | null;
+    gitAuthHeaders?: Record<string, string>;
+  };
+  if (hasResolvedGitAuth(project)) {
+    gitProject = {
+      ...project,
+      gitAuthToken: project.gitAuthToken ?? null,
+    };
+  } else {
+    try {
+      gitProject = await withProjectGitAuth(project);
+    } catch (err) {
+      return {
+        error: `Git auth unavailable: ${(err as Error).message || String(err)}`,
+        status: 502,
+      };
+    }
   }
   if (!gitProject.gitAuthToken) {
     return { error: 'No git credentials available to write to the project repo', status: 502 };
@@ -1794,8 +1822,15 @@ export async function commitRepoFile(
       branch,
       authorName: 'Kortix',
       authorEmail: 'noreply@kortix.ai',
+      expectedFileRevision:
+        expectedFileRevision === undefined
+          ? undefined
+          : { path, sha: expectedFileRevision, candidatePaths: expectedCandidatePaths },
     });
   } catch (err) {
+    if (err instanceof Error && err.name === 'GitFileRevisionConflictError') {
+      return { error: err.message, status: 409 };
+    }
     return {
       error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
       status: 502,
@@ -1813,7 +1848,7 @@ export async function commitRepoFile(
  */
 
 export async function commitManifest(
-  project: ProjectRow,
+  project: ManifestProject,
   manifest: ParsedManifest,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
@@ -1822,7 +1857,14 @@ export async function commitManifest(
   // path) in its own format — never a hardcoded name, or a yaml project's edits
   // would silently land in a second kortix.toml the runtime doesn't read.
   const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
-  return commitRepoFile(project, manifestFile, content, message);
+  return commitRepoFile(
+    project,
+    manifestFile,
+    content,
+    message,
+    manifest.revision,
+    manifest.candidatePaths,
+  );
 }
 
 // POST /v1/projects/:projectId/triggers

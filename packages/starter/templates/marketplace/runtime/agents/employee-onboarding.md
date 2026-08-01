@@ -8,7 +8,6 @@ description: >-
   group membership for human approval and posting the result to
   {{notify_channel}}.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

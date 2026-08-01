@@ -7,7 +7,6 @@ description: >-
   {{escalation_channel}}. The only HubSpot write is an internal hygiene flag —
   never the deal's stage, owner, or amount.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

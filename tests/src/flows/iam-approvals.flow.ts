@@ -2,7 +2,7 @@
  * IAM approval control-plane: project access-requests, the executor
  * approval inbox/resolve routes, per-agent secret/connector scoping, the
  * enterprise-demo preview toggle, and self-serve SSO metadata import. Maps
- * to spec §5 (IAM-27..IAM-33).
+ * to spec §5 (IAM-27..IAM-34).
  *
  * These live under /v1/projects/:id/* and /v1/accounts/:id/iam/* but are
  * grouped here as the "approval control plane" — the human-in-the-loop
@@ -567,6 +567,29 @@ flow(
           { params: { accountId: team.id } },
         );
       r.status(403);
+    });
+  },
+);
+
+flow(
+  'IAM-34',
+  {
+    domain: 'iam',
+    routes: ['GET /v1/approval-links/:token'],
+  },
+  async (ctx) => {
+    await ctx.step('ANON cannot inspect an approval link → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/approval-links/:token', {
+        params: { token: 'invalid' },
+      });
+      r.status(401);
+    });
+
+    await ctx.step('an authenticated invalid token reveals no resource → 404', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/approval-links/:token', {
+        params: { token: 'invalid' },
+      });
+      r.status(404).body().has('$.error', 'Invalid or unknown link');
     });
   },
 );

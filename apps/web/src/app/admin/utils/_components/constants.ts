@@ -1,5 +1,14 @@
-import { Info, AlertTriangle, AlertCircle, ShieldOff, Zap, Globe, Database, Shield } from 'lucide-react';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
+import {
+  WarningCircleIcon as AlertCircle,
+  WarningIcon as AlertTriangle,
+  DatabaseIcon as Database,
+  GlobeIcon as Globe,
+  InfoIcon as Info,
+  ShieldIcon as Shield,
+  ShieldSlashIcon as ShieldOff,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 
 export const MAINTENANCE_LEVELS: {
   value: MaintenanceLevel;
@@ -64,5 +73,5 @@ export const AVAILABLE_SERVICES = [
   { id: 'authentication', label: 'Authentication', icon: Shield },
 ] as const;
 
-export type ServiceId = typeof AVAILABLE_SERVICES[number]['id'];
-export type ServiceLabel = typeof AVAILABLE_SERVICES[number]['label'];
+export type ServiceId = (typeof AVAILABLE_SERVICES)[number]['id'];
+export type ServiceLabel = (typeof AVAILABLE_SERVICES)[number]['label'];

@@ -359,6 +359,10 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -406,6 +410,14 @@
             ]
           },
           "credential": {},
+          "authorization_strategy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "user"
+            ],
+            "default": "project"
+          },
           "agent_scope": {},
           "auth": {
             "type": "object",

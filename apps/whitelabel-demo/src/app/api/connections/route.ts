@@ -2,7 +2,7 @@
  * Connections this wrapper may bind to a new session, grouped by connector
  * alias.
  *
- * Provider-neutral and pre-filtered: a wrapper can only bind TEAM connections
+ * Provider-neutral and pre-filtered: a wrapper can only bind project connections
  * (see `selectBindableConnections`), so the client is never shown an option that
  * would fail at session create. Aliases with NOTHING bindable are still
  * returned, carrying the reason — the client has to be able to say "a teammate
@@ -33,10 +33,12 @@ export async function GET(req: NextRequest) {
   if (!apiKey) return Response.json({ connectors: [] });
 
   const session = getRequestSession(req);
-  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 });
+  if (!session)
+    return Response.json({ error: 'Not authenticated' }, { status: 401 });
 
   const limited = consumeRateLimit(session.userId);
-  if (!limited.ok) return Response.json({ error: 'Rate limited' }, { status: 429 });
+  if (!limited.ok)
+    return Response.json({ error: 'Rate limited' }, { status: 429 });
 
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') ?? '';
@@ -58,7 +60,9 @@ export async function GET(req: NextRequest) {
   });
 
   try {
-    const result = await kortix.project(projectId).connectors.profiles.list();
+    const result = await kortix
+      .project(projectId)
+      .connectors.authorizations.list();
     const connectors = selectConnectorBindingChoices(result?.profiles).filter(
       (choice) => !connector || choice.alias === connector,
     );

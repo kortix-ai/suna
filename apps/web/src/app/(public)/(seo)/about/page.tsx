@@ -1,17 +1,18 @@
+import { AboutPage as AboutPageContent } from '@/features/marketing/about/about-page';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
-import AboutPageClient from './about-client';
+
+const DESCRIPTION =
+  'Kortix is building the open AGI platform. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.';
 
 export const metadata: Metadata = {
   title: 'About',
-  description:
-    'We build self-driving companies. 76% agents, 24% humans — where humans verify, steer, and govern. Agents do the work. Full agent teams doing engineering, product, operations, finance, support, and growth.',
+  description: DESCRIPTION,
   keywords:
-    'Kortix, about Kortix, self-driving company, AI-operated company, autonomous operations, agent workforce, AI agents, company automation',
+    'Kortix, about Kortix, open AGI platform, open source AI management system, autonomous companies, AI agents, self-hosted agent platform',
   openGraph: {
-    title: 'About Kortix – Building Self-Driving Companies',
-    description:
-      'We take process-heavy companies and turn them into AI-operated ones. Full agent teams doing engineering, product, operations, finance, support, and growth.',
+    title: 'About Kortix – The open AGI platform',
+    description: DESCRIPTION,
     url: `${CANONICAL_ORIGIN}/about`,
     images: [
       {
@@ -24,9 +25,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'About Kortix – Building Self-Driving Companies',
-    description:
-      'We take process-heavy companies and turn them into AI-operated ones. Full agent teams doing engineering, product, operations, finance, support, and growth.',
+    title: 'About Kortix – The open AGI platform',
+    description: DESCRIPTION,
     images: ['/images/team.webp'],
   },
   alternates: {
@@ -35,5 +35,5 @@ export const metadata: Metadata = {
 };
 
 export default function AboutPage() {
-  return <AboutPageClient />;
+  return <AboutPageContent />;
 }

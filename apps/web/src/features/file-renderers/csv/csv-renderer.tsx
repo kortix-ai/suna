@@ -2,7 +2,7 @@
 
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileXlsIcon as FileSpreadsheet } from '@phosphor-icons/react';
 import { lazy, Suspense } from 'react';
 
 const CsvViewer = lazy(() => import('./csv-viewer').then((m) => ({ default: m.CsvViewer })));

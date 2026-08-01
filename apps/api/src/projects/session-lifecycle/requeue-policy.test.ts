@@ -3,10 +3,6 @@ import { mayRequeueFailedCreate } from './requeue-policy';
 
 describe('mayRequeueFailedCreate', () => {
   test('a failure ALREADY RETURNED to the caller is never re-queued', () => {
-    // The caller owns the retry now. Keeping our own copy means their retry and
-    // our drainer both run it: two billed sandboxes, same end_user_ref, both
-    // executing the baked initial_prompt — and their retry succeeded, so they
-    // never find out.
     expect(
       mayRequeueFailedCreate({ answeredSynchronously: true, errorIsRetryable: true }),
     ).toBe(false);

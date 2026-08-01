@@ -72,14 +72,10 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer).
- *
- * Version 3 keeps the same governance grant fields. It adds runtime profiles
- * that `compileRuntimeConfig` consumes. This reader must accept v3 so the
- * mandatory declared-agent gate and runtime compiler read one manifest.
- * A version above this ceiling is unknown and remains refused.
+ * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
+ * this ceiling is genuinely unknown to the platform and remains refused.
  */
-export const MAX_SCHEMA_VERSION = 3;
+export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -204,6 +200,10 @@ export interface ParsedManifest {
    *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
    *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
   path: string;
+  /** Git blob SHA observed with this manifest, or null when the file was absent. */
+  revision?: string | null;
+  /** Logical manifest files in winner-priority order. */
+  candidatePaths?: string[];
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -227,9 +227,9 @@ export interface LoadedTriggers {
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
-  let found: { path: string; content: string } | null;
+  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale
     // default) even when the file actually on disk is kortix.yaml — so we
@@ -238,7 +238,9 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
+      forceRefresh: opts?.forceRefresh,
+    });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,
@@ -252,7 +254,13 @@ export async function readManifest(
     return null;
   }
   if (!found) return null;
-  return parseManifestString(found.content, manifestFormatForPath(found.path), found.path);
+  return parseManifestString(
+    found.content,
+    manifestFormatForPath(found.path),
+    found.path,
+    found.sha,
+    found.candidatePaths,
+  );
 }
 
 /**
@@ -293,6 +301,9 @@ export function synthesizeBlankManifest(project: {
   name?: string;
   manifestPath?: string | null;
 }): ParsedManifest {
+  const candidatePaths = manifestCandidatePaths(project.manifestPath ?? undefined).map(
+    (candidate) => candidate.path,
+  );
   return {
     schemaVersion: 2,
     raw: {
@@ -310,7 +321,9 @@ export function synthesizeBlankManifest(project: {
       },
     },
     format: 'yaml',
-    path: manifestCandidatePaths(project.manifestPath ?? undefined)[0].path,
+    path: candidatePaths[0] ?? MANIFEST_FILENAME_YAML,
+    revision: null,
+    candidatePaths,
   };
 }
 
@@ -324,6 +337,8 @@ export function parseManifestString(
   raw: string,
   format: ManifestFormat = 'toml',
   path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
+  revision?: string | null,
+  candidatePaths?: string[],
 ): ParsedManifest {
   const parsed = parseManifestText(raw, format);
   const version =
@@ -342,7 +357,15 @@ export function parseManifestString(
     );
   }
 
-  return { schemaVersion: Math.floor(version), raw: parsed, format, path };
+  const manifest: ParsedManifest = {
+    schemaVersion: Math.floor(version),
+    raw: parsed,
+    format,
+    path,
+  };
+  if (revision !== undefined) manifest.revision = revision;
+  if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
+  return manifest;
 }
 
 /** Serialize a parsed manifest back to text (in its own format) for committing. */

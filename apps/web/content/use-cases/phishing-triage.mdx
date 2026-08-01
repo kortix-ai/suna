@@ -120,11 +120,10 @@ sender, warn affected staff, or close it out as benign.
 The agent reads live employee reports of suspected attacks, so its access is
 scoped and strictly one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the phishing-report inbox and the security channel; nothing else
-  leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the phishing-report inbox and the security channel; nothing else
+  is written back out.
 - **Scoped secrets.** The Gmail credential is encrypted in the Secrets Manager
-  and injected into the sandbox at runtime, never exposed to the model or the
+  and injected into the sandbox at runtime, scoped to the agents you grant them to or the
   logs.
 - **Recommend-only.** The agent analyzes, classifies, and recommends. It never
   blocks a sender, deletes or quarantines mail, or takes any other remediation

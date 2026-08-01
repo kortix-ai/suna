@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ChevronRight } from '@mynaui/icons-react';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
@@ -112,7 +112,7 @@ export function PanelCard({
       // out of room — clipping a row in half instead of ever scrolling. The
       // column's own `overflow-auto` (see `easy-panel.tsx`) is what should
       // handle overflow, not a silent shrink of this card.
-      className="bg-popover shrink-0 overflow-hidden shadow"
+      className="bg-popover shrink-0 overflow-hidden"
       transition={transition}
     >
       <DisclosureTrigger variant="outline">
@@ -135,10 +135,7 @@ export function PanelCard({
                   // on click covers the mouse/tap case, and on keydown stops the
                   // Enter/Space that activates the nested button from *also*
                   // bubbling up into the trigger's own Enter/Space handler.
-                  <span
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
+                  <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     {headerAction}
                   </span>
                 )}

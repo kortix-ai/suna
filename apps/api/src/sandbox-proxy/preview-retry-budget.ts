@@ -17,14 +17,10 @@ export const PROXY_ATTEMPT_TIMEOUT_MS = 15_000;
 // interval as a multipart upload, just mirrored: uploads can't emit headers
 // until the client finishes WRITING the body, this can't emit headers until
 // the server finishes COMPUTING it.
-export function isLongTurnCompletionRequest(request: {
-  method: string;
-  path: string;
-  acpPrompt?: boolean;
-}): boolean {
+export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
   return (
     request.method.toUpperCase() === 'POST' &&
-    (request.acpPrompt === true || /^\/session\/[^/]+\/message(?:$|[/?#])/.test(request.path))
+    /^\/session\/[^/]+\/message(?:$|[/?#])/.test(request.path)
   );
 }
 
@@ -36,7 +32,7 @@ function isUploadRequest(request: { method: string; path: string }): boolean {
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
 export function proxyAttemptTimeoutMs(
   budgetRemainingMs: number,
-  request?: { method: string; path: string; acpPrompt?: boolean },
+  request?: { method: string; path: string },
 ): number {
   // Upload handlers cannot return response headers until the multipart body has
   // been received and written. Treating that whole interval as a connection

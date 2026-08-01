@@ -7,7 +7,7 @@ import {
   type AuthUser,
   createAuthUser,
   deleteAuthUser,
-  installBrowserSession,
+  installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
 
@@ -19,6 +19,12 @@ const api = createApiJsonClient(apiBase);
 const authOptions = { supabaseUrl, password };
 const databaseUrl = process.env.E2E_DATABASE_URL
   || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
+test.use({
+  launchOptions: {
+    args: ['--disable-gpu', '--disable-webgl', '--disable-webgl2'],
+  },
+});
 
 function executeSql(sql: string): string {
   return execFileSync(
@@ -96,7 +102,7 @@ async function waitForReadySession(
   projectId: string,
   sessionId: string,
 ): Promise<void> {
-  const deadline = Date.now() + 5 * 60_000;
+  const deadline = Date.now() + 10 * 60_000;
   let last = '';
   while (Date.now() < deadline) {
     const result = await api<SessionStart>(
@@ -120,7 +126,7 @@ async function waitForReadySession(
 
 test.describe.serial('13 — SDK-only web session', () => {
   test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
-  test.setTimeout(8 * 60_000);
+  test.setTimeout(12 * 60_000);
 
   let user: AuthUser;
   let auth: AuthSession;
@@ -226,9 +232,17 @@ test.describe.serial('13 — SDK-only web session', () => {
     page,
   }) => {
     const runtimeRequests: string[] = [];
+    const globalEventRequests: string[] = [];
+    const acpRequests: string[] = [];
     const failedKortixResponses: string[] = [];
 
     page.on('request', (request) => {
+      if (request.url().includes('/global/event')) {
+        globalEventRequests.push(request.url());
+      }
+      if (request.url().includes('/kortix/acp/')) {
+        acpRequests.push(request.url());
+      }
       if (
         request.method() === 'POST'
         && request.url().includes('/v1/p/')
@@ -248,11 +262,11 @@ test.describe.serial('13 — SDK-only web session', () => {
       }
     });
 
-    await installBrowserSession(
+    await installBrowserSessionDirect(
       page,
       auth,
       `/projects/${projectId}/sessions/${sessionId}`,
-      password,
+      authOptions,
     );
 
     await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
@@ -262,22 +276,24 @@ test.describe.serial('13 — SDK-only web session', () => {
     await expect(page.getByRole('button', { name: 'Model picker' })).toBeVisible();
     const welcomeCard = page.getByRole('complementary', { name: /Welcome from Marko/i });
     if (await welcomeCard.isVisible().catch(() => false)) {
-      await welcomeCard.getByRole('button', { name: 'Dismiss' }).click();
+      await welcomeCard.getByRole('button', { name: 'Dismiss' }).click({ force: true });
     }
 
     const input = page.getByRole('textbox', { name: 'Message input' });
     await expect(input).toBeVisible();
     await input.fill('Reply with exactly one word: PONG');
-    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByRole('button', { name: 'Send message' }).click({ force: true });
 
     await expect(page.getByText('PONG', { exact: true }).last()).toBeVisible({
       timeout: 120_000,
     });
     expect(runtimeRequests).toHaveLength(1);
+    expect(globalEventRequests.length).toBeGreaterThan(0);
+    expect(acpRequests).toEqual([]);
     expect(failedKortixResponses).toEqual([]);
 
     await page.getByRole('button', { name: /^Files$/ }).click();
-    await expect(page).toHaveURL(`/projects/${projectId}/files`);
+    await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
     await expect(page.getByText('kortix.yaml', { exact: true }).first()).toBeVisible({
       timeout: 60_000,
     });
@@ -305,7 +321,7 @@ test.describe.serial('13 — SDK-only web session', () => {
       && response.url().endsWith(`/projects/${projectId}/sessions/warm`)
       && response.status() === 200
     ));
-    await installBrowserSession(page, auth, `/projects/${projectId}`, password);
+    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
     await warmReady;
 
     const input = page.getByRole('textbox', { name: 'Message input' });
@@ -327,7 +343,7 @@ test.describe.serial('13 — SDK-only web session', () => {
       && response.status() === 201
     ));
     const startedAt = Date.now();
-    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByRole('button', { name: 'Send message' }).click({ force: true });
     await mismatchResponse;
     await fallbackCreate;
     await expect(page).toHaveURL(

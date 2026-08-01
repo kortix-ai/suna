@@ -93,7 +93,7 @@ the model, plus a **GH_TOKEN** secret for the `gh` CLI, the agent can:
 The agent can only **skip and mark**, never delete. It opens a PR and an
 issue and stops; it never merges its own PR and never pushes to the default
 branch. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let the daily triage happen">
@@ -120,11 +120,10 @@ test is actually fixed.
 The agent changes what runs in CI, so its access is scoped and
 one-directional:
 
-- **Isolation.** Every run happens in the session's own microVM sandbox. Only
+- **Isolation.** Every run happens in the session's own isolated sandbox. Only
   the PR, the issue, and the Slack post leave it.
 - **Scoped secrets.** The GitHub connector and the `GH_TOKEN` used by the `gh`
-  CLI are encrypted in the Secrets Manager and injected at runtime, never
-  exposed to the model or the logs.
+  CLI are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
 - **Skip, never delete.** The agent's only edit to a test file is a
   skip/quarantine marker with a reason; it never removes a test, its
   assertions, or its file.

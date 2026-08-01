@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { faviconUrlForValue } from '@/lib/favicon';
 import { cn } from '@/lib/utils';
-import { Globe } from 'lucide-react';
+import { GlobeIcon as Globe } from '@phosphor-icons/react';
 
 const SIZE_MAP = {
   '2xs': { avatar: 'size-4', icon: 'size-2.5' },
@@ -28,7 +28,10 @@ export function FaviconAvatar({ value, size = 'xs', className, alt = '' }: Favic
   const src = faviconUrlForValue(value);
 
   return (
-    <Avatar data-slot="favicon-avatar" className={cn('bg-muted/60 rounded', sizes.avatar, className)}>
+    <Avatar
+      data-slot="favicon-avatar"
+      className={cn('bg-muted/60 rounded', sizes.avatar, className)}
+    >
       {src ? (
         <AvatarImage
           src={src}

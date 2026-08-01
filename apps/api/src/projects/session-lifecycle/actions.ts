@@ -10,7 +10,6 @@ import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import type { CompiledRuntimeConfig } from '../lib/compile-runtime-config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -224,9 +223,6 @@ export async function restartSession(input: {
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-          acpRuntimeEnabled: session.metadata?.runtime_transport === 'acp',
-          compiledRuntimeConfig:
-            (session.metadata?.compiled_runtime_plan as CompiledRuntimeConfig | undefined) ?? null,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });

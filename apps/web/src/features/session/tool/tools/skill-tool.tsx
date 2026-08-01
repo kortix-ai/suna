@@ -26,7 +26,11 @@ import {
 } from '@/features/session/tool/shared/skill-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { BookOpen, ExternalLink, FileText } from 'lucide-react';
+import {
+  BookOpenIcon as BookOpen,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

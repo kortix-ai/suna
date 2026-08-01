@@ -40,14 +40,14 @@ import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import {
-  Code2,
-  Download,
-  ExternalLink,
-  Eye,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-} from 'lucide-react';
+  CodeSimpleIcon as Code2,
+  DownloadIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  EyeIcon as Eye,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { type ShareContext, ShareFileButton } from './viewer-actions';
@@ -148,7 +148,7 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {downloading ? (
-          <Loading className="size-3.5 shrink-0" />
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
         ) : (
           <Download className="size-3.5" />
         )}
@@ -194,7 +194,7 @@ export function OpenInNewTabButton({ path }: { path: string }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {opening ? (
-          <Loading className="size-3.5 shrink-0" />
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
         ) : (
           <ExternalLink className="size-3.5" />
         )}
@@ -255,19 +255,12 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  variant="a_accent-i_transparent"
                   aria-label="Preview"
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger
-                  size="xs"
-                  value="source"
-                  variant="a_accent-i_transparent"
-                  aria-label="Source"
-                  className="h-7 w-7 px-0"
-                >
+                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>

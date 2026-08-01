@@ -86,7 +86,7 @@ model, the agent can:
 The agent opens a PR only when the suite passes; a failing upgrade is dropped or
 split, not pushed for a human to debug. It never merges — the merge is a **human
 approval gate**. Credentials are encrypted in the secrets manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let the weekly run happen">
@@ -110,11 +110,11 @@ becomes a PR; it comes back flagged with the failure instead.
 The agent changes dependencies and runs code, so the access is scoped and
 contained:
 
-- **Isolation.** Every run happens in its own microVM sandbox on its own branch.
+- **Isolation.** Every run happens in its own isolated sandbox on its own branch.
   The session can install, resolve, and run the suite to prove an upgrade; only
-  the branch and result leave the sandbox.
+  the branch and result are written back out.
 - **Scoped secrets.** The GitHub and CI credentials are encrypted in the secrets
-  manager and injected into the sandbox at runtime, never exposed to the model or
+  manager and injected into the sandbox at runtime, scoped to the agents you grant them to or
   the logs.
 - **PR-gated.** The agent opens a pull request and stops. It never merges and
   never pushes to the default branch; a human owns the merge.

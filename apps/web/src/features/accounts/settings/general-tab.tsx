@@ -42,8 +42,7 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid } from '@mynaui/icons-react';
-import { Clock } from 'lucide-react';
+import { ClockIcon as Clock, WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
@@ -381,7 +380,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                 <MotionConfig transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}>
                   <motion.div layout className="space-y-4">
                     <motion.div layout>
-                      <InfoBanner tone="warning" icon={DangerTriangleSolid}>
+                      <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />}>
                         {deletionType === 'immediate'
                           ? t('deleteAccount.warningImmediate')
                           : t('deleteAccount.warningGracePeriod')}

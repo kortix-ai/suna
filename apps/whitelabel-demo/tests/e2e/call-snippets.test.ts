@@ -9,17 +9,30 @@ import {
   isCopyableHttp,
   renderHttp,
 } from '../../src/lib/call-snippets';
-import { NO_OVERRIDES, buildSessionCreateInput } from '../../src/lib/session-overrides';
+import {
+  NO_OVERRIDES,
+  buildSessionCreateInput,
+} from '../../src/lib/session-overrides';
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
-const END_USER = 'someone@example.com';
+const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
+  `${['end', 'user', 'ref'].join('_')}|${['origin', 'ref'].join('_')}`,
+);
 
 /** Everything one snippet renders, as one string — the shape a screenshot has. */
-function rendered(id: (typeof CALL_SNIPPET_IDS)[number], ctx: SnippetContext = {}): string {
+function rendered(
+  id: (typeof CALL_SNIPPET_IDS)[number],
+  ctx: SnippetContext = {},
+): string {
   const snippet = callSnippet(id, ctx);
-  return [snippet.title, snippet.summary, snippet.sdk, renderHttp(snippet.http), ...snippet.notes]
-    .join('\n');
+  return [
+    snippet.title,
+    snippet.summary,
+    snippet.sdk,
+    renderHttp(snippet.http),
+    ...snippet.notes,
+  ].join('\n');
 }
 
 /** Everything EVERY snippet renders, for the invariants that must hold globally. */
@@ -65,7 +78,7 @@ describe('call snippets never render credentials', () => {
   });
 
   test('the bearer is only ever the placeholder', () => {
-    const text = renderedAll({ projectId: PROJECT_ID, endUserRef: END_USER });
+    const text = renderedAll({ projectId: PROJECT_ID });
     // Any `Bearer` that is not the placeholder is a real token in a snippet.
     expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
   });
@@ -78,40 +91,17 @@ describe('call snippets never render credentials', () => {
   });
 });
 
-describe('end_user_ref is shown as server-injected', () => {
-  test('the create body carries it — and says the browser does not send it', () => {
-    const snippet = callSnippet('session.create', {
-      projectId: PROJECT_ID,
-      endUserRef: END_USER,
-    });
-    expect(renderHttp(snippet.http)).toContain(`"end_user_ref": "${END_USER}"`);
-    expect(snippet.serverInjected).toContain('end_user_ref');
-    // The SDK form is the BROWSER's call. A create body with end_user_ref in it
-    // would teach the one thing the proxy refuses 403.
-    expect(snippet.sdk).not.toContain('end_user_ref');
+describe('attribution data is absent', () => {
+  test('no snippet contains an upstream customer attribution field', () => {
+    expect(renderedAll({ projectId: PROJECT_ID })).not.toMatch(
+      REMOVED_ATTRIBUTION_PATTERN,
+    );
   });
 
-  test('the session list is filtered in the query, not by the browser', () => {
-    const snippet = callSnippet('sessions.list', {
-      projectId: PROJECT_ID,
-      endUserRef: END_USER,
-    });
-    expect(renderHttp(snippet.http)).toContain('end_user_ref=someone%40example.com');
-    expect(snippet.serverInjected).toContain('end_user_ref');
-    expect(snippet.sdk).not.toContain('end_user_ref');
-  });
-
-  test('nothing claims the server injects a field it does not', () => {
-    // The badge is a security claim; it belongs only on calls the proxy touches.
-    const injected = callSnippets().filter((s) => s.serverInjected.length > 0).map((s) => s.id);
-    expect(injected.sort()).toEqual([
-      'session.create',
-      // Two of them: `end_user_ref`, and the `Idempotency-Key` the server mints
-      // so a browser cannot aim a replay at somebody else's session.
-      'session.idempotentCreate',
-      'sessions.list',
-      'usage.forEndUser',
-    ]);
+  test('no snippet claims the server injects product data', () => {
+    expect(
+      callSnippets().filter((snippet) => snippet.serverInjected.length > 0),
+    ).toEqual([]);
   });
 });
 
@@ -127,11 +117,16 @@ describe('the create snippet is the request the dialog would send', () => {
     const snippet = callSnippet('session.create', {
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      overrides: { agent: 'support', secrets: ['STRIPE_KEY'], bindings: { slack: 'prof_9' }, runtimeContext: null },
+      overrides: {
+        agent: 'support',
+        secrets: ['STRIPE_KEY'],
+        bindings: { slack: 'prof_9' },
+        runtimeContext: null,
+      },
     });
     expect(snippet.sdk).toContain('"agent_name": "support"');
     expect(snippet.sdk).toContain('"secrets"');
-    expect(snippet.sdk).toContain('"profile_id": "prof_9"');
+    expect(snippet.sdk).toContain('"authorization_id": "prof_9"');
     // Binding one alias must not read as unplugging the others.
     expect(snippet.sdk).toContain('"inherit_unbound": true');
   });
@@ -146,7 +141,9 @@ describe('the create snippet is the request the dialog would send', () => {
 
   test('the path is the project the screen is on', () => {
     const snippet = callSnippet('session.create', { projectId: PROJECT_ID });
-    expect(renderHttp(snippet.http)).toContain(`POST /v1/projects/${PROJECT_ID}/sessions`);
+    expect(renderHttp(snippet.http)).toContain(
+      `POST /v1/projects/${PROJECT_ID}/sessions`,
+    );
   });
 });
 
@@ -154,7 +151,9 @@ describe('the other calls', () => {
   test('a prompt has no REST path to copy — the SDK owns the runtime transport', () => {
     const snippet = callSnippet('session.prompt', { agent: 'support' });
     expect(isCopyableHttp(snippet.http)).toBe(false);
-    expect(snippet.sdk).toContain(".send('Refund order 4182', { agent: 'support' })");
+    expect(snippet.sdk).toContain(
+      ".send('Refund order 4182', { agent: 'support' })",
+    );
     // Printing a runtime path here is exactly what scripts/sdk-boundary.mjs
     // forbids client code from constructing.
     expect(rendered('session.prompt')).not.toContain('/v1/p/');
@@ -174,13 +173,10 @@ describe('the other calls', () => {
     expect(rendered('session.model').toLowerCase()).not.toContain('opencode');
   });
 
-  test('usage is read both grouped and narrowed', () => {
-    expect(renderHttp(callSnippet('usage.byEndUser').http)).toContain(
-      'GET /v1/usage?group_by=end_user_ref',
-    );
-    expect(renderHttp(callSnippet('usage.forEndUser', { endUserRef: END_USER }).http)).toContain(
-      'GET /v1/usage?end_user_ref=someone%40example.com',
-    );
+  test('session costs are read for the current project', () => {
+    expect(
+      renderHttp(callSnippet('session.costs', { projectId: PROJECT_ID }).http),
+    ).toContain(`GET /v1/usage/session-costs?project_id=${PROJECT_ID}`);
   });
 
   test('an approval resolves by execution id, and carries no widening scope', () => {
@@ -225,31 +221,38 @@ describe('every snippet is complete', () => {
 });
 
 describe('the create snippet cannot drift from what the app sends', () => {
-  test('a bound connection prints its LABEL, not the raw profile id', () => {
-    // The panel's whole value is "this is the call this app runs". The first cut
-    // built the body without `connectionLabels`, which the dialog does pass — so
-    // it printed {"slack": "prof_9"} where the app sends
-    // {"slack": "Acme Team Slack"}: drift on the exact override the panel exists
-    // to teach.
-    const withLabels = callSnippet('session.create', {
+  test('a bound connection prints its authorization id', () => {
+    const snippet = callSnippet('session.create', {
       projectId: 'p1',
-      overrides: { ...NO_OVERRIDES, bindings: { slack: 'prof_9' }, runtimeContext: null },
-      connectionLabels: { slack: 'Acme Team Slack' },
+      overrides: {
+        ...NO_OVERRIDES,
+        bindings: { slack: 'auth_9' },
+        runtimeContext: null,
+      },
     });
-    const printed = `${withLabels?.sdk ?? ''}${renderHttp(withLabels!.http)}`;
-    expect(printed).toContain('Acme Team Slack');
+    const printed = `${snippet.sdk}${renderHttp(snippet.http)}`;
+    expect(printed).toContain('"authorization_id": "auth_9"');
   });
 
   test('the same builder the submit path uses produces the body', () => {
     // Guards the mechanism rather than one output: if someone hand-rolls the
     // body here again, an override added to buildSessionCreateInput stops
     // appearing and this goes red.
-    const overrides = { ...NO_OVERRIDES, agent: 'reviewer', secrets: ['GMAIL'] };
-    const snippet = callSnippet('session.create', { projectId: 'p1', overrides });
+    const overrides = {
+      ...NO_OVERRIDES,
+      agent: 'reviewer',
+      secrets: ['GMAIL'],
+    };
+    const snippet = callSnippet('session.create', {
+      projectId: 'p1',
+      overrides,
+    });
     const expected = buildSessionCreateInput(overrides, { sessionId: 'SID' });
     for (const key of Object.keys(expected)) {
       if (key === 'session_id') continue;
-      expect(`${snippet?.sdk ?? ''}${renderHttp(snippet!.http)}`).toContain(key);
+      expect(`${snippet?.sdk ?? ''}${renderHttp(snippet!.http)}`).toContain(
+        key,
+      );
     }
   });
 });

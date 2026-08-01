@@ -8,8 +8,11 @@ import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
+import {
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 

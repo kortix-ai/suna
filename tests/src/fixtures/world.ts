@@ -25,7 +25,7 @@ import { adminDeleteUser } from './supabase';
 import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { createDatabaseProject, deleteDatabaseProject } from './database-project';
+import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
@@ -105,6 +105,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const extraUserIds: string[] = [];
   let databaseProjectCount = 0;
   let managedProjectCount = 0;
+  // Session create runs managed-git operations (branch push) synchronously, so
+  // it can never succeed against a database-only project's ke2e.invalid remote.
+  // Sessions on those projects are written straight to the database instead.
+  const databaseProjectIds = new Set<string>();
   // One shared read-only project, provisioned at most once per run.
   let sharedProjectPromise: Promise<CreatedProject> | null = null;
   let sharedSeededProjectPromise: Promise<CreatedProject> | null = null;
@@ -128,6 +132,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         name,
       });
       databaseProjectCount++;
+      databaseProjectIds.add(project.id);
       stack.push('database-project', project.id);
       return project;
     }
@@ -249,6 +254,16 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       return u.principal;
     },
     async session(project, opts) {
+      if (databaseProjectIds.has(project.id)) {
+        const id = await createDatabaseSession(env, {
+          projectId: project.id,
+          accountId: owner.accountId!,
+          userId: owner.userId!,
+        });
+        // No stack entry: deleting the database-only project cascades to its
+        // sessions (project_sessions.project_id ON DELETE CASCADE).
+        return { id, projectId: project.id } as CreatedSession;
+      }
       // `prompt` was never consumed by the session API; use the documented
       // field now that the HTTP boundary rejects unknown create properties.
       const res = await adminClient.post(

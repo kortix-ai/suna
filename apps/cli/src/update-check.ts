@@ -26,7 +26,6 @@ import { C, stripAnsi } from './style.ts';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = process.env.KORTIX_REPO ?? 'kortix-ai/suna';
-const LATEST_RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FETCH_TIMEOUT_MS = 1500;
 
@@ -121,7 +120,12 @@ async function fetchLatestTag(): Promise<string | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(LATEST_RELEASE_URL, {
+    // The literal host stays AT the call site on purpose: this is the one
+    // non-Kortix fetch the CLI makes, and `scripts/sdk-boundary.mjs` can only
+    // verify that statically. Behind a `LATEST_RELEASE_URL` constant the target
+    // is opaque to the lint, which is exactly the shape a Kortix call could
+    // hide in.
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       signal: ctrl.signal,
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-cli' },
     });

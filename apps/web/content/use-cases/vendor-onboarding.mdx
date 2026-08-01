@@ -128,11 +128,10 @@ something else, and makes the actual onboarding decision.
 The agent handles vendor paperwork end to end except the decision that matters,
 so its access is scoped and its authority is capped below approval:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Gmail, Google Sheets, and Slack, and only the register update and
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Gmail, Google Sheets, and Slack, and only the register update and
   the Slack post are meant to persist past the run.
 - **Scoped, brokered credentials.** Gmail and Google Sheets access are injected
-  into the sandbox at runtime, never exposed to the model or written to logs.
+  into the sandbox at runtime, scoped to the agents you grant them to.
 - **Collect, validate, record — nothing further.** The agent checks documents
   and writes status to the register. It has no path to mark a vendor approved
   or to configure a payment method or banking profile, complete paperwork or

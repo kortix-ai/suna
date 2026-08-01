@@ -101,7 +101,7 @@ no shared memory.
   never sends the invite.
 - **Scoped secrets.** Access to {{applications_source}} and
   {{hiring_manager_calendar}} is brokered through connectors; no raw
-  credential is ever shown to the model or written to logs.
+  credential is ever pasted into chat.
 </guardrails>
 
 </skill>

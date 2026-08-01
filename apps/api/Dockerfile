@@ -47,6 +47,7 @@ COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
@@ -63,6 +64,7 @@ ARG SERVICE
 
 # Copy workspace root files for pnpm install
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches ./patches
 
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
@@ -137,6 +139,7 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -198,13 +201,16 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modul
 
 # Drop test-only source copied in with workspace packages. The runtime image
 # executes the API directly from TypeScript source, but does not need tests.
+# The runtime rejects a compiled agent that is older than its source. Refresh
+# the copied binary after all source copies and cleanup steps.
 RUN rm -rf \
     ${SERVICE}/src/__tests__ \
     apps/kortix-sandbox-agent-server/src/__tests__ \
     apps/cli/src/__tests__ \
     packages/starter/src/__tests__ \
     packages/manifest-schema/src/__tests__ \
-    packages/api-contract/src/__tests__
+    packages/api-contract/src/__tests__ && \
+    touch apps/kortix-sandbox-agent-server/dist/kortix-agent
 
 WORKDIR /app/${SERVICE}
 

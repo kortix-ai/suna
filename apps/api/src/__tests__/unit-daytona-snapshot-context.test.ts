@@ -79,6 +79,7 @@ beforeEach(() => {
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
+let scaffoldBareAtDaytonaBoundary = false;
 let executorNodeModulesPresentAtProviderBoundary = false;
 let warmGitArchivePresentAtDaytonaBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
@@ -96,7 +97,13 @@ mock.module('@daytonaio/sdk', () => ({
       dockerfileSeen = readFileSync(path, 'utf8');
       // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
       // finally cleans the context after, so this can't be asserted afterward.
-      scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
+      const scaffoldPath = join(path, '..', 'scaffold.git');
+      scaffoldPresentAtDaytonaBoundary = existsSync(join(scaffoldPath, 'HEAD'));
+      scaffoldBareAtDaytonaBoundary =
+        scaffoldPresentAtDaytonaBoundary &&
+        execFileSync('git', ['--git-dir', scaffoldPath, 'rev-parse', '--is-bare-repository'], {
+          encoding: 'utf8',
+        }).trim() === 'true';
       executorNodeModulesPresentAtProviderBoundary = existsSync(
         join(path, '..', 'kortix-executor-sdk', 'node_modules'),
       );
@@ -144,6 +151,7 @@ describe('Daytona snapshot build context', () => {
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
+    expect(scaffoldBareAtDaytonaBoundary).toBe(true);
     expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
   });
 

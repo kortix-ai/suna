@@ -2,8 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
+import {
+  KeyIcon as KeyRound,
+  DotsThreeIcon as MoreHorizontal,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -60,7 +65,12 @@ import {
   listProjectSecrets,
   upsertProjectSecret,
 } from '@kortix/sdk';
-import { DangerTriangleSolid, Pencil, Search, TrashSolid } from '@mynaui/icons-react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  PencilSimpleIcon,
+  MagnifyingGlassIcon as Search,
+  TrashIcon,
+} from '@phosphor-icons/react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -212,7 +222,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               {missingRequired.length > 0 && (
                 <InfoBanner
                   tone="warning"
-                  icon={DangerTriangleSolid}
+                  icon={<DangerTriangleSolid weight="fill" />}
                   title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
                 >
                   Sessions can still start, but the agent will be missing these values.
@@ -441,7 +451,7 @@ function SecretTableRow({
           </div>
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-[200px] whitespace-normal text-xs font-medium">
+      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
         {statusLabel(row)}
       </TableCell>
       <TableCell>
@@ -456,7 +466,7 @@ function SecretTableRow({
                 )}
               >
                 {busy ? (
-                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                  <Loading className="size-3.5 shrink-0" />
                 ) : (
                   <MoreHorizontal className="size-3.5 shrink-0" />
                 )}
@@ -464,12 +474,12 @@ function SecretTableRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="size-3.5 shrink-0" />
+                <PencilSimpleIcon className="size-3.5 shrink-0" />
                 {row.configured ? 'Edit secret' : 'Set value'}
               </DropdownMenuItem>
               {row.configured && (
-                <DropdownMenuItem onClick={onDelete} variant="destructive">
-                  <TrashSolid className="size-3.5 shrink-0" />
+                <DropdownMenuItem onClick={onDelete}>
+                  <TrashIcon className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',
                   )}
@@ -660,7 +670,7 @@ function SecretDialog({
                 (!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending
               }
             >
-              {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
+              {save.isPending && <Loading className="size-4 shrink-0" />}
               Save
             </Button>
           </ModalFooter>

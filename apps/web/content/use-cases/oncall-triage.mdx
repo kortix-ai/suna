@@ -91,7 +91,7 @@ The agent is **read-only**: it investigates across Sentry, the logs, and GitHub,
 but it does not deploy, roll back, or change anything. High-severity alerts and
 anything it can't resolve page a human straight away — the diagnosis is attached,
 not a substitute for the page. Credentials are encrypted in the secrets manager
-and injected at runtime, never shown to the model or written to logs.
+and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each alert triage itself">
@@ -116,12 +116,11 @@ done, so they open the page to context instead of a blank terminal.
 
 The agent reads production telemetry, so the access is scoped and contained:
 
-- **Isolation.** Every alert runs in its own microVM sandbox. The session can pull
+- **Isolation.** Every alert runs in its own isolated sandbox. The session can pull
   traces, logs, and deploy history to build the diagnosis; only the posted message
-  and any page leave the sandbox.
+  and any page are written back out.
 - **Scoped secrets.** The Sentry, logging, and GitHub credentials are encrypted in
-  the secrets manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The agent never deploys or rolls back. High-severity and
   unresolved alerts page a human, who owns any action taken.
 - **Everything is code.** The agent's configuration, skills, and permissions are
