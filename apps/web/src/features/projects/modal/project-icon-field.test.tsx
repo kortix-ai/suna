@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 
-import { ProjectIconField } from './project-icon-field';
+import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
@@ -22,26 +23,38 @@ const buttonSource = read('../../../components/ui/button.tsx');
  */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-const render = (props: Parameters<typeof ProjectIconField>[0]) =>
-  renderToStaticMarkup(<ProjectIconField {...props} />);
-
 const noop = () => {};
+
+/** `onChange`/`onGlyphChange` default to no-ops so most call sites only ever
+ *  spell out the one prop the test is actually about. */
+const render = (
+  props: Partial<Parameters<typeof ProjectIconField>[0]> & { value: ProjectIconValue },
+) => renderToStaticMarkup(<ProjectIconField onChange={noop} onGlyphChange={noop} {...props} />);
+
+/** A renderable glyph, used everywhere a test needs "some glyph is picked". */
+const ROCKET_BLUE: GlyphSelection = { name: 'Rocket', color: 'blue' };
 
 /**
  * Compile-time pin on the props contract, checked by `tsc --noEmit` and not by
  * `bun test`. `strict` is on repo-wide, so `strictFunctionTypes` makes a prop
  * callback contravariant: widening `onChange` back to
- * `(icon: string | null) => void` makes the component NO LONGER assignable
- * here and the typecheck fails. The signature carried `| null` through a whole
- * round of review with 25 tests passing, so the source assertions in
- * 'the setter is narrower than the getter' carry the same rule for `bun test`.
+ * `(icon: string | null) => void`, or widening `value` past the union, makes
+ * the component NO LONGER assignable here and the typecheck fails.
+ *
+ * `value` is a UNION (`{ emoji } | { glyph } | null`), not two independently
+ * nullable slots — that is what makes it impossible for a host to hold, and
+ * therefore send, both an emoji AND a glyph at once. `onChange` and
+ * `onGlyphChange` are two narrow setters rather than one
+ * `(value: ProjectIconValue) => void`: one wide callback would overload a
+ * single signature with three different events and force every host to
+ * re-derive which one happened from the argument.
  *
  * `onClear` was added when the edit modal needed a way to take an existing
- * project's emoji back off, and it did NOT weaken the rule above — that is the
- * point of it being a second prop rather than a wider `onChange`. Removing and
- * picking are two different events; one nullable setter would have made every
- * host re-derive which one happened from the argument, and would have handed
- * the create modal a clear channel it has no use for.
+ * project's icon back off, and it did NOT weaken the rule above — that is the
+ * point of it being a third callback rather than a nullable `onChange`.
+ * Removing and picking are different events; one nullable setter would make
+ * every host re-derive which one happened, and would hand the create modal a
+ * clear channel it has no use for.
  *
  * The pin is declared with `onClear` present, not omitted. An optional member
  * left out of `PinnedProps` would still be assignable — the pin would simply
@@ -49,8 +62,9 @@ const noop = () => {};
  * would go unnoticed here.
  */
 type PinnedProps = {
-  value: string | null;
+  value: { emoji: string } | { glyph: GlyphSelection } | null;
   onChange: (icon: string) => void;
+  onGlyphChange: (glyph: GlyphSelection) => void;
   onClear?: () => void;
   disabled?: boolean;
 };
@@ -60,20 +74,33 @@ const signaturePin: (props: PinnedProps) => unknown = ProjectIconField;
  * The popover's contents, split at the picker.
  *
  * There are now two `setOpen(false)` call sites inside `<PopoverContent>` — the
- * picker's and the remove control's — so a slice that spans both would let
- * either one satisfy an assertion meant for the other. These three slices keep
- * each test pointed at exactly one of them.
+ * picker's (which itself has two: `onEmojiSelect` and `onGlyphSelect`) and the
+ * remove control's — so a slice that spans both would let either one satisfy
+ * an assertion meant for the other. These slices keep each test pointed at
+ * exactly the element it names.
  */
 const popoverBody = code.slice(code.indexOf('<PopoverContent'), code.indexOf('</PopoverContent>'));
-const pickerEnd = popoverBody.indexOf('/>', popoverBody.indexOf('<EmojiPicker')) + 2;
-/** The `<EmojiPicker … />` element alone. */
-const pickerElement = popoverBody.slice(popoverBody.indexOf('<EmojiPicker'), pickerEnd);
+const pickerEnd = popoverBody.indexOf('/>', popoverBody.indexOf('<ProjectIconPicker')) + 2;
+/** The `<ProjectIconPicker … />` element alone — both `onEmojiSelect` and
+ *  `onGlyphSelect`, and the `defaultTab`/`defaultColor` wiring. */
+const pickerElement = popoverBody.slice(popoverBody.indexOf('<ProjectIconPicker'), pickerEnd);
 /** Everything after the picker — the remove control. */
 const removeBranch = popoverBody.slice(pickerEnd);
+/** Just the `onEmojiSelect` handler body, so a test aimed at it cannot pass
+ *  against `onGlyphSelect`'s `setOpen(false)` instead. */
+const emojiHandler = pickerElement.slice(
+  pickerElement.indexOf('onEmojiSelect={'),
+  pickerElement.indexOf('onGlyphSelect={'),
+);
+/** Just the `onGlyphSelect` handler body. */
+const glyphHandler = pickerElement.slice(
+  pickerElement.indexOf('onGlyphSelect={'),
+  pickerElement.indexOf('defaultTab='),
+);
 
 describe('ProjectIconField trigger', () => {
   test('renders the selected emoji, and only it', () => {
-    const html = render({ value: '🚀', onChange: noop });
+    const html = render({ value: { emoji: '🚀' } });
 
     expect(html).toContain('🚀');
     // The fallback glyph is a Phosphor SVG. Both faces on screen at once means
@@ -81,25 +108,45 @@ describe('ProjectIconField trigger', () => {
     expect(html).not.toContain('<svg');
   });
 
+  test('renders the selected glyph, as an svg, and not the emoji face', () => {
+    const html = render({ value: { glyph: ROCKET_BLUE } });
+
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('🚀');
+  });
+
   test('falls back to a neutral glyph when unset', () => {
-    const html = render({ value: null, onChange: noop });
+    const html = render({ value: null });
 
     expect(html).toContain('<svg');
   });
 
-  test('names the control for assistive tech in both states', () => {
-    // frimousse gives the trigger no visible text, so the aria-label is the
-    // control's only accessible name.
-    expect(render({ value: null, onChange: noop })).toContain('aria-label="Choose project icon"');
-    expect(render({ value: '🚀', onChange: noop })).toContain(
+  test('an unrenderable glyph name falls back to the neutral glyph too', () => {
+    // The server rejects a name outside the catalogue, but a client rendering
+    // stale cached data — a project row whose glyph catalogue shrank — must
+    // not paint a tinted tile around nothing.
+    const html = render({ value: { glyph: { name: 'Skull', color: 'blue' } } });
+
+    expect(html).not.toContain('bg-glyph-fill-blue');
+    expect(html).toContain('text-muted-foreground');
+  });
+
+  test('names the control for assistive tech in all three states', () => {
+    // frimousse/the glyph grid give the trigger no visible text, so the
+    // aria-label is the control's only accessible name.
+    expect(render({ value: null })).toContain('aria-label="Choose project icon"');
+    expect(render({ value: { emoji: '🚀' } })).toContain(
       'aria-label="Project icon: 🚀. Change it"',
+    );
+    expect(render({ value: { glyph: ROCKET_BLUE } })).toContain(
+      'aria-label="Project icon: Rocket. Change it"',
     );
   });
 
-  test('keeps the glyph itself out of the accessibility tree', () => {
+  test('keeps the emoji itself out of the accessibility tree', () => {
     // The button is already named by its aria-label. Without aria-hidden the
     // glyph is announced a second time, after the label that just described it.
-    expect(render({ value: '🚀', onChange: noop })).toMatch(/aria-hidden="true"[^>]*>🚀/);
+    expect(render({ value: { emoji: '🚀' } })).toMatch(/aria-hidden="true"[^>]*>🚀/);
   });
 
   test('is type="button", declared here and not only inherited', () => {
@@ -111,13 +158,13 @@ describe('ProjectIconField trigger', () => {
     // deleting the prop and watching it stay green. Both layers are pinned:
     // the markup, which is what actually protects the form, and the source,
     // which is what stops the prop being dropped as redundant.
-    expect(render({ value: null, onChange: noop })).toContain('type="button"');
+    expect(render({ value: null })).toContain('type="button"');
     expect(code).toMatch(/<Button\s[\s\S]*?\btype="button"/);
   });
 
   test('disabled reaches the button element, not just the styling', () => {
-    expect(render({ value: null, onChange: noop, disabled: true })).toContain('disabled=""');
-    expect(render({ value: null, onChange: noop })).not.toContain('disabled=""');
+    expect(render({ value: null, disabled: true })).toContain('disabled=""');
+    expect(render({ value: null })).not.toContain('disabled=""');
   });
 
   test('the trigger stays clickable once an icon is picked', () => {
@@ -126,25 +173,24 @@ describe('ProjectIconField trigger', () => {
     // that conditions `disabled` on `value` — `disabled || value !== null` is
     // the obvious slip — makes the field a one-shot and is invisible to a test
     // that only ever renders `value: null`.
-    expect(render({ value: '🚀', onChange: noop })).not.toContain('disabled=""');
-    expect(render({ value: '🚀', onChange: noop, disabled: true })).toContain('disabled=""');
+    expect(render({ value: { emoji: '🚀' } })).not.toContain('disabled=""');
+    expect(render({ value: { emoji: '🚀' }, disabled: true })).toContain('disabled=""');
+    expect(render({ value: { glyph: ROCKET_BLUE } })).not.toContain('disabled=""');
     expect(code).toMatch(/disabled=\{disabled\}/);
     expect(code).not.toMatch(/disabled=\{[^}]*\bvalue\b/);
   });
 
-  test('the setter is narrower than the getter', () => {
-    // The field can DISPLAY "no icon" — `value` is nullable — but `onChange`
-    // can never PRODUCE one: its only call site is the picker's onEmojiSelect,
-    // which always has an emoji. `string | null` was a promise the component
-    // never kept, and it still is: removing travels on `onClear`, so a `null`
-    // arriving through `onChange` would be a state nothing here can reach.
-    //
+  test('the value prop is the union, and the setters cannot produce it', () => {
     // `signaturePin` is the real guard and only `tsc` can fail it; referencing
-    // it here is not the assertion. These two are what `bun test` can see.
+    // it here is not the assertion. These are what `bun test` can see.
     expect(signaturePin).toBe(ProjectIconField);
     expect(code).toContain('onChange: (icon: string) => void;');
-    expect(code).toContain('value: string | null;');
+    expect(code).toContain('onGlyphChange: (glyph: GlyphSelection) => void;');
     expect(code).not.toMatch(/onChange:\s*\(icon: string \| null\)/);
+    // The value type itself: a union of the two shapes, not two independently
+    // nullable props — grep for the tell-tale shape of "two slots" and fail if
+    // it ever creeps back in.
+    expect(code).not.toMatch(/emoji\?:\s*string \| null;\s*glyph\?:/);
   });
 
   test('removing has its own callback, and it is optional', () => {
@@ -156,20 +202,25 @@ describe('ProjectIconField trigger', () => {
   });
 
   test('selecting an emoji reports THAT emoji, and closes the popover', () => {
-    // The two lines the whole component exists for, and the two nothing else
-    // here can reach: `renderToStaticMarkup` cannot click, and the handler is a
-    // closure inside a portalled child. Swapping `emoji.emoji` for `emoji.label`
-    // would ship the string "Rocket" as a project icon with every other gate
-    // green; dropping setOpen(false) leaves the picker up over the modal.
-    //
-    // Sliced to the picker ELEMENT, not to `</PopoverContent>`: the remove
-    // control that now follows carries its own `setOpen(false)`, so the wider
-    // slice would keep this green with the picker's own close deleted.
-    const handler = pickerElement.slice(pickerElement.indexOf('onEmojiSelect={'));
+    // Sliced to the emoji handler alone, not to the whole picker element or to
+    // `</PopoverContent>`: both the glyph handler and the remove control carry
+    // their own `setOpen(false)`, so a wider slice would keep this green with
+    // THIS handler's own close deleted.
+    expect(emojiHandler).toMatch(/onChange\(picked\.emoji\)/);
+    expect(emojiHandler).not.toMatch(/onChange\(picked\.label\)/);
+    expect(emojiHandler).toMatch(/setOpen\(false\)/);
+  });
 
-    expect(handler).toMatch(/onChange\(emoji\.emoji\)/);
-    expect(handler).not.toMatch(/onChange\(emoji\.label\)/);
-    expect(handler).toMatch(/setOpen\(false\)/);
+  test('selecting a glyph reports THAT glyph, and closes the popover', () => {
+    expect(glyphHandler).toMatch(/onGlyphChange\(picked\)/);
+    expect(glyphHandler).toMatch(/setOpen\(false\)/);
+  });
+
+  test('reopening a glyph project lands the popover on the Icon tab, pre-coloured', () => {
+    // So switching to Emoji-and-back, or just reopening, doesn't lose the tab
+    // or colour the user was last looking at.
+    expect(pickerElement).toMatch(/defaultTab=\{glyphFace \? 'icon' : 'emoji'\}/);
+    expect(pickerElement).toMatch(/defaultColor=\{glyphFace\?\.color\}/);
   });
 
   test('the popover is controlled in both directions', () => {
@@ -260,7 +311,9 @@ describe('ProjectIconField trigger', () => {
 });
 
 /**
- * The popover has to be EXACTLY as wide as the emoji grid.
+ * The popover has to be EXACTLY as wide as the emoji grid — and the glyph grid
+ * copies the same four literals for the same reason, so the popover never
+ * resizes on tab switch.
  *
  * A frimousse row is a bare flex line with no justification, so surplus width
  * lands as dead space on the right of every row and the grid stops lining up
@@ -314,12 +367,6 @@ describe('ProjectIconField popover geometry', () => {
     expect(Number(declared?.[2])).toBe(2);
   });
 
-  test('the picker takes frimousse’s default column count', () => {
-    // The width above is computed from the default. An explicit `columns` on
-    // Frimousse.Root would silently make it wrong.
-    expect(pickerSource).not.toMatch(/<Frimousse\.Root[\s\S]*?\bcolumns=/);
-  });
-
   test('the popover hangs off the trigger’s leading edge', () => {
     // align="start" is a layout decision, not a default: the trigger is the
     // leftmost control in the modal row, so `center` or `end` would push a
@@ -347,7 +394,7 @@ describe('ProjectIconField popover geometry', () => {
 
 describe('ProjectIconField conventions', () => {
   test('the two faces cross-fade in a shared box instead of hard-swapping', () => {
-    // Picking an emoji closes the popover, so the eye is on the trigger at the
+    // Picking an icon closes the popover, so the eye is on the trigger at the
     // exact moment it changes; a hard swap reads as two objects blinking. The
     // values are the ones the design system fixes for this: scale 0.25 -> 1,
     // opacity 0 -> 1, blur 4px -> 0.
@@ -357,8 +404,8 @@ describe('ProjectIconField conventions', () => {
     expect(swap).toContain("animate: { scale: 1, opacity: 1, filter: 'blur(0px)' }");
     expect(swap).toContain("exit: { scale: 0.25, opacity: 0, filter: 'blur(4px)' }");
 
-    // Both faces need one shared, fixed box or they cross-fade in different
-    // places and the button's width jumps mid-swap.
+    // All three faces need one shared, fixed box or they cross-fade in
+    // different places and the button's width jumps mid-swap.
     expect(code).toMatch(/relative inline-flex size-\d/);
     expect(code.match(/absolute inset-0/g)).toHaveLength(1);
   });
@@ -371,10 +418,15 @@ describe('ProjectIconField conventions', () => {
     expect(code).toContain('<AnimatePresence initial={false}');
   });
 
-  test('re-keys on the value so changing emoji animates too', () => {
+  test('re-keys on the picked face so changing icon animates too', () => {
     // Keyed on a constant, AnimatePresence sees one stable child and only the
-    // null <-> set transition animates; picking a different emoji snaps.
-    expect(code).toMatch(/key=\{value \?\? '[^']+'\}/);
+    // unset <-> set transition animates; picking a different emoji or glyph
+    // would otherwise snap. Keyed on colour as well as name for a glyph:
+    // recolouring the same glyph is still a visible change to animate.
+    expect(code).toMatch(/key=\{identity\}/);
+    expect(code).toMatch(
+      /const identity = glyphFace \? `glyph:\$\{glyphFace\.name\}:\$\{glyphFace\.color\}` : \(emoji \?\? 'unset'\);/,
+    );
   });
 
   test('reduced motion animates opacity only', () => {
@@ -410,20 +462,19 @@ describe('ProjectIconField conventions', () => {
     // the sibling name Input. hit-area-1 pads the target to 40.47px without
     // moving a pixel, using the repo's own utility (see globals.css).
     //
-    // Read from the MARKUP, in both states. It used to read the source, which
-    // stopped meaning anything the moment the className became a cn() call —
-    // and the tinted state is a second class list that could lose either one.
-    for (const value of [null, '🌿']) {
-      const classes = (render({ value, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '').split(
-        /\s+/,
-      );
+    // Read from the MARKUP, in all three states. It used to read the source,
+    // which stopped meaning anything the moment the className became a cn()
+    // call — and each tinted state is its own class list that could lose
+    // either one.
+    for (const value of [null, { emoji: '🌿' }, { glyph: ROCKET_BLUE }] as const) {
+      const classes = (render({ value }).match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
 
       expect(classes).toContain('hit-area-1');
       expect(classes).toContain('size-9');
     }
   });
 
-  test('the two faces share a box the wider of them actually fits', () => {
+  test('the three faces share a box the widest of them actually fits', () => {
     // A text-lg emoji measures 21px. size-5 is 18.39px, so the glyph hung
     // 2.61px out of the box the cross-fade scales and blurs within.
     expect(code).toMatch(/relative inline-flex size-6 items-center justify-center/);
@@ -438,7 +489,7 @@ describe('ProjectIconField conventions', () => {
     //
     // Button composes through cn(), so tailwind-merge resolves the two into one
     // transition-property utility and the winner is observable here.
-    const classes = render({ value: null, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '';
+    const classes = render({ value: null }).match(/class="([^"]*)"/)?.[1] ?? '';
 
     expect(classes).toContain('transition-[color,background-color,box-shadow,scale]');
     expect(classes).not.toContain('transition-all');
@@ -465,7 +516,7 @@ describe('ProjectIconField conventions', () => {
     expect(variants).toContain('hover:bg-foreground/5');
     expect(variants).toContain('bg-transparent');
 
-    const unset = render({ value: null, onChange: noop }).match(/class="([^"]*)"/)?.[1] ?? '';
+    const unset = render({ value: null }).match(/class="([^"]*)"/)?.[1] ?? '';
     expect(unset).toContain('hover:bg-foreground/5');
   });
 
@@ -477,9 +528,9 @@ describe('ProjectIconField conventions', () => {
   });
 
   test('the cross-fade pops the outgoing face out of layout', () => {
-    // mode="popLayout" is what lets the two absolutely-positioned faces
-    // overlap during the swap. Without it AnimatePresence keeps the outgoing
-    // child in flow and the shared box is no longer shared.
+    // mode="popLayout" is what lets the faces overlap during the swap. Without
+    // it AnimatePresence keeps the outgoing child in flow and the shared box
+    // is no longer shared.
     expect(code).toContain('mode="popLayout"');
   });
 
@@ -495,7 +546,7 @@ describe('ProjectIconField conventions', () => {
 });
 
 /**
- * The trigger's tint.
+ * The trigger's tint when an EMOJI is picked.
  *
  * Once an icon is picked, the trigger stops being a neutral outline button and
  * becomes the picker cell you just hovered — the same pale fill under the same
@@ -503,12 +554,12 @@ describe('ProjectIconField conventions', () => {
  * (components/ui/emoji-tint.ts), which is what makes it match the card and the
  * sidebar row without anything being threaded between them.
  */
-describe('ProjectIconField trigger tint', () => {
-  const classesOf = (props: Parameters<typeof ProjectIconField>[0]) =>
-    (render(props).match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
+describe('ProjectIconField trigger tint — emoji', () => {
+  const classesOf = (value: ProjectIconValue) =>
+    (render({ value }).match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
 
   test('a picked emoji tints the trigger at rest', () => {
-    const classes = classesOf({ value: '🌿', onChange: noop });
+    const classes = classesOf({ emoji: '🌿' });
 
     expect(classes).toContain('bg-emoji-fill-green');
     expect(classes).toContain('inset-ring-1');
@@ -521,19 +572,21 @@ describe('ProjectIconField trigger tint', () => {
     // coloured line drawn inside it — two edges where the picker cell has one.
     // tailwind-merge resolves the widths into one utility, so the winner shows
     // up in the markup.
-    const classes = classesOf({ value: '🌿', onChange: noop });
+    const classes = classesOf({ emoji: '🌿' });
 
     expect(classes).toContain('border-0');
     expect(classes).not.toContain('border');
   });
 
   test('an unset trigger stays the plain outline button', () => {
-    // There is no emoji to take a hue from, and a tinted "nothing chosen yet"
-    // control would read as filled. The unset face is a muted Smiley on the
-    // design system's icon-button chrome, exactly as before.
-    const classes = classesOf({ value: null, onChange: noop });
+    // There is no emoji or glyph to take a hue from, and a tinted "nothing
+    // chosen yet" control would read as filled. The unset face is a muted
+    // Smiley on the design system's icon-button chrome, exactly as before.
+    const classes = classesOf(null);
 
-    expect(classes.some((c) => c.startsWith('bg-emoji-fill-'))).toBe(false);
+    expect(classes.some((c) => c.startsWith('bg-emoji-fill-') || c.startsWith('bg-glyph-fill-'))).toBe(
+      false,
+    );
     expect(classes.some((c) => c.startsWith('inset-ring-'))).toBe(false);
     expect(classes).toContain('border');
     expect(classes).not.toContain('border-0');
@@ -546,7 +599,7 @@ describe('ProjectIconField trigger tint', () => {
     // on a tinted trigger flips it to a neutral wash and back. Restating the
     // fill under the same modifier makes tailwind-merge drop the variant's
     // hover outright, which is observable here.
-    const classes = classesOf({ value: '🌿', onChange: noop });
+    const classes = classesOf({ emoji: '🌿' });
 
     expect(classes).toContain('hover:bg-emoji-fill-green');
     expect(classes).not.toContain('hover:bg-foreground/5');
@@ -557,15 +610,15 @@ describe('ProjectIconField trigger tint', () => {
     // ring is the half of the treatment that carries the contrast, so
     // thickening it is the feedback that stays inside the tint's own language
     // rather than borrowing a neutral fill.
-    expect(classesOf({ value: '🌿', onChange: noop })).toContain('hover:inset-ring-2');
-    expect(classesOf({ value: null, onChange: noop })).not.toContain('hover:inset-ring-2');
+    expect(classesOf({ emoji: '🌿' })).toContain('hover:inset-ring-2');
+    expect(classesOf(null)).not.toContain('hover:inset-ring-2');
   });
 
   test('a different emoji gives a different trigger', () => {
     // Guards every check above against a tint pinned to one hue.
-    expect(classesOf({ value: '🔥', onChange: noop })).toContain('bg-emoji-fill-amber');
-    expect(classesOf({ value: '💧', onChange: noop })).toContain('bg-emoji-fill-blue');
-    expect(classesOf({ value: '🔥', onChange: noop })).not.toContain('bg-emoji-fill-green');
+    expect(classesOf({ emoji: '🔥' })).toContain('bg-emoji-fill-amber');
+    expect(classesOf({ emoji: '💧' })).toContain('bg-emoji-fill-blue');
+    expect(classesOf({ emoji: '🔥' })).not.toContain('bg-emoji-fill-green');
   });
 
   test('the trigger and the card tile wear the SAME tint for the same emoji', () => {
@@ -577,9 +630,7 @@ describe('ProjectIconField trigger tint', () => {
       classes.filter((c) => c.includes('emoji-fill-') || c.includes('emoji-ring-')).sort();
 
     for (const emoji of ['🌿', '🔥', '💧', '🚀', '🤖']) {
-      const trigger = tintOf(classesOf({ value: emoji, onChange: noop })).filter(
-        (c) => !c.startsWith('hover:'),
-      );
+      const trigger = tintOf(classesOf({ emoji })).filter((c) => !c.startsWith('hover:'));
       const tile = tintOf(
         (
           renderToStaticMarkup(<EntityAvatar label="Demo" emoji={emoji} size="lg" />).match(
@@ -593,13 +644,121 @@ describe('ProjectIconField trigger tint', () => {
     }
   });
 
-  test('the trigger takes its tint from the shared module, not a local copy', () => {
+  test('the trigger takes its emoji tint from the shared module, not a local copy', () => {
     expect(code).toContain("from '@/components/ui/emoji-tint'");
-    expect(code).toMatch(/emojiTint\(value\)/);
-    expect(code).toMatch(/emojiTintHover\(value\)/);
+    expect(code).toMatch(/emojiTint\(emoji\)/);
+    expect(code).toMatch(/emojiTintHover\(emoji\)/);
 
     // Spelling the classes out here is the fork that makes the surfaces drift.
     expect(code).not.toMatch(/'[^']*bg-emoji-fill-/);
+  });
+});
+
+/**
+ * The trigger's tint when a GLYPH is picked — same treatment, different
+ * source: the hue is CHOSEN (glyph-tint.ts) rather than derived from the
+ * glyph itself.
+ */
+describe('ProjectIconField trigger tint — glyph', () => {
+  const classesOf = (value: ProjectIconValue) =>
+    (render({ value }).match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
+
+  test('a picked glyph tints the trigger at rest, in its chosen colour', () => {
+    const classes = classesOf({ glyph: { name: 'Rocket', color: 'magenta' } });
+
+    expect(classes).toContain('bg-glyph-fill-magenta');
+    expect(classes).toContain('inset-ring-1');
+    expect(classes).toContain('inset-ring-glyph-ring-magenta');
+  });
+
+  test('the glyph tint also cancels the outline variant’s own border', () => {
+    const classes = classesOf({ glyph: ROCKET_BLUE });
+
+    expect(classes).toContain('border-0');
+    expect(classes).not.toContain('border');
+  });
+
+  test('the glyph itself is tinted in its own colour, not left monochrome', () => {
+    const html = render({ value: { glyph: ROCKET_BLUE } });
+
+    expect(html).toContain('text-glyph-ring-blue');
+  });
+
+  test('hovering holds the glyph tint instead of washing it out', () => {
+    const classes = classesOf({ glyph: { name: 'Rocket', color: 'lime' } });
+
+    expect(classes).toContain('hover:bg-glyph-fill-lime');
+    expect(classes).not.toContain('hover:bg-foreground/5');
+    expect(classes).toContain('hover:inset-ring-2');
+  });
+
+  test('a different glyph colour gives a different trigger', () => {
+    expect(classesOf({ glyph: { name: 'Rocket', color: 'orange' } })).toContain(
+      'bg-glyph-fill-orange',
+    );
+    expect(classesOf({ glyph: { name: 'Rocket', color: 'purple' } })).toContain(
+      'bg-glyph-fill-purple',
+    );
+    expect(classesOf({ glyph: { name: 'Rocket', color: 'orange' } })).not.toContain(
+      'bg-glyph-fill-purple',
+    );
+  });
+
+  test('the same glyph name in two colours is two different tiles', () => {
+    // Guards a tint keyed on the glyph NAME instead of its colour — a
+    // plausible slip since the emoji tint (the sibling treatment) IS keyed on
+    // the glyph's own identity.
+    const blue = classesOf({ glyph: { name: 'Star', color: 'blue' } });
+    const red = classesOf({ glyph: { name: 'Star', color: 'red' } });
+
+    expect(blue).toContain('bg-glyph-fill-blue');
+    expect(red).toContain('bg-glyph-fill-red');
+    expect(blue).not.toContain('bg-glyph-fill-red');
+  });
+
+  test('the trigger and the card tile wear the SAME tint for the same glyph', () => {
+    const tintOf = (classes: string[]) =>
+      classes.filter((c) => c.includes('glyph-fill-') || c.includes('glyph-ring-')).sort();
+
+    for (const glyph of [
+      { name: 'Rocket', color: 'blue' },
+      { name: 'Star', color: 'magenta' },
+      { name: 'Leaf', color: 'lime' },
+    ]) {
+      const trigger = tintOf(classesOf({ glyph })).filter((c) => !c.startsWith('hover:'));
+      const tile = tintOf(
+        (
+          renderToStaticMarkup(<EntityAvatar label="Demo" glyph={glyph} size="lg" />).match(
+            /class="([^"]*)"/,
+          )?.[1] ?? ''
+        ).split(/\s+/),
+      );
+
+      expect(trigger).toEqual(tile);
+      expect(trigger.length).toBe(2);
+    }
+  });
+
+  test('the trigger takes its glyph tint from the shared module, not a local copy', () => {
+    expect(code).toContain("from '@/components/ui/glyph-tint'");
+    expect(code).toMatch(/glyphTint\(glyphFace\.color\)/);
+    expect(code).toMatch(/glyphTintHover\(glyphFace\.color\)/);
+    expect(code).toMatch(/glyphForeground\(glyphFace\.color\)/);
+
+    // Spelling the classes out here is the fork that makes the surfaces drift.
+    expect(code).not.toMatch(/'[^']*bg-glyph-fill-/);
+  });
+
+  test('an emoji and a glyph never tint the trigger at the same time', () => {
+    // The union guarantees this at the type level; this is the runtime
+    // evidence. A trigger showing both tints would mean the two fields
+    // (`value: { emoji }` and `value: { glyph }`) were read independently
+    // instead of through the one union prop.
+    const emojiOnly = classesOf({ emoji: '🌿' });
+    expect(emojiOnly.some((c) => c.startsWith('bg-glyph-fill-'))).toBe(false);
+
+    const glyphOnly = classesOf({ glyph: ROCKET_BLUE });
+    expect(glyphOnly.some((c) => c.startsWith('bg-emoji-fill-'))).toBe(false);
   });
 });
 
@@ -615,13 +774,16 @@ describe('ProjectIconField trigger tint', () => {
  * and reading the PATCH it sends.
  */
 describe('ProjectIconField remove control', () => {
-  test('the three popover slices were all found', () => {
+  test('the popover slices were all found', () => {
     // Guard the guards: every assertion in this file that reads a slice is
     // vacuous against an empty one, and `.toContain` on '' fails in a way that
     // reads like a real defect rather than a stale pattern.
-    expect(popoverBody).toContain('<EmojiPicker');
+    expect(popoverBody).toContain('<ProjectIconPicker');
     expect(pickerElement).toContain('onEmojiSelect={');
+    expect(pickerElement).toContain('onGlyphSelect={');
     expect(pickerElement).not.toContain('Remove icon');
+    expect(emojiHandler).not.toBe('');
+    expect(glyphHandler).not.toBe('');
     expect(removeBranch).toContain('Remove icon');
   });
 

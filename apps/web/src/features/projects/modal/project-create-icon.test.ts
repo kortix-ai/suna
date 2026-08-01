@@ -57,8 +57,9 @@ describe('create modal: the project icon', () => {
   test('owns the icon as its own state and drops it when the modal closes', () => {
     // The field never clears itself — the trigger stays live so you can reopen
     // and switch — so a reopened modal would otherwise still show the last
-    // project's emoji.
-    expect(code).toContain('const [icon, setIcon] = useState<string | null>(null)');
+    // project's icon. `ProjectIconValue` is the field's own union type ({
+    // emoji } | { glyph } | null), not two independently nullable slots.
+    expect(code).toContain('const [icon, setIcon] = useState<ProjectIconValue>(null)');
     expect(code).toMatch(/function resetAndClose\(\)[\s\S]*?setIcon\(null\)/);
   });
 
@@ -69,7 +70,12 @@ describe('create modal: the project icon', () => {
     expect(fields).toHaveLength(2);
     for (const field of fields) {
       expect(field).toContain('value={icon}');
-      expect(field).toContain('onChange={setIcon}');
+      // Two narrow setters, each wrapping its picked value in the union shape
+      // the field expects — never a raw `setIcon` passthrough, which would
+      // require `onChange`/`onGlyphChange` to already agree with the state's
+      // union type instead of just their own payload.
+      expect(field).toContain('onChange={(emoji) => setIcon({ emoji })}');
+      expect(field).toContain('onGlyphChange={(glyph) => setIcon({ glyph })}');
       expect(field).toContain('disabled={submitting}');
     }
   });
@@ -96,10 +102,14 @@ describe('create modal: the project icon', () => {
     }
   });
 
-  test('leaves the key out of the payload when no emoji is picked', () => {
+  test('leaves the key out of the payload when nothing is picked, and sends the right key otherwise', () => {
     // Not `icon: icon ?? undefined`: an explicit key is something the server's
-    // create paths would have to interpret. Absent means absent.
-    expect(code).toContain('const iconPayload = icon ? { icon } : {};');
+    // create paths would have to interpret. Absent means absent. Which key —
+    // `icon` or `icon_glyph` — comes straight from which side of the union
+    // `icon` holds, so this client is structurally incapable of sending both.
+    expect(code).toContain(
+      "const iconPayload = !icon ? {} : 'emoji' in icon ? { icon: icon.emoji } : { icon_glyph: icon.glyph };",
+    );
   });
 
   test('sends the icon with the plain managed create', () => {

@@ -4,8 +4,11 @@ import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patc
 
 /** A project as the modal receives it: named, with an emoji already saved. */
 const ICONED = { name: 'Atlas', icon: '🚀' };
-/** A project that has never had an emoji. */
+/** A project that has never had an icon of either kind. */
 const PLAIN = { name: 'Atlas', icon: null };
+/** A project with a glyph already saved (never an emoji at the same time —
+ *  the server-side invariant this feature exists to preserve). */
+const GLYPHED = { name: 'Atlas', icon_glyph: { name: 'Rocket', color: 'blue' } };
 
 /** The patch, or a readable failure naming the status that came back instead. */
 function readyPatch(result: ReturnType<typeof buildProjectEditPatch>) {
@@ -15,7 +18,7 @@ function readyPatch(result: ReturnType<typeof buildProjectEditPatch>) {
 
 describe('nothing to save', () => {
   test('an untouched draft is unchanged', () => {
-    expect(buildProjectEditPatch(ICONED, { name: 'Atlas', icon: '🚀' })).toEqual({
+    expect(buildProjectEditPatch(ICONED, { name: 'Atlas', icon: { emoji: '🚀' } })).toEqual({
       status: 'unchanged',
     });
   });
@@ -37,8 +40,17 @@ describe('nothing to save', () => {
     });
   });
 
+  test('an untouched GLYPH draft is unchanged too', () => {
+    expect(
+      buildProjectEditPatch(GLYPHED, {
+        name: 'Atlas',
+        icon: { glyph: { name: 'Rocket', color: 'blue' } },
+      }),
+    ).toEqual({ status: 'unchanged' });
+  });
+
   test('surrounding whitespace on the name is not a change', () => {
-    expect(buildProjectEditPatch(ICONED, { name: '  Atlas  ', icon: '🚀' })).toEqual({
+    expect(buildProjectEditPatch(ICONED, { name: '  Atlas  ', icon: { emoji: '🚀' } })).toEqual({
       status: 'unchanged',
     });
   });
@@ -54,21 +66,21 @@ describe('nothing to save', () => {
 
 describe('the name is required', () => {
   test('an emptied name is not savable', () => {
-    expect(buildProjectEditPatch(ICONED, { name: '', icon: '🚀' })).toEqual({
+    expect(buildProjectEditPatch(ICONED, { name: '', icon: { emoji: '🚀' } })).toEqual({
       status: 'empty-name',
     });
   });
 
   test('a whitespace-only name is not savable', () => {
-    expect(buildProjectEditPatch(ICONED, { name: '   ', icon: '🚀' })).toEqual({
+    expect(buildProjectEditPatch(ICONED, { name: '   ', icon: { emoji: '🚀' } })).toEqual({
       status: 'empty-name',
     });
   });
 
   test('an emptied name blocks the save even when the icon DID change', () => {
-    // Otherwise the emoji would save and the empty name would be silently
+    // Otherwise the icon would save and the empty name would be silently
     // dropped, leaving the modal reporting success for half the edit.
-    expect(buildProjectEditPatch(ICONED, { name: '', icon: '🎯' })).toEqual({
+    expect(buildProjectEditPatch(ICONED, { name: '', icon: { emoji: '🎯' } })).toEqual({
       status: 'empty-name',
     });
   });
@@ -79,16 +91,19 @@ describe('renaming only', () => {
     // The load-bearing case. `PATCH` leaves the stored icon alone only when the
     // key is absent; `icon: null` would remove it and `icon: '🚀'` would be a
     // pointless rewrite of a value nobody touched.
-    const patch = readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas 2', icon: '🚀' }));
+    const patch = readyPatch(
+      buildProjectEditPatch(ICONED, { name: 'Atlas 2', icon: { emoji: '🚀' } }),
+    );
 
     expect(patch).toEqual({ name: 'Atlas 2' });
     expect('icon' in patch).toBe(false);
+    expect('icon_glyph' in patch).toBe(false);
   });
 
   test('the name is trimmed before it is sent', () => {
-    expect(readyPatch(buildProjectEditPatch(ICONED, { name: '  Atlas 2  ', icon: '🚀' }))).toEqual({
-      name: 'Atlas 2',
-    });
+    expect(
+      readyPatch(buildProjectEditPatch(ICONED, { name: '  Atlas 2  ', icon: { emoji: '🚀' } })),
+    ).toEqual({ name: 'Atlas 2' });
   });
 
   test('renaming a project with no icon still sends no icon key', () => {
@@ -97,22 +112,100 @@ describe('renaming only', () => {
     expect(patch).toEqual({ name: 'Atlas 2' });
     expect('icon' in patch).toBe(false);
   });
+
+  test('renaming a GLYPH project sends no icon_glyph key', () => {
+    const patch = readyPatch(
+      buildProjectEditPatch(GLYPHED, {
+        name: 'Atlas 2',
+        icon: { glyph: { name: 'Rocket', color: 'blue' } },
+      }),
+    );
+
+    expect(patch).toEqual({ name: 'Atlas 2' });
+    expect('icon_glyph' in patch).toBe(false);
+    expect('icon' in patch).toBe(false);
+  });
 });
 
 describe('changing the icon only', () => {
   test('a different emoji is savable on its own, with no name key', () => {
     // The bug this feature exists to fix: the old modal compared only the name,
     // so an icon-only edit left Save disabled.
-    const patch = readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas', icon: '🎯' }));
+    const patch = readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas', icon: { emoji: '🎯' } }));
 
     expect(patch).toEqual({ icon: '🎯' });
     expect('name' in patch).toBe(false);
+    expect('icon_glyph' in patch).toBe(false);
   });
 
   test('adding a first emoji to a project that had none', () => {
-    expect(readyPatch(buildProjectEditPatch(PLAIN, { name: 'Atlas', icon: '🎯' }))).toEqual({
-      icon: '🎯',
-    });
+    expect(
+      readyPatch(buildProjectEditPatch(PLAIN, { name: 'Atlas', icon: { emoji: '🎯' } })),
+    ).toEqual({ icon: '🎯' });
+  });
+
+  test('a different glyph colour is savable on its own', () => {
+    const patch = readyPatch(
+      buildProjectEditPatch(GLYPHED, {
+        name: 'Atlas',
+        icon: { glyph: { name: 'Rocket', color: 'magenta' } },
+      }),
+    );
+
+    expect(patch).toEqual({ icon_glyph: { name: 'Rocket', color: 'magenta' } });
+    expect('name' in patch).toBe(false);
+    expect('icon' in patch).toBe(false);
+  });
+
+  test('a different glyph NAME in the same colour still counts as a change', () => {
+    const patch = readyPatch(
+      buildProjectEditPatch(GLYPHED, {
+        name: 'Atlas',
+        icon: { glyph: { name: 'Star', color: 'blue' } },
+      }),
+    );
+
+    expect(patch).toEqual({ icon_glyph: { name: 'Star', color: 'blue' } });
+  });
+
+  test('adding a first glyph to a project that had none', () => {
+    expect(
+      readyPatch(
+        buildProjectEditPatch(PLAIN, {
+          name: 'Atlas',
+          icon: { glyph: { name: 'Rocket', color: 'blue' } },
+        }),
+      ),
+    ).toEqual({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+  });
+});
+
+describe('switching between an emoji and a glyph', () => {
+  test('switching an emoji project to a glyph sends icon_glyph, and NEVER icon: null', () => {
+    // The case the server-side invariant hinges on: the API deletes the
+    // stored emoji itself the instant `icon_glyph` is written, so a patch
+    // that ALSO carried `icon: null` would be redundant at best — and if this
+    // client ever tracked icon/glyph as two independent nullable fields
+    // instead of one union draft, it is exactly the patch a naive diff would
+    // produce.
+    const patch = readyPatch(
+      buildProjectEditPatch(ICONED, {
+        name: 'Atlas',
+        icon: { glyph: { name: 'Rocket', color: 'blue' } },
+      }),
+    );
+
+    expect(patch).toEqual({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+    expect('icon' in patch).toBe(false);
+  });
+
+  test('switching a glyph project to an emoji sends icon, and NEVER icon_glyph: null', () => {
+    // The symmetric direction — same server behaviour, same reasoning,
+    // covered independently because the two branches are separate code paths.
+    const patch = readyPatch(buildProjectEditPatch(GLYPHED, { name: 'Atlas', icon: { emoji: '🚀' } }));
+
+    expect(patch).toEqual({ icon: '🚀' });
+    expect('icon_glyph' in patch).toBe(false);
   });
 });
 
@@ -143,13 +236,46 @@ describe('removing the icon', () => {
     expect(patch).toEqual({ name: 'Atlas 2', icon: null });
     expect(JSON.stringify(patch)).toContain('"icon":null');
   });
+
+  test('clearing a GLYPH project sends icon_glyph: null, and NEVER icon: null', () => {
+    // The other half of "glyph cleared": nothing was ever stored under
+    // `icon` for this project, so it must not appear in the patch at all —
+    // only the key that actually held a value gets the explicit clear.
+    const patch = readyPatch(buildProjectEditPatch(GLYPHED, { name: 'Atlas', icon: null }));
+
+    expect(patch).toEqual({ icon_glyph: null });
+    expect('icon' in patch).toBe(false);
+    expect(JSON.stringify(patch)).toBe('{"icon_glyph":null}');
+  });
+
+  test('clearing an already-empty project is a no-op, not a spurious clear', () => {
+    expect(buildProjectEditPatch(PLAIN, { name: 'Atlas', icon: null })).toEqual({
+      status: 'unchanged',
+    });
+  });
 });
 
 describe('changing both', () => {
   test('a rename and a new emoji travel in one patch', () => {
-    expect(readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas 2', icon: '🎯' }))).toEqual({
+    expect(
+      readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas 2', icon: { emoji: '🎯' } })),
+    ).toEqual({
       name: 'Atlas 2',
       icon: '🎯',
+    });
+  });
+
+  test('a rename and a new glyph travel in one patch', () => {
+    expect(
+      readyPatch(
+        buildProjectEditPatch(GLYPHED, {
+          name: 'Atlas 2',
+          icon: { glyph: { name: 'Star', color: 'red' } },
+        }),
+      ),
+    ).toEqual({
+      name: 'Atlas 2',
+      icon_glyph: { name: 'Star', color: 'red' },
     });
   });
 });
@@ -174,15 +300,25 @@ describe('summarizeProjectEdit', () => {
     expect(message).not.toContain('Renamed');
   });
 
+  test('a glyph-only change says so too', () => {
+    const message = summarizeProjectEdit({ icon_glyph: { name: 'Rocket', color: 'blue' } }, 'Atlas');
+
+    expect(message).toBe('Project icon updated');
+  });
+
   test('a removal is reported as a removal, not as an update', () => {
     // The distinction the whole tri-state exists for. `!patch.icon` would
     // collapse these two branches and report a removal as an update.
     expect(summarizeProjectEdit({ icon: null }, 'Atlas')).toBe('Project icon removed');
   });
 
+  test('a glyph removal is reported as a removal too', () => {
+    expect(summarizeProjectEdit({ icon_glyph: null }, 'Atlas')).toBe('Project icon removed');
+  });
+
   test('an absent icon key is not treated as a removal', () => {
     // A rename-only patch has no `icon` member at all. Reading it as a removal
-    // would tell the user their emoji is gone while it is still on the card.
+    // would tell the user their icon is gone while it is still on the card.
     expect(summarizeProjectEdit({ name: 'Atlas 2' }, 'Atlas 2')).not.toContain('removed');
   });
 

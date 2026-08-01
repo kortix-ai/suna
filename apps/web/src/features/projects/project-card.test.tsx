@@ -1,11 +1,19 @@
 import type { KortixProject } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import ProjectCard from './project-card';
 
 const noop = () => {};
+
+/** Source with comments stripped, so a comment describing a prop can never
+ *  satisfy a test asserting the prop is actually passed. */
+const code = readFileSync(fileURLToPath(new URL('./project-card.tsx', import.meta.url)), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 const BASE: KortixProject = {
   project_id: 'p1',
@@ -144,5 +152,40 @@ describe('ProjectCard — the project’s own icon', () => {
     // md default would shrink it with no test noticing.
     expect(tileOf(render({ icon: '🐢' }))).toContain('size-10');
     expect(render({ icon: '🐢' })).toContain('Turtle Shop');
+  });
+});
+
+describe('ProjectCard — the project’s own glyph', () => {
+  test('a project that set a glyph shows that glyph on its card', () => {
+    const tile = tileOf(render({ icon_glyph: { name: 'Rocket', color: 'magenta' } }));
+
+    expect(tile).toContain('<svg');
+    expect(tile).toContain('bg-glyph-fill-magenta');
+    expect(tile).toContain('text-glyph-ring-magenta');
+  });
+
+  test('a project with no glyph and no icon still shows its initial', () => {
+    expect(tileTextOf(render({ icon: null, icon_glyph: null }))).toBe('T');
+  });
+
+  test('a response with no glyph field at all still shows the initial', () => {
+    // `icon_glyph` is optional on KortixProject, so a stale/cached payload
+    // omits it — the same case `icon` already covers.
+    expect(tileTextOf(render({}))).toBe('T');
+  });
+
+  test('the glyph is passed to EntityAvatar, which is what actually enforces precedence', () => {
+    // The card's own job is just to hand both fields off — precedence between
+    // a glyph, an emoji, an icon and the initial is EntityAvatar's contract,
+    // covered by entity-avatar.test.tsx. This only pins that the card does not
+    // quietly drop the prop, e.g. by passing `emoji` and forgetting `glyph`.
+    expect(code).toContain('glyph={project.icon_glyph}');
+    expect(code).toContain('emoji={project.icon}');
+  });
+
+  test('a glyph project does not also render the emoji tint', () => {
+    const tile = tileOf(render({ icon_glyph: { name: 'Star', color: 'blue' } }));
+
+    expect(tile.includes('emoji-fill-')).toBe(false);
   });
 });

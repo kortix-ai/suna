@@ -413,3 +413,38 @@ describe('EntityAvatar — existing callers', () => {
     expect(textOf(render({ emoji: '🚀' }))).toBe('🚀');
   });
 });
+
+describe('EntityAvatar — the glyph tile', () => {
+  test('a glyph renders its svg in the chosen colour', () => {
+    const html = renderToStaticMarkup(
+      <EntityAvatar label="Demo" glyph={{ name: 'Rocket', color: 'magenta' }} size="lg" />,
+    );
+    expect(html).toContain('<svg');
+    expect(html).toContain('bg-glyph-fill-magenta');
+    expect(html).toContain('text-glyph-ring-magenta');
+  });
+
+  test('a glyph beats an emoji, an icon, and the initial', () => {
+    const html = renderToStaticMarkup(
+      <EntityAvatar label="Demo" glyph={{ name: 'Rocket', color: 'blue' }} emoji="🚀" size="lg" />,
+    );
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('🚀');
+  });
+
+  test('an unrenderable glyph name falls through to the existing behaviour', () => {
+    // The server rejects these, but a client rendering stale cached data must
+    // not paint an empty tile.
+    const html = renderToStaticMarkup(
+      <EntityAvatar label="Demo" glyph={{ name: 'Skull', color: 'blue' }} size="lg" />,
+    );
+    expect(html).toContain('D');
+  });
+
+  test('every existing emoji-only and icon-only call site is unchanged', () => {
+    const emojiOnly = renderToStaticMarkup(<EntityAvatar label="Demo" emoji="🚀" size="lg" />);
+    expect(emojiOnly).toContain('🚀');
+    const initialOnly = renderToStaticMarkup(<EntityAvatar label="Demo" size="lg" />);
+    expect(initialOnly).toContain('D');
+  });
+});

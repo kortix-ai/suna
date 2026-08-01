@@ -17,16 +17,21 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { updateProject, type ProjectInput } from '@kortix/sdk';
 
 import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patch';
-import { ProjectIconField } from './project-icon-field';
+import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 
 interface EditProjectModalProps {
   projectId: string | null;
   currentName?: string;
   /** The project's saved emoji. `null`/absent means it has none. */
   currentIcon?: string | null;
+  /** The project's saved glyph. `null`/absent means it has none. At most one
+   *  of `currentIcon` / `currentGlyph` is ever set on a real project — see
+   *  `ProjectIconField`'s own union `value`, which this seeds. */
+  currentGlyph?: GlyphSelection | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
@@ -34,10 +39,20 @@ interface EditProjectModalProps {
 
 const MAX_NAME_LENGTH = 120;
 
+/** The field's union, seeded from the project's two independent stored
+ *  columns. Glyph wins if — despite the server invariant — a stale row
+ *  somehow carries both, matching `EntityAvatar`'s own glyph > emoji
+ *  precedence rather than inventing a different tiebreak here. */
+function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): ProjectIconValue {
+  if (glyph) return { glyph };
+  if (icon) return { emoji: icon };
+  return null;
+}
+
 /**
  * Edit a project's name and icon.
  *
- * This was the rename modal. It edits the emoji too because a project's icon
+ * This was the rename modal. It edits the icon too because a project's icon
  * was otherwise write-once: chosen in the create modal and unreachable
  * afterwards, with no way to change it and no way to take it back off.
  *
@@ -50,6 +65,7 @@ export const EditProjectModal = ({
   projectId,
   currentName,
   currentIcon,
+  currentGlyph,
   open,
   onOpenChange,
   onSaved,
@@ -57,7 +73,7 @@ export const EditProjectModal = ({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(currentName ?? '');
-  const [icon, setIcon] = useState<string | null>(currentIcon ?? null);
+  const [icon, setIcon] = useState<ProjectIconValue>(() => toIconValue(currentIcon, currentGlyph));
 
   // Reseed only while OPEN. The projects page drops its target on close, so the
   // props go undefined during the exit animation; reseeding then would empty
@@ -65,10 +81,13 @@ export const EditProjectModal = ({
   useEffect(() => {
     if (!open) return;
     setName(currentName ?? '');
-    setIcon(currentIcon ?? null);
-  }, [open, currentName, currentIcon]);
+    setIcon(toIconValue(currentIcon, currentGlyph));
+  }, [open, currentName, currentIcon, currentGlyph]);
 
-  const edit = buildProjectEditPatch({ name: currentName, icon: currentIcon }, { name, icon });
+  const edit = buildProjectEditPatch(
+    { name: currentName, icon: currentIcon, icon_glyph: currentGlyph },
+    { name, icon },
+  );
 
   const saveMutation = useMutation({
     mutationFn: (patch: Partial<ProjectInput>) => {
@@ -131,8 +150,9 @@ export const EditProjectModal = ({
           <div className="flex items-start gap-2">
             <ProjectIconField
               value={icon}
-              onChange={setIcon}
-              // Passed HERE and not in the create modal: this project's emoji is
+              onChange={(emoji) => setIcon({ emoji })}
+              onGlyphChange={(glyph) => setIcon({ glyph })}
+              // Passed HERE and not in the create modal: this project's icon is
               // already saved, so without a way to remove it there is no way to
               // undo one. Nothing is written until Save — Cancel puts it back.
               onClear={() => setIcon(null)}

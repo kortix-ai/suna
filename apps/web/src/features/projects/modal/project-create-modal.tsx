@@ -85,7 +85,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { RepositoryPicker } from './github-import-pickers';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
-import { ProjectIconField } from './project-icon-field';
+import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
@@ -180,12 +180,16 @@ export const ProjectCreateModal = ({
   // right here via "Clone from a template" (`pickedTemplateId`). Once either
   // is set, the rest of the managed form behaves identically either way.
   const [pickedTemplateId, setPickedTemplateId] = useState<string | null>(null);
-  // The project's emoji, owned here rather than by `ProjectIconField`. The
+  // The project's icon, owned here rather than by `ProjectIconField`. The
   // field renders in whichever mode's form is mounted and never clears itself,
   // so the modal is the one place that can both send the value with the create
   // payload and drop it on close. `null` means "no icon picked" — the field
-  // shows its neutral face and the payloads omit the key entirely.
-  const [icon, setIcon] = useState<string | null>(null);
+  // shows its neutral face and the payloads omit both keys entirely.
+  //
+  // `ProjectIconValue` — the field's own union type — not two nullable slots:
+  // an emoji and a glyph can never both be set here, so `iconPayload` below
+  // can never spread both `icon` and `icon_glyph` into one request body.
+  const [icon, setIcon] = useState<ProjectIconValue>(null);
   const effectiveSourceItemId = sourceItemId ?? pickedTemplateId;
   const cloningFromSource = !!effectiveSourceItemId;
 
@@ -491,7 +495,9 @@ export const ProjectCreateModal = ({
   // Spread, not `icon: icon ?? undefined`: the key is absent from the JSON
   // entirely when nothing is picked, so the server's create paths keep their
   // own "no icon" default instead of receiving an explicit null to interpret.
-  const iconPayload = icon ? { icon } : {};
+  // Which key — `icon` or `icon_glyph` — comes straight from which side of
+  // the union `icon` holds, so this client can never send both.
+  const iconPayload = !icon ? {} : 'emoji' in icon ? { icon: icon.emoji } : { icon_glyph: icon.glyph };
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
@@ -668,7 +674,12 @@ export const ProjectCreateModal = ({
                             so it reads the same as centring, and it stays
                             correct if the input ever grows. */}
                         <div className="flex items-start gap-2">
-                          <ProjectIconField value={icon} onChange={setIcon} disabled={submitting} />
+                          <ProjectIconField
+                            value={icon}
+                            onChange={(emoji) => setIcon({ emoji })}
+                            onGlyphChange={(glyph) => setIcon({ glyph })}
+                            disabled={submitting}
+                          />
                           <div className="min-w-0 flex-1">
                             <FormControl>
                               <Input
@@ -1065,7 +1076,8 @@ export const ProjectCreateModal = ({
                             <div className="flex items-start gap-2">
                               <ProjectIconField
                                 value={icon}
-                                onChange={setIcon}
+                                onChange={(emoji) => setIcon({ emoji })}
+                                onGlyphChange={(glyph) => setIcon({ glyph })}
                                 disabled={submitting}
                               />
                               <div className="min-w-0 flex-1">

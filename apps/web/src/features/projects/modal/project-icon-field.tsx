@@ -5,9 +5,12 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { emojiTint, emojiTintHover } from '@/components/ui/emoji-tint';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
+import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
 import { cn } from '@/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
@@ -38,26 +41,55 @@ const SWAP_REDUCED = {
   exit: { ...SWAP.animate, opacity: 0 },
 } as const;
 
-/** Emoji trigger for the project create and edit modals. Sits beside the name
- *  input and opens the picker in a popover. Controlled: the modal owns the icon
- *  so it can send it with its payload and reset it on close. */
+/**
+ * What this field controls. A UNION, not two independently-nullable slots —
+ * `{ emoji }` XOR `{ glyph }` XOR neither. The server deletes whichever of
+ * `icon` / `icon_glyph` was NOT just written, so modelling the value as one
+ * field rather than two is what makes it impossible for a host to construct a
+ * state (and therefore a request) that sets both, or that clears one without
+ * the other reflecting it. `ProjectCreateModal` and `EditProjectModal` hold
+ * exactly this type as their icon state and pass it straight through.
+ */
+export type ProjectIconValue = { emoji: string } | { glyph: GlyphSelection } | null;
+
+/**
+ * Resolves a glyph selection to the component that actually draws it, along
+ * with the bits the trigger needs to paint it — or `null` if the name isn't
+ * in the registry (stale cached data: a project's `icon_glyph.name` outlived
+ * a catalogue that shrank). One helper shared by every place below that asks
+ * "is there a renderable glyph?", so a name that fails to resolve falls
+ * through to the unset face identically everywhere instead of drifting.
+ */
+function resolveGlyphFace(glyph: GlyphSelection | null) {
+  if (!glyph) return null;
+  const GlyphComponent = glyphComponent(glyph.name);
+  return GlyphComponent ? { GlyphComponent, name: glyph.name, color: glyph.color } : null;
+}
+
+/** Icon trigger for the project create and edit modals. Sits beside the name
+ *  input and opens the Emoji/Icon picker in a popover. Controlled: the modal
+ *  owns the icon so it can send it with its payload and reset it on close. */
 export function ProjectIconField({
   value,
   onChange,
+  onGlyphChange,
   onClear,
   disabled,
 }: {
   /** `null` renders the unset face. The field can DISPLAY "no icon". */
-  value: string | null;
+  value: ProjectIconValue;
   /**
-   * ...and `onChange` still cannot PRODUCE one, so the setter stays narrower
-   * than the getter. Its only call site is the picker's `onEmojiSelect`, which
-   * always has an emoji. Widening it to `string | null` would overload one
-   * callback with two different events — "the user picked 🚀" and "the user
-   * removed the icon" — and force every host to re-derive which one happened
-   * from the argument. Removing gets its own name instead: see `onClear`.
+   * ...and neither setter can PRODUCE the unset state or the other setter's
+   * shape — see `onClear` for removal. `onChange`'s only call site is the
+   * picker's `onEmojiSelect`, which always has an emoji; `onGlyphChange`'s is
+   * `onGlyphSelect`, which always has a glyph. Two narrow setters, not one
+   * `(value: ProjectIconValue) => void`, because a single wide callback would
+   * overload one signature with three different events — "picked an emoji",
+   * "picked a glyph", "removed it" — and force every host to re-derive which
+   * one happened from the argument. Removing gets its own name: `onClear`.
    */
   onChange: (icon: string) => void;
+  onGlyphChange: (glyph: GlyphSelection) => void;
   /**
    * Remove the icon. OPTIONAL, and its presence is what decides whether the
    * field offers a remove control at all — so "can this field clear?" is a host
@@ -65,7 +97,7 @@ export function ProjectIconField({
    *
    * The create modal deliberately does not pass it: there is nothing saved to
    * undo there, and the trigger already stays live so you reopen it and switch.
-   * The edit modal does, because an existing project's emoji IS saved, and
+   * The edit modal does, because an existing project's icon IS saved, and
    * without this there would be no way to ever take one back off.
    */
   onClear?: () => void;
@@ -84,6 +116,15 @@ export function ProjectIconField({
   // re-evaluate to true and the picker would reopen with no user action. Task 7
   // wires `disabled={submitting}`, and a failed create flips that back.
   if (disabled && open) setOpen(false);
+
+  const emoji = value && 'emoji' in value ? value.emoji : null;
+  const glyph = value && 'glyph' in value ? value.glyph : null;
+  const glyphFace = resolveGlyphFace(glyph);
+  // The face the trigger shows and the identity the cross-fade re-keys on —
+  // one derivation for both, so they cannot drift apart. Keyed on colour too,
+  // not just name: recolouring the same glyph is still a visible change the
+  // swap has to animate, not a no-op the key would otherwise hide.
+  const identity = glyphFace ? `glyph:${glyphFace.name}:${glyphFace.color}` : (emoji ?? 'unset');
 
   return (
     // The guard is belt-and-braces on top of the reset above: `disabled` on the
@@ -133,7 +174,13 @@ export function ProjectIconField({
           // Never conditioned on `value`. The whole point of the control is
           // that it stays live after a pick, so you reopen it and switch.
           disabled={disabled}
-          aria-label={value ? `Project icon: ${value}. Change it` : 'Choose project icon'}
+          aria-label={
+            emoji
+              ? `Project icon: ${emoji}. Change it`
+              : glyphFace
+                ? `Project icon: ${glyphFace.name}. Change it`
+                : 'Choose project icon'
+          }
           // size-9 matches the sibling name Input (`size="sm"` => h-9), which is
           // what the field has to line up with. That is 33.11px, under the 40px
           // a pointer target wants, so hit-area-1 pads the target out to 40.47
@@ -153,25 +200,31 @@ export function ProjectIconField({
           // ONCE AN ICON IS PICKED the trigger stops being a neutral outline
           // button and becomes the picker cell you just hovered: the same fill
           // under the same 1px inset ring, at rest, in the hue the emoji earns
-          // (components/ui/emoji-tint.ts). That is what ties it to the same
+          // (components/ui/emoji-tint.ts) or the colour the glyph was given
+          // (components/ui/glyph-tint.ts). That is what ties it to the same
           // project's card tile and sidebar row.
           //
-          // `emojiTintHover` is not decoration. `outline` carries
-          // `hover:bg-foreground/5`, and a :hover rule outranks the resting
-          // fill on specificity, so without it the pointer washes the tint out
-          // to neutral grey and back. Restating the fill at the same modifier
-          // makes tailwind-merge drop the variant's hover entirely — which then
-          // leaves the trigger with no pointer feedback at all, so
-          // `hover:inset-ring-2` firms the ring 1px -> 2px instead. The
-          // feedback stays inside the tint's own language rather than borrowing
-          // a neutral fill.
+          // `emojiTintHover` / `glyphTintHover` are not decoration. `outline`
+          // carries `hover:bg-foreground/5`, and a :hover rule outranks the
+          // resting fill on specificity, so without them the pointer washes
+          // the tint out to neutral grey and back. Restating the fill at the
+          // same modifier makes tailwind-merge drop the variant's hover
+          // entirely — which then leaves the trigger with no pointer feedback
+          // at all, so `hover:inset-ring-2` firms the ring 1px -> 2px instead.
+          // The feedback stays inside the tint's own language rather than
+          // borrowing a neutral fill.
           className={cn(
             'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
-            value && [emojiTint(value), emojiTintHover(value), 'hover:inset-ring-2'],
+            emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:inset-ring-2'],
+            glyphFace && [
+              glyphTint(glyphFace.color),
+              glyphTintHover(glyphFace.color),
+              'hover:inset-ring-2',
+            ],
           )}
         >
           {/* Both faces share one fixed box and cross-fade in place. Picking an
-              emoji closes the popover, so the eye is already on the trigger
+              icon closes the popover, so the eye is already on the trigger
               when it changes — a hard swap reads as two objects blinking.
               `initial={false}` keeps a field that mounts with a value from
               animating on first paint.
@@ -181,16 +234,24 @@ export function ProjectIconField({
           <span className="relative inline-flex size-6 items-center justify-center">
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
-                key={value ?? 'unset'}
+                key={identity}
                 {...(reduceMotion ? SWAP_REDUCED : SWAP)}
                 transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
                 className="absolute inset-0 inline-flex items-center justify-center"
               >
-                {value ? (
+                {glyphFace ? (
+                  // Named by the button's aria-label, so the glyph itself
+                  // stays out of the accessibility tree the same way the
+                  // emoji does below — Phosphor's <svg> carries no implicit
+                  // role, but the sizing/colour treatment matches on purpose.
+                  <glyphFace.GlyphComponent
+                    className={cn('size-4', glyphForeground(glyphFace.color))}
+                  />
+                ) : emoji ? (
                   // Named by the button's aria-label, so the glyph itself stays
                   // out of the accessibility tree.
                   <span aria-hidden className="text-lg leading-none">
-                    {value}
+                    {emoji}
                   </span>
                 ) : (
                   <SmileyIcon className="text-muted-foreground size-4" />
@@ -206,6 +267,9 @@ export function ProjectIconField({
         the picker passes no override) of `size-8` cells in a row padded
         `px-1.5` — in Tailwind `--spacing` units, 9*8 + 2*1.5 = 75. The `+2px`
         covers the 1px border per side, because PopoverContent is `border-box`.
+        `GlyphPicker`, rendered on the Icon tab inside `ProjectIconPicker`,
+        copies the same four literals for exactly this reason — see its own
+        file header — so the popover never resizes on tab switch.
 
         This is a TRADEOFF, not a clean win. It is chosen for the
         overlay-scrollbar case, which is what this app is otherwise built
@@ -247,11 +311,23 @@ export function ProjectIconField({
         aria-label="Choose project icon"
         className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
       >
-        <EmojiPicker
-          onEmojiSelect={(emoji) => {
-            onChange(emoji.emoji);
+        <ProjectIconPicker
+          onEmojiSelect={(picked) => {
+            onChange(picked.emoji);
             setOpen(false);
           }}
+          onGlyphSelect={(picked) => {
+            onGlyphChange(picked);
+            setOpen(false);
+          }}
+          // Reopening lands on the tab you last used: a glyph project reopens
+          // on Icon rather than defaulting back to Emoji every time.
+          defaultTab={glyphFace ? 'icon' : 'emoji'}
+          // Only meaningful when there IS a current glyph — otherwise the
+          // picker keeps its own default (grey). `glyphFace?.color` reaching
+          // `undefined` here is what lets ProjectIconPicker's own default
+          // parameter apply; passing it explicitly would fight that default.
+          defaultColor={glyphFace?.color}
         />
         {/*
           Gated on BOTH: `onClear` because only a host that can accept a removal

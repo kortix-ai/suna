@@ -1,6 +1,8 @@
 'use client';
 
 import { emojiTint } from '@/components/ui/emoji-tint';
+import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphForeground, glyphTint } from '@/components/ui/glyph-tint';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -35,11 +37,42 @@ const SIZE_MAP = {
 
 export type EntityAvatarSize = keyof typeof SIZE_MAP;
 
+/**
+ * Resolves a `glyph` prop to the component that actually draws it, or `null`
+ * if the name isn't in the registry.
+ *
+ * Its own function rather than an inline `glyph ? glyphComponent(…) : null`
+ * at each use site, because EVERY use site (the inline style, the tile's
+ * class list, the rendered face) has to agree on whether there IS a
+ * renderable glyph, and a name that fails to resolve has to fall through to
+ * the rest of the precedence chain identically everywhere. Two independent
+ * `glyphComponent()` calls computing the same answer is how they drift.
+ */
+function resolveGlyph(glyph?: { name: string; color: string } | null) {
+  if (!glyph) return null;
+  const GlyphComponent = glyphComponent(glyph.name);
+  return GlyphComponent ? { GlyphComponent, color: glyph.color } : null;
+}
+
 export interface EntityAvatarProps {
   label?: string;
   /**
-   * A single emoji grapheme standing in for the entity — today, a project's own
-   * icon. Takes precedence over `icon` and over the label's initial.
+   * A named glyph + colour — a project's alternative to `emoji`. Takes
+   * precedence over `emoji`, `icon`, and the label's initial: the field that
+   * produces this value is a union (a project has an emoji XOR a glyph,
+   * never both), so whichever was chosen last is what should paint.
+   *
+   * An unknown `name` resolves through `glyphComponent()` to `null` and
+   * falls through to the rest of the precedence chain rather than painting
+   * an empty tile — the server rejects unknown names, but a client
+   * rendering STALE cached data (an old snapshot in the query cache, a
+   * catalogue that shrank) must not break.
+   */
+  glyph?: { name: string; color: string } | null;
+  /**
+   * A single emoji grapheme standing in for the entity — today, a project's
+   * own icon. Beaten by `glyph`; takes precedence over `icon` and over the
+   * label's initial.
    *
    * Typed `| null` so it takes `KortixProject.icon` (server-validated to one
    * emoji, or null) with no coercion at the call site. Anything falsy — null,
@@ -54,6 +87,7 @@ export interface EntityAvatarProps {
 
 export function EntityAvatar({
   label,
+  glyph,
   emoji,
   icon: IconComponent,
   size = 'md',
@@ -62,18 +96,19 @@ export function EntityAvatar({
   const sizes = SIZE_MAP[size];
   const initial = (label?.trim()?.charAt(0) || '?').toUpperCase();
   const chalk = chalkColors(`${label?.trim()}` || initial);
+  const resolvedGlyph = resolveGlyph(glyph);
 
   return (
     <span
       data-slot="entity-avatar"
       // chalkColors() is an inline style, so it beats any class a caller
-      // passes. An emoji is already the colour — sitting it on a saturated
-      // hash-derived pastel reads as noise, and in dark mode that pastel is a
-      // bright square in an otherwise dark grid. So the emoji tile drops the
-      // style entirely and rebuilds itself from the emoji tint tokens. See the
-      // class list.
+      // passes. A glyph or an emoji is already the colour — sitting either on
+      // a saturated hash-derived pastel reads as noise, and in dark mode that
+      // pastel is a bright square in an otherwise dark grid. So a glyph or
+      // emoji tile drops the style entirely and rebuilds itself from its own
+      // tint tokens. See the class list.
       style={
-        emoji
+        resolvedGlyph || emoji
           ? undefined
           : {
               backgroundColor: chalk.background,
@@ -105,13 +140,23 @@ export function EntityAvatar({
         // (.superpowers/sdd/2026-07-31-project-emoji-icons/tint-report.md).
         //
         // STILL LAST-WINS: a caller className that sets a background silently
-        // beats `bg-emoji-fill-*` and leaves the tile ringed but untinted. That
-        // is why the project card no longer passes `bg-background`.
-        emoji && [emojiTint(emoji), sizes.emoji],
+        // beats `bg-emoji-fill-*` / `bg-glyph-fill-*` and leaves the tile
+        // ringed but untinted. That is why the project card no longer passes
+        // `bg-background`.
+        resolvedGlyph ? glyphTint(resolvedGlyph.color) : emoji && [emojiTint(emoji), sizes.emoji],
         className,
       )}
     >
-      {emoji ? (
+      {resolvedGlyph ? (
+        // Same reasoning as the emoji span below: the tile always sits
+        // beside the name it belongs to, so the glyph itself is decorative.
+        // `sizes.icon`, not `sizes.emoji` — a glyph is a drawn Phosphor icon,
+        // sized like the plain `icon` prop below, not like a text-rendered
+        // emoji grapheme.
+        <resolvedGlyph.GlyphComponent
+          className={cn(sizes.icon, glyphForeground(resolvedGlyph.color))}
+        />
+      ) : emoji ? (
         // The tile always sits beside the name it belongs to, so the glyph is
         // decorative: announced, it reads the emoji's CLDR name immediately
         // before the label that says the same thing. Same treatment as the

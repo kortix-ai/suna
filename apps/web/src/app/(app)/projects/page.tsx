@@ -616,6 +616,7 @@ export default function ProjectsPage() {
         projectId={editTarget?.project_id ?? null}
         currentName={editTarget?.name}
         currentIcon={editTarget?.icon ?? null}
+        currentGlyph={editTarget?.icon_glyph ?? null}
         open={!!editTarget}
         onOpenChange={(o) => {
           if (!o) setEditTarget(null);
