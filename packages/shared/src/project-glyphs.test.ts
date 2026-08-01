@@ -8,12 +8,20 @@ import {
 } from './project-glyphs';
 
 describe('the glyph catalogue', () => {
-  test('is 64 names in 8 groups of 8', () => {
-    expect(PROJECT_GLYPH_NAMES).toHaveLength(64);
-    expect(PROJECT_GLYPH_GROUPS).toHaveLength(8);
-    for (const group of PROJECT_GLYPH_GROUPS) {
-      expect(group.names).toHaveLength(8);
-    }
+  test('is 202 names in 17 groups: 16 of 12 and one of 10', () => {
+    expect(PROJECT_GLYPH_NAMES).toHaveLength(202);
+    expect(PROJECT_GLYPH_GROUPS).toHaveLength(17);
+    // Groups are not uniform size: 16 categories carry 12 glyphs each, and the
+    // Numbers group (drawn digit pictograms, not typographic characters) carries
+    // 10 — one NumberCircle* glyph per digit 0-9. Asserting the exact shape
+    // (rather than dropping the check because sizes differ) is what still fails
+    // if a group silently gains or loses a glyph.
+    const sizes = PROJECT_GLYPH_GROUPS.map((group) => group.names.length);
+    const numbersIndex = PROJECT_GLYPH_GROUPS.findIndex((group) => group.label === 'Numbers');
+    expect(numbersIndex).toBeGreaterThanOrEqual(0);
+    sizes.forEach((size, index) => {
+      expect(size).toBe(index === numbersIndex ? 10 : 12);
+    });
   });
 
   test('every grouped name appears in the flat list, and vice versa', () => {

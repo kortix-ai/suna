@@ -20,9 +20,9 @@ describe('GlyphPicker', () => {
     const html = renderToStaticMarkup(
       <GlyphPicker color="blue" onColorChange={() => {}} onGlyphSelect={() => {}} />,
     );
-    // One button per glyph. A grid that silently renders 60 of 64 would look fine.
+    // One button per glyph. A grid that silently renders 198 of 202 would look fine.
     const buttons = html.match(/data-glyph="/g) ?? [];
-    expect(buttons).toHaveLength(64);
+    expect(buttons).toHaveLength(202);
   });
 
   test('renders one continuous grid, not one sub-grid per category', () => {
@@ -40,8 +40,19 @@ describe('GlyphPicker', () => {
     // Word-boundary match, not plain `toContain`: the Arrows group's own
     // `ArrowsClockwise` glyph name contains "Arrows" as a substring, so a bare
     // `toContain('Arrows')` would fail even with headers correctly removed.
+    //
+    // The Files group also contains a glyph literally named `Files`, so its
+    // label is expected to appear — twice, from that one button's own
+    // `data-glyph="Files"` and `aria-label="Files"`. A reintroduced sticky
+    // header would add a THIRD occurrence, so that group is checked for an
+    // exact count instead of zero, rather than skipped outright.
     for (const group of PROJECT_GLYPH_GROUPS) {
-      expect(html).not.toMatch(new RegExp(`\\b${group.label}\\b`));
+      const matches = html.match(new RegExp(`\\b${group.label}\\b`, 'g')) ?? [];
+      if ((group.names as readonly string[]).includes(group.label)) {
+        expect(matches).toHaveLength(2);
+      } else {
+        expect(matches).toHaveLength(0);
+      }
     }
     const grids = html.match(/grid-cols-9/g) ?? [];
     expect(grids).toHaveLength(1);
@@ -87,7 +98,7 @@ describe('GlyphPicker', () => {
       <GlyphPicker color="blue" onColorChange={() => {}} onGlyphSelect={() => {}} />,
     );
     const buttons = html.match(/<button[^>]*data-glyph=/g) ?? [];
-    expect(buttons).toHaveLength(64);
+    expect(buttons).toHaveLength(202);
     for (const b of buttons) expect(b).toContain('type="button"');
   });
 

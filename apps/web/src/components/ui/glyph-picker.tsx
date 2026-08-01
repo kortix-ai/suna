@@ -36,7 +36,7 @@ export interface GlyphSelection {
  * names — like this one — is deliberately safe to write and cannot make
  * either test pass or fail.
  *
- * All 64 catalogue glyphs render in ONE `grid-cols-9`, in
+ * All 202 catalogue glyphs render in ONE `grid-cols-9`, in
  * `PROJECT_GLYPH_NAMES`'s declaration order — no category headers. This
  * shipped with an 8-category sub-grid (sticky header per category) first;
  * review feedback was that the categories added scannable structure but no
