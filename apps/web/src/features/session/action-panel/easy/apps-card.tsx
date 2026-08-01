@@ -20,12 +20,9 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
-import { ChatIcon as MessageSquarePlus } from '@phosphor-icons/react';
 import { useSyncExternalStore } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { PanelCard } from './panel-card';
@@ -51,16 +48,9 @@ const getSandboxAliveSnapshot = () => {
 export function AppsCard({
   apps,
   onOpenApp,
-  onSendToAgent,
 }: {
   apps: OutputItem[];
   onOpenApp: (app: OutputItem) => void;
-  /** "Send to agent" — shown only on a stopped app row, where the sandbox is
-   *  down so the app can't be opened anyway. Hands the session composer a
-   *  starter prompt asking the agent to bring the app back up. Omitted
-   *  entirely (not disabled) when there's no handler, so a healthy sandbox
-   *  row never grows an extra control. Mirrors "Ask for changes" (W12). */
-  onSendToAgent?: (app: OutputItem) => void;
 }) {
   // One subscription for the card, not one per row: liveness is a property of
   // the sandbox, and every app in it lives or dies together. The green pulse
@@ -87,21 +77,14 @@ export function AppsCard({
       <ul className="flex flex-col gap-0">
         {apps.map((app) => {
           const port = portOf(app.url);
-          // A stopped sandbox is the whole reason this affordance exists: the
-          // app can't be opened (its server is down), so the one thing a user
-          // can still do is ask the agent to bring it back. Shown only when a
-          // handler is wired and the sandbox is genuinely down — a healthy row
-          // never grows the extra control. Mirrors "Ask for changes" (W12).
-          const canSendToAgent = !sandboxAlive && Boolean(onSendToAgent);
           return (
-            <li key={app.url} className="flex items-center">
+            <li key={app.url}>
               <button
                 type="button"
                 onClick={() => onOpenApp(app)}
                 className={cn(
-                  'hover:bg-accent -mx-0.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-1 py-1.5 text-left',
+                  'hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left',
                   'transition-[background-color,transform] active:scale-[0.998]',
-                  canSendToAgent && 'rounded-r-none',
                 )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden>
@@ -127,23 +110,6 @@ export function AppsCard({
                   </span>
                 )}
               </button>
-              {canSendToAgent && (
-                <Hint label="Send to agent" side="left">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Send ${app.name} to agent`}
-                    onClick={() => onSendToAgent?.(app)}
-                    className={cn(
-                      'text-muted-foreground hover:text-foreground size-7 shrink-0 active:scale-[0.96]',
-                      '-ml-0.5',
-                    )}
-                  >
-                    <MessageSquarePlus className="size-3.5" />
-                  </Button>
-                </Hint>
-              )}
             </li>
           );
         })}

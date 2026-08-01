@@ -310,16 +310,17 @@ export const EasyPanel = memo(function EasyPanel({
   const { getServiceUrl } = useSandboxProxy();
 
   /**
-   * "Send to agent" for a stopped app — the apps card's analog of "Ask for
-   * changes" (W12). A stopped sandbox is the one state where an app row can't
-   * open (its server is down), so the one thing a user can still do is ask the
-   * agent to bring it back. Hands the session composer a starter prompt naming
-   * the app and its port, and steps out of the way. The composer is disabled
-   * while the sandbox sleeps, but the prefill is held in the store and lands
-   * the instant the box is awake — which is exactly the moment the app would
-   * be reachable again. Persistent apps/artifacts will replace this; until
-   * then, this is the same shape as the merge-conflict "Solve with agent"
-   * prompt, just delivered into the session that built the app.
+   * "Send to agent" for a stopped app — surfaced from the AppPreview's
+   * "Couldn't load" error state (the screen that says the app on port N may
+   * not be running, next to Retry), in the same shape as the merge-conflict
+   * "Solve with agent" affordance. A dead/empty app is the one state where
+   * opening the app shows the user nothing useful, so the one thing they can
+   * still do is ask the agent to bring it back. Hands the session composer a
+   * starter prompt naming the app and its port, and steps out of the way.
+   * The composer is disabled while the sandbox sleeps, but the prefill is
+   * held in the store and lands the instant the box is awake — which is
+   * exactly the moment the app would be reachable again. Persistent
+   * apps/artifacts will replace this; until then it's the bridge.
    */
   const sendAppToAgent = useCallback(
     (app: OutputItem) => {
@@ -445,6 +446,7 @@ export const EasyPanel = memo(function EasyPanel({
               }
               onClose={closeDetail}
               onAskForChanges={askForChanges}
+              onSendToAgent={() => sendAppToAgent(output)}
             />
           ),
         });
@@ -480,7 +482,16 @@ export const EasyPanel = memo(function EasyPanel({
       });
       setPanelSplit(split);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit, projectId, projectSessionId],
+    [
+      sessionId,
+      getServiceUrl,
+      closeDetail,
+      openDetail,
+      setPanelSplit,
+      projectId,
+      projectSessionId,
+      sendAppToAgent,
+    ],
   );
 
   const outcome = useMemo(
@@ -752,13 +763,7 @@ export const EasyPanel = memo(function EasyPanel({
             sessionId={sessionId}
             onOpenDetail={openDetail}
           />
-          {apps.length > 0 && (
-            <AppsCard
-              apps={apps}
-              onOpenApp={(a) => handleOpenOutput(a, apps)}
-              onSendToAgent={sendAppToAgent}
-            />
-          )}
+          {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
         </div>
       </DetailLayer>
 
