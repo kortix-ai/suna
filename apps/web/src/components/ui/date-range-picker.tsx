@@ -73,21 +73,43 @@ export function toUtcDayRange(startDay: Date, endDay: Date): CostRange {
 
 /**
  * The inverse of `toUtcDayRange`, for feeding a stored `CostRange` back into
- * `<Calendar mode="range">` on reopen. `react-day-picker` highlights by
- * *local* calendar day, so a custom range's exclusive day-after `to` bound
- * must be pulled back one day before it reaches the calendar — otherwise the
- * calendar highlights one day past what the trigger button's label says.
- * Presets are not day-boundary values (`to` is `now`, a real instant, not
- * midnight), so they pass through unadjusted — highlighting through the
- * current moment is correct there.
+ * `<Calendar mode="range">` on reopen. The stored bounds are UTC-midnight
+ * instants; `react-day-picker` highlights by *local* calendar day. Shifting
+ * the instant by milliseconds (an earlier version of this function did
+ * `getTime() - 86_400_000`) only relocates the instant — it does nothing to
+ * account for how a *different* host timezone reads that instant's local
+ * calendar day, so it "corrects" the display for positive-UTC-offset viewers
+ * by coincidence and is wrong in the opposite direction for negative-offset
+ * viewers (e.g. the Americas): both bounds land a day early there.
+ *
+ * The fix mirrors `toUtcDayRange` with its two steps reversed: read the
+ * *UTC* calendar parts off the stored instant (`getUTCFullYear`/
+ * `getUTCMonth`/`getUTCDate` — always host-independent), then rebuild via
+ * the *local* `Date` constructor, so the viewer's own host offset decides
+ * how the resulting `Date` reads back — the same offset `react-day-picker`
+ * itself will later use to highlight it. `new Date(y, m, d)` normalizes an
+ * out-of-range day (`d - 1` below zero, `d + 1` past the month's end), so
+ * month/year rollover needs no special-casing.
  */
 export function toCalendarSelection(value: CostRange): { from: Date; to: Date } {
-  const from = new Date(value.from);
-  const to =
-    value.preset === 'custom'
-      ? new Date(new Date(value.to).getTime() - 86_400_000)
-      : new Date(value.to);
-  return { from, to };
+  const utcPartsToLocalDay = (iso: string, dayDelta = 0): Date => {
+    const instant = new Date(iso);
+    return new Date(
+      instant.getUTCFullYear(),
+      instant.getUTCMonth(),
+      instant.getUTCDate() + dayDelta,
+    );
+  };
+
+  // A preset's from/to are real instants (e.g. `now` minus N days), not day
+  // boundaries — pass them through unadjusted. Only a custom range's bounds
+  // are calendar days that need this local/UTC reconciliation; its `to` is
+  // also the exclusive day-after boundary, so the last inclusive calendar
+  // day the user clicked is one day earlier.
+  if (value.preset !== 'custom') {
+    return { from: new Date(value.from), to: new Date(value.to) };
+  }
+  return { from: utcPartsToLocalDay(value.from), to: utcPartsToLocalDay(value.to, -1) };
 }
 
 /** Human label for the trigger button: the preset name, or both dates for a custom range. */

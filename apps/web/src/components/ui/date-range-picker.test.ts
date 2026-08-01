@@ -71,6 +71,30 @@ describe('toUtcDayRange', () => {
   });
 });
 
+/**
+ * A `Date` whose local `getFullYear`/`getMonth`/`getDate` are pinned to
+ * given values regardless of the host's real timezone, while its own
+ * instant (and `toISOString()`) stays an unrelated, real value. This is the
+ * only way to write a test that is host-TZ-independent *by construction*:
+ * `toISOString()` is always UTC (so it can never expose whether an
+ * implementation reads local calendar parts correctly), and an ordinary
+ * `new Date(year, month, date)` fixture only reveals a local/UTC mismatch on
+ * a host whose offset happens to push across a day boundary.
+ */
+function fakeLocalDay(year: number, month: number, date: number): Date {
+  const fake = new Date('2026-01-01T00:00:00.000Z'); // arbitrary, unrelated instant
+  fake.getFullYear = () => year;
+  fake.getMonth = () => month;
+  fake.getDate = () => date;
+  return fake;
+}
+
+const dayParts = (date: Date): [number, number, number] => [
+  date.getFullYear(),
+  date.getMonth(),
+  date.getDate(),
+];
+
 describe('toCalendarSelection', () => {
   test('a custom range highlights through the inclusive end day, not the exclusive to bound', () => {
     const selection = toCalendarSelection({
@@ -78,12 +102,17 @@ describe('toCalendarSelection', () => {
       from: '2026-07-01T00:00:00.000Z',
       to: '2026-07-16T00:00:00.000Z',
     });
-    expect(selection.to.toISOString()).toBe('2026-07-15T00:00:00.000Z');
+    expect(dayParts(selection.from)).toEqual([2026, 6, 1]);
+    expect(dayParts(selection.to)).toEqual([2026, 6, 15]);
   });
 
   test('a preset range is passed through unchanged', () => {
     const value = resolvePreset('7d', NOW);
     const selection = toCalendarSelection(value);
+    // Presets are real instants (`to` is `now`), not calendar-day
+    // boundaries, so an exact instant comparison is the correct assertion
+    // here — unlike the custom-range cases, there is no local/UTC ambiguity
+    // to guard against for a value that's passed through unmodified.
     expect(selection.from.toISOString()).toBe(value.from);
     expect(selection.to.toISOString()).toBe(value.to);
   });
@@ -94,24 +123,30 @@ describe('toCalendarSelection', () => {
       from: '2026-07-01T00:00:00.000Z',
       to: '2026-07-02T00:00:00.000Z',
     });
-    expect(selection.to.toISOString()).toBe(selection.from.toISOString());
+    expect(dayParts(selection.to)).toEqual(dayParts(selection.from));
   });
 
-  test('is the exact inverse of toUtcDayRange', () => {
-    const start = new Date(2026, 6, 1);
-    const end = new Date(2026, 6, 15);
-    const selection = toCalendarSelection(toUtcDayRange(start, end));
+  test('is the exact inverse of toUtcDayRange across a multi-day range, a single day, a month boundary, and a year boundary', () => {
+    // Each case's start/end is built with fakeLocalDay rather than the
+    // ambient `new Date(y, m, d)` constructor, so the invariant is checked
+    // regardless of the host's real timezone, not merely on this test
+    // process's own (Asia/Calcutta) offset.
+    const cases: Array<{
+      start: [number, number, number];
+      end: [number, number, number];
+    }> = [
+      { start: [2026, 6, 1], end: [2026, 6, 15] }, // multi-day range
+      { start: [2026, 6, 1], end: [2026, 6, 1] }, // single day
+      { start: [2026, 6, 31], end: [2026, 6, 31] }, // month boundary (Jul 31)
+      { start: [2026, 11, 31], end: [2026, 11, 31] }, // year boundary (Dec 31)
+    ];
 
-    expect([
-      selection.from.getFullYear(),
-      selection.from.getMonth(),
-      selection.from.getDate(),
-    ]).toEqual([start.getFullYear(), start.getMonth(), start.getDate()]);
-    expect([
-      selection.to.getFullYear(),
-      selection.to.getMonth(),
-      selection.to.getDate(),
-    ]).toEqual([end.getFullYear(), end.getMonth(), end.getDate()]);
+    for (const { start, end } of cases) {
+      const range = toUtcDayRange(fakeLocalDay(...start), fakeLocalDay(...end));
+      const selection = toCalendarSelection(range);
+      expect(dayParts(selection.from)).toEqual(start);
+      expect(dayParts(selection.to)).toEqual(end);
+    }
   });
 });
 
