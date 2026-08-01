@@ -1,6 +1,10 @@
 import { pauseComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
-import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
+import type {
+  ProjectSessionSandbox,
+  SessionStartFailure,
+  SessionStartResult,
+} from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
@@ -491,6 +495,25 @@ export function serializeSandboxRow(
   };
 }
 
+export function sessionStartFailureFromSandbox(
+  row: typeof sessionSandboxes.$inferSelect,
+): SessionStartFailure | null {
+  if (row.status !== 'error') return null;
+  const metadata = sandboxMetadata(row);
+  const rawCategory = metadata.failureCategory;
+  const category =
+    rawCategory === 'provider-capacity' ||
+    rawCategory === 'git-auth' ||
+    rawCategory === 'sandbox-provider'
+      ? rawCategory
+      : 'sandbox-provider';
+  const message =
+    typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
+      ? metadata.errorMessage
+      : 'The sandbox provider could not start this session. Try again.';
+  return { category, message, retryable: true };
+}
+
 async function preserveEstablishedRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   visible: {
@@ -611,8 +634,9 @@ export async function openSession(args: {
         stage: visible.row.status === 'failed' ? 'failed' : 'stopped',
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
-        sandbox: null,
+        sandbox: row?.status === 'error' ? serializeSandboxRow(row) : null,
         opencode_session_id: null,
+        failure: row ? sessionStartFailureFromSandbox(row) : null,
       };
     }
     if (visible.row.status !== 'provisioning') {

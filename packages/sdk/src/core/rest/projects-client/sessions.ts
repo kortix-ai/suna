@@ -90,6 +90,14 @@ export type SessionConnectorBindingInput =
     };
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
+export interface PendingSessionPrompt {
+  text: string;
+  agent?: string | null;
+  model?: { providerID: string; modelID: string } | null;
+  variant?: string | null;
+  attachment_names?: string[];
+}
+
 /** Public body for POST /projects/:projectId/sessions. */
 export interface CreateProjectSessionInput {
   base_ref?: string;
@@ -97,6 +105,8 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  /** Durable recovery copy. The server never delivers this field automatically. */
+  pending_prompt?: PendingSessionPrompt;
   opencode_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
@@ -145,6 +155,7 @@ export interface ClaimWarmProjectSessionInput {
   session_id: string;
   agent_name?: string;
   sandbox_slug?: string;
+  pending_prompt?: PendingSessionPrompt;
 }
 
 export interface ProjectOpenCodeSession {

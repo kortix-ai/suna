@@ -1,11 +1,13 @@
 import type {
   ClaimWarmProjectSessionInput,
+  PendingSessionPrompt,
   ProjectSession,
 } from '@kortix/sdk';
 
 interface WarmSessionCreateOverrides {
   agent_name?: string;
   sandbox_slug?: string;
+  pending_prompt?: PendingSessionPrompt;
 }
 
 export async function resolveWarmSessionForSend(
@@ -28,6 +30,7 @@ export function buildWarmSessionClaimInput(
     session_id: session.session_id,
     ...(create?.agent_name ? { agent_name: create.agent_name } : {}),
     ...(create?.sandbox_slug ? { sandbox_slug: create.sandbox_slug } : {}),
+    ...(create?.pending_prompt ? { pending_prompt: create.pending_prompt } : {}),
   };
 }
 

@@ -5330,3 +5330,30 @@ Gates: `typecheck` exit 0 · `bun test --isolate src` → **1367 pass, 2 skip,
 0 fail** · `smoke:install` OK.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-01 — session `e2b-capacity-fast-fail` (completion)
+
+Added the provider-neutral `SessionStartFailure` contract.
+Added the durable `PendingSessionPrompt` create and warm-claim contract.
+Added `replayStartStash.onSuccess` for the runtime ACK callback.
+The web uses the callback to clear the durable prompt after delivery.
+
+The type-surface snapshot adds four entries.
+The root and `./projects-client` surfaces each add two types.
+No public field, type, or export was removed or renamed.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1389 pass`, `0 fail`,
+  and `5969 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+The PR, merge, Deploy Dev, and Essentia verification remain.

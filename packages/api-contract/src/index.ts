@@ -666,6 +666,21 @@ export const UpdateConnectionProfileCredentialInputSchema =
 export type UpdateConnectionProfileCredentialInput =
   UpdateConnectorAuthorizationCredentialInput;
 
+export const PendingSessionPromptSchema = z
+  .object({
+    text: z.string().min(1).max(1_000_000),
+    agent: z.string().min(1).nullable().optional(),
+    model: z
+      .object({ providerID: z.string().min(1), modelID: z.string().min(1) })
+      .strict()
+      .nullable()
+      .optional(),
+    variant: z.string().min(1).nullable().optional(),
+    attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
+  })
+  .strict();
+export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -673,6 +688,7 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
+    pending_prompt: PendingSessionPromptSchema.optional(),
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     session_id: z
@@ -794,6 +810,7 @@ export const ClaimWarmProjectSessionInputSchema = z
       ),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
+    pending_prompt: PendingSessionPromptSchema.optional(),
   })
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<
@@ -838,6 +855,15 @@ export const SESSION_START_STAGES = [
 export const SessionStartStageSchema = z.enum(SESSION_START_STAGES);
 export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
+export const SessionStartFailureSchema = z
+  .object({
+    category: z.enum(['provider-capacity', 'git-auth', 'sandbox-provider']),
+    message: z.string(),
+    retryable: z.boolean(),
+  })
+  .strict();
+export type SessionStartFailure = z.infer<typeof SessionStartFailureSchema>;
+
 /**
  * The readiness payload of POST /v1/projects/:id/sessions/:id/start — the one
  * object clients poll until `stage === 'ready'`.
@@ -853,6 +879,8 @@ export const SessionStartResultSchema = z.object({
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical OpenCode root pin, resolved server-side once the box is up. */
   opencode_session_id: z.string().nullable(),
+  /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
+  failure: SessionStartFailureSchema.nullable().optional(),
   /** Server-selected OpenCode REST transport. */
   runtime_transport: z.literal('rest').optional(),
   /**

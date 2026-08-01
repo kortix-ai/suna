@@ -392,6 +392,22 @@ describe('SessionStartResultSchema', () => {
     expect(parsed.sandbox?.provider).toBe('platinum');
   });
 
+  test('accepts a typed provider-neutral terminal capacity failure', () => {
+    const parsed = SessionStartResultSchema.strict().parse({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      sandbox: sandboxFixture({ status: 'error' }),
+      opencode_session_id: null,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
+    expect(parsed.failure?.category).toBe('provider-capacity');
+  });
+
   test('rejects an unknown stage', () => {
     expect(() =>
       SessionStartResultSchema.parse({
@@ -402,6 +418,28 @@ describe('SessionStartResultSchema', () => {
         opencode_session_id: null,
       }),
     ).toThrow();
+  });
+});
+
+describe('pending session prompt contract', () => {
+  test('accepts a durable prompt draft on normal create and warm claim', () => {
+    const pendingPrompt = {
+      text: 'Map the flood risk for this parcel.',
+      agent: 'kortix',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+    expect(
+      ClaimWarmProjectSessionInputSchema.strict().parse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        pending_prompt: pendingPrompt,
+      }).pending_prompt,
+    ).toEqual(pendingPrompt);
   });
 });
 

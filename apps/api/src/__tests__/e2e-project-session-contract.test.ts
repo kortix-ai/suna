@@ -1642,6 +1642,63 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows).toHaveLength(1);
   });
 
+  test('dashboard start returns one typed terminal capacity failure without re-provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'e2b',
+      error: 'The sandbox provider is at capacity right now. Stop another session and retry.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'e2b',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'provider-capacity',
+          errorMessage:
+            'The sandbox provider is at capacity right now. Stop another session and retry.',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await app.request(
+        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+        { method: 'POST' },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        stage: 'failed',
+        retriable: false,
+        sandbox: {
+          status: 'error',
+          metadata: { initAttempts: 1, initMaxAttempts: 1 },
+        },
+        failure: {
+          category: 'provider-capacity',
+          message:
+            'The sandbox provider is at capacity right now. Stop another session and retry.',
+          retryable: true,
+        },
+      });
+    }
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
     const app = createApp();
     sessionRow = {
@@ -2578,6 +2635,30 @@ describe('project session API contract', () => {
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
+  test('session create persists a pending prompt without injecting it into the sandbox', async () => {
+    const app = createApp();
+    const pendingPrompt = {
+      text: 'Map this parcel.',
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      attachment_names: ['parcel.geojson'],
+    };
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', pending_prompt: pendingPrompt }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      metadata: { pending_prompt: pendingPrompt },
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+  });
+
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
@@ -2855,6 +2936,60 @@ describe('project session API contract', () => {
     expect(res.status).toBe(202);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+  });
+
+  test('explicit restart replaces an unmaterialized capacity failure without auto-sending its prompt', async () => {
+    const app = createApp();
+    const pendingPrompt = {
+      text: 'Map this parcel safely.',
+      agent: 'default',
+      model: null,
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    };
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'failed',
+      error: 'The sandbox provider is at capacity right now. Try again in a minute.',
+      metadata: { pending_prompt: pendingPrompt },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'provider-capacity',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      session_id: SESSION_ID,
+      status: 'provisioning',
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {

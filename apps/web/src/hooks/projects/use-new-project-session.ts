@@ -30,6 +30,7 @@ import {
   claimWarmProjectSession,
   createProjectSession,
   getProjectSessionScope,
+  type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindings,
   setProjectSessionScope,
@@ -79,6 +80,7 @@ export type NewProjectSessionOpts = {
   create?: {
     sandbox_slug?: string;
     agent_name?: string;
+    pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindings;
     inherit_unbound?: boolean;
     require_connectors?: string[];
