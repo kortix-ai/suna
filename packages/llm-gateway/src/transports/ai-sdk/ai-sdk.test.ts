@@ -1502,6 +1502,43 @@ describe('ai-sdk streaming error frame — defect 4 (401 surfaces cleanly, no ha
     // invoked exactly once, not retried internally.
     expect(calls).toBe(1);
   });
+
+  // Defect (2026-08-01, live-reported): an upstream 400 "context length
+  // exceeded from messages" surfaced to the user as a generic "Bad Gateway"
+  // instead of the real error + real status. The AI SDK wraps a non-2xx HTTP
+  // response in an APICallError whose `.message` is the generic HTTP status
+  // text ("Bad Request") — the actionable message ("context length exceeded
+  // from messages") lives in `.responseBody` (the raw upstream JSON), and the
+  // numeric status in `.statusCode`. The streaming adapter (sse.ts) threaded
+  // `.responseBody` into the frame's `detail` but used the generic
+  // `.message` as the client-facing message, AND only emitted a numeric
+  // `code` for terminal-auth failures — so a 400 reached the pipeline's
+  // statusForErrorFrame as `code: undefined`, which falls through to a blanket
+  // 502 "Bad Gateway". Both the real message and the real status were lost.
+  // This test pins the defect at the SSE-frame layer; the handler-layer test
+  // (handler.test.ts) pins the end-to-end client-facing response.
+  it('an APICallError with a generic message + real responseBody surfaces the real upstream message and status', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts({
+          type: 'error',
+          error: Object.assign(new Error('Bad Request'), {
+            statusCode: 400,
+            responseBody:
+              '{"error":{"message":"context length exceeded from messages","type":"invalid_request_error","code":"context_length_exceeded"}}',
+          }),
+        }),
+        CTX,
+      ),
+    );
+    const frame = sseErrorFrame(sse);
+    // REAL upstream message must reach the client, not the generic "Bad Request".
+    expect(frame?.message).toBe('context length exceeded from messages');
+    // The numeric upstream status must be carried so the pipeline classifies
+    // it as 400, not a blanket 502.
+    expect(frame?.code).toBe(400);
+    expect(sseHasContent(sse)).toBe(false);
+  });
 });
 
 // Piece B (2026-07-17): AI-SDK ⇄ native request PARITY AUDIT + fix.
