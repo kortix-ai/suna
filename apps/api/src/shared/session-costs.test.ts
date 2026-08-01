@@ -5,7 +5,6 @@ import {
   compareSessionCostRows,
   computeBilledSeconds,
   mergeLegacyGatewaySessionRows,
-  parseSessionCostListQuery,
   sessionCostSortKey,
   sortLedgerEntriesNewestFirst,
 } from './session-costs';
@@ -19,36 +18,6 @@ const baseSession = {
   createdAt: new Date('2026-07-01T10:00:00.000Z'),
   updatedAt: new Date('2026-07-02T11:00:00.000Z'),
 };
-
-describe('parseSessionCostListQuery', () => {
-  test('applies the documented pagination defaults', () => {
-    expect(parseSessionCostListQuery({})).toEqual({ limit: 25, offset: 0 });
-  });
-
-  test('accepts the inclusive pagination bounds', () => {
-    expect(parseSessionCostListQuery({ limit: '1', offset: '0' })).toEqual({
-      limit: 1,
-      offset: 0,
-    });
-    expect(parseSessionCostListQuery({ limit: '100', offset: '200' })).toEqual({
-      limit: 100,
-      offset: 200,
-    });
-  });
-
-  test('rejects invalid pagination values', () => {
-    for (const input of [
-      { limit: '0' },
-      { limit: '101' },
-      { limit: '1.5' },
-      { limit: 'invalid' },
-      { offset: '-1' },
-      { offset: '1.5' },
-    ]) {
-      expect(() => parseSessionCostListQuery(input)).toThrow(InvalidSessionCostQueryError);
-    }
-  });
-});
 
 describe('assembleSessionCostSummary', () => {
   test('includes a zero-cost session with null activity and owner identity', () => {

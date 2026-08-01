@@ -8,14 +8,17 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
+import {
+  type CostSort,
+  type CostWindow,
+  InvalidCostQueryError,
+  parseCostPagination,
+  parseCostSort,
+  parseCostWindow,
+} from '../../shared/cost-window';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import {
-  InvalidSessionCostQueryError,
-  getSessionCostRecord,
-  listSessionCosts,
-  parseSessionCostListQuery,
-} from '../../shared/session-costs';
+import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
 import type { AppEnv } from '../../types';
 import {
   InvalidUsageQueryError,
@@ -24,6 +27,13 @@ import {
   mapUsageTotals,
   parseUsageQuery,
 } from './usage-query';
+
+// The route's allowed sorts. Deliberately excludes `name_asc`: CostSort is
+// shared with the project-level rollup, but a session page has no name to
+// sort on and sessionCostSortKey throws for it by design. Keeping it out of
+// this list is what makes that a clean 400 (rejected by parseCostSort before
+// listSessionCosts ever runs) instead of a 500.
+export const SESSION_COST_SORTS: readonly CostSort[] = ['total_desc', 'total_asc', 'recent'];
 
 const usageApp = makeOpenApiApp<AppEnv>();
 
@@ -221,6 +231,10 @@ const SessionCostListQuerySchema = z
   .object({
     account_id: z.string().optional(),
     project_id: z.string().optional(),
+    owner_id: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    sort: z.enum(['total_desc', 'total_asc', 'recent']).optional(),
     limit: z.string().optional(),
     offset: z.string().optional(),
   })
@@ -350,7 +364,17 @@ usageApp.openapi(
     tags: ['usage'],
     summary: 'List session costs for one account',
     description:
-      'Lists every project session, including zero-cost sessions, with LLM and billed compute totals.',
+      'Lists every project session, including zero-cost sessions, with LLM and billed ' +
+      'compute totals over a date window. LLM cost is windowed on request time ' +
+      '(created_at); compute cost is windowed on the billing window start (started_at). ' +
+      'Bounds are half-open [from, to) and always UTC; an absent from/to defaults to the ' +
+      'trailing 30 days. ' +
+      '`reconciliation` covers spend the account cannot attribute to any session in the ' +
+      'same window: per-session totals attribute LLM cost by session_id, but ' +
+      '`reconciliation` attributes it by the nullable gateway_request_logs.project_id, ' +
+      'because by definition no session_id match exists. A project-scoped ' +
+      'reconciliation figure and the per-session table beside it can therefore ' +
+      'legitimately disagree.',
     ...auth,
     request: { query: SessionCostListQuerySchema },
     responses: {
@@ -359,28 +383,29 @@ usageApp.openapi(
     },
   }),
   async (c) => {
-    let pagination: { limit: number; offset: number };
+    let parsed: {
+      window: CostWindow;
+      sort: CostSort;
+      limit: number;
+      offset: number;
+    };
     try {
-      pagination = parseSessionCostListQuery({
-        limit: c.req.query('limit'),
-        offset: c.req.query('offset'),
-      });
+      parsed = {
+        window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
+        sort: parseCostSort(c.req.query('sort'), SESSION_COST_SORTS, 'total_desc'),
+        ...parseCostPagination({ limit: c.req.query('limit'), offset: c.req.query('offset') }),
+      };
     } catch (error) {
-      if (error instanceof InvalidSessionCostQueryError) {
+      if (error instanceof InvalidCostQueryError) {
         throw new HTTPException(400, { message: error.message });
       }
       throw error;
     }
 
     const projectId = c.req.query('project_id') || undefined;
+    const ownerId = c.req.query('owner_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
-    return c.json(
-      await listSessionCosts({
-        accountId,
-        projectId,
-        ...pagination,
-      }),
-    );
+    return c.json(await listSessionCosts({ accountId, projectId, ownerId, ...parsed }));
   },
 );
 

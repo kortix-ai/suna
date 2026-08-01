@@ -327,19 +327,6 @@ describe('listSessionCosts service', () => {
     }
   });
 
-  test('defaults to recent so the route keeps the ordering it has today', async () => {
-    queryRecords = [];
-    resultForQuery = () => [];
-    await listSessionCosts({ accountId, limit: 25, offset: 0 });
-
-    const [recency] = renderOrderBy(
-      queryRecords.find(
-        (query) => query.table === projectSessions && 'projectName' in query.fields,
-      ),
-    );
-    expect(recency).toBe('"kortix"."project_sessions"."updated_at" desc');
-  });
-
   test('filters the page and the total by owner when one is supplied', async () => {
     resultForQuery = (fields, table) => {
       if (table === projectSessions && 'total' in fields) return [{ total: 0 }];

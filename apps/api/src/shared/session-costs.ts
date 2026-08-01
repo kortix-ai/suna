@@ -20,7 +20,7 @@ import {
 } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities } from '../projects/lib/access';
 import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
-import { type CostSort, type CostWindow, parseCostWindow } from './cost-window';
+import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
 
 type NumericValue = number | string | null | undefined;
@@ -224,40 +224,6 @@ function latestIsoValue(...values: TemporalValue[]): string | null {
     if (candidate && (!latest || candidate > latest)) latest = candidate;
   }
   return latest;
-}
-
-function parseIntegerQuery(
-  value: string | number | undefined,
-  name: 'limit' | 'offset',
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (
-    (typeof value === 'string' && !/^\d+$/.test(value)) ||
-    (typeof value === 'number' && !Number.isInteger(value))
-  ) {
-    throw new InvalidSessionCostQueryError(`${name} must be an integer`);
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) {
-    throw new InvalidSessionCostQueryError(`${name} must be a safe integer`);
-  }
-  return parsed;
-}
-
-export function parseSessionCostListQuery(input: {
-  limit?: string | number;
-  offset?: string | number;
-}): { limit: number; offset: number } {
-  const limit = parseIntegerQuery(input.limit, 'limit') ?? 25;
-  const offset = parseIntegerQuery(input.offset, 'offset') ?? 0;
-
-  if (limit < 1 || limit > 100) {
-    throw new InvalidSessionCostQueryError('limit must be an integer from 1 to 100');
-  }
-  if (offset < 0) {
-    throw new InvalidSessionCostQueryError('offset must be a non-negative integer');
-  }
-  return { limit, offset };
 }
 
 export function computeBilledSeconds(
@@ -605,17 +571,16 @@ export async function listSessionCosts(input: {
   accountId: string;
   projectId?: string;
   ownerId?: string;
-  window?: CostWindow;
-  sort?: CostSort;
+  window: CostWindow;
+  sort: CostSort;
   limit: number;
   offset: number;
 }): Promise<SessionCostListResponse> {
-  // GET /v1/usage/session-costs passes neither parameter at this commit, so the
-  // defaults must not change what it returns today: `recent` is the ordering it
-  // already had. The window default is the shared trailing-30-day one, which
-  // windowing the aggregates necessarily introduces.
-  const window = input.window ?? parseCostWindow({});
-  const sort = input.sort ?? 'recent';
+  // Required, not defaulted: GET /v1/usage/session-costs (the sole caller) always
+  // parses both from the request and passes them explicitly. A caller that omits
+  // either fails to compile, so a new caller cannot silently inherit a default it
+  // never chose.
+  const { window, sort } = input;
 
   const llm = llmAggregateSubquery(input.accountId, window);
   const compute = computeAggregateSubquery(input.accountId, window);

@@ -63,8 +63,6 @@ const reconciliation = {
   compute_seconds: 0,
 };
 
-class InvalidSessionCostQueryError extends Error {}
-
 mock.module('../../middleware/auth', () => ({
   combinedAuth: async (c: TestContext, next: () => Promise<void>) => {
     c.set('userId', USER_ID);
@@ -98,18 +96,6 @@ mock.module('../../projects/lib/access', () => ({
 }));
 
 mock.module('../../shared/session-costs', () => ({
-  InvalidSessionCostQueryError,
-  parseSessionCostListQuery: (input: { limit?: string; offset?: string }) => {
-    const limit = input.limit === undefined ? 25 : Number(input.limit);
-    const offset = input.offset === undefined ? 0 : Number(input.offset);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      throw new InvalidSessionCostQueryError('limit must be an integer from 1 to 100');
-    }
-    if (!Number.isInteger(offset) || offset < 0) {
-      throw new InvalidSessionCostQueryError('offset must be a non-negative integer');
-    }
-    return { limit, offset };
-  },
   listSessionCosts: async (input: Record<string, unknown>) => {
     listInput = input;
     return {
@@ -128,7 +114,7 @@ mock.module('../../shared/session-costs', () => ({
   },
 }));
 
-const { usageApp } = await import('./usage');
+const { usageApp, SESSION_COST_SORTS } = await import('./usage');
 
 function createTestApp() {
   const app = new Hono();
@@ -160,12 +146,15 @@ describe('GET /v1/usage/session-costs', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(listInput).toEqual({
+    expect(listInput).toMatchObject({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       limit: 25,
       offset: 0,
+      sort: 'total_desc',
     });
+    const window = (listInput as { window: { from: Date; to: Date } }).window;
+    expect(window.to.getTime() - window.from.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
     expect(await response.json()).toEqual({
       sessions: [summary],
       total: 1,
@@ -181,6 +170,60 @@ describe('GET /v1/usage/session-costs', () => {
 
     expect(response.status).toBe(200);
     expect(listInput).toMatchObject({ limit: 10, offset: 20 });
+  });
+
+  test('passes the parsed window and sort through to the service', async () => {
+    const response = await createTestApp().request(
+      '/v1/usage/session-costs?from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z&sort=recent',
+    );
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({ sort: 'recent' });
+    const window = (listInput as { window: { from: Date; to: Date } }).window;
+    expect(window.from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(window.to.toISOString()).toBe('2026-07-08T00:00:00.000Z');
+  });
+
+  test('defaults to spend-descending over the trailing 30 days', async () => {
+    const response = await createTestApp().request('/v1/usage/session-costs');
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({ sort: 'total_desc' });
+    const window = (listInput as { window: { from: Date; to: Date } }).window;
+    expect(window.to.getTime() - window.from.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  test('rejects an inverted window with 400', async () => {
+    const response = await createTestApp().request(
+      '/v1/usage/session-costs?from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z',
+    );
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
+  test('rejects an unsupported sort with 400', async () => {
+    const response = await createTestApp().request('/v1/usage/session-costs?sort=cheapest');
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
+  // CostSort is shared with the project rollup, which has a name_asc sessions
+  // cannot honor (sessionCostSortKey throws for it). The route must reject it
+  // as a clean 400 through validation, never let it reach the service and 500.
+  test('rejects name_asc, which sessions cannot honor, with 400 not 500', async () => {
+    const response = await createTestApp().request('/v1/usage/session-costs?sort=name_asc');
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
+  test('forwards owner_id as a filter', async () => {
+    const response = await createTestApp().request(`/v1/usage/session-costs?owner_id=${USER_ID}`);
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({ ownerId: USER_ID });
   });
 
   test('infers the account from an accessible project when account_id is omitted', async () => {
@@ -234,6 +277,17 @@ describe('GET /v1/usage/session-costs', () => {
 
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();
+  });
+});
+
+// Guards the allowed-sort list directly: the OpenAPI query schema also
+// restricts `sort` to these three values, so an HTTP request carrying
+// `sort=name_asc` is already rejected before this list is ever consulted.
+// Without this assertion, widening the list back to include `name_asc` would
+// pass every other test in this file — it is the only test that catches it.
+describe('SESSION_COST_SORTS', () => {
+  test('excludes name_asc, which sessionCostSortKey cannot honor', () => {
+    expect(SESSION_COST_SORTS).toEqual(['total_desc', 'total_asc', 'recent']);
   });
 });
 
