@@ -71,6 +71,25 @@ export function toUtcDayRange(startDay: Date, endDay: Date): CostRange {
   return { preset: 'custom', from, to };
 }
 
+/**
+ * The inverse of `toUtcDayRange`, for feeding a stored `CostRange` back into
+ * `<Calendar mode="range">` on reopen. `react-day-picker` highlights by
+ * *local* calendar day, so a custom range's exclusive day-after `to` bound
+ * must be pulled back one day before it reaches the calendar — otherwise the
+ * calendar highlights one day past what the trigger button's label says.
+ * Presets are not day-boundary values (`to` is `now`, a real instant, not
+ * midnight), so they pass through unadjusted — highlighting through the
+ * current moment is correct there.
+ */
+export function toCalendarSelection(value: CostRange): { from: Date; to: Date } {
+  const from = new Date(value.from);
+  const to =
+    value.preset === 'custom'
+      ? new Date(new Date(value.to).getTime() - 86_400_000)
+      : new Date(value.to);
+  return { from, to };
+}
+
 /** Human label for the trigger button: the preset name, or both dates for a custom range. */
 export function formatRangeLabel(range: CostRange): string {
   if (range.preset !== 'custom') return PRESET_LABELS[range.preset];
@@ -96,10 +115,7 @@ interface DateRangePickerProps {
 export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
 
-  const selected: DateRange = {
-    from: new Date(value.from),
-    to: new Date(value.to),
-  };
+  const selected = toCalendarSelection(value);
 
   const handlePresetSelect = (preset: Exclude<CostRangePreset, 'custom'>) => {
     onChange(resolvePreset(preset, new Date()));

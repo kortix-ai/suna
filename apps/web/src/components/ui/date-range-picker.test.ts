@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatRangeLabel, resolvePreset, toUtcDayRange } from './date-range-picker';
+import { formatRangeLabel, resolvePreset, toCalendarSelection, toUtcDayRange } from './date-range-picker';
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
 
@@ -23,13 +23,16 @@ describe('resolvePreset', () => {
 
 describe('toUtcDayRange', () => {
   // These Dates are built with the local-midnight constructor
-  // `new Date(year, monthIndex, day)`, not `Date.UTC`. That is deliberate:
-  // this test process runs in Asia/Calcutta (UTC+5:30, see `TZ`/`date`), so
-  // `new Date(2026, 6, 1).toISOString()` is actually '2026-06-30T18:30:00.000Z'
-  // — a naive implementation that called `.toISOString()` on the picked Date
-  // directly would fail this test with drift. `toUtcDayRange` must instead
-  // read the *local* calendar parts (`getFullYear`/`getMonth`/`getDate`) and
-  // rebuild the instant with `Date.UTC`, which cancels the host offset.
+  // `new Date(year, monthIndex, day)`, not `Date.UTC`. That is a realistic
+  // fixture — it's exactly what react-day-picker hands back — and, since
+  // this process runs in Asia/Calcutta (UTC+5:30, see `TZ`/`date`), it does
+  // exercise real timezone-drift correction on THIS host. It is not a
+  // reliable regression guard on every host, though: on a UTC+0 CI runner,
+  // local midnight already equals UTC midnight, so a naive implementation
+  // that just called `.toISOString()` on the picked Date directly would
+  // produce byte-identical output here and the assertions below would not
+  // catch it. See the dedicated host-independent test at the bottom of this
+  // block for the guard that holds on every host.
   test('spans from the start of the first day to the start of the day after the last', () => {
     const range = toUtcDayRange(new Date(2026, 6, 1), new Date(2026, 6, 15));
     expect(range.from).toBe('2026-07-01T00:00:00.000Z');
@@ -47,6 +50,68 @@ describe('toUtcDayRange', () => {
     const range = toUtcDayRange(new Date(2026, 6, 31), new Date(2026, 6, 31));
     expect(range.from).toBe('2026-07-31T00:00:00.000Z');
     expect(range.to).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  test('reads the local calendar day rather than the Date\'s own instant, on every host', () => {
+    // A Date whose real underlying instant is Jan 1, with getFullYear/
+    // getMonth/getDate overridden to report Jul 1. toUtcDayRange must call
+    // those local getters (as the implementation does) rather than fall
+    // back to `.toISOString()` on the Date itself (what the pre-fix
+    // implementation did) — `.toISOString()` always reads the real Jan 1
+    // instant, which is host-TZ-independent, so this distinguishes correct
+    // from buggy on every host, including UTC+0, unlike the fixtures above.
+    const fakePickedDay = new Date('2026-01-01T00:00:00.000Z');
+    fakePickedDay.getFullYear = () => 2026;
+    fakePickedDay.getMonth = () => 6;
+    fakePickedDay.getDate = () => 1;
+
+    const range = toUtcDayRange(fakePickedDay, fakePickedDay);
+    expect(range.from).toBe('2026-07-01T00:00:00.000Z');
+    expect(range.to).toBe('2026-07-02T00:00:00.000Z');
+  });
+});
+
+describe('toCalendarSelection', () => {
+  test('a custom range highlights through the inclusive end day, not the exclusive to bound', () => {
+    const selection = toCalendarSelection({
+      preset: 'custom',
+      from: '2026-07-01T00:00:00.000Z',
+      to: '2026-07-16T00:00:00.000Z',
+    });
+    expect(selection.to.toISOString()).toBe('2026-07-15T00:00:00.000Z');
+  });
+
+  test('a preset range is passed through unchanged', () => {
+    const value = resolvePreset('7d', NOW);
+    const selection = toCalendarSelection(value);
+    expect(selection.from.toISOString()).toBe(value.from);
+    expect(selection.to.toISOString()).toBe(value.to);
+  });
+
+  test('a single-day custom range highlights exactly one day', () => {
+    const selection = toCalendarSelection({
+      preset: 'custom',
+      from: '2026-07-01T00:00:00.000Z',
+      to: '2026-07-02T00:00:00.000Z',
+    });
+    expect(selection.to.toISOString()).toBe(selection.from.toISOString());
+  });
+
+  test('is the exact inverse of toUtcDayRange', () => {
+    const start = new Date(2026, 6, 1);
+    const end = new Date(2026, 6, 15);
+    const selection = toCalendarSelection(toUtcDayRange(start, end));
+
+    expect([
+      selection.from.getFullYear(),
+      selection.from.getMonth(),
+      selection.from.getDate(),
+    ]).toEqual([start.getFullYear(), start.getMonth(), start.getDate()]);
+    expect([
+      selection.to.getFullYear(),
+      selection.to.getMonth(),
+      selection.to.getDate(),
+    ]).toEqual([end.getFullYear(), end.getMonth(), end.getDate()]);
   });
 });
 
