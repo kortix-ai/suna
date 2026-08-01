@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import { getSupabaseAccessTokenWithRetry } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import type { ProjectSessionStatus } from './sessions';
 import { unwrap } from './shared';
@@ -155,6 +156,12 @@ function appendWindow(query: URLSearchParams, options: CostWindowOptions): void 
   if (options.to) query.set('to', options.to);
 }
 
+/** `?<query>` when non-empty, else `''` — shared by every list/get below so
+ *  the empty-query case (no trailing `?`) is expressed exactly once. */
+function suffix(query: URLSearchParams): string {
+  return query.size > 0 ? `?${query}` : '';
+}
+
 export async function listSessionCosts(
   options: ListSessionCostsOptions = {},
 ): Promise<SessionCostsPage> {
@@ -165,8 +172,7 @@ export async function listSessionCosts(
   if (options.sort) query.set('sort', options.sort);
   if (options.limit != null) query.set('limit', String(options.limit));
   if (options.offset != null) query.set('offset', String(options.offset));
-  const suffix = query.size > 0 ? `?${query}` : '';
-  return unwrap(await backendApi.get<SessionCostsPage>(`/usage/session-costs${suffix}`));
+  return unwrap(await backendApi.get<SessionCostsPage>(`/usage/session-costs${suffix(query)}`));
 }
 
 export async function getSessionCostRecord(
@@ -175,10 +181,9 @@ export async function getSessionCostRecord(
 ): Promise<SessionCostDetail> {
   const query = new URLSearchParams();
   appendScopeOptions(query, options);
-  const suffix = query.size > 0 ? `?${query}` : '';
   return unwrap(
     await backendApi.get<SessionCostDetail>(
-      `/usage/session-costs/${encodeURIComponent(sessionId)}${suffix}`,
+      `/usage/session-costs/${encodeURIComponent(sessionId)}${suffix(query)}`,
     ),
   );
 }
@@ -224,8 +229,7 @@ export async function listCostByProject(
   if (options.sort) query.set('sort', options.sort);
   if (options.limit != null) query.set('limit', String(options.limit));
   if (options.offset != null) query.set('offset', String(options.offset));
-  const suffix = query.size > 0 ? `?${query}` : '';
-  return unwrap(await backendApi.get<ProjectCostPage>(`/usage/cost-by-project${suffix}`));
+  return unwrap(await backendApi.get<ProjectCostPage>(`/usage/cost-by-project${suffix(query)}`));
 }
 
 // ── Spend summary — GET /usage/cost-summary ─────────────────────────────────
@@ -276,44 +280,130 @@ export async function getCostSummary(
   appendScopeOptions(query, options);
   if (options.sessionId) query.set('session_id', options.sessionId);
   appendWindow(query, options);
-  const suffix = query.size > 0 ? `?${query}` : '';
-  return unwrap(await backendApi.get<CostSummary>(`/usage/cost-summary${suffix}`));
+  return unwrap(await backendApi.get<CostSummary>(`/usage/cost-summary${suffix(query)}`));
 }
 
-// ── CSV export URLs ──────────────────────────────────────────────────────
-// Pure URL builders — neither function calls `fetch`. `GET /usage/cost-by-project`
-// and `GET /usage/session-costs` both require a Bearer token (combinedAuth has
-// no query-token fallback for these routes — see
-// `apps/api/src/middleware/auth.ts`), so the caller is responsible for
-// attaching auth when it requests this URL (e.g. an authenticated `fetch` that
-// turns the response into a downloadable Blob), the same way
-// `fetchProjectArchive` in `./files.ts` does for the project-archive download.
+// ── CSV export ────────────────────────────────────────────────────────────
+// `GET /usage/cost-by-project` and `GET /usage/session-costs` (format=csv)
+// both require a Bearer token — combinedAuth has no query-token fallback for
+// these routes (see `apps/api/src/middleware/auth.ts`: the ?token= fallback
+// is reserved for the legacy /provision-stream EventSource path only, with an
+// explicit warning against extending it — it "leaks bearer material into
+// URLs, logs, history, and Referer headers"). So a bare `<a href>` or
+// `window.open()` against a `costExportUrl()` result 401s.
+//
+// `fetchCostExportCsv` below owns the whole authenticated flow — attach the
+// token, fetch, return a Blob — the same pattern `fetchProjectArchive` in
+// `./files.ts` already uses for the project-archive download (it calls
+// `getSupabaseAccessTokenWithRetry()` itself, attaches the header itself,
+// and returns a `Blob`). `costExportUrl` stays exported alongside it as the
+// pure URL builder, for a caller that wants the URL without immediately
+// fetching it (e.g. to hand to a different authenticated transport, or to
+// display/copy) — removing it now would break the export this task already
+// published.
 
-export interface CostExportOptions extends CostWindowOptions {
+/** Options accepted by `costExportUrl('projects', …)` / `fetchCostExportCsv('projects', …)`.
+ *  No `projectId`/`ownerId` — `/cost-by-project` has no such query param. */
+export interface ProjectCostExportOptions extends CostWindowOptions {
   accountId?: string;
-  /** `kind: 'sessions'` only — ignored for `kind: 'projects'`, which has no
-   *  project/owner query param on its route. */
-  projectId?: string;
-  /** `kind: 'sessions'` only — ignored for `kind: 'projects'`. */
-  ownerId?: string;
-  /** `ProjectCostSort` is a superset of `SessionCostSort`, so this one field
-   *  type covers both `kind`s without a discriminated overload. */
   sort?: ProjectCostSort;
 }
 
+/** Options accepted by `costExportUrl('sessions', …)` / `fetchCostExportCsv('sessions', …)`.
+ *  `sort` is `SessionCostSort`, not `ProjectCostSort` — `name_asc` is only
+ *  valid on the project rollup (SESSION_COST_SORTS excludes it on the API,
+ *  so passing it here would compile before this fix and 400 at request time). */
+export interface SessionCostExportOptions extends CostWindowOptions {
+  accountId?: string;
+  projectId?: string;
+  ownerId?: string;
+  sort?: SessionCostSort;
+}
+
+/** Convenience union of the two kind-specific option shapes above. Kept as
+ *  its own exported name (rather than removed) because `costExportUrl` was
+ *  already published with a single flat `CostExportOptions` parameter type;
+ *  the discriminated overloads below are what actually enforces the
+ *  per-`kind` field set now — this union just lets a caller hold "whichever
+ *  export options" without picking a kind up front. */
+export type CostExportOptions = ProjectCostExportOptions | SessionCostExportOptions;
+
+/** Pure URL builder — never calls `fetch`. See the section comment above for
+ *  why a bare `<a href>`/`window.open()` against this URL 401s, and why
+ *  `fetchCostExportCsv` (not this) is the function that actually downloads. */
+export function costExportUrl(kind: 'projects', options?: ProjectCostExportOptions): string;
+export function costExportUrl(kind: 'sessions', options?: SessionCostExportOptions): string;
 export function costExportUrl(
   kind: 'projects' | 'sessions',
-  options: CostExportOptions = {},
+  options: ProjectCostExportOptions | SessionCostExportOptions = {},
 ): string {
   const query = new URLSearchParams();
   if (options.accountId) query.set('account_id', options.accountId);
   if (kind === 'sessions') {
-    if (options.projectId) query.set('project_id', options.projectId);
-    if (options.ownerId) query.set('owner_id', options.ownerId);
+    const sessionOptions = options as SessionCostExportOptions;
+    if (sessionOptions.projectId) query.set('project_id', sessionOptions.projectId);
+    if (sessionOptions.ownerId) query.set('owner_id', sessionOptions.ownerId);
   }
   appendWindow(query, options);
   if (options.sort) query.set('sort', options.sort);
   query.set('format', 'csv');
   const path = kind === 'projects' ? '/usage/cost-by-project' : '/usage/session-costs';
   return `${platformConfig().backendUrl || ''}${path}?${query}`;
+}
+
+export interface CostExportResult {
+  blob: Blob;
+  /** Parsed `x-kortix-row-cap` response header — `CSV_ROW_CAP` in
+   *  `apps/api/src/shared/cost-csv.ts` — or `null` when the header is absent
+   *  or unparseable. Both CSV export routes always set it, but the header is
+   *  not part of either route's JSON response schema, so a caller needing to
+   *  warn "your finance export was capped at N rows" can only get this
+   *  number from here, not from the CSV body itself. */
+  rowCap: number | null;
+}
+
+/**
+ * Fetch a CSV export as a `Blob`, owning the whole authenticated flow —
+ * mirrors `fetchProjectArchive` in `./files.ts`: resolves the current token
+ * via `getSupabaseAccessTokenWithRetry()`, attaches
+ * `Authorization: Bearer <token>` itself, and throws with the response body
+ * on a non-OK response.
+ */
+export function fetchCostExportCsv(
+  kind: 'projects',
+  options?: ProjectCostExportOptions,
+): Promise<CostExportResult>;
+export function fetchCostExportCsv(
+  kind: 'sessions',
+  options?: SessionCostExportOptions,
+): Promise<CostExportResult>;
+export async function fetchCostExportCsv(
+  kind: 'projects' | 'sessions',
+  options: ProjectCostExportOptions | SessionCostExportOptions = {},
+): Promise<CostExportResult> {
+  // Delegates to costExportUrl for the URL itself — kind is narrowed to a
+  // literal in each branch, which is what lets the two-overload function be
+  // called at all (an overloaded function can't be called with a
+  // non-narrowed 'projects' | 'sessions' variable directly). This also
+  // guarantees the fetched URL can never drift from what costExportUrl
+  // builds and this file's costExportUrl tests already cover.
+  const url =
+    kind === 'projects'
+      ? costExportUrl('projects', options as ProjectCostExportOptions)
+      : costExportUrl('sessions', options as SessionCostExportOptions);
+
+  const token = await getSupabaseAccessTokenWithRetry();
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Failed to export CSV (HTTP ${res.status})`);
+  }
+
+  const rowCapHeader = res.headers.get('x-kortix-row-cap');
+  const parsedRowCap = rowCapHeader != null ? Number(rowCapHeader) : NaN;
+  const blob = await res.blob();
+  return { blob, rowCap: Number.isFinite(parsedRowCap) ? parsedRowCap : null };
 }

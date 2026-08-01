@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   costExportUrl,
+  fetchCostExportCsv,
   getCostSummary,
   getSessionCostRecord,
   listCostByProject,
@@ -330,13 +331,92 @@ test('costExportUrl builds the sessions CSV export URL with project and owner sc
   );
 });
 
-test('costExportUrl drops project/owner scope for kind "projects" (route has no such filter)', () => {
-  const url = costExportUrl('projects', { projectId: 'proj-1', ownerId: 'user-9' });
-
-  expect(url).toBe('http://test.local/usage/cost-by-project?format=csv');
-});
-
 test('costExportUrl emits only format=csv when no options are supplied', () => {
   expect(costExportUrl('sessions')).toBe('http://test.local/usage/session-costs?format=csv');
   expect(costExportUrl('projects')).toBe('http://test.local/usage/cost-by-project?format=csv');
+});
+
+// `project_id`/`owner_id` have no meaning on `/cost-by-project` (it has no
+// per-session filter), and `name_asc` has no meaning on `/session-costs` (a
+// session has no project name to sort on, mirroring SESSION_COST_SORTS on the
+// API). The discriminated overload on `costExportUrl`/`fetchCostExportCsv`
+// turns each of these from a runtime-ignored/400-rejected value into a
+// compile error — checked here by `tsc --noEmit`, not by `bun test` (bun
+// strips types and does not evaluate `@ts-expect-error`). An UNUSED
+// `@ts-expect-error` is itself a typecheck error, so this only stays green if
+// every line below still fails to compile.
+test('costExportUrl and fetchCostExportCsv reject the wrong kind\'s fields at compile time', () => {
+  // @ts-expect-error project_id has no meaning on the /cost-by-project route
+  costExportUrl('projects', { projectId: 'proj-1' });
+  // @ts-expect-error owner_id has no meaning on the /cost-by-project route
+  costExportUrl('projects', { ownerId: 'user-9' });
+  // @ts-expect-error name_asc is valid only for the project rollup, not sessions
+  costExportUrl('sessions', { sort: 'name_asc' });
+  // @ts-expect-error project_id has no meaning on the /cost-by-project route
+  void fetchCostExportCsv('projects', { projectId: 'proj-1' });
+  // @ts-expect-error name_asc is valid only for the project rollup, not sessions
+  void fetchCostExportCsv('sessions', { sort: 'name_asc' });
+
+  expect(true).toBe(true);
+});
+
+// ── fetchCostExportCsv ───────────────────────────────────────────────────
+// Unlike costExportUrl, this DOES call fetch — it owns the whole
+// "authenticate, request, return a downloadable Blob" flow the way
+// fetchProjectArchive in ./files.ts does, per the architecture rule that
+// hosts never raw-fetch the Kortix API. Each test installs its own
+// globalThis.fetch mock (overriding the shared beforeEach one) so the
+// Authorization header actually sent can be inspected — the shared `calls`
+// array used by the tests above only ever recorded {url, method}.
+
+test('fetchCostExportCsv requests the export URL with a Bearer token and parses the row cap', async () => {
+  let capturedUrl = '';
+  let capturedHeaders: HeadersInit | undefined;
+  globalThis.fetch = mock(async (url: unknown, opts: RequestInit = {}) => {
+    capturedUrl = String(url);
+    capturedHeaders = opts.headers;
+    return new Response('session_id,total_cost\nsession-1,1.75\n', {
+      status: 200,
+      headers: { 'content-type': 'text/csv', 'x-kortix-row-cap': '10000' },
+    });
+  }) as unknown as typeof fetch;
+
+  const result = await fetchCostExportCsv('sessions', { accountId: 'acct-1', sort: 'recent' });
+
+  expect(capturedUrl).toBe(
+    'http://test.local/usage/session-costs?account_id=acct-1&sort=recent&format=csv',
+  );
+  expect(capturedHeaders).toEqual({ Authorization: 'Bearer tok' });
+  expect(result.rowCap).toBe(10000);
+  expect(await result.blob.text()).toBe('session_id,total_cost\nsession-1,1.75\n');
+});
+
+test('fetchCostExportCsv targets the projects rollup route for kind "projects"', async () => {
+  let capturedUrl = '';
+  globalThis.fetch = mock(async (url: unknown) => {
+    capturedUrl = String(url);
+    return new Response('project_id,total_cost\n', { status: 200 });
+  }) as unknown as typeof fetch;
+
+  await fetchCostExportCsv('projects', { accountId: 'acct-1' });
+
+  expect(capturedUrl).toBe('http://test.local/usage/cost-by-project?account_id=acct-1&format=csv');
+});
+
+test('fetchCostExportCsv returns rowCap null when the response carries no row-cap header', async () => {
+  globalThis.fetch = mock(
+    async () => new Response('project_id,total_cost\n', { status: 200 }),
+  ) as unknown as typeof fetch;
+
+  const result = await fetchCostExportCsv('projects');
+
+  expect(result.rowCap).toBeNull();
+});
+
+test('fetchCostExportCsv throws with the response body on a non-OK response', async () => {
+  globalThis.fetch = mock(
+    async () => new Response('Forbidden', { status: 403 }),
+  ) as unknown as typeof fetch;
+
+  await expect(fetchCostExportCsv('projects')).rejects.toThrow('Forbidden');
 });
