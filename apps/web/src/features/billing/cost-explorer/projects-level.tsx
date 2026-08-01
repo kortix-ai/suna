@@ -1,0 +1,375 @@
+'use client';
+
+import { useState, type ReactNode } from 'react';
+
+import type { CostSummary, ProjectCostPage } from '@kortix/sdk';
+import { ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
+
+import { Button } from '@/components/ui/button';
+import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
+import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { COST_PAGE_SIZE, useCostByProject, useCostSummary } from '@/hooks/billing/use-cost-explorer';
+
+import { CostLevelShell } from './cost-level-shell';
+import { formatSessionCostUsd } from '../session-cost-format';
+
+/** The whole explorer's default landing preset (`parseExplorerState` in the
+ *  forthcoming explorer shell — see the plan's Task 15 — defaults new URL
+ *  state to it too). Used here only to pick the right empty-state copy: a
+ *  non-default preset with zero rows means the user filtered the data away;
+ *  the default preset with zero rows means the account has no history yet. */
+const DEFAULT_RANGE_PRESET = '30d';
+
+const UNASSIGNED_LABEL = 'Unassigned';
+const UNASSIGNED_TOOLTIP_COPY = 'Spend recorded against sessions that no longer exist.';
+
+// Rounding-noise guard: half a hundredth of a cent. Anything at or below
+// this is treated as "fully attributed" and never surfaced as a row.
+const UNASSIGNED_TOLERANCE_USD = 0.005;
+
+export interface ProjectTableRow {
+  project_id: string | null;
+  project_name: string;
+  session_count: number;
+  llm_cost: number;
+  compute_cost: number;
+  total_cost: number;
+  last_activity_at: string | null;
+}
+
+/**
+ * Appends a synthetic "Unassigned" row so the table's footer reconciles with
+ * the account total. `/usage/cost-by-project` sums only spend the API can
+ * attribute to a project that still exists; `/usage/cost-summary` totals
+ * every dollar the account was billed, including spend whose session (and
+ * therefore project) no longer resolves. The gap between the two is
+ * unassigned spend, and it belongs in the table — not a banner that never
+ * reconciles with the rows beneath it (design spec, defect #7).
+ *
+ * Two guards, both required:
+ *  - **Only the first page.** Every later page is a subset of `projects`, so
+ *    `summary.totals.total_cost` minus *that* subset is not "unassigned" —
+ *    it is "everything not on this page", which is meaningless.
+ *  - **Only when positive.** Floating-point noise between two independently
+ *    computed rollups must never invent a negative (or effectively-zero) row.
+ */
+export function buildProjectTableRows(
+  page: ProjectCostPage,
+  summary: CostSummary | undefined,
+): ProjectTableRow[] {
+  const rows: ProjectTableRow[] = page.projects.map((project) => ({ ...project }));
+
+  if (!summary || page.offset > 0) return rows;
+
+  const attributed = page.projects.reduce((sum, project) => sum + project.total_cost, 0);
+  const unassigned = Number((summary.totals.total_cost - attributed).toFixed(10));
+
+  if (unassigned <= UNASSIGNED_TOLERANCE_USD) return rows;
+
+  return [
+    ...rows,
+    {
+      project_id: null,
+      project_name: UNASSIGNED_LABEL,
+      session_count: 0,
+      llm_cost: 0,
+      compute_cost: 0,
+      total_cost: unassigned,
+      last_activity_at: null,
+    },
+  ];
+}
+
+/** A row drills into a project only when it resolves to a real
+ *  `project_id` — the synthetic Unassigned row has nowhere to go. */
+export function isProjectRowClickable(
+  row: ProjectTableRow,
+): row is ProjectTableRow & { project_id: string } {
+  return row.project_id !== null;
+}
+
+function sumBy(rows: ProjectTableRow[], pick: (row: ProjectTableRow) => number): number {
+  return rows.reduce((sum, row) => sum + pick(row), 0);
+}
+
+export interface ProjectsLevelContentProps {
+  range: CostRange;
+  onRangeChange: (next: CostRange) => void;
+  onResetRange: () => void;
+  summary: CostSummary | undefined;
+  isSummaryLoading: boolean;
+  summaryError: Error | null;
+  page: ProjectCostPage | undefined;
+  isProjectsLoading: boolean;
+  projectsError: Error | null;
+  onSelectProject: (projectId: string) => void;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+}
+
+/**
+ * Presentational half of the projects level — mirrors the
+ * `SessionCostExplorerContent` / `SessionCostExplorer` split this replaces
+ * (`session-cost-explorer.tsx`), so the whole render contract is testable
+ * with plain props via `renderToStaticMarkup`, with no react-query or
+ * Supabase account context required.
+ */
+export function ProjectsLevelContent({
+  range,
+  onRangeChange,
+  onResetRange,
+  summary,
+  isSummaryLoading,
+  summaryError,
+  page,
+  isProjectsLoading,
+  projectsError,
+  onSelectProject,
+  onPreviousPage,
+  onNextPage,
+}: ProjectsLevelContentProps) {
+  const rows = page ? buildProjectTableRows(page, summary) : [];
+
+  const offset = page?.offset ?? 0;
+  const total = page?.total ?? 0;
+  const start = total === 0 ? 0 : offset + 1;
+  const end = page ? Math.min(offset + page.projects.length, total) : 0;
+
+  let tableSlot: ReactNode;
+  if (projectsError) {
+    tableSlot = (
+      <InfoBanner tone="destructive" title="Failed to load project costs">
+        {projectsError.message}
+      </InfoBanner>
+    );
+  } else if (isProjectsLoading && !page) {
+    tableSlot = (
+      <div className="space-y-2" aria-label="Loading projects">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Skeleton key={index} className="h-12 w-full rounded-md" />
+        ))}
+      </div>
+    );
+  } else if (rows.length === 0) {
+    const isFiltered = range.preset !== DEFAULT_RANGE_PRESET;
+    tableSlot = isFiltered ? (
+      <EmptyState
+        size="sm"
+        icon={ReceiptText}
+        title="No spend in this range"
+        description="Nothing was recorded for the selected window."
+        action={
+          <Button type="button" variant="outline" size="sm" onClick={onResetRange}>
+            Reset range
+          </Button>
+        }
+      />
+    ) : (
+      <EmptyState
+        size="sm"
+        icon={ReceiptText}
+        title="No spend recorded yet"
+        description="Project costs appear here once a session starts running."
+      />
+    );
+  } else {
+    tableSlot = (
+      <TooltipProvider delayDuration={300}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Project</TableHead>
+              <TableHead className="text-right">Sessions</TableHead>
+              <TableHead className="text-right">LLM</TableHead>
+              <TableHead className="text-right">Compute</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <ProjectRow
+                key={row.project_id ?? UNASSIGNED_LABEL}
+                row={row}
+                onSelectProject={onSelectProject}
+              />
+            ))}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell className="font-medium">Total</TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatSessionCostUsd(sumBy(rows, (row) => row.llm_cost))}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatSessionCostUsd(sumBy(rows, (row) => row.compute_cost))}
+              </TableCell>
+              <TableCell className="text-right font-mono font-medium tabular-nums">
+                {formatSessionCostUsd(sumBy(rows, (row) => row.total_cost))}
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </TooltipProvider>
+    );
+  }
+
+  return (
+    <CostLevelShell
+      range={range}
+      onRangeChange={onRangeChange}
+      summary={summary}
+      isSummaryLoading={isSummaryLoading}
+      summaryError={summaryError}
+    >
+      <div className="space-y-3">
+        {tableSlot}
+        {total > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-muted-foreground text-xs tabular-nums">
+              Showing {start}-{end} of {total} projects
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={offset === 0}
+                onClick={onPreviousPage}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page?.next_offset == null}
+                onClick={onNextPage}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </CostLevelShell>
+  );
+}
+
+function ProjectRow({
+  row,
+  onSelectProject,
+}: {
+  row: ProjectTableRow;
+  onSelectProject: (projectId: string) => void;
+}) {
+  const clickable = isProjectRowClickable(row);
+
+  // The unassigned row has no session/LLM/compute breakdown to show — the
+  // API folds it into the account total without a split (see the SDK
+  // comment on `ProjectCostRow`). Showing "$0.00" there would imply a real
+  // zero rather than "not broken down", so those cells read as an em dash;
+  // only Total carries the real figure.
+  const cells = (
+    <>
+      <TableCell>{row.project_name}</TableCell>
+      <TableCell className="text-right font-mono tabular-nums">
+        {clickable ? row.session_count.toLocaleString('en-US') : '—'}
+      </TableCell>
+      <TableCell className="text-right font-mono tabular-nums">
+        {clickable ? formatSessionCostUsd(row.llm_cost) : '—'}
+      </TableCell>
+      <TableCell className="text-right font-mono tabular-nums">
+        {clickable ? formatSessionCostUsd(row.compute_cost) : '—'}
+      </TableCell>
+      <TableCell className="text-right font-mono font-medium tabular-nums">
+        {formatSessionCostUsd(row.total_cost)}
+      </TableCell>
+    </>
+  );
+
+  if (!clickable) {
+    return (
+      <Hint label={UNASSIGNED_TOOLTIP_COPY} side="top">
+        <TableRow aria-label={UNASSIGNED_TOOLTIP_COPY} className="text-muted-foreground">
+          {cells}
+        </TableRow>
+      </Hint>
+    );
+  }
+
+  return (
+    <TableRow
+      className="cursor-pointer hover:bg-accent"
+      onClick={() => onSelectProject(row.project_id)}
+    >
+      {cells}
+    </TableRow>
+  );
+}
+
+export interface ProjectsLevelProps {
+  range: CostRange;
+  onRangeChange: (next: CostRange) => void;
+  onSelectProject: (projectId: string) => void;
+}
+
+/**
+ * The Projects level of the Project -> Sessions -> Session drill-down — the
+ * screen the whole cost explorer opens on. Owns pagination state and the two
+ * queries (`useCostSummary`, `useCostByProject`); rendering itself is
+ * `ProjectsLevelContent`.
+ */
+export function ProjectsLevel({ range, onRangeChange, onSelectProject }: ProjectsLevelProps) {
+  const [offset, setOffset] = useState(0);
+
+  const summaryQuery = useCostSummary({ from: range.from, to: range.to });
+  const projectsQuery = useCostByProject({
+    from: range.from,
+    to: range.to,
+    sort: 'total_desc',
+    offset,
+  });
+
+  const handleRangeChange = (next: CostRange) => {
+    setOffset(0);
+    onRangeChange(next);
+  };
+
+  const handleResetRange = () => {
+    setOffset(0);
+    onRangeChange(resolvePreset(DEFAULT_RANGE_PRESET, new Date()));
+  };
+
+  return (
+    <ProjectsLevelContent
+      range={range}
+      onRangeChange={handleRangeChange}
+      onResetRange={handleResetRange}
+      summary={summaryQuery.data}
+      isSummaryLoading={summaryQuery.isLoading}
+      summaryError={summaryQuery.error instanceof Error ? summaryQuery.error : null}
+      page={projectsQuery.data}
+      isProjectsLoading={projectsQuery.isLoading}
+      projectsError={projectsQuery.error instanceof Error ? projectsQuery.error : null}
+      onSelectProject={onSelectProject}
+      onPreviousPage={() => setOffset((current) => Math.max(0, current - COST_PAGE_SIZE))}
+      onNextPage={() => setOffset((current) => projectsQuery.data?.next_offset ?? current)}
+    />
+  );
+}
