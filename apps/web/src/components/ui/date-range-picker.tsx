@@ -108,7 +108,7 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
           />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={8} className="w-auto p-0">
+      <PopoverContent align="start" sideOffset={8} className="w-auto p-0 shadow-md">
         <div className="flex flex-wrap items-center gap-1 border-b p-2">
           {PRESET_ORDER.map((preset) => {
             const active = value.preset === preset;
