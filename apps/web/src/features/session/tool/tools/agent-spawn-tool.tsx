@@ -14,15 +14,16 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useRuntimeMessages } from '@kortix/sdk/react';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
+import { useRuntimeMessages } from '@kortix/sdk/react';
 import { CheckIcon as Check, CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useContext, useMemo, useState } from 'react';
 
@@ -81,39 +82,57 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
         }
         forceOpen={forceOpen}
       >
-        {verification && (
-          <div className="text-muted-foreground/60 px-3 pt-2 text-xs leading-relaxed">
-            ✓ {verification}
-          </div>
-        )}
-
+        {/* The verification condition and whatever the worker returned are one
+				    object — what the agent was asked to guarantee, and what came back —
+				    so they share a single card rather than floating as two bare blocks.
+				    `ToolOutputFallback` brings its own card, so the failure branch stays
+				    outside this one; nesting them would double the border. */}
         {isCompleted && spawnFailure ? (
-          <ToolOutputFallback output={output} toolName="agent_spawn" />
-        ) : isCompleted && cleanedOutput ? (
-          <div className="px-3 py-2">
-            <OutputBlock text={cleanedOutput} markdown />
-          </div>
-        ) : isCompleted && childToolParts.length > 0 ? (
-          <div className="space-y-0.5 px-3 py-2">
-            {childToolParts.slice(-3).map((tp, i) => {
-              const info = getToolInfo(tp.tool, partInput(tp) as Record<string, any>);
-              return (
-                <div
-                  key={i}
-                  className="text-muted-foreground flex items-center gap-1.5 truncate text-xs"
-                >
-                  <Check className="text-muted-foreground/50 size-2.5 flex-shrink-0" />
-                  {info.title}
-                  {info.subtitle ? ` · ${info.subtitle}` : ''}
+          <>
+            {verification && (
+              <ToolResultCard>
+                <div className="text-muted-foreground/60 px-2 py-1.5 text-xs leading-relaxed">
+                  ✓ {verification}
                 </div>
-              );
-            })}
-            {childToolParts.length > 3 && (
-              <div className="text-muted-foreground/50 pl-4 text-xs">
-                +{childToolParts.length - 3} more
-              </div>
+              </ToolResultCard>
             )}
-          </div>
+            <ToolOutputFallback output={output} toolName="agent_spawn" />
+          </>
+        ) : verification || (isCompleted && (cleanedOutput || childToolParts.length > 0)) ? (
+          <ToolResultCard>
+            <div className="space-y-2 px-2 py-1.5">
+              {verification && (
+                <div className="text-muted-foreground/60 text-xs leading-relaxed">
+                  ✓ {verification}
+                </div>
+              )}
+
+              {isCompleted && cleanedOutput ? (
+                <OutputBlock text={cleanedOutput} markdown />
+              ) : isCompleted && childToolParts.length > 0 ? (
+                <div className="space-y-0.5">
+                  {childToolParts.slice(-3).map((tp, i) => {
+                    const info = getToolInfo(tp.tool, partInput(tp) as Record<string, any>);
+                    return (
+                      <div
+                        key={i}
+                        className="text-muted-foreground flex items-center gap-1.5 truncate text-xs"
+                      >
+                        <Check className="text-muted-foreground/50 size-2.5 flex-shrink-0" />
+                        {info.title}
+                        {info.subtitle ? ` · ${info.subtitle}` : ''}
+                      </div>
+                    );
+                  })}
+                  {childToolParts.length > 3 && (
+                    <div className="text-muted-foreground/50 pl-4 text-xs">
+                      +{childToolParts.length - 3} more
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </ToolResultCard>
         ) : null}
 
         {surface === 'panel' && childToolParts.length > 0 && (

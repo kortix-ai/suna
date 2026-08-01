@@ -13,9 +13,9 @@ import {
   resolveSideSize,
 } from '@/features/session/action-panel/easy/easy-panel-logic';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
+import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
-import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';

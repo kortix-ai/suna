@@ -8,6 +8,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { stripMarkupForToolOutput } from '@/features/session/tool/tool-renderers-sanitization';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
@@ -38,7 +39,11 @@ export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="pty_kill" />
       ) : cleanOutput ? (
-        <div className="text-muted-foreground px-3 py-2 text-xs leading-relaxed">{cleanOutput}</div>
+        <ToolResultCard>
+          <div className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
+            {cleanOutput}
+          </div>
+        </ToolResultCard>
       ) : null}
     </BasicTool>
   );

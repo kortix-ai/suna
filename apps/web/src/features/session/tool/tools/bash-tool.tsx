@@ -151,15 +151,20 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           // reading — further from the eye.
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             {running && status !== 'completed' && status !== 'error' ? (
-              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
-                {commandPreview}
-              </TextShimmer>
+              <>
+                <span className="text-foreground shrink-0 text-xs">Running command</span>
+                <TextShimmer
+                  duration={1}
+                  spread={2}
+                  className="text-muted-foreground min-w-0 truncate font-mono text-xs"
+                >
+                  {commandPreview}
+                </TextShimmer>
+              </>
             ) : (
-              <span
-                className="text-muted-foreground min-w-0 truncate font-mono text-xs"
-                title={command}
-              >
-                {commandPreview}
+              <span className="min-w-0 truncate text-xs" title={command}>
+                <span className="text-foreground">Ran command</span>{' '}
+                <span className="text-muted-foreground font-mono">{commandPreview}</span>
               </span>
             )}
           </div>

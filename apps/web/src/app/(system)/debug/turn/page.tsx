@@ -7,8 +7,8 @@ import { ToolActivateContext } from '@/features/session/tool/shared/infrastructu
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { PlanCard } from '@/features/session/turn/plan-card';
 import { UserMessage } from '@/features/session/turn/user-message';
-import { beginOptimisticSend } from '@kortix/sdk/react';
 import type { MessageWithParts, Part } from '@/ui';
+import { beginOptimisticSend } from '@kortix/sdk/react';
 
 /**
  * /debug/turn
@@ -201,6 +201,53 @@ function patchTool(): Part {
   } as unknown as Part;
 }
 
+/**
+ * Shape `parseScrapeOutput` expects — `{ results: [{ url, success, title,
+ * content }] }`, stringified like every other tool output. One failure in the
+ * set so the destructive glyph on a row is covered too.
+ */
+const SCRAPE_URLS = [
+  'https://www.postgresql.org/docs/current/explicit-locking.html',
+  'https://sutharjay.com',
+  'https://example.invalid/missing',
+];
+
+const SCRAPE_OUTPUT = JSON.stringify({
+  total: 3,
+  successful: 2,
+  failed: 1,
+  results: [
+    {
+      url: SCRAPE_URLS[0],
+      success: true,
+      title: 'PostgreSQL: Documentation: Explicit Locking',
+      content: [
+        '## 13.3. Explicit Locking',
+        '',
+        'PostgreSQL provides various lock modes to control concurrent access to',
+        'data in tables. Advisory locks are allocated by the application rather',
+        'than by the system, and are released either at transaction end or on an',
+        'explicit unlock call.',
+        '',
+        '```sql',
+        'SELECT pg_try_advisory_lock(hashtext($1));',
+        '```',
+      ].join('\n'),
+    },
+    {
+      url: SCRAPE_URLS[1],
+      success: true,
+      title: 'Jay Suthar',
+      content: '# Jay Suthar\n\nMumbai, IN\n\nI design and engineer exceptional interfaces.',
+    },
+    {
+      url: SCRAPE_URLS[2],
+      success: false,
+      error: 'DNS lookup failed for example.invalid (ENOTFOUND).',
+    },
+  ],
+});
+
 /** Plain error + stack trace → the summary/disclosure branch of ToolError. */
 const ERROR_WITH_TRACE = `Error: ENOENT: no such file or directory, open '/workspace/src/missing.ts'
 Traceback (most recent call last):
@@ -336,6 +383,51 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
       tool('grep', { pattern: 'TODO' }),
       tool('write', { filePath: '/workspace/out.md' }),
       tool('list', { path: '/workspace/src' }),
+    ],
+  },
+  {
+    // Every one of these used to render its body as a bare `px-3 py-2` div: no
+    // edge, so the content ran straight into the chain rail beside it while
+    // bash — the same family of tool — sat in a hairlined card. This burst
+    // exists so that divergence is visible the moment it comes back. /debug/tools
+    // cannot show it: that page binds `ToolActivateContext`, so `BasicTool`
+    // returns an `ActivatableToolRow` and the body never renders inline at all.
+    label: 'result cards · pty/list/agent_spawn bodies must match bash',
+    working: false,
+    parts: [
+      tool('bash', { command: 'pnpm dev' }, 900, 'ready on :3000'),
+      tool(
+        'pty_spawn',
+        { command: 'pnpm dev', title: 'Dev server' },
+        800,
+        '<pty_spawned>\nID: pty_4f2a\nTitle: Dev server\nCommand: pnpm dev\nStatus: running\nPID: 48213\nWorkdir: /workspace/apps/web\n</pty_spawned>',
+      ),
+      tool(
+        'pty_read',
+        { id: 'pty_4f2a' },
+        300,
+        '<pty_output id="pty_4f2a" status="running">\n00001| $ pnpm dev\n00002| ▲ Next.js 16.0.0\n00003| - Local:  http://localhost:3000\n00004| ✓ Ready in 1.2s\n(End of buffer — 4 lines total)\n</pty_output>',
+      ),
+      tool('pty_write', { id: 'pty_4f2a', input: 'rs\n' }, 120, 'ok'),
+      tool('pty_kill', { id: 'pty_4f2a' }, 150, 'Process pty_4f2a terminated.'),
+      // Empty directory: the "is empty" answer is carded like any other result.
+      tool('list', { path: '/workspace/empty' }, 200, 'No files found'),
+      // No child session here, so this exercises the verification-only branch —
+      // the one that used to render as a bare line of text under the row.
+      tool(
+        'agent_spawn',
+        {
+          title: 'Draft the pricing comparison report',
+          verification_condition:
+            'The report exists at /workspace/reports/pricing-comparison.md and covers 3 competitors.',
+        },
+        4200,
+        'Report written to /workspace/reports/pricing-comparison.md',
+      ),
+      // Three pages incl. one failure: proves the rows are flat inside ONE card
+      // (they used to carry a rounded border each) and that the hairline still
+      // separates a result from the next once its content is expanded.
+      tool('scrape_webpage', { urls: SCRAPE_URLS }, 3100, SCRAPE_OUTPUT),
     ],
   },
 ];

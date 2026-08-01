@@ -58,11 +58,16 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </ToolResultCard>
       ) : isNoResults ? (
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
-          )}
-        />
+        // "Empty" is still a result the tool returned, so it keeps the same
+        // card the file list gets. Bare, the sentence floated with no edge and
+        // an empty directory read as a rendering failure rather than an answer.
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
+            )}
+          />
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="list" />
       ) : null}

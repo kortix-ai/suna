@@ -1245,7 +1245,7 @@ export function UserMessage({
               {/* Gradient fade for collapsed long messages. Keyed to `muted`
                   so it dissolves into the bubble it sits on, not the old card. */}
               {canExpand && !expanded && (
-                <div className="from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+                <div className="from-sidebar pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
               )}
 
               {/* Expand/collapse indicator */}

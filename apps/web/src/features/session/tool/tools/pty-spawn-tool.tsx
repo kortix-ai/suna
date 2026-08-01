@@ -11,6 +11,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useMemo } from 'react';
@@ -51,35 +52,40 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       {status === 'completed' && isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="pty_spawn" />
       ) : (
-        <div className="space-y-2 px-3 py-2">
-          {command && (
-            <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-              <span className="text-muted-foreground/50 select-none">$</span>{' '}
-              <span className="text-foreground/80">{command}</span>
-            </div>
-          )}
-          {(processStatus || ptyId || pid || workdir) && (
-            <InlineMeta>
-              {processStatus && (
-                <Badge
-                  variant={processStatus === 'running' ? 'success' : 'muted'}
-                  size="sm"
-                  className="gap-1"
-                >
-                  {processStatus === 'running' && <StatusDot tone="success" pulse />}
-                  {processStatus}
-                </Badge>
-              )}
-              {ptyId && <span className="font-mono">{ptyId}</span>}
-              {pid && <span className="font-mono">PID {pid}</span>}
-              {workdir && (
-                <span className="font-mono" title={workdir}>
-                  {workdir}
-                </span>
-              )}
-            </InlineMeta>
-          )}
-        </div>
+        // The spawned process is a result the tool returned, so it gets the
+        // same hairlined card every other result lives in. Bare, it had no edge
+        // and ran straight into the chain rail beside it.
+        <ToolResultCard>
+          <div className="space-y-2 px-2 py-1.5">
+            {command && (
+              <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+                <span className="text-muted-foreground/50 select-none">$</span>{' '}
+                <span className="text-foreground/80">{command}</span>
+              </div>
+            )}
+            {(processStatus || ptyId || pid || workdir) && (
+              <InlineMeta>
+                {processStatus && (
+                  <Badge
+                    variant={processStatus === 'running' ? 'success' : 'muted'}
+                    size="sm"
+                    className="gap-1"
+                  >
+                    {processStatus === 'running' && <StatusDot tone="success" pulse />}
+                    {processStatus}
+                  </Badge>
+                )}
+                {ptyId && <span className="font-mono">{ptyId}</span>}
+                {pid && <span className="font-mono">PID {pid}</span>}
+                {workdir && (
+                  <span className="font-mono" title={workdir}>
+                    {workdir}
+                  </span>
+                )}
+              </InlineMeta>
+            )}
+          </div>
+        </ToolResultCard>
       )}
     </BasicTool>
   );

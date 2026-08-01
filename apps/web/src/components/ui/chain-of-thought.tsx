@@ -94,11 +94,7 @@ export function ChainOfThoughtStep({
   ...props
 }: ChainOfThoughtStepProps) {
   return (
-    <Disclosure
-      className={cn('group/step relative pb-3 data-[last=true]:pb-0', className)}
-      data-last={isLast}
-      {...props}
-    >
+    <Disclosure className={cn('group/step relative pb-3', isLast && 'pb-2', className)} {...props}>
       {/*
 			  The rail spans the step rather than sitting after it.
 
@@ -117,12 +113,22 @@ export function ChainOfThoughtStep({
 			  the same column every step's icon occupies. `top-5` clears the icon;
 			  `bottom-0.5` stops just short of the next one so the rail reads as
 			  connecting the icons rather than colliding with them.
+
+			  The last step drops its rail — a line below the final icon connects to
+			  nothing and leaves the chain trailing off into empty space. This reads
+			  `isLast` directly rather than through a `data-last` attribute + a
+			  `group-data-[last=true]/step:` variant: `Disclosure` destructures a
+			  fixed prop list and never spreads the rest, so the attribute never
+			  reached the DOM and the rule silently never fired. TypeScript could not
+			  catch it — hyphenated JSX attributes skip prop-type checking. The rail
+			  and `isLast` live in this one component, so the indirection bought
+			  nothing even when it worked.
 			*/}
       <div
         aria-hidden
         className={cn(
           'bg-muted-foreground/60 absolute top-[1.6rem] bottom-0 left-2 w-px',
-          'group-data-[last=true]/step:hidden',
+          isLast && 'hidden',
         )}
       />
       {children}

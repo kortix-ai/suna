@@ -17,6 +17,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   looksLikeHtml,
@@ -26,7 +27,11 @@ import {
 } from '@/features/session/tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
-import { WarningIcon as DangerTriangleSolid, GlobeIcon } from '@phosphor-icons/react';
+import {
+  CaretRightIcon,
+  WarningIcon as DangerTriangleSolid,
+  GlobeIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -47,6 +52,18 @@ function getScrapeContent(result: ScrapeResult): { content: string; allowHtml?: 
   return { content: capped };
 }
 
+/**
+ * One scraped page: the same flat row a search source gets, expandable into the
+ * page's own content.
+ *
+ * The row deliberately carries NO border of its own. It used to be a
+ * `Disclosure variant="outline"` — its own `rounded-md border` per result — so
+ * putting the list in the shared result card would have nested a rounded border
+ * directly inside a rounded border, the one thing the radius rules forbid. The
+ * border moved up to the card instead, which is also how `web-search-tool`
+ * renders the same shape: one card, flat rows, so a web source looks identical
+ * whether it was searched or scraped.
+ */
 function ScrapeResultItem({ result }: { result: ScrapeResult }) {
   const url = safeHttpUrl(result.url);
   if (!url) return null;
@@ -55,30 +72,34 @@ function ScrapeResultItem({ result }: { result: ScrapeResult }) {
   const { content, allowHtml } = getScrapeContent(result);
 
   return (
-    <Disclosure variant="outline" className="group rounded-md">
-      <DisclosureTrigger className="overflow-hidden rounded-md">
-        <div className="group-data-[state=closed]:hover:bg-accent flex w-full cursor-pointer items-center justify-between gap-2 p-3 transition-colors group-data-[state=open]:bg-transparent group-data-[state=open]:hover:bg-transparent">
-          <div className="flex items-center gap-2">
-            <FaviconAvatar value={url} size="xs" className="shrink-0" />
-            <p className="text-foreground min-w-0 truncate text-sm font-medium">
-              {result.title || hostname}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {!result.success && (
-              <DangerTriangleSolid
-                weight="fill"
-                className={cn('size-3 shrink-0', STATUS_TEXT.destructive)}
-              />
-            )}
-            <p className="text-muted-foreground ml-auto min-w-0 shrink-0 truncate text-xs">
-              {hostname}
-            </p>
-          </div>
+    <Disclosure className="group">
+      <DisclosureTrigger>
+        {/* Row grammar copied from `WebSourceRow`: favicon → title → domain,
+				    `rounded-sm` because the row sits inside the card's `p-1` and
+				    concentric radius wants inner = outer − padding.
+				    The caret is the one deliberate addition. A source row that looks
+				    exactly like a search result reads as a link to somewhere else, but
+				    this one opens the scraped page IN PLACE — same glyph `InlineFileList`
+				    uses to say "this expands rather than navigates". */}
+        <div className="hover:bg-muted flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-2 transition-colors duration-150">
+          <CaretRightIcon className="text-muted-foreground/60 size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+          <FaviconAvatar value={url} size="xs" className="shrink-0" />
+          <span className="text-foreground min-w-0 flex-1 truncate text-sm">
+            {result.title || hostname}
+          </span>
+          {!result.success && (
+            <DangerTriangleSolid
+              weight="fill"
+              className={cn('size-3 shrink-0', STATUS_TEXT.destructive)}
+            />
+          )}
+          <span className="text-muted-foreground max-w-[40%] shrink-0 truncate text-sm">
+            {hostname}
+          </span>
         </div>
       </DisclosureTrigger>
       <DisclosureContent className="p-0">
-        <DisclosureBody className="px-3 pb-3">
+        <DisclosureBody className="px-2 pb-2">
           <div className={cn('text-foreground/80 text-xs', MD_FLUSH_CLASSES)}>
             <UnifiedMarkdown content={content} isStreaming={false} allowHtml={allowHtml} />
           </div>
@@ -123,11 +144,15 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
       locked={locked}
     >
       {results.length > 0 ? (
-        <div className="space-y-2">
+        // A hairline between siblings, not a gap: once a result is expanded,
+        // its page content and the next result's row would otherwise run
+        // together with nothing marking where one page ends. Same hairline
+        // `bash-tool` puts between a command and its output.
+        <ToolResultCard className="[&>*>*+*]:border-border/60 [&>*>*+*]:border-t">
           {results.map((result, idx) => (
             <ScrapeResultItem key={`${result.url}-${idx}`} result={result} />
           ))}
-        </div>
+        </ToolResultCard>
       ) : null}
     </BasicTool>
   );

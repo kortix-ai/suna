@@ -6,10 +6,11 @@
  * Renders as a chain of thought: a muted summary line that expands into a
  * connected vertical chain of steps. Open while it streams, auto-collapsed the
  * moment it settles, and manual after the user's first click. Collapsed height
- * is always one row, whatever the burst contains.
+ * is always one row, whatever the burst contains. A settled chain closes on a
+ * "Done" step so the rail terminates instead of trailing off.
  */
 
-import { CaretRightIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, CheckCircleIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
@@ -34,6 +35,19 @@ export function burstIsRunning(parts: ReadonlyArray<Part>, working: boolean): bo
     }
     return false;
   });
+}
+
+/**
+ * True when the chain gets its closing "Done" step.
+ *
+ * Two clauses, both about not lying to the reader:
+ *   - A running burst has no cap. The open end IS the signal that more is
+ *     coming; capping it would claim the work finished while it is mid-flight.
+ *   - An empty chain has no cap. When every part was plumbing the body renders
+ *     nothing, and a lone "Done" with no steps above it terminates nothing.
+ */
+export function showsDoneStep(stepCount: number, running: boolean): boolean {
+  return stepCount > 0 && !running;
 }
 
 export function ActivityBurst({
@@ -130,6 +144,24 @@ export function ActivityBurst({
                     />
                   </ChainOfThoughtStep>
                 ),
+              )}
+
+              {/* The closing step. It is a step, not a footer, so `ChainOfThought`
+							    hands it `isLast` and the rail above it finally has somewhere to
+							    land — the chain reads as terminated rather than trailing off.
+							    Monochrome, at the same scale as every other row: the cap is
+							    punctuation, and a success-green check would out-weigh the work it
+							    closes on every burst the reader opens. */}
+              {showsDoneStep(steps.length, running) && (
+                <ChainOfThoughtStep key="done">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <CheckCircleIcon
+                      weight="fill"
+                      className="text-muted-foreground size-4 flex-none"
+                    />
+                    <span className="text-muted-foreground text-sm leading-[1.5]">Done</span>
+                  </div>
+                </ChainOfThoughtStep>
               )}
             </ChainOfThought>
           </div>

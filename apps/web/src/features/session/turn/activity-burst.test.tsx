@@ -1,6 +1,6 @@
 import type { Part, ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
-import { burstIsRunning } from './activity-burst';
+import { burstIsRunning, showsDoneStep } from './activity-burst';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
   return {
@@ -45,5 +45,22 @@ describe('burstIsRunning', () => {
       { id: 'r', type: 'reasoning', text: 'done', time: { start: 1, end: 2 } } as unknown as Part,
     ];
     expect(burstIsRunning(parts, true)).toBe(false);
+  });
+});
+
+describe('showsDoneStep', () => {
+  test('a settled chain with steps closes on Done', () => {
+    expect(showsDoneStep(1, false)).toBe(true);
+    expect(showsDoneStep(9, false)).toBe(true);
+  });
+
+  test('a running chain is never capped — the open end means work continues', () => {
+    expect(showsDoneStep(3, true)).toBe(false);
+  });
+
+  test('an empty chain is never capped — Done alone terminates nothing', () => {
+    // Every part was plumbing, so mergeBurstSteps returned no rows.
+    expect(showsDoneStep(0, false)).toBe(false);
+    expect(showsDoneStep(0, true)).toBe(false);
   });
 });
