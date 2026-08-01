@@ -27,6 +27,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
+import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -307,6 +308,34 @@ export const EasyPanel = memo(function EasyPanel({
   // architecture Easy mode runs on — every sandbox surface here (AppPreview,
   // browser/desktop tabs) reaches its port through this same proxy.
   const { getServiceUrl } = useSandboxProxy();
+
+  /**
+   * "Send to agent" for a stopped app — the apps card's analog of "Ask for
+   * changes" (W12). A stopped sandbox is the one state where an app row can't
+   * open (its server is down), so the one thing a user can still do is ask the
+   * agent to bring it back. Hands the session composer a starter prompt naming
+   * the app and its port, and steps out of the way. The composer is disabled
+   * while the sandbox sleeps, but the prefill is held in the store and lands
+   * the instant the box is awake — which is exactly the moment the app would
+   * be reachable again. Persistent apps/artifacts will replace this; until
+   * then, this is the same shape as the merge-conflict "Solve with agent"
+   * prompt, just delivered into the session that built the app.
+   */
+  const sendAppToAgent = useCallback(
+    (app: OutputItem) => {
+      track('app_send_to_agent_clicked', { kind: app.kind });
+      const port = parseLocalhostUrl(app.url)?.port;
+      const portHint = port ? ` on port ${port}` : '';
+      useSessionComposerPrefillStore
+        .getState()
+        .setPrefill(
+          sessionId,
+          `The app \`${app.name}\`${portHint} isn’t running anymore. Go start it again.`,
+        );
+      closeDetail();
+    },
+    [sessionId, closeDetail],
+  );
 
   /**
    * Opening an output shows the THING, not the machinery around it: a running
@@ -723,7 +752,13 @@ export const EasyPanel = memo(function EasyPanel({
             sessionId={sessionId}
             onOpenDetail={openDetail}
           />
-          {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
+          {apps.length > 0 && (
+            <AppsCard
+              apps={apps}
+              onOpenApp={(a) => handleOpenOutput(a, apps)}
+              onSendToAgent={sendAppToAgent}
+            />
+          )}
         </div>
       </DetailLayer>
 
