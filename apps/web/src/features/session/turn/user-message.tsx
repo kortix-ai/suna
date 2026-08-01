@@ -9,19 +9,27 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CaretDownIcon as ChevronDown,
-  FileTextIcon as FileText,
-  ImageIcon,
-  ArrowBendUpLeftIcon as Reply,
+  PencilSimpleIcon,
   ScissorsIcon as Scissors,
   TerminalWindowIcon as Terminal,
   TimerIcon as Timer,
 } from '@phosphor-icons/react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import {
+  PreviewImage,
+  PreviewImageContent,
+  PreviewImageTrigger,
+} from '@/components/ui/preview-image';
 import { detectCommandFromText } from '@/features/session/detect-command';
-import { SandboxImage } from '@/features/session/sandbox-image';
+import { useSandboxImageSrc } from '@/features/session/sandbox-image';
 import { cn } from '@/lib/utils';
+import { getFileIcon, getFilename, getFileType } from '@/lib/utils/file-utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
@@ -35,6 +43,7 @@ import {
   isTextPart,
   splitUserParts,
 } from '@/ui';
+import { useIsMessageUploading } from '@kortix/sdk/react';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -46,7 +55,8 @@ import {
   stripSystemPtyText,
   SystemNotificationCard,
 } from '../message-parsing';
-import { PlanCard } from './plan-card';
+
+import { useHasPlan } from './plan-card';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -254,7 +264,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
   const hasDetails = hasItems || notification.distilled || notification.summary;
 
   return (
-    <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
+    <div className="border-border/60 bg-card/50 overflow-hidden rounded-lg border">
       {/* Header */}
       <Button
         onClick={() => hasDetails && setExpanded(!expanded)}
@@ -364,6 +374,314 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
   );
 }
 
+const BUBBLE_TEXT = cn(
+  'text-[0.9rem] leading-[22px] font-medium',
+  'break-words whitespace-pre-wrap select-text',
+);
+
+const BUBBLE_SURFACE = cn(
+  'bg-sidebar text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+);
+
+export interface NormalizedAttachment {
+  key: string;
+  filename: string;
+  mime?: string;
+  src?: string;
+  path?: string;
+  /** The bytes are still on their way to the sandbox. */
+  pending?: boolean;
+}
+
+export function normalizeAttachments(
+  parts: FilePart[],
+  uploads: ReadonlyArray<{ path: string; mime: string; filename: string }>,
+): NormalizedAttachment[] {
+  return [
+    ...parts.map((file) => ({
+      key: file.id,
+      filename: file.filename || 'File',
+      mime: file.mime,
+      src: file.url,
+    })),
+    ...uploads.map((file) => ({
+      key: `upload:${file.path}`,
+      filename: file.filename || getFilename(file.path),
+      mime: file.mime,
+      src: file.path,
+      path: file.path,
+    })),
+  ];
+}
+
+/**
+ * Attachments shown before the grid collapses into a `+N` tile.
+ *
+ * Whole rows of four, because the cap exists to bound HEIGHT and a cap that
+ * leaves a half-filled tail trades one ragged shape for another.
+ */
+const ATTACHMENT_TILE_CAP = 8;
+export { ATTACHMENT_TILE_CAP };
+
+export interface AttachmentGridPlan {
+  visible: NormalizedAttachment[];
+  hidden: number;
+}
+
+/**
+ * How much of the attachment block to show.
+ *
+ * That is the whole decision. Images and files are the SAME square tile, so
+ * there is no kind to branch on, no order to group, and no per-kind cap — the
+ * grid lays attachments out exactly as the user attached them.
+ */
+export function planAttachmentGrid(
+  attachments: NormalizedAttachment[],
+  expanded: boolean,
+): AttachmentGridPlan {
+  if (expanded || attachments.length <= ATTACHMENT_TILE_CAP) {
+    return { visible: attachments, hidden: 0 };
+  }
+  return {
+    visible: attachments.slice(0, ATTACHMENT_TILE_CAP),
+    hidden: attachments.length - ATTACHMENT_TILE_CAP,
+  };
+}
+
+/**
+ * The press/hover feel every attachment shares — a file pill, an image row and
+ * an image tile all answer the pointer the same way, so the block reads as one
+ * set of controls rather than three.
+ */
+const ATTACHMENT_INTERACTIVE =
+  'hover:bg-muted/50 cursor-pointer transition-colors active:scale-[0.97]';
+
+/**
+ * Every attachment is the same square tile — the picture if we have one, an
+ * icon with the name in the bottom corner otherwise. One shape is the whole
+ * idea: there is no rows-vs-tiles mode to pick, nothing reflows when a file
+ * joins a message, and a filename's length can never set a tile's width.
+ */
+const TILE_SURFACE =
+  'border-border bg-background relative block size-20 shrink-0 overflow-hidden rounded-md border';
+
+/** True when we can actually paint this attachment rather than name it. */
+const isImageAttachment = (file: NormalizedAttachment) =>
+  Boolean(file.mime?.startsWith('image/') && file.src);
+
+/**
+ * A named attachment: icon top-left, filename along the bottom.
+ *
+ * Two lines, bottom-aligned, because the name is the only thing distinguishing
+ * one document from another — `AdmitCard-260411128971.pdf` truncated to a single
+ * line is indistinguishable from its siblings.
+ */
+function FileTileBody({ file, pending }: { file: NormalizedAttachment; pending?: boolean }) {
+  const Icon = getFileIcon(getFileType(file.filename));
+  return (
+    <span className="flex size-full flex-col justify-between gap-1 p-2">
+      {pending ? (
+        <Loading className="text-muted-foreground size-4 shrink-0" variant="spokes" />
+      ) : (
+        <Icon className="text-muted-foreground size-4 shrink-0" />
+      )}
+      <span className="text-foreground line-clamp-2 text-left text-xs leading-tight break-all">
+        {file.filename}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * An image attachment: a square tile that opens full-size on click.
+ *
+ * Resolving the src here (rather than handing the path to `SandboxImage`) buys
+ * two things: the lightbox gets the same URL the tile is already showing, and
+ * the tile is free to be any size — `SandboxImage` pins its loading and error
+ * states to an 80px minimum, which is what produced the oversized "Image
+ * unavailable" block.
+ *
+ * A tile that cannot resolve falls back to the named treatment. It used to
+ * render an empty `<span>`, which is how eleven attachments became eleven blank
+ * boxes — the layout looked broken on top of being ugly, and nothing on screen
+ * said which picture was missing.
+ */
+function AttachmentImage({
+  file,
+  className,
+  pending,
+}: {
+  file: NormalizedAttachment;
+  className?: string;
+  /** The whole message is still being sent. */
+  pending?: boolean;
+}) {
+  const { resolvedSrc, isLoading } = useSandboxImageSrc(file.src!);
+
+  if (!resolvedSrc) {
+    // An image that has not resolved is either still arriving or never will.
+    // Both used to render an empty box; now the first spins and the second
+    // falls back to the named tile, so the tile always says which it is.
+    return (
+      <span title={file.filename} className={className}>
+        <FileTileBody file={file} pending={pending || isLoading || file.pending} />
+      </span>
+    );
+  }
+
+  return (
+    <PreviewImage>
+      <PreviewImageTrigger asChild>
+        <button
+          type="button"
+          title={file.filename}
+          onClick={(e) => e.stopPropagation()}
+          className={className}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={resolvedSrc} alt={file.filename} className="size-full object-cover" />
+        </button>
+      </PreviewImageTrigger>
+      <PreviewImageContent fileContent={resolvedSrc} fileName={file.filename} fullscreen />
+    </PreviewImage>
+  );
+}
+
+/**
+ * What the user handed over with the message.
+ *
+ * One grid, four columns, right-aligned, in the order the user attached things.
+ * This replaced a rows-or-tiles switch whose "a file pulls images back to rows"
+ * branch turned a 15-attachment message into 15 filename-width rows stacked
+ * against the right edge — roughly 700px of staircase.
+ */
+function MessageAttachments({
+  attachments,
+  pending,
+}: {
+  attachments: NormalizedAttachment[];
+  /** The whole message is still being sent, so every tile is still uploading. */
+  pending?: boolean;
+}) {
+  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
+  const [expanded, setExpanded] = useState(false);
+
+  const { visible, hidden } = planAttachmentGrid(attachments, expanded);
+  if (visible.length === 0) return null;
+
+  return (
+    // Fixed 5rem squares that simply wrap, packed against the right rail. No
+    // grid, no column track.
+    //
+    // The cap only reads as deliberate if the rows come out even, and with free
+    // wrapping the row length follows whatever width happens to be available —
+    // at 579px seven fit, so a cap of 8 left one orphan tile stranded on its own
+    // row. `max-w` in the same units as the tile pins it: 4 × 5rem + 3 × 0.5rem
+    // = 21.5rem, so a row is always four and the cap is always two clean rows,
+    // at any root font size.
+    <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
+      {visible.map((file, index) => {
+        // The LAST visible tile carries the overflow count over its own
+        // contents, so the grid never shows a blank slot — the count is an
+        // overlay, not a placeholder. It opens the rest instead of the file, so
+        // it is a plain button: nesting one inside the preview trigger would be
+        // two buttons deep and invalid.
+        if (hidden > 0 && index === visible.length - 1) {
+          return (
+            <li key={file.key} className="contents">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(true);
+                }}
+                aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
+                className={cn(
+                  TILE_SURFACE,
+                  ATTACHMENT_INTERACTIVE,
+                  'text-muted-foreground flex items-center justify-center text-sm font-medium',
+                )}
+              >
+                +{hidden}
+              </button>
+            </li>
+          );
+        }
+
+        if (isImageAttachment(file)) {
+          return (
+            <li key={file.key} className="contents">
+              <AttachmentImage
+                file={file}
+                pending={pending}
+                className={cn(TILE_SURFACE, ATTACHMENT_INTERACTIVE)}
+              />
+            </li>
+          );
+        }
+
+        const canOpen = Boolean(file.path);
+        return (
+          <li key={file.key} className="contents">
+            <button
+              type="button"
+              disabled={!canOpen}
+              title={file.filename}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (file.path) openFileInComputer(file.path);
+              }}
+              className={cn(
+                'border-border bg-background relative block h-20 max-w-40 min-w-24 shrink-0 overflow-hidden rounded-md border',
+                canOpen && ATTACHMENT_INTERACTIVE,
+              )}
+            >
+              <FileTileBody file={file} pending={pending || file.pending} />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ============================================================================
+// User message actions — edit (rewind) + copy
+// ============================================================================
+
+function UserMessageActions({
+  copyText,
+  messageId,
+  rewindPromptText,
+  onRewind,
+  rewindDisabled,
+}: {
+  copyText: string;
+  messageId: string;
+  rewindPromptText: string;
+  onRewind: (messageId: string, text: string) => void;
+  rewindDisabled: boolean;
+}) {
+  if (rewindDisabled) return null;
+  return (
+    <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+      <Hint label="Edit from here" side="bottom" align="center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Edit message and rewind session"
+          disabled={rewindDisabled}
+          onClick={() => onRewind(messageId, rewindPromptText)}
+        >
+          <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+        </Button>
+      </Hint>
+      <CopyButton code={copyText} size="sm" />
+    </div>
+  );
+}
+
 // ============================================================================
 // User Message
 // ============================================================================
@@ -375,6 +693,8 @@ export function UserMessage({
   commands,
   sessionId,
   ownsPlan,
+  onRewind,
+  rewindDisabled = false,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
@@ -382,6 +702,8 @@ export function UserMessage({
   commands?: Command[];
   sessionId: string;
   ownsPlan: boolean;
+  onRewind?: (messageId: string, text: string) => void;
+  rewindDisabled?: boolean;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -434,11 +756,66 @@ export function UserMessage({
   void fileMentionRefs;
   void agentMentionRefs;
 
+  // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
+  // parsed and then discarded — see `normalizeAttachments`.
+  const allAttachments = useMemo(
+    () => normalizeAttachments(attachments, uploadedFiles),
+    [attachments, uploadedFiles],
+  );
+
+  // Full width is the PLAN's claim on the message, so it has to follow a plan
+  // that actually renders. `ownsPlan` alone doesn't: the anchor falls back to
+  // the last turn when nothing ever wrote todos, which stretched the bubble in
+  // sessions that have no plan at all.
+  // Still uploading? The store is the only thing that knows. Without this the
+  // tile cannot tell "these bytes are on their way" from "this image is broken"
+  // — both render as icon + filename, which is what made a live upload look
+  // like a failure.
+  const isUploading = useIsMessageUploading(message.info.id);
+
+  const hasPlan = useHasPlan(sessionId);
+  const showPlan = ownsPlan && hasPlan;
+
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
     () => commandInfo ?? detectCommandFromText(rawText, commands),
     [commandInfo, rawText, commands],
   );
+
+  const copyText = useMemo(() => {
+    const textParts = message.parts.filter(
+      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
+    ) as TextPart[];
+    return textParts
+      .map((p) => stripSystemPtyText(p.text))
+      .filter((t) => t.trim())
+      .join('\n')
+      .trim();
+  }, [message.parts]);
+
+  const rewindPromptText = useMemo(() => {
+    if (effectiveCommandInfo) {
+      return `/${effectiveCommandInfo.name}${effectiveCommandInfo.args ? ` ${effectiveCommandInfo.args}` : ''}`;
+    }
+    const withoutReply = parseReplyContext(copyText).cleanText;
+    const withoutUploads = parseFileReferences(withoutReply).cleanText;
+    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
+    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
+    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
+    return stripKortixSystemTags(withoutSessions).trim();
+  }, [copyText, effectiveCommandInfo]);
+
+  const actions =
+    copyText && onRewind ? (
+      <UserMessageActions
+        copyText={copyText}
+        messageId={message.info.id}
+        rewindPromptText={rewindPromptText}
+        onRewind={onRewind}
+        rewindDisabled={rewindDisabled}
+      />
+    ) : null;
 
   // Detect channel message (Telegram/Slack) in user message
   const channelMessageInfo = useMemo(() => {
@@ -646,7 +1023,7 @@ export function UserMessage({
     const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
+        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
           <div className="flex items-center gap-2">
             <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill={brandColor}>
               {isTelegram ? (
@@ -669,6 +1046,7 @@ export function UserMessage({
             </div>
           )}
         </div>
+        {actions}
       </div>
     );
   }
@@ -677,7 +1055,7 @@ export function UserMessage({
   if (triggerEventInfo) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
+        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-lg border px-4 py-2.5">
           <div className="flex items-center gap-2">
             <Timer className="text-muted-foreground size-3.5 shrink-0" />
             <span className="text-foreground font-mono text-sm">
@@ -698,6 +1076,7 @@ export function UserMessage({
             </div>
           )}
         </div>
+        {actions}
       </div>
     );
   }
@@ -706,7 +1085,7 @@ export function UserMessage({
   if (effectiveCommandInfo) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
+        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-lg border px-4 py-2.5">
           <div className="flex items-center gap-2">
             <Terminal className="text-muted-foreground size-3.5 shrink-0" />
             <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
@@ -735,18 +1114,40 @@ export function UserMessage({
             ))}
           </div>
         )}
+        {actions}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="bg-accent relative overflow-hidden rounded-lg border">
+    // The whole message is ONE right-aligned column capped at 80%, so the
+    // bubble, its attachments and its actions all hang off the same rail and
+    // wrap against the same edge. The old root was a full-width stretching
+    // column, which is why attachments spanned the transcript on the far left
+    // while the bubble sat right.
+    // A plan is the one thing that overrides the cap: a checklist reads as a
+    // panel, not as something trailing off the end of a sentence.
+    <div
+      className={cn(
+        'ml-auto flex w-full flex-col items-end gap-2 self-end',
+        // showPlan ? 'max-w-full' : 'max-w-[80%]',
+        'max-w-[80%]',
+      )}
+    >
+      {allAttachments.length > 0 && (
+        <MessageAttachments attachments={allAttachments} pending={isUploading} />
+      )}
+      {/* No text means no bubble. Attach a file and send with nothing typed and
+          the bubble used to render anyway — a padded surface with nothing in
+          it, hanging under the attachments. The attachments ARE the message. */}
+      {(text || replyContext) && (
         <div
           className={cn(
-            'bg-accent flex w-full flex-col overflow-hidden rounded-[calc(var(--radius)-0.6px)] border px-4 py-3',
-            canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
-            ownsPlan && 'rounded-b-lg border-b-[1.5px]',
+            BUBBLE_SURFACE,
+            'relative overflow-hidden',
+            showPlan ? 'w-full' : 'w-fit',
+            canExpand && 'cursor-pointer transition-colors',
+            // showPlan && 'shadow',
           )}
           role={canExpand ? 'button' : undefined}
           tabIndex={canExpand ? 0 : undefined}
@@ -761,46 +1162,21 @@ export function UserMessage({
             }
           }}
         >
-          {/* Attachment thumbnails (images/PDFs) */}
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-3 pb-0">
-              {attachments.map((file) => (
-                <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
-                  {file.mime?.startsWith('image/') && file.url ? (
-                    <SandboxImage
-                      src={file.url}
-                      alt={file.filename ?? 'Attachment'}
-                      className="max-h-32 max-w-48 object-cover"
-                      preview
-                    />
-                  ) : file.mime === 'application/pdf' ? (
-                    <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                      <FileText className="text-muted-foreground size-4" />
-                      <span className="text-muted-foreground text-xs">
-                        {file.filename || 'PDF'}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                      <ImageIcon className="text-muted-foreground size-4" />
-                      <span className="text-muted-foreground text-xs">
-                        {file.filename || 'File'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Reply context banner */}
+          {/* Quoted context — a rule, not a card.
+              A filled, bordered banner sitting on the already-filled bubble
+              made two nested surfaces, and the louder one was the quote rather
+              than the message the reader actually came for. A left rule says
+              "this part is quoted" with no chrome at all, and lets the message
+              lead again.
+              `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
+              `truncate` pair: two truncations that could stack two ellipses,
+              and cut mid-word at the container edge. Clamping wraps to a
+              second line and ends cleanly, and the full text stays in the DOM
+              to select and copy. */}
           {replyContext && (
-            <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-              <Reply className="text-primary/60 size-3 flex-shrink-0" />
-              <span className="text-muted-foreground truncate text-xs">
-                {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
-              </span>
-            </div>
+            <blockquote className="border-border mb-2 border-l-2 pl-2.5">
+              <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
+            </blockquote>
           )}
 
           {/* Text content */}
@@ -809,7 +1185,8 @@ export function UserMessage({
               <div
                 ref={textRef}
                 className={cn(
-                  'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
+                  'max-w-full min-w-0',
+                  BUBBLE_TEXT,
                   !expanded && 'max-h-[200px] overflow-hidden',
                 )}
               >
@@ -874,14 +1251,15 @@ export function UserMessage({
                 )}
               </div>
 
-              {/* Gradient fade overlay for collapsed long messages */}
+              {/* Gradient fade for collapsed long messages. Keyed to `muted`
+                  so it dissolves into the bubble it sits on, not the old card. */}
               {canExpand && !expanded && (
-                <div className="from-card/50 pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
+                <div className="from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
               )}
 
               {/* Expand/collapse indicator */}
               {canExpand && (
-                <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
+                <div className="bg-muted/80 text-muted-foreground absolute right-0 bottom-0 z-10 rounded-md p-1 backdrop-blur-sm">
                   <ChevronDown
                     className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
                   />
@@ -890,8 +1268,7 @@ export function UserMessage({
             </div>
           )}
         </div>
-        {ownsPlan && <PlanCard sessionId={sessionId} />}
-      </div>
+      )}
       {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
@@ -909,6 +1286,7 @@ export function UserMessage({
           ))}
         </div>
       )}
+      {actions}
     </div>
   );
 }

@@ -91,6 +91,20 @@ function PlanPie({
   );
 }
 
+/**
+ * Whether this session has a plan worth showing.
+ *
+ * `PlanCard` already returns null for an empty plan, but callers need the same
+ * answer BEFORE they lay out — the user message sizes itself differently when a
+ * plan sits inside it, and `ownsPlan` alone is not that answer: the anchor
+ * falls back to the last turn when no turn ever wrote todos, so a session with
+ * zero todos still nominates an owner.
+ */
+export function useHasPlan(sessionId: string): boolean {
+  const { data } = useRuntimeSessionTodo(sessionId);
+  return parseTodos(data).length > 0;
+}
+
 export function planSummary(todos: ReadonlyArray<{ status: string; content: string }>) {
   const total = todos.length;
   const done = todos.filter((todo) => todo.status === 'completed').length;
@@ -114,7 +128,7 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
 
   return (
     <Collapsible className="group/plan" open={open} onOpenChange={setOpen}>
-      <div className="bg-accent rounded-none border-none px-3 py-1.5">
+      <div className="bg-inherit rounded-none border-none px-3 py-1.5">
         {/* CollapsibleTrigger renders a <button>, whose content model is
             phrasing content — every child here is a <span>, never a <div>
             or <p>. */}

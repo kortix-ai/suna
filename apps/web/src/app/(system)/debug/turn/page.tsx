@@ -7,6 +7,7 @@ import { ToolActivateContext } from '@/features/session/tool/shared/infrastructu
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { PlanCard } from '@/features/session/turn/plan-card';
 import { UserMessage } from '@/features/session/turn/user-message';
+import { beginOptimisticSend } from '@kortix/sdk/react';
 import type { MessageWithParts, Part } from '@/ui';
 
 /**
@@ -357,6 +358,99 @@ const userMessage = {
   ],
 } as unknown as MessageWithParts;
 
+/**
+ * The reported multi-attachment case: 11 screenshots + 4 documents + a two-word
+ * message. Uploads reach the transcript as `<file …>` tags inside the text
+ * (uploaded-file-refs.ts), which `parseFileReferences` strips back out — so
+ * this fixture is byte-shaped like a real send, not a hand-built props object.
+ *
+ * None of these paths resolve here, which is the point: it also exercises the
+ * unresolvable-image fallback that used to render as a blank box.
+ */
+const fileTag = (path: string, mime: string, filename: string) =>
+  `<file path="${path}" mime="${mime}" filename="${filename}">\nThis file has been uploaded and is available at the path above.\n</file>`;
+
+const MANY_ATTACHMENT_TEXT = [
+  'HIII',
+  '',
+  ...Array.from({ length: 11 }, (_, i) =>
+    fileTag(
+      `/workspace/uploads/Screenshot_2026-08-01_at_3.4${i}.12_PM.png`,
+      'image/png',
+      `Screenshot 2026-08-01 at 3.4${i}.12 PM.png`,
+    ),
+  ),
+  fileTag('/workspace/uploads/plan.md', 'text/markdown', 'plan.md'),
+  fileTag('/workspace/uploads/DESIGN-framer.md', 'text/markdown', 'DESIGN-framer.md'),
+  fileTag('/workspace/uploads/Receipt-2199-5561.pdf', 'application/pdf', 'Receipt-2199-5561.pdf'),
+  fileTag(
+    '/workspace/uploads/AdmitCard-260411128971.pdf',
+    'application/pdf',
+    'AdmitCard-260411128971.pdf',
+  ),
+].join('\n');
+
+const manyAttachmentMessage = {
+  info: {
+    id: 'msg_dbg_attach',
+    sessionID: 'ses_dbg',
+    role: 'user',
+    time: { created: 1_000_001 },
+  },
+  parts: [
+    {
+      id: 'prt_dbg_attach',
+      messageID: 'msg_dbg_attach',
+      sessionID: 'ses_dbg',
+      type: 'text',
+      text: MANY_ATTACHMENT_TEXT,
+    },
+  ],
+} as unknown as MessageWithParts;
+
+const fewAttachmentMessage = {
+  info: {
+    id: 'msg_dbg_attach_few',
+    sessionID: 'ses_dbg',
+    role: 'user',
+    time: { created: 1_000_002 },
+  },
+  parts: [
+    {
+      id: 'prt_dbg_attach_few',
+      messageID: 'msg_dbg_attach_few',
+      sessionID: 'ses_dbg',
+      type: 'text',
+      text: [
+        'can you look at these',
+        '',
+        fileTag('/workspace/uploads/shot.png', 'image/png', 'shot.png'),
+        fileTag('/workspace/uploads/notes.md', 'text/markdown', 'notes.md'),
+      ].join('\n'),
+    },
+  ],
+} as unknown as MessageWithParts;
+
+/** Same attachments, but registered with the store as an unconfirmed send —
+ *  which is exactly what `isOptimisticMessage` keys the uploading state off. */
+const uploadingMessage = {
+  info: {
+    id: 'msg_dbg_uploading',
+    sessionID: 'ses_dbg',
+    role: 'user',
+    time: { created: 1_000_003 },
+  },
+  parts: [
+    {
+      id: 'prt_dbg_uploading',
+      messageID: 'msg_dbg_uploading',
+      sessionID: 'ses_dbg',
+      type: 'text',
+      text: MANY_ATTACHMENT_TEXT,
+    },
+  ],
+} as unknown as MessageWithParts;
+
 const TODOS = [
   { content: 'Read the enrichment worker', status: 'completed' },
   { content: 'Map the retry and rate-limit paths', status: 'completed' },
@@ -377,6 +471,12 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 export default function DebugTurnPage() {
   const [dark, setDark] = useState(true);
   const [activateCount, setActivateCount] = useState(0);
+
+  // Mark the uploading fixture as an in-flight send so the tiles render their
+  // spinner. Mirrors what `beginOptimisticSend` does on a real send.
+  useEffect(() => {
+    beginOptimisticSend('ses_dbg', 'msg_dbg_uploading', MANY_ATTACHMENT_TEXT);
+  }, []);
   const [qc] = useState(() => {
     const c = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // PlanCard reads this exact key; the todo.updated SSE handler writes it.
@@ -406,8 +506,24 @@ export default function DebugTurnPage() {
             side-panel activations: {activateCount}
           </p>
 
-          <Section label="user message · full width, no reference chips">
-            <UserMessage message={userMessage} />
+          <Section label="user message · no plan → bubble hugs its text, right-aligned">
+            <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan={false} />
+          </Section>
+
+          <Section label="user message · owns the plan → spans the column, PlanCard inside">
+            <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan />
+          </Section>
+
+          <Section label="user message · UPLOADING → every tile spins, name still readable">
+            <UserMessage message={uploadingMessage} sessionId="ses_dbg" ownsPlan={false} />
+          </Section>
+
+          <Section label="user message · 15 attachments → square tiles wrap 4-up, capped at 8 with +7">
+            <UserMessage message={manyAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
+          </Section>
+
+          <Section label="user message · 2 attachments → same square tile, no cap">
+            <UserMessage message={fewAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
           <Section label="plan card · 2 of 5, in-progress row visible">

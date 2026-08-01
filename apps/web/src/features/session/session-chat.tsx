@@ -8,15 +8,13 @@ import { SessionPermissionPrompt } from '@/features/session/session-permission-p
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   WarningIcon as AlertTriangle,
+  ArrowBendUpLeftIcon,
   ArrowDownIcon as ArrowDown,
-  CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
   CheckIcon,
   CaretDownIcon as ChevronDown,
-  CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
   StackIcon as Layers,
-  PencilSimpleIcon,
   ArrowBendUpLeftIcon as Reply,
   ArrowCounterClockwiseIcon as RotateCcw,
   TerminalWindowIcon as Terminal,
@@ -39,11 +37,11 @@ import {
 } from './message-parsing';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
-import { PlanCard } from './turn/plan-card';
 import { segmentTurn } from './turn/segment-turn';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 
+import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
@@ -62,7 +60,6 @@ import {
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
@@ -77,10 +74,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
@@ -738,7 +733,6 @@ function SessionTurn({
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
-  const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
 
@@ -1126,26 +1120,6 @@ function SessionTurn({
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
-  const rewindPromptText = useMemo(() => {
-    if (commandForTurn) {
-      return `/${commandForTurn.name}${commandForTurn.args ? ` ${commandForTurn.args}` : ''}`;
-    }
-    const withoutReply = parseReplyContext(userMessageText).cleanText;
-    const withoutUploads = parseFileReferences(withoutReply).cleanText;
-    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
-    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
-    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
-    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
-    return stripKortixSystemTags(withoutSessions).trim();
-  }, [commandForTurn, userMessageText]);
-
-  const handleCopyUser = async () => {
-    if (!userMessageText) return;
-    await navigator.clipboard.writeText(userMessageText);
-    setUserCopied(true);
-    setTimeout(() => setUserCopied(false), 2000);
-  };
-
   // ---- Status throttling (2.5s) ----
   const lastStatusChangeRef = useRef(Date.now());
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1357,38 +1331,9 @@ function SessionTurn({
             commands={commands}
             sessionId={sessionId}
             ownsPlan={ownsPlan}
+            onRewind={onRewind}
+            rewindDisabled={rewindDisabled}
           />
-          {/* Only the turn that actually wrote the todos shows the plan.
-              Repeating it on every turn is noise, and pinning it to the LAST
-              turn made it migrate onto each new message the user sent — a
-              follow-up question would sprout the checklist it never created.
-              PlanCard itself renders null when the session has no todos, so
-              this also covers "no plan yet". */}
-     
-          {userMessageText && (
-            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-              <Hint label="Edit from here" side="top" align="center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Edit message and rewind session"
-                  disabled={rewindDisabled}
-                  onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
-                >
-                  <PencilSimpleIcon className="size-3.5" />
-                </Button>
-              </Hint>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
-                    {userCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
         </div>
       )}
 
@@ -3951,28 +3896,11 @@ export function SessionChat({
             >
               <Button
                 onClick={handleSelectionReply}
-                size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
+                size="sm"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
               >
                 Reply
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  color="currentColor"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  className="size-4"
-                >
-                  <path d="M3.99219 10H11.9922C13.8521 10 14.7821 10 15.5451 10.2044C17.6157 10.7592 19.2329 12.3765 19.7877 14.4471C19.9922 15.2101 19.9922 16.1401 19.9922 18"></path>
-                  <path
-                    d="M7.99219 6L6.83839 6.87652C4.94092 8.31801 3.99219 9.03875 3.99219 10C3.99219 10.9612 4.94092 11.682 6.83839 13.1235L7.99219 14"
-                    strokeLinejoin="round"
-                  ></path>
-                </svg>
+                <ArrowBendUpLeftIcon className="size-4 shrink-0" />
               </Button>
             </div>
           )}
