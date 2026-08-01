@@ -4,8 +4,8 @@
  * Zod schemas + inferred TS types describing EXACTLY what apps/api serializes
  * onto the wire today. The API serializers
  * (apps/api/src/projects/lib/serializers.ts et al) are the behavioral source
- * of truth; these schemas are purely descriptive — nothing here validates
- * requests or reshapes responses.
+ * of truth. Response schemas are descriptive. Request schemas validate public
+ * input and can normalize deprecated input aliases to canonical fields.
  *
  * The contract is enforced two ways:
  *   1. compile time — serializer return types in apps/api are annotated with
@@ -49,9 +49,9 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
+  teams: z.boolean(),
   voice: z.boolean(),
   llm_gateway: z.boolean(),
-  acp_runtime: z.boolean(),
   review_center: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
@@ -200,23 +200,72 @@ export const SessionRuntimeContextSchema = z
 export type SessionRuntimeContext = z.infer<typeof SessionRuntimeContextSchema>;
 
 export const SESSION_CONNECTOR_BINDINGS_MAX_KEYS = 64;
+const SessionConnectorBindingAliasSchema = z
+  .string()
+  .regex(
+    /^[a-z][a-z0-9_-]{0,127}$/,
+    'connector binding aliases must be lower-case connector slugs',
+  );
+
+export const SessionConnectorBindingInputSchema = z
+  .object({
+    authorization_id: z.string().uuid().optional(),
+    profile_id: z.string().uuid().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.authorization_id && !value.profile_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['authorization_id'],
+        message: 'authorization_id is required',
+      });
+    }
+    if (
+      value.authorization_id &&
+      value.profile_id &&
+      value.authorization_id !== value.profile_id
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['profile_id'],
+        message: 'authorization_id and profile_id must match',
+      });
+    }
+  })
+  .transform((value) => ({
+    authorization_id: value.authorization_id ?? value.profile_id!,
+  }));
+export type SessionConnectorBindingInput = z.input<
+  typeof SessionConnectorBindingInputSchema
+>;
+
 export const SessionConnectorBindingSchema = z
   .object({
-    profile_id: z.string().uuid(),
+    authorization_id: z.string().uuid(),
   })
   .strict();
 export type SessionConnectorBinding = z.infer<typeof SessionConnectorBindingSchema>;
 
-export const SessionConnectorBindingsSchema = z
+export const SessionConnectorBindingsInputSchema = z
   .record(
-    z
-      .string()
-      .regex(
-        /^[a-z][a-z0-9_-]{0,127}$/,
-        'connector binding aliases must be lower-case connector slugs',
-      ),
-    SessionConnectorBindingSchema,
+    SessionConnectorBindingAliasSchema,
+    SessionConnectorBindingInputSchema,
   )
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > SESSION_CONNECTOR_BINDINGS_MAX_KEYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `connector_bindings may contain at most ${SESSION_CONNECTOR_BINDINGS_MAX_KEYS} entries`,
+      });
+    }
+  });
+export type SessionConnectorBindingsInput = z.input<
+  typeof SessionConnectorBindingsInputSchema
+>;
+
+export const SessionConnectorBindingsSchema = z
+  .record(SessionConnectorBindingAliasSchema, SessionConnectorBindingSchema)
   .superRefine((value, ctx) => {
     if (Object.keys(value).length > SESSION_CONNECTOR_BINDINGS_MAX_KEYS) {
       ctx.addIssue({
@@ -249,9 +298,86 @@ export const SessionSecretsAllowlistSchema = z
   );
 export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSchema>;
 
-export const ConnectionProfileOwnerTypeSchema = z.enum(['agent', 'member', 'subject', 'external']);
-export const ConnectionProfileStatusSchema = z.enum(['active', 'revoked', 'error']);
-export const ConnectionProfileMetadataSchema = z
+export const ConnectorAuthorizationStrategySchema = z.enum(['project', 'user']);
+export type ConnectorAuthorizationStrategy = z.infer<
+  typeof ConnectorAuthorizationStrategySchema
+>;
+
+/**
+ * Connector aliases a session REQUIRES, whether or not anything is connected.
+ *
+ * Distinct from `connector_bindings`, which says "use THIS connection for that
+ * alias" and therefore cannot express the case that matters most: a session that
+ * needs Gmail and has no Gmail connected yet. Naming an alias here is what makes
+ * the pre-flight refuse the next turn with a connect prompt instead of letting
+ * the agent discover it mid-answer.
+ */
+export const SessionRequiredConnectorsSchema = z
+  .array(z.string().min(1).max(128))
+  .max(64, 'require_connectors may contain at most 64 aliases');
+export type SessionRequiredConnectors = z.infer<typeof SessionRequiredConnectorsSchema>;
+
+export const SessionScopeInputSchema = z
+  .object({
+    secrets: SessionSecretsAllowlistSchema.nullable().optional(),
+    connector_bindings: SessionConnectorBindingsInputSchema.optional(),
+    require_connectors: SessionRequiredConnectorsSchema.nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Object.hasOwn(value, 'secrets') ||
+      Object.hasOwn(value, 'connector_bindings') ||
+      Object.hasOwn(value, 'require_connectors'),
+    'Supply `secrets`, `connector_bindings`, `require_connectors`, or any combination',
+  );
+export type SessionScopeInput = z.input<typeof SessionScopeInputSchema>;
+
+export const SessionScopeSchema = z
+  .object({
+    secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
+    required_connectors: SessionRequiredConnectorsSchema.nullable(),
+    connector_bindings: SessionConnectorBindingsSchema,
+    dropped_secrets: z.array(z.string()),
+    added_secrets: z.array(z.string()),
+    dropped_bindings: z.array(z.string()),
+    retroactive: z.boolean(),
+    detail: z.string(),
+  })
+  .strict();
+export type SessionScope = z.infer<typeof SessionScopeSchema>;
+
+export const ConnectorAuthorizationRequiredProfileSchema = z
+  .object({
+    id: z.string().uuid(),
+    slug: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
+    name: z.string().min(1),
+    authorization_strategy: ConnectorAuthorizationStrategySchema,
+  })
+  .strict();
+export type ConnectorAuthorizationRequiredProfile = z.infer<
+  typeof ConnectorAuthorizationRequiredProfileSchema
+>;
+
+export const ConnectorAuthorizationRequiredErrorSchema = z
+  .object({
+    code: z.literal('CONNECTOR_AUTHORIZATION_REQUIRED'),
+    message: z.string().min(1),
+    connector_profiles: z.array(ConnectorAuthorizationRequiredProfileSchema).min(1),
+  })
+  .strict();
+export type ConnectorAuthorizationRequiredError = z.infer<
+  typeof ConnectorAuthorizationRequiredErrorSchema
+>;
+
+export const ConnectorAuthorizationOwnerTypeSchema = z.enum([
+  'agent',
+  'member',
+  'subject',
+  'external',
+]);
+export const ConnectorAuthorizationStatusSchema = z.enum(['active', 'revoked', 'error']);
+export const ConnectorAuthorizationMetadataSchema = z
   .record(
     z
       .string()
@@ -261,7 +387,7 @@ export const ConnectionProfileMetadataSchema = z
           !/(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/.test(
             key,
           ),
-        'connection profile metadata is non-secret',
+        'connector authorization metadata is non-secret',
       ),
     SessionRuntimeContextScalarSchema,
   )
@@ -279,32 +405,49 @@ export const ConnectionProfileMetadataSchema = z
       });
     }
   });
-export const ConnectionProfileSchema = z.object({
+export const ConnectorAuthorizationSchema = z.object({
   profile_id: z.string().uuid(),
   connector_alias: z.string(),
   owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
   owner_id: z.string().nullable(),
   label: z.string(),
-  status: ConnectionProfileStatusSchema,
+  status: ConnectorAuthorizationStatusSchema,
   is_default: z.boolean(),
-  metadata: ConnectionProfileMetadataSchema,
+  metadata: ConnectorAuthorizationMetadataSchema,
 });
-export type ConnectionProfile = z.infer<typeof ConnectionProfileSchema>;
+export type ConnectorAuthorization = z.infer<typeof ConnectorAuthorizationSchema>;
 
-export const ReconcileConnectionProfileInputSchema = z
+export const ReconcileConnectorAuthorizationInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-    // `project` = a TEAM-shared connection (several are allowed per connector,
+    // `project` = a project-shared connection (several are allowed per connector,
     // distinguished by label); it takes no owner_id. Every other owner type
-    // requires one. Creating a team connection needs the profiles-manage
+    // requires one. Creating a project connection needs the profiles-manage
     // capability — enforced at the route.
     owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
     owner_id: z.string().trim().min(1).max(512).optional(),
     label: z.string().trim().min(1).max(255),
-    metadata: ConnectionProfileMetadataSchema.optional(),
+    metadata: ConnectorAuthorizationMetadataSchema.optional(),
   })
   .strict();
-export type ReconcileConnectionProfileInput = z.infer<typeof ReconcileConnectionProfileInputSchema>;
+export type ReconcileConnectorAuthorizationInput = z.infer<
+  typeof ReconcileConnectorAuthorizationInputSchema
+>;
+
+/** @deprecated Use `ConnectorAuthorizationOwnerTypeSchema`. */
+export const ConnectionProfileOwnerTypeSchema = ConnectorAuthorizationOwnerTypeSchema;
+/** @deprecated Use `ConnectorAuthorizationStatusSchema`. */
+export const ConnectionProfileStatusSchema = ConnectorAuthorizationStatusSchema;
+/** @deprecated Use `ConnectorAuthorizationMetadataSchema`. */
+export const ConnectionProfileMetadataSchema = ConnectorAuthorizationMetadataSchema;
+/** @deprecated Use `ConnectorAuthorizationSchema`. */
+export const ConnectionProfileSchema = ConnectorAuthorizationSchema;
+/** @deprecated Use `ConnectorAuthorization`. */
+export type ConnectionProfile = ConnectorAuthorization;
+/** @deprecated Use `ReconcileConnectorAuthorizationInputSchema`. */
+export const ReconcileConnectionProfileInputSchema = ReconcileConnectorAuthorizationInputSchema;
+/** @deprecated Use `ReconcileConnectorAuthorizationInput`. */
+export type ReconcileConnectionProfileInput = ReconcileConnectorAuthorizationInput;
 
 export const OAuth2ClientCredentialsSchema = z
   .object({
@@ -499,7 +642,7 @@ export const OAuth2ConnectionStatusSchema = z
   .strict();
 export type OAuth2ConnectionStatus = z.infer<typeof OAuth2ConnectionStatusSchema>;
 
-export const UpdateConnectionProfileCredentialInputSchema = z.union([
+export const UpdateConnectorAuthorizationCredentialInputSchema = z.union([
   z
     .object({
       value: z.string().min(1).max(65536),
@@ -508,9 +651,15 @@ export const UpdateConnectionProfileCredentialInputSchema = z.union([
     .strict(),
   z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
 ]);
-export type UpdateConnectionProfileCredentialInput = z.infer<
-  typeof UpdateConnectionProfileCredentialInputSchema
+export type UpdateConnectorAuthorizationCredentialInput = z.infer<
+  typeof UpdateConnectorAuthorizationCredentialInputSchema
 >;
+/** @deprecated Use `UpdateConnectorAuthorizationCredentialInputSchema`. */
+export const UpdateConnectionProfileCredentialInputSchema =
+  UpdateConnectorAuthorizationCredentialInputSchema;
+/** @deprecated Use `UpdateConnectorAuthorizationCredentialInput`. */
+export type UpdateConnectionProfileCredentialInput =
+  UpdateConnectorAuthorizationCredentialInput;
 
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
@@ -532,38 +681,17 @@ export const SessionCreateInputSchema = z
     branch_already_created: z.boolean().optional(),
     metadata: JsonObjectSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
-    connector_bindings: SessionConnectorBindingsSchema.optional(),
-    // When `connector_bindings` is set, binding any alias normally disables the
-    // project-default fallback for every OTHER (unbound) alias ("all-or-nothing").
-    // `inherit_unbound: true` keeps that fallback, so a caller can override just one
-    // connector (e.g. a user's own account) without re-binding the rest. Only ever
-    // inherits the project DEFAULT profile — never another owner's — so it is not
-    // origin-gated (any caller may set it).
+    connector_bindings: SessionConnectorBindingsInputSchema.optional(),
+    // When `connector_bindings` is set, unbound aliases fail closed.
+    // `inherit_unbound: true` keeps strategy-based default resolution for them.
     inherit_unbound: z.boolean().optional(),
-    // Interactive-only: require each named connector to resolve to the ACTING
-    // USER's OWN connected account for this session. Like connector_bindings but
-    // BY ALIAS — the server finds the caller's member profile for each. If the
-    // user hasn't connected one, session-create is refused with a structured
-    // CONNECTOR_CONNECTION_REQUIRED (409) naming the connector, so the UI can
-    // prompt them to connect it. Implies inherit_unbound (other connectors keep
-    // their project defaults). Rejected for backend/service-account origin — a
-    // backend caller has no single "current user"; it uses connector_bindings.
+    // Require each named connector profile to resolve an authorization that
+    // matches its project-or-user strategy. Missing authorizations return the
+    // structured CONNECTOR_AUTHORIZATION_REQUIRED response before provisioning.
     require_connectors: z
       .array(z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'))
       .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
       .optional(),
-    // Backend-only: the wrapper's opaque end-user handle this session acts for.
-    // Accepted only from a backend-origin caller (an account API key / PAT or a
-    // service-account bearer); any other origin supplying it is rejected 403
-    // (see resolveSessionOrigin / canOverride).
-    end_user_ref: z.string().trim().min(1).max(256).optional(),
-    /**
-     * @deprecated Renamed to `end_user_ref`. Still accepted, and will stay
-     * accepted — this is a published wire field. Sending both is fine only if
-     * they agree; disagreeing values are rejected 400 END_USER_REF_CONFLICT
-     * rather than silently picking one and misattributing the usage rows.
-     */
-    origin_ref: z.string().trim().min(1).max(256).optional(),
     // Backend-only: narrow which project secrets (by identifier) this session's
     // sandbox receives, from the default agent-grant set down to this list. `[]`
     // means inject zero project secrets. Backend origin required — a non-backend
@@ -599,11 +727,6 @@ export const ProjectSessionSchema = z.object({
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
   opencode_session_id: z.string().nullable(),
-  runtime_transport: z.enum(['acp', 'rest']).optional(),
-  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
-  native_agent: z.string().nullable().optional(),
-  acp_server_id: z.string().nullable().optional(),
-  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -620,10 +743,6 @@ export const ProjectSessionSchema = z.object({
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
-  /** Backend wrapper's end-user handle; non-null only for backend sessions. */
-  end_user_ref: z.string().nullable(),
-  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
-  origin_ref: z.string().nullable(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
@@ -729,15 +848,8 @@ export const SessionStartResultSchema = z.object({
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical OpenCode root pin, resolved server-side once the box is up. */
   opencode_session_id: z.string().nullable(),
-  /**
-   * Server-selected OpenCode transport. Omitted only by pre-ACP servers.
-   * Clients must treat omission as the legacy REST transport.
-   */
-  runtime_transport: z.enum(['acp', 'rest']).optional(),
-  runtime_harness: z.enum(['claude', 'codex', 'opencode', 'pi']).optional(),
-  native_agent: z.string().nullable().optional(),
-  acp_server_id: z.string().nullable().optional(),
-  acp_session_id: z.string().nullable().optional(),
+  /** Server-selected OpenCode REST transport. */
+  runtime_transport: z.literal('rest').optional(),
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns

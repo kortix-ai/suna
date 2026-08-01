@@ -97,7 +97,7 @@ reading the plan.
   {{interviewer_calendars}} — no assumption carries over from the prior run.
 - **Scoped secrets.** Access to {{greenhouse_pipeline}} and
   {{interviewer_calendars}} is brokered through connectors; no raw credential
-  is ever shown to the model or written to logs.
+  is ever pasted into chat.
 </guardrails>
 
 </skill>

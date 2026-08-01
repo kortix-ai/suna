@@ -37,22 +37,22 @@ import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Globe,
-  Link as LinkIcon,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  LinkIcon,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as TbExternalLink,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { sandboxRecents } from './easy-panel-logic';
 import type { ShareContext } from './viewer-actions';

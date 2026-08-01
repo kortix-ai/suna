@@ -6,7 +6,6 @@ description: >-
   {{alert_channel}}. Bulk field updates affecting more than
   {{bulk_update_threshold}} records at once are held for human approval.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

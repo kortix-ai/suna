@@ -1,8 +1,13 @@
 import {
-  kortixPtyWsUrlForPort,
-  openKortixPtyWebSocket,
-  type OpencodePty,
-} from '../api/sandbox-proxy.ts';
+  createKortixPty,
+  getKortixPtyWebSocketUrl,
+  listKortixPty,
+  updateKortixPty,
+  type KortixPty,
+} from '@kortix/sdk';
+
+import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
@@ -87,9 +92,20 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions shell');
   if (!resolved) return 1;
 
-  let pty: OpencodePty;
+  // The SDK resolves this session's runtime base URL. The CLI never builds a
+  // `/p/<external-id>/<port>` proxy URL by hand any more.
+  let runtimeUrl: string;
+  let pty: KortixPty;
   try {
-    pty = wantNew ? await createPty(resolved) : await ensurePty(resolved);
+    runtimeUrl = await withKortixScope(resolved.auth, async () => {
+      const ready = await kortixFromAuth(resolved.auth)
+        .session(resolved.ctx.projectId, resolved.session.session_id)
+        .ensureReady();
+      return ready.runtimeUrl;
+    });
+    pty = await withKortixScope(resolved.auth, async () =>
+      wantNew ? createPty(runtimeUrl) : ensurePty(runtimeUrl),
+    );
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 1;
@@ -100,26 +116,32 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     `${status.ok(`Opening shell in ${C.bold}${label}${C.reset}`)} ${C.dim}(pty ${pty.id})${C.reset}\n`,
   );
 
-  return runPtySession(resolved, pty);
+  return runPtySession(resolved, runtimeUrl, pty);
 }
 
 /** Reuse the session's existing terminal if one's already running (matches
  *  the dashboard's "ambient shell" — one persistent terminal per session,
  *  never killed on disconnect), else spawn one. */
-async function ensurePty(resolved: ResolvedSession): Promise<OpencodePty> {
-  const existing = await resolved.oc.listPty();
+async function ensurePty(runtimeUrl: string): Promise<KortixPty> {
+  const existing = await listKortixPty(runtimeUrl);
   if (existing.length > 0) return existing[0]!;
-  return createPty(resolved);
+  return createPty(runtimeUrl);
 }
 
-function createPty(resolved: ResolvedSession): Promise<OpencodePty> {
-  return resolved.oc.createPty({ title: 'Session terminal', env: { ...PTY_ENV } });
+function createPty(runtimeUrl: string): Promise<KortixPty> {
+  return createKortixPty(runtimeUrl, { title: 'Session terminal', env: { ...PTY_ENV } });
 }
 
 /** Put the local terminal in raw mode, pipe bytes to/from the remote PTY's
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
-function runPtySession(resolved: ResolvedSession, pty: OpencodePty): Promise<number> {
-  const wsUrl = kortixPtyWsUrlForPort(resolved.auth, resolved.proxyId, resolved.runtimePort, pty.id);
+async function runPtySession(
+  resolved: ResolvedSession,
+  runtimeUrl: string,
+  pty: KortixPty,
+): Promise<number> {
+  const wsUrl = await withKortixScope(resolved.auth, async () =>
+    getKortixPtyWebSocketUrl(pty.id, runtimeUrl),
+  );
   const ws = openKortixPtyWebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
@@ -127,9 +149,11 @@ function runPtySession(resolved: ResolvedSession, pty: OpencodePty): Promise<num
   const sendResize = () => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      resolved.oc
-        .updatePty(pty.id, { size: { rows: process.stdout.rows, cols: process.stdout.columns } })
-        .catch(() => {});
+      withKortixScope(resolved.auth, async () =>
+        updateKortixPty(runtimeUrl, pty.id, {
+          size: { rows: process.stdout.rows, cols: process.stdout.columns },
+        }),
+      ).catch(() => {});
     }, 100);
   };
 

@@ -24,24 +24,24 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { Maximize2 } from 'lucide-react';
 import { useState } from 'react';
-import { GrRefresh } from 'react-icons/gr';
 
 import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
-  AlertTriangle,
-  Code2,
-  ExternalLink,
+  WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon as GrRefresh,
+  CodeSimpleIcon as Code2,
+  ArrowSquareOutIcon as ExternalLink,
   FileIcon,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Music,
-  Type,
-  Video,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  ArrowsOutSimpleIcon as Maximize2,
+  MusicNotesIcon as Music,
+  TextTIcon as Type,
+  VideoIcon as Video,
+} from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 export { SHOW_HTML_EXT_RE, ShowCarousel, ShowContentRenderer, showDomain };

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { dialogContentZ, DialogDepthProvider, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import { cva, VariantProps } from 'class-variance-authority';
 import { buttonVariants } from './button';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 const Dialog = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
   const parentDepth = useDialogDepth();
@@ -18,7 +19,20 @@ const Dialog = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
   );
 };
 
-const DialogTrigger = DialogPrimitive.Trigger;
+const DialogTrigger = ({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Trigger>, 'size'> & TriggerVariantProps) => (
+  <DialogPrimitive.Trigger
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
+);
 
 const DialogPortal = DialogPrimitive.Portal;
 

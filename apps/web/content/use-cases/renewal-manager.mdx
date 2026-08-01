@@ -107,7 +107,7 @@ The agent preps and drafts; it never contacts a customer and never touches
 price. It cannot send the outreach email, and it cannot apply, offer, or even
 suggest a specific discount — pricing conversations stay with the account
 owner. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Hand off the packet">
@@ -142,9 +142,9 @@ explicit:
 - **Scoped writes.** The only thing the agent writes back to HubSpot is which
   renewal window a deal has been surfaced for — never the deal stage, the
   amount, or the pipeline.
-- **Isolation.** Every run happens in its own microVM sandbox. Credentials for
+- **Isolation.** Every run happens in its own isolated sandbox. Credentials for
   HubSpot and Google Calendar are encrypted in the Secrets Manager and injected
-  at runtime, never exposed to the model or the logs.
+  at runtime, scoped to the agents you grant them to.
 - **Everything is code.** The renewal playbook, the at-risk criteria, and the
   per-system permissions are files in the repo, versioned and changed through
   a reviewed **change request** rather than a dashboard setting.

@@ -176,7 +176,6 @@ const AGENT_PORT = 8000;
  * attempt-timeout behaviour.
  */
 const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
-const ACP = /^\/kortix\/acp(?:$|[/?#])/;
 
 /** Does this proxied request START a turn? Used by the proxy to observe a run
  *  beginning without trusting anything the sandbox says about itself. */
@@ -184,7 +183,7 @@ export function isTurnStartRequest(port: number, method: string, path: string): 
   if (method.toUpperCase() !== 'POST') return false;
   if (port !== AGENT_PORT && port !== OPENCODE_PORT) return false;
   const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
-  return TURN_START.test(p) || ACP.test(p);
+  return TURN_START.test(p);
 }
 
 /**

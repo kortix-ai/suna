@@ -268,7 +268,6 @@ projectsApp.openapi(
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
-  const acpRuntimeStarter = !sourceItemId;
 
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
@@ -380,12 +379,9 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-      managed: true,
-    projectMetadata: acpRuntimeStarter
-      ? { experimental: { acp_runtime: true } }
-      : undefined,
+    managed: true,
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
-    // (kortix_version 3) — record that path so it's never stale from birth.
+    // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',
   });
 

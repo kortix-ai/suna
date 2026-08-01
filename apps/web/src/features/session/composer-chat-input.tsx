@@ -1,7 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
+import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
+import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -21,6 +23,7 @@ export interface ComposerOptions {
   agent?: string;
   model?: ModelKey;
   variant?: string;
+  scope?: SessionScopeCommit;
 }
 
 /**
@@ -102,6 +105,39 @@ export function ComposerChatInput({
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  const selectedAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
+  const [newSessionScope, setNewSessionScope] = useState<{
+    agentName: string | null;
+    commit: SessionScopeCommit;
+  } | null>(null);
+  const handleCommittedScope = useCallback(
+    (commit: SessionScopeCommit | undefined) => {
+      setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
+    },
+    [selectedAgentName],
+  );
+  const sessionScopeToolbar = useMemo(
+    () =>
+      projectId ? (
+        <SessionScopeToolbar
+          projectId={projectId}
+          sessionId={sessionId}
+          agentName={selectedAgentName ?? undefined}
+          onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+        />
+      ) : null,
+    [handleCommittedScope, projectId, selectedAgentName, sessionId],
+  );
+  const combinedToolbarSlot = useMemo(
+    () =>
+      toolbarSlot || sessionScopeToolbar ? (
+        <>
+          {toolbarSlot}
+          {sessionScopeToolbar}
+        </>
+      ) : undefined,
+    [sessionScopeToolbar, toolbarSlot],
+  );
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
@@ -110,6 +146,9 @@ export function ComposerChatInput({
     else if (local.agent.current) o.agent = local.agent.current.name;
     if (local.model.currentKey) o.model = local.model.currentKey;
     if (local.model.variant.current) o.variant = local.model.variant.current;
+    if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
+      o.scope = newSessionScope.commit;
+    }
     return o;
   };
 
@@ -129,13 +168,13 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       inputSlot={inputSlot}
-      toolbarSlot={toolbarSlot}
+      toolbarSlot={combinedToolbarSlot}
       cardClassName={cardClassName}
       sessionId={sessionId}
       projectId={projectId}
       providers={providers}
       agents={local.agent.list}
-      selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+      selectedAgent={selectedAgentName}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
       models={local.model.list}

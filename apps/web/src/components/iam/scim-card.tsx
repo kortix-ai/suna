@@ -14,18 +14,18 @@ import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import { listAccountMembers } from '@kortix/sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Check,
-  ChevronDown,
-  Copy,
-  KeyRound,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-  Users,
-} from 'lucide-react';
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  ArrowClockwiseIcon as RefreshCw,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 
@@ -116,7 +116,7 @@ function ProvisioningHealthPanel({
             groupsQuery.refetch();
           }}
         >
-          <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
+          {isLoading ? <Loading className="size-3.5" /> : <RefreshCw className="size-3.5" />}
         </Button>
       </div>
       {isLoading ? (

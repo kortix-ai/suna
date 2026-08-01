@@ -1,6 +1,6 @@
+import { CaretDownIcon as ChevronDownIcon } from '@phosphor-icons/react';
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
 import { cva } from 'class-variance-authority';
-import { ChevronDownIcon } from 'lucide-react';
 import { NavigationMenu as NavigationMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
 

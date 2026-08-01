@@ -66,8 +66,14 @@ export function webLaunchEnv(ports: Ports, c: SlotCreds, opts: { billing?: boole
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
+    SUPABASE_URL: c.supabaseUrl,
     NEXT_PUBLIC_SUPABASE_URL: c.supabaseUrl,
-    ...(c.anonKey ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: c.anonKey } : {}),
+    ...(c.anonKey
+      ? {
+          SUPABASE_ANON_KEY: c.anonKey,
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: c.anonKey,
+        }
+      : {}),
     NEXT_PUBLIC_APP_URL: `http://localhost:${ports.web}`,
     NEXT_PUBLIC_URL: `http://localhost:${ports.web}`,
     NEXT_PUBLIC_BILLING_ENABLED: opts.billing ? 'true' : 'false',

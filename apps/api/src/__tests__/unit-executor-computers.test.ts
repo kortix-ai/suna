@@ -121,7 +121,7 @@ const LIST: GatewayAction = {
 };
 
 function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ) {
-  const calls: Array<{ accountId: string; selector: string | null; method: string; args: Record<string, unknown> }> = [];
+  const calls: Array<Parameters<NonNullable<GatewayDeps['executeComputerCall']>>[0]> = [];
   const deps: GatewayDeps = {
     loadConnectorBySlug: async () => COMPUTER,
     loadAction: async () => action,
@@ -155,7 +155,15 @@ describe('handleCall — computer (tunnel)', () => {
     expect(res.status).toBe('ok');
     if (res.status === 'ok') expect(res.data).toEqual({ content: 'hello' });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual({ accountId: 'acct-1', selector: 'laptop', method: 'fs.read', args: { path: '/tmp/x' } });
+    expect(calls[0]).toEqual({
+      accountId: 'acct-1',
+      actorUserId: 'u1',
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      selector: 'laptop',
+      method: 'fs.read',
+      args: { path: '/tmp/x' },
+    });
   });
 
   test('no selector → selector is null (resolved server-side to the sole online machine)', async () => {
@@ -182,6 +190,14 @@ describe('handleCall — computer (tunnel)', () => {
     const { deps, calls } = makeDeps({ ok: true, data: { computers: [] } }, LIST);
     const res = await handleCall(deps, input({}, 'list_computers'));
     expect(res.status).toBe('ok');
-    expect(calls[0]).toEqual({ accountId: 'acct-1', selector: null, method: 'list_computers', args: {} });
+    expect(calls[0]).toEqual({
+      accountId: 'acct-1',
+      actorUserId: 'u1',
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      selector: null,
+      method: 'list_computers',
+      args: {},
+    });
   });
 });

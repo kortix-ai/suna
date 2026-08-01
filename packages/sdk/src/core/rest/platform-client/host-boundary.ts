@@ -304,6 +304,13 @@ export async function downloadAccountAudit(
     format: 'csv' | 'jsonl';
     action?: string;
     actor?: string;
+    project_id?: string;
+    session_id?: string;
+    actor_type?: 'human' | 'agent' | 'service_account' | 'system';
+    source?: string;
+    outcome?: 'success' | 'failure' | 'denied' | 'pending';
+    request_id?: string;
+    correlation_id?: string;
     resource_type?: string;
     since?: string;
     until?: string;
@@ -314,6 +321,13 @@ export async function downloadAccountAudit(
   const params = new URLSearchParams({ format: query.format });
   if (query.action) params.set('action', query.action);
   if (query.actor) params.set('actor', query.actor);
+  if (query.project_id) params.set('project_id', query.project_id);
+  if (query.session_id) params.set('session_id', query.session_id);
+  if (query.actor_type) params.set('actor_type', query.actor_type);
+  if (query.source) params.set('source', query.source);
+  if (query.outcome) params.set('outcome', query.outcome);
+  if (query.request_id) params.set('request_id', query.request_id);
+  if (query.correlation_id) params.set('correlation_id', query.correlation_id);
   if (query.resource_type) params.set('resource_type', query.resource_type);
   if (query.since) params.set('since', query.since);
   if (query.until) params.set('until', query.until);

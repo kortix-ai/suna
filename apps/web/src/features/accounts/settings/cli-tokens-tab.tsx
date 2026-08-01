@@ -1,8 +1,8 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -33,9 +33,15 @@ import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
-import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  ShieldIcon as ShieldSolid,
+  TrashIcon,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -167,7 +173,10 @@ function TokenRow({
                   router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)
                 }
               >
-                <ShieldSolid className="text-muted-foreground hover:text-foreground size-4" />
+                <ShieldSolid
+                  weight="fill"
+                  className="text-muted-foreground hover:text-foreground size-4"
+                />
               </Button>
             )}
             <Button
@@ -176,7 +185,7 @@ function TokenRow({
               aria-label={`Revoke ${token.name}`}
               onClick={() => setConfirming(true)}
             >
-              <TrashSolid />
+              <TrashIcon />
             </Button>
           </div>
         )}
@@ -313,8 +322,8 @@ export function CliTokensTab() {
               </Button>
             }
           >
-            Verify your second factor to manage API keys. Already verified? This
-            list refreshes automatically once your session steps up.
+            Verify your second factor to manage API keys. Already verified? This list refreshes
+            automatically once your session steps up.
           </InfoBanner>
         ) : (
           <div className="border-destructive bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">
@@ -368,22 +377,27 @@ kortix projects ls`}
         </pre>
       </div>
 
-      <div className="bg-foreground/5 overflow-hidden rounded-lg border text-sm">
-        <div className="px-4 py-2">
-          <span className="font-medium">Using the API</span>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            The same key is a Bearer credential for the REST API — use it to run Kortix as a
-            backend. Sessions it starts are tracked with a <code>backend</code> origin, and{' '}
-            <code>origin_ref</code> attributes each one to your own end-user.
-          </p>
-        </div>
-        <pre className="bg-foreground text-background overflow-x-auto rounded-t-lg px-4 py-3 font-mono text-xs">
-          {`curl -X POST ${apiBase}/projects/<project-id>/sessions \\
+      <ApiKeyUsageExamples apiBase={apiBase} />
+    </div>
+  );
+}
+
+export function ApiKeyUsageExamples({ apiBase }: { apiBase: string }) {
+  return (
+    <div className="bg-foreground/5 overflow-hidden rounded-lg border text-sm">
+      <div className="px-4 py-2">
+        <span className="font-medium">Using the API</span>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          The same key is a Bearer credential for the REST API. Store each returned{' '}
+          <code>session_id</code> in your application to query that session later.
+        </p>
+      </div>
+      <pre className="bg-foreground text-background overflow-x-auto rounded-t-lg px-4 py-3 font-mono text-xs">
+        {`curl -X POST ${apiBase}/projects/<project-id>/sessions \\
   -H "Authorization: Bearer <api-key>" \\
   -H "Content-Type: application/json" \\
-  -d '{"initial_prompt": "Summarize new signups", "origin_ref": "your-user-123"}'`}
-        </pre>
-      </div>
+  -d '{"initial_prompt": "Summarize new signups"}'`}
+      </pre>
     </div>
   );
 }

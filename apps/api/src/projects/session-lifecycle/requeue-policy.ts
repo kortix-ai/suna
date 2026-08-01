@@ -11,9 +11,8 @@
  *   retrying transient infrastructure failures is the entire point.
  *
  * Re-queueing an INLINE failure means the same request runs twice: once as the
- * caller's retry, once as the drainer's. Two billed sandboxes for one intent,
- * with the same end_user_ref, both executing the baked initial_prompt. The
- * caller cannot detect it — their retry succeeded.
+ * caller's retry, once as the drainer's. Two billed sandboxes execute the baked
+ * initial_prompt. The caller cannot detect it because their retry succeeded.
  *
  * So retryability is a property of WHO OWNS THE OUTCOME, not of the error.
  */

@@ -84,7 +84,7 @@ The agent reads the financial systems and writes only to the tracking sheet — 
 never moves money or touches Stripe or the bank beyond reading. Anything it can't
 match within tolerance is **escalated to a person** rather than force-fit or
 written off. Credentials are encrypted in the secrets manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each month run">
@@ -109,12 +109,10 @@ sent to a person to chase, with the two records it couldn't reconcile attached.
 Giving an agent access to financial systems is a security question first. The
 relevant controls on Kortix:
 
-- **Isolation.** Each run happens in its own microVM sandbox. The session can
-  read the accounts it needs, and only the summary it writes to the sheet leaves
-  the sandbox.
+- **Isolation.** Each run happens in its own isolated sandbox. The session can
+  read the accounts it needs, and only the summary it writes to the sheet is written back out.
 - **Scoped secrets.** The Stripe, bank, and Sheets credentials are encrypted in
-  the secrets manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** Anything the agent can't match within tolerance is
   escalated to a person rather than force-fit, and the agent never moves money.
 - **Everything is code.** The agent's persona, skills, and permissions are files

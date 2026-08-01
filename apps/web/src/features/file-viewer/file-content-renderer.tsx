@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast, successToast } from '@/components/ui/toast';
+import Loading from '@/components/ui/loading';
 import {
   appendPreviewToken,
   isSubdomainPreviewUrl,
@@ -16,33 +17,30 @@ import {
 } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getAuthToken } from '@/lib/auth-token';
-import {
-  getActiveStaticFileHealthUrl,
-  getActiveStaticFilePreviewUrl,
-} from '@kortix/sdk/react';
+import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { toSandboxAbsolutePath } from '@kortix/sdk';
 import {
-  AlertTriangle,
-  Braces,
-  Check,
-  CircleAlert,
-  Code,
-  Download,
-  Eye,
-  FileDiff,
-  FileWarning,
-  FileX,
-  Globe,
-  Loader2,
-  RotateCcw,
-  Save,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  BracketsCurlyIcon as Braces,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  GitDiffIcon as FileDiff,
+  FileXIcon as FileWarning,
+  FileXIcon as FileX,
+  GlobeIcon as Globe,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  FloppyDiskIcon as Save,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -228,7 +226,7 @@ function isBlobCategory(cat: FileCategory): cat is BlobCategory {
 function RendererFallback() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }
@@ -302,6 +300,9 @@ export interface FileContentRendererProps {
    * "file does not exist" state. No effect on the default viewer chrome.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
+   *  default. No effect on any other file category. */
+  fitOnOpen?: boolean;
 }
 
 export function FileContentRenderer({
@@ -317,11 +318,18 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
+  fitOnOpen = false,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
+
+  // `null` outside a <PreviewFitProvider>. Used for one thing only: telling a
+  // ratio-fitting surface that an `image` produced nothing to render, in which
+  // case no ImageRenderer is ever mounted and no renderer is left to say so
+  // itself. Every other failure is reported by the renderer that hit it.
+  const previewFit = usePreviewFit();
 
   // Data access is supplied by the surface (live workspace vs. project git-ref)
   // via <FileSourceProvider>, so this renderer stays presentation-only.
@@ -648,6 +656,43 @@ export function FileContentRenderer({
     else onStatusChange('ready');
   }, [onStatusChange, isNotFound, showLoadingState]);
 
+  // An `image` that settled without an image to show: bytes whose mime is not
+  // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
+  // instead), or a HEIC whose blob never arrived. No ImageRenderer is mounted
+  // on those paths, so nothing downstream can report the failure — this is the
+  // case the surface itself has to speak for.
+  //
+  // A HEIC whose CONVERSION fails is deliberately not one of them:
+  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
+  // URL over the raw bytes, which a browser with native HEIC support then
+  // renders correctly. So `heicImageUrl` is set, this predicate is false, and
+  // ImageRenderer mounts. Where the browser also cannot decode it, the release
+  // comes from ImageRenderer exhausting its own retries ~5s later — a known,
+  // accepted window during which a ratio-fitting consumer still holds the
+  // previous document's width. Widening this predicate to pre-empt it would
+  // break the browsers the fallback exists for.
+  //
+  // A HEIC whose blob just resolved is ALSO not one of them, for one render:
+  // `useHeicBlob` flips `isConverting` to true inside its effect
+  // (`use-heic-url.ts:29`), which runs after this render commits. On the
+  // render where `blobLoading` first goes false, `heicConverting` is still
+  // `false` and `heicImageUrl` is still `null` even though conversion is
+  // about to start — not because it failed. Only a HEIC whose blob never
+  // arrived (`rawBlob` still null/absent) counts as producing nothing.
+  const heicAboutToConvert = isHeicImage && !!rawBlob;
+  const imageProducedNothing =
+    fileCategory === 'image' &&
+    !showLoadingState &&
+    !heicConverting &&
+    !imageDataUrl &&
+    !heicImageUrl &&
+    !heicAboutToConvert;
+
+  useEffect(() => {
+    if (!previewFit || !imageProducedNothing) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imageProducedNothing]);
+
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
   // ---------------------------------------------------------------------------
@@ -736,7 +781,7 @@ export function FileContentRenderer({
                   )}
                 >
                   {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loading className="h-3.5 w-3.5" />
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
@@ -840,7 +885,7 @@ export function FileContentRenderer({
           {/* Loading */}
           {showLoadingState && (
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
             </div>
           )}
 
@@ -886,7 +931,12 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
+              <PdfRenderer
+                fileContent={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                fitOnOpen={fitOnOpen}
+              />
             </Suspense>
           )}
 
@@ -972,7 +1022,7 @@ export function FileContentRenderer({
               {serverHealth !== 'unavailable' &&
                 (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
                   <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin opacity-40" />
+                    <Loading className="h-5 w-5 opacity-40" />
                     <p className="text-xs opacity-50">
                       {tHardcodedUi.raw(
                         'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',

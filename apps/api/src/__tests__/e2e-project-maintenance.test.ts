@@ -87,6 +87,7 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,

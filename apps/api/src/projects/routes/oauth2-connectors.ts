@@ -22,6 +22,10 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import {
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
+} from '../lib/connector-authorization-strategy';
 import { readBody } from '../lib/serializers';
 
 function callbackUrl(requestUrl: string): string {
@@ -62,8 +66,20 @@ async function loadMutableProfile(c: any, projectId: string, profileId: string) 
       profileId: executorConnectionProfiles.profileId,
       ownerType: executorConnectionProfiles.ownerType,
       ownerId: executorConnectionProfiles.ownerId,
+      metadata: executorConnectionProfiles.metadata,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+      providerType: executorConnectors.providerType,
+      connectorConfig: executorConnectors.config,
     })
     .from(executorConnectionProfiles)
+    .innerJoin(
+      executorConnectors,
+      and(
+        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+        eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
+        eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+      ),
+    )
     .where(
       and(
         eq(executorConnectionProfiles.profileId, profileId),
@@ -81,10 +97,25 @@ async function loadMutableProfile(c: any, projectId: string, profileId: string) 
     projectId,
     PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
   );
+  const strategyMatches = connectorAuthorizationMatchesStrategy({
+    strategy: profile.authorizationStrategy,
+    ownerType: profile.ownerType,
+    ownerId: profile.ownerId,
+    actingUserId: loaded.userId,
+    actingPrincipalIsServiceAccount: serviceAccount,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: profile.providerType,
+      platform:
+        typeof profile.connectorConfig.platform === 'string'
+          ? profile.connectorConfig.platform
+          : null,
+      ownerType: profile.ownerType,
+      ownerId: profile.ownerId,
+      metadata: profile.metadata,
+    }),
+  });
   const allowed =
-    profile.ownerType === 'member'
-      ? !serviceAccount && profile.ownerId === loaded.userId
-      : mayManage;
+    strategyMatches && (profile.authorizationStrategy === 'user' || mayManage);
   return allowed ? { loaded, profile } : null;
 }
 
@@ -102,7 +133,10 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/profile', async (c: any) =
   );
   if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
   const [connector] = await db
-    .select({ connectorId: executorConnectors.connectorId })
+    .select({
+      connectorId: executorConnectors.connectorId,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
     .from(executorConnectors)
     .where(
       and(
@@ -113,6 +147,15 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/profile', async (c: any) =
     )
     .limit(1);
   if (!connector) return c.json({ error: 'Connector not found' }, 404);
+  if (connector.authorizationStrategy !== 'project') {
+    return c.json(
+      {
+        error: 'This connector uses member-owned authorizations',
+        code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+      },
+      409,
+    );
+  }
   const profileId = await ensureDefaultProfile({
     projectId,
     connectorId: connector.connectorId,

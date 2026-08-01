@@ -1,5 +1,6 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -7,7 +8,12 @@ import { isPlatformAdmin } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
-import { seedRepoViaGitPush } from '../git-backends/seed';
+import {
+  ManagedRepoSeedError,
+  buildManagedRepoSeedState,
+  pushSeedFiles,
+  pushVerifiedSeed,
+} from '../managed-repo-seed';
 import {
   getGitHubAppInstallation,
   listLinkableGitHubAppInstallations,
@@ -25,7 +31,7 @@ import {
 } from '../seed-files';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
-import { invalidateProjectMirror } from '../git';
+import { invalidateProjectMirror, remoteBranchExists } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -344,6 +350,7 @@ projectsApp.openapi(
     defaultBranch: imported.defaultBranch,
     manifestPath,
   });
+  setContextField('projectId', row.projectId);
 
   kickProjectTemplatePrebuilds(
     {
@@ -466,7 +473,6 @@ projectsApp.openapi(
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
-  const acpRuntimeStarter = !sourceItemId;
 
   // Managed repo name = a readable slug from the display name + the project's
   // UUID, so managed repos under the shared org NEVER collide (two projects can
@@ -501,6 +507,23 @@ projectsApp.openapi(
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';
   const now = new Date();
+
+  // Seed the starter into the empty repo when the caller has no local working
+  // tree to push (web "Create project"). `kortix ship` leaves this false and
+  // pushes its own files instead (apps/cli/src/commands/ship.ts) — a plain,
+  // non-force push, so seeding that repo would reject it. Resolved BEFORE the
+  // insert so the row records the INTENT: a crash between the insert and a
+  // verified seed then leaves `{ expected: true, seeded: false }`, which
+  // `shouldSelfHealManagedRepoSeed` repairs on next access instead of leaving a
+  // permanently dead project that reports itself active.
+  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
+  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
+  const initialSeedState = buildManagedRepoSeedState(
+    seedStarter
+      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
+      : { seeded: false, expected: false, reason: 'caller_opted_out', at: now.toISOString() },
+  );
+
   const [row] = await db
     .insert(projects)
     .values({
@@ -510,7 +533,7 @@ projectsApp.openapi(
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
       // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 3) — record that as the canonical path so
+      // kortix.yaml (kortix_version 2) — record that as the canonical path so
       // a project created here is never labeled with a stale v1 filename. A
       // CLI `kortix ship` that pushes its own files instead of seeding still
       // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
@@ -532,6 +555,11 @@ projectsApp.openapi(
           repo_id: provisioned.externalRepoId,
           owner: provisioned.repoOwner,
           name: provisioned.repoName,
+          // Scaffold-seed intent + outcome. Without this, an empty managed repo
+          // is indistinguishable from a seeded one and nothing can repair it —
+          // the defect behind "brand-new project has no files, no agents, no
+          // skills, and session start 500s on refs/heads/main".
+          seed: initialSeedState,
         },
         // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
         // unification.md §2.1/§3 Phase 2): every project created through this
@@ -541,13 +569,11 @@ projectsApp.openapi(
         // createProjectSession). Pre-existing projects (this flag absent/false)
         // keep the v1 adopt-to-govern behavior untouched.
         require_declared_agents: true,
-        ...(acpRuntimeStarter
-          ? { experimental: { acp_runtime: true } }
-          : {}),
       },
       updatedAt: now,
     })
     .returning();
+  setContextField('projectId', row.projectId);
 
   await grantProjectRole({
     accountId: scope.accountId,
@@ -572,7 +598,11 @@ projectsApp.openapi(
     credentialRef: provisioned.credentialRef,
     visibility: 'private',
     status: 'connected',
-    metadata: { seeded: false },
+    // `seeded: false` used to be hard-coded here and never updated, so the
+    // connection row claimed every project was unseeded — including seeded
+    // ones. Record the seed INTENT instead; the authoritative, updated state
+    // lives on `projects.metadata.git.seed` (see managed-repo-seed.ts).
+    metadata: { seed_expected: initialSeedState.expected },
   });
   const connRef = buildConnectionRef(
     row,
@@ -599,12 +629,13 @@ projectsApp.openapi(
       )
     : null;
 
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). The CLI leaves this false and pushes
-  // its own files on first `kortix ship`. If seeding fails we roll back the
-  // orphan repo + project so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
-  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
+  // If seeding fails we roll back the orphan repo + project so we never leave a
+  // half-created project behind — and, since #5871, "fails" includes "the
+  // backend accepted the push but the default branch is not there". A project
+  // whose repo has no default branch is structurally unusable (no files, no
+  // agents, no skills, manifest detection falls back to v1, session start dies
+  // on `couldn't find remote ref refs/heads/main`), so it must never be
+  // reported as `status: active`.
   let seeded = false;
   if (seedStarter) {
     try {
@@ -624,30 +655,39 @@ projectsApp.openapi(
             marketplaceItems,
             now: now.toISOString(),
           });
-      if (backend.seedFiles) {
-        // Seed the project tip == the deterministic scaffold root (the constant
-        // 'kortix-project' render), byte-identical to the image-baked scaffold
-        // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
-        // the warm-seed's already-opencode-initialized /workspace with ZERO
-        // network (git.ts baked-checkout reuse fires when baseSha == scaffold
-        // root) — the single biggest spawn-latency win. The per-project name
-        // customization is applied in-sandbox at fork (not committed to the
-        // shared remote root) so the warm reuse is never broken by a divergent tip.
-        await backend.seedFiles(connRef, internalPushToken, seed.files, {
-          branch: provisioned.defaultBranch,
-          message: 'chore: scaffold Kortix project',
-          baseFiles: seed.baseFiles,
-        });
-      } else {
-        await seedRepoViaGitPush({
-          upstreamUrl: connRef.upstreamUrl,
-          token: internalPushToken,
-          files: seed.files,
-          branch: provisioned.defaultBranch,
-          commitMessage: 'chore: scaffold Kortix project',
-          baseFiles: seed.baseFiles,
-        });
-      }
+      // Seed the project tip == the deterministic scaffold root (the constant
+      // 'kortix-project' render), byte-identical to the image-baked scaffold
+      // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
+      // the warm-seed's already-opencode-initialized /workspace with ZERO
+      // network (git.ts baked-checkout reuse fires when baseSha == scaffold
+      // root) — the single biggest spawn-latency win. The per-project name
+      // customization is applied in-sandbox at fork (not committed to the
+      // shared remote root) so the warm reuse is never broken by a divergent tip.
+      await pushVerifiedSeed({
+        projectId: row.projectId,
+        branch: provisioned.defaultBranch,
+        push: () =>
+          pushSeedFiles({
+            backend,
+            connRef,
+            token: internalPushToken as string,
+            branch: provisioned.defaultBranch,
+            files: seed.files,
+            baseFiles: seed.baseFiles,
+          }),
+        remoteHasBranch: () =>
+          remoteBranchExists(
+            {
+              projectId: row.projectId,
+              repoUrl: writeUpstream?.url ?? connRef.upstreamUrl,
+              defaultBranch: provisioned.defaultBranch,
+              manifestPath: row.manifestPath,
+              gitAuthToken: internalPushToken,
+              gitAuthHeaders: writeUpstream?.headers ?? {},
+            },
+            provisioned.defaultBranch,
+          ),
+      });
       seeded = true;
 
       // Mirror the seeded manifest's declared default agent into
@@ -658,23 +698,59 @@ projectsApp.openapi(
       // defense-in-depth fallback that also covers pre-existing/CLI-created
       // projects where this mirror is still stale.
       const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
-      if (seededDefaultAgent) {
-        row.metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}), default_agent: seededDefaultAgent };
-        // FIX-J: persist ONLY `default_agent` via a SQL-side atomic merge (never
-        // the whole object) so this creation-seed write can't revert a pin the
-        // prebuild kick may have activated concurrently. `row.metadata` above is
-        // the in-memory copy the creation response serializes.
-        await db
-          .update(projects)
-          .set({ metadata: metadataMerge({ default_agent: seededDefaultAgent }), updatedAt: new Date() })
-          .where(eq(projects.projectId, row.projectId))
-          .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
-      }
+      const verifiedSeedState = buildManagedRepoSeedState({
+        seeded: true,
+        expected: true,
+        reason: 'seeded',
+        at: new Date().toISOString(),
+        template: sourceItemId ?? starterTemplate,
+      });
+      row.metadata = {
+        ...((row.metadata as Record<string, unknown> | null) ?? {}),
+        ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
+        git: {
+          ...(((row.metadata as { git?: Record<string, unknown> } | null)?.git) ?? {}),
+          seed: verifiedSeedState,
+        },
+      };
+      // Persist ONLY the keys this step owns via a SQL-side atomic merge (never
+      // the whole object) so this creation-seed write can't revert a pin the
+      // prebuild kick may have activated concurrently. `row.metadata` above is
+      // the in-memory copy the creation response serializes.
+      await db
+        .update(projects)
+        .set({
+          metadata: metadataMerge({
+            ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
+            git: { seed: verifiedSeedState },
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.projectId, row.projectId))
+        .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
     } catch (error) {
+      const stage = error instanceof ManagedRepoSeedError ? error.stage : 'push';
+      console.error(
+        `[projects] provision rolled back project=${row.projectId} account=${scope.accountId} ` +
+          `repo=${connRef.repoName ?? connRef.upstreamUrl} stage=${stage}:`,
+        error instanceof Error ? error.message : error,
+      );
       try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
       await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
-      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to seed project repo',
+          code: stage === 'verify' ? 'seed_verification_failed' : 'seed_push_failed',
+        },
+        502,
+      );
     }
+  } else {
+    // Legal, but never silent: the caller owns this repo's first commit. Log it
+    // so an empty managed repo in production is always attributable.
+    console.warn(
+      `[projects] provisioned managed repo WITHOUT a scaffold seed project=${row.projectId} account=${scope.accountId} repo=${connRef.repoName ?? connRef.upstreamUrl} — the caller must push the first commit (kortix ship); the project has no default branch yet`,
+    );
   }
 
   if (seeded) {

@@ -25,23 +25,23 @@ import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { cn } from '@/lib/utils';
-import { SparklesSolid } from '@mynaui/icons-react';
-import { formatDistanceToNowStrict } from 'date-fns';
 import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  Columns2,
-  FileDiff,
-  FileEdit,
-  FilePlus2,
-  FileX2,
-  RefreshCcw,
-  RotateCcw,
-  Rows3,
-  XCircle,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle2,
+  CaretDownIcon as ChevronDown,
+  ColumnsIcon as Columns2,
+  NotePencilIcon as FileEdit,
+  GitDiffIcon as FileDiff,
+  FilePlusIcon as FilePlus2,
+  FileXIcon as FileX2,
+  ArrowClockwiseIcon as RefreshCcw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  RowsIcon as Rows3,
+  SparkleIcon as SparklesSolid,
+  XCircleIcon as XCircle,
+} from '@phosphor-icons/react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestStatus } from '../api/change-requests';
@@ -194,11 +194,10 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   // Gate on `variables === crId` so a stale failure from a previously-viewed CR
   // (the dialog is reused, not remounted) never bleeds onto the current one.
   const mergeError = mergeMutation.error as
-    | (Error & {
+    (Error & {
         code?: string;
         data?: { issues?: ManifestIssue[]; conflicts?: string[] };
-      })
-    | null;
+      }) | null;
   const manifestIssues =
     mergeError?.code === 'MANIFEST_INVALID' && mergeMutation.variables === crId
       ? (mergeError.data?.issues ?? [])

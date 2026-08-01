@@ -16,10 +16,6 @@ function readRealTitle(value: unknown): string | null {
   return title;
 }
 
-export function readAcpSessionTitle(sessionInfo: Record<string, unknown> | null): string | null {
-  return readRealTitle(sessionInfo?.title);
-}
-
 function cachedSessionHasTitle(
   queryClient: Pick<QueryClient, 'getQueryData'>,
   projectId: string,
@@ -75,9 +71,8 @@ function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
 /**
  * Refetch the authoritative Kortix session until its generated title appears.
  *
- * OpenCode generates titles asynchronously. ACP does not guarantee a
- * session_info_update notification, so runtime events are only a fast path.
- * This bounded loop covers both ACP and REST without permanent sidebar polling.
+ * OpenCode generates titles asynchronously. This bounded loop refreshes the
+ * authoritative Kortix session without permanent sidebar polling.
  */
 export async function refreshSessionTitleQueryUntilResolved(
   queryClient: SessionTitleQueryClient,
@@ -98,12 +93,20 @@ export async function refreshSessionTitleQueryUntilResolved(
   return false;
 }
 
-export function syncAcpSessionTitleQuery(
-  queryClient: Pick<QueryClient, 'refetchQueries'>,
+/**
+ * Reconcile a server-generated title after the conversation hydrates.
+ *
+ * This also covers an existing session opened after the original post-send
+ * refresh window ended. Empty conversations never poll.
+ */
+export async function reconcileHydratedSessionTitle(
+  queryClient: SessionTitleQueryClient,
   projectId: string,
   sessionId: string,
-  sessionInfo: Record<string, unknown> | null,
-): void {
-  if (!readAcpSessionTitle(sessionInfo)) return;
-  void refetchSessionTitleQueries(queryClient, projectId, sessionId);
+  userMessageCount: number,
+  options: SessionTitleRefreshOptions = {},
+): Promise<boolean> {
+  if (userMessageCount <= 0) return false;
+  if (cachedSessionHasTitle(queryClient, projectId, sessionId)) return true;
+  return refreshSessionTitleQueryUntilResolved(queryClient, projectId, sessionId, options);
 }

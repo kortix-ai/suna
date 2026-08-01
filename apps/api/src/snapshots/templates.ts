@@ -19,13 +19,9 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
@@ -212,13 +208,8 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // routes are removed: a sandbox baked at =<v32 still runs `meet speak`, and its
 // skill tells it never to fall back to a raw API, so it would report a retired
 // feature as a transient provider failure mid-call.
-// v34: bake exact Claude Code, Codex, and Pi ACP adapter versions. The sandbox
-// daemon can start all four harnesses without a request-time package download.
-// v35: pin Pi's internal 0.x packages to the same version as pi-coding-agent.
-// v36: install Pi with npm because pnpm 11 isolates each global root graph.
-// v37: require a source digest beside the compiled sandbox CLI. This invalidates
-// the poisoned v36 snapshot whose new source identity contained an old binary.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v37';
+// v37: require a source digest beside the compiled sandbox CLI.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v38';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -933,9 +924,9 @@ const runtimeIntegrityKey = () =>
     BUN_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${CLAUDE_AGENT_ACP_VERSION}:${CODEX_ACP_VERSION}:${PI_ACP_VERSION}:${PI_CODING_AGENT_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:claude-acp:${CLAUDE_AGENT_ACP_VERSION}:codex-acp:${CODEX_ACP_VERSION}:pi-acp:${PI_ACP_VERSION}:pi:${PI_CODING_AGENT_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

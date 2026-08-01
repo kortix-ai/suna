@@ -7,8 +7,8 @@ import { serializeSession } from './serializers';
  * `GET /sessions?scope=project` deliberately lists rows the caller cannot open
  * (so a manager sees the whole project), marking each `can_access: false`. The
  * serializer redacted nothing, so those rows still carried `metadata` — which
- * holds `initial_prompt`, the literal text an end-user typed — plus the
- * end-user handle and the session's secret allowlist.
+ * holds `initial_prompt`, the literal text a user typed — plus the session's
+ * secret allowlist.
  */
 const row = (over: Record<string, unknown> = {}) =>
   ({
@@ -27,7 +27,7 @@ const row = (over: Record<string, unknown> = {}) =>
     createdBy: 'wrapper',
     visibility: 'private',
     origin: 'backend',
-    originRef: 'end-user-alice',
+    originRef: 'legacy-reference',
     secretsAllowlist: ['STRIPE_KEY'],
     connectorBindingsInheritUnbound: false,
     metadata: { initial_prompt: 'my private prompt', source: 'backend' },
@@ -37,12 +37,12 @@ const row = (over: Record<string, unknown> = {}) =>
   }) as never;
 
 describe('serializeSession redaction', () => {
-  test('an inaccessible row carries no metadata, end-user handle, or allowlist', () => {
+  test('an inaccessible row carries no metadata or allowlist', () => {
     const out = serializeSession(row(), { canAccess: false }) as Record<string, unknown>;
     expect(out.can_access).toBe(false);
     expect(out.metadata).toEqual({});
-    expect(out.end_user_ref).toBeNull();
-    expect(out.origin_ref).toBeNull();
+    expect(out).not.toHaveProperty('end_user_ref');
+    expect(out).not.toHaveProperty('origin_ref');
     expect(out.secrets_allowlist).toBeNull();
   });
 
@@ -85,16 +85,18 @@ describe('serializeSession redaction', () => {
     expect(out.created_by).toBe('wrapper');
   });
 
-  test('an ACCESSIBLE row is completely unchanged', () => {
+  test('an accessible legacy row omits attribution fields', () => {
     const out = serializeSession(row(), { canAccess: true }) as Record<string, unknown>;
     expect(out.metadata).toEqual({ initial_prompt: 'my private prompt', source: 'backend' });
-    expect(out.end_user_ref).toBe('end-user-alice');
+    expect(out).not.toHaveProperty('end_user_ref');
+    expect(out).not.toHaveProperty('origin_ref');
     expect(out.secrets_allowlist).toEqual(['STRIPE_KEY']);
   });
 
   test('the default (no ctx) stays accessible — single-session reads are already gated', () => {
     const out = serializeSession(row()) as Record<string, unknown>;
     expect(out.can_access).toBe(true);
-    expect(out.end_user_ref).toBe('end-user-alice');
+    expect(out).not.toHaveProperty('end_user_ref');
+    expect(out).not.toHaveProperty('origin_ref');
   });
 });

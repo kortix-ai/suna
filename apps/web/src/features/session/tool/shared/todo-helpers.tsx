@@ -2,7 +2,10 @@
 
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { BanSolid, CheckCircleSolid } from '@mynaui/icons-react';
+import {
+  ProhibitIcon as BanSolid,
+  CheckCircleIcon as CheckCircleSolid,
+} from '@phosphor-icons/react';
 
 export interface TodoItem {
   content: string;
@@ -26,11 +29,11 @@ export function parseTodos(value: unknown): TodoItem[] {
 export function TodoStatusIcon({ status }: { status: TodoItem['status'] }) {
   switch (status) {
     case 'completed':
-      return <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />;
+      return <CheckCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />;
     case 'in_progress':
       return <Loading className="text-kortix-orange size-4 shrink-0" />;
     case 'cancelled':
-      return <BanSolid className="text-muted-foreground/40 size-4 shrink-0" />;
+      return <BanSolid weight="fill" className="text-muted-foreground/40 size-4 shrink-0" />;
     case 'pending':
       return (
         <div className="flex size-4 shrink-0 items-center justify-center">

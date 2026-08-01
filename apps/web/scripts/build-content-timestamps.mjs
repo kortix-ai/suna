@@ -24,7 +24,7 @@
 // retrievers.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 const APPS_WEB = resolve(new URL('.', import.meta.url).pathname, '..');
@@ -45,6 +45,26 @@ const MARKETING_SOURCES = {
   marketplace: 'apps/web/src/app/(public)/(marketing)/marketplace/page.tsx',
   support: 'apps/web/src/app/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/(public)/(seo)/legal/page.tsx',
+  'agent-computer': 'apps/web/src/app/(public)/(marketing)/agent-computer/page.tsx',
+  'agents-and-skills': 'apps/web/src/app/(public)/(marketing)/agents-and-skills/page.tsx',
+  automations: 'apps/web/src/app/(public)/(marketing)/automations/page.tsx',
+  channels: 'apps/web/src/app/(public)/(marketing)/channels/page.tsx',
+  'company-as-code': 'apps/web/src/app/(public)/(marketing)/company-as-code/page.tsx',
+  integrations: 'apps/web/src/app/(public)/(marketing)/integrations/page.tsx',
+  security: 'apps/web/src/app/(public)/(marketing)/security/page.tsx',
+  'self-hosted': 'apps/web/src/app/(public)/(marketing)/self-hosted/page.tsx',
+  // Solutions: the hub, then one entry per role. The eight role pages share a
+  // single dynamic route, so the meaningful source of each one is its own
+  // content file — that is the file whose last commit dates the page.
+  solutions: 'apps/web/src/features/marketing/solutions/hub-page.tsx',
+  'solutions/sales': 'apps/web/src/features/marketing/solutions/roles/sales.ts',
+  'solutions/marketing': 'apps/web/src/features/marketing/solutions/roles/marketing.ts',
+  'solutions/product': 'apps/web/src/features/marketing/solutions/roles/product.ts',
+  'solutions/engineering': 'apps/web/src/features/marketing/solutions/roles/engineering.ts',
+  'solutions/finance': 'apps/web/src/features/marketing/solutions/roles/finance.ts',
+  'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
+  'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
+  'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
 };
 
 function gitAvailable() {
@@ -77,7 +97,20 @@ function lastCommitIso(pathRelativeToRepo) {
       encoding: 'utf8',
     });
     const trimmed = out.trim();
-    return trimmed || null;
+    if (trimmed) return trimmed;
+  } catch {
+    // fall through to the mtime fallback
+  }
+  // A source file that exists on disk but has no commit touching it yet — a
+  // page written on a branch and not yet committed. `git log` is silent for it,
+  // which would leave its record without a `lastModified` and fail
+  // public-content.test.ts on every uncommitted new page. Fall back to the
+  // file's own modification time: it is the same "when did this content become
+  // publishable" signal, and the git value takes over on the first commit.
+  try {
+    const absolute = join(REPO_ROOT, pathRelativeToRepo);
+    if (!existsSync(absolute)) return null;
+    return statSync(absolute).mtime.toISOString();
   } catch {
     return null;
   }

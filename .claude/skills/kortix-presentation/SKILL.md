@@ -12,7 +12,7 @@ On-brand Kortix `.pptx` decks. This skill carries the full Anthropic pptx engine
 Read the product marketing context first: if `product-marketing.md` exists, read it and reuse what it covers — only ask for what is task-specific or genuinely missing.
 
 - **Brand source (visual):** Read [`../brand-guidelines/SKILL.md`](../brand-guidelines/SKILL.md) — colors, Roobert typography, logo rules, shadows, spacing. It is the source of truth; if a request conflicts, say so and offer the closest on-brand option.
-- **Messaging source (copy):** Read [`../internal-comms/SKILL.md`](../internal-comms/SKILL.md) for positioning, terminology, and the banned-phrases list before writing any on-slide text.
+- **Messaging source (copy):** Read [`../comms/SKILL.md`](../comms/SKILL.md) for positioning, terminology, and the banned-phrases list before writing any on-slide text.
 
 ## Choosing an approach
 
@@ -29,7 +29,7 @@ Read the product marketing context first: if `product-marketing.md` exists, read
 - **Color:** Kortix neutrals — light `FFFFFF`/`0A0A0A`, dark `0A0A0A`/`FAFAFA` — plus **exactly one** accent per deck from the brand palette (blue `2B91F7` is the default; yellow `CCA300`, orange `D18B19`, green `8AD693`, purple `AB80D6`, red `F14B4C`). Never a rainbow. Accent at 10–15% visual weight. (Ignore generic "derive accent from content" advice — brand-guidelines is authoritative.)
 - **Type:** Roobert (headings + body), Roobert Mono for product nouns / paths / commands; fall back to Inter, then system sans. Weights Regular/Medium/Semibold only. Sizes per the brand-guidelines scale.
 - **Logo:** composite the **Kortix symbol** top-left on 16:9 surfaces — **never generate, redraw, or restyle it.** Recolor to surface: near-black `0A0A0A` on light, white `FAFAFA` on dark. Never the white mark on a light background. One mark per surface.
-- **Voice:** direct, product-grounded (sessions, repos, sandboxes, skills, change requests). Banned: "unlock productivity", "seamless", "revolutionary", and generic AI claims with no mechanism (see internal-comms).
+- **Voice:** direct, product-grounded (sessions, repos, sandboxes, skills, change requests). Banned: "unlock productivity", "seamless", "revolutionary", and generic AI claims with no mechanism (see comms).
 - **Shadows / spacing:** subtle shadows only (brand-guidelines scale, low opacity, small offset — no glow); 0.5" minimum slide margins, 0.3–0.5" between blocks.
 
 ## Design (slides-specific)

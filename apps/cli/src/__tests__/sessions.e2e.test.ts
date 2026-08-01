@@ -26,6 +26,7 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
 let transcriptRequests: URL[] = [];
+let apiRequests: string[] = [];
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -59,6 +60,7 @@ describe('sessions new CLI flow', () => {
     sessionCreateBody = null;
     sessionList = [];
     transcriptRequests = [];
+    apiRequests = [];
 
     mkdirSync(repo, { recursive: true });
     git(['init', '-b', 'main'], repo);
@@ -88,6 +90,7 @@ describe('sessions new CLI flow', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url);
+        apiRequests.push(`${req.method} ${url.pathname}`);
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}`) {
           return Response.json({
             project_id: PROJECT_ID,
@@ -242,6 +245,15 @@ describe('sessions new CLI flow', () => {
     expect(code).toBe(0);
     expect(sessionCreateBody).not.toBeNull();
     expect(sessionCreateBody).not.toHaveProperty('agent_name');
+  });
+
+  test('a removed session attribution option exits before an API request', async () => {
+    const removedFlag = ['--', 'origin', '-ref'].join('');
+    const code = await runSessions(['new', removedFlag, 'customer-42']);
+
+    expect(code).toBe(2);
+    expect(apiRequests).toEqual([]);
+    expect(sessionCreateBody).toBeNull();
   });
 
   test('digest uses compact project transcript endpoint', async () => {

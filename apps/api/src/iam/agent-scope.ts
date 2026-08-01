@@ -22,6 +22,11 @@ export function getAgentGrant(c: Context): AgentGrant | null {
   return (c.get('agentGrant') as AgentGrant | null | undefined) ?? null;
 }
 
+export function isProjectSessionPrincipal(c: Context): boolean {
+  if (c.get('authType') === 'supabase') return false;
+  return c.get('sessionId') != null || getAgentGrant(c) != null;
+}
+
 /**
  * Synonym pairs for the change-request capability. A route gates CR creation as
  * `project.cr.open` but the central agent-grant fold (via assertProjectCapability)

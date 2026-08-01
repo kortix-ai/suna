@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { XIcon as X } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
@@ -22,7 +22,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { cn } from '@/lib/utils';
-import { TelephoneSolid } from '@mynaui/icons-react';
+import { PhoneIcon as TelephoneSolid } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 const MARKO_CAL_LINK = 'team/kortix/demo';
@@ -125,7 +125,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
 
         <CardFooter className="flex-wrap gap-2 px-4">
           <Button size="sm" onClick={() => setQualifierOpen(true)}>
-            <TelephoneSolid />
+            <TelephoneSolid weight="fill" />
             {tI18nHardcoded.raw(
               'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextBookADemo7f3fc2d5',
             )}

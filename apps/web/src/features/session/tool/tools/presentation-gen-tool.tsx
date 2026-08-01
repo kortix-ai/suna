@@ -1,30 +1,26 @@
 'use client';
-import { STATUS_TEXT, } from '@/components/ui/status';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { STATUS_TEXT } from '@/components/ui/status';
 import {
   BasicTool,
-  ToolOutputFallback,
-  ToolRunningContext,
   InlineServicePreview,
   partInput,
   partOutput,
   partStatus,
+  ToolOutputFallback,
+  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import {
-  Check,
-  ExternalLink,
-  Presentation,
-} from 'lucide-react';
+  CheckIcon as Check,
+  ArrowSquareOutIcon as ExternalLink,
+  PresentationIcon as Presentation,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useContext,
-  useMemo,
-} from 'react';
-
+import { useContext, useMemo } from 'react';
 
 import { parsePresentationOutput } from '@/features/session/tool/shared/presentation-helpers';
 

@@ -22,19 +22,18 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  Globe,
-  Loader2,
-  PanelRight,
-  Search,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  WarningCircleIcon as CircleAlert,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  SidebarSimpleIcon as PanelRight,
+  MagnifyingGlassIcon as Search,
+  ArrowSquareOutIcon as TbExternalLink,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
@@ -489,7 +488,7 @@ export function StatusIcon({ status }: { status: string }) {
       return <CircleAlert className="text-muted-foreground size-3 flex-shrink-0" />;
     case 'running':
     case 'pending':
-      return <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />;
+      return <Loading className="text-muted-foreground size-3 flex-shrink-0" />;
     default:
       return null;
   }
@@ -862,7 +861,7 @@ function ToolRightCluster({
         </span>
       )}
       {running && (
-        <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+        <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
       )}
       {!running && rightAccessory && (
         <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">
@@ -1082,7 +1081,10 @@ function ActivatableToolRow({
       className={cn(TOOL_ROW_CLASS, 'cursor-pointer')}
     >
       {header}
-      <PanelRight className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80" />
+      <PanelRight
+        className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80"
+        mirrored
+      />
     </div>
   );
 }

@@ -8,7 +8,15 @@
  * is a single "running" state rather than per-model streaming.
  */
 
-import { AlertTriangle, Clock, Coins, Play, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import {
+  WarningIcon as AlertTriangle,
+  ClockIcon as Clock,
+  CoinsIcon as Coins,
+  PlayIcon as Play,
+  PlusIcon as Plus,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -33,8 +41,8 @@ import type {
 import { cn } from '@/lib/utils';
 import { useProjectModels } from '@kortix/sdk/react';
 
-import { displayModel } from './_shared';
 import { fmtUsd } from './_metrics';
+import { displayModel } from './_shared';
 import { GenerationControlsPanel } from './generation-controls';
 
 const MAX_MODELS = 6;
@@ -95,8 +103,10 @@ export function PlaygroundResultCard({ result }: { result: GatewayPlaygroundResu
       </div>
       <div className="flex-1 space-y-3 px-4 py-4">
         {result.ok ? (
-          <p className="text-foreground max-h-64 overflow-y-auto text-sm whitespace-pre-wrap text-pretty">
-            {result.output?.trim() || <span className="text-muted-foreground">Empty response.</span>}
+          <p className="text-foreground max-h-64 overflow-y-auto text-sm text-pretty whitespace-pre-wrap">
+            {result.output?.trim() || (
+              <span className="text-muted-foreground">Empty response.</span>
+            )}
           </p>
         ) : (
           <InfoBanner tone="destructive" icon={AlertTriangle} title="Request failed">
@@ -149,7 +159,8 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
   );
 
   const canAddMore =
-    selected.length < MAX_MODELS && models.some((model) => !selected.includes(modelKeyToWire(model)));
+    selected.length < MAX_MODELS &&
+    models.some((model) => !selected.includes(modelKeyToWire(model)));
   const canRun = prompt.trim().length > 0 && selected.length > 0 && !playground.isPending;
   const results = playground.data?.results ?? null;
 
@@ -234,7 +245,10 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
                 const tunedCount = tuned ? Object.keys(tuned).length : 0;
                 const open = tunedModel === wire;
                 return (
-                  <li key={`${wire}-${index}`} className="bg-popover overflow-hidden rounded-md border">
+                  <li
+                    key={`${wire}-${index}`}
+                    className="bg-popover overflow-hidden rounded-md border"
+                  >
                     <div className="flex items-center gap-2 px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <PlaygroundModelSelector
@@ -287,7 +301,10 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
                       </Button>
                     </div>
                     <Disclosure variant="outline" open={open}>
-                      <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                      <DisclosureContent
+                        variant="outline"
+                        contentClassName="border-border border-t"
+                      >
                         <div className="px-3 py-4">
                           <GenerationControlsPanel
                             model={wire}

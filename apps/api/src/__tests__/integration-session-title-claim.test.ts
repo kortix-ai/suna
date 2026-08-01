@@ -3,8 +3,8 @@
  * an atomic jsonb merge.
  *
  * Moving titling to create time puts the write exactly inside the window where
- * `acp-session-identity.ts`, the remote-branch publisher and the start-timeline
- * writer commit their own metadata. A read-modify-write of the whole metadata
+ * the remote-branch publisher and the start-timeline writer commit their own
+ * metadata. A read-modify-write of the whole metadata
  * object would clobber, or be clobbered by, any of them — and would let a late
  * duplicate overwrite a user rename. These tests pin both halves: the WHERE
  * clause (first-writer-wins) and the merge expression (no key loss).
@@ -128,11 +128,10 @@ describe('persistTitle — compare-and-set', () => {
     expect((await metadataOf(numericCustom.sessionId)).name).toBeUndefined();
   });
 
-  test('no clobber: a concurrent full-metadata acp_session_id write survives, and so does the title', async () => {
-    const row = await seed({ runtime_transport: 'acp', acp_server_id: 'srv-1' });
+  test('no clobber: a concurrent full-metadata write survives with the title', async () => {
+    const row = await seed({ runtime_transport: 'rest', provider_session_id: 'provider-1' });
 
-    // Mirrors acp-session-identity.ts: SELECT … FOR UPDATE, then write the whole
-    // metadata object back. Racing it against persistTitle used to lose one side.
+    // Race a full metadata rewrite against persistTitle to verify both writes.
     const claimIdentity = db.transaction(async (tx) => {
       const [locked] = await tx
         .select({ metadata: projectSessions.metadata })
@@ -144,7 +143,7 @@ describe('persistTitle — compare-and-set', () => {
         .set({
           metadata: {
             ...((locked?.metadata ?? {}) as Record<string, unknown>),
-            acp_session_id: 'acp-sess-9',
+            sync_checkpoint: 'checkpoint-9',
           },
         })
         .where(eq(projectSessions.sessionId, row.sessionId));
@@ -153,9 +152,9 @@ describe('persistTitle — compare-and-set', () => {
     await Promise.all([claimIdentity, persistTitle(row, 'Generated Title')]);
 
     const metadata = await metadataOf(row.sessionId);
-    expect(metadata.acp_session_id).toBe('acp-sess-9');
+    expect(metadata.sync_checkpoint).toBe('checkpoint-9');
     expect(metadata.name).toBe('Generated Title');
-    expect(metadata.acp_server_id).toBe('srv-1');
+    expect(metadata.provider_session_id).toBe('provider-1');
   });
 
   test('no clobber: the provisioning_error merge preserves a title written after insert', async () => {

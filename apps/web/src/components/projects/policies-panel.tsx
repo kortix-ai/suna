@@ -15,8 +15,12 @@
  *   • Default behavior: "Ask before risky actions" (risk) vs "Run everything"
  *     (allow_all, legacy).
  */
+import {
+  PlusIcon as Plus,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -34,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -521,7 +526,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
               Revert
             </Button>
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
-              {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {save.isPending && <Loading className="h-3.5 w-3.5" />}
               {tI18nHardcoded.raw('autoComponentsProjectsPoliciesPanelJsxTextSaveChanges3a1ef407')}
             </Button>
           </div>

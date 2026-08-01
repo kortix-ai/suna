@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronsUpDown } from 'lucide-react';
+import { CheckIcon, CaretUpDownIcon as ChevronsUpDown } from '@phosphor-icons/react';
 import * as React from 'react';
 import * as RPNInput from 'react-phone-number-input';
 import flags from 'react-phone-number-input/flags';

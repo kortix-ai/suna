@@ -38,6 +38,7 @@
 import { createHash } from 'node:crypto';
 import {
   CHANNEL_PLATFORMS,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   RESERVED_SLUG_PROVIDERS,
   SLUG_RE,
   parseConnectorHeaders,
@@ -69,6 +70,8 @@ const PROVIDERS: readonly ConnectorProvider[] = [
   'channel',
   'computer',
 ];
+export type ConnectorAuthorizationStrategy =
+  (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -171,6 +174,8 @@ export interface ConnectorSpec {
    *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
    *  resolves to `shared` here — it can never round-trip back into git. */
   credentialMode: 'shared';
+  /** Which authorization owner can supply credentials for this profile. */
+  authorizationStrategy: ConnectorAuthorizationStrategy;
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
@@ -296,6 +301,7 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     name: spec.name,
     provider: spec.provider,
     enabled: spec.enabled,
+    authorization_strategy: spec.authorizationStrategy,
   };
   // `shared` is the only mode and the implicit default for every provider —
   // never emit `credential` (mirrors how `sensitive: false` is omitted).
@@ -362,6 +368,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
   const canonical = JSON.stringify({
     provider: spec.provider,
     credentialMode: spec.credentialMode,
+    authorizationStrategy: spec.authorizationStrategy,
     app: spec.app,
     account: spec.account,
     url: spec.url,
@@ -441,7 +448,10 @@ function parseConnectorEntry(
     );
   }
 
-  const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
+  if (row.name !== undefined && (typeof row.name !== 'string' || !row.name.trim())) {
+    return err(slug, 'name must be a non-empty string when provided', filename);
+  }
+  const name = typeof row.name === 'string' ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
   const sensitive = coerceBool(row.sensitive, false);
 
@@ -458,6 +468,22 @@ function parseConnectorEntry(
     );
   }
   const credentialMode = 'shared' as const;
+  const strategyRaw =
+    typeof row.authorization_strategy === 'string'
+      ? row.authorization_strategy.trim().toLowerCase()
+      : '';
+  if (
+    strategyRaw &&
+    !(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategyRaw)
+  ) {
+    return err(
+      slug,
+      'authorization_strategy must be "project" or "user"',
+      filename,
+    );
+  }
+  const authorizationStrategy: ConnectorAuthorizationStrategy =
+    (strategyRaw as ConnectorAuthorizationStrategy) || 'project';
 
   // Defaults; provider blocks fill them in.
   const base: Omit<ConnectorSpec, 'auth' | 'headers' | 'policies'> = {
@@ -467,6 +493,7 @@ function parseConnectorEntry(
     enabled,
     provider: provider as ConnectorProvider,
     credentialMode,
+    authorizationStrategy,
     sensitive,
     app: null,
     account: null,

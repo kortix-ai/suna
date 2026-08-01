@@ -5,7 +5,6 @@ description: >-
   writes commentary on what moved and why, and posts the report to
   {{report_channel}}. Never writes to the database.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

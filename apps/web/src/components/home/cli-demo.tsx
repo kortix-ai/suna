@@ -3,7 +3,7 @@
 import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   type CSSProperties,
@@ -146,7 +146,7 @@ const INIT_INTRO: Line[] = [
   [],
   [
     t('   '),
-    t('The operating system for AI workers', 'fg'),
+    t('The open-source AI Management System', 'fg'),
     t('   '),
     t('·  configure your Kortix project', 'faded'),
   ],

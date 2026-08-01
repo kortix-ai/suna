@@ -7,10 +7,8 @@ import {
   isExperimentalFeatureKey,
   resolveExperimentalFeature,
   resolveExperimentalFeatures,
-  resolveProjectRuntimeTransport,
 } from '../experimental/features';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-
 function findCatalogFeature(key: string) {
   const feature = buildExperimentalCatalog({}).find((f) => f.key === key);
   if (!feature) throw new Error(`Missing experimental feature: ${key}`);
@@ -23,8 +21,8 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('connectors_api_discover')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
+    expect(isExperimentalFeatureKey('teams')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
-    expect(isExperimentalFeatureKey('acp_runtime')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -61,6 +59,17 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
+  test('teams is explicit opt-in and needs no operator env var', () => {
+    expect(resolveExperimentalFeature({}, 'teams')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { teams: true } }, 'teams')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { teams: false } }, 'teams')).toBe(false);
+    // The channel is always listable — server bot credentials only decide
+    // whether the MANAGED install path is offered, never whether a project may
+    // hold an opinion (bring-your-own works without them).
+    expect(findCatalogFeature('teams').available).toBe(true);
+    expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
+  });
+
   test('connectors API Discover is explicit opt-in', () => {
     expect(resolveExperimentalFeature({}, 'connectors_api_discover')).toBe(false);
     expect(
@@ -75,19 +84,6 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
         'connectors_api_discover',
       ),
     ).toBe(false);
-  });
-
-  test('ACP runtime is an explicit per-project client transport', () => {
-    expect(resolveExperimentalFeature({}, 'acp_runtime')).toBe(false);
-    expect(resolveExperimentalFeature({ experimental: { acp_runtime: true } }, 'acp_runtime')).toBe(
-      true,
-    );
-    expect(resolveProjectRuntimeTransport({})).toBe('rest');
-    expect(
-      resolveProjectRuntimeTransport({
-        experimental: { acp_runtime: true },
-      }),
-    ).toBe('acp');
   });
 
   test('llm_gateway is platform-gated and defaults on when available', () => {
@@ -162,6 +158,13 @@ describe('buildExperimentalCatalog', () => {
     expect(reviewCenter.overridden).toBe(true);
     expect(typeof reviewCenter.available).toBe('boolean');
 
+    const teams = catalog.find((f) => f.key === 'teams');
+    if (!teams) throw new Error('Missing Microsoft Teams feature');
+    expect(teams.name).toBe('Microsoft Teams');
+    expect(teams.stability).toBe('experimental');
+    expect(teams.enabled).toBe(false);
+    expect(teams.overridden).toBe(false);
+
     const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
     if (!tunnel) throw new Error('Missing Agent Computer Tunnel feature');
     expect(tunnel.overridden).toBe(false); // no explicit choice made
@@ -176,14 +179,6 @@ describe('buildExperimentalCatalog', () => {
     }
   });
 
-  test('the ACP experiment represents ACP and multi-harness routing', () => {
-    const acp = findCatalogFeature('acp_runtime');
-    expect(acp.name).toBe('ACP & Multi-Harness');
-    expect(acp.description).toContain('OpenCode');
-    expect(acp.description).toContain('Claude Code');
-    expect(acp.description).toContain('Codex');
-    expect(acp.description).toContain('Pi');
-  });
 });
 
 describe('applyExperimentalOverride', () => {

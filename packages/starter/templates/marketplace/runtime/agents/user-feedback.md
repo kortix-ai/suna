@@ -6,7 +6,6 @@ description: >-
   Linear issue per theme in {{linear_team}} with representative quotes and a
   mention count. Never sets priority, assigns an owner, or closes an issue.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

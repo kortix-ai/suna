@@ -1,7 +1,15 @@
 'use client';
 
-import { TrashSolid } from '@mynaui/icons-react';
-import { Check, Copy, Info, Monitor, MoreHorizontal, ScrollText, Shield } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  InfoIcon as Info,
+  MonitorIcon as Monitor,
+  DotsThreeIcon as MoreHorizontal,
+  ScrollIcon as ScrollText,
+  ShieldIcon as Shield,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -90,8 +98,8 @@ export function TunnelSettingsDialog({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={onDelete} variant="destructive">
-                    <TrashSolid className="shrink-0" />
+                  <DropdownMenuItem onClick={onDelete}>
+                    <TrashIcon className="shrink-0" />
                     Delete connection
                   </DropdownMenuItem>
                 </DropdownMenuContent>

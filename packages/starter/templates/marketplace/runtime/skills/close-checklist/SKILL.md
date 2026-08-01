@@ -122,8 +122,7 @@ and closes the books themselves.
   missing docs, or anomalies into a single vague note — a person needs to act
   on each independently.
 - **Scoped, brokered credentials.** Stripe and Sheets access are injected
-  into the sandbox at runtime and never shown to the model or written to
-  logs.
+  into the sandbox at runtime, scoped to this agent's grant.
 </guardrails>
 
 </skill>

@@ -1,14 +1,4 @@
-// continueSession() titles the session it is delivering into, for BOTH
-// transports.
-//
-// Server-side delivery used to piggyback on the sandbox proxy's REST hook, which
-// left every ACP project untitled: `deliverHeadlessAcpPrompt` builds its route
-// from `acp_server_id` but sends `params.sessionId = acp_session_id`, and the
-// proxy's `acpPromptSessionId` predicate requires the two to be equal — which
-// `acp-session-identity.ts` hard-rejects. Every email/Slack/Teams reply, trigger
-// reuse fire and CR request-changes on an ACP project therefore never got a
-// title. Hook 5 sits in continueSession itself, so it is transport-independent
-// and depends on no proxy predicate.
+// continueSession() titles the OpenCode REST session it is delivering into.
 //
 // Same mocking caveat as ./continue-session-deleted-guard.test.ts: engine.ts's
 // heavier dependencies are stubbed so its top-level imports resolve, and
@@ -110,29 +100,7 @@ async function deliver(metadata: Record<string, unknown>, text: string) {
 }
 
 describe('continueSession — server-side delivery titles the session', () => {
-  test('an ACP session is titled (no dependency on the proxy prompt predicate)', async () => {
-    await deliver(
-      {
-        runtime_transport: 'acp',
-        runtime_harness: 'claude',
-        acp_server_id: SESSION_ID,
-        acp_session_id: 'acp-sess-9',
-      },
-      'reply to the customer about the invoice',
-    );
-
-    expect(titleCalls).toEqual([
-      {
-        sessionId: SESSION_ID,
-        projectId: PROJECT_ID,
-        accountId: ACCOUNT_ID,
-        userId: 'automation-user-1',
-        firstPromptText: 'reply to the customer about the invoice',
-      },
-    ]);
-  });
-
-  test('a REST session is titled identically', async () => {
+  test('a REST session is titled', async () => {
     await deliver({ runtime_transport: 'rest' }, 'bump the node version in CI');
 
     expect(titleCalls).toHaveLength(1);

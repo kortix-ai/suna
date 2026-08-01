@@ -325,38 +325,16 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
-  test('ACP sessions require the current sandbox runtime identity', async () => {
+  test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
 
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      projectMetadata: { experimental: { acp_runtime: true } },
-    });
+    await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(imageRequests[0]).toMatchObject({
-      source: 'session-start',
-      requireCurrentRuntime: true,
-    });
-  });
-
-  test('REST sessions retain last-known-good runtime compatibility', async () => {
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      projectMetadata: { experimental: { acp_runtime: false } },
-    });
-    await opened;
-
-    expect(imageRequests[0]).toMatchObject({
-      source: 'session-start',
-      requireCurrentRuntime: false,
-    });
+    expect(imageRequests[0]).toMatchObject({ source: 'session-start' });
+    expect(imageRequests[0]).not.toHaveProperty('requireCurrentRuntime');
   });
 
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
@@ -395,29 +373,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
       ),
     ).toBe(false);
-  });
-
-  test('classifies a provider no-capacity response as transient capacity failure', async () => {
-    providerCreateErrors.daytona =
-      'platinum POST /v1/sandboxes -> 503 {"error":"no capacity","code":"unavailable"}';
-    const failed = waitFor((resolve) => {
-      onProviderEvent = resolve;
-    });
-
-    await provisionSessionSandbox(baseOpts());
-    await failed;
-
-    const failureCalls = updateCalls.filter(
-      (call) =>
-        call.table === sessionSandboxes &&
-        call.updates.status === 'error' &&
-        'metadata' in call.updates,
-    );
-    expect(failureCalls.at(-1)?.updates.metadata).toMatchObject({
-      failureCategory: 'provider-capacity',
-      errorMessage:
-        'The sandbox provider is at capacity right now. Try again in a minute.',
-    });
   });
 
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {

@@ -4,10 +4,10 @@ import { useTranslations } from 'next-intl';
 
 import { searchWorkspaceFiles } from '@/features/files';
 import type {
+  Agent,
   Command,
   MessageWithParts,
   ProviderListResponse,
-  RuntimeAgent,
   Session,
 } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
@@ -16,7 +16,13 @@ import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
-import { ArrowUpLeft, Clock, Reply, Terminal, X } from 'lucide-react';
+import {
+  ArrowUpLeftIcon as ArrowUpLeft,
+  ClockIcon as Clock,
+  ArrowBendUpLeftIcon as Reply,
+  TerminalIcon as Terminal,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -105,7 +111,7 @@ export interface SessionChatInputProps {
    * running" and shows a stop button instead.
    */
   isSending?: boolean;
-  agents?: RuntimeAgent[];
+  agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
   /** Show the selected agent but prevent switching inside an immutable session. */

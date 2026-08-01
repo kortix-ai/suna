@@ -108,7 +108,7 @@ export function OAuth2ApplicationFields({
           value={value.authMethod}
           onValueChange={(next) => set('authMethod', next as OAuth2ApplicationForm['authMethod'])}
         >
-          <SelectTrigger id={id('auth-method')} variant="popover">
+          <SelectTrigger id={id('auth-method')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

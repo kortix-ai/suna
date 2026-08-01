@@ -12,8 +12,13 @@
 // customer actually uses, gated on `source === 'env'` at the call site in
 // accounts/[id]/page.tsx.
 
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  FileCodeIcon as FileCode2,
+  GithubLogoIcon as Github,
+  KeyIcon as KeyRound,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, FileCode2, Github, KeyRound } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 

@@ -14,6 +14,7 @@
  * contract; these tests pin that contract so it can't regress.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHmac } from 'node:crypto';
 import {
   buildGitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
@@ -27,12 +28,16 @@ import {
 // buildGitHubAppInstallUrl, which feeds the token into a GitHub URL).
 
 const ORIG_SECRET = process.env.SUPABASE_JWT_SECRET;
+const ORIG_STATE_SECRET = process.env.KORTIX_GITHUB_APP_STATE_SECRET;
 beforeEach(() => {
   process.env.SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret';
+  process.env.KORTIX_GITHUB_APP_STATE_SECRET = 'test-github-state-secret';
 });
 afterEach(() => {
   if (ORIG_SECRET === undefined) delete process.env.SUPABASE_JWT_SECRET;
   else process.env.SUPABASE_JWT_SECRET = ORIG_SECRET;
+  if (ORIG_STATE_SECRET === undefined) delete process.env.KORTIX_GITHUB_APP_STATE_SECRET;
+  else process.env.KORTIX_GITHUB_APP_STATE_SECRET = ORIG_STATE_SECRET;
 });
 
 describe('verifyGitHubAppInstallStatePayload — defensive input handling', () => {
@@ -98,6 +103,14 @@ describe('verifyGitHubAppInstallStatePayload — malformed/foreign tokens', () =
     const tamperedPayload = Buffer.from(JSON.stringify(payloadJson)).toString('base64url');
     const tampered = `${parts[0]}.${tamperedPayload}.${parts[2]}`;
     expect(verifyGitHubAppInstallStatePayload(tampered)).toBeNull();
+  });
+
+  test('returns null for a correctly signed malformed payload', () => {
+    const payload = Buffer.from('{"account_id":').toString('base64url');
+    const signature = createHmac('sha256', 'test-github-state-secret')
+      .update(payload)
+      .digest('base64url');
+    expect(verifyGitHubAppInstallStatePayload(`v1.${payload}.${signature}`)).toBeNull();
   });
 });
 

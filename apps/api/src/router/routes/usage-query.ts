@@ -6,28 +6,14 @@
  * aggregation query.
  */
 
-export type UsageGroupBy = 'model' | 'provider' | 'day' | 'origin_ref' | 'end_user_ref';
+export type UsageGroupBy = 'model' | 'provider' | 'day';
 
-export const USAGE_GROUP_BY_VALUES: readonly UsageGroupBy[] = [
-  'model',
-  'provider',
-  'day',
-  // Kortix-as-a-Backend: spend per END-USER of the wrapper. Rows with no
-  // origin_ref (all non-backend spend) are excluded from this rollup rather
-  // than lumped into a null bucket — see the route's grouping branch.
-  'origin_ref',
-  'end_user_ref',
-];
-
-/** Max length of an origin_ref, mirroring the session-create bound. */
-const ORIGIN_REF_MAX = 256;
+export const USAGE_GROUP_BY_VALUES: readonly UsageGroupBy[] = ['model', 'provider', 'day'];
 
 export interface UsageQueryParams {
   start?: Date;
   end?: Date;
   groupBy?: UsageGroupBy;
-  /** Narrow to a single end-user (KaaB). Exact match on the stored value. */
-  originRef?: string;
 }
 
 export class InvalidUsageQueryError extends Error {}
@@ -37,9 +23,6 @@ export function parseUsageQuery(query: {
   start?: string;
   end?: string;
   group_by?: string;
-  end_user_ref?: string;
-  /** @deprecated Renamed to `end_user_ref`; still accepted. */
-  origin_ref?: string;
 }): UsageQueryParams {
   const result: UsageQueryParams = {};
 
@@ -72,31 +55,6 @@ export function parseUsageQuery(query: {
     result.groupBy = query.group_by as UsageGroupBy;
   }
 
-  // `end_user_ref` is the name; `origin_ref` is the deprecated alias. Both are
-  // accepted; disagreeing values are rejected rather than one silently winning.
-  if (
-    query.end_user_ref !== undefined &&
-    query.origin_ref !== undefined &&
-    query.end_user_ref.trim() !== query.origin_ref.trim()
-  ) {
-    throw new InvalidUsageQueryError(
-      'end_user_ref and its deprecated alias origin_ref disagree — send only end_user_ref',
-    );
-  }
-  const suppliedRef = query.end_user_ref ?? query.origin_ref;
-  if (suppliedRef !== undefined && suppliedRef !== '') {
-    const originRef = suppliedRef.trim();
-    if (originRef === '') {
-      throw new InvalidUsageQueryError('end_user_ref must not be blank');
-    }
-    if (originRef.length > ORIGIN_REF_MAX) {
-      throw new InvalidUsageQueryError(
-        `end_user_ref must be at most ${ORIGIN_REF_MAX} characters`,
-      );
-    }
-    result.originRef = originRef;
-  }
-
   return result;
 }
 
@@ -125,7 +83,6 @@ export interface UsageBreakdownRow {
   day?: string | null;
   provider?: string | null;
   model?: string | null;
-  originRef?: string | null;
   inputTokens: number | string | null;
   outputTokens: number | string | null;
   cachedTokens: number | string | null;
@@ -147,10 +104,6 @@ export function mapUsageBreakdownRow(row: UsageBreakdownRow) {
     cost: Number(row.cost ?? 0),
     count: Number(row.count ?? 0),
   };
-  if (row.originRef !== undefined) {
-    // Both keys carry the same value so old readers keep working.
-    return { end_user_ref: row.originRef, origin_ref: row.originRef, ...totals };
-  }
   if (row.day !== undefined) {
     return { day: row.day, ...totals };
   }

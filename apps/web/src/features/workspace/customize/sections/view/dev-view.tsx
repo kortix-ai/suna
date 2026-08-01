@@ -1,7 +1,7 @@
 'use client';
 
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 
@@ -26,6 +26,8 @@ import { useCopy } from '@/hooks/use-copy';
 import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { getEnv } from '@/lib/env-config';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { cn } from '@/lib/utils';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
@@ -98,6 +100,7 @@ function DevSteps({
   const repoDir = repoDirFor(project.repo_url) || 'my-project';
   const managed = isManagedGithubProject(project);
   const branch = project.default_branch || 'main';
+  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
 
   const steps: DevStep[] = [];
 
@@ -132,9 +135,7 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintManages9608753c',
       ),
-      content: (
-        <CommandBlock lines={['curl -fsSL https://kortix.com/install | bash', 'kortix login']} />
-      ),
+      content: <CommandBlock lines={[installCommand, 'kortix login']} />,
     },
     {
       title: tI18nHardcoded.raw(
@@ -343,7 +344,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
           />
         </div>
         <Button type="submit" className="shrink-0" disabled={!username.trim() || invite.isPending}>
-          {invite.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
+          {invite.isPending ? <Loading className="size-3.5" /> : null}
           {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
         </Button>
       </div>

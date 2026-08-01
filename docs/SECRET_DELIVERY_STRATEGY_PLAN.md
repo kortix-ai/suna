@@ -1,5 +1,11 @@
 # Secret Delivery Strategy (SDS) — design and implementation plan
 
+> **Contract update, 2026-07-29.** Customer-reference usage attribution and
+> per-reference limits were removed after this plan was written. New
+> implementation work must key security decisions on the authenticated
+> principal, project, and session. Session cost comes from the unified
+> session-cost ledger. Legacy attribution columns are physical storage only.
+
 > **Provenance.** Produced by a multi-agent design pass: 8 parallel code-survey
 > agents established ground truth, 4 independent architectures were proposed,
 > 4 independent judges scored them on security / compatibility / buildability /
@@ -229,7 +235,8 @@ Makes `broker` work for *any* HTTP vendor API, not just the four existing named 
 9. Stream with a **connect-phase-only** AbortController cleared the moment `fetch` resolves (`preview.ts:855-879` documents the regression where a whole-lifecycle `AbortSignal.timeout` severed every SSE body at 15s), `idleTimeout: 0`, `Accept-Encoding: identity` / `decompress:false`. Response scrub for the literal credential → 502 rather than echo it back.
 10. Policy/approval: reuse `executor/policy.ts:170` unchanged (it matches arbitrary strings, so `stripe.POST:api.stripe.com/v1/charges` is as matchable as `stripe.charges.create`) and the 45s approval hold from `executor/gateway.ts:471`.
 11. Audit to `executor_executions` with one added nullable `secret_id` column — best-effort, never fails the call (`gateway.ts:798`).
-12. Rate/spend limit keyed on **`sessionId` and `origin_ref`**, not account. `KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` (`config.ts:573`) already establishes `origin_ref` as a first-class metering key.
+12. Rate limits key on the authenticated principal, project, and `sessionId`.
+    Cost controls read the unified session-cost ledger.
 
 **Three sandbox-facing faces** (none is a boundary — all authenticate with a token the agent already holds; the security comes entirely from Stage 1):
 - `kortix fetch` (`apps/cli/src/commands/fetch.ts`, curl-shaped) — already on PATH.
@@ -255,7 +262,10 @@ The first stage where the founder's literal ask exists.
 - **`CreateSandboxOpts.egress`** + `SandboxProvider.sandboxFacingBrokerOrigin?()` mirroring `sandboxFacingApiOrigin?()` (`providers/index.ts:148`), **recomputed on every hot push** from the owning provider — a hoisted constant silently re-breaks same-machine providers on the next prompt (`sandbox-env-sync.ts:31` documents this exact bug for the gateway URL).
 - **`supportsEgressEnforcement` capability flag** — session creation on a provider without it under `egress_mode: 'enforce'` is **refused**, never silently downgraded.
 - **`observe` mode:** the broker accepts CONNECT for undeclared hosts, tunnels without injection, audits `decision='tunneled'` — so a project discovers its real egress footprint before flipping `on_no_match: deny`.
-- New table `kortix.secret_egress_events` (`accountId, projectId, sessionId, endUserRef, secretId, identifier, strategy, backend, host, method, pathTemplate, matchedRuleIndex, decision, severity, upstreamStatus, bytes, latencyMs`) — the first real audit trail secrets have ever had. `GET /v1/projects/:id/secret-usage?identifier=&end_user_ref=`.
+- New table `kortix.secret_egress_events` (`accountId, projectId, sessionId,
+  actorId, secretId, identifier, strategy, backend, host, method, pathTemplate,
+  matchedRuleIndex, decision, severity, upstreamStatus, bytes, latencyMs`).
+  Query by project, session, actor, or secret identifier.
 
 **Adversarial tests:** the nine dispositions as explicit cases; `unset HTTPS_PROXY && curl https://api.anthropic.com` from inside a local-docker box must yield a connection failure, **not** an uncredentialed request; `sudo iptables -F` then retry must still fail; CONNECT to an allowed host with a forged inner `Host` must 403; a handle from session A presented on session B's connection must 403 and page.
 
@@ -277,12 +287,15 @@ Host-side nftables on the VM tap: `policy drop` on forward, accept only the brok
 
 ---
 
-### Stage 6 — teeth, and the KaaB per-end-user dimension
+### Stage 6 — enforcement and session ownership
 
 - **Per-prompt handle rotation** over the existing hot push with a 60s overlap, so an exfiltrated handle is dead within one turn. This is the single best answer to off-box replay on Daytona.
-- Approval-gated egress; per-`end_user_ref` rate + spend caps; the security console over `secret_egress_events`.
+- Approval-gated egress, principal/session rate controls, and the security
+  console over `secret_egress_events`.
 - **Relax the mid-session agent-switch 409** (`secret-grant.ts:20`) for sessions where every granted secret is non-`runtime` — narrowing now takes effect on the next outbound call. A user-visible product win falling out of the security work.
-- Bridge brokered secrets to the `(owner_type, owner_id)` dimension `executor_connection_profiles` already has (`kortix.ts:3786`) and `project_secrets` lacks, with a **server-side requirement that `owner_id == session.origin_ref`** — closing the hole the connector path currently has, where `validateSessionConnectorBindings` (`session-connector-bindings.ts:193`) accepts any non-member profile and the call-time recheck (`:451`) only re-verifies member-owned ones.
+- If brokered secrets gain owner-specific records, validate ownership against
+  the authenticated principal. Do not derive secret ownership from application
+  customer metadata.
 
 ### Parallel track — independently sufficient to sink KaaB, fixed by none of the above
 
@@ -290,7 +303,8 @@ Each is small and should be scheduled alongside, not after:
 - `GET /v1/projects/:id/git/clone-credential` returns the **raw** provider token to a sandbox-kind key (`r3.ts:300`); `KORTIX_GIT_PROXY` defaults **false** (`config.ts:222`).
 - `buildGitAuthArgs` puts the token in argv (`git.ts:181`); the git credential helper is an in-box oracle (`git.ts:448`).
 - 4319/4320 reachable from outside via `/proxy/<port>` (`proxy.ts:190`).
-- KaaB session visibility resolves against a shared `created_by` (`session-inventory.ts:114`) — end-user A can list and open end-user B's sessions.
+- Session visibility must resolve from the authenticated Kortix principal and
+  explicit project sharing.
 - Task #21 on the board: the actor-context claim is HMAC'd with the sandbox's own bearer (`actor-context.ts:76`).
 
 ---
@@ -301,9 +315,14 @@ Each is small and should be scheduled alongside, not after:
 2. **Kortix's own session credentials stay readable.** `KORTIX_TOKEN` / `KORTIX_CLI_TOKEN` / `KORTIX_EXECUTOR_TOKEN` / `KORTIX_SANDBOX_TOKEN` are deliberately in every shell (`agent-env-file.ts:39-48`); `KORTIX_LLM_API_KEY` **is** the executor PAT (`session-sandbox.ts:433`). With a null agent grant that token carries the wrapper's full project authority.
 3. **Non-HTTP secrets are out of scope.** A Postgres password, an SSH key, an SMTP credential has no header to inject into. They stay `runtime` — visible and honestly labelled — or `denied`.
 4. **Anything ever delivered as `runtime` must be rotated, not merely re-scoped.** There is no retraction path at any provider (`daytona.ts:222`; `start()` at `:278` never re-sends), and the daemon's `process.env` keeps boot values for the life of the box.
-5. **`sandbox.on_boot` persistence.** `main.ts:266` runs `bash -lc` with the daemon's full env every boot, before any prompt, and the agent can write the repo. One injection is a permanent, cross-end-user compromise. This is why strategy lives in the DB with a sandbox-write gate, and the manifest may only *strengthen*.
-6. **KaaB cross-end-user session isolation is a separate, unfixed problem.**
-7. **v1 gives every end-user the *wrapper's* key.** `project_secrets` has no `(owner_type, owner_id)` dimension. Stage 6.
+5. **`sandbox.on_boot` persistence.** `main.ts:266` runs `bash -lc` with the
+   daemon's full environment before a prompt. One injection can persist for the
+   session. This is why strategy lives in the database with a sandbox-write
+   gate, and the manifest may only strengthen it.
+6. **Application customer isolation stays outside Kortix.** A wrapper must not
+   hand its backend credential to a browser.
+7. **Project secrets have no per-customer ownership dimension.** Use separate
+   projects when customer-level secret isolation requires a Kortix boundary.
 8. **Off-box replay** of a handle + token pair on Daytona/E2B until session end (per-prompt rotation in Stage 6 shrinks it to one turn; only local-docker and Platinum give topological binding).
 9. **Cert-pinned clients on `egress` hosts cannot work** — per-host `tls: 'tunnel'` is the documented escape, and it disables injection loudly.
 10. **Single static encryption key.** One `API_KEY_SECRET`, `v1`-only envelope, no key id (`secrets.ts:50`). The broker decrypts on the request path and inherits that blast radius.
@@ -314,10 +333,12 @@ Each is small and should be scheduled alongside, not after:
 
 1. **Do service-account-created (KaaB) projects default to `secret_default_strategy = 'denied'`?** — **Recommend YES.** It is the difference between a feature people enable and a platform that is correct out of the box: an undeclared secret in a KaaB project exists but has no path until someone declares one. Costs nothing for existing projects (default stays `runtime`).
 2. **Do we build `egress` (TLS-terminating MITM) at all, or stop at `broker`?** — **Recommend: build it, per-project opt-in, and make `broker` the recommended default.** `broker` covers most real usage via `base_url_env` with zero CA and zero enterprise pushback; `egress` is for the tail of unmodifiable third-party code. Some enterprises will refuse a CA outright and must remain fully served by `broker` + `denied`.
-3. **Auto-upgrading existing gateway-managed provider keys to `broker(llm_gateway)`** — flag day or opt-in? — **Recommend opt-in per project, then flip the default after a soak.** Removing the native key does not merely *permit* gateway routing, it **forces** it (`acp/harness-registry.ts:141` actively prefers a native key when present), and `LLM_GATEWAY_ENABLED` defaults false (`config.ts:329`), so self-host must keep the keys.
+3. **Auto-upgrading existing gateway-managed provider keys to `broker(llm_gateway)`** — flag day or opt-in? — **Recommend opt-in per project, then flip the default after a soak.** Removing the native key forces gateway routing, and `LLM_GATEWAY_ENABLED` defaults false, so self-host must keep the keys.
 4. **Platinum host-agent egress work** — is that team available in the next quarter? This is the only cross-repo dependency and it gates the KaaB fast path's `egress` story. **Recommend: start the conversation during Stage 2.** Stage 1 already removes the value from `/etc/pt-env`, so this is not a blocker for shipping real security.
 5. **Flip `KORTIX_GIT_PROXY` to default true?** — **Recommend YES, as a standalone PR.** It is the already-built server-side git-credential broker sitting dark, and it is the closest existing analogue to this whole project.
-6. **Separate `KORTIX_LLM_API_KEY` from the executor PAT?** — **Recommend YES, as a sibling project.** Until they differ, "route LLM through the gateway" bounds neither spend nor out-of-turn use, and per-end-user spend caps (task #18) cannot be enforced against a token the agent holds. This plan depends on it for meaningful abuse control but does not deliver it.
+6. **Separate `KORTIX_LLM_API_KEY` from the executor PAT?** — **Recommend YES,
+   as a sibling project.** Until they differ, gateway routing cannot bound
+   out-of-turn use for a token the agent holds.
 7. **Do we relax the mid-session agent-switch 409 for all-brokered sessions?** — **Recommend YES, in Stage 6.** The 409 exists *only* because injected values are irretrievable; that reasoning genuinely no longer applies.
 
 ---

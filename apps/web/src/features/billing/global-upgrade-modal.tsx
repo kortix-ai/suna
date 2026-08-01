@@ -36,10 +36,13 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  ArrowRightIcon as ArrowRight,
+  CreditCardIcon as CreditCardPlusSolid,
+  UserPlusIcon as UserPlus,
+} from '@phosphor-icons/react';
 import { formatCredits } from '@kortix/shared';
-import { CreditCardPlusSolid } from '@mynaui/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
 

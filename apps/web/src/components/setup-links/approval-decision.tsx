@@ -23,8 +23,16 @@ import { Button } from '@/components/ui/button';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { AlertTriangle, Check, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import {
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
+
+import Loading from '@/components/ui/loading';
 
 type Phase = 'loading' | 'error' | 'ready' | 'deciding' | 'decided';
 
@@ -101,7 +109,7 @@ export function ApprovalDecision({ token }: { token: string }) {
   if (phase === 'loading') {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        <Loading className="h-4 w-4" /> Loading…
       </div>
     );
   }
@@ -215,7 +223,7 @@ export function ApprovalDecision({ token }: { token: string }) {
               onClick={() => decide('deny')}
             >
               {deciding && outcome === 'deny' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loading className="mr-2 h-4 w-4" />
               ) : (
                 <X className="mr-2 h-4 w-4" />
               )}
@@ -223,7 +231,7 @@ export function ApprovalDecision({ token }: { token: string }) {
             </Button>
             <Button className="flex-1" disabled={deciding} onClick={() => decide('approve')}>
               {deciding && outcome === 'approve' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loading className="mr-2 h-4 w-4" />
               ) : (
                 <ShieldCheck className="mr-2 h-4 w-4" />
               )}

@@ -8,9 +8,14 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
+import {
+  aspectChangedWidth,
+  resolveSideSize,
+} from '@/features/session/action-panel/easy/easy-panel-logic';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
@@ -28,10 +33,10 @@ import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
-import { PanelRight } from 'lucide-react';
+import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as ResizablePrimitive from 'react-resizable-panels';
 
 interface SessionLayoutProps {
@@ -71,6 +76,10 @@ export const SessionLayout = memo(function SessionLayout({
   // presentation deliverable, 50 for the terminal layer, null for the default
   // card column). See the store's doc comment; Advanced ignores it.
   const panelSplit = useKortixComputerStore((s) => s.panelSplit);
+  // Easy mode only — the open document's own width/height, published by the
+  // renderer that decoded it. Outranks `panelSplit`: a portrait PDF knows its
+  // shape, and a file extension only ever guessed at it. See `resolveSideSize`.
+  const panelAspect = useKortixComputerStore((s) => s.panelAspect);
   // Easy mode only — whether a detail (or the terminal layer) is showing.
   // Gates the resize grip: the card home is fixed-width. Published by EasyPanel.
   const detailOpen = useKortixComputerStore((s) => s.detailOpen);
@@ -146,8 +155,15 @@ export const SessionLayout = memo(function SessionLayout({
   const mainPanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const panelGroupRef = useRef<HTMLDivElement>(null);
+  // The panel group's own box, in a REF and never in state. The fit is decided
+  // once per (document, ratio) pair; a window resize must not redecide it, or
+  // the layout would quietly walk away from a divider the user dragged by
+  // hand. State here would re-render — and therefore re-fit — on every resize
+  // tick, which is precisely the behavior we are refusing.
+  const panelBoxRef = useRef<{ width: number; height: number } | null>(null);
   const prevExpandedRef = useRef(isExpanded);
   const prevSplitRef = useRef(panelSplit);
+  const prevAspectRef = useRef(panelAspect);
 
   const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
 
@@ -210,21 +226,84 @@ export const SessionLayout = memo(function SessionLayout({
     });
   }, []);
 
+  // Keep the box current so a measurement landing at any moment has a real
+  // layout to be a fraction of. Desktop only — the mobile branch returns a
+  // drawer and never mounts this element, and nothing there has a split to
+  // observe for.
+  useEffect(() => {
+    if (isMobile) {
+      // Drop the box with the observer. A desktop box left behind would let a
+      // measurement landing under the drawer compute a fit against a layout
+      // that is no longer on screen — and run the 320ms resize timer for it.
+      panelBoxRef.current = null;
+      return;
+    }
+    const el = panelGroupRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (!box) return;
+      panelBoxRef.current = { width: box.width, height: box.height };
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isMobile]);
+
   // Easy mode opens at the panel's MINIMUM width (35/65): the cards are a
   // narrow column and the chat is where the user lives — a 50/50 split steals
   // half the screen for whitespace. Advanced keeps 50/50 (its
   // stepper/terminal/browser views earn the room). A layer that needs more
   // room requests it through `panelSplit` — 70/30 for a presentation
-  // deliverable (the deck needs real width), 50/50 for the terminal. The drag
-  // handle still lets either mode go wider/narrower by hand.
-  const sideSize = isExpanded ? 100 : !isEasy ? 50 : (panelSplit ?? 35);
+  // deliverable (the deck needs real width), 50/50 for the terminal. A
+  // document that reported its own shape beats all of that (`panelAspect`).
+  // The drag handle still lets either mode go wider/narrower by hand.
+  //
+  // Memoized on exactly the states that may re-decide the width, so the box
+  // read below is sampled at those moments and only those: this is what makes
+  // the fit survive a window resize instead of chasing it.
+  //
+  // `panelBoxRef.current` is read here ON PURPOSE, outside the dep array —
+  // this is a deliberate stale-ref read, not a missed dependency. Adding
+  // `panelBox` to the deps (or promoting the ref to state so it re-renders)
+  // would make every `ResizeObserver` tick re-decide `sideSize`, turning the
+  // one-shot fit into a live window-resize follower: it would fight a
+  // hand-dragged divider on every resize instead of leaving it alone, and a
+  // window resize would re-run the 300ms glide `aspectChangedWidth` below is
+  // built to fire only once per real change. Do not "fix" this lint.
+  const sideSize = useMemo(
+    () =>
+      resolveSideSize({
+        isExpanded,
+        isEasy,
+        panelAspect,
+        panelSplit,
+        panelBox: panelBoxRef.current,
+      }),
+    [isExpanded, isEasy, panelAspect, panelSplit],
+  );
   const mainSize = 100 - sideSize;
+  const prevSideSizeRef = useRef(sideSize);
 
   useEffect(() => {
     const expandChanged = prevExpandedRef.current !== isExpanded;
     const splitChanged = prevSplitRef.current !== panelSplit;
+    // A fit measurement joins the SAME change detection, so it rides the same
+    // 300ms glide — a ratio arriving during the entrance coalesces into it
+    // rather than fighting it. Judged on the width it produces against the
+    // panel's REAL width, which is why `getSize()` and not `prevSideSizeRef`:
+    // a divider the user dragged moved the panel without telling us, so the
+    // width we last commanded is not the width on screen. See
+    // `aspectChangedWidth` for both failures this guards.
+    const aspectChanged = aspectChangedWidth({
+      prevAspect: prevAspectRef.current,
+      nextAspect: panelAspect,
+      currentSize: sidePanelRef.current?.getSize() ?? prevSideSizeRef.current,
+      nextSize: sideSize,
+    });
     prevExpandedRef.current = isExpanded;
     prevSplitRef.current = panelSplit;
+    prevAspectRef.current = panelAspect;
+    prevSideSizeRef.current = sideSize;
 
     // A detail-close collapse rides in with this flag set: snap the width, don't
     // glide it (the detail plays its own slide-out — a width animation under it
@@ -233,7 +312,7 @@ export const SessionLayout = memo(function SessionLayout({
     const skipAnimation = useKortixComputerStore.getState().skipNextExpandAnimation;
     if (skipAnimation) useKortixComputerStore.setState({ skipNextExpandAnimation: false });
 
-    const changed = expandChanged || splitChanged;
+    const changed = expandChanged || splitChanged || aspectChanged;
     const shouldAnimate = changed && shouldShowPanel && !skipAnimation;
 
     if (shouldAnimate) {
@@ -266,6 +345,7 @@ export const SessionLayout = memo(function SessionLayout({
     disablePanelTransition,
     isEasy,
     panelSplit,
+    panelAspect,
     sideSize,
     mainSize,
   ]);
@@ -377,11 +457,26 @@ export const SessionLayout = memo(function SessionLayout({
             if (!open) handleSidePanelClose();
           }}
         >
-          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+          {/* Easy mode's tool surfaces (Terminal, Browser, Files) render as
+              layers INSIDE this one sheet rather than as their own stacked
+              drawers, so it has to be tall enough to hold them, and a grabber
+              would sit above their own headers. Advanced keeps the shorter,
+              grabbed sheet — there the tools are tabs in the panel body. */}
+          <DrawerContent
+            bar={false}
+            className={cn('flex flex-col overflow-hidden p-0', 'h-[95dvh] max-h-[95dvh]')}
+          >
             {effectivePanelHeader}
             <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
           </DrawerContent>
         </Drawer>
+        {/* Dev tools (header / palette) open here — a peer of the panel
+            sheet, never inside it. Closing lands back on chat. */}
+        <MobileToolDrawer
+          sessionId={sessionId}
+          projectId={projectId}
+          projectSessionId={projectSessionId}
+        />
       </div>
     );
   }
@@ -526,7 +621,7 @@ function PanelHeaderSwitcher({
           isSidePanelOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
       >
-        <PanelRight className="h-4 w-4" />
+        <PanelRight className="h-4 w-4" mirrored />
       </Button>
     </Hint>
   );
@@ -539,7 +634,6 @@ function PanelHeaderSwitcher({
         className="gap-0 p-0"
       >
         <TabsList
-          type="secondary"
           animate="none"
           size="sm"
           className="h-7 border-b-0 p-0"
@@ -547,19 +641,19 @@ function PanelHeaderSwitcher({
             'componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView',
           )}
         >
-          <TabsTrigger size="xs" value="actions" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="actions" className="h-7 w-fit">
             Actions
           </TabsTrigger>
-          <TabsTrigger size="xs" value="browser" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
             Browser
           </TabsTrigger>
-          <TabsTrigger size="xs" value="explorer" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="explorer" className="h-7 w-fit">
             Files
           </TabsTrigger>
-          <TabsTrigger size="xs" value="terminal" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="terminal" className="h-7 w-fit">
             Terminal
           </TabsTrigger>
-          <TabsTrigger size="xs" value="audit" variant="secondary" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="audit" className="h-7 w-fit">
             Audit
           </TabsTrigger>
         </TabsList>

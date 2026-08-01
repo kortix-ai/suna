@@ -26,15 +26,16 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
-  Check,
-  CheckCircleSolid,
-  ChevronRight,
-  Refresh,
-  XCircleSolid,
-} from '@mynaui/icons-react';
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretRightIcon as ChevronRight,
+  GitDiffIcon as FileDiff,
+  ClockCounterClockwiseIcon as History,
+  ArrowClockwiseIcon as Refresh,
+  XCircleIcon as XCircleSolid,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { FileDiff, History } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -182,9 +183,9 @@ function ChangeRequestRow({
         )}
       >
         {cr.status === 'merged' ? (
-          <CheckCircleSolid className="text-kortix-green size-5" />
+          <CheckCircleSolid weight="fill" className="text-kortix-green size-5" />
         ) : cr.status === 'closed' ? (
-          <XCircleSolid className="text-kortix-red size-5" />
+          <XCircleSolid weight="fill" className="text-kortix-red size-5" />
         ) : (
           <FileDiff className="text-kortix-blue size-5" />
         )}
@@ -377,7 +378,9 @@ function ChangesTimeline({
           {(commitsFailed || crsFailed) && (
             <ErrorState
               size="sm"
-              title={commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"}
+              title={
+                commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"
+              }
               description="Showing what loaded. Retry to refresh."
               action={
                 <Button

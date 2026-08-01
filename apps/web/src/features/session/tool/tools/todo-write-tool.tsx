@@ -13,7 +13,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { parseTodos, TodoStatusIcon } from '@/features/session/tool/shared/todo-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { ListTodo } from 'lucide-react';
+import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 

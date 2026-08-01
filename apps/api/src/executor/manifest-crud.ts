@@ -1,4 +1,4 @@
-import type { UpdateConnectionProfileCredentialInput } from '@kortix/api-contract';
+import type { UpdateConnectorAuthorizationCredentialInput } from '@kortix/api-contract';
 import { executorConnectors, projects } from '@kortix/db';
 /**
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
@@ -13,6 +13,7 @@ import { executorConnectors, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { resolveExperimentalFeature } from '../experimental/features';
 import {
+  type ConnectorAuthorizationStrategy,
   type ConnectorPolicyAction,
   type ConnectorPolicySpec,
   type ConnectorSpec,
@@ -21,6 +22,7 @@ import {
   extractConnectors,
 } from '../projects/connectors';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
+import { withProjectGitAuth } from '../projects/lib/git';
 import {
   type DefaultMode,
   type ProjectPolicySpec,
@@ -37,6 +39,8 @@ export interface ConnectorDraft {
   slug: string;
   name?: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel';
+  /** Refuse to update an existing slug. */
+  create_only?: boolean;
   platform?: 'slack' | 'email';
   app?: string;
   account?: string;
@@ -49,6 +53,8 @@ export interface ConnectorDraft {
    *  removed 2026-07-05) — accepted for back-compat callers but never emitted
    *  into the manifest, since `shared` is already the implicit default. */
   credential?: 'shared';
+  /** Exclusive owner model for authorizations under this connector profile. */
+  authorization_strategy?: ConnectorAuthorizationStrategy;
   auth?: {
     type?:
       | 'none'
@@ -79,6 +85,9 @@ export type CrudResult =
 function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   const entry: Record<string, unknown> = { slug: d.slug, provider: d.provider };
   if (d.name) entry.name = d.name;
+  if (d.authorization_strategy) {
+    entry.authorization_strategy = d.authorization_strategy;
+  }
   // `shared` is the only mode and the implicit default — never emit `credential`.
   if (d.provider === 'pipedream') {
     if (d.app) entry.app = d.app;
@@ -112,6 +121,29 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   // instead of committing an unusable manifest. Omit when empty so the
   // manifest stays minimal (same rule as `sensitive`).
   if (d.headers && Object.keys(d.headers).length > 0) entry.headers = { ...d.headers };
+  return entry;
+}
+
+/** Build the manifest entry for an upsert without dropping fields owned by
+ * other connector-profile controls. */
+export function mergeConnectorDraftEntry(
+  draft: ConnectorDraft,
+  previous?: Record<string, unknown>,
+): Record<string, unknown> {
+  const entry = draftToEntry(draft);
+  if (!previous) return entry;
+  if (previous.policies !== undefined) entry.policies = previous.policies;
+  if (draft.headers === undefined && previous.headers !== undefined) {
+    entry.headers = previous.headers;
+  }
+  if (
+    draft.authorization_strategy === undefined &&
+    previous.authorization_strategy !== undefined
+  ) {
+    entry.authorization_strategy = previous.authorization_strategy;
+  }
+  if (previous.enabled !== undefined) entry.enabled = previous.enabled;
+  if (entry.name === undefined && previous.name !== undefined) entry.name = previous.name;
   return entry;
 }
 
@@ -169,31 +201,44 @@ export async function upsertConnectorInManifest(
     };
   }
 
-  let manifest;
+  let gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
-    manifest = await loadManifestForEdit(row);
+    gitProject = await withProjectGitAuth(row);
   } catch (e) {
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const entry = draftToEntry(draft);
+  const result = await upsertConnectorInManifestWithRevision(gitProject, draft);
+  if (!result.ok) return result;
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+async function upsertConnectorInManifestWithRevision(
+  project: Awaited<ReturnType<typeof withProjectGitAuth>>,
+  draft: ConnectorDraft,
+): Promise<CrudResult> {
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(project);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
   const current = Array.isArray(manifest.raw.connectors)
     ? (manifest.raw.connectors as Record<string, unknown>[])
     : [];
   const idx = current.findIndex((c) => c?.slug === draft.slug);
+  if (idx >= 0 && draft.create_only === true) {
+    return {
+      ok: false,
+      error: `Connector profile slug "${draft.slug}" already exists`,
+      status: 409,
+    };
+  }
+  const entry = mergeConnectorDraftEntry(draft, idx >= 0 ? current[idx] : undefined);
   if (idx >= 0) {
-    // Updating in place: carry over fields the connection draft doesn't own —
-    // per-tool policies, the enabled flag, and the display name (when the draft
-    // omits it) — so editing the connection never clobbers permissions or rename.
-    const prev = current[idx]!;
-    if (prev.policies !== undefined) entry.policies = prev.policies;
-    // A draft that doesn't mention `headers` keeps the ones already declared —
-    // same carry-over rule as policies/enabled/name, so editing the connection
-    // from a form that doesn't own the header table can't silently drop it.
-    // (Send `headers: {}` to clear them.)
-    if (draft.headers === undefined && prev.headers !== undefined) entry.headers = prev.headers;
-    if (prev.enabled !== undefined) entry.enabled = prev.enabled;
-    if (entry.name === undefined && prev.name !== undefined) entry.name = prev.name;
     current[idx] = entry;
   } else {
     current.push(entry);
@@ -205,14 +250,13 @@ export async function upsertConnectorInManifest(
   if (err) return { ok: false, error: err.error, status: 400 };
 
   const committed = await commitManifest(
-    row,
+    project,
     manifest,
     `chore: ${idx >= 0 ? 'update' : 'add'} connector ${draft.slug}`,
   );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
-  const sync = await syncProjectConnectors(projectId, accountId);
-  return { ok: true, sync };
+  return { ok: true };
 }
 
 export async function deleteConnectorFromManifest(
@@ -248,26 +292,39 @@ export async function deleteConnectorFromManifest(
   return { ok: true };
 }
 
-/** Set the SHARED credential value (userId null) — the only credential a
- *  connector has since `per_user` was removed 2026-07-05. */
+/** Set a project-owned connector authorization credential. */
 export async function setConnectorCredentialShared(
   projectId: string,
   slug: string,
-  input: UpdateConnectionProfileCredentialInput,
+  input: UpdateConnectorAuthorizationCredentialInput,
 ): Promise<CrudResult> {
-  const connectorId = await connectorIdFor(projectId, slug);
-  if (!connectorId) return { ok: false, error: 'connector not found', status: 404 };
+  const [connector] = await db
+    .select({
+      connectorId: executorConnectors.connectorId,
+      authorizationStrategy: executorConnectors.authorizationStrategy,
+    })
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!connector) return { ok: false, error: 'connector not found', status: 404 };
+  if (connector.authorizationStrategy !== 'project') {
+    return {
+      ok: false,
+      error: 'Shared credentials require a project authorization strategy',
+      status: 409,
+    };
+  }
   if ('oauth2' in input) {
     await upsertOAuth2Credential({
       projectId,
-      connectorId,
+      connectorId: connector.connectorId,
       userId: null,
       oauth2: input.oauth2,
     });
   } else {
     await upsertCredential({
       projectId,
-      connectorId,
+      connectorId: connector.connectorId,
       userId: null,
       value: input.value,
       kind: input.kind,
@@ -318,6 +375,48 @@ export async function setConnectorCredentialModeInManifest(
     `chore: set ${slug} credential mode → ${mode}`,
   );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+/** Set the exclusive authorization owner model for one connector profile. */
+export async function setConnectorAuthorizationStrategyInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  authorizationStrategy: ConnectorAuthorizationStrategy,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
+  const entry = current.find((candidate) => candidate?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  entry.authorization_strategy = authorizationStrategy;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const error = parsed.errors.find((candidate) => candidate.slug === slug);
+  if (error) return { ok: false, error: error.error, status: 400 };
+
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: set ${slug} authorization strategy to ${authorizationStrategy}`,
+  );
+  if ('error' in committed) {
+    return { ok: false, error: committed.error, status: committed.status };
+  }
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };
@@ -419,9 +518,11 @@ export async function setConnectorNameInManifest(
 /** The editable connection config — same fields the "Add connector" form sets. */
 export interface ConnectorConfigView {
   slug: string;
+  name: string;
   provider: ConnectorSpec['provider'];
   platform: ConnectorSpec['platform'];
   credentialMode: 'shared';
+  authorizationStrategy: ConnectorAuthorizationStrategy;
   app: string | null;
   account: string | null;
   url: string | null;
@@ -465,9 +566,11 @@ export async function getConnectorConfigFromManifest(
   if (!spec) return null;
   return {
     slug: spec.slug,
+    name: spec.name,
     provider: spec.provider,
     platform: spec.platform,
     credentialMode: spec.credentialMode,
+    authorizationStrategy: spec.authorizationStrategy,
     app: spec.app,
     account: spec.account,
     url: spec.url,

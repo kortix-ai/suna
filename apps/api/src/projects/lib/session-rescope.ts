@@ -29,6 +29,11 @@
  * gets a credential left in place.
  */
 
+import {
+  canonicalConnectorAlias,
+  publicConnectorAlias,
+} from '../../shared/connector-alias';
+
 export type RescopeSecretsResult =
   | { ok: true; allowlist: string[] | null; dropped: string[]; added: string[] }
   | { ok: false; code: 'NOT_IN_AGENT_GRANT'; message: string; offending: string[] };
@@ -118,16 +123,21 @@ export function rescopeSessionBindings(input: {
   requested: Record<string, string>;
   grantedConnectors: string[] | 'all' | undefined;
 }): RescopeBindingsResult {
+  const current: Record<string, string> = {};
+  for (const [alias, profileId] of Object.entries(input.current)) {
+    current[canonicalConnectorAlias(alias.trim())] = profileId;
+  }
+
   const requested: Record<string, string> = {};
   for (const [alias, profileId] of Object.entries(input.requested)) {
-    const key = alias.trim();
+    const key = canonicalConnectorAlias(alias.trim());
     const value = typeof profileId === 'string' ? profileId.trim() : '';
     if (!key || !value) continue;
     requested[key] = value;
   }
 
   if (Array.isArray(input.grantedConnectors)) {
-    const granted = new Set(input.grantedConnectors);
+    const granted = new Set(input.grantedConnectors.map(canonicalConnectorAlias));
     const offending = Object.keys(requested).filter((alias) => !granted.has(alias));
     if (offending.length > 0) {
       return {
@@ -141,9 +151,11 @@ export function rescopeSessionBindings(input: {
     }
   }
 
-  const dropped = Object.keys(input.current).filter((alias) => !(alias in requested));
-  const changed = Object.keys(requested).filter(
-    (alias) => alias in input.current && input.current[alias] !== requested[alias],
-  );
+  const dropped = Object.keys(current)
+    .filter((alias) => !(alias in requested))
+    .map(publicConnectorAlias);
+  const changed = Object.keys(requested)
+    .filter((alias) => alias in current && current[alias] !== requested[alias])
+    .map(publicConnectorAlias);
   return { ok: true, bindings: requested, dropped, changed };
 }

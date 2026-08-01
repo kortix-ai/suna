@@ -7,7 +7,6 @@ description: >-
   opens a PR only when everything passes. Flags still in partial rollout or an
   active experiment are never touched — only reported for a human to review.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

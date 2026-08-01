@@ -48,10 +48,6 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
 | `rewindPending` | `boolean` | A rewind or restore request is in progress. |
 | `rewindError` | `KortixSendError \| null` | The last rewind or restore failure. |
-| `runtimeTransport` | `'rest' \| 'acp'` | The server-selected transport. Display it for diagnostics only. Do not branch on it. |
-| `runtimeHarness` | `'opencode' \| 'claude' \| 'codex' \| 'pi' \| null` | Immutable session harness. Display it for diagnostics only. |
-| `nativeAgent` | `string \| null` | Immutable harness-native agent or mode. |
-| `acpServerId`, `acpSessionId` | `string \| null` | ACP process key and harness-native conversation id. |
 | `models`, `agents`, `defaultAgent`, `commands` | — | Selectable models, selectable agents, the default agent, and slash commands. Available before the runtime starts. |
 | `retry` | `() => void` | Force a re-check of `/start`. |
 
@@ -79,7 +75,6 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | Option | Default | What it does |
 |---|---|---|
 | `waitMs` | `15000` | The long-poll budget sent to `/start`. |
-| `runtimeTransport` | (unset) | Override the server-selected transport (`'rest'` \| `'acp'`) for page-scoped diagnostics. Omit to use `/start`'s `runtime_transport`. |
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
@@ -90,14 +85,6 @@ events fill in the agent's reply.
 `rewind(messageId)` never creates a session. It uses the canonical session from
 `POST /start`. The runtime restores file state and keeps the removed transcript
 path recoverable. The next accepted prompt commits the replacement path.
-
-### ACP experiment
-
-The project experiment `acp_runtime` selects ACP. The default is REST.
-`useSession` owns both paths. A v3 session can select OpenCode, Claude Code,
-Codex, or Pi. The host does not construct `/kortix/acp/` URLs, call OpenCode
-prompt routes directly, or branch on `runtimeHarness`. Disable the experiment
-to use OpenCode REST for compatible projects.
 
 ## Other stable hooks
 

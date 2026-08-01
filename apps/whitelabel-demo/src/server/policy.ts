@@ -42,7 +42,7 @@ function deny(status: number, reason: string): PolicyResult {
  * @param method                     HTTP method (any case).
  * @param path                       Upstream path with the leading `/v1` and any
  *                                   leading/trailing slashes stripped, e.g.
- *                                   `projects/abc123/gateway/sessions`, `accounts`,
+ *                                   `projects/abc123/sessions`, `accounts`,
  *                                   `p/sb_123/3000/index.html`.
  * @param isOwner                    Predicate: does the caller own this project id?
  * @param resolveProjectIdForSandbox Resolve a `p/{sandboxId}/...` sandbox id to the
@@ -98,7 +98,8 @@ export function evaluatePolicy(
   if (/^p\//.test(p) || p === 'p') return allow();
 
   // ── Projects: bare collection ─────────────────────────────────────────────
-  if (p === 'projects' && m === 'GET') return allow({ filterProjectsList: true });
+  if (p === 'projects' && m === 'GET')
+    return allow({ filterProjectsList: true });
   if (p === 'projects' && m === 'POST') {
     return deny(
       403,
@@ -106,16 +107,22 @@ export function evaluatePolicy(
     );
   }
   if (p === 'projects/create-repo') {
-    return deny(403, 'Not used by this app; blocked by default in wrapper mode.');
+    return deny(
+      403,
+      'Not used by this app; blocked by default in wrapper mode.',
+    );
   }
-  if (p === 'projects/provision' && m === 'POST') return allow({ recordProvisionOwner: true });
+  if (p === 'projects/provision' && m === 'POST')
+    return allow({ recordProvisionOwner: true });
 
   // ── Projects: scoped to one id ────────────────────────────────────────────
   // Everything the app does once a project exists — detail, sessions,
   // gateway (cost/logs), secrets, sandbox, llm-catalog, settings — all live
   // under `projects/{id}/...`. Connector/policy management goes through
   // `executor/projects/{id}/...` instead. Both require ownership of `{id}`.
-  const sessionStartMatch = p.match(/^projects\/([^/]+)\/sessions\/[^/]+\/start$/);
+  const sessionStartMatch = p.match(
+    /^projects\/([^/]+)\/sessions\/[^/]+\/start$/,
+  );
   if (sessionStartMatch && m === 'POST') {
     const projectId = sessionStartMatch[1];
     return isOwner(projectId)
@@ -125,11 +132,15 @@ export function evaluatePolicy(
 
   const projMatch = p.match(/^projects\/([^/]+)(?:\/.*)?$/);
   if (projMatch) {
-    return isOwner(projMatch[1]) ? allow() : deny(403, "You don't have access to this project.");
+    return isOwner(projMatch[1])
+      ? allow()
+      : deny(403, "You don't have access to this project.");
   }
   const execMatch = p.match(/^executor\/projects\/([^/]+)(?:\/.*)?$/);
   if (execMatch) {
-    return isOwner(execMatch[1]) ? allow() : deny(403, "You don't have access to this project.");
+    return isOwner(execMatch[1])
+      ? allow()
+      : deny(403, "You don't have access to this project.");
   }
 
   // ── Accounts: self-identity probe only ────────────────────────────────────

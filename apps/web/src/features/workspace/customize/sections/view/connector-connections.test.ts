@@ -16,9 +16,9 @@ describe('connectorConnectionRows', () => {
     expect(rows.map((r) => r.profile_id)).toEqual(['a']);
   });
 
-  test('keeps both team-shared and the caller’s own private connections', () => {
+  test('keeps both project-owned and the caller’s own private authorizations', () => {
     const rows = connectorConnectionRows(
-      [profile('gmail', 'project', 'team'), profile('gmail', 'member', 'mine')],
+      [profile('gmail', 'project', 'project'), profile('gmail', 'member', 'mine')],
       'gmail',
     );
     expect(rows.map((r) => r.owner_type)).toEqual(['project', 'member']);
@@ -26,10 +26,10 @@ describe('connectorConnectionRows', () => {
 
   test('drops agent-owned profiles, which are a binding artifact and not a connection', () => {
     const rows = connectorConnectionRows(
-      [profile('gmail', 'agent', 'bound'), profile('gmail', 'project', 'team')],
+      [profile('gmail', 'agent', 'bound'), profile('gmail', 'project', 'project')],
       'gmail',
     );
-    expect(rows.map((r) => r.profile_id)).toEqual(['team']);
+    expect(rows.map((r) => r.profile_id)).toEqual(['project']);
   });
 
   test('treats a missing list as empty, so the tab count never renders NaN', () => {

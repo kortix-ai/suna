@@ -100,7 +100,7 @@ The agent is **read-mostly**. The only write it ever makes to HubSpot is an
 internal hygiene flag on the deal — never the stage, never the owner, never
 the amount. It cannot reassign a deal, advance it, or touch the number tied to
 it, no matter what the data suggests. Credentials are encrypted in the secrets
-manager and injected at runtime, never shown to the model or written to logs.
+manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Nudge the rep, escalate the worst">
@@ -127,10 +127,10 @@ what happens next; the agent only reports.
 Reading and flagging every open deal every day is a trust question, so the
 agent's access is narrow and one-directional in the ways that matter:
 
-- **Isolation.** Every run happens in its own microVM sandbox. Only the
-  hygiene flag write and the Slack messages leave the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. Only the
+  hygiene flag write and the Slack messages are written back out.
 - **Scoped secrets.** The HubSpot credential is encrypted in the secrets
-  manager and injected into the sandbox at runtime, never exposed to the model
+  manager and injected into the sandbox at runtime, scoped to the agents you grant them to
   or the logs.
 - **Read-mostly.** The agent's only write to HubSpot is an internal hygiene
   flag on the deal. It never changes a deal's stage, reassigns its owner, or

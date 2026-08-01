@@ -14,17 +14,17 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import {
-  BookOpen,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  FileText,
-  ListTodo,
-  MessageCircle,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
+  BookOpenIcon as BookOpen,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  FileTextIcon as FileText,
+  ListChecksIcon as ListTodo,
+  ChatCircleIcon as MessageCircle,
+  ArrowsInSimpleIcon as Minimize2,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import React, { useMemo } from 'react';
 

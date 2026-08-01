@@ -92,6 +92,7 @@ export default function ProjectIndexPage() {
       setSending(true);
       newSession({
         create: buildNewSessionCreateInput(options),
+        scope: options?.scope,
         // Create failed (already surfaced by the hook) — we never left this
         // page, so just unlock the composer with the text still in it.
         onError: () => setSending(false),

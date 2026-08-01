@@ -11,7 +11,7 @@
  *   2. mint a per-end-user connection PROFILE (owner_type 'external' = your user)
  *      + store that user's own credential + activate it            (by reference)
  *   3. start a BACKEND-origin session, binding the profile, pinning the model
- *      and agent, vouching via end_user_ref, and narrowing secrets      (overrides)
+ *      and agent, and narrowing secrets                              (overrides)
  *   4. STREAM the agent's answer live to your terminal / your own SSE endpoint
  *
  * Two run modes in this one file:
@@ -27,10 +27,10 @@
  *       -d '{"endUserId":"alice","prompt":"Summarize my new signups"}'
  *
  * Notes:
- *   - `end_user_ref` + `secrets` are backend-only fields that require the
- *     Kortix-as-a-Backend release. Set KAAB_OVERRIDES=off to drop them so the
+ *   - `secrets` is a backend-only field that requires the
+ *     Kortix-as-a-Backend release. Set KAAB_OVERRIDES=off to drop it so the
  *     connector + binding + session + streaming path still runs against a
- *     deployment that doesn't have them yet (origin still auto-derives to
+ *     deployment that does not support it yet (origin still auto-derives to
  *     'backend' from the API key).
  *   - Bun only — the `@kortix/sdk/server` subpath statically imports
  *     node:async_hooks (standard on Node 18+/22).
@@ -65,8 +65,8 @@ if (!upstreamApiKey || !projectId) {
  * wrapper mints/stores one PAT per tenant (or scopes a shared one) in its own
  * auth store, keyed off the incoming request — never a hardcoded env var. Here
  * every user shares the wrapper's own key; origin still derives to 'backend',
- * and per-user isolation comes from end_user_ref + the end-user's connection
- * profile, not from distinct Kortix logins.
+ * and per-user isolation comes from wrapper-owned metadata and the end-user's
+ * connection profile, not from distinct Kortix logins.
  */
 function upstreamTokenFor(_endUserId: string): string {
   return upstreamApiKey!;
@@ -146,7 +146,6 @@ async function ensureUserProfile(
 // ─── step 3: start a backend-origin session bound to this user ───────────────
 async function startSession(
   kortix: ReturnType<typeof clientFor>,
-  endUserId: string,
   profileId: string | null,
 ): Promise<string> {
   const body: Record<string, unknown> = {
@@ -155,18 +154,13 @@ async function startSession(
     ...(profileId ? { connector_bindings: { [CONNECTOR_SLUG]: { profile_id: profileId } } } : {}),
     ...(AGENT_NAME ? { agent_name: AGENT_NAME } : {}),
     ...(MODEL ? { opencode_model: MODEL } : {}),
-    // Backend-only fields (require the KaaB release; KAAB_OVERRIDES=off drops them):
-    ...(includeOverrides
-      ? {
-          end_user_ref: endUserId, // attribution → KORTIX_END_USER_REF in the sandbox
-          ...(SECRET_ID ? { secrets: [SECRET_ID] } : {}), // narrow injected secrets
-        }
-      : {}),
+    // Backend-only secret narrowing. KAAB_OVERRIDES=off omits it.
+    ...(includeOverrides && SECRET_ID ? { secrets: [SECRET_ID] } : {}),
   };
   const session = await kortix.project(projectId!).sessions.create(body);
   console.error(
     `[session ${session.session_id}] origin=${session.origin ?? '(n/a)'}` +
-      ` end_user_ref=${session.end_user_ref ?? '(n/a)'} secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
+      ` secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
   );
   return session.session_id;
 }
@@ -244,7 +238,7 @@ async function serveOneUser(endUserId: string, prompt: string, onText: (t: strin
       console.error(`[connector] unavailable, continuing without a binding: ${String(err)}`);
     }
   }
-  const sessionId = await startSession(kortix, endUserId, profileId);
+  const sessionId = await startSession(kortix, profileId);
   await runTurn(kortix, sessionId, prompt, onText);
 }
 

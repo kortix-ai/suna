@@ -13,8 +13,7 @@ import { cva } from 'class-variance-authority';
 import * as React from 'react';
 
 export type InfoBannerIcon =
-  | React.ComponentType<{ className?: string; strokeWidth?: number }>
-  | React.ReactElement<{ className?: string; strokeWidth?: number }>;
+  React.ComponentType<{ className?: string }> | React.ReactElement<{ className?: string }>;
 
 const infoBannerVariants = cva(
   'text-foreground bg-popover flex flex-wrap items-center gap-4 px-4 py-3 text-sm',
@@ -59,12 +58,11 @@ function renderBannerIcon(icon: InfoBannerIcon, className: string): React.ReactN
   if (React.isValidElement(icon)) {
     return React.cloneElement(icon, {
       className: cn(className, icon.props.className),
-      strokeWidth: icon.props.strokeWidth ?? 1.25,
     });
   }
 
   const IconComponent = icon;
-  return <IconComponent className={className} strokeWidth={1.25} />;
+  return <IconComponent className={className} />;
 }
 
 export interface InfoBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {

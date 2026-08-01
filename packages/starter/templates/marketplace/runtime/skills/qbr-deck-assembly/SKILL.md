@@ -125,8 +125,7 @@ anything — that's the CSM's job.
   when backed by a concrete data point — a seat gap, a feature touch, a
   logged goal — never a guess dressed as insight.
 - **Scoped secrets.** The Postgres and HubSpot connectors are brokered
-  server-side; no raw credential is ever shown to the model or written to
-  logs.
+  server-side; no raw credential is ever pasted into chat.
 - **The CSM presents, not the agent.** The agent's job ends at a finished
   draft pair. It never shares, presents, or sends the deck or the doc to
   anyone.

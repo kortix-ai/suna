@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectConfigSummary } from '../../core/rest/projects-client';
 import { projectConfigAgentsToOpenCodeAgents } from './agents';
 
 const config = (defaultAgent: string | null) =>
@@ -15,7 +14,7 @@ const config = (defaultAgent: string | null) =>
         mode: 'primary',
       },
     ],
-  }) as ProjectConfigSummary;
+  }) as any;
 
 describe('projectConfigAgentsToOpenCodeAgents', () => {
   test('places the declared project default first for fallback consumers', () => {
@@ -29,22 +28,5 @@ describe('projectConfigAgentsToOpenCodeAgents', () => {
       'kortix',
       'memory-reflector',
     ]);
-  });
-
-  test('preserves runtime and harness metadata for project agent consumers', () => {
-    const input = config('memory-reflector');
-    input.agents[1] = {
-      ...input.agents[1],
-      runtime: 'codex',
-      harness: 'codex',
-      native_agent: 'reviewer',
-    };
-
-    expect(projectConfigAgentsToOpenCodeAgents(input)[0]).toMatchObject({
-      name: 'memory-reflector',
-      runtime: 'codex',
-      harness: 'codex',
-      nativeAgent: 'reviewer',
-    });
   });
 });

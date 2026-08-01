@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Link2 } from 'lucide-react';
+import { CheckIcon as Check, LinkSimpleIcon as Link2 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';

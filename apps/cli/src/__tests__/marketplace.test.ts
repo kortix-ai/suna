@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runMarketplace } from '../commands/marketplace.ts';
 
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_CONFIG_FILE = process.env.KORTIX_CONFIG_FILE;
 const ORIGINAL_STDOUT_WRITE = process.stdout.write;
@@ -119,7 +121,7 @@ describe('kortix marketplace', () => {
             marketplaceLabel: 'Kortix',
           }],
         }),
-        { status: 200 },
+        { status: 200, headers: JSON_HEADERS },
       );
     }) as typeof fetch;
 
@@ -137,7 +139,7 @@ describe('kortix marketplace', () => {
       const url = String(input);
       requests.push({ url, authorization: String(init?.headers && (init.headers as Record<string, string>).Authorization) });
       if (url === 'https://api.test/v1/marketplace/items/pdf') {
-        return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+        return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
       }
       if (url === 'https://api.test/v1/marketplace/items?query=pdf') {
         return new Response(
@@ -158,7 +160,7 @@ describe('kortix marketplace', () => {
               marketplaceLabel: 'Kortix',
             }],
           }),
-          { status: 200 },
+          { status: 200, headers: JSON_HEADERS },
         );
       }
       if (url === 'https://api.test/v1/marketplace/items/kortix-starter%3Apdf') {
@@ -178,10 +180,10 @@ describe('kortix marketplace', () => {
             marketplaceId: 'kortix',
             marketplaceLabel: 'Kortix',
           }),
-          { status: 200 },
+          { status: 200, headers: JSON_HEADERS },
         );
       }
-      return new Response(JSON.stringify({ error: 'unexpected' }), { status: 500 });
+      return new Response(JSON.stringify({ error: 'unexpected' }), { status: 500, headers: JSON_HEADERS });
     }) as typeof fetch;
 
     const code = await runMarketplace(['show', 'pdf']);

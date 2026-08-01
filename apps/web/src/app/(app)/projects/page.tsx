@@ -47,9 +47,8 @@ import {
   listAccounts,
   listProjectsForAccount,
 } from '@kortix/sdk';
-import { Search } from '@mynaui/icons-react';
+import { FolderPlusIcon as FolderPlus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

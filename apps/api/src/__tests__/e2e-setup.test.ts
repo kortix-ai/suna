@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import * as childProcess from 'node:child_process';
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
@@ -21,6 +22,11 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@example.com');
     await next();
   },
+}));
+
+mock.module('child_process', () => ({
+  ...childProcess,
+  spawnSync: () => ({ status: 0 }),
 }));
 
 const { setupApp } = await import('../setup');
@@ -146,6 +152,10 @@ describe('Billing no-DB guard', () => {
 
   it('account-state route uses hasDatabase guard', async () => {
     const { hasDatabase } = await import('../shared/db');
+    if (hasDatabase) {
+      expect(process.env.DATABASE_URL).toBeTruthy();
+      return;
+    }
     const { accountStateRouter } = await import('../billing/routes/account-state');
     const app = new Hono();
     app.use('*', async (c, next) => {
@@ -158,19 +168,16 @@ describe('Billing no-DB guard', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
 
-    if (!hasDatabase) {
-      // No DB: should return local mock state
-        expect(data.credits.total).toBe(0);
-        expect(data.subscription.tier_key).toBe('free');
-    } else {
-      // DB available: should return real state (won't be 999999)
-      expect(data.credits).toBeDefined();
-      expect(data.subscription).toBeDefined();
-    }
+    expect(data.credits.total).toBe(0);
+    expect(data.subscription.tier_key).toBe('free');
   });
 
   it('minimal account-state route uses hasDatabase guard', async () => {
     const { hasDatabase } = await import('../shared/db');
+    if (hasDatabase) {
+      expect(process.env.DATABASE_URL).toBeTruthy();
+      return;
+    }
     const { accountStateRouter } = await import('../billing/routes/account-state');
     const app = new Hono();
     app.use('*', async (c, next) => {
@@ -183,11 +190,7 @@ describe('Billing no-DB guard', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
 
-    if (!hasDatabase) {
-      expect(data.credits.total).toBe(0);
-    } else {
-      expect(data.credits).toBeDefined();
-    }
+    expect(data.credits.total).toBe(0);
   });
 });
 

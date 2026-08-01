@@ -88,7 +88,7 @@ The agent is **read-only** across every connected system: it reads the database,
 Stripe, and last month's update, and it writes nothing back to any of them. Its
 one output is a draft document. A founder finalizes and sends; the agent never
 sends anything. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Hand a founder a finished first draft">
@@ -113,12 +113,10 @@ with a person.
 The agent reads revenue and product data to draft a document, so the access is
 scoped and contained:
 
-- **Isolation.** Every run happens in its own per-task microVM sandbox. The
-  session reads only the systems it's scoped to, and only the draft document leaves
-  the sandbox.
+- **Isolation.** Every run happens in its own per-task isolated sandbox. The
+  session reads only the systems it's scoped to, and only the draft document is written back out.
 - **Scoped secrets.** The Postgres and Stripe credentials are encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only.** The agent reads every source and writes back to none of them. Its
   only output is a draft, and it never sends. A founder owns the send.
 - **Everything is code.** The agent's configuration, skills, and per-system

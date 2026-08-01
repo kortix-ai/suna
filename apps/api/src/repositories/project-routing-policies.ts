@@ -13,12 +13,6 @@ export interface StoredProjectRoutingPolicy {
   defaultFallback: ProjectRoutingFallback | null;
   rules: ProjectRoutingRule[];
   modelGenerationConfig: ProjectModelGenerationConfig;
-  /**
-   * Exceptions to the default model set: `wireModelId -> enabled`. Resolve it
-   * through `llm-gateway/model-enablement.ts` (which layers it over the catalog
-   * default); never read this field as if it were the answer on its own.
-   */
-  modelOverrides: Record<string, boolean>;
 }
 
 function fromRow(row: typeof projectLlmRoutingPolicies.$inferSelect): StoredProjectRoutingPolicy {
@@ -33,36 +27,7 @@ function fromRow(row: typeof projectLlmRoutingPolicies.$inferSelect): StoredProj
           },
     rules: row.rules,
     modelGenerationConfig: (row.modelGenerationConfig ?? {}) as ProjectModelGenerationConfig,
-    modelOverrides: (row.modelOverrides ?? {}) as Record<string, boolean>,
   };
-}
-
-/**
- * Persist ONLY the project's model overrides, preserving any routing policy.
- * Upserts the policy row (other fields keep their column defaults on insert and
- * are untouched on conflict), so model enablement is independent of the routing
- * editor. An empty object clears every exception, restoring the catalog default.
- */
-export async function setProjectModelOverrides(params: {
-  projectId: string;
-  updatedBy: string;
-  modelOverrides: Record<string, boolean>;
-}): Promise<void> {
-  await db
-    .insert(projectLlmRoutingPolicies)
-    .values({
-      projectId: params.projectId,
-      modelOverrides: params.modelOverrides,
-      updatedBy: params.updatedBy,
-    })
-    .onConflictDoUpdate({
-      target: projectLlmRoutingPolicies.projectId,
-      set: {
-        modelOverrides: params.modelOverrides,
-        updatedBy: params.updatedBy,
-        updatedAt: new Date(),
-      },
-    });
 }
 
 export async function getProjectRoutingPolicy(

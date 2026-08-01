@@ -16,25 +16,27 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
+import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
-import { Eye, Pencil, TrashSolid } from '@mynaui/icons-react';
 import {
-  ArrowUpRight,
-  ClipboardCopy,
-  Copy,
-  Download,
-  History,
-  MoreVertical,
-  Scissors,
-} from 'lucide-react';
+  ArrowUpRightIcon as ArrowUpRight,
+  ClipboardIcon as ClipboardCopy,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  ClockCounterClockwiseIcon as History,
+  DotsThreeVerticalIcon as MoreVertical,
+  PencilSimpleIcon,
+  ScissorsIcon as Scissors,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import type { FileNode } from '@/features/file-browser/types';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
-import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
-import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 interface DriveGridItemProps {
   node: FileNode;
@@ -127,13 +129,13 @@ export function FolderDriveMenuItems({
           <Separator />
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
-              <Pencil />
+              <PencilSimpleIcon />
               Rename
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
-              <TrashSolid />
+              <TrashIcon />
               Remove
             </Item>
           )}
@@ -216,13 +218,13 @@ export function FileDriveMenuItems({
           <Separator />
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
-              <Pencil />
+              <PencilSimpleIcon />
               Rename
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
-              <TrashSolid />
+              <TrashIcon />
               Remove
             </Item>
           )}

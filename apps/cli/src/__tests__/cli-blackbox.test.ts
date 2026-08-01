@@ -418,111 +418,6 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).toContain('marketplace');
   });
 
-  test('sessions connect runs opencode attach through an authenticated sandbox proxy', async () => {
-    const apiBase = startCliE2eServer();
-    const configFile = writeConfig(apiBase);
-    const fakeOpenCode = join(tmp, 'fake-opencode');
-    writeFileSync(
-      fakeOpenCode,
-      `#!/usr/bin/env bun
-const [,, cmd, url, ...args] = process.argv;
-if (cmd !== 'attach') {
-  console.error('expected attach command');
-  process.exit(11);
-}
-if (!url?.startsWith('http://127.0.0.1:')) {
-  console.error('expected local proxy url');
-  process.exit(12);
-}
-const res = await fetch(new URL('/session/ses_oc', url));
-if (!res.ok) {
-  console.error(await res.text());
-  process.exit(13);
-}
-const body = await res.json();
-console.log(JSON.stringify({ cmd, args, body }));
-`,
-      'utf8',
-    );
-    chmodSync(fakeOpenCode, 0o755);
-
-    const result = await runCli(
-      ['sessions', 'connect', 'sess_connect', '--project', 'proj_e2e', '--', '--mini'],
-      tmp,
-      { KORTIX_CONFIG_FILE: configFile, KORTIX_OPENCODE_BIN: fakeOpenCode },
-    );
-
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      cmd: 'attach',
-      args: ['--session', 'ses_oc', '--mini'],
-      body: { id: 'ses_oc', title: 'Connected through proxy' },
-    });
-    expect(result.stderr).toContain('Connecting to');
-    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
-      'GET',
-      '/v1/projects/proj_e2e/sessions/sess_connect',
-      'Bearer tok_blackbox',
-    ]);
-    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
-      'GET',
-      '/v1/p/ext-sess-connect/8000/session/ses_oc',
-      'Bearer tok_blackbox',
-    ]);
-  }, 15_000);
-
-  test('sessions connect heals a stale opencode session pin before attaching', async () => {
-    const apiBase = startCliE2eServer();
-    const configFile = writeConfig(apiBase);
-    const fakeOpenCode = join(tmp, 'fake-opencode-stale');
-    writeFileSync(
-      fakeOpenCode,
-      `#!/usr/bin/env bun
-const [,, cmd, url, ...args] = process.argv;
-if (cmd !== 'attach') process.exit(11);
-const res = await fetch(new URL('/session/ses_live', url));
-if (!res.ok) {
-  console.error(await res.text());
-  process.exit(13);
-}
-const body = await res.json();
-console.log(JSON.stringify({ cmd, args, body }));
-`,
-      'utf8',
-    );
-    chmodSync(fakeOpenCode, 0o755);
-
-    const result = await runCli(
-      ['sessions', 'connect', 'sess_stale', '--project', 'proj_e2e', '--', '--mini'],
-      tmp,
-      { KORTIX_CONFIG_FILE: configFile, KORTIX_OPENCODE_BIN: fakeOpenCode },
-    );
-
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      cmd: 'attach',
-      args: ['--session', 'ses_live', '--mini'],
-      body: { id: 'ses_live', title: 'Live root' },
-    });
-    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
-      'GET',
-      '/v1/p/ext-sess-stale/8000/session/ses_stale',
-      'Bearer tok_blackbox',
-      undefined,
-    ]);
-    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
-      'GET',
-      '/v1/p/ext-sess-stale/8000/session',
-      'Bearer tok_blackbox',
-      undefined,
-    ]);
-    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
-      'PATCH',
-      '/v1/projects/proj_e2e/sessions/sess_stale',
-      'Bearer tok_blackbox',
-      { opencode_session_id: 'ses_live' },
-    ]);
-  }, 15_000);
 
   test('top-level help is grouped into tiers and labeled sections', async () => {
     const result = await runCli(['--help']);
@@ -664,12 +559,11 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'default-project');
-    expect(readFileSync(join(root, '.claude', 'CLAUDE.md'), 'utf8')).toContain(
-      'Claude Code runtime',
-    );
-    expect(readFileSync(join(root, '.pi', 'README.md'), 'utf8')).toContain('Pi runtime');
     expect(lstatSync(join(root, '.claude', 'skills')).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(root, '.pi', 'skills')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(root, '.claude', 'CLAUDE.md'))).toBe(false);
+    expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false);
+    expect(existsSync(join(root, '.pi', 'README.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
@@ -688,12 +582,11 @@ console.log(JSON.stringify({ cmd, args, body }));
     const result = await runCli(['init', '--help']);
 
     expect(result.code).toBe(0);
-    expect(result.stdout).toMatch(
-      /Every\s+new project includes OpenCode, Claude Code, Codex, and Pi runtime profiles\./,
-    );
+    expect(result.stdout).toContain('cloud OpenCode REST runtime');
     expect(result.stdout).not.toContain('--template');
     expect(result.stdout).not.toContain('acp-multi-harness');
     expect(result.stdout).not.toContain('minimal');
+    expect(result.stdout).not.toContain('runtime profiles');
   });
 
   test('init accepts the historical general-knowledge-worker template value', async () => {

@@ -1,6 +1,12 @@
 'use client';
 
-import { Check, Copy, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  DotsThreeIcon as MoreHorizontal,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -100,7 +106,7 @@ export function GatewayKeys({
                 API keys
                 <span className="text-muted-foreground font-normal"> ({keys.length})</span>
               </Label>
-              <p className="text-muted-foreground mt-0.5 text-pretty text-xs">
+              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
                 Project-scoped keys for calling the gateway from external apps — every request is
                 logged and billed here.
               </p>
@@ -174,7 +180,6 @@ export function GatewayKeys({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
                           <DropdownMenuItem
-                            variant="destructive"
                             onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
                           >
                             <Trash2 className="size-3.5 shrink-0" />

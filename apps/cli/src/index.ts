@@ -34,6 +34,7 @@ import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
+import { runDoctor } from './commands/doctor.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { confirm } from './prompts.ts';
@@ -165,6 +166,11 @@ const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+          {
+            name: 'doctor',
+            args: '[--no-session]',
+            blurb: 'End-to-end health check: auth, project, session, agent reply',
+          },
           {
             name: 'schema',
             args: '[--version 1|2]',
@@ -440,6 +446,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'whoami') {
     return runWhoami(argv.slice(1));
   }
+  if (argv[0] === 'doctor') {
+    return runDoctor(argv.slice(1));
+  }
   if (argv[0] === 'token') {
     return runWhoami(['--token-only', ...argv.slice(1)]);
   }
@@ -552,6 +561,7 @@ const KNOWN_COMMANDS = [
   'login',
   'logout',
   'whoami',
+  'doctor',
   'token',
   'hosts',
   'accounts',

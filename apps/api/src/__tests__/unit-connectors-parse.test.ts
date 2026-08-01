@@ -279,6 +279,7 @@ connectors:
 `);
     expect(errors).toEqual([]);
     expect(specs[0]!.credentialMode).toBe('shared');
+    expect(specs[0]!.authorizationStrategy).toBe('project');
   });
 
   test('rejects bad credential mode', () => {
@@ -290,6 +291,95 @@ connectors:
     credential: team
 `);
     expect(errors[0]!.error).toContain('credential must be');
+  });
+});
+
+describe('connectors: — authorization strategy', () => {
+  test('defaults legacy entries to project authorization', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-shared
+    name: Shared Gmail
+    provider: pipedream
+    app: gmail
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.authorizationStrategy).toBe('project');
+  });
+
+  test('preserves a user authorization strategy through serialization', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-personal
+    name: Personal Gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'gmail-personal',
+      name: 'Personal Gmail',
+      app: 'gmail',
+      authorizationStrategy: 'user',
+    });
+    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
+      slug: 'gmail-personal',
+      name: 'Personal Gmail',
+      app: 'gmail',
+      authorization_strategy: 'user',
+    });
+  });
+
+  test('allows two connector profiles to reference one provider app', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail-read
+    name: Gmail read only
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+  - slug: gmail-send
+    name: Gmail send
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`);
+    expect(errors).toEqual([]);
+    expect(specs.map((spec) => [spec.slug, spec.app, spec.authorizationStrategy])).toEqual([
+      ['gmail-read', 'gmail', 'project'],
+      ['gmail-send', 'gmail', 'user'],
+    ]);
+  });
+
+  test('rejects an unsupported authorization strategy', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: both
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('authorization_strategy must be "project" or "user"');
+  });
+
+  test('includes authorization strategy in the materialization hash', () => {
+    const project = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: project
+`).specs[0]!;
+    const user = parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    authorization_strategy: user
+`).specs[0]!;
+    expect(manifestHashForConnector(project)).not.toBe(manifestHashForConnector(user));
   });
 });
 
@@ -365,6 +455,18 @@ connectors:
 `);
     expect(errors).toHaveLength(1);
     expect(errors[0]!.error).toContain('missing a slug');
+  });
+
+  test('explicit blank name', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: gmail
+    name: ""
+    provider: pipedream
+    app: gmail
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('name must be a non-empty string');
   });
 
   test('bad slug', () => {

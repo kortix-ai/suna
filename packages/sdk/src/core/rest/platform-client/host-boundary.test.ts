@@ -68,4 +68,35 @@ describe('host boundary transport', () => {
     expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
+
+  test('audit export sends project and session reconstruction filters', async () => {
+    responseFactory = () =>
+      new Response('', {
+        status: 200,
+        headers: { 'content-type': 'text/csv' },
+      });
+
+    await boundary.downloadAccountAudit(
+      'account-1',
+      {
+        format: 'csv',
+        project_id: 'project-1',
+        session_id: 'session-1',
+        actor_type: 'agent',
+        source: 'executor',
+        outcome: 'failure',
+      },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+
+    const url = new URL(requests[0]!.url);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      format: 'csv',
+      project_id: 'project-1',
+      session_id: 'session-1',
+      actor_type: 'agent',
+      source: 'executor',
+      outcome: 'failure',
+    });
+  });
 });

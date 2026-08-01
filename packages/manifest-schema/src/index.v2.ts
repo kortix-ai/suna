@@ -122,13 +122,11 @@ export interface AgentBlockV2 {
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   connectors?: GrantSetV2;
-  /** Subset of `connectors` that must resolve to the LAUNCHING USER's OWN
-   *  connection (their member profile), never the shared project one. Any session
-   *  started with this agent auto-requires these — server-side, exactly like the
-   *  caller passing `require_connectors`. If the user hasn't connected one,
-   *  session-create is refused with CONNECTOR_CONNECTION_REQUIRED so the UI can
-   *  prompt them to connect it. Must be a subset of this agent's `connectors`
-   *  grant (an alias not granted can never be personally required). */
+  /** Connector profiles that must resolve before the session starts. Each
+   *  entry must also exist in this agent's resolved `connectors` grant. */
+  connectors_required?: string[];
+  /** @deprecated Input alias for `connectors_required`. Serializers emit only
+   *  `connectors_required`. */
   connectors_personal?: string[];
   /** Which project secrets this agent may receive as sandbox env (and read via
    *  the secrets API) — a list of secret IDENTIFIERS (project_secrets.identifier),
@@ -189,6 +187,94 @@ export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'non
       .map((item) => item.trim());
   }
   return defaultWhenOmitted;
+}
+
+function normalizeRequiredConnectorList(
+  value: unknown,
+  where: string,
+  issues: ManifestIssue[],
+): string[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) {
+    issues.push({
+      path: where,
+      message: 'must be an array of connector profile slugs.',
+      severity: 'error',
+    });
+    return null;
+  }
+
+  const normalized: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (typeof item !== 'string' || item.trim() === '') {
+      issues.push({
+        path: `${where}[${index}]`,
+        message: 'entries must be non-empty connector profile slugs.',
+        severity: 'error',
+      });
+      continue;
+    }
+    const slug = item.trim();
+    if (!normalized.includes(slug)) normalized.push(slug);
+  }
+  return normalized;
+}
+
+function equalConnectorSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
+}
+
+/** Validate the required-connector aliases in a v2 agent block. */
+export function validateRequiredConnectorFields(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  const canonical = normalizeRequiredConnectorList(
+    entry.connectors_required,
+    `${where}.connectors_required`,
+    issues,
+  );
+  const legacy = normalizeRequiredConnectorList(
+    entry.connectors_personal,
+    `${where}.connectors_personal`,
+    issues,
+  );
+
+  if (entry.connectors_personal !== undefined) {
+    issues.push({
+      path: `${where}.connectors_personal`,
+      message: 'connectors_personal is deprecated in kortix_version 2; use connectors_required.',
+      severity: 'warning',
+    });
+  }
+
+  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
+    issues.push({
+      path: `${where}.connectors_personal`,
+      message: 'must match connectors_required when both fields are present.',
+      severity: 'error',
+    });
+    return;
+  }
+
+  const required = canonical ?? legacy;
+  if (!required?.length) return;
+
+  const connectors = resolveGrantSet(entry.connectors, 'none');
+  if (connectors === 'all') return;
+  const granted = new Set(connectors === 'none' ? [] : connectors);
+  const missing = required.filter((slug) => !granted.has(slug));
+  if (missing.length > 0) {
+    issues.push({
+      path: `${where}.connectors_required`,
+      message: `must be a subset of the resolved connectors grant; not granted: ${missing.join(', ')}.`,
+      severity: 'error',
+    });
+  }
 }
 
 /** v2 dispatch: called from `index.ts`'s `validateManifestBodyV2`. */
@@ -434,6 +520,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
   validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false, 2);
+  validateRequiredConnectorFields(entry, where, issues);
   validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.

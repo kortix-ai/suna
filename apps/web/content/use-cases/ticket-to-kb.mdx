@@ -83,7 +83,7 @@ closer to publishable.
 Through a scoped connection, the agent works with:
 
 - **Resolved tickets from Plain** — read-only, via a raw API key injected at
-  runtime, never shown to the model.
+  runtime, scoped to the agents you grant them to.
 - **The docs/KB repo on GitHub** — read to see which topics already have an
   article, and write only as a pull request on an isolated branch, via a
   scoped GitHub token used by the `gh` CLI.
@@ -95,7 +95,7 @@ The agent never publishes an article and never merges its own PR. It can only
 open a pull request against an isolated branch; a human reviews the drafts,
 edits them, and decides what actually ships to the help center. Both
 credentials are encrypted in the Secrets Manager and injected at runtime,
-never exposed to the model or written to logs.
+scoped to the agents you grant them to.
 
 </Step>
 <Step title="Open one PR of drafted articles">
@@ -124,12 +124,9 @@ question — from tickets to drafts is safe, from drafts to a live article is
 not something the agent decides — so the guardrails are built around that
 line:
 
-- **Isolation.** Every run resumes in its own microVM sandbox. The session can
-  reach only Plain and the KB repo, and only the pull request leaves the
-  sandbox.
+- **Isolation.** Every run resumes in its own isolated sandbox. The session is granted access only to Plain and the KB repo, and only the pull request is written back out.
 - **Scoped secrets.** The Plain API key and the GitHub token are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed
-  to the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Draft-only.** The agent opens a PR against an isolated branch and stops.
   It never pushes to the live docs branch and never merges its own work — a
   human reviews and publishes.

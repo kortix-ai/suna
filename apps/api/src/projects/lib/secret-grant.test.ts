@@ -263,6 +263,28 @@ describe('resolveSessionSecretGrant', () => {
     ).rejects.toThrow(AgentSecretGrantMismatchError);
   });
 
+  test('re-scopes to the running agent when the optional strict lock is disabled', async () => {
+    loadProjectAgentsImpl = async () =>
+      loaded([
+        spec('narrow', ['NPM_TOKEN'], { connectors: ['registry'], kortixCli: [] }),
+        spec('broad', 'all', { connectors: 'all', kortixCli: 'all' }),
+      ]);
+
+    const grant = await resolveSessionAgentGrant({
+      ...PROJECT,
+      sessionAgent: 'narrow',
+      requestedAgent: 'broad',
+      enforceGrantLock: false,
+    });
+
+    expect(grant).toMatchObject({
+      agent: 'broad',
+      env: 'all',
+      connectors: 'all',
+      kortixCli: 'all',
+    });
+  });
+
   test('ALLOWS a switch that changes only the connector grant', async () => {
     // Identical secrets, different connectors. This must NOT 409: per-agent
     // `connectors:` with no `secrets:` declared is the most ordinary manifest

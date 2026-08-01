@@ -89,7 +89,7 @@ model, the agent can:
 The agent researches and drafts freely, but nothing goes out on its own: every
 follow-up stops at a **human approval gate** as a draft for a person to review
 and send. Credentials are encrypted in the secrets manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each lead run">
@@ -113,13 +113,12 @@ want, and sends — instead of starting each follow-up from a blank page.
 Giving an agent the ability to reach out to leads is a brand question as much as
 a sales one. The relevant controls on Kortix:
 
-- **Isolation.** Each sweep runs in its own microVM sandbox — a fresh session
+- **Isolation.** Each sweep runs in its own isolated sandbox — a fresh session
   that can cover several new leads at once, each handled as an independent
   unit so a failure on one never blocks the rest. Only the drafts it produces
-  leave the sandbox.
+  are written back out.
 - **Scoped secrets.** The HubSpot, email, and Calendar credentials are encrypted
-  in the secrets manager and injected into the sandbox at runtime, never exposed
-  to the model or the logs.
+  in the secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** No message reaches a lead without a person reviewing
   the draft and sending it.
 - **Everything is code.** The agent's persona, skills, and permissions are files

@@ -8,7 +8,6 @@ description: >-
   holding every redline and flag for counsel's sign-off. Never signs,
   executes, or sends anything itself.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

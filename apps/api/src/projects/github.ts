@@ -875,7 +875,8 @@ export async function getFileSha(opts: {
       opts.auth,
     );
     return res.sha ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 404) return null;
+    throw error;
   }
 }

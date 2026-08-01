@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type OAuth2ApplicationForm,
+  type OAuth2CredentialForm,
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
   createConnectorWithOptionalOAuth2,
   mergeOAuth2DiscoveryMetadata,
   oauth2ApplicationFormValid,
   oauth2CredentialFormValid,
-  type OAuth2ApplicationForm,
-  type OAuth2CredentialForm,
 } from './connector-oauth2';
 
 const SECRET_FORM: OAuth2CredentialForm = {
@@ -208,13 +208,16 @@ describe('OAuth2 application form', () => {
 describe('createConnectorWithOptionalOAuth2', () => {
   test('creates the connector before it stores the OAuth2 credential', async () => {
     const calls: string[] = [];
+    let createdDraft: unknown;
     await createConnectorWithOptionalOAuth2(
       'project-1',
       { slug: 'sharepoint', provider: 'openapi', spec: 'https://example.com/openapi.json' },
       SECRET_FORM,
       {
-        createConnector: async () => {
+        createConnector: async (_projectId, draft) => {
           calls.push('create');
+          createdDraft = draft;
+          return { ok: true };
         },
         deleteConnector: async () => {
           calls.push('delete');
@@ -228,6 +231,7 @@ describe('createConnectorWithOptionalOAuth2', () => {
     );
 
     expect(calls).toEqual(['create', 'credential:sharepoint:client_secret_post']);
+    expect(createdDraft).toMatchObject({ slug: 'sharepoint', create_only: true });
   });
 
   test('does not create a credential when OAuth2 is not selected', async () => {
@@ -237,7 +241,7 @@ describe('createConnectorWithOptionalOAuth2', () => {
       { slug: 'public-api', provider: 'openapi', spec: 'https://example.com/openapi.json' },
       null,
       {
-        createConnector: async () => undefined,
+        createConnector: async () => ({ ok: true }),
         deleteConnector: async () => undefined,
         setConnectorCredential: async () => {
           credentialCalls += 1;
@@ -260,6 +264,7 @@ describe('createConnectorWithOptionalOAuth2', () => {
         {
           createConnector: async () => {
             calls.push('create');
+            return { ok: true };
           },
           deleteConnector: async () => {
             calls.push('delete');
@@ -273,5 +278,66 @@ describe('createConnectorWithOptionalOAuth2', () => {
     ).rejects.toBe(credentialError);
 
     expect(calls).toEqual(['create', 'credential', 'delete']);
+  });
+
+  test('does not store a credential or roll back when manifest synchronization fails', async () => {
+    const calls: string[] = [];
+
+    const result = await createConnectorWithOptionalOAuth2(
+      'project-1',
+      { slug: 'sharepoint', provider: 'openapi', spec: 'https://example.com/openapi.json' },
+      SECRET_FORM,
+      {
+        createConnector: async () => {
+          calls.push('create');
+          return {
+            ok: true,
+            sync: {
+              synced: 0,
+              errors: [{ slug: 'sharepoint', error: 'sandbox unavailable' }],
+            },
+          };
+        },
+        deleteConnector: async () => {
+          calls.push('delete');
+        },
+        setConnectorCredential: async () => {
+          calls.push('credential');
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      syncError: 'sandbox unavailable',
+      credentialStored: false,
+    });
+    expect(calls).toEqual(['create']);
+  });
+
+  test('does not delete an existing connector when create-only mode rejects a duplicate', async () => {
+    const calls: string[] = [];
+    const conflict = new Error('Connector already exists');
+
+    await expect(
+      createConnectorWithOptionalOAuth2(
+        'project-1',
+        { slug: 'sharepoint', provider: 'openapi', spec: 'https://example.com/openapi.json' },
+        SECRET_FORM,
+        {
+          createConnector: async () => {
+            calls.push('create');
+            throw conflict;
+          },
+          deleteConnector: async () => {
+            calls.push('delete');
+          },
+          setConnectorCredential: async () => {
+            calls.push('credential');
+          },
+        },
+      ),
+    ).rejects.toBe(conflict);
+
+    expect(calls).toEqual(['create']);
   });
 });

@@ -3,6 +3,7 @@ import {
   canChangeSessionModel,
   mayChangeSessionModel,
   modelChangeNeedsLivePush,
+  modelChangeResult,
   validateModelChangeShape,
 } from './session-model-change';
 
@@ -69,5 +70,68 @@ describe('mayChangeSessionModel — visibility is not mutability', () => {
     // changing its model restarts opencode and kills the owner's in-flight
     // turn. Sharing routes at r7.ts:1508 / :1689 gate on exactly this.
     expect(mayChangeSessionModel({ canManageSharing: false })).toBe(false);
+  });
+});
+
+describe('modelChangeResult — a half-applied change must never read as done', () => {
+  test('a live push that succeeded is applied', () => {
+    const result = modelChangeResult({
+      model: 'kortix/claude-sonnet-4.6',
+      needsPush: true,
+      push: { applied: true },
+    });
+    expect(result).toEqual({ opencode_model: 'kortix/claude-sonnet-4.6', applied_live: true });
+  });
+
+  test('a live push that FAILED is flagged, with the upstream reason', () => {
+    const result = modelChangeResult({
+      model: 'kortix/deepseek-v4-flash',
+      needsPush: true,
+      push: { applied: false, reason: '502 upstream-closed-before-headers' },
+    });
+    expect(result).toEqual({
+      opencode_model: 'kortix/deepseek-v4-flash',
+      applied_live: false,
+      push_failed: true,
+      detail: 'stored, but not pushed: 502 upstream-closed-before-headers',
+    });
+  });
+
+  test('a failed push with no reason still flags the failure', () => {
+    const result = modelChangeResult({
+      model: 'kortix/glm-5.2',
+      needsPush: true,
+      push: { applied: false },
+    });
+    expect(result.push_failed).toBe(true);
+    expect(result.detail).toBe('stored, but not pushed: unknown');
+  });
+
+  test('no push needed on a cold session is NOT a failure', () => {
+    const result = modelChangeResult({
+      model: 'kortix/claude-opus-4.8',
+      needsPush: false,
+      current: 'kortix/claude-sonnet-4.6',
+    });
+    expect(result).toEqual({
+      opencode_model: 'kortix/claude-opus-4.8',
+      applied_live: false,
+      detail: 'stored — applies when the sandbox next starts',
+    });
+    expect(result.push_failed).toBeUndefined();
+  });
+
+  test('re-selecting the same model is a benign no-op, not a failure', () => {
+    const result = modelChangeResult({
+      model: 'kortix/claude-opus-4.8',
+      needsPush: false,
+      current: 'kortix/claude-opus-4.8',
+    });
+    expect(result).toEqual({
+      opencode_model: 'kortix/claude-opus-4.8',
+      applied_live: false,
+      detail: 'already set to this model',
+    });
+    expect(result.push_failed).toBeUndefined();
   });
 });

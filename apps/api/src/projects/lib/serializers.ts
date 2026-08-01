@@ -109,25 +109,6 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    runtime_transport:
-      canAccess && row.metadata?.runtime_transport === 'acp' ? 'acp' : 'rest',
-    runtime_harness:
-      canAccess &&
-      ['claude', 'codex', 'opencode', 'pi'].includes(String(row.metadata?.runtime_harness))
-        ? (row.metadata?.runtime_harness as 'claude' | 'codex' | 'opencode' | 'pi')
-        : 'opencode',
-    native_agent:
-      canAccess && typeof row.metadata?.native_agent === 'string'
-        ? row.metadata.native_agent
-        : null,
-    acp_server_id:
-      canAccess && typeof row.metadata?.acp_server_id === 'string'
-        ? row.metadata.acp_server_id
-        : null,
-    acp_session_id:
-      canAccess && typeof row.metadata?.acp_session_id === 'string'
-        ? row.metadata.acp_session_id
-        : null,
     name: customName ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
@@ -145,12 +126,6 @@ export function serializeSession(
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
-    // Which END-USER a backend session acts for, and what it may read, are
-    // both session content — withheld on a row the caller cannot open.
-    end_user_ref: canAccess ? row.originRef : null,
-    // Deprecated alias, echoed with the same value so wrappers written against
-    // the old name keep working. The DB column keeps its original name.
-    origin_ref: canAccess ? row.originRef : null,
     secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
     sharing: visibilityToIntent(
       row.visibility as 'private' | 'project' | 'restricted',

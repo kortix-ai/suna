@@ -1,0 +1,157 @@
+import { beforeEach, expect, mock, test } from 'bun:test';
+import { configureKortix } from '../../http/config';
+import {
+  getSessionCostRecord,
+  listSessionCosts,
+  type SessionCostDetail,
+  type SessionCostsPage,
+} from './session-costs';
+
+let calls: { url: string; method: string }[] = [];
+let nextResponse: unknown = {};
+
+beforeEach(() => {
+  calls = [];
+  nextResponse = {};
+  globalThis.fetch = mock(async (url: unknown, opts: RequestInit = {}) => {
+    calls.push({ url: String(url), method: opts.method ?? 'GET' });
+    return new Response(JSON.stringify(nextResponse), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+});
+
+configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+const last = () => calls[calls.length - 1];
+
+const page = {
+  sessions: [
+    {
+      session_id: 'session-1',
+      project_id: 'project-1',
+      project_name: 'Project One',
+      owner_id: 'owner-1',
+      owner_type: 'user',
+      owner_name: 'Owner One',
+      owner_email: 'owner@example.test',
+      status: 'running',
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-02T00:00:00.000Z',
+      last_activity_at: '2026-07-02T00:00:00.000Z',
+      llm_cost: 1.25,
+      compute_cost: 0.5,
+      total_cost: 1.75,
+      request_count: 2,
+      error_count: 0,
+      input_tokens: 100,
+      output_tokens: 50,
+      cached_tokens: 10,
+      cache_write_tokens: 5,
+      model_count: 1,
+      compute_seconds: 120,
+    },
+  ],
+  total: 1,
+  limit: 25,
+  offset: 0,
+  next_offset: null,
+  reconciliation: {
+    llm_cost: 0.25,
+    compute_cost: 0,
+    total_cost: 0.25,
+    request_count: 1,
+    compute_window_count: 0,
+    compute_seconds: 0,
+  },
+} satisfies SessionCostsPage;
+
+const detail = {
+  ...page.sessions[0],
+  model_usage: [
+    {
+      provider: 'anthropic',
+      model: 'claude-sonnet',
+      request_count: 2,
+      error_count: 0,
+      input_tokens: 100,
+      output_tokens: 50,
+      cached_tokens: 10,
+      cache_write_tokens: 5,
+      cost: 1.25,
+      last_at: '2026-07-02T00:00:00.000Z',
+    },
+  ],
+  ledger_entries: [
+    {
+      kind: 'llm',
+      id: 'log-1',
+      occurred_at: '2026-07-02T00:00:00.000Z',
+      cost: 1.25,
+      provider: 'anthropic',
+      model: 'claude-sonnet',
+      request_id: 'request-1',
+      status: 200,
+      ok: true,
+      input_tokens: 100,
+      output_tokens: 50,
+      cached_tokens: 10,
+      cache_write_tokens: 5,
+    },
+    {
+      kind: 'compute',
+      id: 'compute-1',
+      started_at: '2026-07-01T00:00:00.000Z',
+      ended_at: '2026-07-01T00:02:00.000Z',
+      billed_through_at: '2026-07-01T00:02:00.000Z',
+      cost: 0.5,
+      provider: 'daytona',
+      state: 'finalized',
+      compute_seconds: 120,
+      cpu_cores: 2,
+      memory_gb: 4,
+      disk_gb: 10,
+      gpu_count: 0,
+    },
+  ],
+} satisfies SessionCostDetail;
+
+test('listSessionCosts serializes account, project, limit, and zero offset', async () => {
+  nextResponse = page;
+
+  const result = await listSessionCosts({
+    accountId: 'account-1',
+    projectId: 'project-1',
+    limit: 25,
+    offset: 0,
+  });
+
+  expect(last()).toEqual({
+    url: 'http://test.local/usage/session-costs?account_id=account-1&project_id=project-1&limit=25&offset=0',
+    method: 'GET',
+  });
+  expect(result).toEqual(page);
+});
+
+test('listSessionCosts omits the query string when no filters are supplied', async () => {
+  nextResponse = { ...page, sessions: [] };
+
+  await listSessionCosts();
+
+  expect(last().url).toBe('http://test.local/usage/session-costs');
+});
+
+test('getSessionCostRecord encodes the session id and serializes scope filters', async () => {
+  nextResponse = detail;
+
+  const result = await getSessionCostRecord('session/with space', {
+    accountId: 'account-1',
+    projectId: 'project-1',
+  });
+
+  expect(last()).toEqual({
+    url: 'http://test.local/usage/session-costs/session%2Fwith%20space?account_id=account-1&project_id=project-1',
+    method: 'GET',
+  });
+  expect(result.ledger_entries.map((entry) => entry.kind)).toEqual(['llm', 'compute']);
+});

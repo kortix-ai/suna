@@ -8,7 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { previewSound } from '@/lib/sounds';
 import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
-import { Volume2 } from 'lucide-react';
+import { SpeakerHighIcon as Volume2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 export function SoundsTab() {
@@ -66,8 +66,9 @@ export function SoundsTab() {
                 min={0}
                 max={100}
                 value={[Math.round(preferences.volume * 100)]}
+                thumbLabel="Volume"
+                formatValue={(value) => `${value}%`}
                 onValueChange={(value) => setVolume(value[0] / 100)}
-                // className="accent-foreground h-1.5 flex-1 cursor-pointer"
               />
               <span className="text-muted-foreground w-8 text-right text-xs tabular-nums">
                 {Math.round(preferences.volume * 100)}%

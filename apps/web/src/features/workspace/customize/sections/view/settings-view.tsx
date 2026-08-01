@@ -35,6 +35,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   archiveProject,
   getProject,
@@ -51,15 +53,13 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { TrashIcon } from '@phosphor-icons/react';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
   applySandboxProviderResult,
   pollSandboxProviderTransition,
 } from './sandbox-provider-result';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { TrashSolid } from '@mynaui/icons-react';
-import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function SettingsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -153,7 +153,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
                     size="sm"
                     onClick={() => setArchiveOpen(true)}
                   >
-                    <TrashSolid className="size-4" />
+                    <TrashIcon className="size-4" />
                     Archive
                   </Button>
                 </div>
@@ -274,7 +274,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
               onValueChange={setDefaultBranch}
               disabled={!canManage || isPending}
             >
-              <SelectTrigger id="default-branch" className="font-mono text-xs" variant="popover">
+              <SelectTrigger id="default-branch" className="font-mono text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -407,9 +407,7 @@ function ExperimentalFeatureRow({
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {mutation.isPending ? (
-          <Loading className="text-muted-foreground size-3.5 animate-spin" />
-        ) : null}
+        {mutation.isPending ? <Loading className="text-muted-foreground size-3.5" /> : null}
         <Switch
           checked={pendingValue ?? feature.enabled}
           disabled={!canManage || mutation.isPending}
@@ -452,7 +450,9 @@ function SandboxProviderRow({
       // cached project shape.
       const kind = applySandboxProviderResult(queryClient, project.project_id, result);
       if (kind === 'preparation') {
-        successToast(`Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`);
+        successToast(
+          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
+        );
         // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
         // and refresh the project once it settles so the now-active provider shows.
         void pollSandboxProviderTransition(project.project_id, {
@@ -485,19 +485,20 @@ function SandboxProviderRow({
           </Badge>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          Pin this project to a specific sandbox provider, overriding the platform
-          default. New sessions here run on the chosen provider — “Automatic” follows
-          the platform default.
+          Pin this project to a specific sandbox provider, overriding the platform default. New
+          sessions here run on the chosen provider — “Automatic” follows the platform default.
         </p>
       </div>
       <Select
         value={current ?? AUTO_PROVIDER}
         onValueChange={(v) =>
-          mutation.mutate(v === AUTO_PROVIDER ? null : available.find((provider) => provider === v) ?? null)
+          mutation.mutate(
+            v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
+          )
         }
         disabled={!canManage || mutation.isPending}
       >
-        <SelectTrigger className="w-40 shrink-0" variant="popover">
+        <SelectTrigger className="w-40 shrink-0">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -605,68 +606,67 @@ function RepoCollaboratorInvite({
       </div>
 
       {canManage ? (
-      <form onSubmit={submit}>
-        <FieldGroup className="gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_auto] sm:items-end sm:gap-x-3">
-            <Field>
-              <div className="relative min-w-0">
-                <Icon.Github className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                <Input
-                  id="repo-collaborator-username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsSettingsViewJsxAttrPlaceholderGitHub84efb7a1',
-                  )}
-                  variant="popover"
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="pl-9"
-                />
-              </div>
-            </Field>
+        <form onSubmit={submit}>
+          <FieldGroup className="gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_auto] sm:items-end sm:gap-x-3">
+              <Field>
+                <div className="relative min-w-0">
+                  <Icon.Github className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                  <Input
+                    id="repo-collaborator-username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsSettingsViewJsxAttrPlaceholderGitHub84efb7a1',
+                    )}
+                    variant="popover"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="pl-9"
+                  />
+                </div>
+              </Field>
 
-            <Field>
-              <Select
-                value={permission}
-                onValueChange={(v) => setPermission(v as 'read' | 'write')}
-              >
-                <SelectTrigger
-                  id="repo-collaborator-permission"
-                  className="w-full"
-                  variant="popover"
+              <Field>
+                <Select
+                  value={permission}
+                  onValueChange={(v) => setPermission(v as 'read' | 'write')}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="write">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanEdit2eb88c1b',
-                    )}
-                  </SelectItem>
-                  <SelectItem value="read">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanView39f4dd36',
-                    )}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
+                  <SelectTrigger
+                    id="repo-collaborator-permission"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="write">
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanEdit2eb88c1b',
+                      )}
+                    </SelectItem>
+                    <SelectItem value="read">
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanView39f4dd36',
+                      )}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <Field>
-              <Button
-                type="submit"
-                className="w-full shrink-0 sm:w-auto"
-                disabled={!username.trim() || inviteMutation.isPending}
-              >
-                {inviteMutation.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
-                Add
-              </Button>
-            </Field>
-          </div>
-        </FieldGroup>
-      </form>
+              <Field>
+                <Button
+                  type="submit"
+                  className="w-full shrink-0 sm:w-auto"
+                  disabled={!username.trim() || inviteMutation.isPending}
+                >
+                  {inviteMutation.isPending ? <Loading className="size-3.5" /> : null}
+                  Add
+                </Button>
+              </Field>
+            </div>
+          </FieldGroup>
+        </form>
       ) : null}
     </div>
   );

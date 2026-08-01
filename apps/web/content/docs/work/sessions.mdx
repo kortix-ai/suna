@@ -25,8 +25,7 @@ Kortix does not write them for a session today.
 
 You can stop a session yourself. Resume brings back the same sandbox with the
 same filesystem and runtime identity. Only the running processes and memory
-reset. A v3 session keeps its runtime profile, harness, native agent, and ACP
-conversation identity.
+reset. The OpenCode conversation remains attached to the session.
 
 Kortix also stops an idle session for you:
 
@@ -48,15 +47,10 @@ Stop and resume keep the sandbox's identity and filesystem. Delete destroys
 the sandbox. Git is the only durable record: work the agent commits and
 pushes survives; everything else does not.
 
-## Runtime harness
+## Runtime
 
-A v2 session uses OpenCode REST. A v3 session uses the runtime profile selected
-by its logical agent. Supported harnesses are OpenCode, Claude Code, Codex, and
-Pi.
-
-Kortix stores the runtime profile, harness, config directory, and optional
-native agent when the session starts. Restart and resume keep these values.
-Create a new session to select another harness.
+Every session uses OpenCode REST. Kortix stores the selected OpenCode agent and
+model when the session starts. Restart and resume keep the same session runtime.
 
 ## Sharing a preview
 

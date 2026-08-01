@@ -1,23 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  buildClaudeSubscriptionProvider,
   formatPricePerMillion,
   formatTokenCount,
   gatewayModelId,
   pickInitialTab,
 } from './utils';
-
-describe('Claude subscription provider', () => {
-  test('is a distinct Claude Code connection backed by the setup token', () => {
-    expect(buildClaudeSubscriptionProvider()).toMatchObject({
-      id: 'claude',
-      label: 'Claude Code',
-      envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
-      hint: 'Claude Pro, Max, Team, or Enterprise subscription',
-    });
-  });
-});
 
 describe('pickInitialTab', () => {
   test('opens Add provider by default when providers are connected', () => {

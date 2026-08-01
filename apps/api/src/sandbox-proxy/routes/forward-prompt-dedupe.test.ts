@@ -37,6 +37,12 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
+// The connector pre-flight now runs on every turn-start. This file is about a
+// different concern, so keep it satisfied — unstubbed it reaches a real DB.
+mock.module('../../projects/lib/prompt-connector-preflight', () => ({
+  PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
+  missingPromptConnectorAuthorizations: async () => ({ ok: true }),
+}));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));

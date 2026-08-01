@@ -72,7 +72,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
-    expect(merged).not.toContain('npm install -g');
+    expect(merged).not.toContain('npm install -g opencode-ai');
+    expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');
   });
 
@@ -89,7 +90,8 @@ describe('buildLayeredDockerfile', () => {
   test('runs build-time and runtime tools as the standard kortix user', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
-    expect(merged).toContain("printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix");
+    expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
+    expect(merged).not.toContain("NOPASSWD:ALL\\n");
     expect(merged).toContain(
       'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral',
     );
@@ -227,6 +229,11 @@ describe('buildLayeredDockerfile', () => {
     });
     const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
     expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const ownershipIdx = withConfig.indexOf(
+      'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
+    );
+    expect(ownershipIdx).toBeGreaterThanOrEqual(0);
+    expect(ownershipIdx).toBeLessThan(verifyIdx);
     const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
     const stepText = withConfig.slice(precedingRun, verifyIdx);
     expect(stepText).not.toContain('set +e');

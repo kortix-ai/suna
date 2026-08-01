@@ -39,8 +39,8 @@ const OPENCODE_DIR = '.kortix/opencode';
  *
  * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
  * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
- * choice wires `.agents`. Claude Code and Pi keep their harness-native runtime
- * files in real `.claude` and `.pi` directories. The CLI links only the native
+ * choice wires `.agents`. Claude Code and Pi keep their local configuration
+ * in real `.claude` and `.pi` directories. The CLI links only the native
  * discovery subdirectories into those directories. Pi also reads a root
  * `AGENTS.md`. Cursor has no directory of its own and reads `AGENTS.md`.
  *
@@ -152,7 +152,7 @@ canonical system skills are available through each wired tool's native discovery
 location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, connectors, ACP, runtime profiles, or OpenCode,
+sandbox image, sessions, connectors, or OpenCode,
 Claude Code, Codex, and Pi configuration — read \`${CANONICAL_SKILL}\` first.
 It is the canonical reference.
 

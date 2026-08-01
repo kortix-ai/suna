@@ -1,7 +1,9 @@
 import { CustomizeSection } from '@/lib/customize-sections';
-import { Icon as IconMynauiType } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
-import { IconType } from 'react-icons/lib';
+import {
+  type Icon as IconMynauiType,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 export interface RailItem {
   section: CustomizeSection;

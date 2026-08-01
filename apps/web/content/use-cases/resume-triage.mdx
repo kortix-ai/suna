@@ -89,7 +89,7 @@ The agent scores only against the written rubric and always surfaces the evidenc
 behind every strength, gap, and score, so a decision can be checked. It never
 auto-rejects: a person makes every advance-or-reject decision. The agent produces
 the screen and the proposed slots; the hiring manager decides. Credentials are
-encrypted in the Secrets Manager and injected at runtime, never shown to the model
+encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to
 or written to logs.
 
 </Step>
@@ -116,12 +116,11 @@ person.
 The agent reads candidate applications and its output shapes hiring, so fairness
 and human judgment are built into the controls:
 
-- **Isolation.** Every application runs in its own microVM sandbox. The session
+- **Isolation.** Every application runs in its own isolated sandbox. The session
   reads only the resume it's seeded with and reaches only the calendar; only the
-  screen and proposed slots leave the sandbox.
+  screen and proposed slots are written back out.
 - **Scoped secrets.** The inbox, ATS, and calendar credentials are encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The agent never auto-rejects. It scores only against the
   written rubric and always surfaces the evidence behind every score, and a person
   makes every advance-or-reject decision.

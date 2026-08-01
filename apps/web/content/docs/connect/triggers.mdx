@@ -170,7 +170,7 @@ Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger
 
 | Source | Variables |
 | --- | --- |
-| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.fired_at }}`, `{{ cron.last_fired_at }}`. No top-level `fired_at`. |
+| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire). No top-level `fired_at`. |
 | webhook | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`. |
 | manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`. |
 

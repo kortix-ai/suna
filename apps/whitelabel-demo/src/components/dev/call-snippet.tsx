@@ -32,7 +32,11 @@ import {
   isCopyableHttp,
   renderHttp,
 } from '@/lib/call-snippets';
-import { type SnippetLanguage, type TokenKind, highlight } from '@/lib/syntax-highlight';
+import {
+  type SnippetLanguage,
+  type TokenKind,
+  highlight,
+} from '@/lib/syntax-highlight';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Code2, Copy } from 'lucide-react';
 import { useState } from 'react';
@@ -55,7 +59,11 @@ export function CallSnippet({
   return (
     <Collapsible defaultOpen={defaultOpen} className={cn('w-full', className)}>
       <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="xs" className="group gap-1.5 text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="xs"
+          className="group gap-1.5 text-muted-foreground"
+        >
           <Code2 className="size-3" />
           The API call
           <ChevronDown className="size-3 transition-transform group-data-[state=open]:rotate-180" />
@@ -63,9 +71,16 @@ export function CallSnippet({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-1.5 space-y-3 rounded-md border border-border bg-muted/30 p-3">
-          <p className="text-xs leading-relaxed text-muted-foreground">{snippet.summary}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {snippet.summary}
+          </p>
 
-          <Block label="SDK" caption="What this app runs." code={snippet.sdk} language="ts" />
+          <Block
+            label="SDK"
+            caption="What this app runs."
+            code={snippet.sdk}
+            language="ts"
+          />
 
           <Block
             label="HTTP"
@@ -79,15 +94,18 @@ export function CallSnippet({
             copyable={isCopyableHttp(snippet.http)}
           />
 
-          {/* Named explicitly rather than left implicit in the body above: a
-              snippet that let someone believe the browser sets `end_user_ref`
-              would teach exactly the forgery the proxy refuses. */}
           {snippet.serverInjected.length > 0 && (
             <div className="rounded-md border border-brand/30 bg-brand/5 px-2.5 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium">Added by the server, not the browser</span>
+                <span className="text-xs font-medium">
+                  Added by the server, not the browser
+                </span>
                 {snippet.serverInjected.map((field) => (
-                  <Badge key={field} variant="outline" className="font-mono text-[11px]">
+                  <Badge
+                    key={field}
+                    variant="outline"
+                    className="font-mono text-[11px]"
+                  >
                     {field}
                   </Badge>
                 ))}
@@ -97,16 +115,20 @@ export function CallSnippet({
 
           <ul className="space-y-1.5">
             {snippet.notes.map((note) => (
-              <li key={note} className="text-xs leading-relaxed text-muted-foreground">
+              <li
+                key={note}
+                className="text-xs leading-relaxed text-muted-foreground"
+              >
                 {note}
               </li>
             ))}
           </ul>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            <span className="font-mono">$KORTIX_API_KEY</span> is a placeholder. Nothing here ever
-            renders a real key, token or secret value — the key stays on your server, and the end
-            user&apos;s own token never reaches Kortix.
+            <span className="font-mono">$KORTIX_API_KEY</span> is a placeholder.
+            Nothing here ever renders a real key, token or secret value — the
+            key stays on your server, and the end user&apos;s own token never
+            reaches Kortix.
           </p>
         </div>
       </CollapsibleContent>
@@ -160,7 +182,9 @@ function Block({
         <Badge variant="secondary" className="text-[10px]">
           {label}
         </Badge>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{caption}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+          {caption}
+        </span>
         {copyable && (
           <Button
             variant="ghost"
@@ -168,7 +192,11 @@ function Block({
             aria-label={`Copy the ${label} call`}
             onClick={copy}
           >
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+            {copied ? (
+              <Check className="size-3" />
+            ) : (
+              <Copy className="size-3" />
+            )}
           </Button>
         )}
       </div>
@@ -188,7 +216,9 @@ function Block({
       ) : (
         // Prose, not a code block: there is no path to copy, and printing one
         // would teach hand-rolling the runtime transport the SDK owns.
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{code}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {code}
+        </p>
       )}
     </div>
   );

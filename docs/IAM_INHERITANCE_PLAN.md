@@ -1,9 +1,5 @@
 # IAM — agent-centric access & inheritance (plan)
 
-> **Runtime update on 2026-07-28.** The OpenCode-only status in this plan is
-> historical. Version 3 preserves the same agent grants while routing the
-> logical agent to OpenCode, Claude Code, Codex, or Pi.
-
 Turning the meeting notes into a grounded plan: what's real today, what the
 "pyramid" idea actually solves, whether it makes sense, and how to build it.
 

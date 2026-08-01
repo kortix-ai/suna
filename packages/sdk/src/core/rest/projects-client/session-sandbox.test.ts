@@ -71,11 +71,6 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
     opencode_session_id: "oc-1",
-    runtime_transport: "acp",
-    runtime_harness: "codex",
-    native_agent: "reviewer",
-    acp_server_id: SESSION,
-    acp_session_id: "codex-native-1",
     name: null,
     custom_name: null,
     agent_name: "default",
@@ -107,11 +102,6 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       updated_at: "2026-01-02T00:00:00Z",
     },
     opencode_session_id: "oc-1",
-    runtime_transport: "acp",
-    runtime_harness: "codex",
-    native_agent: "reviewer",
-    acp_server_id: SESSION,
-    acp_session_id: "codex-native-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
 });

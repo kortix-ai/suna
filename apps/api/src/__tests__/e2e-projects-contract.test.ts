@@ -194,6 +194,7 @@ mock.module('../projects/git', () => ({
     });
   },
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -583,6 +584,7 @@ describe('projects API contract', () => {
         });
       },
       listBranches: async () => [],
+      remoteBranchExists: async () => true,
       listCommits: async () => ({ entries: [], nextCursor: null }),
       getCommit: async () => null,
       getCommitDiff: async () => null,

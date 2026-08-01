@@ -6,11 +6,19 @@
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
-import { getEnv } from '@/lib/env-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { getEnv } from '@/lib/env-config';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import {
+  ArrowRightIcon as ArrowRight,
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, ChevronDown, Copy, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -21,7 +29,6 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
 import {
   Modal,
   ModalBody,
@@ -39,6 +46,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
@@ -874,7 +882,7 @@ function AddMappingDialog({
               onValueChange={setGroupId}
               disabled={mutation.isPending || groupsQuery.isLoading}
             >
-              <SelectTrigger variant="popover">
+              <SelectTrigger>
                 <SelectValue placeholder="Pick a group..." />
               </SelectTrigger>
               <SelectContent>

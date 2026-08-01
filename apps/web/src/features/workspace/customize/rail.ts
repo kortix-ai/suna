@@ -1,23 +1,24 @@
 import type { CustomizeSection } from '@/lib/customize-sections';
-import { ChatMessages, Sparkles } from '@mynaui/icons-react';
 import {
-  AlarmClock,
-  ArrowUpCircle,
-  AudioLines,
-  Bot,
-  Boxes,
-  Command,
-  Container,
-  GitFork,
-  Inbox,
-  KeyRound,
-  LucideSettings,
-  LucideUsersRound,
-  Monitor,
-  Plug,
-  Store,
-  Webhook,
-} from 'lucide-react';
+  AlarmIcon as AlarmClock,
+  ArrowCircleUpIcon as ArrowUpCircle,
+  ChatsIcon as ChatMessages,
+  CommandIcon as Command,
+  CubeIcon as Boxes,
+  GearSixIcon as LucideSettings,
+  GitForkIcon as GitFork,
+  KeyIcon as KeyRound,
+  MonitorIcon as Monitor,
+  PlugIcon as Plug,
+  RobotIcon as Bot,
+  ShippingContainerIcon as Container,
+  SparkleIcon as Sparkles,
+  StorefrontIcon as Store,
+  TrayIcon as Inbox,
+  UsersThreeIcon as LucideUsersRound,
+  WaveformIcon as AudioLines,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import type { RailGroup, RailItem } from './type';
 
 /**

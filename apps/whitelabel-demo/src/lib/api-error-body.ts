@@ -5,7 +5,7 @@
  * `code` to the top level, and has **no `body` field at all**
  * (`core/http/api/errors.ts`). Demo code that read `err.body` therefore never
  * fired: every Kortix-as-a-Backend refusal — the connector prompt, the agent
- * switch conflict, the per-end-user cap — collapsed into one generic message,
+ * switch conflict, or connector refusal — collapsed into one generic message,
  * and the classifiers written to handle them were dead code.
  *
  * Reading through one function means the next classifier cannot get this wrong.
@@ -33,7 +33,8 @@ export function serverErrorBody(err: unknown): ServerErrorBody | null {
   const code = candidate?.code ?? e.code;
   // ApiError.message is always coerced to a string and holds the server's
   // `error`/`detail` text, so it is a usable fallback when the body is absent.
-  const error = candidate?.error ?? (typeof e.message === 'string' ? e.message : undefined);
+  const error =
+    candidate?.error ?? (typeof e.message === 'string' ? e.message : undefined);
 
   if (code === undefined && error === undefined && !candidate) return null;
   return { code, error, connector: candidate?.connector, raw: candidate };

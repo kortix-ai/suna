@@ -23,11 +23,7 @@ import {
   AGENT_BROWSER_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
   OPENCODE_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   UV_SHA256_AMD64,
@@ -126,34 +122,6 @@ describe('runtime artifact integrity', () => {
     expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
   });
 
-  test('installs and probes each ACP adapter at an exact version', () => {
-    expect(rendered).toContain(
-      `"@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}"`,
-    );
-    expect(rendered).toContain(`"pi-acp@${PI_ACP_VERSION}"`);
-    expect(rendered).toContain(
-      `"@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      'npm install -g --prefix /home/kortix/.local',
-    );
-    expect(rendered).toContain('command -v claude-agent-acp');
-    expect(rendered).toContain('command -v codex-acp');
-    expect(rendered).toContain('command -v pi-acp');
-    expect(rendered).toContain('command -v pi');
-  });
 });
 
 describe('the Python runtime is managed by uv', () => {

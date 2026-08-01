@@ -1,25 +1,20 @@
 'use client';
-import { STATUS_TEXT, } from '@/components/ui/status';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { STATUS_TEXT } from '@/components/ui/status';
+import Loading from '@/components/ui/loading';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
-  ToolRunningContext,
   partInput,
   partOutput,
+  ToolOutputFallback,
+  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import {
-  Loader2,
-  Scissors,
-} from 'lucide-react';
-import {
-  useContext,
-} from 'react';
-
+import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
+import { useContext } from 'react';
 
 export function DCPDistillTool({ part }: ToolProps) {
   const input = partInput(part);
@@ -37,7 +32,7 @@ export function DCPDistillTool({ part }: ToolProps) {
           {ids && ids.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto text-xs">{ids.length} tools</span>
           )}
-          {isRunning && <Loader2 className="text-muted-foreground ml-auto size-3 animate-spin" />}
+          {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
     >
@@ -52,4 +47,3 @@ export function DCPDistillTool({ part }: ToolProps) {
   );
 }
 ToolRegistry.register('distill', DCPDistillTool);
-

@@ -117,6 +117,25 @@ describe('rescopeSessionBindings — SET semantics', () => {
     if (!result.ok) expect(result.offending).toEqual(['zendesk']);
   });
 
+  test('a public alias matches its canonical agent grant alias', () => {
+    expect(
+      rescopeSessionBindings({
+        current: {},
+        requested: {
+          email: '11111111-1111-4111-a111-111111111111',
+        },
+        grantedConnectors: ['kortix_email'],
+      }),
+    ).toEqual({
+      ok: true,
+      bindings: {
+        kortix_email: '11111111-1111-4111-a111-111111111111',
+      },
+      dropped: [],
+      changed: [],
+    });
+  });
+
   test('an empty map unbinds everything', () => {
     const result = rescopeSessionBindings({
       current: { gmail: 'p1' },
@@ -162,9 +181,9 @@ describe('the docs match the contract', () => {
           line,
         );
         if (!claimsFrozen) continue;
-        // `runtime_context` and `end_user_ref` genuinely ARE create-only.
+        // `runtime_context` genuinely is create-only.
         const aboutMovableFields = /\bsecrets\b|connector_bindings/.test(line);
-        const alsoNamesFrozenOnes = /runtime_context|end_user_ref/.test(line);
+        const alsoNamesFrozenOnes = /runtime_context/.test(line);
         expect({ path, line: line.trim().slice(0, 100) }).toMatchObject({
           path,
           line: aboutMovableFields && !alsoNamesFrozenOnes ? '<<must not claim frozen>>' : line.trim().slice(0, 100),

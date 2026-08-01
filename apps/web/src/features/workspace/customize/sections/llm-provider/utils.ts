@@ -1,32 +1,12 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
-import {
-  CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
-  CODEX_AUTH_JSON_SECRET_NAME,
-  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
-} from './constants';
+import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'claude') return 'Claude subscription';
   if (provider.id === 'codex') return 'ChatGPT subscription';
   if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
-}
-
-export function buildClaudeSubscriptionProvider(): LlmProviderEntry {
-  return {
-    id: 'claude',
-    label: 'Claude Code',
-    envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME],
-    authRequirement: {
-      methods: [{ envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME] }],
-    },
-    helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
-    hint: 'Claude Pro, Max, Team, or Enterprise subscription',
-    models: [],
-    featured: true,
-  };
 }
 
 type RuntimeProvidersSnapshot =

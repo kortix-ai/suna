@@ -48,6 +48,7 @@ function computerSpec(): ConnectorSpec {
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
+    authorizationStrategy: 'project',
     sensitive: false,
     app: null,
     account: null,

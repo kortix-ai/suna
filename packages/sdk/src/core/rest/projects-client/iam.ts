@@ -854,10 +854,20 @@ export async function deleteAuditWebhook(accountId: string, webhookId: string) {
 export interface IamAuditEvent {
   event_id: string;
   occurred_at: string;
+  project_id: string | null;
+  session_id: string | null;
   actor_user_id: string | null;
+  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
+  source: string | null;
+  outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
   action: string;
   resource_type: string;
   resource_id: string | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  request_id: string | null;
+  trace_id: string | null;
+  correlation_id: string | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   ip: string | null;
@@ -871,6 +881,13 @@ export interface ListAuditFilter {
   action?: string;
   /** Only events performed by this user_id. */
   actor?: string;
+  project_id?: string;
+  session_id?: string;
+  actor_type?: 'human' | 'agent' | 'service_account' | 'system';
+  source?: string;
+  outcome?: 'success' | 'failure' | 'denied' | 'pending';
+  request_id?: string;
+  correlation_id?: string;
   /** Prefix match on resource_type (e.g. "project_session"). */
   resource_type?: string;
   /** ISO datetime — events at or after. */
@@ -889,6 +906,13 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   const params = new URLSearchParams();
   if (filter.action) params.set('action', filter.action);
   if (filter.actor) params.set('actor', filter.actor);
+  if (filter.project_id) params.set('project_id', filter.project_id);
+  if (filter.session_id) params.set('session_id', filter.session_id);
+  if (filter.actor_type) params.set('actor_type', filter.actor_type);
+  if (filter.source) params.set('source', filter.source);
+  if (filter.outcome) params.set('outcome', filter.outcome);
+  if (filter.request_id) params.set('request_id', filter.request_id);
+  if (filter.correlation_id) params.set('correlation_id', filter.correlation_id);
   if (filter.resource_type) params.set('resource_type', filter.resource_type);
   if (filter.since) params.set('since', filter.since);
   if (filter.until) params.set('until', filter.until);

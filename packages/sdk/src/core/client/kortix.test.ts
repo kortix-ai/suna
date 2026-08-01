@@ -1,8 +1,8 @@
-import { test, expect, beforeEach, mock } from 'bun:test';
-import { createKortix, SessionNotReadyError } from './kortix';
-import { isConfigured } from '../http/config';
+import { beforeEach, expect, mock, test } from 'bun:test';
 import { listFiles as globalListFiles } from '../files/client';
 import { ApiError } from '../http/api/errors';
+import { isConfigured } from '../http/config';
+import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
 let calls: { url: string; method: string; body?: unknown }[] = [];
@@ -47,9 +47,38 @@ test('session(projectId, sessionId) binds both ids', async () => {
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
 });
 
+test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
+  await kortix.session('PID123', 'SID456').cost();
+
+  expect(calls).toHaveLength(1);
+  expect(last().url).toBe('http://test.local/usage/session-costs/SID456?project_id=PID123');
+  expect(last().method).toBe('GET');
+});
+
 test('project(id).session(sid) is the same session handle', async () => {
   await kortix.project('PA').session('SB').get();
   expect(last().url).toContain('/projects/PA/sessions/SB');
+});
+
+test('session(...).scope reads the authoritative session scope', async () => {
+  await kortix.session('PID123', 'SID456').scope();
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().method).toBe('GET');
+});
+
+test('session(...).rescope writes canonical connector authorization bindings', async () => {
+  await kortix.session('PID123', 'SID456').rescope({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({
+    connector_bindings: {
+      gmail: { authorization_id: 'AUTH-1' },
+    },
+  });
 });
 
 test('project(id).sessions.list forwards manager inventory scope', async () => {
@@ -347,7 +376,8 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
   await kortix.project('PID123').connectors.auth.discover({
-    slug: 'hubspot', provider: 'postman',
+    slug: 'hubspot',
+    provider: 'postman',
     spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
   });
   expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
@@ -362,6 +392,11 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.setCredentialMode('slack-1', 'shared');
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential-mode');
 
+  await kortix.project('PID123').connectors.setAuthorizationStrategy('slack-1', 'user');
+  expect(last().url).toContain(
+    '/executor/projects/PID123/connectors/slack-1/authorization-strategy',
+  );
+
   await kortix.project('PID123').connectors.setSensitive('slack-1', true);
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sensitive');
 
@@ -369,7 +404,9 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('GET');
 
-  await kortix.project('PID123').connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
+  await kortix
+    .project('PID123')
+    .connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
@@ -380,7 +417,9 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/executor/projects/PID123/discover/integrations?q=notion');
 
   await kortix.project('PID123').connectors.discover.detail('mcp/notion');
-  expect(last().url).toContain('/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion');
+  expect(last().url).toContain(
+    '/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion',
+  );
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect');
@@ -389,6 +428,21 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
   expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect/finalize');
   expect(last().method).toBe('POST');
+});
+
+test('project(id).connectors exposes canonical authorizations with a profiles alias', async () => {
+  await kortix.project('PID123').connectors.authorizations.list();
+  expect(last().url).toContain('/projects/PID123/connector-profiles');
+
+  await kortix.project('PID123').connectors.authorizations.reconcile({
+    connector_alias: 'gmail',
+    owner_type: 'project',
+    label: 'Project Gmail',
+  });
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.profiles.list();
+  expect(last().url).toContain('/projects/PID123/connector-profiles');
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
@@ -506,7 +560,10 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('GET');
 
-  await kortix.accounts.audit.webhooks.create('ACC1', { name: 'siem', url: 'https://siem.example.com/hook' });
+  await kortix.accounts.audit.webhooks.create('ACC1', {
+    name: 'siem',
+    url: 'https://siem.example.com/hook',
+  });
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('POST');
 
@@ -615,6 +672,28 @@ test('kortix.billing.credits covers purchase + auto-topup get/configure', async 
   expect(last().method).toBe('POST');
 });
 
+test('kortix.billing.sessionCosts covers paginated list and detail reads', async () => {
+  await kortix.billing.sessionCosts.list({
+    accountId: 'ACC1',
+    projectId: 'PID1',
+    limit: 20,
+    offset: 0,
+  });
+  expect(last().url).toBe(
+    'http://test.local/usage/session-costs?account_id=ACC1&project_id=PID1&limit=20&offset=0',
+  );
+  expect(last().method).toBe('GET');
+
+  await kortix.billing.sessionCosts.get('SID/1', {
+    accountId: 'ACC1',
+    projectId: 'PID1',
+  });
+  expect(last().url).toBe(
+    'http://test.local/usage/session-costs/SID%2F1?account_id=ACC1&project_id=PID1',
+  );
+  expect(last().method).toBe('GET');
+});
+
 test('kortix.marketplace covers public catalog browse + authed sources CRUD (top-level, not project-scoped)', async () => {
   await kortix.marketplace.items({ query: 'slack' });
   expect(last().url).toContain('/marketplace/items?query=slack');
@@ -677,7 +756,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function mockTwoSessionRuntimes() {
+function mockTwoSessionSandboxes() {
   return mock(async (input: unknown) => {
     const url = requestUrl(input);
     calls.push({ url, method: 'POST' });
@@ -691,15 +770,15 @@ function mockTwoSessionRuntimes() {
   }) as unknown as typeof fetch;
 }
 
-test('two session handles resolve independent runtimes: A.send never crosses to B (or back)', async () => {
-  globalThis.fetch = mockTwoSessionRuntimes();
+test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {
+  globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
   const a = k.session('PROJ', 'SESS-A');
   const b = k.session('PROJ', 'SESS-B');
 
   await a.ensureReady();
-  await b.ensureReady(); // resolves AFTER a — used to clobber the shared global runtime
+  await b.ensureReady(); // resolves AFTER a — guards against shared sandbox state
 
   await a.send('hello from A');
   const aPromptCall = calls.find((c) => c.url.includes('/message'));
@@ -748,7 +827,11 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   });
   await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
 
-  const promptCall = calls.find((call) => call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  const promptCall = calls.find(
+    (call) =>
+      call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') &&
+      call.method === 'POST',
+  );
   expect(promptCall?.body).toMatchObject({
     agent: 'kortix',
     model: { providerID: 'kortix', modelID: 'glm-5.2' },
@@ -797,7 +880,11 @@ test('changeModel invalidates the persisted default before the next send', async
   await handle.changeModel('kortix/gpt-5.6-mini');
   await handle.send('after change');
 
-  const prompts = calls.filter((call) => call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  const prompts = calls.filter(
+    (call) =>
+      call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') &&
+      call.method === 'POST',
+  );
   expect(prompts.map((call) => call.body)).toEqual([
     expect.objectContaining({
       model: { providerID: 'kortix', modelID: 'glm-5.2' },
@@ -806,6 +893,28 @@ test('changeModel invalidates the persisted default before the next send', async
       model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
     }),
   ]);
+});
+
+test('changeModel surfaces push_failed so a half-applied change is not read as saved', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.endsWith('/projects/PROJ/sessions/SESS-HALF/model')) {
+      return jsonResponse({
+        opencode_model: 'kortix/deepseek-v4-flash',
+        applied_live: false,
+        push_failed: true,
+        detail: 'stored, but not pushed: env sync failed: 502 upstream-closed-before-headers',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const result = await k.session('PROJ', 'SESS-HALF').changeModel('kortix/deepseek-v4-flash');
+
+  expect(result.push_failed).toBe(true);
+  expect(result.applied_live).toBe(false);
+  expect(result.detail).toContain('502 upstream-closed-before-headers');
 });
 
 test('per-call and handle prompt choices override persisted session defaults', async () => {
@@ -845,7 +954,11 @@ test('per-call and handle prompt choices override persisted session defaults', a
     agent: 'per-call-agent',
   });
 
-  const prompts = calls.filter((call) => call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  const prompts = calls.filter(
+    (call) =>
+      call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') &&
+      call.method === 'POST',
+  );
   expect(prompts.map((call) => call.body)).toEqual([
     expect.objectContaining({
       model: { providerID: 'persisted', modelID: 'model' },
@@ -860,7 +973,12 @@ test('per-call and handle prompt choices override persisted session defaults', a
       agent: 'per-call-agent',
     }),
   ]);
-  expect(calls.filter((call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET')).toHaveLength(1);
+  expect(
+    calls.filter(
+      (call) =>
+        call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET',
+    ),
+  ).toHaveLength(1);
 });
 
 test('a failed persisted-default read is retried by the next send', async () => {
@@ -898,7 +1016,11 @@ test('a failed persisted-default read is retried by the next send', async () => 
   await handle.send('second');
 
   expect(sessionReads).toBe(4);
-  const prompts = calls.filter((call) => call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') && call.method === 'POST');
+  const prompts = calls.filter(
+    (call) =>
+      call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') &&
+      call.method === 'POST',
+  );
   expect(prompts).toHaveLength(1);
   expect(prompts[0]?.body).toMatchObject({
     model: { providerID: 'persisted', modelID: 'model' },
@@ -907,8 +1029,8 @@ test('a failed persisted-default read is retried by the next send', async () => 
   });
 });
 
-test('previewUrl uses the handle\'s own sandbox id, not whichever session resolved last', async () => {
-  globalThis.fetch = mockTwoSessionRuntimes();
+test("previewUrl uses the handle's own sandbox id, not whichever session resolved last", async () => {
+  globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
   const a = k.session('PROJ', 'SESS-A');
@@ -944,8 +1066,8 @@ test('health() resolves gracefully (ok: false) before ensureReady() instead of t
   expect(result.status).toBe(0);
 });
 
-test('health() resolves against the handle\'s own runtime URL once ready', async () => {
-  globalThis.fetch = mockTwoSessionRuntimes();
+test("health() resolves against the handle's own runtime URL once ready", async () => {
+  globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const a = k.session('PROJ', 'SESS-A');
 
@@ -1135,7 +1257,14 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
     if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
       startCalls += 1;
       // First attempt: a failure shape (no sandbox / not ready).
-      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, opencode_session_id: null, agent_name: 'agent' });
+      if (startCalls === 1)
+        return jsonResponse({
+          stage: 'failed',
+          retriable: true,
+          sandbox: null,
+          opencode_session_id: null,
+          agent_name: 'agent',
+        });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
     }
     return jsonResponse({ ok: true });
@@ -1157,12 +1286,14 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
 // follows (P0 fix: cross-session bleed for a host juggling multiple open
 // sessions concurrently) ─────────────────────────────────────────────────────
 
-test("session(...).files hits THIS session's own runtime URL, not whichever session is globally \"active\"", async () => {
+test('session(...).files hits THIS session\'s own runtime URL, not whichever session is globally "active"', async () => {
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
     calls.push({ url, method: 'GET' });
-    if (url.includes('/sessions/FILES-A/start')) return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
-    if (url.includes('/sessions/FILES-B/start')) return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
+    if (url.includes('/sessions/FILES-A/start'))
+      return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
+    if (url.includes('/sessions/FILES-B/start'))
+      return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
     if (url.includes('/file?path=')) return jsonResponse([]);
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
@@ -1195,7 +1326,8 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
     calls.push({ url, method: 'GET' });
-    if (url.includes('/sessions/FILES-AUTO/start')) return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
+    if (url.includes('/sessions/FILES-AUTO/start'))
+      return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
     if (url.includes('/file/mkdir')) return jsonResponse(true);
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;

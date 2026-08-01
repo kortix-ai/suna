@@ -300,63 +300,30 @@ describe('sensitive connector — reads gate too', () => {
   });
 });
 
-describe('per-CONNECTION policies', () => {
-  // One connector, several connections (support@, sales@, a member's own).
-  // Connector rules are keyed by the connector, so they cannot say "sales@ may
-  // send, support@ may not". Connection rules sit between project and connector.
-  const resolve = (
-    connectionPolicies: Policy[],
-    connectorPolicies: Policy[] = [],
-    projectPolicies: Policy[] = [],
-  ) =>
-    resolveEffectiveAction({
-      fullPath: 'gmail.send_email',
-      relPath: 'send_email',
-      projectPolicies,
-      connectionPolicies,
-      connectorPolicies,
-      risk: 'write',
-      defaultMode: 'risk',
-    });
-
-  test('a connection rule beats the connector default', () => {
-    const r = resolve([{ match: 'send_email', action: 'always_run' }], [
-      { match: '*', action: 'block' },
-    ]);
-    expect(r.action).toBe('always_run');
-    expect(r.source).toBe('connection');
-  });
-
-  test('two connections under one connector can differ', () => {
-    expect(resolve([{ match: 'send_email', action: 'always_run' }]).action).toBe('always_run');
-    expect(resolve([{ match: 'send_email', action: 'block' }]).action).toBe('block');
-  });
-
-  test('a project rule still cannot be overridden by a connection', () => {
-    // The admin guardrail must survive the new, more specific scope.
-    const r = resolve([{ match: 'send_email', action: 'always_run' }], [], [
-      { match: 'gmail.send_email', action: 'block' },
-    ]);
-    expect(r.action).toBe('block');
-    expect(r.source).toBe('project');
-  });
-
-  test('no connection rule falls through to the connector, unchanged', () => {
-    const r = resolve([], [{ match: 'send_email', action: 'require_approval' }]);
-    expect(r.action).toBe('require_approval');
-    expect(r.source).toBe('connector');
-  });
-
-  test('omitting connection policies entirely behaves exactly as before', () => {
-    const r = resolveEffectiveAction({
+describe('authorization policy removal', () => {
+  test('two authorizations use the same connector profile policy', () => {
+    const base = {
       fullPath: 'gmail.send_email',
       relPath: 'send_email',
       projectPolicies: [],
-      connectorPolicies: [{ match: 'send_email', action: 'block' }],
-      risk: 'write',
-      defaultMode: 'risk',
-    });
-    expect(r.action).toBe('block');
-    expect(r.source).toBe('connector');
+      connectorPolicies: [{ match: 'send_email', action: 'block' as const }],
+      risk: 'write' as const,
+      defaultMode: 'risk' as const,
+    };
+    const expected = {
+      action: 'block',
+      source: 'connector',
+    } as const;
+    const firstAuthorization = {
+      ...base,
+      connectionPolicies: [{ match: 'send_email', action: 'always_run' as const }],
+    };
+    const secondAuthorization = {
+      ...base,
+      connectionPolicies: [{ match: 'send_email', action: 'require_approval' as const }],
+    };
+
+    expect(resolveEffectiveAction(firstAuthorization)).toEqual(expected);
+    expect(resolveEffectiveAction(secondAuthorization)).toEqual(expected);
   });
 });

@@ -1593,9 +1593,9 @@
       "checklistAuditTitle": "完全な監査エクスポート",
       "checklistAuditDescription": "すべてのエージェントのアクションを SIEM へストリーミング。",
       "checklistSandboxesTitle": "分離サンドボックス",
-      "checklistSandboxesDescription": "各セッションは、サーバー側で資格情報を解決する一時VMで実行されます。",
+      "checklistSandboxesDescription": "各セッションは専用の分離されたマシンで実行されます。",
       "checklistSecretsTitle": "暗号化されたシークレット",
-      "checklistSecretsDescription": "実行時にトークンプロキシ経由で注入され、モデルには決して見えません。",
+      "checklistSecretsDescription": "コネクタの認証情報はサーバー側で仲介され、マシンに入ることはありません。ランタイムのシークレットは、セッションを開始した人のロールとエージェントに付与された権限を通じてのみ届きます。",
       "deploymentEyebrow": "デプロイ",
       "deploymentTitle": "あなたのデータが外に出る必要はありません。",
       "deploymentDescription": "Kortix はオープンソースです。同じスタックがどこでも動き、すべてがあなたのものです。あらゆる設定、あらゆる会話、あらゆるコンテキストの 1 バイトまで。データのロックインは決してありません。",
@@ -1643,7 +1643,7 @@
       "onboardingProcessTitle": "セキュリティレビューから本番環境の最初のエージェントまで、明確な道筋があります。",
       "architectureEyebrow": "スケールのための設計",
       "architectureTitle": "デフォルトで分離。制限なくスケール。",
-      "architectureDescription": "各セッションは専用の分離された VM 上で、専用の Git ブランチで実行されます。数十万のエージェントを並列で稼働させても、何も衝突せず、あらゆる変更はレビュー可能な変更リクエストを通じて統合されます。",
+      "architectureDescription": "各セッションは専用の分離されたマシン上で、専用の Git ブランチで実行されます。数十万のエージェントを並列で稼働させても、何も衝突せず、あらゆる変更はレビュー可能な変更リクエストを通じて統合されます。",
       "architectureSandboxTitle": "セッションごとにサンドボックス",
       "architectureSandboxDescription": "各エージェントには、main のクリーンなクローンを備えた分離されたマシンが与えられます。共有状態も、相互干渉もありません。",
       "architectureBranchTitle": "エージェントごとにブランチ",
@@ -4649,10 +4649,10 @@
     },
     "componentsLayoutUserMenu": {
       "line146JsxAttrAriaLabelYourMenu": "あなたのメニュー",
-      "line213JsxAttrLabelUserSettings": "ユーザー設定",
+      "line213JsxAttrLabelUserSettings": "環境設定",
       "line253JsxAttrLabelLogOut": "ログアウト",
       "line142JsxAttrAriaLabelYourMenu": "あなたのメニュー",
-      "line209JsxAttrLabelUserSettings": "ユーザー設定",
+      "line209JsxAttrLabelUserSettings": "環境設定",
       "line248JsxAttrLabelLogOut": "ログアウト"
     },
     "componentsMaintenanceMaintenancePage": {

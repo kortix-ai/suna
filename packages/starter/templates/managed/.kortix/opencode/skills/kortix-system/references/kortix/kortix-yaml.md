@@ -9,21 +9,13 @@ The platform parser is permissive: it never throws on a bad entry.
 Instead, bad triggers go into an `errors` list returned alongside the
 good ones, so a single typo doesn't break the whole file.
 
-This page documents the current YAML schemas:
-
-- `kortix_version: 2` uses one OpenCode runtime.
-- `kortix_version: 3` uses ACP runtime profiles and supports OpenCode, Claude
-  Code, Codex, and Pi.
-
-Both versions use a governance-only `agents:` name-to-block map. Version 3
-adds the required `runtimes:` map and requires each logical agent to reference
-one runtime profile through `runtime`.
+This page documents `kortix_version: 2`, which uses OpenCode REST and a
+governance-only `agents:` name-to-block map.
 
 The authoritative structural spec is the public JSON Schema:
-`https://kortix.com/schema/kortix.v3.schema.json`,
 `https://kortix.com/schema/kortix.v2.schema.json`, or
 `https://kortix.com/schema/kortix.schema.json` for all published versions.
-Use `kortix schema --version 3` offline.
+Use `kortix schema --version 2` offline.
 
 > **Legacy note — v1 used TOML.** Projects created before v2 shipped
 > may still have a `kortix.toml` at the root with `kortix_version: 1`
@@ -114,102 +106,6 @@ agents:
     kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
-## Version 3 multi-harness example
-
-Enable the project experiment `acp_runtime`, shown as **ACP &
-Multi-Harness**, before starting a v3 session.
-
-```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
-default_agent: opencode
-
-project:
-  name: my-project
-  description: OpenCode, Claude Code, Codex, and Pi.
-
-env:
-  optional:
-    - ANTHROPIC_API_KEY
-    - OPENAI_API_KEY
-    - CODEX_API_KEY
-
-runtimes:
-  opencode:
-    harness: opencode
-    config_dir: .kortix/opencode
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  pi:
-    harness: pi
-    config_dir: .pi
-
-agents:
-  opencode:
-    runtime: opencode
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-  claude:
-    runtime: claude
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-  codex:
-    runtime: codex
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-  pi:
-    runtime: pi
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-```
-
-### `runtimes:` in version 3
-
-`runtimes` is required and must contain at least one named runtime profile.
-
-| Key | Required | Notes |
-| --- | --- | --- |
-| `harness` | yes | `opencode`, `claude`, `codex`, or `pi`. |
-| `config_dir` | no | Repo-relative native config directory. Defaults by harness. |
-
-The default config directories are `.kortix/opencode`, `.claude`, `.codex`,
-and `.pi`.
-
-### `agents:` in version 3
-
-Every logical agent must select a declared runtime profile.
-
-| Key | Required | Notes |
-| --- | --- | --- |
-| `runtime` | yes | Name of one profile under `runtimes`. |
-| `agent` | no | Harness-native agent identifier. Omit for the harness default. |
-| `enabled` | no | Defaults to `true`. |
-| `connectors` | no | Kortix connector grant. Defaults to `none`. |
-| `secrets` | no | Runtime-secret grant. Defaults to `none`. |
-| `skills` | no | Skill grant. Defaults to `none`. |
-| `kortix_cli` | no | Kortix CLI/API grant. Defaults to `none`. |
-| `workspace` | no | `runtime`, `read`, or `branch`. |
-
-Kortix freezes the selected runtime profile when the session starts. A
-manifest edit or in-place restart does not change an existing session's
-harness. Start a new session to use another profile.
-
-Harness behavior stays in `config_dir`. Version 3 rejects OpenCode behavior
-fields such as `model`, `mode`, `temperature`, and `permission` in a logical
-agent block.
-
 ## `agents:` in version 2
 
 Per-agent **governance overlay**. OpenCode-native behavior (prompt, mode,
@@ -268,9 +164,8 @@ server/LLM-gateway catalog rather than a sandbox-local provider list.
 
 ## Schema versioning
 
-`kortix_version` is the schema version. Versions 2 and 3 are YAML-only.
-Version 2 requires `default_agent` and `agents`. Version 3 also requires
-`runtimes` and `agents.<name>.runtime`.
+`kortix_version` is the schema version. Version 2 is YAML-only and requires
+`default_agent` and `agents`.
 
 A manifest declaring a version higher than
 the platform knows about is rejected outright — the platform won't
@@ -286,7 +181,7 @@ self-describing at a glance.
 | ---------------------- | ------------------------------------------------------------------- |
 | Trigger sweep          | `triggers:`                                                          |
 | Sandbox builder        | `sandbox:`                                                           |
-| Sandbox runtime        | v2 `opencode:` or v3 `runtimes:` and `agents.<name>.runtime`          |
+| Sandbox runtime        | v2 `opencode:`                                                   |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
@@ -461,25 +356,26 @@ Variables available on every fire:
 
 | Variable             | Source                                                         |
 | -------------------- | -------------------------------------------------------------- |
-| `{{ fired_at }}`     | ISO-8601 timestamp of this fire.                               |
 | `{{ trigger.slug }}` | The trigger's slug.                                            |
 | `{{ trigger.type }}` | `"cron"` or `"webhook"`.                                       |
 | `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
 
-Cron-only additions:
+Cron-only additions. There is **no** `fired_at` on a cron fire — use
+`cron.scheduled_for`:
 
-| Variable                | Source                                  |
-| ----------------------- | ---------------------------------------- |
-| `{{ cron.schedule }}`   | The croner expression that just fired.  |
-| `{{ cron.timezone }}`   | Configured tz (defaults to `"UTC"`).    |
-| `{{ cron.fired_at }}`   | Same as top-level `fired_at`.           |
-| `{{ cron.last_fired_at }}` | Previous fire timestamp (or empty).  |
-| `{{ last_fired_at }}`   | Same as `cron.last_fired_at`.           |
+| Variable                        | Source                                        |
+| ------------------------------- | --------------------------------------------- |
+| `{{ cron.schedule }}`           | The croner expression that just fired.        |
+| `{{ cron.timezone }}`           | Configured tz (defaults to `"UTC"`).          |
+| `{{ cron.scheduled_for }}`      | The slot this fire is for (ISO-8601).         |
+| `{{ cron.claimed_at }}`         | When the scheduler picked the slot up.        |
+| `{{ cron.last_scheduled_for }}` | The previous slot; empty on the first fire.   |
 
 Webhook-only additions:
 
 | Variable          | Source                                                          |
 | ----------------- | ----------------------------------------------------------------- |
+| `{{ fired_at }}`  | ISO-8601 timestamp of this fire. Webhook and manual fires only.  |
 | `{{ body.* }}`    | JSON-parsed request body. Dotted access works.                  |
 | `{{ headers.* }}` | `content_type`, `user_agent`, `forwarded_for`.                  |
 

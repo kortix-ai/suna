@@ -9,7 +9,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import type { Bot } from 'lucide-react';
+import type { RobotIcon as Bot } from '@phosphor-icons/react';
 
 export function Segmented<T extends string>({
   options,
@@ -71,7 +71,9 @@ export function SectionHeader({ icon: Icon, title }: { icon: typeof Bot; title: 
   return (
     <div className="flex items-center gap-2">
       <Icon className="text-muted-foreground/70 size-3.5 shrink-0" />
-      <span className="text-foreground/80 text-xs font-medium tracking-wide uppercase">{title}</span>
+      <span className="text-foreground/80 text-xs font-medium tracking-wide uppercase">
+        {title}
+      </span>
     </div>
   );
 }
@@ -94,14 +96,19 @@ export function LayerHeader({
   icon: typeof Bot;
 }) {
   return (
-    <div className="flex items-center gap-2.5 border-b border-border/60 pb-2.5">
+    <div className="border-border/60 flex items-center gap-2.5 border-b pb-2.5">
       <span
         className={cn(
           'flex size-6 shrink-0 items-center justify-center rounded-sm',
           tone === 'kortix' ? 'bg-kortix-base/20' : 'bg-muted',
         )}
       >
-        <Icon className={cn('size-3.5', tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground')} />
+        <Icon
+          className={cn(
+            'size-3.5',
+            tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground',
+          )}
+        />
       </span>
       <Badge variant={tone} size="sm" className="shrink-0 tracking-wide uppercase">
         {label}
