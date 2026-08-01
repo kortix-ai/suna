@@ -8,6 +8,7 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
+import { CSV_ROW_CAP, toCsv } from '../../shared/cost-csv';
 import { getCostSummary, listCostByProject } from '../../shared/cost-rollups';
 import {
   type CostSort,
@@ -238,6 +239,7 @@ const SessionCostListQuerySchema = z
     sort: z.enum(['total_desc', 'total_asc', 'recent']).optional(),
     limit: z.string().optional(),
     offset: z.string().optional(),
+    format: z.enum(['csv']).optional(),
   })
   .openapi('SessionCostListQuery');
 
@@ -448,7 +450,15 @@ usageApp.openapi(
     ...auth,
     request: { query: SessionCostListQuerySchema },
     responses: {
-      200: json(SessionCostListResponseSchema, 'Paginated session cost summaries'),
+      200: {
+        description:
+          'Paginated session cost summaries, or (format=csv) the same filtered rows as a ' +
+          'CSV attachment capped at CSV_ROW_CAP.',
+        content: {
+          'application/json': { schema: SessionCostListResponseSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
       ...errors(400, 401, 403),
     },
   }),
@@ -475,6 +485,56 @@ usageApp.openapi(
     const projectId = c.req.query('project_id') || undefined;
     const ownerId = c.req.query('owner_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
+
+    if (c.req.query('format') === 'csv') {
+      // Same filtered query as the JSON branch (accountId, projectId, ownerId,
+      // window, sort) — only limit/offset differ, because a CSV export wants
+      // up to CSV_ROW_CAP rows in one shot, not one paginated page of it.
+      const page = await listSessionCosts({
+        accountId,
+        projectId,
+        ownerId,
+        window: parsed.window,
+        sort: parsed.sort,
+        limit: CSV_ROW_CAP,
+        offset: 0,
+      });
+      const body = toCsv(
+        [
+          'session_id',
+          'project_name',
+          'owner',
+          'status',
+          'requests',
+          'llm_cost_usd',
+          'compute_cost_usd',
+          'total_cost_usd',
+          'last_activity_at',
+        ],
+        page.sessions.map((row) => [
+          row.session_id,
+          row.project_name,
+          // owner_name is the resolved display label (it already falls back
+          // to owner_email when a user has no name set — see
+          // resolveSessionOwnerIdentities), so one "owner" column reuses it
+          // instead of the route picking its own fallback across
+          // owner_name/owner_email/owner_id.
+          row.owner_name,
+          row.status,
+          row.request_count,
+          row.llm_cost,
+          row.compute_cost,
+          row.total_cost,
+          row.last_activity_at,
+        ]),
+      );
+      return c.body(body, 200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="kortix-session-costs.csv"',
+        'x-kortix-row-cap': String(CSV_ROW_CAP),
+      });
+    }
+
     return c.json(await listSessionCosts({ accountId, projectId, ownerId, ...parsed }));
   },
 );
@@ -534,31 +594,83 @@ usageApp.openapi(
           sort: z.enum(PROJECT_COST_SORTS).optional(),
           limit: z.string().optional(),
           offset: z.string().optional(),
+          format: z.enum(['csv']).optional(),
         })
         .openapi('ProjectCostQuery'),
     },
     responses: {
-      200: json(ProjectCostPageSchema, 'Project spend rollup'),
+      200: {
+        description:
+          'Project spend rollup, or (format=csv) the same filtered rows as a CSV ' +
+          'attachment capped at CSV_ROW_CAP.',
+        content: {
+          'application/json': { schema: ProjectCostPageSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
       ...errors(400, 401, 403),
     },
   }),
   async (c) => {
+    let accountId: string;
+    let window: CostWindow;
+    let sort: CostSort;
+    let limit: number;
+    let offset: number;
     try {
-      const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
-      return c.json(
-        await listCostByProject({
-          accountId,
-          window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
-          sort: parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc'),
-          ...parseCostPagination({ limit: c.req.query('limit'), offset: c.req.query('offset') }),
-        }),
-      );
+      window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
+      sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
+      ({ limit, offset } = parseCostPagination({
+        limit: c.req.query('limit'),
+        offset: c.req.query('offset'),
+      }));
+      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
     } catch (error) {
       if (error instanceof InvalidCostQueryError) {
         throw new HTTPException(400, { message: error.message });
       }
       throw error;
     }
+
+    if (c.req.query('format') === 'csv') {
+      // Same filtered query as the JSON branch (accountId, window, sort) —
+      // only limit/offset differ, because a CSV export wants up to
+      // CSV_ROW_CAP rows in one shot, not one paginated page of it.
+      const page = await listCostByProject({
+        accountId,
+        window,
+        sort,
+        limit: CSV_ROW_CAP,
+        offset: 0,
+      });
+      const body = toCsv(
+        [
+          'project_id',
+          'project_name',
+          'sessions',
+          'llm_cost_usd',
+          'compute_cost_usd',
+          'total_cost_usd',
+          'last_activity_at',
+        ],
+        page.projects.map((row) => [
+          row.project_id,
+          row.project_name,
+          row.session_count,
+          row.llm_cost,
+          row.compute_cost,
+          row.total_cost,
+          row.last_activity_at,
+        ]),
+      );
+      return c.body(body, 200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="kortix-cost-by-project.csv"',
+        'x-kortix-row-cap': String(CSV_ROW_CAP),
+      });
+    }
+
+    return c.json(await listCostByProject({ accountId, window, sort, limit, offset }));
   },
 );
 

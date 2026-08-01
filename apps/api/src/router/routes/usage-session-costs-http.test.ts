@@ -64,6 +64,11 @@ const reconciliation = {
   compute_seconds: 0,
 };
 
+// Mutable so CSV-path tests can swap in a row carrying quoting/injection
+// characters without disturbing the JSON-path tests, which rely on the
+// static `summary` fixture above.
+let sessionsToReturn: Record<string, unknown>[] = [summary];
+
 mock.module('../../middleware/auth', () => ({
   combinedAuth: async (c: TestContext, next: () => Promise<void>) => {
     c.set('userId', USER_ID);
@@ -100,8 +105,8 @@ mock.module('../../shared/session-costs', () => ({
   listSessionCosts: async (input: Record<string, unknown>) => {
     listInput = input;
     return {
-      sessions: [summary],
-      total: 1,
+      sessions: sessionsToReturn,
+      total: sessionsToReturn.length,
       limit: input.limit,
       offset: input.offset,
       next_offset: null,
@@ -144,6 +149,7 @@ beforeEach(() => {
   projectAccessInput = null;
   projectCapabilityInput = null;
   projectCapabilityDenied = false;
+  sessionsToReturn = [summary];
 });
 
 describe('GET /v1/usage/session-costs', () => {
@@ -162,6 +168,11 @@ describe('GET /v1/usage/session-costs', () => {
     });
     const window = (listInput as { window: { from: Date; to: Date } }).window;
     expect(window.to.getTime() - window.from.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
+    // format is absent: the JSON envelope, content-type and headers must be
+    // byte-identical to what this route returned before format=csv existed.
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(response.headers.get('x-kortix-row-cap')).toBeNull();
+    expect(response.headers.get('content-disposition')).toBeNull();
     expect(await response.json()).toEqual({
       sessions: [summary],
       total: 1,
@@ -281,6 +292,93 @@ describe('GET /v1/usage/session-costs', () => {
     sandboxId = '00000000-0000-4000-a000-000000000099';
 
     const response = await createTestApp().request('/v1/usage/session-costs');
+
+    expect(response.status).toBe(403);
+    expect(listInput).toBeNull();
+  });
+});
+
+describe('GET /v1/usage/session-costs?format=csv', () => {
+  test('returns a CSV attachment with content-type, disposition and the row-cap header', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&format=csv`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="kortix-session-costs.csv"',
+    );
+    expect(response.headers.get('x-kortix-row-cap')).toBe('10000');
+  });
+
+  test('queries CSV_ROW_CAP rows at offset 0, ignoring any limit/offset params', async () => {
+    const response = await createTestApp().request(
+      '/v1/usage/session-costs?format=csv&limit=10&offset=20',
+    );
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({ limit: 10_000, offset: 0 });
+  });
+
+  test('runs the same filtered query as the JSON path: account, project, owner, sort and window', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?project_id=${PROJECT_ID}&owner_id=${USER_ID}&sort=recent` +
+        '&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z&format=csv',
+    );
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({
+      accountId: SECONDARY_ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      ownerId: USER_ID,
+      sort: 'recent',
+    });
+    const window = (listInput as { window: { from: Date; to: Date } }).window;
+    expect(window.from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(window.to.toISOString()).toBe('2026-07-08T00:00:00.000Z');
+  });
+
+  test('renders a header row and one data row per session', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&format=csv`,
+    );
+
+    expect(await response.text()).toBe(
+      'session_id,project_name,owner,status,requests,llm_cost_usd,compute_cost_usd,' +
+        'total_cost_usd,last_activity_at\r\n' +
+        `${SESSION_ID},Project One,,stopped,0,0,0,0,`,
+    );
+  });
+
+  test('neutralises a formula-prefixed owner and quotes a comma in the project name', async () => {
+    sessionsToReturn = [
+      { ...summary, project_name: 'Acme, Inc', owner_name: '=cmd|calc!A0' },
+    ];
+
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&format=csv`,
+    );
+    const [, dataLine] = (await response.text()).split('\r\n');
+
+    expect(dataLine).toContain('"Acme, Inc"');
+    expect(dataLine).toContain('"\'=cmd|calc!A0"');
+  });
+
+  test('rejects an invalid window before querying costs, like the JSON path', async () => {
+    const response = await createTestApp().request(
+      '/v1/usage/session-costs?format=csv&from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z',
+    );
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
+  test('preserves the account-wide sandbox-token rejection on the CSV path too', async () => {
+    authType = 'apiKey';
+    sandboxId = '00000000-0000-4000-a000-000000000099';
+
+    const response = await createTestApp().request('/v1/usage/session-costs?format=csv');
 
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();
