@@ -5027,3 +5027,119 @@ end-to-end wiring against a running API (web consumption is Task 10+), and
 `costExportUrl`'s download flow was not exercised against a live server (it is
 a pure string builder with no network call — the auth-attachment + Blob-download
 flow is a web-task concern per the brief's `costExportUrl` scope).
+
+---
+
+### 2026-08-02 — session `cost-explorer-sdk-clients` (fix round 1/5)
+
+Review: Spec ✅ / Approved, one Important finding, one Minor folded in, one
+DRY cleanup requested. All three addressed. Commit `f78f79da7`.
+
+**Important — the `fetchProjectArchive` precedent claim was backwards.** The
+prior completion entry said `costExportUrl` mirrors `fetchProjectArchive` "in
+leaving the caller responsible for attaching the token." Re-reading
+`./files.ts:78-99` shows the opposite: `fetchProjectArchive` calls
+`getSupabaseAccessTokenWithRetry()` itself, attaches the `Authorization`
+header itself, fetches itself, and returns a `Blob`. As shipped,
+`costExportUrl` was a bare URL string with no auth story — a consumer
+treating it like a plain link (`<a href>`, `window.open`) gets a silent
+`401`, and the architecture rule ("hosts never raw-fetch the Kortix API")
+would force Task 16 to hand-roll authenticated fetch-to-Blob logic in
+`apps/web` instead.
+
+Fix: added `fetchCostExportCsv(kind, options): Promise<CostExportResult>`
+(`{ blob: Blob; rowCap: number | null }`), built the way
+`fetchProjectArchive` actually is — resolves the token via
+`getSupabaseAccessTokenWithRetry()`, attaches
+`Authorization: Bearer <token>`, fetches, throws with the response body on a
+non-OK response. It delegates to `costExportUrl` for the URL itself (kind is
+narrowed to a literal in each branch first, since an overloaded function
+can't be called with a non-narrowed union argument), so the two functions
+cannot diverge. `costExportUrl` is unchanged in behavior and stays exported —
+removing it would break a name this task already published.
+
+Deviated from the literal `Promise<Blob>` suggested in the review: also
+surfaces the `x-kortix-row-cap` response header (parsed to `number | null`)
+because Task 16 needs it to warn when the 10,000-row CSV cap truncates a
+finance export, and that header isn't present anywhere in either route's JSON
+response schema — a caller genuinely cannot get it any other way. Judged
+`{ blob, rowCap }` as not "awkward" (a small named result type is a standard
+ergonomic pattern), so implemented it rather than leaving the header
+unreachable.
+
+**Minor (folded in) — `CostExportOptions.sort` accepted `name_asc` for both
+kinds.** Split into `ProjectCostExportOptions` (`sort?: ProjectCostSort`) and
+`SessionCostExportOptions` (`sort?: SessionCostSort`, no `projectId`/
+`ownerId`), with a discriminated overload on both `costExportUrl` and
+`fetchCostExportCsv`. `costExportUrl('sessions', { sort: 'name_asc' })` and
+`costExportUrl('projects', { projectId: … })` are now compile errors instead
+of a runtime 400 / silently-ignored field. `CostExportOptions` stays exported
+as `export type CostExportOptions = ProjectCostExportOptions |
+SessionCostExportOptions` — same name, no removal, now precise instead of a
+flat bag. Proved by 5 `@ts-expect-error` assertions in a dedicated test,
+checked by `tsc --noEmit` (bun strips types and does not evaluate the
+directive; an *unused* `@ts-expect-error` is itself a typecheck error, so the
+test only stays green if every line genuinely fails to compile — confirmed by
+a clean `pnpm typecheck` with all 5 directives present).
+
+**Minor 1 — duplicated `suffix` ternary.** Extracted
+`function suffix(query: URLSearchParams): string` and applied it at all four
+call sites in the file (`listSessionCosts`, `getSessionCostRecord`,
+`listCostByProject`, `getCostSummary`) — including the pre-existing
+`getSessionCostRecord` occurrence the review didn't explicitly name, for full
+consistency within the same file. Left `costExportUrl`'s own query assembly
+duplicated with `fetchCostExportCsv`'s call into it, per "not to fix."
+
+**RED** (before the fetcher/overloads existed):
+```
+bun test src/core/rest/projects-client/session-costs.test.ts
+→ SyntaxError: Export named 'fetchCostExportCsv' not found in module '.../session-costs.ts'
+→ 0 pass, 1 fail, 1 error
+```
+
+**GREEN:**
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0
+
+pnpm --filter @kortix/sdk test
+→ 1374 pass, 0 fail, 5926 expect() calls, across 116 files [16.62s]
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+
+bun test src/index.isomorphic.test.ts
+→ 67 pass, 0 fail, 2947 expect() calls
+```
+
+Test count: 1370 (prior completion) → **1374** (+4: the `@ts-expect-error`
+type-safety test, plus 3 `fetchCostExportCsv` behavior tests).
+
+**Mutation check (required by this fix round) — removed the `Authorization`
+header from `fetchCostExportCsv`:**
+```
+bun test src/core/rest/projects-client/session-costs.test.ts
+→ (fail) fetchCostExportCsv requests the export URL with a Bearer token and
+  parses the row cap — expected {"Authorization": "Bearer tok"}, got {}
+→ 17 pass, 1 fail
+```
+Caught. Reverted; file diffed byte-identical to the pre-mutation copy
+afterward.
+
+**Public-surface snapshot diff** — re-recorded, reviewed line by line before
+accepting: 4 new type-level names (`CostExportResult`,
+`ProjectCostExportOptions`, `SessionCostExportOptions`, `fetchCostExportCsv`,
+each × 2 subpaths). `CostExportOptions` itself has **zero** diff lines —
+its shape changed (interface → type alias) but the exported *name* didn't,
+so the name-only snapshot shows no change for it. Every line in both diffs is
+a `+`. Zero removals, zero renames.
+
+**Status:** DONE.
+
+**SDK package shippable to production: YES.** All three gates green
+post-fix, mutation check on the new fetcher caught the missing-auth-header
+case, snapshot diff confirmed additive-only. Unverified/out of scope: live-API
+integration (Task 10+/16 territory) and the actual browser download trigger
+(save-as / anchor-click flow) around the `Blob` `fetchCostExportCsv` returns —
+that UI wiring belongs to the web task consuming this client.
