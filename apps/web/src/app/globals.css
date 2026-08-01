@@ -175,7 +175,7 @@
 
 @theme inline {
   --color-background: var(--background);
-  --color-base: var(--base);
+  --color-pane: var(--pane);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-roobert);
   --font-mono: var(--font-roobert-mono);
@@ -607,7 +607,7 @@
     }
   }
 }
- 
+
 /*
  * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
  * Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never
@@ -631,7 +631,7 @@
  */
 :root {
   --background: oklch(1 0 0); /* canvas */
-  --base: oklch(1 0 0); /* #ffffff */
+  --pane: oklch(1 0 0); /* #ffffff */
   --foreground: oklch(0 0 0); /* ink */
   --card: oklch(0.9672 0 0); /* surface-1 */
   --card-foreground: oklch(0 0 0);
@@ -694,7 +694,7 @@
 
 .dark {
   --background: oklch(0.1398 0 0); /* canvas #090909 */
-  --base: oklch(0.1543 0 0); /* #0c0c0c */
+  --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
   --card-foreground: oklch(1 0 0);

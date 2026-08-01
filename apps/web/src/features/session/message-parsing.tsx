@@ -1,11 +1,8 @@
 'use client';
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { STATUS_TEXT } from '@/components/ui/status';
-import { cn } from '@/lib/utils';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { SystemMessage } from '@/components/ui/system-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { CaretRightIcon as ChevronRight, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { useState } from 'react';
 
 // ============================================================================
 // Parse <file> XML references from uploaded file text parts
@@ -211,7 +208,7 @@ export function parseSystemNotifications(text: string): {
 
       notifications.push({
         tag: tag.toLowerCase(),
-        label: tag.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+        label: tag.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
         fields,
         body: bodyLines.join('\n').trim(),
       });
@@ -232,73 +229,68 @@ export function stripSystemPtyText(text: string): string {
     .trim();
 }
 
+/**
+ * The session could not continue, or something was lost. Red is spent here and
+ * nowhere else — a recovered retry is not an error, and if routine failures go
+ * red then red stops meaning anything by the time it matters.
+ */
+const CRITICAL =
+  /\b(aborted|corrupted?|crashed|denied|error|errored|exceeded|exhausted|expired|failed|failure|fatal|forbidden|lost|missing|rejected|revoked|timed out|timeout|unauthorized|unavailable|unreachable)\b/;
+
+/** Still running but degraded, or stopped and waiting on the person reading it. */
+const NEEDS_ATTENTION =
+  /\b(blocked|blocker|degraded|deprecated|limit|limited|needs|partial|paused|requires|retried|retry|retrying|skipped|stopped|throttled|waiting)\b/;
+
+/**
+ * Which tone a notification tag earns.
+ *
+ * The parser accepts any XML block the other subsystems did not claim, so there
+ * is no fixed vocabulary to map — the tag is the only signal the emitter gives
+ * us. Keywords match on word boundaries against the spaced-out tag
+ * ("quota_exceeded" -> "quota exceeded"), so "exceeded" hits and "proceeded"
+ * does not. Anything unrecognised stays neutral on purpose: a tag nobody
+ * classified should read as quiet, never as alarming.
+ */
+export function systemNotificationSeverity(tag: string): 'error' | 'warning' | 'action' {
+  const words = tag.replace(/[-_]/g, ' ');
+  if (CRITICAL.test(words)) return 'error';
+  if (NEEDS_ATTENTION.test(words)) return 'warning';
+  return 'action';
+}
+
+/**
+ * One quiet line in the chat stream telling the reader what the session just
+ * did. Deliberately not an inspector: no expander, no field table, no stack
+ * trace. Tone carries the severity, the sentence carries the rest.
+ */
 export function SystemNotificationCard({ notification }: { notification: SystemNotification }) {
-  const [open, setOpen] = useState(false);
-
-  // Show first 1-2 short field values inline as muted detail
-  const inlineDetail = notification.fields
-    .slice(0, 2)
-    .map(([, v]) => v)
-    .filter((v) => v.length < 40)
-    .join(' · ');
-
-  // Expandable when there's a body, >2 fields, or any long values
-  const hasExpandable =
-    !!notification.body ||
-    notification.fields.length > 2 ||
-    notification.fields.some(([, v]) => v.length >= 40);
-
-  const isError = notification.tag.includes('failed') || notification.tag.includes('blocker');
-  const isWarning = notification.tag.includes('stopped');
-
-  const iconColor = isError
-    ? 'text-destructive/50'
-    : isWarning
-      ? STATUS_TEXT.warning
-      : 'text-muted-foreground/50';
-
-  const trigger = (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5',
-        'bg-muted/20 border-border/40 border',
-        'max-w-full text-xs select-none',
-        hasExpandable && 'hover:bg-muted/40 cursor-pointer transition-colors',
-      )}
-    >
-      <Terminal className={cn('size-3.5 flex-shrink-0', iconColor)} />
-      <span className="text-muted-foreground/70 truncate">
-        {notification.label}
-        {inlineDetail && (
-          <span className="text-muted-foreground/40 ml-1.5 font-mono">{inlineDetail}</span>
-        )}
-      </span>
-      {hasExpandable && (
-        <ChevronRight
-          className={cn(
-            'text-muted-foreground/30 ml-auto size-3 flex-shrink-0 transition-transform',
-            open && 'rotate-90',
-          )}
-        />
-      )}
-    </div>
-  );
-
-  if (!hasExpandable) return trigger;
+  // One detail, and the friendliest one: identifiers and codes ("daytona",
+  // "1.2s", "us-east-1") have no spaces, so the longest value that does is the
+  // closest thing to a sentence the tag gave us. Overflow is a truncated line,
+  // never a second row.
+  const detail = notification.fields
+    .map(([, value]) => value)
+    .filter((value) => value.includes(' '))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>{trigger}</CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="border-border/40 bg-muted/10 space-y-1 rounded-b-lg border border-t-0 px-3 py-2 text-xs">
+    <Disclosure variant="outline" className="bg-secondary">
+      <DisclosureTrigger>
+        <SystemMessage variant={systemNotificationSeverity(notification.tag)} fill>
+          <span className="block truncate">
+            {notification.label}
+            {detail && <span className="ml-1.5 opacity-70">{detail}</span>}
+          </span>
+        </SystemMessage>
+      </DisclosureTrigger>
+      <DisclosureContent>
+        <div className="space-y-1 px-3 pb-2 text-xs">
           {notification.fields.length > 0 && (
             <div className="space-y-0.5">
               {notification.fields.map(([key, value], i) => (
                 <div key={i} className="flex min-w-0 gap-2">
-                  <span className="text-muted-foreground/40 flex-shrink-0">{key}:</span>
-                  <span className="text-muted-foreground/60 font-mono text-xs break-all">
-                    {value}
-                  </span>
+                  <span className="text-muted-foreground shrink-0">{key}:</span>
+                  <span className="text-foreground font-mono text-xs break-all">{value}</span>
                 </div>
               ))}
             </div>
@@ -309,7 +301,7 @@ export function SystemNotificationCard({ notification }: { notification: SystemN
             </div>
           )}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
