@@ -451,7 +451,7 @@ interface MemSpec {
 
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
-  'kortix-api': { limit: '640m', reservation: '256m' },
+  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-640m}', reservation: '256m' },
   'llm-gateway': { limit: '512m', reservation: '128m' },
   frontend: { limit: '512m', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
