@@ -514,6 +514,8 @@ export async function provisionSessionSandbox(opts: {
       );
     }
     let idBootDisabled = false;
+    let lastProvisionAttempt = SANDBOX_INIT_MAX_ATTEMPTS;
+    let lastProvisionMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
@@ -576,7 +578,9 @@ export async function provisionSessionSandbox(opts: {
       let attempts: number;
       try {
       ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
-        onAttemptStart: async (attempt) => {
+        onAttemptStart: async (attempt, maxAttempts) => {
+          lastProvisionAttempt = attempt;
+          lastProvisionMaxAttempts = maxAttempts;
           await db
             .update(sessionSandboxes)
             .set({
@@ -585,13 +589,16 @@ export async function provisionSessionSandbox(opts: {
                 attempt,
                 attempt === 1 ? 'provisioning' : 'retrying',
                 firstStage?.id,
-                attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${SANDBOX_INIT_MAX_ATTEMPTS})…`,
+                attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
+                maxAttempts,
               ),
               updatedAt: new Date(),
             })
             .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         },
-        onAttemptFailure: async (attempt, error, willRetry) => {
+        onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
+          lastProvisionAttempt = attempt;
+          lastProvisionMaxAttempts = maxAttempts;
           await db
             .update(sessionSandboxes)
             .set({
@@ -601,6 +608,7 @@ export async function provisionSessionSandbox(opts: {
                 error,
                 attempt,
                 willRetry,
+                maxAttempts,
               ),
               updatedAt: new Date(),
             })
@@ -695,6 +703,7 @@ export async function provisionSessionSandbox(opts: {
                   providerExternalId: result.externalId,
                 },
                 attempts,
+                lastProvisionMaxAttempts,
               ),
               stoppedDuringProvisioning: true,
               stoppedAt: new Date().toISOString(),
@@ -767,6 +776,7 @@ export async function provisionSessionSandbox(opts: {
             },
           },
           attempts,
+          lastProvisionMaxAttempts,
         ),
         config: { serviceKey: sandboxKey.secretKey, llmGatewayEnabled: !!gatewayLlmKey },
         lastUsedAt: new Date(),
@@ -966,8 +976,9 @@ export async function provisionSessionSandbox(opts: {
               ...buildSandboxInitFailureMetadata(
                 sandbox.metadata as Record<string, unknown> | null,
                 bgErr,
-                SANDBOX_INIT_MAX_ATTEMPTS,
+                lastProvisionAttempt,
                 false,
+                lastProvisionMaxAttempts,
               ),
               errorMessage: userMessage,
               lastProvisioningError: bgMessage.slice(0, 500),
