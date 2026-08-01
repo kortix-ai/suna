@@ -87,3 +87,34 @@ describe('GlyphPicker', () => {
     expect(glyph.match(height)?.[1]).toBe(emoji.match(height)?.[1]);
   });
 });
+
+describe('GlyphPicker click commits the resolved colour, not the raw prop', () => {
+  test('an out-of-palette color resolves to grey everywhere in the grid', () => {
+    // `resolvedColor` (`resolveGlyphColor(color)`) is what every render path in
+    // this file uses. This pins what it evaluates to for a stale/out-of-palette
+    // value BEFORE the next test pins that the click handler commits that same
+    // value rather than the raw `color` prop.
+    const html = renderToStaticMarkup(
+      <GlyphPicker color="chartreuse" onColorChange={() => {}} onGlyphSelect={() => {}} />,
+    );
+    expect(html).toMatch(/data-swatch="grey"[^>]*aria-pressed="true"/);
+    expect(html).toContain('text-glyph-ring-grey');
+    expect(html).not.toContain('chartreuse');
+  });
+
+  test('the glyph click handler commits the RESOLVED colour, not the raw prop', () => {
+    // Every render path paints with `resolveGlyphColor(color)` — proven above: a
+    // stale `chartreuse` prop paints grey. The click handler has to agree:
+    // committing the raw `color` prop instead sends `{ name, color: "chartreuse" }`
+    // to the server, `normalizeProjectGlyph` rejects it, the PATCH returns 200 and
+    // writes nothing, and the picker still closes as if it had succeeded.
+    //
+    // apps/web has no DOM harness (no jsdom, no testing-library — see the note at
+    // the top of project-icon-field.test.tsx's "remove control" describe block),
+    // so a real click can't be simulated here. This reads the handler off source
+    // the same way that file's `emojiHandler` / `glyphHandler` slices do.
+    const code = stripComments(readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'));
+    expect(code).toMatch(/onClick=\{\(\) => onGlyphSelect\(\{ name, color: resolvedColor \}\)\}/);
+    expect(code).not.toMatch(/onGlyphSelect\(\{ name, color \}\)/);
+  });
+});

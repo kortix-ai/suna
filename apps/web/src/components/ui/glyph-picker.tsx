@@ -164,7 +164,7 @@ export function GlyphPicker({
                         type="button"
                         data-glyph={name}
                         aria-label={name}
-                        onClick={() => onGlyphSelect({ name, color })}
+                        onClick={() => onGlyphSelect({ name, color: resolvedColor })}
                         className={cn(
                           GLYPH_BUTTON,
                           glyphForeground(color),
