@@ -8,6 +8,7 @@ import {
   getCommitDiff,
   getFileHistory,
   grepRepoFiles,
+  isRepoFileNotFoundError,
   listBranches,
   listCommits,
   listRepoFiles,
@@ -371,7 +372,14 @@ projectsApp.openapi(
     const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
     return c.json({ path, ref, content });
   } catch (error) {
-    if (isMissingGitPathError(error)) {
+    // `readRepoFile` converts a `git show` "path does not exist" failure into a
+    // typed `RepoFileNotFoundError` (message: `file not found in repository at
+    // '<ref>:<path>'`), which the `isMissingGitPathError` regex below does NOT
+    // match — without this branch the typed error leaked as an uncaught 500
+    // (Better Stack pattern `5b40ec1a…`). Keep `isMissingGitPathError` as a
+    // backstop for genuine `GitOperationError`s carrying the raw `fatal: path
+    // … does not exist in …` message from callers that bypass `readRepoFile`.
+    if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
       return c.json({ error: 'File not found' }, 404);
     }
     throw error;
