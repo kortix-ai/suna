@@ -36,9 +36,14 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
     const line = rawLine.replace(/\s+$/, '');
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
-    const nested = line.match(/^\s+([\w.-]+)\s*:\s*(.*)$/);
+    // A nested key may be QUOTED, and in the opencode permission idiom it
+    // usually is — `"*": allow`. Matching only [\w.-] dropped that line, left
+    // the parent an empty object, and printed a bare em-dash where the
+    // permissions belong. Wildcards and path-ish keys are accepted bare too.
+    const nested = line.match(/^\s+(?:"([^"]+)"|'([^']+)'|([\w.*/-]+))\s*:\s*(.*)$/);
     if (nested && currentParent && typeof result[currentParent] === 'object') {
-      (result[currentParent] as Record<string, string>)[nested[1]] = nested[2].trim();
+      const key = nested[1] ?? nested[2] ?? nested[3];
+      (result[currentParent] as Record<string, string>)[key] = nested[4].trim();
       continue;
     }
 
