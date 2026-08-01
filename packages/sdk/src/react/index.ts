@@ -13,6 +13,7 @@ export {
   rejectQuestion,
   classifySendError,
   type KortixSendError,
+  type KortixSendErrorConnector,
   type KortixSendErrorKind,
   type SendState,
 } from './use-session';

@@ -308,21 +308,40 @@ export type ConnectorAuthorizationStrategy = z.infer<
   typeof ConnectorAuthorizationStrategySchema
 >;
 
+/**
+ * Connector aliases a session REQUIRES, whether or not anything is connected.
+ *
+ * Distinct from `connector_bindings`, which says "use THIS connection for that
+ * alias" and therefore cannot express the case that matters most: a session that
+ * needs Gmail and has no Gmail connected yet. Naming an alias here is what makes
+ * the pre-flight refuse the next turn with a connect prompt instead of letting
+ * the agent discover it mid-answer.
+ */
+export const SessionRequiredConnectorsSchema = z
+  .array(z.string().min(1).max(128))
+  .max(64, 'require_connectors may contain at most 64 aliases');
+export type SessionRequiredConnectors = z.infer<typeof SessionRequiredConnectorsSchema>;
+
 export const SessionScopeInputSchema = z
   .object({
     secrets: SessionSecretsAllowlistSchema.nullable().optional(),
     connector_bindings: SessionConnectorBindingsInputSchema.optional(),
+    require_connectors: SessionRequiredConnectorsSchema.nullable().optional(),
   })
   .strict()
   .refine(
-    (value) => Object.hasOwn(value, 'secrets') || Object.hasOwn(value, 'connector_bindings'),
-    'Supply `secrets`, `connector_bindings`, or both',
+    (value) =>
+      Object.hasOwn(value, 'secrets') ||
+      Object.hasOwn(value, 'connector_bindings') ||
+      Object.hasOwn(value, 'require_connectors'),
+    'Supply `secrets`, `connector_bindings`, `require_connectors`, or any combination',
   );
 export type SessionScopeInput = z.input<typeof SessionScopeInputSchema>;
 
 export const SessionScopeSchema = z
   .object({
     secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
+    required_connectors: SessionRequiredConnectorsSchema.nullable(),
     connector_bindings: SessionConnectorBindingsSchema,
     dropped_secrets: z.array(z.string()),
     added_secrets: z.array(z.string()),

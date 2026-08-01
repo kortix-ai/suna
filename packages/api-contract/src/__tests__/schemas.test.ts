@@ -734,6 +734,9 @@ describe('session scope contracts', () => {
   test('emits only authorization_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
+      // The alias a session REQUIRES, whether or not anything is connected —
+      // the one axis a binding cannot express, since a binding carries an id.
+      required_connectors: ['gmail'],
       connector_bindings: { gmail: { authorization_id: authorizationId } },
       dropped_secrets: [],
       added_secrets: ['GMAIL_TOKEN'],

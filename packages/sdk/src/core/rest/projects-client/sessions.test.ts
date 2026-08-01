@@ -320,6 +320,7 @@ test('stopProjectSession POSTs to /stop', async () => {
 test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
+    required_connectors: null,
     connector_bindings: { gmail: { authorization_id: 'AUTH-1' } },
     dropped_secrets: [],
     added_secrets: [],

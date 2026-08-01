@@ -215,17 +215,67 @@ describe('session scope control changes', () => {
     ).toEqual({ connector_bindings: {} });
   });
 
-  test('does not enable a connector without an available authorization', () => {
+  test('a connector with NO authorization is selectable, as a requirement', () => {
+    // This used to be un-selectable, which meant you could only require a
+    // connector that already worked — backwards, since needing one you have not
+    // connected yet is the case worth expressing. It cannot become a binding
+    // (there is no authorization id to bind), so it is recorded as a requirement
+    // and the next turn stops at a connect prompt.
     const connector =
       catalog.connector_profiles.status === 'ready'
-        ? {
-            ...catalog.connector_profiles.items[0],
-            authorizations: [],
-          }
+        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
         : undefined;
+    expect(connector).toBeDefined();
     const draft: SessionScopeDraft = { connector_bindings: {} };
 
-    expect(connector).toBeDefined();
+    const next = setSessionConnectorEnabled(draft, connector!, true);
+
+    expect(next.require_connectors).toEqual([connector!.slug]);
+    expect(next.connector_bindings).toEqual({});
+  });
+
+  test('unchecking it drops the requirement rather than leaving it behind', () => {
+    const connector =
+      catalog.connector_profiles.status === 'ready'
+        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
+        : undefined;
+    const draft: SessionScopeDraft = {
+      connector_bindings: {},
+      require_connectors: [connector!.slug],
+    };
+
+    expect(setSessionConnectorEnabled(draft, connector!, false).require_connectors).toEqual([]);
+  });
+
+  test('requiring the same connector twice does not duplicate it', () => {
+    const connector =
+      catalog.connector_profiles.status === 'ready'
+        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
+        : undefined;
+    const draft: SessionScopeDraft = {
+      connector_bindings: {},
+      require_connectors: [connector!.slug],
+    };
+
     expect(setSessionConnectorEnabled(draft, connector!, true)).toBe(draft);
+  });
+
+  test('choosing an authorization converts the requirement into a binding', () => {
+    // Both would mean the server holds the same requirement twice, and it would
+    // outlive the binding if the binding were later removed.
+    const connector =
+      catalog.connector_profiles.status === 'ready'
+        ? catalog.connector_profiles.items[0]
+        : undefined;
+    expect(connector?.authorizations.length).toBeGreaterThan(0);
+    const draft: SessionScopeDraft = {
+      connector_bindings: {},
+      require_connectors: [connector!.slug],
+    };
+
+    const next = setSessionConnectorEnabled(draft, connector!, true);
+
+    expect(next.require_connectors).toEqual([]);
+    expect(next.connector_bindings?.[connector!.slug]).toBeDefined();
   });
 });

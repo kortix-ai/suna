@@ -2737,6 +2737,7 @@
     "KortixProjectProvider",
     "KortixProjectQueryOptions",
     "KortixSendError",
+    "KortixSendErrorConnector",
     "KortixSendErrorKind",
     "KortixTask",
     "KortixTaskEvent",

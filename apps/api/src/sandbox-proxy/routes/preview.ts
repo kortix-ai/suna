@@ -5,6 +5,11 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
+import {
+  PromptConnectorPreflightUnresolved,
+  type PromptConnectorVerdict,
+  missingPromptConnectorAuthorizations,
+} from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import {
   AgentSecretGrantMismatchError,
@@ -368,6 +373,156 @@ function requestedPromptAgent(
   }
 }
 
+/**
+ * Does this request START A USER TURN that a missing connector should block?
+ *
+ * The same shape as `isTurnStartRequest` MINUS `/summarize`. Summarize is
+ * compaction, not a user turn: refusing to compact a conversation because Gmail
+ * is disconnected would wedge the session instead of protecting it.
+ *
+ * Built on `isTurnStartRequest` rather than the env-sync predicate
+ * (`shouldSyncProjectEnvBeforeProxy`) because that one keys on the
+ * client-addressed port, so a request sent straight to :4096 slips past it, and
+ * it does not strip the in-box `/proxy/{port}` prefix.
+ */
+function isConnectorGatedTurn(port: number, method: string, path: string): boolean {
+  if (!isTurnStartRequest(port, method, path)) return false;
+  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(path.replace(/^\/proxy\/\d+(?=\/)/, ''));
+}
+
+/**
+ * May this caller run the agent this prompt names? Response to refuse, or null.
+ *
+ * Hoisted out of the forward loop so it runs BEFORE the connector gate. The
+ * connector gate reads the requested agent's manifest, and a caller who may not
+ * run agent B must not learn which connectors B requires by naming it — the
+ * refusal list carries connector ids, names and strategies.
+ *
+ * Running it here also fixes a defect it had where it sat: below
+ * `claimPromptDelivery`, so a 403 burned the Idempotency-Key and the retry after
+ * being granted access came back as a silent duplicate.
+ */
+async function agentSwitchRefusal(
+  record: { accountId: string; projectId: string; agentName?: string | null },
+  requestedAgent: string | null,
+  userId: string | undefined,
+  sandboxId: string,
+  origin?: string,
+): Promise<Response | null> {
+  const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
+  // Agent-lock enforcement is OFF by default — in-session agent switching is
+  // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
+  // explicitly enabled.
+  if (
+    requestedAgent &&
+    config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
+    isProhibitedAgentSwitch(requestedAgent, sessionAgent)
+  ) {
+    return agentSwitchConflictResponse(sessionAgent, requestedAgent, origin);
+  }
+  if (!isProhibitedAgentSwitch(requestedAgent, sessionAgent)) return null;
+  const switchedToAgent = requestedAgent as string;
+  if (!userId) {
+    // A switch is an authorization decision and there is no principal to decide
+    // about — a share-token forward, say. Refuse rather than run another agent
+    // on nobody's authority.
+    return jsonProxyError(
+      {
+        error: `You don't have permission to run the agent '${switchedToAgent}'.`,
+        code: 'AGENT_NOT_AUTHORIZED',
+        requested_agent: switchedToAgent,
+      },
+      403,
+      origin,
+    );
+  }
+
+  const verdict = await authorize(userId, record.accountId, PROJECT_ACTIONS.PROJECT_AGENT_READ, {
+    type: 'project',
+    id: record.projectId,
+    resource: { type: 'agent', id: switchedToAgent },
+  });
+  if (verdict.allowed) return null;
+  console.warn(
+    `[PREVIEW] Refused prompt on ${sandboxId}: caller may not run agent '${switchedToAgent}' (${verdict.reason})`,
+  );
+  return jsonProxyError(
+    {
+      error: `You don't have permission to run the agent '${switchedToAgent}'.`,
+      code: 'AGENT_NOT_AUTHORIZED',
+      requested_agent: switchedToAgent,
+    },
+    403,
+    origin,
+  );
+}
+
+/**
+ * The refusal body, or null to let the turn through.
+ *
+ * The shape is byte-identical to what session CREATE returns for the same two
+ * codes (projects/routes/r7.ts). That is a contract, not a coincidence: one
+ * client classifier has to read both, and a renamed field here degrades to a
+ * card that says "a connector is missing" without naming which.
+ */
+async function connectorGateRefusal(
+  record: { accountId: string; projectId: string; sessionId: string; agentName?: string | null },
+  requestedAgent: string | null,
+  origin?: string,
+): Promise<Response | null> {
+  let verdict: PromptConnectorVerdict;
+  try {
+    verdict = await missingPromptConnectorAuthorizations({
+      accountId: record.accountId,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
+      requestedAgent,
+    });
+  } catch (err) {
+    if (err instanceof PromptConnectorPreflightUnresolved) {
+      // 503, never 409. We failed to ESTABLISH the answer; saying "connect your
+      // Gmail" off a transient git read would be a confident lie, and the client
+      // retries a 503 while it never retries a 4xx.
+      console.warn(`[PREVIEW] Connector pre-flight unresolved for ${record.sessionId}: ${err.message}`);
+      return jsonProxyError(
+        { error: err.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' },
+        503,
+        origin,
+      );
+    }
+    throw err;
+  }
+  if (verdict.ok) return null;
+
+  if (verdict.kind === 'unavailable') {
+    return jsonProxyError(
+      {
+        error:
+          verdict.aliases.length === 1
+            ? `Required connector profile "${verdict.aliases[0]}" is unavailable`
+            : `Required connector profiles ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
+        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+        connectors: verdict.aliases,
+      },
+      409,
+      origin,
+    );
+  }
+  return jsonProxyError(
+    {
+      // `message` as well as `error`: the SDK prefers `message` and otherwise
+      // substitutes a generic "Failed to send message", which would bury this.
+      error: 'Connect the required connector profiles before continuing this session.',
+      message: 'Connect the required connector profiles before continuing this session.',
+      code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+      connector_profiles: verdict.profiles,
+    },
+    409,
+    origin,
+  );
+}
+
 function agentSwitchConflictResponse(
   expectedAgent: string,
   requestedAgent: string,
@@ -634,6 +789,29 @@ export async function forwardToSandbox(
   if (carriesSessionData(upstreamPort) && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
+  // A turn whose required connectors cannot serve it is refused HERE — before the
+  // sandbox is woken, before the dedupe claim, before the title is generated from
+  // a prompt that will never run.
+  //
+  // The position is the whole design. Every one of those is downstream:
+  //   - claimPromptDelivery (below) burns the Idempotency-Key. Refuse after it and
+  //     the retry the user makes AFTER connecting Gmail comes back
+  //     `200 {status:'duplicate'}` — their message silently discarded, which is a
+  //     far worse bug than the one being fixed.
+  //   - generateSessionTitleFromFirstPrompt would name the session after a turn
+  //     that was refused.
+  // The three existing early returns further down all sit after the claim and
+  // have exactly that defect; this one deliberately does not join them.
+  if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
+    const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
+    // Authorization FIRST. The connector gate below reads this agent's manifest,
+    // and its refusal names the connectors that agent requires — not something a
+    // caller who may not run it should be able to enumerate by asking.
+    const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
+    if (unauthorized) return unauthorized;
+    const refusal = await connectorGateRefusal(record, promptAgent, origin);
+    if (refusal) return refusal;
+  }
   if (record.status !== 'active') {
     // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
     // (port 8000, principal) should wake in place — the same resume `/start` does —
@@ -793,46 +971,9 @@ export async function forwardToSandbox(
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
         const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-        // Agent-lock enforcement is OFF by default — in-session agent switching is
-        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
-        // explicitly enabled (a future per-agent executor-token auth model; see the
-        // config flag's TODO). Until then a prompt may freely run a different agent.
-        if (
-          requestedAgent &&
-          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
-          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-        ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent, origin);
-        }
-        const switchedToAgent = isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-          ? requestedAgent
-          : null;
-        if (switchedToAgent) {
-          const verdict = await authorize(
-            userId,
-            record.accountId,
-            PROJECT_ACTIONS.PROJECT_AGENT_READ,
-            {
-              type: 'project',
-              id: record.projectId,
-              resource: { type: 'agent', id: switchedToAgent },
-            },
-          );
-          if (!verdict.allowed) {
-            console.warn(
-              `[PREVIEW] Refused prompt on ${sandboxId}: caller may not run agent '${switchedToAgent}' (${verdict.reason})`,
-            );
-            return jsonProxyError(
-              {
-                error: `You don't have permission to run the agent '${switchedToAgent}'.`,
-                code: 'AGENT_NOT_AUTHORIZED',
-                requested_agent: switchedToAgent,
-              },
-              403,
-              origin,
-            );
-          }
-        }
+        // The agent-lock 409 and the project.agent.read 403 used to live here.
+        // They now run in `agentSwitchRefusal`, above the dedupe claim and above
+        // the connector gate — see that function for why both moves matter.
         // Drop only the legacy 'default' sentinel so OpenCode resolves its own
         // `default_agent` (the real default the session booted with). A *concrete*
         // requested agent is forwarded untouched so the user can switch agents

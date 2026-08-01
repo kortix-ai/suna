@@ -31,6 +31,7 @@ function row(
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
     metadata: {},
