@@ -55,6 +55,72 @@ describe('session cost query builders', () => {
     expect(query.staleTime).toBe(30_000);
   });
 
+  test('keys and forwards the window, sort and owner filter so changing them refetches', async () => {
+    const calls: unknown[] = [];
+    const query = buildSessionCostsListQuery(
+      {
+        accountId: 'account-1',
+        projectId: 'project-1',
+        limit: 25,
+        offset: 0,
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-08-01T00:00:00.000Z',
+        sort: 'total_desc',
+        ownerId: 'owner-1',
+      },
+      {
+        ...sources,
+        list: async (options) => {
+          calls.push(options);
+          return { source: 'list' } as never;
+        },
+      },
+    );
+
+    expect(query.queryKey).toEqual([
+      'session-costs',
+      'list',
+      {
+        accountId: 'account-1',
+        projectId: 'project-1',
+        limit: 25,
+        offset: 0,
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-08-01T00:00:00.000Z',
+        sort: 'total_desc',
+        ownerId: 'owner-1',
+      },
+    ]);
+    await query.queryFn();
+    expect(calls).toEqual([
+      {
+        accountId: 'account-1',
+        projectId: 'project-1',
+        ownerId: 'owner-1',
+        sort: 'total_desc',
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-08-01T00:00:00.000Z',
+        limit: 25,
+        offset: 0,
+      },
+    ]);
+
+    const changedWindow = buildSessionCostsListQuery(
+      {
+        accountId: 'account-1',
+        projectId: 'project-1',
+        limit: 25,
+        offset: 0,
+        from: '2026-06-01T00:00:00.000Z',
+        to: '2026-07-01T00:00:00.000Z',
+        sort: 'total_desc',
+        ownerId: 'owner-1',
+      },
+      sources,
+    );
+    expect(changedWindow.queryKey).not.toEqual(query.queryKey);
+  });
+
   test('enables detail only for a selected session and binds its project', async () => {
     const calls: unknown[] = [];
     const disabled = buildSessionCostDetailQuery(
