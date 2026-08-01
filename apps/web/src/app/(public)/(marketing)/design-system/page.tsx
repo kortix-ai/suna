@@ -87,6 +87,9 @@ import {
 import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { type GlyphSelection } from '@/components/ui/glyph-picker';
+import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -108,6 +111,7 @@ import {
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section as BrandSection } from '@/components/ui/section';
@@ -581,6 +585,7 @@ const TOC_SECTIONS = [
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
+      { id: 'comp-project-icon-picker', label: 'Project Icon Picker' },
       { id: 'comp-alert', label: 'Alert' },
       { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },
@@ -935,6 +940,85 @@ function EmojiPickerDemo() {
       </Popover>
       <span className="text-muted-foreground text-sm">
         {selection ? selection.label : 'Nothing picked yet'}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * ProjectIconPicker demo — Emoji and Icon tabs sharing one popover, the same
+ * composition Task 9 wires into project-icon-field.tsx. The trigger renders
+ * whichever face was picked last; picking from one tab clears the other
+ * tab's selection so the trigger never has to arbitrate between two stale
+ * picks.
+ *
+ * Behind a trigger for the same reason as EmojiPickerDemo above: the Emoji
+ * tab still mounts frimousse and pays its ~782 KB fetch on first open, and
+ * this is a public marketing route.
+ */
+function ProjectIconPickerDemo() {
+  const [open, setOpen] = useState(false);
+  const [emoji, setEmoji] = useState<EmojiSelection | null>(null);
+  const [glyph, setGlyph] = useState<GlyphSelection | null>(null);
+  const Glyph = glyph ? glyphComponent(glyph.name) : null;
+
+  return (
+    <div className="flex items-center gap-3">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={
+              emoji
+                ? `Icon: ${emoji.label}. Change it`
+                : glyph
+                  ? `Icon: ${glyph.name}. Change it`
+                  : 'Choose a project icon'
+            }
+            className={cn(
+              'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
+              glyph && [glyphTint(glyph.color), glyphTintHover(glyph.color), 'hover:inset-ring-2'],
+            )}
+          >
+            {emoji ? (
+              // Named by the button's aria-label, so the glyph itself stays out
+              // of the accessibility tree.
+              <span aria-hidden className="text-lg leading-none">
+                {emoji.emoji}
+              </span>
+            ) : glyph && Glyph ? (
+              <Glyph aria-hidden className={cn('size-4', glyphForeground(glyph.color))} />
+            ) : (
+              <Smiley className="text-muted-foreground size-4" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        {/* Same exact width as EmojiPickerDemo's popover above — both tabs
+            inside ProjectIconPicker share the emoji grid's 9-column geometry,
+            so the popover never resizes when the Icon tab is selected. */}
+        <PopoverContent
+          align="start"
+          aria-label="Choose a project icon"
+          className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+        >
+          <ProjectIconPicker
+            onEmojiSelect={(next) => {
+              setEmoji(next);
+              setGlyph(null);
+              setOpen(false);
+            }}
+            onGlyphSelect={(next) => {
+              setGlyph(next);
+              setEmoji(null);
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      <span className="text-muted-foreground text-sm">
+        {emoji ? emoji.label : glyph ? glyph.name : 'Nothing picked yet'}
       </span>
     </div>
   );
@@ -2541,6 +2625,20 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <EmojiPickerDemo />
+                </DemoContainer>
+              </div>
+
+              <div id="comp-project-icon-picker" className="mb-12">
+                <ComponentLabel>Project Icon Picker</ComponentLabel>
+                <ComponentDesc>
+                  Emoji and Icon side by side in one popover — <code>Tabs</code> wrapping the emoji
+                  grid above and a 64-glyph grid, both fixed to the same <code>368px</code> height and
+                  9-column geometry so switching tabs never resizes the popover. The Icon tab&apos;s
+                  grid previews in the selected colour; the colour row lives in the footer, where the
+                  Emoji tab puts its skin-tone selector.
+                </ComponentDesc>
+                <DemoContainer>
+                  <ProjectIconPickerDemo />
                 </DemoContainer>
               </div>
 
