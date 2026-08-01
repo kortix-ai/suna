@@ -477,10 +477,13 @@ const envSchema = z.object({
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
 
-  // ── E2B Cloud — sandbox provisioning (conditional: required if enabled) ──
+  // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
+  // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
+  // E2B Cloud. A self-hosted deployment uses its own base domain.
   // E2B_TEMPLATE is an optional ready fallback template. Project-specific
   // templates built by the shared snapshot system take precedence.
   E2B_API_KEY: optStr,
+  E2B_DOMAIN: optStrDefault('e2b.dev'),
   E2B_TEMPLATE: optStr,
 
   // ── Local Docker — EXPERIMENTAL sandbox provider (same-machine only) ────
@@ -1033,6 +1036,7 @@ export const config = {
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,
+  E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
   LOCAL_DOCKER_NETWORK: env.LOCAL_DOCKER_NETWORK,
   LOCAL_DOCKER_SOCKET_PATH: env.LOCAL_DOCKER_SOCKET_PATH,

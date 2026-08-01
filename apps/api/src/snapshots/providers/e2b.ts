@@ -28,8 +28,15 @@ function connectionOpts() {
   return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 30_000 } as const;
 }
 
+function apiBaseUrl(): string {
+  const domain = config.E2B_DOMAIN.trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
+  return `https://api.${domain}`;
+}
+
 async function listTemplates(): Promise<E2BTemplateView[]> {
-  const response = await fetch('https://api.e2b.dev/templates', {
+  const response = await fetch(`${apiBaseUrl()}/templates`, {
     headers: { 'X-API-KEY': config.E2B_API_KEY },
     signal: AbortSignal.timeout(30_000),
   });
@@ -116,11 +123,14 @@ class E2BAdapter implements SandboxProviderAdapter {
     try {
       const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
       if (!template) return;
-      const response = await fetch(`https://api.e2b.dev/templates/${encodeURIComponent(template.templateID)}`, {
-        method: 'DELETE',
-        headers: { 'X-API-KEY': config.E2B_API_KEY },
-        signal: AbortSignal.timeout(30_000),
-      });
+      const response = await fetch(
+        `${apiBaseUrl()}/templates/${encodeURIComponent(template.templateID)}`,
+        {
+          method: 'DELETE',
+          headers: { 'X-API-KEY': config.E2B_API_KEY },
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
       if (!response.ok && response.status !== 404) {
         throw new Error(`E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`);
       }
