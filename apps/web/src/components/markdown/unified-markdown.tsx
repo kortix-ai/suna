@@ -342,7 +342,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
 const INLINE_CODE =
-  'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
+  'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
 
 // Inline code that becomes a link (URLs) or opens a file preview (absolute paths).
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {

@@ -43,7 +43,6 @@ import {
   isTextPart,
   splitUserParts,
 } from '@/ui';
-import { useIsMessageUploading } from '@kortix/sdk/react';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -380,7 +379,7 @@ const BUBBLE_TEXT = cn(
 );
 
 const BUBBLE_SURFACE = cn(
-  'bg-sidebar text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+  'bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
 );
 
 export interface NormalizedAttachment {
@@ -631,10 +630,7 @@ function MessageAttachments({
                 e.stopPropagation();
                 if (file.path) openFileInComputer(file.path);
               }}
-              className={cn(
-                'border-border bg-background relative block h-20 max-w-40 min-w-24 shrink-0 overflow-hidden rounded-md border',
-                canOpen && ATTACHMENT_INTERACTIVE,
-              )}
+              className={cn(TILE_SURFACE, canOpen && ATTACHMENT_INTERACTIVE)}
             >
               <FileTileBody file={file} pending={pending || file.pending} />
             </button>
@@ -767,12 +763,6 @@ export function UserMessage({
   // that actually renders. `ownsPlan` alone doesn't: the anchor falls back to
   // the last turn when nothing ever wrote todos, which stretched the bubble in
   // sessions that have no plan at all.
-  // Still uploading? The store is the only thing that knows. Without this the
-  // tile cannot tell "these bytes are on their way" from "this image is broken"
-  // — both render as icon + filename, which is what made a live upload look
-  // like a failure.
-  const isUploading = useIsMessageUploading(message.info.id);
-
   const hasPlan = useHasPlan(sessionId);
   const showPlan = ownsPlan && hasPlan;
 
@@ -1129,14 +1119,12 @@ export function UserMessage({
     // panel, not as something trailing off the end of a sentence.
     <div
       className={cn(
-        'ml-auto flex w-full flex-col items-end gap-2 self-end',
+        'ml-auto flex w-full flex-col  items-end gap-2 self-end',
         // showPlan ? 'max-w-full' : 'max-w-[80%]',
         'max-w-[80%]',
       )}
     >
-      {allAttachments.length > 0 && (
-        <MessageAttachments attachments={allAttachments} pending={isUploading} />
-      )}
+      {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
       {/* No text means no bubble. Attach a file and send with nothing typed and
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}

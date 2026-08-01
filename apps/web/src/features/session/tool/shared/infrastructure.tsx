@@ -26,13 +26,13 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-b
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
+  ArrowSquareOutIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
-  ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -232,7 +232,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
           onClick={openInBrowser}
           className={cn(navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-50')}
         >
-          <TbExternalLink className="size-4.5" />
+          <ArrowSquareOutIcon className="size-4.5" />
         </Button>
       </Hint>
       <Hint
@@ -278,7 +278,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
               navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-60',
             )}
           >
-            <TbExternalLink className="text-muted-foreground size-4 shrink-0" />
+            <ArrowSquareOutIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="break-all">{label}</span>
           </Button>
         </Hint>

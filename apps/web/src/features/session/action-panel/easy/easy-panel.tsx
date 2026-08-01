@@ -1,22 +1,21 @@
 'use client';
 
 /**
- * `EasyPanel` — the non-technical home for a session's right panel: three
- * promise cards (Progress / Outputs / Context) over the same tool-call data
+ * `EasyPanel` — the non-technical home for a session's right panel: the
+ * promise cards (Outputs / Context / Apps) over the same tool-call data
  * `AdvancedPanel` renders one-at-a-time. Same props shape as `AdvancedPanel`
  * (plus the session's busy flag) so `session-layout.tsx` can swap between them
  * freely.
  *
  * Easy mode is chrome-free: no tab strip, no header, no border. The panel IS
- * the three cards. They expand in place and never navigate away from each
+ * the cards. They expand in place and never navigate away from each
  * other — the only thing that ever replaces them is a detail (a step's tool
  * views, a Context group, a file, a running app), and the panel owns that,
  * because a card cannot replace its own parent.
  *
  * Must use `collectAllToolParts`, not `collectToolParts`: the latter strips
  * `read`/`skill` parts, which is correct for Advanced's one-at-a-time
- * stepper but would silently empty out Easy mode's "Read N files" narration
- * and the Context card's "Files read" bucket.
+ * stepper but would silently empty out the Context card's "Files read" bucket.
  */
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
@@ -38,14 +37,12 @@ import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { FileTextIcon as FileText, TerminalIcon } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
 import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
-import { pendingInputCount } from '../shared/deliverable-readiness';
 import { type OutputItem, deriveContext, deriveOutputs } from '../shared/derive-panels';
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
@@ -75,7 +72,6 @@ import {
 } from './easy-panel-logic';
 import { FilePreview, reportsIntrinsicSize } from './file-preview';
 import { OutputsCard } from './outputs-card';
-import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
 
 /** The path's last segment — used only to decide whether the path hint in
@@ -107,19 +103,12 @@ export const EasyPanel = memo(function EasyPanel({
   const outputs = useMemo(() => deriveOutputs(parts, { latestRun: latestIds }), [parts, latestIds]);
   const context = useMemo(() => deriveContext(parts), [parts]);
 
-  // The latest run's own steps, not the session's — shared by `ProgressCard`
-  // itself (the live story it narrates), `elapsedMs` (the run's wall-clock,
-  // not the session's lifetime sum: "6 of 6 done · 3h 40m" across a week of
-  // runs answers a question nobody asked, W11), AND `outcome` below (a
+  // The latest run's own steps, not the session's — read by `outcome` below (a
   // text-only turn must never inherit a verdict from an old errored run
   // further back in the session).
   const latestSteps = useMemo(
     () => groupSteps(collectAllToolParts(latestRunMessages(messages))),
     [messages],
-  );
-  const elapsedMs = useMemo(
-    () => latestSteps.reduce((total, step) => total + (step.durationMs ?? 0), 0),
-    [latestSteps],
   );
 
   // A running app is not "one of" the outputs — it's the thing the user asked
@@ -143,19 +132,10 @@ export const EasyPanel = memo(function EasyPanel({
 
   // Part-derived alone flickers between tool calls (assistant text streams
   // with no part running/pending) — OR it with the session's own status so
-  // Outputs only auto-expands at the real finish, and Progress's
-  // shimmer/subtitle don't flicker at every tool boundary. See `deriveIsRunning`.
+  // Outputs only auto-expands at the real finish. See `deriveIsRunning`.
   const isRunning = deriveIsRunning(
     steps.some((s) => s.status === 'running'),
     isSessionBusy,
-  );
-
-  // W9 — the agent is blocked on a pending question/permission for THIS
-  // session. Progress redirects attention to it instead of claiming to be
-  // working or done. Same filter the header's needs-input chip uses (see
-  // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
-  const waitingOnUser = useRuntimePendingStore(
-    (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
   );
 
   const isMobile = useIsMobile();
@@ -173,7 +153,7 @@ export const EasyPanel = memo(function EasyPanel({
   // Leaving a detail always returns to the home cards, so it must also drop the
   // panel out of fullscreen — the store `isExpanded` a detail entered when the
   // app/file was maximized. Without this the panel stays pinned at 100% width
-  // and the home cards (progress/outputs/context/apps) render full-bleed
+  // and the home cards (outputs/context/apps) render full-bleed
   // instead of snapping back to the resizable split; worse, "Ask for changes"
   // targets the chat composer, which fullscreen has collapsed to zero width.
   // Only the exits route through here. Paging between siblings does NOT: the
@@ -704,13 +684,6 @@ export const EasyPanel = memo(function EasyPanel({
     <div className="relative h-full w-full">
       <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile} terminalOpen={terminalOpen}>
         <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-          <ProgressCard
-            steps={latestSteps}
-            isRunning={isRunning}
-            elapsedMs={elapsedMs}
-            outcome={outcome}
-            waitingOnUser={waitingOnUser}
-          />
           <OutputsCard
             outputs={files}
             defaultExpanded={outputsDefaultOpen}

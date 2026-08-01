@@ -40,6 +40,7 @@ import {
   WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
   CheckIcon as Check,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
@@ -48,7 +49,6 @@ import {
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
   ArrowClockwiseIcon as RefreshCw,
-  ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
@@ -373,7 +373,7 @@ export function AppPreview({
               window.open(previewUrl, '_blank', 'noopener,noreferrer');
             }}
           >
-            <TbExternalLink className="size-4" />
+            <ArrowSquareOutIcon className="size-4" />
           </Button>
         </Hint>
 

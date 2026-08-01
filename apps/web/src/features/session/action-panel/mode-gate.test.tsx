@@ -94,7 +94,7 @@ describe('panel mode gate', () => {
     expect(html).toContain('Context');
   });
 
-  test('EasyPanel renders the card home — Progress/Outputs/Context promises, no stepper', () => {
+  test('EasyPanel renders the card home — Outputs/Context promises, no stepper', () => {
     const html = renderToStaticMarkup(
       withQueryClient(<EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
     );
