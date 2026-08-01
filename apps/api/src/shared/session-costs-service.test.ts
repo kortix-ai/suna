@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@kortix/db';
+import { type SQL, sql } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 type QueryRecord = {
   fields: Record<string, unknown>;
@@ -9,6 +11,14 @@ type QueryRecord = {
 
 let queryRecords: QueryRecord[] = [];
 let resultForQuery: (fields: Record<string, unknown>, table: unknown) => unknown[] = () => [];
+
+// The mock never talks to Postgres, so render the recorded WHERE clause to real
+// SQL to assert which columns and bounds a query actually carries.
+function renderWhere(record: QueryRecord | undefined): { sql: string; params: unknown[] } {
+  const where = record?.calls.find((call) => call.method === 'where')?.args[0];
+  if (!where) throw new Error('query recorded no where() call');
+  return new PgDialect().sqlToQuery(where as SQL);
+}
 
 function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   const builder: Record<string, unknown> = {};
@@ -26,6 +36,15 @@ function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
       return builder;
     };
   }
+  // Mirrors Drizzle's subquery terminator: `.as(alias)` ends the builder chain
+  // and yields an object whose keys are the selected columns, addressable as
+  // `"alias"."column"` by the outer query.
+  builder.as = (alias: string) => {
+    record.calls.push({ method: 'as', args: [alias] });
+    return Object.fromEntries(
+      Object.keys(record.fields).map((column) => [column, sql.raw(`"${alias}"."${column}"`)]),
+    );
+  };
   // biome-ignore lint/suspicious/noThenProperty: The Drizzle query mock must be awaitable.
   builder.then = (resolve: (value: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
     Promise.resolve(rows).then(resolve, reject);
@@ -77,6 +96,29 @@ const baseSessionRow = {
   updatedAt: new Date('2026-07-01T11:00:00.000Z'),
 };
 
+// listSessionCosts now reads the aggregates off the joined session row instead
+// of a second round trip, so the fixture carries the left-joined columns.
+const joinedSessionRow = {
+  ...baseSessionRow,
+  llmCost: '1.25',
+  requestCount: 3,
+  errorCount: 1,
+  inputTokens: 100,
+  outputTokens: 50,
+  cachedTokens: 20,
+  cacheWriteTokens: 5,
+  modelCount: 2,
+  llmLastAt: new Date('2026-07-01T11:30:00.000Z'),
+  computeCost: '0.75',
+  computeSeconds: 120,
+  computeLastAt: '2026-07-01T11:31:00.000Z',
+};
+
+const costWindow = {
+  from: new Date('2026-07-01T00:00:00.000Z'),
+  to: new Date('2026-07-08T00:00:00.000Z'),
+};
+
 beforeEach(() => {
   queryRecords = [];
   resultForQuery = () => [];
@@ -85,34 +127,8 @@ beforeEach(() => {
 describe('listSessionCosts service', () => {
   test('paginates base sessions and attaches account-wide reconciliation', async () => {
     resultForQuery = (fields, table) => {
-      if (table === projectSessions && 'projectName' in fields) return [baseSessionRow];
+      if (table === projectSessions && 'projectName' in fields) return [joinedSessionRow];
       if (table === projectSessions && 'total' in fields) return [{ total: 2 }];
-      if (table === gatewayRequestLogs && 'llmCost' in fields) {
-        return [
-          {
-            sessionId,
-            llmCost: '1.25',
-            requestCount: 3,
-            errorCount: 1,
-            inputTokens: 100,
-            outputTokens: 50,
-            cachedTokens: 20,
-            cacheWriteTokens: 5,
-            modelCount: 2,
-            lastAt: new Date('2026-07-01T11:30:00.000Z'),
-          },
-        ];
-      }
-      if (table === sandboxComputeSessions && 'computeCost' in fields) {
-        return [
-          {
-            sessionId,
-            computeCost: '0.75',
-            computeSeconds: 120,
-            lastAt: '2026-07-01T11:31:00.000Z',
-          },
-        ];
-      }
       if (table === gatewayRequestLogs && 'requests' in fields && !('tokens' in fields)) {
         return [{ cost: '0.1', requests: 1 }];
       }
@@ -125,6 +141,8 @@ describe('listSessionCosts service', () => {
     const result = await listSessionCosts({
       accountId,
       projectId,
+      window: costWindow,
+      sort: 'total_desc',
       limit: 1,
       offset: 0,
     });
@@ -160,6 +178,8 @@ describe('listSessionCosts service', () => {
     );
     expect(baseQuery?.calls.map((call) => call.method)).toEqual([
       'innerJoin',
+      'leftJoin',
+      'leftJoin',
       'where',
       'orderBy',
       'limit',
@@ -167,6 +187,148 @@ describe('listSessionCosts service', () => {
     ]);
     expect(baseQuery?.calls.find((call) => call.method === 'limit')?.args).toEqual([1]);
     expect(baseQuery?.calls.find((call) => call.method === 'offset')?.args).toEqual([0]);
+    // Two ORDER BY terms: the sort column and the session_id tiebreak that keeps
+    // LIMIT/OFFSET paging totally ordered.
+    expect(baseQuery?.calls.find((call) => call.method === 'orderBy')?.args).toHaveLength(2);
+  });
+
+  test('windows the LLM aggregate on created_at and the compute aggregate on started_at', async () => {
+    resultForQuery = () => [];
+    await listSessionCosts({
+      accountId,
+      window: costWindow,
+      sort: 'total_desc',
+      limit: 25,
+      offset: 0,
+    });
+
+    const llmAggregate = queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'llmCost' in query.fields,
+    );
+    const computeAggregate = queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'computeCost' in query.fields,
+    );
+    for (const aggregate of [llmAggregate, computeAggregate]) {
+      expect(aggregate?.calls.map((call) => call.method)).toEqual(['where', 'groupBy', 'as']);
+    }
+    expect(llmAggregate?.calls.at(-1)?.args).toEqual(['llm_agg']);
+    expect(computeAggregate?.calls.at(-1)?.args).toEqual(['compute_agg']);
+
+    // Half-open [from, to) on the columns idx_gateway_logs_account_time and
+    // idx_sandbox_compute_sessions_account_time cover.
+    const llmWhere = renderWhere(llmAggregate);
+    expect(llmWhere.sql).toContain('"created_at" >= $');
+    expect(llmWhere.sql).toContain('"created_at" < $');
+    expect(llmWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+
+    const computeWhere = renderWhere(computeAggregate);
+    expect(computeWhere.sql).toContain('"started_at" >= $');
+    expect(computeWhere.sql).toContain('"started_at" < $');
+    // last_billed_at's only index is partial (WHERE state = 'active'), so it
+    // must never become the window column.
+    expect(computeWhere.sql).not.toContain('last_billed_at');
+    expect(computeWhere.params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+  });
+
+  test('windows the unassigned-cost reconciliation on the same bounds', async () => {
+    resultForQuery = () => [];
+    await listSessionCosts({
+      accountId,
+      window: costWindow,
+      sort: 'total_desc',
+      limit: 25,
+      offset: 0,
+    });
+
+    const llmReconciliation = queryRecords.find(
+      (query) =>
+        query.table === gatewayRequestLogs &&
+        'requests' in query.fields &&
+        !('tokens' in query.fields),
+    );
+    const computeReconciliation = queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'windows' in query.fields,
+    );
+
+    expect(renderWhere(llmReconciliation).params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+    expect(renderWhere(computeReconciliation).params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+  });
+
+  test('emits the page in the requested spend order', async () => {
+    const rows = [
+      { ...joinedSessionRow, sessionId: 'session-cheap', llmCost: '0', computeCost: '0' },
+      { ...joinedSessionRow, sessionId: 'session-expensive', llmCost: '9', computeCost: '1' },
+    ];
+    resultForQuery = (fields, table) => {
+      if (table === projectSessions && 'projectName' in fields) return rows;
+      if (table === projectSessions && 'total' in fields) return [{ total: 2 }];
+      return [];
+    };
+
+    const descending = await listSessionCosts({
+      accountId,
+      window: costWindow,
+      sort: 'total_desc',
+      limit: 25,
+      offset: 0,
+    });
+    expect(descending.sessions.map((session) => session.session_id)).toEqual([
+      'session-expensive',
+      'session-cheap',
+    ]);
+
+    const ascending = await listSessionCosts({
+      accountId,
+      window: costWindow,
+      sort: 'total_asc',
+      limit: 25,
+      offset: 0,
+    });
+    expect(ascending.sessions.map((session) => session.session_id)).toEqual([
+      'session-cheap',
+      'session-expensive',
+    ]);
+  });
+
+  test('filters the page and the total by owner when one is supplied', async () => {
+    resultForQuery = (fields, table) => {
+      if (table === projectSessions && 'total' in fields) return [{ total: 0 }];
+      return [];
+    };
+
+    await listSessionCosts({
+      accountId,
+      ownerId,
+      window: costWindow,
+      sort: 'recent',
+      limit: 25,
+      offset: 0,
+    });
+
+    // The page and the total must carry identical scope, or next_offset lies.
+    const scopedQueries = queryRecords.filter((query) => query.table === projectSessions);
+    expect(scopedQueries).toHaveLength(2);
+    for (const query of scopedQueries) {
+      const where = renderWhere(query);
+      expect(where.sql).toContain('"created_by" = $');
+      expect(where.params).toEqual([accountId, ownerId]);
+    }
   });
 });
 

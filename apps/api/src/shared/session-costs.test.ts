@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   InvalidSessionCostQueryError,
   assembleSessionCostSummary,
+  compareSessionCostRows,
   computeBilledSeconds,
   mergeLegacyGatewaySessionRows,
   parseSessionCostListQuery,
+  sessionCostSortKey,
   sortLedgerEntriesNewestFirst,
 } from './session-costs';
 
@@ -120,6 +122,61 @@ describe('assembleSessionCostSummary', () => {
       compute_seconds: 90,
       last_activity_at: '2026-07-03T12:01:00.000Z',
     });
+  });
+});
+
+describe('sessionCostSortKey', () => {
+  test('total_desc ranks the most expensive session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 1.5, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 12.25, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'c', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_desc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['b', 'a', 'c']);
+  });
+
+  test('total_asc ranks the cheapest session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 1.5, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 12.25, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'c', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_asc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['c', 'a', 'b']);
+  });
+
+  test('total_desc breaks ties on session id so paging is stable', () => {
+    const rows = [
+      { session_id: 'b', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'a', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_desc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['a', 'b']);
+  });
+
+  test('recent ranks the most recently updated session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 99, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('recent'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['b', 'a']);
+  });
+
+  test('recent breaks ties on session id so paging is stable', () => {
+    const rows = [
+      { session_id: 'b', total_cost: 2, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'a', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('recent'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['a', 'b']);
+  });
+
+  test('sortKey maps every sort to a stable column pair', () => {
+    expect(sessionCostSortKey('total_desc')).toEqual(['total_cost', 'desc']);
+    expect(sessionCostSortKey('total_asc')).toEqual(['total_cost', 'asc']);
+    expect(sessionCostSortKey('recent')).toEqual(['updated_at', 'desc']);
   });
 });
 
