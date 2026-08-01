@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { Checkpoint, CheckpointIcon, CheckpointLabel } from '@/components/ai-elements/checkpoint';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
@@ -11,6 +12,7 @@ import type { KortixSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
   CreditCardIcon as CreditCard,
+  WarningCircleIcon,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 
@@ -196,7 +198,15 @@ export function TurnErrorDisplay({
 
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(text)) {
-    return <p className={cn('text-muted-foreground/50 text-xs italic', className)}>Interrupted</p>;
+    return (
+      <Checkpoint>
+        <CheckpointIcon>
+          <WarningCircleIcon className="text-muted-foreground size-3.5 shrink-0" />
+        </CheckpointIcon>
+
+        <CheckpointLabel>Interrupted</CheckpointLabel>
+      </Checkpoint>
+    );
   }
 
   // Typed billing failure — the "is this billing at all" question is already
