@@ -18,10 +18,31 @@ const DEFAULT_WINDOW_DAYS = 30;
 const MAX_WINDOW_DAYS = 366;
 const DAY_MS = 86_400_000;
 
+// A date-only ISO string (YYYY-MM-DD) is unambiguous: the ECMAScript spec
+// defines it as UTC midnight regardless of the parsing environment's local
+// time zone.
+const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+// A full date-time is only unambiguous with an explicit UTC designator (Z/z)
+// or a numeric offset — both pin the string to one instant. Per spec, a
+// date-time with neither parses as *local* time, which would silently
+// violate the "always UTC" window contract depending on server TZ (e.g.
+// `new Date('2026-07-01T00:00:00.000')` under TZ=Asia/Calcutta becomes
+// 2026-06-30T18:30:00.000Z, not the UTC midnight the caller wrote).
+const ISO_DATE_TIME_WITH_DESIGNATOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|z|[+-]\d{2}:\d{2})$/;
+
 function parseBound(value: string, name: 'from' | 'to'): Date {
+  const invalidMessage = `${name} must be an ISO 8601 timestamp with a UTC designator or offset (e.g. 2026-07-01T00:00:00Z)`;
+  const isUnambiguousInstant =
+    ISO_DATE_ONLY.test(value) || ISO_DATE_TIME_WITH_DESIGNATOR.test(value);
+  if (!isUnambiguousInstant) {
+    throw new InvalidCostQueryError(invalidMessage);
+  }
   const parsed = new Date(value);
+  // The regex accepts the shape but not the range (e.g. month 13), so a
+  // second check still catches a well-formed-looking but invalid date.
   if (Number.isNaN(parsed.getTime())) {
-    throw new InvalidCostQueryError(`${name} must be an ISO 8601 timestamp`);
+    throw new InvalidCostQueryError(invalidMessage);
   }
   return parsed;
 }
