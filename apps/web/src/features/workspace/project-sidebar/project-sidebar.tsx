@@ -195,7 +195,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             live instead of inert. */}
         <div className="flex w-full items-center gap-1">
           <ProjectSwitcher variant="sidebar" className="min-w-0 flex-1" />
-          <div className="flex shrink-0 items-center gap-0.5 ml-auto">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
                 too: there is no keystroke to fall back on there. */}
