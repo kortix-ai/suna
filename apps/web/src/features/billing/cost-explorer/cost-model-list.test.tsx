@@ -28,6 +28,22 @@ describe('CostModelList', () => {
     expect(html).not.toContain('Show all');
   });
 
+  test('renders all 5 with no "Show all" control at the exact slice boundary', () => {
+    // 5 is the literal number in the brief and VISIBLE_COUNT's own cutoff —
+    // rest.length === 0 at exactly 5, so the Disclosure/button must not render.
+    const models = [
+      model('rank-1', 100),
+      model('rank-2', 80),
+      model('rank-3', 60),
+      model('rank-4', 40),
+      model('rank-5', 20),
+    ];
+    const html = renderToStaticMarkup(<CostModelList models={models} />);
+    expect(html).toContain('rank-1');
+    expect(html).toContain('rank-5');
+    expect(html).not.toContain('Show all');
+  });
+
   test('shows only the top 5 with a "Show all" control when there are more', () => {
     const models = [
       model('rank-1', 100),

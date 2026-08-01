@@ -59,11 +59,20 @@ describe('CostSummaryTiles', () => {
     expect(html.match(/%/g)?.length ?? 0).toBe(1);
   });
 
-  test('never renders the delta as a coloured badge — no badge markup near the figure', () => {
+  test('never renders the delta as a coloured badge or with green/red text', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
     expect(html).not.toContain('data-slot="badge"');
+
+    // Scoped to the delta paragraph's own class attribute — a global
+    // `not.toContain('data-slot="badge"')` alone would still pass if the
+    // delta were colour-coded directly (e.g. `text-kortix-red` on the <p>)
+    // without ever introducing a Badge. Extract that paragraph's className
+    // and assert no direction-coded colour landed on it specifically.
+    const deltaParagraph = html.match(/<p class="([^"]*)">\+23% vs prior period<\/p>/);
+    expect(deltaParagraph).not.toBeNull();
+    expect(deltaParagraph![1]).not.toMatch(/text-kortix-(green|red)/);
   });
 
   test('suppresses the delta entirely when the prior window had no spend', () => {

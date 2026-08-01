@@ -27,7 +27,7 @@ function formatDay(value: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-function formatAxisUsd(value: number): string {
+export function formatAxisUsd(value: number): string {
   if (value === 0) return '$0';
   if (value >= 1) return `$${Math.round(value).toLocaleString('en-US')}`;
   return formatSessionCostUsd(value);
@@ -40,7 +40,15 @@ export interface CostChartProps {
 
 export function CostChart({ series, isLoading }: CostChartProps) {
   if (isLoading) {
-    return <Skeleton className="h-[220px] w-full rounded-md" />;
+    // Skeleton only forwards `className`/`children` (see
+    // components/ui/skeleton.tsx), not arbitrary DOM props, so the label goes
+    // on a wrapping element — the same shape CostSummaryTiles' loading state
+    // uses for its own aria-label.
+    return (
+      <div aria-label="Loading spend chart">
+        <Skeleton className="h-[220px] w-full rounded-md" />
+      </div>
+    );
   }
 
   // A one-bar chart is noise pretending to be information — render nothing

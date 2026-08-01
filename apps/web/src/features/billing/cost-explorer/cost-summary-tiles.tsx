@@ -17,6 +17,10 @@ export interface CostSummaryTilesProps {
 
 export interface PeriodDelta {
   label: string;
+  /** Never map to colour — a cost delta has no good/bad direction. Spending
+   *  less is not inherently "good", so green-up/red-down would editorialise a
+   *  fact. Kept only for callers that need the sign for non-colour purposes
+   *  (e.g. an aria-label or a neutral glyph), not for styling. */
   direction: 'up' | 'down' | 'flat';
 }
 
@@ -42,7 +46,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
         {Array.from({ length: tileCount }).map((_, index) => (
           <div key={index} className="px-3 py-2.5">
             <Skeleton className="h-3 w-12" />
-            <Skeleton className="mt-2 ml-auto h-5 w-16" />
+            <Skeleton className="mt-2 h-5 w-16" />
           </div>
         ))}
       </div>
@@ -63,14 +67,14 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
       {tiles.map((tile) => (
         <div key={tile.label} className="px-3 py-2.5">
           <p className="text-muted-foreground text-xs">{tile.label}</p>
-          <p className="mt-0.5 text-right font-mono text-sm font-medium tabular-nums">
-            {tile.value}
-          </p>
+          <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{tile.value}</p>
           {/* The delta is muted text beneath the total, never a coloured badge —
               green-up/red-down on a cost figure is ambiguous (is spending less
-              "good"?) and would add decorative colour to a one-accent surface. */}
+              "good"?) and would add decorative colour to a one-accent surface.
+              `tile.delta.direction` above is never read here — see the field's
+              own doc comment for why. */}
           {tile.delta ? (
-            <p className="text-muted-foreground mt-0.5 text-right text-xs tabular-nums">
+            <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
               {tile.delta.label} vs prior period
             </p>
           ) : null}
