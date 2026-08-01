@@ -51,6 +51,12 @@ mock.module('../../iam', () => ({
       : { allowed: false, reason: 'resource_scope_insufficient' };
   },
 }));
+// The connector pre-flight now runs on every turn-start. This file is about a
+// different concern, so keep it satisfied — unstubbed it reaches a real DB.
+mock.module('../../projects/lib/prompt-connector-preflight', () => ({
+  PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
+  missingPromptConnectorAuthorizations: async () => ({ ok: true }),
+}));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: { requestedAgent?: string | null }) => {
     envSyncCalls.push({ requestedAgent: input.requestedAgent });

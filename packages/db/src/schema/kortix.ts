@@ -700,6 +700,21 @@ export const projectSessions = kortixSchema.table(
     // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
     // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
     secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
+    // Connector aliases this session REQUIRES, independent of whether anything is
+    // connected to them yet.
+    //
+    // A binding row cannot express this: `profile_id` is NOT NULL, so a binding is
+    // "use THIS connection", never "this session needs Gmail and has none". That
+    // gap is why the UI had to grey out an unconnected connector — there was
+    // nowhere to record the intent — and why `require_connectors` on create was
+    // read, enforced once, and then forgotten, leaving every later prompt and
+    // every warm-claim re-check blind to what the caller actually asked for.
+    //
+    // Checked as a UNION with the running agent's manifest `connectors_required`
+    // and the session's binding rows (see projects/lib/prompt-connector-preflight.ts),
+    // so this column narrows nothing and only ever ADDS a requirement.
+    // null/absent = the caller declared none.
+    requiredConnectors: jsonb('required_connectors').$type<string[]>(),
     // Distinguishes omitted connector_bindings from an explicit replacement.
     connectorBindingsConfigured: boolean('connector_bindings_configured')
       .default(false)
@@ -710,7 +725,12 @@ export const projectSessions = kortixSchema.table(
     // out: unbound aliases keep resolving to the project DEFAULT profile, so a
     // caller can override just one connector (e.g. a user's own Gmail) without
     // re-binding the rest. Only ever inherits the project default — never another
-    // owner's profile — so it is safe for any origin. Set at create, immutable after.
+    // owner's profile — so it is safe for any origin.
+    //
+    // Set at create AND changeable by `PUT /sessions/{id}/scope`. It used to say
+    // "immutable after", which stopped being true when the re-scope route landed
+    // and silently forced it to false on every binding change — quietly cutting
+    // off project-default fallback for a session that had been relying on it.
     connectorBindingsInheritUnbound: boolean('connector_bindings_inherit_unbound')
       .default(false)
       .notNull(),
@@ -952,16 +972,26 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column; every model is served. Retained INERT (not dropped) so
-     * a mixed-version rollout can't hit a missing column on the gateway's hot
-     * path — a later contract migration drops it. Do not add new readers.
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. Display-only: it decides what the session picker
+     * and "Manage models" OFFER; the gateway never refuses a request over it
+     * (enforcement 400'd in-use models — the #5932 revert).
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
      */
     modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column. Retained INERT (not dropped) for the same mixed-version
-     * reason as `modelOverrides`; a later contract migration drops it.
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
      */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),

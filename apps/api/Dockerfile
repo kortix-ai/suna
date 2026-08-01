@@ -64,6 +64,7 @@ ARG SERVICE
 
 # Copy workspace root files for pnpm install
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches ./patches
 
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
@@ -200,13 +201,16 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modul
 
 # Drop test-only source copied in with workspace packages. The runtime image
 # executes the API directly from TypeScript source, but does not need tests.
+# The runtime rejects a compiled agent that is older than its source. Refresh
+# the copied binary after all source copies and cleanup steps.
 RUN rm -rf \
     ${SERVICE}/src/__tests__ \
     apps/kortix-sandbox-agent-server/src/__tests__ \
     apps/cli/src/__tests__ \
     packages/starter/src/__tests__ \
     packages/manifest-schema/src/__tests__ \
-    packages/api-contract/src/__tests__
+    packages/api-contract/src/__tests__ && \
+    touch apps/kortix-sandbox-agent-server/dist/kortix-agent
 
 WORKDIR /app/${SERVICE}
 

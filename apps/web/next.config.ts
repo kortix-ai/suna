@@ -6,6 +6,7 @@ import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import './scripts/build-content-timestamps.mjs';
+import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
 
 // --- Content timestamps manifest -----------------------------------------
@@ -54,6 +55,38 @@ if (missingViewerWasmOutputs.length > 0) {
   // here when the outputs already exist, so it's safe to continue.
   console.warn(
     `[next.config.ts] Could not refresh viewer wasm assets (${(viewerWasmCopyError as Error).message}), ` +
+      `but all expected outputs already exist in public/ — continuing.`,
+  );
+}
+
+// --- Emoji dataset guarantee ----------------------------------------------
+// The emoji picker fetches the emojibase dataset from `public/` at first open
+// (see scripts/emojibase-data.mjs for why it is self-hosted rather than pulled
+// from a CDN). Same belt-and-suspenders as the viewer wasm above, and it
+// matters more here: frimousse has no error slot, so a missing dataset is not a
+// 404 anyone sees — it is a picker that spins forever with nothing on screen.
+let emojibaseCopyError: unknown = null;
+try {
+  copyEmojibaseData();
+} catch (err) {
+  emojibaseCopyError = err;
+}
+const missingEmojibaseOutputs = getEmojibaseDataOutputPaths().filter(
+  (output) => !fs.existsSync(output),
+);
+if (missingEmojibaseOutputs.length > 0) {
+  throw new Error(
+    `[next.config.ts] scripts/emojibase-data.mjs failed to produce required emoji dataset file(s): ` +
+      `${missingEmojibaseOutputs.join(', ')}` +
+      (emojibaseCopyError ? ` (${(emojibaseCopyError as Error).message})` : '') +
+      `. Run \`node scripts/copy-emojibase-data.mjs\` manually to diagnose.`,
+  );
+} else if (emojibaseCopyError) {
+  // Expected in a slim prod image: `next start` ships a `public/` populated at
+  // build time but not the node_modules the dataset comes from. Only reach here
+  // when the outputs already exist, so it's safe to continue.
+  console.warn(
+    `[next.config.ts] Could not refresh the emoji dataset (${(emojibaseCopyError as Error).message}), ` +
       `but all expected outputs already exist in public/ — continuing.`,
   );
 }

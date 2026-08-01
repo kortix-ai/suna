@@ -88,6 +88,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: { onboarding_completed_at: NOW },
+    icon: '🚀',
+    icon_glyph: null,
     last_opened_at: NOW,
     created_at: NOW,
     updated_at: NOW,
@@ -275,6 +277,34 @@ describe('ProjectSchema', () => {
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('accepts a null icon', () => {
+    const parsed = ProjectSchema.parse(projectFixture({ icon: null }));
+    expect(parsed.icon).toBeNull();
+  });
+
+  test('rejects a project with no icon field (icon is always emitted, never omitted)', () => {
+    const { icon: _dropped, ...withoutIcon } = projectFixture();
+    expect(() => ProjectSchema.strict().parse(withoutIcon)).toThrow();
+  });
+});
+
+describe('ProjectSchema.icon_glyph', () => {
+  test('accepts a glyph object and null, rejects undefined', () => {
+    const base = projectFixture();
+    expect(
+      ProjectSchema.safeParse({ ...base, icon_glyph: { name: 'Rocket', color: 'blue' } }).success,
+    ).toBe(true);
+    expect(ProjectSchema.safeParse({ ...base, icon_glyph: null }).success).toBe(true);
+    // nullable, NOT optional — a missing key is a contract violation.
+    const { icon_glyph: _omitted, ...withoutKey } = { ...base, icon_glyph: null };
+    expect(ProjectSchema.safeParse(withoutKey).success).toBe(false);
+  });
+
+  test('rejects a bare string', () => {
+    const base = projectFixture();
+    expect(ProjectSchema.safeParse({ ...base, icon_glyph: 'Rocket' }).success).toBe(false);
   });
 });
 
@@ -704,6 +734,9 @@ describe('session scope contracts', () => {
   test('emits only authorization_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
+      // The alias a session REQUIRES, whether or not anything is connected —
+      // the one axis a binding cannot express, since a binding carries an id.
+      required_connectors: ['gmail'],
       connector_bindings: { gmail: { authorization_id: authorizationId } },
       dropped_secrets: [],
       added_secrets: ['GMAIL_TOKEN'],

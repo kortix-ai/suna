@@ -21,6 +21,10 @@
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { Button } from '@/components/ui/button';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
@@ -416,11 +420,20 @@ function FileBody({
   }
 
   if (markdown) {
+    // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
+    // the raw file, markdown reads the block as prose: the opening `---` is a
+    // thematic break and the closing `---` is a setext underline, so an agent
+    // definition rendered as a stray horizontal rule followed by its entire
+    // metadata as one giant bold heading. Same split, same card as the chat's
+    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
+    // an agent file looks like.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
       <div className="p-10">
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={content} allowHtml={false} />
+        <DocMarkdown content={body} allowHtml={false} />
       </div>
     );
   }

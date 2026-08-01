@@ -356,6 +356,9 @@ function buildOpencodeInstanceWarmupLines(opts: {
     // breaks every session's first prompt, not just startup latency, so
     // it must fail the build — the warm-up readiness probe below stays
     // best-effort as before.
+    // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
+    // ownership explicitly before the standard kortix user changes this tree.
+    'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
     'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
@@ -435,7 +438,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
-    "    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\",
+    // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
+    // Use echo so every provider writes the same valid sudoers line.
+    "    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\",
     '    && chmod 0440 /etc/sudoers.d/kortix \\',
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',

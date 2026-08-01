@@ -60,6 +60,7 @@ import {
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
+import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from './grid-file-card';
@@ -3643,6 +3644,11 @@ export function SessionChat({
     description?: string;
   } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
+  // The last prompt handed to the runtime, verbatim. Only read by the
+  // connector-refusal card, to re-send exactly what was refused.
+  const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
+    null,
+  );
   const [failedStartDraft, setFailedStartDraft] = useState<{
     text: string;
     files: AttachedFile[];
@@ -4781,6 +4787,11 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
+      // Kept so a turn refused for a missing connector can be re-sent verbatim
+      // once the account is connected. Without it the user connects, the card
+      // retries, and re-sends nothing — losing the message they typed, which is
+      // a worse outcome than the refusal they started with.
+      lastSubmittedRef.current = { parts: mappedParts, options };
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
       const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
@@ -5644,6 +5655,27 @@ export function SessionChat({
 
                 {/* Busy indicator when no turns yet but session is busy */}
                 {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                {/* A turn refused for a missing connector renders HERE — after
+                    the last turn, directly under the message that triggered it —
+                    rather than as a one-line pill. It is the one failure with a
+                    button that fixes it. */}
+                <ConnectorRequiredNotice
+                  error={sessionState?.sendError}
+                  projectId={projectId}
+                  resend={
+                    sessionState && lastSubmittedRef.current
+                      ? () => {
+                          const last = lastSubmittedRef.current;
+                          if (!last) return;
+                          void sessionState.sendParts(
+                            last.parts as Parameters<typeof sessionState.sendParts>[0],
+                            last.options as Parameters<typeof sessionState.sendParts>[1],
+                          );
+                        }
+                      : undefined
+                  }
+                  className="mt-2"
+                />
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of

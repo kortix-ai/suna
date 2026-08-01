@@ -33,6 +33,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
     metadata: {},

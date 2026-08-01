@@ -107,8 +107,16 @@ export function setSessionConnectorEnabled(
   connector: SessionScopeConnectorOption,
   enabled: boolean,
 ): SessionScopeDraft {
+  const withoutRequirement = (base: SessionScopeDraft): SessionScopeDraft =>
+    base.require_connectors?.includes(connector.slug)
+      ? {
+          ...base,
+          require_connectors: base.require_connectors.filter((slug) => slug !== connector.slug),
+        }
+      : base;
+
   if (!enabled) {
-    return setSessionConnectorAuthorization(draft, connector.slug, null);
+    return withoutRequirement(setSessionConnectorAuthorization(draft, connector.slug, null));
   }
 
   if (draft.connector_bindings?.[connector.slug]) {
@@ -119,9 +127,21 @@ export function setSessionConnectorEnabled(
     connector.authorizations.find((candidate) => candidate.is_default) ??
     connector.authorizations[0];
 
-  return authorization
-    ? setSessionConnectorAuthorization(draft, connector.slug, authorization.authorization_id)
-    : draft;
+  if (authorization) {
+    return withoutRequirement(
+      setSessionConnectorAuthorization(draft, connector.slug, authorization.authorization_id),
+    );
+  }
+
+  // Nothing connected to this connector yet — and selecting it anyway is the
+  // point. It used to be un-checkable, so the only way to say "this session
+  // needs Gmail" was to already have Gmail working. Recorded as a REQUIREMENT
+  // instead of a binding (a binding needs an authorization id it does not have),
+  // which makes the next turn stop at a connect prompt rather than letting the
+  // agent discover it mid-answer.
+  return draft.require_connectors?.includes(connector.slug)
+    ? draft
+    : { ...draft, require_connectors: [...(draft.require_connectors ?? []), connector.slug] };
 }
 
 function secretSummary(draft: SessionScopeDraft): string {
@@ -301,14 +321,23 @@ export function SessionScopeControlContent({
                   const currentAuthorizationIsAvailable = connector.authorizations.some(
                     (authorization) => authorization.authorization_id === currentAuthorization,
                   );
-                  const selected = currentAuthorization !== undefined;
-                  const canSelect = selected || connector.authorizations.length > 0;
+                  const bound = currentAuthorization !== undefined;
+                  // Required but not connected: the session declares it and the
+                  // next turn will stop for a connect prompt.
+                  const requiredUnconnected =
+                    !bound && (draft.require_connectors?.includes(connector.slug) ?? false);
+                  const selected = bound || requiredUnconnected;
+                  const hasAuthorization = connector.authorizations.length > 0;
 
                   return (
                     <li key={connector.slug}>
                       <Checkbox
                         checked={selected}
-                        disabled={controlsDisabled || !canSelect}
+                        // Selectable with nothing connected. Greying it out meant
+                        // you could only require a connector that already worked,
+                        // which is precisely backwards — needing one you have not
+                        // connected yet is the case worth expressing.
+                        disabled={controlsDisabled}
                         className="min-h-10"
                         label={
                           <span className="flex min-w-0 items-center gap-1.5">
@@ -316,9 +345,11 @@ export function SessionScopeControlContent({
                             <Badge variant="outline" size="xs">
                               {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
                             </Badge>
-                            {!canSelect ? (
+                            {!hasAuthorization ? (
                               <span className="text-muted-foreground truncate text-xs font-normal">
-                                No authorization
+                                {requiredUnconnected
+                                  ? 'Required — connect to continue'
+                                  : 'Not connected'}
                               </span>
                             ) : null}
                           </span>
@@ -327,7 +358,16 @@ export function SessionScopeControlContent({
                           onChange(setSessionConnectorEnabled(draft, connector, checked === true))
                         }
                       />
-                      {selected ? (
+                      {requiredUnconnected ? (
+                        // No authorization exists, so there is nothing for the
+                        // Select to offer — rendering it would show an empty
+                        // dropdown that looks broken. Say what will happen instead.
+                        <p className="text-muted-foreground pr-2 pb-2 pl-10 text-xs text-pretty">
+                          Nothing is connected to {connector.name} yet. This session will ask you
+                          to connect it before its next reply.
+                        </p>
+                      ) : null}
+                      {selected && !requiredUnconnected ? (
                         <div className="pr-2 pb-2 pl-10">
                           <Select
                             value={currentAuthorization}
