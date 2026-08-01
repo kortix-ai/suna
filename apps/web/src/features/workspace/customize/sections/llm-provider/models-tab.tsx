@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { ModelIdCopyButton } from './model-id-copy-button';
 import { buildModelGroups } from './model-rows';
+import { useConnectedProviders } from './use-connected-providers';
 import { formatPricePerMillion, formatTokenCount } from './utils';
 
 export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
@@ -24,7 +25,17 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
   // switch here decides whether a model is offered in this browser's picker,
   // not a server-enforced enablement.
   const models = useProjectModels(projectId);
-  const modelStore = useModelStore(models);
+  // `useModelStore` hides a gateway model unless its upstream provider is
+  // connected, and resolves the "latest per family" default set from the FULL
+  // catalog — so BOTH `connectedProviderIds` and `catalogModels` must be passed
+  // or the tab renders "0 of N shown" (every model hidden) even though the
+  // session picker shows them. See useModelStore's opts doc comment.
+  const { connectedProviders } = useConnectedProviders(projectId, true);
+  const connectedProviderIds = useMemo(
+    () => new Set(connectedProviders.map((provider) => provider.id)),
+    [connectedProviders],
+  );
+  const modelStore = useModelStore(models, { connectedProviderIds, catalogModels: models });
 
   const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
   const enabledCount = useMemo(

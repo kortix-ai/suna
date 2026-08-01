@@ -80,6 +80,7 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
+import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -436,7 +437,15 @@ export function CommandPalette() {
   );
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
-  const modelStore = useModelStore(allModels);
+  // Pass the store the opts it needs, or `isVisible` hides every gateway model
+  // (unless its provider is connected) and resolves an empty "latest" set — the
+  // same "0 shown" bug the Manage-models tab had. See useModelStore's opts doc.
+  const { connectedProviders } = useConnectedProviders(projectId ?? '', open && !!projectId);
+  const connectedProviderIds = useMemo(
+    () => new Set(connectedProviders.map((provider) => provider.id)),
+    [connectedProviders],
+  );
+  const modelStore = useModelStore(allModels, { connectedProviderIds, catalogModels: allModels });
 
   const currentAgentName = useMemo(() => {
     if (!currentSessionId) return undefined;
