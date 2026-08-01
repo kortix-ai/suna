@@ -259,10 +259,18 @@
      color-scheme: dark — so these need no `dark:` variant anywhere.
 
      The ring token paints BOTH the 1px inset ring and the glyph itself, so its
-     lightness has to clear 3:1 against the pale fill AND against --popover.
-     Yellow and lime sit much darker than the rest because they are
-     perceptually light at the same L — these are STARTING VALUES and are
-     measured and tuned in Task 10. */
+     lightness has to clear 3:1 against the pale fill AND against --popover/
+     --card. Task 10 measured all 48 ring-vs-surface pairs (8 hues x 2 themes x
+     3 surfaces) against WCAG's 3:1 non-text threshold and tuned the L channel
+     only — hue and saturation are untouched, so all eight stay recognisable.
+     Light mode needed a small darkening on red/yellow/blue only (their L
+     started too close to the fill). Dark mode needed a much bigger lightening
+     across ALL EIGHT hues: the dark fills sit at L 24-27%, close enough to the
+     near-black --card/--popover (relative luminance ~0.007) that sRGB's gamma
+     curve compresses the ring-vs-fill gap far below 3:1 at the original
+     L 38-48%; every dark ring now sits at L 46-61% to clear it. See
+     .superpowers/sdd/2026-08-01-project-glyph-icons/task-10-report.md for the
+     full before/after table. */
   --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
   --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
   --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
@@ -271,14 +279,14 @@
   --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
   --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
   --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
-  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 44%));
-  --color-glyph-ring-red: light-dark(hsl(4 46% 55%), hsl(4 46% 46%));
-  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 42%));
-  --color-glyph-ring-yellow: light-dark(hsl(46 62% 39%), hsl(46 55% 40%));
-  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 38%));
-  --color-glyph-ring-blue: light-dark(hsl(212 46% 54%), hsl(212 46% 46%));
-  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 48%));
-  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 46%));
+  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
+  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
+  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
+  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
+  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
+  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
+  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
+  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
   --text-xs: 0.8125rem;
