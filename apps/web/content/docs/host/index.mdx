@@ -86,6 +86,15 @@ Any signed-in user can still join by invite or SSO. Opt out with
 admin-only default with `--restrict-account-creation`.
 </Callout>
 
+Self-hosted instances do not start a warm session when a user opens a project.
+This setting protects fixed sandbox capacity. Enable warm sessions with:
+
+```sh
+kortix self-host env set KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED=true
+```
+
+The setting changes only the project index. A prompt still starts a session.
+
 ## Updates
 
 Every instance updates itself automatically. Pin an exact version instead:

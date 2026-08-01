@@ -80,6 +80,10 @@ const RuntimeEnvSchema = z.object({
    *  self-host without PIPEDREAM_* set should flip it off. Set via
    *  KORTIX_PUBLIC_CONNECTORS_ENABLED / NEXT_PUBLIC_CONNECTORS_ENABLED. */
   CONNECTORS_ENABLED: z.boolean().default(true),
+  /** Whether the project index creates and starts one unclaimed session before
+   *  the user sends a prompt. Cloud defaults this on. Self-host defaults this
+   *  off to avoid speculative sandbox capacity use. */
+  WARM_PROJECT_SESSIONS_ENABLED: z.boolean().default(true),
   /** Self-host: redirect unauthenticated visitors hitting "/" straight to
    *  /auth instead of the marketing landing page. Set via
    *  KORTIX_PUBLIC_DISABLE_LANDING_PAGE / NEXT_PUBLIC_DISABLE_LANDING_PAGE. */

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { provisioningFailurePresentation } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -473,13 +474,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       if (sandbox?.status === 'error') {
+        const failure = provisioningFailurePresentation(meta, sandboxLabel ?? 'session');
         return (
           <InlineSessionError
-            title={`Couldn't start ${sandboxLabel ?? 'session'}`}
-            message={
-              (meta.provisioningError as string) ||
-              (meta.errorMessage as string) ||
-              'Something went wrong while provisioning this session.'
+            title={failure.title}
+            message={failure.message}
+            action={
+              failure.retryable ? (
+                <RestartSessionButton restart={restart} onRestart={handleRestart} />
+              ) : undefined
             }
           />
         );

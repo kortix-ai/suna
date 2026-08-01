@@ -3497,6 +3497,159 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
   )
 })
 
+// --- 2026-08-01 sibling: the `BrowserApiErrors.setTimeout`-captured variant
+// (BS pattern `f50ed590…`). The `postEvent` Android WebView bridge-GC throw
+// surfaced via Sentry's `BrowserApiErrors` setTimeout auto-wrapper, which
+// records the SCHEDULING frame (the Next.js webpack runtime chunk where
+// `setTimeout` was REGISTERED) as frame #1 and the actual THROW SITE
+// (`<anonymous>`, the anonymous timer callback = the WebView bridge hop) as
+// frame #2. The #5181 matcher's resolvable-frame negative guard rejected
+// this event because frame #1 (`app:///_next/…`) is resolvable, so it leaked.
+// The fix recognizes the `<anonymous>` throw-site frame as a positive anchor
+// and relaxes the resolvable-frame negative guard so the incidental
+// webpack-runtime scheduling frame does NOT veto suppression. See
+// `ANDROID_WEBVIEW_BRIDGE_THROW_SITE_FRAME` for the rationale.
+//
+// The EXACT production event frames from BS `f50ed590…` (release
+// `c330eda4d96e7aee557618254a86df7d16ba5d9b`, v0.12.0, Chrome 150 Android 16,
+// mechanism `auto.browser.browserapierrors.setTimeout`, UNCAUGHT `handled:false`,
+// URL `https://kortix.com/`). Frame #1 is the webpack runtime chunk
+// (`__webpack_require__`'s module-init `setTimeout` registration, minified
+// function `u`); frame #2 is the `<anonymous>` throw site (function `?`).
+const SETTIMEOUT_PROD_SCHEDULING_FRAME =
+  'app:///_next/static/chunks/86784-d4b6544b8ad14b3b.js?dpl=dpl_vkPg62H2TNxvxAUgEDzEoaANndoK'
+const SETTIMEOUT_PROD_THROW_SITE_FRAME = '<anonymous>'
+
+test('classifies the BrowserApiErrors.setTimeout-captured postEvent noise (exact prod frames)', () => {
+  // The exact production capture shape — frame #1 is the webpack runtime
+  // SCHEDULING frame (where `setTimeout` was registered), frame #2 is the
+  // `<anonymous>` THROW SITE (the anonymous timer callback = the WebView
+  // bridge hop). Both `in_app:true`.
+  for (const message of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message,
+        frames: [
+          { filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' },
+          { filename: SETTIMEOUT_PROD_THROW_SITE_FRAME, function: '?' },
+        ],
+      }),
+      true,
+      `expected setTimeout-captured "${message}" (webpack-runtime + <anonymous> throw site) to be noise`,
+    )
+    // The scheduling frame alone (no `<anonymous>` throw site) must STILL keep
+    // reporting — an incidental webpack chunk frame with NO `<anonymous>`
+    // throw-site anchor is not the WebView bridge shape; it is an
+    // attributable app/webpack error. Only the `<anonymous>` throw-site frame
+    // is the positive anchor.
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message,
+        frames: [{ filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' }],
+      }),
+      false,
+      `expected scheduling-frame-only "${message}" (no <anonymous> throw site) to keep reporting`,
+    )
+  }
+})
+
+test('classifies the <anonymous> throw-site frame as noise even with an incidental app-chunk scheduling frame', () => {
+  // The positive `<anonymous>` throw-site anchor must fire regardless of
+  // which incidental scheduling frame the BrowserApiErrors wrapper recorded
+  // (a generic `app:///_next/…` chunk, a URL, or any non-first-party source).
+  for (const schedulingFrame of [
+    'app:///_next/static/chunks/66499-704f783b0e8ea993.js',
+    'app:///_next/static/chunks/webpack-abc123.js',
+    'https://kortix.com/_next/static/chunks/main-123.js',
+  ]) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message: 'Error invoking postEvent: Java object is gone',
+        frames: [
+          { filename: schedulingFrame },
+          { filename: '<anonymous>', function: '?' },
+        ],
+      }),
+      true,
+      `expected <anonymous> throw site + incidental scheduling frame ${schedulingFrame} to be noise`,
+    )
+  }
+  // The `<anonymous>` throw site is also noise via the runtime (window.onerror)
+  // gate when it is the filename itself.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      filename: '<anonymous>',
+    }),
+    true,
+    'expected runtime gate to suppress <anonymous> throw-site postEvent',
+  )
+})
+
+test('suppresses the BrowserApiErrors.setTimeout-captured postEvent noise via the Sentry beforeSend gate', () => {
+  // The exact production Sentry event shape — exception value + 2-frame
+  // stacktrace (webpack-runtime scheduling + `<anonymous>` throw site).
+  for (const value of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  { filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' },
+                  { filename: SETTIMEOUT_PROD_THROW_SITE_FRAME, function: '?' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress setTimeout-captured "${value}"`,
+    )
+  }
+})
+
+test('still does NOT suppress a real first-party postEvent failure (regression guard for the relaxed matcher)', () => {
+  // The first-party `apps/web/src/…` negative guard MUST still fire even when
+  // an incidental `<anonymous>` frame is present alongside a first-party frame.
+  // A real first-party `postEvent`/`dispatchEvent` regression de-minifies to
+  // `apps/web/src/…` and must never be hidden by the relaxed `<anonymous>`
+  // throw-site anchor.
+  const firstPartyFrames = [
+    { filename: 'apps/web/src/features/messaging/event-bridge.ts', function: 'dispatchBridgeEvent' },
+    { filename: '<anonymous>', function: '?' },
+  ]
+  assert.equal(
+    isAndroidWebViewNativeBridgePostEventNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      frames: firstPartyFrames,
+    }),
+    false,
+    'expected first-party postEvent regression with an incidental <anonymous> frame to keep reporting',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: 'Error invoking postEvent: Java object is gone', stacktrace: { frames: firstPartyFrames } }],
+      },
+    }),
+    false,
+    'expected Sentry gate to keep reporting first-party postEvent regression',
+  )
+  // Via the runtime gate: a first-party filename keeps reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      filename: 'apps/web/src/features/messaging/event-bridge.ts',
+    }),
+    false,
+  )
+})
+
 // ---------------------------------------------------------------------------
 // iOS WebKit (WKWebView) in-app-browser native-bridge `messageHandlers` noise
 // — the iOS sibling of the Android WebView bridge classes above.

@@ -232,7 +232,7 @@ export function ProjectSwitcher({
             clicked, and never after the pointer has left. */}
         <span
           aria-hidden
-          className="bg-border/0 group-hover/switcher:bg-border h-full w-px shrink-0 transition-colors duration-150 ease-out"
+          className="bg-border/0 group-hover/switcher:bg-border/70 h-full w-px shrink-0 transition-colors duration-150 ease-out"
         />
         <DropdownMenuTrigger asChild>
           <button
