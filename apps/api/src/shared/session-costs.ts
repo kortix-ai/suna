@@ -189,7 +189,12 @@ export interface LegacyGatewaySessionRow {
   total_cost: number;
 }
 
-const billedComputeSecondsExpression = sql<number>`
+// Exported so cost-rollups.ts's getCostSummary reuses this one definition
+// instead of a second, independently-editable copy: /usage/session-costs and
+// /usage/cost-summary both report compute_seconds for the same session, and
+// two byte-identical-today copies would silently drift the moment either one
+// is edited (e.g. clamping on ended_at instead of last_billed_at).
+export const billedComputeSecondsExpression = sql<number>`
   greatest(
     extract(
       epoch from ${sandboxComputeSessions.lastBilledAt} - ${sandboxComputeSessions.startedAt}

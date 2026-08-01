@@ -39,6 +39,17 @@ function renderOrderBy(record: QueryRecord | undefined): string[] {
   return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
 }
 
+// Renders one selected field's SQL expression (e.g. a `sum(...)` aggregate)
+// to text, so a test can pin the exact column a money or duration figure is
+// computed from. Without this, swapping final_cost_precise for the
+// legacy, lower-precision final_cost column — or swapping a billed-seconds
+// expression for raw wall time — changes no assertion anywhere in this file.
+function renderField(record: QueryRecord | undefined, key: string): string {
+  const value = record?.fields[key];
+  if (!value) throw new Error(`query recorded no "${key}" field`);
+  return new PgDialect().sqlToQuery(value as SQL).sql;
+}
+
 function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   const builder: Record<string, unknown> = {};
   for (const method of ['innerJoin', 'leftJoin', 'where', 'groupBy', 'orderBy', 'limit']) {
@@ -63,6 +74,13 @@ mock.module('./db', () => ({
       },
     }),
   },
+  // getCostSummary imports billedComputeSecondsExpression from
+  // session-costs.ts, which transitively imports projects/lib/access.ts ->
+  // platform-roles.ts, which reads hasDatabase from this same module at
+  // import time. Only the query-builder mock above matters to this file's
+  // tests, but the module has to satisfy every export the import graph
+  // touches or the import throws before any test runs.
+  hasDatabase: true,
 }));
 
 const {
@@ -508,6 +526,16 @@ describe('getCostSummary', () => {
         'cost' in query.fields,
     );
   }
+  function llmProjectIdsRecord() {
+    return queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'projectId' in query.fields,
+    );
+  }
+  function computeProjectIdsRecord() {
+    return queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'projectId' in query.fields,
+    );
+  }
 
   test('windows the LLM aggregate on created_at and the compute aggregate on started_at, never last_billed_at', async () => {
     await getCostSummary({ accountId, window });
@@ -538,11 +566,38 @@ describe('getCostSummary', () => {
     // Joining project_sessions unconditionally would inner-join away compute
     // cost from sessions with no project_sessions row, undercounting the
     // account-wide total that the "unassigned" row downstream depends on.
+    // This applies to every money query on the compute side — totals, daily,
+    // AND prior — not just totals: an unguarded prior-window join would
+    // silently exclude unassigned compute from `previous.total_cost` too,
+    // corrupting the period delta the same way.
     expect(computeTotalsRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
     expect(computeDailyRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
+    expect(computePriorRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
 
     const llmWhere = renderWhere(llmTotalsRecord());
     expect(llmWhere.params).toHaveLength(3);
+  });
+
+  test('every money and duration figure is computed from the precise, unbilled-drift-free column', async () => {
+    await getCostSummary({ accountId, window });
+
+    // gateway_request_logs carries two cost columns: the legacy
+    // final_cost (numeric(12,6)) and final_cost_precise (numeric(20,10),
+    // Drizzle field name finalCost). Only the precise column may back any
+    // of these four LLM money aggregates — a swap to the legacy column
+    // truncates money and nothing else here would notice.
+    expect(renderField(llmTotalsRecord(), 'llmCost')).toContain('"final_cost_precise"');
+    expect(renderField(llmDailyRecord(), 'cost')).toContain('"final_cost_precise"');
+    expect(renderField(modelsRecord(), 'cost')).toContain('"final_cost_precise"');
+    expect(renderField(llmPriorRecord(), 'cost')).toContain('"final_cost_precise"');
+
+    // compute_seconds must be BILLED seconds (last_billed_at - started_at),
+    // not raw wall time (e.g. now() - started_at, or ended_at - started_at)
+    // — a session that stopped accruing charges but never formally ended
+    // would otherwise keep accumulating seconds it was never billed for.
+    const computeSecondsSql = renderField(computeTotalsRecord(), 'computeSeconds');
+    expect(computeSecondsSql).toContain('"last_billed_at"');
+    expect(computeSecondsSql).toContain('"started_at"');
   });
 
   test('scopes every query to project_id when provided, joining compute through project_sessions', async () => {
@@ -622,10 +677,19 @@ describe('getCostSummary', () => {
       gatewayRequestLogs.provider,
       gatewayRequestLogs.resolvedModel,
     ]);
-    expect(renderOrderBy(record)[0]).toBe(
-      'sum("kortix"."gateway_request_logs"."final_cost_precise") desc',
-    );
     expect(record?.calls.find((call) => call.method === 'limit')?.args).toEqual([10]);
+  });
+
+  test('the model breakdown breaks a spend tie deterministically by provider then model', async () => {
+    await getCostSummary({ accountId, window });
+
+    // A tie on the 10th row is ordinary at LIMIT 10, not an edge case: cost
+    // ordering alone leaves it to whatever order Postgres happens to scan
+    // rows in, which can flip between refreshes.
+    const [spend, provider, model] = renderOrderBy(modelsRecord());
+    expect(spend).toBe('sum("kortix"."gateway_request_logs"."final_cost_precise") desc');
+    expect(provider).toBe('"kortix"."gateway_request_logs"."provider" desc');
+    expect(model).toBe('"kortix"."gateway_request_logs"."resolved_model" desc');
   });
 
   test('the prior window is the equal-length window immediately before the current one', async () => {
@@ -644,10 +708,36 @@ describe('getCostSummary', () => {
     ]);
   });
 
+  test('project_count is sourced from a dedicated query per side, the compute side always joined', async () => {
+    await getCostSummary({ accountId, window });
+
+    // The LLM side reads project_id directly off gateway_request_logs — no
+    // join needed, it is already a column on that table.
+    const llmIds = llmProjectIdsRecord();
+    expect(llmIds?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
+    expect(renderWhere(llmIds).sql).toContain('"project_id" is not null');
+    expect(renderWhere(llmIds).params).toEqual([
+      accountId,
+      '2026-07-01T00:00:00.000Z',
+      '2026-07-08T00:00:00.000Z',
+    ]);
+
+    // The compute side has no project_id column of its own: this query
+    // always joins project_sessions to reach it, unconditionally — unlike
+    // computeTotals/computeDaily/computePrior, which join only when
+    // projectId scopes the query down to one project. This query carries no
+    // money, so there is nothing for that join to silently undercount.
+    const computeIds = computeProjectIdsRecord();
+    expect(computeIds?.calls.map((call) => call.method)).toEqual(['innerJoin', 'where', 'groupBy']);
+    expect(renderJoinOn(computeIds, 'innerJoin')).toBe(
+      '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
+    );
+  });
+
   test('assembles totals, previous, series and models from the aggregate queries', async () => {
     resultForQuery = (fields, table) => {
       if (table === gatewayRequestLogs && 'llmCost' in fields) {
-        return [{ llmCost: '10', requestCount: 4, sessionCount: 2, projectCount: 1 }];
+        return [{ llmCost: '10', requestCount: 4, sessionCount: 2 }];
       }
       if (table === gatewayRequestLogs && 'day' in fields) {
         return [{ day: '2026-07-02', cost: '10' }];
@@ -657,6 +747,10 @@ describe('getCostSummary', () => {
           { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: '10', requestCount: 4 },
         ];
       }
+      if (table === gatewayRequestLogs && 'projectId' in fields) {
+        // Project p1 has LLM activity in the window.
+        return [{ projectId: 'p1' }];
+      }
       if (table === gatewayRequestLogs && Object.keys(fields).length === 1 && 'cost' in fields) {
         return [{ cost: '4' }];
       }
@@ -665,6 +759,12 @@ describe('getCostSummary', () => {
       }
       if (table === sandboxComputeSessions && 'day' in fields) {
         return [{ day: '2026-07-03', cost: '5' }];
+      }
+      if (table === sandboxComputeSessions && 'projectId' in fields) {
+        // p1 again (both sources touch it) plus p2, which has ONLY compute
+        // spend in this window and zero gateway_request_logs rows — the
+        // scenario a count(distinct) on the LLM side alone would miss.
+        return [{ projectId: 'p1' }, { projectId: 'p2' }];
       }
       if (
         table === sandboxComputeSessions &&
@@ -692,7 +792,10 @@ describe('getCostSummary', () => {
       compute_seconds: 900,
       // The larger of the two sources' distinct session counts.
       session_count: 3,
-      project_count: 1,
+      // The union of {p1} (LLM) and {p1, p2} (compute) is {p1, p2}: 2, not
+      // the 1 that counting only the LLM side's distinct project_id would
+      // give.
+      project_count: 2,
     });
     // 4 (llm prior) + 6 (compute prior).
     expect(summary.previous).toEqual({ total_cost: 10 });
@@ -704,5 +807,19 @@ describe('getCostSummary', () => {
     expect(summary.models).toEqual([
       { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: 10, request_count: 4 },
     ]);
+  });
+
+  test('counts a project with compute spend and zero LLM calls in the window', async () => {
+    resultForQuery = (fields, table) => {
+      if (table === gatewayRequestLogs && 'projectId' in fields) return [];
+      if (table === sandboxComputeSessions && 'projectId' in fields) {
+        return [{ projectId: 'compute-only-project' }];
+      }
+      return [];
+    };
+
+    const summary = await getCostSummary({ accountId, window });
+
+    expect(summary.totals.project_count).toBe(1);
   });
 });

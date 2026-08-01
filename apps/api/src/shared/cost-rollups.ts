@@ -3,6 +3,7 @@ import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
+import { billedComputeSecondsExpression } from './session-costs';
 
 export interface ProjectCostRow {
   project_id: string;
@@ -301,20 +302,6 @@ const LLM_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${gatewayReques
 // mode, so `at time zone 'UTC'` on the raw column is valid the same way.
 const COMPUTE_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${sandboxComputeSessions.startedAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
 
-// Seconds actually billed (last_billed_at - started_at, clamped to >= 0), not
-// raw wall time. Mirrors session-costs.ts's billedComputeSecondsExpression;
-// duplicated (not imported) to keep this task's edits inside the three files
-// it was scoped to (cost-rollups.ts / .test.ts / usage.ts) — flagged in the
-// task report as a candidate for consolidation.
-const billedComputeSecondsExpression = sql<number>`
-  greatest(
-    extract(
-      epoch from ${sandboxComputeSessions.lastBilledAt} - ${sandboxComputeSessions.startedAt}
-    ),
-    0
-  )
-`;
-
 interface ComputeTotalsRow {
   computeCost: number | string;
   computeSeconds: number | string;
@@ -436,21 +423,43 @@ export async function getCostSummary(input: {
 
   const previous = previousWindow(window);
 
+  // A dedicated, non-money query pair for project_count: the true union of
+  // distinct project ids touched by either source, not just the LLM side's
+  // count (see the comment on totals.project_count below for why the LLM
+  // side alone undercounts). The compute side is always joined to
+  // project_sessions here — unlike computeTotals/computeDaily/computePrior,
+  // this query carries no money, so there is no completeness constraint to
+  // protect: a compute row with no project_sessions match has no project to
+  // attribute to a distinct-project count in the first place.
+  const llmProjectIdsQuery = db
+    .select({ projectId: gatewayRequestLogs.projectId })
+    .from(gatewayRequestLogs)
+    .where(and(llmScope(window), sql`${gatewayRequestLogs.projectId} is not null`))
+    .groupBy(gatewayRequestLogs.projectId);
+
+  const computeProjectIdsQuery = db
+    .select({ projectId: projectSessions.projectId })
+    .from(sandboxComputeSessions)
+    .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+    .where(computeScope(window))
+    .groupBy(projectSessions.projectId);
+
   const [
     llmTotalsRows,
     llmDailyRows,
     modelRows,
     llmPriorRows,
+    llmProjectIdRows,
     computeTotalsRows,
     computeDailyRows,
     computePriorRows,
+    computeProjectIdRows,
   ] = await Promise.all([
     db
       .select({
         llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
         requestCount: sql<number>`count(*)::int`,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
-        projectCount: sql<number>`count(distinct ${gatewayRequestLogs.projectId})::int`,
       })
       .from(gatewayRequestLogs)
       .where(llmScope(window)),
@@ -472,16 +481,29 @@ export async function getCostSummary(input: {
       .from(gatewayRequestLogs)
       .where(llmScope(window))
       .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`))
+      // Cost descending, then provider/model descending as a deterministic
+      // tie-break — without it, which model lands on the 10th row of a tie
+      // is unspecified and can flip between refreshes.
+      .orderBy(
+        desc(sql`sum(${gatewayRequestLogs.finalCost})`),
+        desc(gatewayRequestLogs.provider),
+        desc(gatewayRequestLogs.resolvedModel),
+      )
       .limit(10),
     db
       .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
+    llmProjectIdsQuery,
     loadComputeTotals(window),
     loadComputeDaily(window),
     loadComputePrior(previous),
+    computeProjectIdsQuery,
   ]);
+
+  const projectIds = new Set<string>();
+  for (const row of llmProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
+  for (const row of computeProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
 
   const llmTotals = llmTotalsRows[0];
   const computeTotals = computeTotalsRows[0];
@@ -494,19 +516,28 @@ export async function getCostSummary(input: {
     total_cost: Number((llmCost + computeCost).toFixed(10)),
     request_count: numberValue(llmTotals?.requestCount),
     compute_seconds: numberValue(computeTotals?.computeSeconds),
-    // The larger of the two sources' distinct session counts — the same
-    // convention mergeProjectCostRows uses above, so a session with spend on
-    // only one side is never undercounted.
+    // The larger of the two sources' distinct session counts — NOT the true
+    // union: a session with LLM-only spend and a different session with
+    // compute-only spend both go uncounted by Math.max the same way they
+    // would under- or over-count with either side alone. This follows
+    // mergeProjectCostRows's established convention above (same
+    // approximation, same tradeoff) rather than diverging with a more
+    // accurate but novel calculation.
     session_count: Math.max(
       numberValue(llmTotals?.sessionCount),
       numberValue(computeTotals?.sessionCount),
     ),
-    // Sourced from gateway_request_logs.project_id alone: it is the only side
-    // that carries project_id without a join, and joining the compute side
-    // unconditionally would break the total_cost completeness constraint
-    // documented on computeScope above. This undercounts only in the edge
-    // case of a project with compute spend and zero LLM calls in the window.
-    project_count: numberValue(llmTotals?.projectCount),
+    // The true union of distinct project ids across both sources, not just
+    // the LLM side's count: a project can have compute spend and zero
+    // gateway_request_logs rows in the window (a session whose compute
+    // started inside the window but whose LLM calls fell outside it, or a
+    // project on BYO keys with no gateway rows at all), and listCostByProject
+    // above already treats such a project as real (mergeProjectCostRows's
+    // compute loop calls ensure(row.projectId) same as the LLM loop). This is
+    // a separate, non-money query (projectIds), so it does not touch the
+    // total_cost completeness constraint documented on computeScope above —
+    // that constraint binds the money queries, not a distinct-id count.
+    project_count: projectIds.size,
   };
 
   const previousTotalCost = Number(

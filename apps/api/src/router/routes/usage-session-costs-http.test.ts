@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
@@ -112,6 +113,12 @@ mock.module('../../shared/session-costs', () => ({
     if (!detailFound) return null;
     return { ...summary, model_usage: [], ledger_entries: [] };
   },
+  // usage.ts also imports getCostSummary from cost-rollups.ts, which imports
+  // this named export from the real session-costs.ts module. This file only
+  // exercises the /session-costs routes (getCostSummary is never called),
+  // but the static import still has to resolve against this mock or the
+  // whole module graph fails to load before any test runs.
+  billedComputeSecondsExpression: sql`0`,
 }));
 
 const { usageApp, SESSION_COST_SORTS } = await import('./usage');
