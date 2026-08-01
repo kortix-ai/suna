@@ -121,6 +121,19 @@ describe('session cost query builders', () => {
     expect(changedWindow.queryKey).not.toEqual(query.queryKey);
   });
 
+  test('list query is disabled until an account id is known', () => {
+    const disabled = buildSessionCostsListQuery(
+      { accountId: undefined, projectId: null, limit: 25, offset: 0 },
+      sources,
+    );
+    const enabled = buildSessionCostsListQuery(
+      { accountId: 'account-1', projectId: null, limit: 25, offset: 0 },
+      sources,
+    );
+    expect(disabled.enabled).toBe(false);
+    expect(enabled.enabled).toBe(true);
+  });
+
   test('enables detail only for a selected session and binds its project', async () => {
     const calls: unknown[] = [];
     const disabled = buildSessionCostDetailQuery(
@@ -164,6 +177,14 @@ describe('session cost query builders', () => {
         options: { accountId: 'account-1', projectId: 'project-1' },
       },
     ]);
+  });
+
+  test('detail query stays disabled without an account id even when a session is selected', () => {
+    const query = buildSessionCostDetailQuery(
+      { accountId: undefined, projectId: 'project-1', sessionId: 'session-1' },
+      sources,
+    );
+    expect(query.enabled).toBe(false);
   });
 
   test('scopes the project catalog and resets pagination when the filter changes', async () => {

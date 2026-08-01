@@ -74,6 +74,7 @@ export function buildSessionCostsListQuery(
   return {
     queryKey: ['session-costs', 'list', keyInput] as const,
     queryFn: () => sources.list(options),
+    enabled: Boolean(input.accountId),
     staleTime: SESSION_COST_STALE_TIME_MS,
   };
 }
@@ -99,7 +100,16 @@ export function buildSessionCostDetailQuery(
         projectId: input.projectId ?? undefined,
       });
     },
-    enabled: Boolean(input.sessionId),
+    // Requires an account id too, not just a session id: getSessionCostRecord's
+    // scope options (`appendScopeOptions` in the SDK) only set `account_id` when
+    // truthy, and the API's session-costs detail route falls back to
+    // resolveScopedAccountId -> the caller's PRIMARY account when the query
+    // omits it. Firing before useBillingAccountId() resolves would silently
+    // query the wrong account (a 404 today, since getSessionCostRecord ANDs
+    // accountId with sessionId server-side — but relying on that AND as a
+    // safety net is fragile, and it still means a spurious "not found" flash
+    // for the exact session the user is looking at).
+    enabled: Boolean(input.sessionId) && Boolean(input.accountId),
     staleTime: SESSION_COST_STALE_TIME_MS,
   };
 }
