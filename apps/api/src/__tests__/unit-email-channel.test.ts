@@ -272,6 +272,7 @@ describe('dispatchAgentMailEvent', () => {
           name: 'Support',
         },
       ],
+      [{ agentName: 'veyris', opencodeModel: null }],
       [{ eventId: 'email:threadcreate:inb-1:thr-1' }],
       [
         {
@@ -305,6 +306,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls[0].body.connector_bindings).toEqual({
       email: { authorization_id: 'profile-email-1' },
     });
+    expect(createCalls[0].body.agent_name).toBe('veyris');
     expect(createCalls[0].body.initial_prompt).toBeUndefined();
   });
 
@@ -334,6 +336,7 @@ describe('dispatchAgentMailEvent', () => {
           name: 'Support',
         },
       ],
+      [],
       [{ eventId: 'email:threadcreate:inb-1:thr-unwrapped' }],
       [
         {

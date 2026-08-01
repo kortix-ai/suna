@@ -95,6 +95,7 @@ import {
   setProjectModelOverrides,
 } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
+import { loadProjectAgents } from '../agents';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -1891,6 +1892,8 @@ projectsApp.openapi(
       display_name?: string;
       displayName?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
+      agent_name?: string | null;
+      agentName?: string | null;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -1905,6 +1908,27 @@ projectsApp.openapi(
 
     const connectorSlug =
       (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const requestedAgent = body.agent_name ?? body.agentName;
+    const agentName =
+      typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent.trim() : null;
+    if (requestedAgent !== undefined && requestedAgent !== null && !agentName) {
+      return c.json({ error: 'agent_name cannot be blank', code: 'invalid_agent' }, 400);
+    }
+    if (agentName) {
+      const loadedAgents = await loadProjectAgents(loaded.row, {
+        forceRefresh: true,
+        rethrowReadErrors: true,
+      });
+      if (!loadedAgents.specs.some((agent) => agent.enabled && agent.name === agentName)) {
+        return c.json(
+          {
+            error: `Agent "${agentName}" is not declared or is disabled`,
+            code: 'invalid_agent',
+          },
+          400,
+        );
+      }
+    }
     const displayName = (
       body.display_name ??
       body.displayName ??
@@ -1997,6 +2021,7 @@ projectsApp.openapi(
       webhookId,
       webhookSecret,
       senderPolicy,
+      agentName,
     });
     await reconcileChannelConnectors(projectId);
     return c.json({
