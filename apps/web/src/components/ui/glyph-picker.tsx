@@ -106,12 +106,20 @@ const GLYPH_BUTTON = cn(
   'hover:inset-ring-1',
 );
 
-/** A glyph's keyword list always includes its own lowercased name
- *  (glyph-registry.test.tsx pins this), so an empty query matches everything
- *  and a real query only needs a substring check against that list. */
-function matchesSearch(name: string, query: string): boolean {
+/**
+ * A glyph's keyword list always includes its own lowercased name
+ * (glyph-registry.test.tsx pins this), so an empty query matches everything.
+ *
+ * `startsWith`, NOT `includes`. A substring test matches the middle of a word,
+ * which stayed tolerable at 64 glyphs and stopped being so at 202: "cat"
+ * matched `dupli(cat)e` and `notifi(cat)ion`, so searching for the cat returned
+ * Copy and Bell above it. Every keyword here is a whole word a person would
+ * actually type, so anchoring to the start costs nothing real and removes a
+ * class of result that reads as the search being broken.
+ */
+export function matchesSearch(name: string, query: string): boolean {
   if (!query) return true;
-  return GLYPH_SEARCH[name]?.some((keyword) => keyword.includes(query)) ?? false;
+  return GLYPH_SEARCH[name]?.some((keyword) => keyword.startsWith(query)) ?? false;
 }
 
 export function GlyphPicker({

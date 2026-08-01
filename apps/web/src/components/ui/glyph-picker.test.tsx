@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PROJECT_GLYPH_GROUPS } from '@kortix/shared';
-import { GlyphPicker } from './glyph-picker';
+import { GlyphPicker, matchesSearch } from './glyph-picker';
 
 /**
  * Block and line comments stripped out, same as emoji-picker.test.tsx's own
@@ -14,6 +14,37 @@ import { GlyphPicker } from './glyph-picker';
  */
 const stripComments = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+describe('matchesSearch', () => {
+  test('an empty query matches everything', () => {
+    expect(matchesSearch('Cat', '')).toBe(true);
+    expect(matchesSearch('Rocket', '')).toBe(true);
+  });
+
+  test('a query matches the start of a keyword', () => {
+    expect(matchesSearch('Cat', 'cat')).toBe(true);
+    expect(matchesSearch('Rocket', 'deploy')).toBe(true);
+    expect(matchesSearch('PiggyBank', 'sav')).toBe(true);
+  });
+
+  test('a query does NOT match the middle of a keyword', () => {
+    // The regression this exists for. With `includes`, "cat" matched
+    // `dupli(cat)e` on Copy and `notifi(cat)ion` on Bell, so searching for the
+    // cat surfaced Copy and Bell alongside it. Tolerable across 64 glyphs,
+    // actively misleading across 202.
+    expect(matchesSearch('Copy', 'cat')).toBe(false);
+    expect(matchesSearch('Bell', 'cat')).toBe(false);
+  });
+
+  test('an unknown glyph name matches nothing rather than throwing', () => {
+    expect(matchesSearch('NotAGlyph', 'anything')).toBe(false);
+  });
+
+  test('a number circle is findable by both its word and its digit', () => {
+    expect(matchesSearch('NumberCircleThree', 'three')).toBe(true);
+    expect(matchesSearch('NumberCircleThree', '3')).toBe(true);
+  });
+});
 
 describe('GlyphPicker', () => {
   test('renders every catalogue glyph', () => {
