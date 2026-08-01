@@ -347,7 +347,6 @@ export function shouldAutoOpenPayoff(args: {
   hasPrimary: boolean;
   detailOpen: boolean;
   interactedThisRun: boolean;
-  panelOpen: boolean;
 }): boolean {
   return (
     args.wasRunning &&
@@ -355,7 +354,6 @@ export function shouldAutoOpenPayoff(args: {
     args.outcome === 'succeeded' &&
     args.hasPrimary &&
     !args.detailOpen &&
-    !args.interactedThisRun &&
-    args.panelOpen
+    !args.interactedThisRun
   );
 }

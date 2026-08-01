@@ -316,7 +316,6 @@ describe('shouldAutoOpenPayoff (W2)', () => {
     hasPrimary: true,
     detailOpen: false,
     interactedThisRun: false,
-    panelOpen: true,
   };
 
   test('fires exactly at the successful running→idle transition with a primary', () => {
@@ -336,11 +335,15 @@ describe('shouldAutoOpenPayoff (W2)', () => {
     expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
   });
 
-  // ─── IMPORTANT 6 — desktop keeps EasyPanel mounted behind a closed panel.
-  // Without this refusal the payoff would silently open a detail the user
-  // can't see; the closed-panel case belongs to the ready chip (W1) instead. ──
-  test('never fires behind a closed panel, even when every other condition is met', () => {
-    expect(shouldAutoOpenPayoff({ ...base, panelOpen: false })).toBe(false);
+  // The detail panel is content-driven since the cards moved to the floating
+  // overlay, so the payoff opening it IS the presentation — the old
+  // `panelOpen` refusal (which deferred to the ready chip while the panel was
+  // closed) no longer has a closed panel to defer about. The edge is what
+  // keeps this one-shot: `wasRunning && !isRunning` can only be true on the
+  // single render where the run settles, so the payoff cannot replay while a
+  // finished run sits idle.
+  test('an idle finished run never re-fires — the edge, not a panel flag, is the guard', () => {
+    expect(shouldAutoOpenPayoff({ ...base, wasRunning: false, isRunning: false })).toBe(false);
   });
 });
 

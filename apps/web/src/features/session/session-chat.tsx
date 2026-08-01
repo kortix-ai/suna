@@ -54,6 +54,7 @@ import {
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
 import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
+import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -1730,13 +1731,12 @@ export function SessionChat({
   }, [selectionPopup]);
 
   // ---- KortixComputer side panel ----
-  const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
-  const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
+  // No `isSidePanelOpen` subscription here any more. The header's toggle was
+  // the only thing that needed it, and the chat was re-rendering in full on
+  // every open and close of a panel beside it for a value it no longer reads.
+  // The action panel column owns its own flag and subscribes to it itself.
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const handleTogglePanel = useCallback(() => {
-    setIsSidePanelOpen(!isSidePanelOpen);
-  }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   // ---- Hooks ----
   // runtimeReady gates the session query (it's disabled until the sandbox
@@ -3617,8 +3617,6 @@ export function SessionChat({
         <SessionSiteHeader
           sessionId={sessionId}
           sessionTitle={session?.title || 'Untitled'}
-          onToggleSidePanel={handleTogglePanel}
-          isSidePanelOpen={isSidePanelOpen}
           leadingAction={headerLeadingAction}
         />
       )}
@@ -3633,410 +3631,429 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
-      {/* Content area — loading, not-found, or actual messages. The single
-          session loader (SessionStartingLoader) carries through here on its
-          "Connecting" phase so there's never a second, different loader. */}
-      {isNotFound ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <div className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-              } catch {}
-              if (typeof window !== 'undefined') window.location.assign('/');
-            }}
-            className="text-primary text-sm hover:underline"
-          >
-            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
-          </button>
-        </div>
-      ) : (
-        <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
-          <div
-            ref={scrollContainerCallbackRef}
-            className={cn(
-              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
-              shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
-            )}
-            onMouseUp={handleChatMouseUp}
-            onMouseDown={handleChatMouseDown}
-            onScroll={handleChatScroll}
-          >
-            <div
-              ref={contentRef}
-              role="log"
-              className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
-            >
-              <div className="flex min-w-0 flex-col">
-                {/* Optimistic user message */}
-                {showOptimistic && (
-                  <div data-turn-id="optimistic" className="mt-12 first:mt-0">
-                    <div className="flex justify-end">
-                      <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
-                        {(() => {
-                          const { cleanText: afterReply, replyContext: optReply } =
-                            parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
-                          const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
-                          const { cleanText: afterFileMentions } =
-                            parseFileMentionReferences(afterProjects);
-                          const { cleanText: afterAgentMentions } =
-                            parseAgentMentionReferences(afterFileMentions);
-                          const { cleanText } = parseSessionReferences(afterAgentMentions);
-                          return (
-                            <>
-                              {optReply && (
-                                <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
-                                  <span className="text-muted-foreground truncate text-xs">
-                                    {optReply.length > 150
-                                      ? `${optReply.slice(0, 150)}...`
-                                      : optReply}
-                                  </span>
-                                </div>
-                              )}
-                              {files.length > 0 && (
-                                <div className="flex flex-wrap gap-2 p-3 pb-0">
-                                  {files.map((f, i) => (
-                                    <div key={i} onClick={(e) => e.stopPropagation()}>
-                                      <GridFileCard
-                                        filePath={f.path}
-                                        fileName={f.path.split('/').pop() || f.path}
-                                        onClick={() => openPreview(f.path)}
-                                      />
+      {/* Chat and the action panel share one row. The panel is a real column,
+          not an overlay: opening it takes width from this row, and the chat
+          column below re-centers its own content in what is left. That is the
+          whole reason for this wrapper — an absolutely positioned panel
+          floated over the transcript instead of moving it. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {/* Content area — loading, not-found, or actual messages. The single
+              session loader (SessionStartingLoader) carries through here on its
+              "Connecting" phase so there's never a second, different loader. */}
+          {isNotFound ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <div className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                  if (typeof window !== 'undefined') window.location.assign('/');
+                }}
+                className="text-primary text-sm hover:underline"
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </button>
+            </div>
+          ) : (
+            <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
+              <div
+                ref={scrollContainerCallbackRef}
+                className={cn(
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
+                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                )}
+                onMouseUp={handleChatMouseUp}
+                onMouseDown={handleChatMouseDown}
+                onScroll={handleChatScroll}
+              >
+                <div
+                  ref={contentRef}
+                  role="log"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
+                >
+                  <div className="flex min-w-0 flex-col">
+                    {/* Optimistic user message */}
+                    {showOptimistic && (
+                      <div data-turn-id="optimistic" className="mt-12 first:mt-0">
+                        <div className="flex justify-end">
+                          <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
+                            {(() => {
+                              const { cleanText: afterReply, replyContext: optReply } =
+                                parseReplyContext(optimisticPrompt || '');
+                              const { cleanText: afterFiles, files } =
+                                parseFileReferences(afterReply);
+                              const { cleanText: afterProjects } =
+                                parseProjectReferences(afterFiles);
+                              const { cleanText: afterFileMentions } =
+                                parseFileMentionReferences(afterProjects);
+                              const { cleanText: afterAgentMentions } =
+                                parseAgentMentionReferences(afterFileMentions);
+                              const { cleanText } = parseSessionReferences(afterAgentMentions);
+                              return (
+                                <>
+                                  {optReply && (
+                                    <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                      <Reply className="text-primary/60 size-3 flex-shrink-0" />
+                                      <span className="text-muted-foreground truncate text-xs">
+                                        {optReply.length > 150
+                                          ? `${optReply.slice(0, 150)}...`
+                                          : optReply}
+                                      </span>
                                     </div>
-                                  ))}
-                                </div>
-                              )}
-                              {cleanText && (
-                                <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-                                  <HighlightMentions
-                                    text={cleanText}
-                                    agentNames={agentNames}
-                                    onFileClick={openFileInComputer}
-                                  />
-                                </p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                    <AssistantPendingRow className="mt-6" />
-                  </div>
-                )}
-
-                {isOptimisticCompacting && !hasCompactionTurn && (
-                  <div className="mt-12 space-y-3">
-                    <div className="my-3 flex items-center gap-3 py-4">
-                      <div className="bg-border h-px flex-1" />
-                      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                        <Layers className="text-muted-foreground size-3.5" />
-                        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                          Compaction
-                        </span>
-                      </div>
-                      <div className="bg-border h-px flex-1" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src="/kortix-logomark-white.svg"
-                        alt="Kortix"
-                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-                      />
-                      <div className="text-muted-foreground text-sm">
-                        {tHardcodedUi.raw(
-                          'componentsSessionSessionChat.line5954JsxTextCompactingSession',
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Turn-based message rendering.
-                    ToolActivateContext makes inline tool rows open the side
-                    panel (Actions) focused on that tool, instead of expanding. */}
-                {hasOlder && (
-                  <div className="mb-6 flex flex-col items-center gap-2">
-                    {/* Sentinel: crossing into view pulls the previous page.
-                        Sits above the spinner so it clears the viewport as
-                        soon as the prepended turns render. */}
-                    <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
-                    {isLoadingOlder && <Loading />}
-                    {olderPullFailed && !isLoadingOlder && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground text-xs">
-                          Couldn&apos;t load older messages.
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline-ghost"
-                          size="sm"
-                          onClick={() => void handleLoadOlder()}
-                        >
-                          Retry
-                        </Button>
+                                  )}
+                                  {files.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 p-3 pb-0">
+                                      {files.map((f, i) => (
+                                        <div key={i} onClick={(e) => e.stopPropagation()}>
+                                          <GridFileCard
+                                            filePath={f.path}
+                                            fileName={f.path.split('/').pop() || f.path}
+                                            onClick={() => openPreview(f.path)}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {cleanText && (
+                                    <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+                                      <HighlightMentions
+                                        text={cleanText}
+                                        agentNames={agentNames}
+                                        onFileClick={openFileInComputer}
+                                      />
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                        <AssistantPendingRow className="mt-6" />
                       </div>
                     )}
-                  </div>
-                )}
-                <ToolActivateContext.Provider value={toolActivate}>
-                  {turns.map((turn, turnIndex) => {
-                    // Check if this turn is a compaction summary
-                    const hasCompaction =
-                      turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-                      turn.assistantMessages.some((msg) =>
-                        msg.parts.some((p) => p.type === 'compaction'),
-                      );
 
-                    // Notification-only early-return removed: it rendered the
-                    // user's pty_* card but skipped turn.assistantMessages,
-                    // hiding every subsequent assistant response in that turn.
-                    // Fall through to the normal turn renderer instead.
+                    {isOptimisticCompacting && !hasCompactionTurn && (
+                      <div className="mt-12 space-y-3">
+                        <div className="my-3 flex items-center gap-3 py-4">
+                          <div className="bg-border h-px flex-1" />
+                          <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                            <Layers className="text-muted-foreground size-3.5" />
+                            <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                              Compaction
+                            </span>
+                          </div>
+                          <div className="bg-border h-px flex-1" />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src="/kortix-logomark-white.svg"
+                            alt="Kortix"
+                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                          />
+                          <div className="text-muted-foreground text-sm">
+                            {tHardcodedUi.raw(
+                              'componentsSessionSessionChat.line5954JsxTextCompactingSession',
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                    return (
-                      <div
-                        key={turn.userMessage.info.id}
-                        data-turn-id={turn.userMessage.info.id}
-                        className={cn(
-                          '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
-                          turnIndex === 0 ? '' : 'mt-12',
-                        )}
-                      >
-                        {/* Compaction divider — shown before the first turn after compaction */}
-                        {hasCompaction && (
-                          <div className="my-3 flex items-center gap-3 py-4">
-                            <div className="bg-border h-px flex-1" />
-                            <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                              <Layers className="text-muted-foreground size-3.5" />
-                              <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                                Compaction
-                              </span>
-                            </div>
-                            <div className="bg-border h-px flex-1" />
+                    {/* Turn-based message rendering.
+                    ToolActivateContext makes inline tool rows open the side
+                    panel (Actions) focused on that tool, instead of expanding. */}
+                    {hasOlder && (
+                      <div className="mb-6 flex flex-col items-center gap-2">
+                        {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                        <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                        {isLoadingOlder && <Loading />}
+                        {olderPullFailed && !isLoadingOlder && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground text-xs">
+                              Couldn&apos;t load older messages.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline-ghost"
+                              size="sm"
+                              onClick={() => void handleLoadOlder()}
+                            >
+                              Retry
+                            </Button>
                           </div>
                         )}
-                        <SessionTurn
-                          turn={turn}
-                          allMessages={messages!}
-                          sessionId={sessionId}
-                          sessionStatus={sessionStatus}
-                          permissions={pendingPermissions}
-                          questions={pendingQuestions}
-                          agentNames={agentNames}
-                          isFirstTurn={turnIndex === 0}
-                          isBusy={isBusy}
-                          isCompaction={hasCompaction}
-                          providers={providers}
-                          commandMessages={commandMessagesRef.current}
-                          commands={commands}
-                          disableToolNavigation={disableToolNavigation}
-                          onPermissionReply={handlePermissionReply}
-                          onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
-                          rewindDisabled={
-                            !!readOnly || !sessionState || isBusy || sessionState.rewindPending
-                          }
-                        />
                       </div>
-                    );
-                  })}
-                </ToolActivateContext.Provider>
+                    )}
+                    <ToolActivateContext.Provider value={toolActivate}>
+                      {turns.map((turn, turnIndex) => {
+                        // Check if this turn is a compaction summary
+                        const hasCompaction =
+                          turn.assistantMessages.some(
+                            (msg) => (msg.info as any).summary === true,
+                          ) ||
+                          turn.assistantMessages.some((msg) =>
+                            msg.parts.some((p) => p.type === 'compaction'),
+                          );
 
-                {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
-                {/* A turn refused for a missing connector renders HERE — after
+                        // Notification-only early-return removed: it rendered the
+                        // user's pty_* card but skipped turn.assistantMessages,
+                        // hiding every subsequent assistant response in that turn.
+                        // Fall through to the normal turn renderer instead.
+
+                        return (
+                          <div
+                            key={turn.userMessage.info.id}
+                            data-turn-id={turn.userMessage.info.id}
+                            className={cn(
+                              '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
+                              turnIndex === 0 ? '' : 'mt-12',
+                            )}
+                          >
+                            {/* Compaction divider — shown before the first turn after compaction */}
+                            {hasCompaction && (
+                              <div className="my-3 flex items-center gap-3 py-4">
+                                <div className="bg-border h-px flex-1" />
+                                <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                  <Layers className="text-muted-foreground size-3.5" />
+                                  <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                                    Compaction
+                                  </span>
+                                </div>
+                                <div className="bg-border h-px flex-1" />
+                              </div>
+                            )}
+                            <SessionTurn
+                              turn={turn}
+                              allMessages={messages!}
+                              sessionId={sessionId}
+                              sessionStatus={sessionStatus}
+                              permissions={pendingPermissions}
+                              questions={pendingQuestions}
+                              agentNames={agentNames}
+                              isFirstTurn={turnIndex === 0}
+                              isBusy={isBusy}
+                              isCompaction={hasCompaction}
+                              providers={providers}
+                              commandMessages={commandMessagesRef.current}
+                              commands={commands}
+                              disableToolNavigation={disableToolNavigation}
+                              onPermissionReply={handlePermissionReply}
+                              onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                              rewindDisabled={
+                                !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                    </ToolActivateContext.Provider>
+
+                    {/* Busy indicator when no turns yet but session is busy */}
+                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                    {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a
                     button that fixes it. */}
-                <ConnectorRequiredNotice
-                  error={sessionState?.sendError}
-                  projectId={projectId}
-                  resend={
-                    sessionState && lastSubmittedRef.current
-                      ? () => {
-                          const last = lastSubmittedRef.current;
-                          if (!last) return;
-                          void sessionState.sendParts(
-                            last.parts as Parameters<typeof sessionState.sendParts>[0],
-                            last.options as Parameters<typeof sessionState.sendParts>[1],
-                          );
-                        }
-                      : undefined
-                  }
-                  className="mt-2"
-                />
-                {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
-              </div>
-              {/* Spacer — ensures the last message can scroll to the top of
+                    <ConnectorRequiredNotice
+                      error={sessionState?.sendError}
+                      projectId={projectId}
+                      resend={
+                        sessionState && lastSubmittedRef.current
+                          ? () => {
+                              const last = lastSubmittedRef.current;
+                              if (!last) return;
+                              void sessionState.sendParts(
+                                last.parts as Parameters<typeof sessionState.sendParts>[0],
+                                last.options as Parameters<typeof sessionState.sendParts>[1],
+                              );
+                            }
+                          : undefined
+                      }
+                      className="mt-2"
+                    />
+                    {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
+                  </div>
+                  {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
 						    only brings the last message to the bottom of the screen.
 						    Height is dynamically measured from the scroll container so
 						    the newest message appears flush at the top. */}
-              <div ref={spacerElRef} />
-            </div>
-          </div>
+                  <div ref={spacerElRef} />
+                </div>
+              </div>
 
-          {/* Selection "Reply" popup — floats near selected text */}
-          {selectionPopup && (
-            <div
-              data-reply-popup
-              className="absolute z-50"
-              style={{
-                left: `${selectionPopup.x}px`,
-                top: `${selectionPopup.y}px`,
-                transform: 'translate(-50%, -100%)',
-              }}
-            >
-              <Button
-                onClick={handleSelectionReply}
-                size="sm"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+              {/* Selection "Reply" popup — floats near selected text */}
+              {selectionPopup && (
+                <div
+                  data-reply-popup
+                  className="absolute z-50"
+                  style={{
+                    left: `${selectionPopup.x}px`,
+                    top: `${selectionPopup.y}px`,
+                    transform: 'translate(-50%, -100%)',
+                  }}
+                >
+                  <Button
+                    onClick={handleSelectionReply}
+                    size="sm"
+                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                  >
+                    Reply
+                    <ArrowBendUpLeftIcon className="size-4 shrink-0" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Chat Minimap */}
+              <ChatMinimap
+                turns={turns}
+                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                contentRef={contentRef as React.RefObject<HTMLDivElement>}
+              />
+
+              {/* Scroll to bottom FAB */}
+              <div
+                className={cn(
+                  'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
+                  showScrollButton
+                    ? 'translate-y-0 scale-100 opacity-100'
+                    : 'pointer-events-none translate-y-4 scale-95 opacity-0',
+                )}
               >
-                Reply
-                <ArrowBendUpLeftIcon className="size-4 shrink-0" />
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
+                  onClick={smoothScrollToAbsoluteBottom}
+                >
+                  <ArrowDown className="mr-1 size-3" />
+                  {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Chat Minimap */}
-          <ChatMinimap
-            turns={turns}
-            scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-            contentRef={contentRef as React.RefObject<HTMLDivElement>}
-          />
-
-          {/* Scroll to bottom FAB */}
-          <div
-            className={cn(
-              'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
-              showScrollButton
-                ? 'translate-y-0 scale-100 opacity-100'
-                : 'pointer-events-none translate-y-4 scale-95 opacity-0',
-            )}
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
-              onClick={smoothScrollToAbsoluteBottom}
-            >
-              <ArrowDown className="mr-1 size-3" />
-              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Input — hidden in read-only mode (sub-session modal) */}
-      {!readOnly && (
-        <>
-          <SessionChatInput
-            onSend={async (text, files, mentions) => {
-              await handleSend(text, files, mentions);
-              if (failedStartDraft) {
-                clearStartStash(sessionId);
-                usePendingFilesStore.getState().consumePendingFiles();
-                setFailedStartDraft(null);
-              }
-            }}
-            prefill={
-              rewindDraft
-                ? {
-                    text: rewindDraft.text,
-                    id: rewindDraft.id,
-                    mode: 'replace',
+          {/* Input — hidden in read-only mode (sub-session modal) */}
+          {!readOnly && (
+            <>
+              <SessionChatInput
+                onSend={async (text, files, mentions) => {
+                  await handleSend(text, files, mentions);
+                  if (failedStartDraft) {
+                    clearStartStash(sessionId);
+                    usePendingFilesStore.getState().consumePendingFiles();
+                    setFailedStartDraft(null);
                   }
-                : failedStartDraft
-                  ? {
-                      text: failedStartDraft.text,
-                      files: failedStartDraft.files,
-                      id: failedStartDraft.id,
-                      mode: 'merge',
-                    }
-                  : sessionPrefill
-                    ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                    : null
-            }
-            isBusy={isBusy}
-            queuedMessages={queuedMessages}
-            onQueueMessage={handleQueueMessage}
-            onRemoveQueuedMessage={handleRemoveQueuedMessage}
-            onStop={handleStop}
-            escCount={escCount}
-            agents={local.agent.list}
-            selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-            onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-            agentSelectorLocked={!!lockedAgentName}
-            commands={chatCommands}
-            onCommand={handleCommand}
-            models={local.model.list}
-            selectedModel={local.model.currentKey ?? null}
-            onModelChange={handleModelChange}
-            modelDefaultControls={chatModelDefaultControls}
-            variants={local.model.variant.list}
-            selectedVariant={local.model.variant.current ?? null}
-            onVariantChange={handleVariantChange}
-            messages={messages}
-            sessionId={sessionId}
-            projectId={projectId}
-            onFileSearch={handleFileSearch}
-            providers={providers}
-            modelRequired
-            modelsLoading={providersLoading}
-            threadContext={threadContext}
-            onContextClick={handleContextClick}
-            replyTo={replyTo}
-            onClearReply={handleClearReply}
-            // Only lock the input into question-answer mode while the session is
-            // actually busy (a live question keeps the run busy). If a question
-            // chip is ever showing while the session is idle — e.g. a dead /
-            // abandoned question the agent left behind — the input stays unlocked
-            // so a typed message is sent to the agent instead of being swallowed
-            // as a custom answer.
-            lockForQuestion={!!renderedQuestion && isBusy}
-            // Same dead-prompt guard as questions: only lock while the agent is
-            // actually paused on the decision (isBusy), so a stale card can't
-            // swallow the composer on an idle session.
-            lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-            onCustomAnswer={handleCustomAnswer}
-            questionButtonLabel={renderedQuestion ? questionAction.label : null}
-            questionCanAct={questionAction.canAct}
-            onQuestionAction={handleQuestionAction}
-            inputSlot={chatInputSlot}
-            toolbarSlot={chatToolbarSlot}
-            // The shell can now render on a cached transcript alone, i.e. before
-            // the sandbox answers — so sending has to be gated separately from
-            // reading. See sessionComposerReadiness.
-            disabled={composerReadiness.disabled}
-            placeholder={composerReadiness.placeholder}
-          />
-          <ConfirmDialog
-            open={!!rewindTarget}
-            onOpenChange={(open) => !open && setRewindTarget(null)}
-            title="Edit from this message?"
-            description={
-              <>
-                <p>This rewinds the same session and restores its files to this message.</p>
-                <p className="mt-2">
-                  You can restore the removed path until you send a replacement prompt.
-                </p>
-              </>
-            }
-            confirmLabel="Rewind session"
-            confirmVariant="destructive"
-            confirmIcon={<RotateCcw className="size-3.5" />}
-            isPending={sessionState?.rewindPending}
-            onConfirm={() => void handleConfirmRewind()}
-          />
-        </>
-      )}
+                }}
+                prefill={
+                  rewindDraft
+                    ? {
+                        text: rewindDraft.text,
+                        id: rewindDraft.id,
+                        mode: 'replace',
+                      }
+                    : failedStartDraft
+                      ? {
+                          text: failedStartDraft.text,
+                          files: failedStartDraft.files,
+                          id: failedStartDraft.id,
+                          mode: 'merge',
+                        }
+                      : sessionPrefill
+                        ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                        : null
+                }
+                isBusy={isBusy}
+                queuedMessages={queuedMessages}
+                onQueueMessage={handleQueueMessage}
+                onRemoveQueuedMessage={handleRemoveQueuedMessage}
+                onStop={handleStop}
+                escCount={escCount}
+                agents={local.agent.list}
+                selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+                onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+                agentSelectorLocked={!!lockedAgentName}
+                commands={chatCommands}
+                onCommand={handleCommand}
+                models={local.model.list}
+                selectedModel={local.model.currentKey ?? null}
+                onModelChange={handleModelChange}
+                modelDefaultControls={chatModelDefaultControls}
+                variants={local.model.variant.list}
+                selectedVariant={local.model.variant.current ?? null}
+                onVariantChange={handleVariantChange}
+                messages={messages}
+                sessionId={sessionId}
+                projectId={projectId}
+                onFileSearch={handleFileSearch}
+                providers={providers}
+                modelRequired
+                modelsLoading={providersLoading}
+                threadContext={threadContext}
+                onContextClick={handleContextClick}
+                replyTo={replyTo}
+                onClearReply={handleClearReply}
+                // Only lock the input into question-answer mode while the session is
+                // actually busy (a live question keeps the run busy). If a question
+                // chip is ever showing while the session is idle — e.g. a dead /
+                // abandoned question the agent left behind — the input stays unlocked
+                // so a typed message is sent to the agent instead of being swallowed
+                // as a custom answer.
+                lockForQuestion={!!renderedQuestion && isBusy}
+                // Same dead-prompt guard as questions: only lock while the agent is
+                // actually paused on the decision (isBusy), so a stale card can't
+                // swallow the composer on an idle session.
+                lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+                onCustomAnswer={handleCustomAnswer}
+                questionButtonLabel={renderedQuestion ? questionAction.label : null}
+                questionCanAct={questionAction.canAct}
+                onQuestionAction={handleQuestionAction}
+                inputSlot={chatInputSlot}
+                toolbarSlot={chatToolbarSlot}
+                // The shell can now render on a cached transcript alone, i.e. before
+                // the sandbox answers — so sending has to be gated separately from
+                // reading. See sessionComposerReadiness.
+                disabled={composerReadiness.disabled}
+                placeholder={composerReadiness.placeholder}
+              />
+              <ConfirmDialog
+                open={!!rewindTarget}
+                onOpenChange={(open) => !open && setRewindTarget(null)}
+                title="Edit from this message?"
+                description={
+                  <>
+                    <p>This rewinds the same session and restores its files to this message.</p>
+                    <p className="mt-2">
+                      You can restore the removed path until you send a replacement prompt.
+                    </p>
+                  </>
+                }
+                confirmLabel="Rewind session"
+                confirmVariant="destructive"
+                confirmIcon={<RotateCcw className="size-3.5" />}
+                isPending={sessionState?.rewindPending}
+                onConfirm={() => void handleConfirmRewind()}
+              />
+            </>
+          )}
+        </div>
+
+        {/* The action panel column — a sibling of the chat, so it pushes
+            rather than covers. Self-gates to null on mobile and outside a
+            SessionPanelProvider (the read-only sub-session modal renders this
+            component with no panel around it). */}
+        {!hideHeader && !readOnly && <SessionActionPanelColumn />}
+      </div>
     </div>
   );
 }
