@@ -5,7 +5,19 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { type SQL, and, asc, count, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  type SQLWrapper,
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  sql,
+} from 'drizzle-orm';
 import { resolveSessionOwnerIdentities } from '../projects/lib/access';
 import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
 import { type CostSort, type CostWindow, parseCostWindow } from './cost-window';
@@ -545,27 +557,47 @@ interface SortableCostRow {
   updated_at: string;
 }
 
-export function sessionCostSortKey(sort: CostSort): [string, 'asc' | 'desc'] {
-  if (sort === 'recent') return ['updated_at', 'desc'];
-  if (sort === 'total_asc') return ['total_cost', 'asc'];
-  return ['total_cost', 'desc'];
+// The only columns a session cost page can be ordered by. Widening this union
+// forces a compile error at every exhaustive map below.
+type SessionCostSortColumn = 'total_cost' | 'updated_at';
+
+// Exhaustive on purpose. `CostSort` is shared with the project rollup, which
+// has a `name_asc` sessions cannot honor, and later work may add members. A
+// fall-through here would compile into silently wrong ordering.
+export function sessionCostSortKey(sort: CostSort): [SessionCostSortColumn, 'asc' | 'desc'] {
+  switch (sort) {
+    case 'recent':
+      return ['updated_at', 'desc'];
+    case 'total_asc':
+      return ['total_cost', 'asc'];
+    case 'total_desc':
+      return ['total_cost', 'desc'];
+    case 'name_asc':
+      throw new InvalidSessionCostQueryError('sessions cannot be sorted by name');
+    default: {
+      const unsupported: never = sort;
+      throw new InvalidSessionCostQueryError(`unsupported sort: ${String(unsupported)}`);
+    }
+  }
 }
 
-// Ties break on session_id so LIMIT/OFFSET paging is stable. Without a total
-// order, a row can appear on two pages or on none.
+const compareByColumn: Record<
+  SessionCostSortColumn,
+  (left: SortableCostRow, right: SortableCostRow) => number
+> = {
+  total_cost: (left, right) => left.total_cost - right.total_cost,
+  updated_at: (left, right) => left.updated_at.localeCompare(right.updated_at),
+};
+
+// The JS mirror of the ORDER BY, derived from the same key so the two cannot
+// drift. Ties break on session_id so LIMIT/OFFSET paging is stable: without a
+// total order, a row can appear on two pages or on none.
 export function compareSessionCostRows(sort: CostSort) {
+  const [column, direction] = sessionCostSortKey(sort);
   return (left: SortableCostRow, right: SortableCostRow): number => {
-    if (sort === 'recent') {
-      const byTime = right.updated_at.localeCompare(left.updated_at);
-      if (byTime !== 0) return byTime;
-    } else {
-      const delta =
-        sort === 'total_asc'
-          ? left.total_cost - right.total_cost
-          : right.total_cost - left.total_cost;
-      if (delta !== 0) return delta;
-    }
-    return left.session_id.localeCompare(right.session_id);
+    const delta = compareByColumn[column](left, right);
+    const ordered = direction === 'asc' ? delta : -delta;
+    return ordered || left.session_id.localeCompare(right.session_id);
   };
 }
 
@@ -578,10 +610,12 @@ export async function listSessionCosts(input: {
   limit: number;
   offset: number;
 }): Promise<SessionCostListResponse> {
-  // The route supplies both explicitly. These defaults match the documented
-  // query defaults so the callable stays usable without them.
+  // GET /v1/usage/session-costs passes neither parameter at this commit, so the
+  // defaults must not change what it returns today: `recent` is the ordering it
+  // already had. The window default is the shared trailing-30-day one, which
+  // windowing the aggregates necessarily introduces.
   const window = input.window ?? parseCostWindow({});
-  const sort = input.sort ?? 'total_desc';
+  const sort = input.sort ?? 'recent';
 
   const llm = llmAggregateSubquery(input.accountId, window);
   const compute = computeAggregateSubquery(input.accountId, window);
@@ -591,8 +625,12 @@ export async function listSessionCosts(input: {
   if (input.ownerId) conditions.push(eq(projectSessions.createdBy, input.ownerId));
 
   const totalCostExpression = sql<number>`(coalesce(${llm.llmCost}, 0) + coalesce(${compute.computeCost}, 0))`;
+  const sortTargets: Record<SessionCostSortColumn, SQLWrapper> = {
+    total_cost: totalCostExpression,
+    updated_at: projectSessions.updatedAt,
+  };
   const [sortColumn, sortDirection] = sessionCostSortKey(sort);
-  const sortTarget = sortColumn === 'updated_at' ? projectSessions.updatedAt : totalCostExpression;
+  const sortTarget = sortTargets[sortColumn];
   const orderBy = [
     sortDirection === 'asc' ? asc(sortTarget) : desc(sortTarget),
     asc(projectSessions.sessionId),
@@ -642,33 +680,32 @@ export async function listSessionCosts(input: {
   const ownerById = await resolveSessionOwnerIdentities(ownerIds, input.accountId);
 
   const total = numberValue(totalRows[0]?.total);
-  // Postgres selects the page; the comparator states the same total order in
-  // one place the tests can execute, and keeps the emitted order independent of
-  // the database's text collation for the session_id tiebreak.
-  const sessions = sessionRows
-    .map((row) =>
-      assembleSessionCostSummary({
-        session: row,
-        owner: row.ownerId ? ownerById.get(row.ownerId) : undefined,
-        llm: {
-          llmCost: row.llmCost,
-          requestCount: row.requestCount,
-          errorCount: row.errorCount,
-          inputTokens: row.inputTokens,
-          outputTokens: row.outputTokens,
-          cachedTokens: row.cachedTokens,
-          cacheWriteTokens: row.cacheWriteTokens,
-          modelCount: row.modelCount,
-          lastAt: row.llmLastAt,
-        },
-        compute: {
-          computeCost: row.computeCost,
-          computeSeconds: row.computeSeconds,
-          lastAt: row.computeLastAt,
-        },
-      }),
-    )
-    .sort(compareSessionCostRows(sort));
+  // Postgres is the sole authority on order. Re-sorting here would be a second,
+  // divergent statement of it: `updated_at` loses sub-millisecond precision
+  // through requiredIsoValue, and sumCosts rounds to 10 decimal places, so a
+  // JS pass can reorder rows the query deliberately separated.
+  const sessions = sessionRows.map((row) =>
+    assembleSessionCostSummary({
+      session: row,
+      owner: row.ownerId ? ownerById.get(row.ownerId) : undefined,
+      llm: {
+        llmCost: row.llmCost,
+        requestCount: row.requestCount,
+        errorCount: row.errorCount,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cachedTokens: row.cachedTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        modelCount: row.modelCount,
+        lastAt: row.llmLastAt,
+      },
+      compute: {
+        computeCost: row.computeCost,
+        computeSeconds: row.computeSeconds,
+        lastAt: row.computeLastAt,
+      },
+    }),
+  );
 
   return {
     sessions,

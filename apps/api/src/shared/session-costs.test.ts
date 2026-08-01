@@ -178,6 +178,14 @@ describe('sessionCostSortKey', () => {
     expect(sessionCostSortKey('total_asc')).toEqual(['total_cost', 'asc']);
     expect(sessionCostSortKey('recent')).toEqual(['updated_at', 'desc']);
   });
+
+  // CostSort is shared with the project rollup. A session page has no name to
+  // sort on, so name_asc must fail loudly rather than fall through to a
+  // different order than the caller asked for.
+  test('rejects a sort sessions cannot honor instead of substituting one', () => {
+    expect(() => sessionCostSortKey('name_asc')).toThrow(InvalidSessionCostQueryError);
+    expect(() => compareSessionCostRows('name_asc')).toThrow(InvalidSessionCostQueryError);
+  });
 });
 
 describe('computeBilledSeconds', () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import type { CostSort } from './cost-window';
 
 type QueryRecord = {
   fields: Record<string, unknown>;
@@ -19,6 +20,18 @@ function renderWhere(record: QueryRecord | undefined): { sql: string; params: un
   if (!where) throw new Error('query recorded no where() call');
   return new PgDialect().sqlToQuery(where as SQL);
 }
+
+// The mock records orderBy() without applying it, so the ORDER BY can only be
+// asserted by rendering it. Without this the sort direction and target column
+// have no coverage at all.
+function renderOrderBy(record: QueryRecord | undefined): string[] {
+  const terms = record?.calls.find((call) => call.method === 'orderBy')?.args;
+  if (!terms?.length) throw new Error('query recorded no orderBy() call');
+  const dialect = new PgDialect();
+  return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
+}
+
+const SESSION_ID_TIEBREAK = '"kortix"."project_sessions"."session_id" asc';
 
 function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   const builder: Record<string, unknown> = {};
@@ -270,40 +283,61 @@ describe('listSessionCosts service', () => {
     ]);
   });
 
-  test('emits the page in the requested spend order', async () => {
-    const rows = [
-      { ...joinedSessionRow, sessionId: 'session-cheap', llmCost: '0', computeCost: '0' },
-      { ...joinedSessionRow, sessionId: 'session-expensive', llmCost: '9', computeCost: '1' },
-    ];
-    resultForQuery = (fields, table) => {
-      if (table === projectSessions && 'projectName' in fields) return rows;
-      if (table === projectSessions && 'total' in fields) return [{ total: 2 }];
-      return [];
-    };
+  // Postgres owns the order, and the mock records orderBy() without applying it,
+  // so these render the ORDER BY to SQL. Asserting on emitted row order instead
+  // would prove nothing about the query.
+  async function orderByFor(sort: CostSort): Promise<string[]> {
+    queryRecords = [];
+    resultForQuery = () => [];
+    await listSessionCosts({ accountId, window: costWindow, sort, limit: 25, offset: 0 });
+    return renderOrderBy(
+      queryRecords.find(
+        (query) => query.table === projectSessions && 'projectName' in query.fields,
+      ),
+    );
+  }
 
-    const descending = await listSessionCosts({
-      accountId,
-      window: costWindow,
-      sort: 'total_desc',
-      limit: 25,
-      offset: 0,
-    });
-    expect(descending.sessions.map((session) => session.session_id)).toEqual([
-      'session-expensive',
-      'session-cheap',
-    ]);
+  test('total_desc orders by the coalesced spend of both subqueries, descending', async () => {
+    const [spend, tiebreak] = await orderByFor('total_desc');
+    expect(spend).toMatch(
+      /^\(coalesce\("llm_agg"\..+, 0\) \+ coalesce\("compute_agg"\..+, 0\)\) desc$/,
+    );
+    expect(tiebreak).toBe(SESSION_ID_TIEBREAK);
+  });
 
-    const ascending = await listSessionCosts({
-      accountId,
-      window: costWindow,
-      sort: 'total_asc',
-      limit: 25,
-      offset: 0,
-    });
-    expect(ascending.sessions.map((session) => session.session_id)).toEqual([
-      'session-cheap',
-      'session-expensive',
-    ]);
+  test('total_asc orders by the same expression, ascending', async () => {
+    const [spend, tiebreak] = await orderByFor('total_asc');
+    expect(spend).toMatch(
+      /^\(coalesce\("llm_agg"\..+, 0\) \+ coalesce\("compute_agg"\..+, 0\)\) asc$/,
+    );
+    expect(tiebreak).toBe(SESSION_ID_TIEBREAK);
+  });
+
+  test('recent orders by updated_at, descending, never by spend', async () => {
+    const [recency, tiebreak] = await orderByFor('recent');
+    expect(recency).toBe('"kortix"."project_sessions"."updated_at" desc');
+    expect(tiebreak).toBe(SESSION_ID_TIEBREAK);
+  });
+
+  test('every sort ends in the session id tiebreak and nothing after it', async () => {
+    for (const sort of ['total_desc', 'total_asc', 'recent'] as const) {
+      const terms = await orderByFor(sort);
+      expect(terms).toHaveLength(2);
+      expect(terms.at(-1)).toBe(SESSION_ID_TIEBREAK);
+    }
+  });
+
+  test('defaults to recent so the route keeps the ordering it has today', async () => {
+    queryRecords = [];
+    resultForQuery = () => [];
+    await listSessionCosts({ accountId, limit: 25, offset: 0 });
+
+    const [recency] = renderOrderBy(
+      queryRecords.find(
+        (query) => query.table === projectSessions && 'projectName' in query.fields,
+      ),
+    );
+    expect(recency).toBe('"kortix"."project_sessions"."updated_at" desc');
   });
 
   test('filters the page and the total by owner when one is supplied', async () => {
