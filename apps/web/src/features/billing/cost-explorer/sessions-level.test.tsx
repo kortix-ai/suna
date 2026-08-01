@@ -53,6 +53,21 @@ describe('collectOwnerOptions', () => {
     ] as never);
     expect(options).toEqual([{ id: 'u3', label: 'Unknown owner' }]);
   });
+
+  // The dedupe keys on `owner_id`, not on the display label — two distinct
+  // people who happen to share a name (or a name that collides with another
+  // owner's email) must both survive as separate options, not collapse into
+  // one. A label-keyed Map would merge these; only an id-keyed one is correct.
+  test('keeps two different owners with the same display name as separate options', () => {
+    const options = collectOwnerOptions([
+      { owner_id: 'u1', owner_name: 'Alex Chen', owner_email: 'alex.chen@example.com' },
+      { owner_id: 'u2', owner_name: 'Alex Chen', owner_email: 'alex.chen@other.example.com' },
+    ] as never);
+    expect(options).toEqual([
+      { id: 'u1', label: 'Alex Chen' },
+      { id: 'u2', label: 'Alex Chen' },
+    ]);
+  });
 });
 
 // ── the pure query-input builders — this is what the "ownerId pass-through"
@@ -97,12 +112,25 @@ describe('buildSessionsLevelOwnerCatalogInput', () => {
     // picked).
     expect(buildSessionsLevelOwnerCatalogInput('project-1', range)).toEqual({
       projectId: 'project-1',
-      limit: SESSION_COST_PAGE_SIZE,
+      limit: 100,
       offset: 0,
       from: range.from,
       to: range.to,
       sort: 'total_desc',
     });
+  });
+
+  // The catalog fetch must use the API's actual ceiling (`MAX_COST_LIMIT` in
+  // apps/api/src/shared/cost-window.ts), not the visible table's smaller
+  // page — a fix-round finding caught this hardcoded to SESSION_COST_PAGE_SIZE
+  // (25), silently missing any owner outside the top 25 sessions by spend.
+  // Pinned as its own assertion (not folded into the test above) so a future
+  // regression back to the table's page size fails on the exact number, not
+  // just on "some field changed".
+  test('uses a wider page than the visible table, not SESSION_COST_PAGE_SIZE', () => {
+    const input = buildSessionsLevelOwnerCatalogInput('project-1', range);
+    expect(input.limit).not.toBe(SESSION_COST_PAGE_SIZE);
+    expect(input.limit).toBe(100);
   });
 });
 

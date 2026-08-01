@@ -8,6 +8,7 @@ import { ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { CostRange } from '@/components/ui/date-range-picker';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
@@ -62,6 +63,20 @@ const SORT_OPTIONS: { value: SessionCostSort; label: string }[] = [
 const DEFAULT_FILTERS: SessionsLevelFilters = { ownerId: null, sort: 'total_desc', offset: 0 };
 
 /**
+ * The owner-catalog fetch's page size — deliberately the API's actual
+ * ceiling (`MAX_COST_LIMIT` in `apps/api/src/shared/cost-window.ts`, which
+ * `parseCostPagination` enforces on every `/usage/session-costs` request),
+ * not the visible table's `SESSION_COST_PAGE_SIZE` (25). This query exists
+ * only to enumerate owners for the dropdown, so it should see as much of the
+ * window as the API allows in one request — the same route already serves
+ * up to `CSV_ROW_CAP` rows for CSV export, so a wider single-purpose fetch
+ * here is established practice, not a new load concern. Kept as a literal
+ * (not imported) because `apps/api` is a separate deployable the web app
+ * does not import from; the SDK does not re-export server-side constants.
+ */
+const SESSION_OWNER_CATALOG_LIMIT = 100;
+
+/**
  * Owners dedupe by id, name wins over email — "what did Marko spend?" needs
  * a name, not an address — and a session with no owner contributes nothing.
  * Sorted alphabetically so the list is scannable rather than activity-order.
@@ -109,11 +124,15 @@ export function buildSessionsLevelListInput(
  * immediately collapse the dropdown to that single entry. There is no
  * dedicated "list owners" endpoint (this level's interfaces are
  * `useSessionCosts` / `useCostSummary` only), so this reuses the same
- * session list at a fixed page.
+ * session list, at `SESSION_OWNER_CATALOG_LIMIT` — the API's own maximum
+ * page size, not the visible table's smaller page.
  *
- * Known limitation: an owner whose sessions never rank in the top
- * `SESSION_COST_PAGE_SIZE` by spend for the current window will not appear
- * in the dropdown until their spend rises high enough to place on that page.
+ * Known limitation: the catalog still reflects only the top
+ * `SESSION_OWNER_CATALOG_LIMIT` sessions by spend for the window — an owner
+ * whose individual sessions never crack that page (regardless of large
+ * cumulative spend spread across many cheap sessions) will not appear until
+ * one of their sessions does. The Owner control surfaces this directly (see
+ * the `Hint` in `SessionsLevel`) rather than filtering silently.
  */
 export function buildSessionsLevelOwnerCatalogInput(
   projectId: string,
@@ -121,7 +140,7 @@ export function buildSessionsLevelOwnerCatalogInput(
 ): SessionsLevelListInput {
   return {
     projectId,
-    limit: SESSION_COST_PAGE_SIZE,
+    limit: SESSION_OWNER_CATALOG_LIMIT,
     offset: 0,
     from: range.from,
     to: range.to,
@@ -378,9 +397,14 @@ export function SessionsLevel({
           }))
         }
       >
-        <SelectTrigger className="h-8 w-[180px]" aria-label="Filter sessions by owner">
-          <SelectValue placeholder="All owners" />
-        </SelectTrigger>
+        <Hint
+          label="Reflects the top-spending sessions in this window — an owner whose sessions never rank there may not be listed."
+          side="bottom"
+        >
+          <SelectTrigger className="h-8 w-[180px]" aria-label="Filter sessions by owner">
+            <SelectValue placeholder="All owners" />
+          </SelectTrigger>
+        </Hint>
         <SelectContent>
           <SelectItem value="all">All owners</SelectItem>
           {ownerOptions.map((option) => (
