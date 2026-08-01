@@ -46,3 +46,15 @@ describe('the glyph registry', () => {
     }
   });
 });
+
+describe('glyphComponent — prototype keys', () => {
+  test('inherited Object.prototype members are not treated as glyphs', () => {
+    // A bare `GLYPH_COMPONENTS[name]` returns a truthy FUNCTION for these,
+    // which React then throws on when it tries to render it. The API's
+    // allowlist already rejects them on write and on read, so this is
+    // defence-in-depth for callers that are not the API.
+    for (const name of ['toString', 'valueOf', 'constructor', 'hasOwnProperty', '__proto__']) {
+      expect(glyphComponent(name)).toBeNull();
+    }
+  });
+});

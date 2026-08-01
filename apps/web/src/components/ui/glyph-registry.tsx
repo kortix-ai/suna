@@ -441,8 +441,21 @@ export const GLYPH_COMPONENTS: Record<string, Icon> = {
   NumberCircleNine: NumberCircleNineIcon,
 };
 
+/**
+ * `Object.hasOwn`, not a bare index. `GLYPH_COMPONENTS` is an object literal, so
+ * it inherits Object.prototype: a bare `GLYPH_COMPONENTS['toString']` returns a
+ * function — truthy, not a component — and React throws when it tries to render
+ * it. Same for `constructor` and `valueOf`.
+ *
+ * Not reachable through the API today: `normalizeProjectGlyph` allowlists the
+ * name against the catalogue on every write AND on the read path, and rejects
+ * all of those keys (verified). This guard exists so the helper is safe on its
+ * own terms rather than only because two other layers happen to hold — a future
+ * caller passing a name from a URL, localStorage, or a cached payload would
+ * otherwise turn a typo into a render crash.
+ */
 export function glyphComponent(name: string): Icon | null {
-  return GLYPH_COMPONENTS[name] ?? null;
+  return Object.hasOwn(GLYPH_COMPONENTS, name) ? (GLYPH_COMPONENTS[name] ?? null) : null;
 }
 
 /**
