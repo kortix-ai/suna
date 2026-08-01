@@ -314,7 +314,7 @@ export function ProjectSwitcher({
                     onSelect={() => switchProject(project)}
                     className={cn('cursor-pointer', active && 'bg-muted/80')}
                   >
-                    <EntityAvatar label={project.name} size="sm" />
+                    <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
                     <div className="grid min-w-0 flex-1 leading-tight">
                       <span className="truncate text-sm font-medium">{project.name}</span>
                     </div>

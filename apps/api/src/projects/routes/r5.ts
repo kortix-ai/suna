@@ -18,8 +18,11 @@ import {
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, type SQL } from 'drizzle-orm';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { metadataMerge } from '../lib/metadata-merge';
+import { normalizeProjectIcon } from '../lib/project-icon';
+import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
@@ -696,9 +699,68 @@ projectsApp.openapi(
   if (defaultBranch) updates.defaultBranch = defaultBranch;
   if (manifestPath) updates.manifestPath = manifestPath;
 
+  // `icon` and `icon_glyph` are the two fields here where "absent" and "null"
+  // mean different things, and where a malformed value must be distinguished
+  // from an explicit removal. Both normalizers collapse invalid input AND an
+  // explicit null to `null`, so only the request BODY — not the normalizer's
+  // return value — can tell those apart. Resolution is by VALIDITY, not by
+  // key presence, so a PATCH agrees with the three create paths (provision /
+  // create-repo / link-repository) on every shared input, including a body
+  // that carries both keys:
+  //
+  //   neither key present                 → no metadata write; untouched
+  //   icon_glyph valid                    → merge { icon_glyph }, delete `icon`
+  //   icon_glyph invalid, icon valid      → merge { icon },       delete `icon_glyph`
+  //   icon valid alone                    → merge { icon },       delete `icon_glyph`
+  //   icon_glyph invalid, icon invalid/absent, icon_glyph: null   → delete `icon_glyph`
+  //   icon invalid/absent, icon_glyph invalid/absent, icon: null  → delete `icon`
+  //   icon: null AND icon_glyph: null (both explicit)             → delete BOTH keys
+  //   icon invalid alone (no valid glyph, no explicit null)       → no metadata write
+  //   both invalid, neither explicitly null                       → no metadata write
+  //
+  // A malformed value must never be able to wipe a choice the user made — only
+  // an explicit `null` on a key clears THAT key. Sending both keys `null` in
+  // the same request reads as "clear the icon entirely" and clears both,
+  // rather than picking one key to privilege for deletion.
+  //
+  // THE INVARIANT: a project shows one icon, so writing either key deletes the
+  // other in the SAME statement — `metadataMerge` emits
+  // `(coalesce(metadata,'{}') - 'icon') || '{"icon_glyph":…}'::jsonb`, one
+  // expression under the row's own lock. Enforcing it here rather than in the
+  // modal means every client gets the rule without implementing it.
+  //
+  // A valid `icon_glyph` always wins over `icon` (checked first below), same
+  // as the create paths: a request carrying both valid values resolves to the
+  // glyph, and the emoji is dropped.
+  const iconGlyphPresent = 'icon_glyph' in body;
+  const iconGlyph = iconGlyphPresent ? normalizeProjectGlyph(body.icon_glyph) : null;
+  const iconPresent = 'icon' in body;
+  const icon = iconPresent ? normalizeProjectIcon(body.icon) : null;
+
+  let metadataExpr: SQL | undefined;
+  if (iconGlyph) {
+    metadataExpr = metadataMerge({ icon_glyph: iconGlyph }, ['icon']);
+  } else if (icon) {
+    metadataExpr = metadataMerge({ icon }, ['icon_glyph']);
+  } else {
+    // Neither side resolved to a value worth storing. Delete only the keys
+    // the caller EXPLICITLY nulled — a key that's absent or merely malformed
+    // is left untouched, per the invariant above.
+    const deleteKeys: string[] = [];
+    if (iconGlyphPresent && body.icon_glyph === null) deleteKeys.push('icon_glyph');
+    if (iconPresent && body.icon === null) deleteKeys.push('icon');
+    if (deleteKeys.length > 0) metadataExpr = metadataMerge({}, deleteKeys);
+  }
+
   const [row] = await db
     .update(projects)
-    .set(updates)
+    .set({
+      ...updates,
+      // Spread rather than assigned into `updates`: that object is typed
+      // `Partial<$inferInsert>`, which has no room for a SQL expression, while
+      // Drizzle's own `.set()` input accepts one per column.
+      ...(metadataExpr ? { metadata: metadataExpr } : {}),
+    })
     .where(eq(projects.projectId, projectId))
     .returning();
 
