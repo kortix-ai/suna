@@ -4925,3 +4925,105 @@ matches what actually runs today. Recording the real measured number per the
 task brief's instruction not to trust either stale figure.)
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-08-02 — session `cost-explorer-sdk-clients` (completion)
+
+Implemented Task 8. TDD throughout, RED watched before any implementation code.
+
+**Added** to `packages/sdk/src/core/rest/projects-client/session-costs.ts`
+(barrel `index.ts` already does `export * from './session-costs'` — no barrel
+edit needed, name collision-checked against the whole `projects-client/` dir
+and the rest of `src/`, none found):
+
+- `interface CostWindowOptions { from?; to? }`
+- `type SessionCostSort = 'total_desc' | 'total_asc' | 'recent'`
+- `type ProjectCostSort = SessionCostSort | 'name_asc'`
+- `ListSessionCostsOptions` gains `from?`, `to?`, `sort?: SessionCostSort`,
+  `ownerId?` (all optional — widening, not narrowing)
+- `interface ProjectCostRow`, `interface ProjectCostPage`,
+  `interface ListCostByProjectOptions`
+- `listCostByProject(options?): Promise<ProjectCostPage>` →
+  `GET /usage/cost-by-project`
+- `interface CostSummaryTotals`, `CostSeriesPoint`, `CostModelRow`,
+  `CostSummary`, `GetCostSummaryOptions`
+- `getCostSummary(options?): Promise<CostSummary>` → `GET /usage/cost-summary`
+- `interface CostExportOptions`, `costExportUrl(kind, options?): string` — pure
+  URL builder (never calls `fetch`; the CSV routes require a Bearer token with
+  no query-token fallback, so the caller attaches auth itself, same pattern as
+  `fetchProjectArchive` in `./files.ts`)
+
+**Type shapes verified against the real API**, not the plan:
+`apps/api/src/shared/cost-rollups.ts` (`ProjectCostRow`/`ProjectCostPage`/
+`CostSummaryTotals`/`CostSeriesPoint`/`CostModelRow`/`CostSummary`) and
+`apps/api/src/router/routes/usage.ts` (query param names, route paths,
+`SESSION_COST_SORTS`/`PROJECT_COST_SORTS`). Confirmed by grep that no response
+anywhere in the API carries an `unassigned` field — `ProjectCostPage` does not
+have one, matching the brief's warning, and `CostSummary` doesn't either
+(unattributable compute/LLM spend is folded into the account-wide totals, not
+surfaced as a synthetic field).
+
+RED — `bun test src/core/rest/projects-client/session-costs.test.ts` failed
+with `SyntaxError: Export named 'costExportUrl' not found in module`, before
+any implementation code existed, for the expected reason.
+
+GREEN:
+
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0 (tsc --noEmit + tsc --noEmit -p examples/tsconfig.json)
+
+pnpm --filter @kortix/sdk test
+→ 1370 pass, 0 fail, 5908 expect() calls, across 116 files [16.58s]
+   (post-change run; two SSE-related tests are environment-conditionally
+   skipped in some runs and not in others — pre-existing, unrelated to this
+   change, and total test count (1370) is stable across both)
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+```
+
+Baseline was 1357 pass / 1359 total; post-change is 1370 total (+11, exactly
+the 11 new `test()` calls added), 0 regressions.
+
+**Mutation checks** (each applied to the restored, working implementation,
+then reverted — file diffed byte-identical to pre-mutation afterward):
+
+1. Dropped `appendWindow(query, options)` from `listCostByProject` → the exact
+   URL assertion in `listCostByProject targets the rollup route with account,
+   window, sort and paging` failed (`from=…&to=…` missing from the URL). 13
+   pass / 1 fail.
+2. Renamed `owner_id` → `owner` in `listSessionCosts` → the exact URL assertion
+   in `listSessionCosts forwards window, sort and owner as query params` failed
+   (`owner=user-9` instead of `owner_id=user-9`). 13 pass / 1 fail.
+
+Both mutations were caught by exactly one test each, as intended — the tests
+assert the literal URL string, not merely that a request happened.
+
+**Absent-optional coverage:** `listSessionCosts({ accountId })`,
+`listCostByProject()`, `getCostSummary()`, and `costExportUrl(kind)` (no
+options) each assert the exact resulting URL carries no stray `from=`, `to=`,
+`sort=`, or `owner_id=` param.
+
+**Public-surface snapshot diff** (`public-surface.snapshot.json` +
+`public-type-surface.snapshot.json`, re-recorded with
+`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1` after visually
+confirming every line): 6 new value exports
+(`costExportUrl`/`getCostSummary`/`listCostByProject`, each listed once for `.`
+and once for `./projects-client`) and 30 new type-level exports (12 new
+type/interface names × the same two subpaths, plus the 6 value names repeated
+at the type level). **Every line in both diffs is a `+` addition. Zero
+removals, zero renames.** The type-surface test's own drift report labelled
+every one of the 30 entries `← added — additive, fine`.
+
+**Status:** DONE.
+
+**SDK package shippable to production: YES**, for this change. Verified:
+typecheck, full test suite (0 regressions, 11 new passing tests), packed-install
+smoke test, and 2/2 mutation checks caught. Unverified/out of scope for Task 8:
+end-to-end wiring against a running API (web consumption is Task 10+), and
+`costExportUrl`'s download flow was not exercised against a live server (it is
+a pure string builder with no network call — the auth-attachment + Blob-download
+flow is a web-task concern per the brief's `costExportUrl` scope).
