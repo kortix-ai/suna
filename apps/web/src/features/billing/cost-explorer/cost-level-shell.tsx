@@ -14,6 +14,12 @@ export interface CostLevelShellProps {
   onRangeChange: (next: CostRange) => void;
   summary: CostSummary | undefined;
   isSummaryLoading: boolean;
+  /** Renders the destructive error banner whenever set, independent of
+   *  `isSummaryLoading`. The two are not mutually exclusive: a caller may
+   *  hold a stale error while a manual refetch is in flight, in which case
+   *  the banner and the tiles/chart loading skeletons render at the same
+   *  time. That is intentional — this shell does not clear `summaryError`
+   *  on the caller's behalf, so the caller decides when it goes away. */
   summaryError: Error | null;
   extraTiles?: CostSummaryTile[];
   /** Defaults to shown — pass `false` to hide (e.g. a single-session scope,
