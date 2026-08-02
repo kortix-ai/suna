@@ -1,3 +1,6 @@
+import { constants } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
+import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * `kortix executor mcp` — the Executor exposed as a stdio MCP server.
  *
@@ -20,9 +23,6 @@
  * skips the host/update notices for `executor`, so this stays clean.
  */
 import type { ExecutorClient } from '@kortix/executor-sdk';
-import { constants } from 'node:fs';
-import { open, realpath, stat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   addConnector,
   callPausingForApproval,
@@ -142,12 +142,14 @@ export async function uploadAttachmentFiles(
     if (!isAbsolute(item.path)) {
       throw new Error(`attachment_files[${index}].path must be absolute`);
     }
-    const file = await open(item.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-      if (asRecord(error).code === 'ELOOP') {
-        throw new Error(`attachment_files[${index}].path must not be a symbolic link`);
-      }
-      throw error;
-    });
+    const file = await open(item.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+      (error: unknown) => {
+        if (asRecord(error).code === 'ELOOP') {
+          throw new Error(`attachment_files[${index}].path must not be a symbolic link`);
+        }
+        throw error;
+      },
+    );
     try {
       await options.afterOpen?.(item.path, index);
       const path = await realpath(item.path);
@@ -158,6 +160,9 @@ export async function uploadAttachmentFiles(
       }
       const [details, pathDetails] = await Promise.all([file.stat(), stat(path)]);
       if (!details.isFile()) throw new Error(`attachment_files[${index}].path is not a file`);
+      if (details.nlink !== 1) {
+        throw new Error(`attachment_files[${index}].path must not have hard links`);
+      }
       if (details.dev !== pathDetails.dev || details.ino !== pathDetails.ino) {
         throw new Error(`attachment_files[${index}].path changed while it was being opened`);
       }
@@ -169,11 +174,19 @@ export async function uploadAttachmentFiles(
       }
 
       const filename = item.filename || basename(path);
-      if (!filename || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\')) {
+      if (
+        !filename ||
+        filename === '.' ||
+        filename === '..' ||
+        filename.includes('/') ||
+        filename.includes('\\')
+      ) {
         throw new Error(`attachment_files[${index}].filename must be a plain filename`);
       }
       const contentType =
-        item.content_type || ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] || 'application/octet-stream';
+        item.content_type ||
+        ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] ||
+        'application/octet-stream';
       const result = await executor.uploadAttachment(await file.readFile(), {
         filename,
         contentType,

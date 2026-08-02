@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,6 +74,18 @@ describe('Executor MCP attachment_files', () => {
     await expect(
       uploadAttachmentFiles([{ path: link }], {} as ExecutorClient, { workspaceRoot: root }),
     ).rejects.toThrow('must not be a symbolic link');
+  });
+
+  test('rejects hard-linked aliases of files outside generated-artifact directories', async () => {
+    const root = await fixture();
+    const secret = join(root, 'secret.txt');
+    const alias = join(root, 'output', 'report.txt');
+    await writeFile(secret, 'do-not-send');
+    await link(secret, alias);
+
+    await expect(
+      uploadAttachmentFiles([{ path: alias }], {} as ExecutorClient, { workspaceRoot: root }),
+    ).rejects.toThrow('must not have hard links');
   });
 
   test('rejects a path that changes after the file descriptor is opened', async () => {
