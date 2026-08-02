@@ -77,16 +77,19 @@ terminationGracePeriodSeconds: 60
 preStopSleepSeconds: 10
 
 health:
-  path: /v1/health
+  # Readiness/startup path — returns 503 until the app is fully initialized
+  # (schema ready, services booted) and when draining. This is the ALB target
+  # group health check path, so the load balancer only routes traffic to truly
+  # ready instances — no "brief 503 during deploy" window.
+  path: /health/ready
   # Liveness probe path. The shallow `path` above answers in <1ms even when the
   # event loop is badly degraded, so it never restarts a wedged-but-not-dead pod
   # (this is why the 2026-06-18 incident ran 90 min with no auto-recovery). The
   # API also serves /health/live, which returns 503 when event-loop lag is
   # sustained-high → kubelet liveness fails → the pod restarts.
-  # DEPLOY ORDER: only set this to /health/live once an image that serves the
-  # route is live in this env (an old image would 404 the probe and crash-loop).
-  # Empty → falls back to `path` (no behavior change).
-  livenessPath: ""
+  # DEPLOY ORDER: flip this to /health/live once an image that serves the route
+  # is live in this env. The readiness endpoint is now served by all images.
+  livenessPath: /health/live
   # startup probe covers slow first-boot (schema/migrations); liveness restarts a
   # hung pod; readiness gates ALB traffic.
   startupFailureThreshold: 30 # 30 * 5s = up to 150s to become healthy

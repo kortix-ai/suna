@@ -103,6 +103,7 @@ module "api" {
   image            = var.api_image
   container_port   = var.container_port
   certificate_arn  = module.acm.certificate_arn
+  health_check_path = "/health/ready"
   environment      = var.api_environment
   secrets          = var.api_secrets
   secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
