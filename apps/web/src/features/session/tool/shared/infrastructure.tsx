@@ -785,7 +785,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
           <UnifiedMarkdown content={text} />
         </div>
       ) : (
-        <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+        <pre className="text-muted-foreground font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
           {text}
         </pre>
       )}
@@ -1210,6 +1210,19 @@ export function BasicTool({
  */
 export const TOOL_INDENT = 'ml-5.5';
 
+/**
+ * The indent, or nothing, depending on which surface the tool is drawn on.
+ *
+ * An inline row leads with a `size-4` icon and a `gap-1.5`, so its text column
+ * starts 22px in and a card below it has to match. The panel has no icon
+ * gutter and supplies its own `p-4`, so the same indent only pushes the card
+ * 22px off the header it sits under. {@link ToolOutputCard} already guarded its
+ * indent this way; every other site hardcoded `TOOL_INDENT` and drifted.
+ */
+export function useToolIndent(): string {
+  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
+}
+
 export function ToolCodeCard({
   code,
   language,
@@ -1219,9 +1232,10 @@ export function ToolCodeCard({
   language: string;
   className?: string;
 }) {
+  const indent = useToolIndent();
   if (!code) return null;
   return (
-    <div className={cn('mt-1.5', TOOL_INDENT, className)}>
+    <div className={cn('mt-1.5', indent, className)}>
       <div className="border-border bg-popover relative rounded-md border">
         {/* The scroller sits INSIDE the overlay so the copy button stays pinned
             to the card while long content scrolls under it. */}

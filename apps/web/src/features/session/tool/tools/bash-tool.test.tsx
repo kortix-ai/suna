@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import type { ToolPart } from '@/ui';
 
 import { BashTool } from './bash-tool';
@@ -104,5 +105,65 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
 
     expect(html).toContain('echo hi');
     expect(html).toContain('hi');
+  });
+});
+
+// The command card's geometry, asserted on the emitted class attributes.
+//
+// Every one of these was broken at once, and all four were invisible to the
+// existing tests because they only checked that text reached the DOM: the
+// command sat at `px-0` against the card border while its own output sat at
+// 12px, the copy button was a flex sibling centred on the vertical middle of a
+// three-line command, `pr-9` reserved space for a control that ALSO took real
+// width, and `SHIKI_RESET`'s `text-sm` on the <code> beat the <pre>'s inherited
+// `text-xs`, drawing the command at 14px over 12px output.
+//
+// Class strings are the contract here because they are the whole bug — there
+// is no behavior to assert, only geometry. Arbitrary variants arrive
+// HTML-escaped (`[&_code]` → `[&amp;_code]`), so match a substring that skips
+// the ampersand.
+describe('BashTool command card geometry', () => {
+  const html = renderToStaticMarkup(
+    withProviders(<BashTool part={makePart('echo hi', 'hi')} defaultOpen />),
+  );
+
+  test('command and output share one left edge', () => {
+    expect(html).toContain('p-3 pr-11');
+    expect(html).not.toContain('px-0');
+  });
+
+  test('the copy button floats instead of sitting in a flex row', () => {
+    expect(html).toContain('absolute top-2 right-2');
+    expect(html).not.toContain('justify-between');
+    expect(html).not.toContain('pr-9');
+  });
+
+  test('the highlighted command inherits the 12px type size', () => {
+    expect(html).toContain('_code]:text-xs');
+  });
+});
+
+// The 22px indent lines a card up with the trigger row's TEXT column, which
+// exists only on the inline surface — the panel has no icon gutter and brings
+// its own `p-4`, so the same indent just pushed the card off its header.
+describe('BashTool indent is surface-aware', () => {
+  const part = makePart('echo hi', 'hi');
+
+  test('inline keeps the icon-gutter indent', () => {
+    const html = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
+
+    expect(html).toContain('ml-5.5');
+  });
+
+  test('the panel drops it', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <BashTool part={part} defaultOpen />
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('ml-5.5');
   });
 });

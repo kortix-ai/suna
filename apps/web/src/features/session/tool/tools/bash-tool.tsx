@@ -10,8 +10,8 @@ import {
   partStatus,
   partStreamingInput,
   StructuredOutput,
-  TOOL_INDENT,
   ToolRunningContext,
+  useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -58,15 +58,38 @@ function CommandBlock({
   return (
     <div className="border-border bg-popover relative rounded-md border">
       <div data-scrollable className="max-h-96 overflow-auto">
-        <div className="flex w-full items-center justify-between">
-          <pre className="text-foreground/90 px-0 py-2.5 pr-9 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
+        {/* The command and its copy button, not a flex row.
+
+            As a row, the button was a layout participant: `items-center` hung
+            it off the vertical middle of a three-line command, `mr-3` took 12px
+            of width, and the `<pre>` STILL reserved `pr-9` for it — 76px of
+            dead space for a 28px control. The `<pre>` also had no `min-w-0`, so
+            an unbreakable path could set the row's minimum width and push the
+            button out of the card. Floating the button over a plain block
+            settles all four: nothing to centre, nothing to shrink. */}
+        <div className="relative">
+          {/* `[&_code]:text-xs` is load-bearing. `SHIKI_RESET` puts `text-sm` on
+              the <code> it renders, and a class on the child beats a font size
+              inherited from this <pre> — so the command drew at 14px against
+              12px output, two type sizes in one card. (`text-inherit` is not
+              the fix: in Tailwind that sets colour, not size.) Command and
+              output now share 12px, and the hierarchy is carried by colour. */}
+          <pre className="text-foreground/90 p-3 pr-11 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
             <HighlightedCode code={command} language="bash">
               {command}
             </HighlightedCode>
           </pre>
-          <span className="mr-3">
+          {/* Optically centred on the first line, not on the block: the line's
+              centre sits at 12px padding + (12px × 1.65) / 2 = 21.9px, and the
+              28px button inset 8px centres at 22px.
+
+              The wrapper carries the position, not the button — `hit-area-3`
+              sets `position: relative` on the button itself, so an `absolute`
+              passed through `className` would be two competing declarations
+              settled by stylesheet order. This is `CopyOverlay`'s pattern. */}
+          <div className="absolute top-2 right-2">
             <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
-          </span>
+          </div>
         </div>
 
         {hasOutput && (
@@ -80,7 +103,7 @@ function CommandBlock({
             {richOutput ? (
               richOutput
             ) : (
-              <div className="text-muted-foreground px-3 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground p-3 font-mono text-xs leading-[1.65] break-words whitespace-pre-wrap">
                 {output}
               </div>
             )}
@@ -98,6 +121,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
+  const indent = useToolIndent();
   const command =
     (input.command as string) ||
     (metadata.command as string) ||
@@ -179,9 +203,12 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {/* Shared with read / write / edit so all four code blocks line up: the
 			    trigger's icon column is `size-4` and TOOL_ROW_CLASS sets `gap-1.5`,
 			    which puts the text — and therefore this block — 22px in. The old
-			    `ml-7` here was computed against a `gap-3` the row class never had. */}
+			    `ml-7` here was computed against a `gap-3` the row class never had,
+			    and the indent was applied on every surface — including the panel,
+			    which has no icon gutter to line up with. `useToolIndent` drops it
+			    there. */}
       {command && (
-        <div className={cn('mt-1.5', TOOL_INDENT)}>
+        <div className={cn('mt-1.5', indent)}>
           <CommandBlock command={command} output={plainOutput} richOutput={richOutput} />
         </div>
       )}

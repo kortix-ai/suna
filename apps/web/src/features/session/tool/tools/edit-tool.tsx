@@ -12,10 +12,10 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
-  TOOL_INDENT,
   ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
+  useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -42,6 +42,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
   const diagnostics = getToolDiagnostics(part, filePath);
+  const indent = useToolIndent();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
@@ -89,7 +90,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           {/* Morph's instructions describe the edit the card below carries, so
               they share its indent rather than sitting flush with the row. */}
           {morphInstructions && (
-            <div className={cn('text-muted-foreground mt-1.5 text-xs italic', TOOL_INDENT)}>
+            <div className={cn('text-muted-foreground mt-1.5 text-xs italic', indent)}>
               {morphInstructions}
             </div>
           )}
