@@ -33,6 +33,7 @@ import {
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
+  isSupabaseTokenExpiredNoise,
   isTronLinkProxyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
@@ -650,12 +651,271 @@ test('suppresses storage-disabled WebView null.getItem TypeErrors (V8 + JSC)', (
       true,
       `expected runtime error "${value}" to be suppressed`,
     )
-    assert.equal(
+assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value }] },
+        exception: { values: [{ value, stacktrace: { frames: [] } }] },
       }),
       true,
       `expected Sentry event "${value}" to be suppressed`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Supabase gotrue `TOKEN_EXPIRED` auth-session rejection noise (Better Stack
+// pattern 63b0cde714048bca4c42129afacd5f8ec56813e0e663fbdb41265fdba6ed28a4,
+// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// Supabase auth session JWT expired mid-flight (during a page load after a
+// Google OAuth redirect, or during a stale session transition), and a
+// fire-and-forget `.then()` on a Supabase auth call rejected with the plain
+// gotrue error object `{ code: 400, message: "TOKEN_EXPIRED", status:
+// "INVALID_ARGUMENT" }`. Because the rejected value is a plain object (NOT an
+// Error), Sentry's GlobalHandlers `onunhandledrejection` integration cannot
+// extract a stack from it: it serializes the object's own enumerable keys into
+// `extra.__serialized__` and sets the exception value to the synthetic
+// "Object captured as promise rejection with keys: code, message, status" with
+// NO stacktrace frames. 2 occurrences, 0 identified users (anonymous), first
+// 2026-08-01 13:22:03 UTC, last 2026-08-01 13:22:27 UTC, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary), release
+// `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
+// `https://kortix.com/auth` (first occurrence) and
+// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
+// 151.0.0.0 on Windows. Stack trace: NONE — `call_site_file`/`call_site_function`
+// are null, `call_stack_hash` is null, no frames at all.
+//
+// DISTINCT from the EIP-1193 wallet-extension plain-object rejection class
+// (`isExtensionRejectedObjectNoise`, PR #4720, Better Stack `0f78b2f8…`):
+// that one rejects with `{ code, message, stack }` (keys include `stack` with
+// an extension content-script origin) and the message is "Object captured as
+// promise rejection with keys: code, message, stack". THIS class rejects with
+// `{ code, message, status }` (keys include `status` instead of `stack`) and
+// the message is "Object captured as promise rejection with keys: code, message,
+// status". The two matchers are disjoint because the wallet-extension matcher
+// requires a serialized `stack` with an extension-origin protocol prefix, which
+// this event lacks (no `stack` key in `__serialized__`). The wallet-extension
+// matcher's `SYNTHETIC_OBJECT_REJECTION_PATTERN` is a prefix match
+// (`/^Object captured as promise rejection with keys:/`) that would match BOTH
+// messages, but the extension-origin stack check rejects this event (there is
+// no `stack` key), so the wallet-extension matcher returns false for this class.
+//
+// The "Object captured as promise rejection with keys: code, message, status"
+// message is Sentry's generic signature for ANY `Promise.reject({ code, message,
+// status })` — a real first-party `Promise.reject({ code: 400, message:
+// "TOKEN_EXPIRED", status: "INVALID_ARGUMENT" })` would produce the SAME
+// signature — so the matcher requires the canonical message AND NEGATIVE guards:
+// if the event has ANY resolved stack frame OR a resolved first-party
+// `apps/web/src/…` frame, keep reporting (a real first-party
+// `Promise.reject({ code, message, status })` we can attribute should still
+// surface). The production noise pattern has NO frames at all; only the
+// frameless capture is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic message from the production event.
+const SUPABASE_TOKEN_EXPIRED_REJECTION =
+  'Object captured as promise rejection with keys: code, message, status'
+
+test('classifies the Supabase TOKEN_EXPIRED frameless rejection noise', () => {
+  // Exact production shape: the canonical message, NO frames (the rejection
+  // carried no stack).
+  assert.equal(
+    isSupabaseTokenExpiredNoise({
+      message: SUPABASE_TOKEN_EXPIRED_REJECTION,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate (first occurrence — /auth)', () => {
+  // Exact shape of the first production event: type `UnhandledRejection`,
+  // mechanism `auto.browser.global_handlers.onunhandledrejection` (uncaught
+  // global unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL `https://kortix.com/auth`.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: SUPABASE_TOKEN_EXPIRED_REJECTION,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate (second occurrence — post-OAuth project page)', () => {
+  // Exact shape of the second production event: type `UnhandledRejection`,
+  // mechanism `auto.browser.global_handlers.onunhandledrejection` (uncaught
+  // global unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL `https://kortix.com/projects/c5a6e2f5-...`
+  // (post-Google-OAuth redirect), referer `https://accounts.google.com/`.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf' },
+      exception: {
+        values: [
+          {
+            value: SUPABASE_TOKEN_EXPIRED_REJECTION,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Supabase TOKEN_EXPIRED rejection when frames are absent entirely (no stacktrace key)', () => {
+  // The production event has no frames at all — Sentry omits the stacktrace
+  // key entirely when there is nothing to serialize. The gate must still drop
+  // it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [{ value: SUPABASE_TOKEN_EXPIRED_REJECTION }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a different-keys object rejection (e.g. wallet-extension stack variant)', () => {
+  // The wallet-extension class has keys `code, message, stack` (not `status`).
+  // The exact-message anchor means the `code, message, stack` variant is NOT
+  // matched by this matcher — it is handled separately by
+  // `isExtensionRejectedObjectNoise` (PR #4720).
+  for (const message of [
+    'Object captured as promise rejection with keys: code, message, stack',
+    'Object captured as promise rejection with keys: code, message, something',
+    'Object captured as promise rejection with keys: code, message',
+    'Object captured as promise rejection with keys: status',
+    'Object captured as promise rejection with keys: code, message, status, extra',
+  ]) {
+    assert.equal(
+      isSupabaseTokenExpiredNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: [] } }],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the Supabase TOKEN_EXPIRED rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code rejected a promise
+  // with a `{ code, message, status }` object → actionable; the negative guard
+  // MUST preserve it so the call site can be found + fixed. This is the whole
+  // reason the matcher is frame-aware (the message is also a real first-party
+  // `Promise.reject({ code, message, status })` signature).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/auth/supabase-client.ts', function: 'getUser' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/auth/providers.ts', function: 'handleSession' },
+    ],
+  ]) {
+    assert.equal(
+      isSupabaseTokenExpiredNoise({
+        message: SUPABASE_TOKEN_EXPIRED_REJECTION,
+        frames,
+      }),
+      false,
+      `expected first-party TOKEN_EXPIRED rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: SUPABASE_TOKEN_EXPIRED_REJECTION, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party TOKEN_EXPIRED rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the Supabase TOKEN_EXPIRED rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject({ code, message, status })` with a stack we can trace. Keep
+  // reporting; only the frameless capture (the production noise pattern) is
+  // dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/sdk.js', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isSupabaseTokenExpiredNoise({
+        message: SUPABASE_TOKEN_EXPIRED_REJECTION,
+        frames,
+      }),
+      false,
+      `expected attributable TOKEN_EXPIRED rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a message that only mentions the object-rejection wording', () => {
+  // The matcher anchors on the EXACT canonical message; a different wording
+  // that merely mentions the prefix must not be matched.
+  for (const message of [
+    'Object captured as promise rejection with keys: code, message, status (extra context)',
+    'Object captured as promise rejection',
+    'promise rejection with keys: code, message, status',
+    'UnhandledRejection: TOKEN_EXPIRED',
+  ]) {
+    assert.equal(
+      isSupabaseTokenExpiredNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different serialized payload', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class —
+  // keep reporting it via this matcher. (The bare-`undefined` non-Error
+  // rejection class has its own dedicated matcher + tests; not re-tested here.)
+  for (const message of [
+    'Something else entirely',
+    'Object captured as promise rejection with keys: code, message, stack',
+    'Object captured as promise rejection with keys: different, keys',
+  ]) {
+    assert.equal(
+      isSupabaseTokenExpiredNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for frameless "${message}" to keep reporting`,
     )
   }
 })
@@ -1329,9 +1589,9 @@ test('does NOT suppress a non-storage SecurityError with the same shape', () => 
       false,
       `expected non-storage message "${value}" to keep reporting`,
     )
-    assert.equal(
+assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value }] },
+        exception: { values: [{ value, stacktrace: { frames: [] } }] },
       }),
       false,
       `expected Sentry event "${value}" to keep reporting`,
@@ -2436,12 +2696,12 @@ test('suppresses every Paper Shaders null-context message via the Sentry beforeS
       true,
       `expected Sentry gate to suppress "${message}" with a chunk frame`,
     )
-    assert.equal(
+assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value: message }] },
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
       }),
       true,
-      `expected Sentry gate to suppress "${message}" even with NO chunk frame (message is specific enough)`,
+      `expected Sentry gate to suppress "${message}" even without a chunk frame`,
     )
   }
 })
@@ -3492,6 +3752,159 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
     isAndroidWebViewNativeBridgePostEventNoise({
       message: 'Error invoking postEvent: Java object is gone',
       filename: 'app://navigation_performance_logger_androidx',
+    }),
+    false,
+  )
+})
+
+// --- 2026-08-01 sibling: the `BrowserApiErrors.setTimeout`-captured variant
+// (BS pattern `f50ed590…`). The `postEvent` Android WebView bridge-GC throw
+// surfaced via Sentry's `BrowserApiErrors` setTimeout auto-wrapper, which
+// records the SCHEDULING frame (the Next.js webpack runtime chunk where
+// `setTimeout` was REGISTERED) as frame #1 and the actual THROW SITE
+// (`<anonymous>`, the anonymous timer callback = the WebView bridge hop) as
+// frame #2. The #5181 matcher's resolvable-frame negative guard rejected
+// this event because frame #1 (`app:///_next/…`) is resolvable, so it leaked.
+// The fix recognizes the `<anonymous>` throw-site frame as a positive anchor
+// and relaxes the resolvable-frame negative guard so the incidental
+// webpack-runtime scheduling frame does NOT veto suppression. See
+// `ANDROID_WEBVIEW_BRIDGE_THROW_SITE_FRAME` for the rationale.
+//
+// The EXACT production event frames from BS `f50ed590…` (release
+// `c330eda4d96e7aee557618254a86df7d16ba5d9b`, v0.12.0, Chrome 150 Android 16,
+// mechanism `auto.browser.browserapierrors.setTimeout`, UNCAUGHT `handled:false`,
+// URL `https://kortix.com/`). Frame #1 is the webpack runtime chunk
+// (`__webpack_require__`'s module-init `setTimeout` registration, minified
+// function `u`); frame #2 is the `<anonymous>` throw site (function `?`).
+const SETTIMEOUT_PROD_SCHEDULING_FRAME =
+  'app:///_next/static/chunks/86784-d4b6544b8ad14b3b.js?dpl=dpl_vkPg62H2TNxvxAUgEDzEoaANndoK'
+const SETTIMEOUT_PROD_THROW_SITE_FRAME = '<anonymous>'
+
+test('classifies the BrowserApiErrors.setTimeout-captured postEvent noise (exact prod frames)', () => {
+  // The exact production capture shape — frame #1 is the webpack runtime
+  // SCHEDULING frame (where `setTimeout` was registered), frame #2 is the
+  // `<anonymous>` THROW SITE (the anonymous timer callback = the WebView
+  // bridge hop). Both `in_app:true`.
+  for (const message of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message,
+        frames: [
+          { filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' },
+          { filename: SETTIMEOUT_PROD_THROW_SITE_FRAME, function: '?' },
+        ],
+      }),
+      true,
+      `expected setTimeout-captured "${message}" (webpack-runtime + <anonymous> throw site) to be noise`,
+    )
+    // The scheduling frame alone (no `<anonymous>` throw site) must STILL keep
+    // reporting — an incidental webpack chunk frame with NO `<anonymous>`
+    // throw-site anchor is not the WebView bridge shape; it is an
+    // attributable app/webpack error. Only the `<anonymous>` throw-site frame
+    // is the positive anchor.
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message,
+        frames: [{ filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' }],
+      }),
+      false,
+      `expected scheduling-frame-only "${message}" (no <anonymous> throw site) to keep reporting`,
+    )
+  }
+})
+
+test('classifies the <anonymous> throw-site frame as noise even with an incidental app-chunk scheduling frame', () => {
+  // The positive `<anonymous>` throw-site anchor must fire regardless of
+  // which incidental scheduling frame the BrowserApiErrors wrapper recorded
+  // (a generic `app:///_next/…` chunk, a URL, or any non-first-party source).
+  for (const schedulingFrame of [
+    'app:///_next/static/chunks/66499-704f783b0e8ea993.js',
+    'app:///_next/static/chunks/webpack-abc123.js',
+    'https://kortix.com/_next/static/chunks/main-123.js',
+  ]) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostEventNoise({
+        message: 'Error invoking postEvent: Java object is gone',
+        frames: [
+          { filename: schedulingFrame },
+          { filename: '<anonymous>', function: '?' },
+        ],
+      }),
+      true,
+      `expected <anonymous> throw site + incidental scheduling frame ${schedulingFrame} to be noise`,
+    )
+  }
+  // The `<anonymous>` throw site is also noise via the runtime (window.onerror)
+  // gate when it is the filename itself.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      filename: '<anonymous>',
+    }),
+    true,
+    'expected runtime gate to suppress <anonymous> throw-site postEvent',
+  )
+})
+
+test('suppresses the BrowserApiErrors.setTimeout-captured postEvent noise via the Sentry beforeSend gate', () => {
+  // The exact production Sentry event shape — exception value + 2-frame
+  // stacktrace (webpack-runtime scheduling + `<anonymous>` throw site).
+  for (const value of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  { filename: SETTIMEOUT_PROD_SCHEDULING_FRAME, function: 'u' },
+                  { filename: SETTIMEOUT_PROD_THROW_SITE_FRAME, function: '?' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress setTimeout-captured "${value}"`,
+    )
+  }
+})
+
+test('still does NOT suppress a real first-party postEvent failure (regression guard for the relaxed matcher)', () => {
+  // The first-party `apps/web/src/…` negative guard MUST still fire even when
+  // an incidental `<anonymous>` frame is present alongside a first-party frame.
+  // A real first-party `postEvent`/`dispatchEvent` regression de-minifies to
+  // `apps/web/src/…` and must never be hidden by the relaxed `<anonymous>`
+  // throw-site anchor.
+  const firstPartyFrames = [
+    { filename: 'apps/web/src/features/messaging/event-bridge.ts', function: 'dispatchBridgeEvent' },
+    { filename: '<anonymous>', function: '?' },
+  ]
+  assert.equal(
+    isAndroidWebViewNativeBridgePostEventNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      frames: firstPartyFrames,
+    }),
+    false,
+    'expected first-party postEvent regression with an incidental <anonymous> frame to keep reporting',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: 'Error invoking postEvent: Java object is gone', stacktrace: { frames: firstPartyFrames } }],
+      },
+    }),
+    false,
+    'expected Sentry gate to keep reporting first-party postEvent regression',
+  )
+  // Via the runtime gate: a first-party filename keeps reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      filename: 'apps/web/src/features/messaging/event-bridge.ts',
     }),
     false,
   )

@@ -574,6 +574,59 @@ flow(
   },
 );
 
+// PROJ-35 — PUT /v1/projects/:projectId/model-enablement
+// (apps/api/src/projects/routes/r4.ts:2763-2822). Replace the project's
+// model-override exceptions (which models are enabled/disabled). The full
+// positive path needs a funded account + model-picker data; the BOUNDARIES
+// are assertable without one: an unknown project 404s, ANON 401s, a missing
+// body 400s, and a NONMEMBER is denied — proving the route is mounted and
+// its auth/shape gates fire before any model-override logic.
+flow(
+  'PROJ-35',
+  { domain: 'projects', routes: ['PUT /v1/projects/:projectId/model-enablement'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: p.id } },
+        );
+      r.status(401);
+    });
+    await ctx.step('unknown projectId → 404 (project not loadable)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('missing modelOverrides → 400 (zod validation)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put('/v1/projects/:projectId/model-enablement', {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step('NONMEMBER → 403/404 (no project access)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/model-enablement',
+          { modelOverrides: {} },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
+
 // PROJ-28 — Suna-migration status surface. Top-level `/v1/projects/suna-migration/*`
 // (NOT project-scoped, despite the path prefix) — scoped to the caller's own
 // account. eligible = the account has legacy `public.projects` rows AND no

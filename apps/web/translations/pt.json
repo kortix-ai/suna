@@ -3900,6 +3900,11 @@
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "busca no conteúdo"
     },
+    "componentsCommonErrorBoundary": {
+      "reload": "Recarregar",
+      "errorDetails": "Detalhes do erro",
+      "copyDetails": "Copiar detalhes do erro"
+    },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "Prévia do arquivo:",
       "line122JsxAttrTitleOpenInNewTab": "Abrir em uma nova aba",
@@ -6811,7 +6816,6 @@
     "autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e": "kortix init",
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "Coletando atualizações da noite...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "Histórico de checkpoints",
-    "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "Nome do projeto",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propor alterações",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Ver alterações",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Nova sessão",
@@ -7867,8 +7871,10 @@
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "Nenhuma pré-visualização disponível para este arquivo.",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "Fechar pesquisa",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "Volte",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "Renomear projeto",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124": "Dê um novo nome a este projeto.",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextEditProjecta4dc3833": "Editar projeto",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextChangeThise7a7a4b7": "Altere o nome e o ícone deste projeto.",
+    "autoFeaturesProjectsModalEditProjectModalJsxAttrPlaceholderProject25498193": "Nome do projeto",
+    "autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833": "Editar projeto",
     "autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3": "Criar em",
     "autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89": "mostrado no seletor de modelo",
     "autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2": "Redefinir para os padrões",

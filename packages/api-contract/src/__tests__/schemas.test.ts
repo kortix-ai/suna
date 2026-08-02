@@ -88,6 +88,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: { onboarding_completed_at: NOW },
+    icon: '🚀',
+    icon_glyph: null,
     last_opened_at: NOW,
     created_at: NOW,
     updated_at: NOW,
@@ -276,6 +278,34 @@ describe('ProjectSchema', () => {
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
   });
+
+  test('accepts a null icon', () => {
+    const parsed = ProjectSchema.parse(projectFixture({ icon: null }));
+    expect(parsed.icon).toBeNull();
+  });
+
+  test('rejects a project with no icon field (icon is always emitted, never omitted)', () => {
+    const { icon: _dropped, ...withoutIcon } = projectFixture();
+    expect(() => ProjectSchema.strict().parse(withoutIcon)).toThrow();
+  });
+});
+
+describe('ProjectSchema.icon_glyph', () => {
+  test('accepts a glyph object and null, rejects undefined', () => {
+    const base = projectFixture();
+    expect(
+      ProjectSchema.safeParse({ ...base, icon_glyph: { name: 'Rocket', color: 'blue' } }).success,
+    ).toBe(true);
+    expect(ProjectSchema.safeParse({ ...base, icon_glyph: null }).success).toBe(true);
+    // nullable, NOT optional — a missing key is a contract violation.
+    const { icon_glyph: _omitted, ...withoutKey } = { ...base, icon_glyph: null };
+    expect(ProjectSchema.safeParse(withoutKey).success).toBe(false);
+  });
+
+  test('rejects a bare string', () => {
+    const base = projectFixture();
+    expect(ProjectSchema.safeParse({ ...base, icon_glyph: 'Rocket' }).success).toBe(false);
+  });
 });
 
 describe('ProjectSessionSchema', () => {
@@ -362,6 +392,22 @@ describe('SessionStartResultSchema', () => {
     expect(parsed.sandbox?.provider).toBe('platinum');
   });
 
+  test('accepts a typed provider-neutral terminal capacity failure', () => {
+    const parsed = SessionStartResultSchema.strict().parse({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      sandbox: sandboxFixture({ status: 'error' }),
+      opencode_session_id: null,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
+    expect(parsed.failure?.category).toBe('provider-capacity');
+  });
+
   test('rejects an unknown stage', () => {
     expect(() =>
       SessionStartResultSchema.parse({
@@ -371,6 +417,43 @@ describe('SessionStartResultSchema', () => {
         sandbox: null,
         opencode_session_id: null,
       }),
+    ).toThrow();
+  });
+});
+
+describe('pending session prompt contract', () => {
+  test('accepts a durable prompt draft on normal create and warm claim', () => {
+    const pendingPrompt = {
+      text: 'Map the flood risk for this parcel.',
+      agent: 'kortix',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+    expect(
+      ClaimWarmProjectSessionInputSchema.strict().parse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        pending_prompt: pendingPrompt,
+      }).pending_prompt,
+    ).toEqual(pendingPrompt);
+  });
+
+  test('accepts a file-only draft with an empty text field', () => {
+    const pendingPrompt = {
+      text: '',
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+
+    expect(() =>
+      SessionCreateInputSchema.strict().parse({ pending_prompt: { text: '' } }),
     ).toThrow();
   });
 });

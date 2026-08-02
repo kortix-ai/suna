@@ -87,12 +87,28 @@ export interface FlatModel {
   lastUpdated?: string;
   /**
    * Whether the project OFFERS this model. Server-owned per-project
-   * enablement, resolved by the API and enforced by the gateway — the picker
-   * renders the enabled ones and "Manage models" switches on this flag.
-   * Neither re-derives it. Undefined on catalogs that don't carry enablement
-   * (anything but `/model-picker`), which callers read as "not applicable".
+   * enablement, resolved by the API (`/model-picker`) — the picker renders the
+   * enabled ones and "Manage models" switches on this flag. Neither re-derives
+   * it, and the gateway never refuses a request over it (display-only).
+   * Undefined on catalogs that don't carry enablement (anything but
+   * `/model-picker`), which callers read as "not applicable".
    */
   enabled?: boolean;
+}
+
+/**
+ * Whether `key` may be offered/resolved from `models` — present in the catalog
+ * and not turned off by the server's per-project enablement (`enabled` above).
+ * THE one predicate for "is this model selectable?"; a second, client-local
+ * visibility heuristic beside it is exactly what made the session picker and
+ * "Manage models" disagree.
+ */
+export function isOfferedModel(
+  models: FlatModel[],
+  key: { providerID: string; modelID: string },
+): boolean {
+  const model = models.find((m) => m.providerID === key.providerID && m.modelID === key.modelID);
+  return !!model && model.enabled !== false;
 }
 
 // The gateway-specific fields (`provider`, `reasoning_options`,

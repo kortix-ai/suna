@@ -91,7 +91,17 @@ export default function ProjectIndexPage() {
       // defaults to "default" when unset (see buildNewSessionCreateInput).
       setSending(true);
       newSession({
-        create: buildNewSessionCreateInput(options),
+        create: {
+          ...buildNewSessionCreateInput(options),
+          pending_prompt: {
+            text,
+            agent: options?.agent ?? null,
+            model: options?.model ?? null,
+            variant: options?.variant ?? null,
+            attachment_names:
+              files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
+          },
+        },
         scope: options?.scope,
         // Create failed (already surfaced by the hook) — we never left this
         // page, so just unlock the composer with the text still in it.

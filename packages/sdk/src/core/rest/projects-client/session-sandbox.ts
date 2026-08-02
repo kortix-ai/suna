@@ -34,6 +34,13 @@ export interface ProjectSessionSandbox {
 export type SessionStartStage =
   "provisioning" | "starting" | "ready" | "stopped" | "failed";
 
+export interface SessionStartFailure {
+  category: "provider-capacity" | "git-auth" | "sandbox-provider";
+  message: string;
+  /** A user action can retry. Automatic polling must still stop. */
+  retryable: boolean;
+}
+
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
@@ -43,6 +50,8 @@ export interface SessionStartResult {
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
   opencode_session_id: string | null;
+  /** Stable terminal failure. Provider-specific diagnostics stay internal. */
+  failure?: SessionStartFailure | null;
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000), composed
    * against the configured backendUrl. The server owns the proxy scheme; the SDK

@@ -1,6 +1,7 @@
 import { type KortixProject, listProjectsForAccount, provisionProject } from '@kortix/sdk';
 
 import { isValidProjectId } from '@/lib/onboarding/landing-destination';
+import { hasPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 
 export type FirstProjectAutoCreateState = {
   activeAccountId: string | null;
@@ -63,9 +64,16 @@ export function clearAutoProjectSuppression(): void {
  * list — gate creation on this. Opening an EXISTING project stays allowed from
  * anywhere.
  *
- * A same-origin referrer covers the real entry points (`/auth/callback`, `/`,
- * in-app links). An EMPTY referrer covers a typed URL or a bookmark, which is
- * genuine user intent. A referrer naming another origin is what we refuse.
+ * Intent is proven by any ONE of:
+ *  - the post-auth marker — authentication completed moments ago on this
+ *    browser. This is what admits every real signup: a magic link opened from
+ *    webmail, an OAuth/SSO hop, and the `/auth` page's client-side redirect
+ *    all arrive with a CROSS-origin (or stale) `document.referrer`, and a
+ *    referrer-only version of this gate demoted exactly those users to the
+ *    projects list instead of their project.
+ *  - a same-origin referrer — `/`, in-app links.
+ *  - an EMPTY referrer — a typed URL or a bookmark.
+ * A referrer naming another origin, with no fresh sign-in, is what we refuse.
  *
  * This is defense in depth, not a complete control: an attacker can send
  * `referrerpolicy="no-referrer"` and be indistinguishable from a typed
@@ -76,6 +84,7 @@ export function clearAutoProjectSuppression(): void {
  */
 export function navigationMayCreateProject(): boolean {
   if (typeof document === 'undefined') return false;
+  if (hasPostAuthIntent()) return true;
   const referrer = document.referrer;
   if (!referrer) return true;
   try {

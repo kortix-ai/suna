@@ -3900,6 +3900,11 @@
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "内容検索"
     },
+    "componentsCommonErrorBoundary": {
+      "reload": "再読み込み",
+      "errorDetails": "エラーの詳細",
+      "copyDetails": "エラーの詳細をコピー"
+    },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "ファイルプレビュー:",
       "line122JsxAttrTitleOpenInNewTab": "新しいタブで開く",
@@ -6811,7 +6816,6 @@
     "autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e": "kortix init",
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "夜間の更新を収集中...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "チェックポイント履歴",
-    "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "プロジェクト名",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "変更を提案",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "変更を表示",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "新しいセッション",
@@ -7867,8 +7871,10 @@
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "このファイルのプレビューはありません。",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "検索を閉じる",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "戻る",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "プロジェクト名の変更",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124": "このプロジェクトに新しい名前を付けます。",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextEditProjecta4dc3833": "プロジェクトの編集",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextChangeThise7a7a4b7": "このプロジェクトの名前とアイコンを変更します。",
+    "autoFeaturesProjectsModalEditProjectModalJsxAttrPlaceholderProject25498193": "プロジェクト名",
+    "autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833": "プロジェクトの編集",
     "autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3": "で作成する",
     "autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89": "モデルピッカーに表示される",
     "autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2": "デフォルトにリセットする",

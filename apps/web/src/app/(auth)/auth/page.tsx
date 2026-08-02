@@ -32,6 +32,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
@@ -236,6 +237,10 @@ function AuthCardForm({
       }
     }
 
+    // Client-side navigation keeps the referrer /auth itself loaded with —
+    // often a search engine — so the landing door cannot read intent from it.
+    // The marker is what proves "this user just signed in" to the door.
+    markPostAuthIntent();
     const dest = result?.redirectTo || returnUrl;
     router.push(dest);
     router.refresh();

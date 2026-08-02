@@ -69,6 +69,10 @@ describe('secrets-registry pure helpers', () => {
     expect(servicesForKeys([])).toEqual([]);
   });
 
+  test('servicesForKeys restarts the frontend when the warm-session flag changes', () => {
+    expect(servicesForKeys(['KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED'])).toEqual(['frontend']);
+  });
+
   test('ROTATABLE_GENERATED_KEYS excludes the internal Supabase-infra encryption keys', () => {
     for (const infraKey of ['SECRET_KEY_BASE', 'REALTIME_DB_ENC_KEY', 'VAULT_ENC_KEY', 'PG_META_CRYPTO_KEY']) {
       expect(ROTATABLE_GENERATED_KEYS).not.toContain(infraKey);

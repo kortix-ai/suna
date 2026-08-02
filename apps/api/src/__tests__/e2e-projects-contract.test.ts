@@ -176,7 +176,18 @@ mock.module('../projects/git', () => ({
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
     if (path === 'missing.txt') {
+      // The legacy `GitOperationError` shape: a raw `fatal: path … does not
+      // exist in …` message. `isMissingGitPathError` matches this → 404.
       throw new Error("fatal: path 'missing.txt' does not exist in 'feature'");
+    }
+    if (path === 'not-found.txt') {
+      // The typed shape `readRepoFile` actually throws in prod (files.ts:127) —
+      // a `RepoFileNotFoundError` whose message does NOT match the
+      // `isMissingGitPathError` regex. Without the route branching on
+      // `isRepoFileNotFoundError`, this leaked as an uncaught 500 (Better Stack
+      // pattern `5b40ec1a…`). Throw the REAL class so the regression test
+      // exercises the exact prod code path, not a string lookalike.
+      throw new actualGit.RepoFileNotFoundError(path, ref);
     }
     return `content:${path}@${ref}`;
   },
@@ -534,6 +545,23 @@ describe('projects API contract', () => {
     expect(missingFile.status).toBe(404);
     expect(await missingFile.json()).toEqual({ error: 'File not found' });
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
+
+    // Regression (Better Stack pattern `5b40ec1a…`): `readRepoFile` now throws a
+    // typed `RepoFileNotFoundError` (message `file not found in repository at
+    // '<ref>:<path>'`) instead of the raw `fatal: path … does not exist in …`
+    // `GitOperationError`. The route's catch block only matched the OLD regex
+    // (`isMissingGitPathError`), so the typed error leaked uncaught to
+    // `app.onError` → 500 → captureException → Sentry. The mock above throws
+    // the REAL `RepoFileNotFoundError` class for `not-found.txt`, so this
+    // exercises the exact prod code path. The fix makes the route branch on
+    // `isRepoFileNotFoundError` and return 404 — a 404 here proves the typed
+    // error no longer reaches the 500/Sentry path.
+    const typedMissingFile = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=not-found.txt&ref=feature`,
+    );
+    expect(typedMissingFile.status).toBe(404);
+    expect(await typedMissingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
