@@ -1,9 +1,9 @@
+import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import {
   ToolRunningContext,
@@ -74,7 +74,7 @@ const PART = makePart({
 });
 
 describe('ShowTool drives its inline surface with Disclosure; panel stays visually identical', () => {
-  test('inline surface renders a w-fit outline button as the disclosure trigger', () => {
+  test('inline surface renders a w-fit accent button as the disclosure trigger', () => {
     const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
 
     // Grammar: the trigger is a real <button>, still tagged `tool-trigger` so
@@ -83,8 +83,9 @@ describe('ShowTool drives its inline surface with Disclosure; panel stays visual
     expect(html).toContain('<button');
     expect(html).toContain('aria-expanded="false"');
 
-    // Outline variant, hugging its content — not a full-bleed row.
-    expect(html).toContain('border-border');
+    // Accent variant, hugging its content — not a full-bleed row.
+    expect(html).toContain('bg-foreground/5');
+    expect(html).toContain('border');
     expect(html).toContain('w-fit');
 
     // The label is the payload's resolved title (mirrors `showLabel`-style

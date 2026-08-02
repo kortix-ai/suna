@@ -285,7 +285,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   // filling the pane with no shell wrapper.
   if (fill) return body;
 
-  // Inline (chat) surface: a `w-fit` outline button reveals the payload in
+  // Inline (chat) surface: a `w-fit` accent button reveals the payload in
   // place. Its label is the payload's RESOLVED title (`displayTitle`) — never a
   // raw path or URL, which is what the `safeHttpUrl` gate above guarantees. The
   // button hugs its content instead of spanning the column: `show` is one action
@@ -299,10 +299,10 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
           variant="accent"
           size="sm"
           data-component="tool-trigger"
-          className="w-fit max-w-full justify-start gap-2 font-normal border"
+          className="w-fit max-w-full justify-start gap-2 border font-normal"
         >
           {/* `Loading`'s base sets `in-data-[slot=button]:text-background`, which
-              is invisible on a transparent outline button — the same trailing-`!`
+              is invisible on the subtle accent surface. The same trailing-`!`
               override the auth buttons use puts the color back. */}
           {running ? (
             <Loading className="text-muted-foreground! size-4 shrink-0" />
