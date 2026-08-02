@@ -10,7 +10,7 @@ import {
   executorConnectors,
 } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, ne, or } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
 
@@ -43,7 +43,10 @@ export interface CreateAgentKnowledgeSourceInput {
 }
 
 export class AgentKnowledgeInputError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message);
     this.name = 'AgentKnowledgeInputError';
   }
@@ -95,6 +98,8 @@ function validateSourceUrl(value: string | undefined): string {
 async function assertConnectorProfile(input: {
   accountId: string;
   projectId: string;
+  agentName: string;
+  userId: string;
   profileId: string | undefined;
   resourceId: string | undefined;
   connectorAction: string | undefined;
@@ -130,6 +135,17 @@ async function assertConnectorProfile(input: {
         eq(executorConnectors.accountId, input.accountId),
         eq(executorConnectors.projectId, input.projectId),
         eq(executorConnectors.status, 'active'),
+        or(
+          eq(executorConnectionProfiles.ownerType, 'project'),
+          and(
+            eq(executorConnectionProfiles.ownerType, 'member'),
+            eq(executorConnectionProfiles.ownerId, input.userId),
+          ),
+          and(
+            eq(executorConnectionProfiles.ownerType, 'agent'),
+            eq(executorConnectionProfiles.ownerId, input.agentName),
+          ),
+        ),
       ),
     )
     .limit(1);
@@ -185,7 +201,8 @@ async function assertConnectorProfile(input: {
     'id',
     'url',
   ];
-  const resourceArgument = input.resourceArgument ?? preferredArguments.find((key) => key in properties);
+  const resourceArgument =
+    input.resourceArgument ?? preferredArguments.find((key) => key in properties);
   if (!resourceArgument || !(resourceArgument in properties)) {
     throw new AgentKnowledgeInputError(
       'connector_resource_argument_not_found',
@@ -273,6 +290,8 @@ export async function createAgentKnowledgeSourceRecord(input: {
     const connector = await assertConnectorProfile({
       accountId: input.accountId,
       projectId: input.projectId,
+      agentName: input.agentName,
+      userId: input.userId,
       profileId: input.input.connectorProfileId,
       resourceId: input.input.resourceId,
       connectorAction: input.input.connectorAction,
@@ -402,13 +421,19 @@ export async function revokeAgentKnowledgeSourceRecord(
 
   if (!result) return false;
   if (result.storagePath) {
-    await getSupabase().storage.from(AGENT_KNOWLEDGE_BUCKET).remove([result.storagePath]).catch(() => {});
+    await getSupabase()
+      .storage.from(AGENT_KNOWLEDGE_BUCKET)
+      .remove([result.storagePath])
+      .catch(() => {});
   }
   return true;
 }
 
 function safeFileName(fileName: string): string {
-  const base = posix.basename(fileName.trim()).replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 180);
+  const base = posix
+    .basename(fileName.trim())
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .slice(0, 180);
   if (!base || base === '.' || base === '..') {
     throw new AgentKnowledgeInputError('invalid_file_name', 'File name is invalid.');
   }
@@ -441,14 +466,21 @@ export async function createAgentKnowledgeUploadRecord(input: {
   expiresAt: string;
 }> {
   assertAgentName(input.agentName);
-  if (!Number.isInteger(input.size) || input.size <= 0 || input.size > AGENT_KNOWLEDGE_MAX_FILE_SIZE) {
+  if (
+    !Number.isInteger(input.size) ||
+    input.size <= 0 ||
+    input.size > AGENT_KNOWLEDGE_MAX_FILE_SIZE
+  ) {
     throw new AgentKnowledgeInputError(
       'invalid_file_size',
       `Knowledge files must be between 1 byte and ${AGENT_KNOWLEDGE_MAX_FILE_SIZE} bytes.`,
     );
   }
   if (!AGENT_KNOWLEDGE_UPLOAD_MIME_TYPES.has(input.contentType)) {
-    throw new AgentKnowledgeInputError('unsupported_file_type', 'This knowledge file type is not supported.');
+    throw new AgentKnowledgeInputError(
+      'unsupported_file_type',
+      'This knowledge file type is not supported.',
+    );
   }
   const fileName = safeFileName(input.fileName);
   const sourceId = crypto.randomUUID();
@@ -513,25 +545,41 @@ export async function completeAgentKnowledgeUploadRecord(
   if (!source || source.sourceType !== 'upload' || !source.storagePath) return null;
   const config = source.sourceConfig as Record<string, unknown>;
   const expectedHash = typeof config.uploadTokenHash === 'string' ? config.uploadTokenHash : '';
-  const expiresAt = typeof config.uploadExpiresAt === 'string' ? new Date(config.uploadExpiresAt) : null;
-  if (!expectedHash || !equalToken(uploadToken, expectedHash) || !expiresAt || expiresAt < new Date()) {
-    throw new AgentKnowledgeInputError('invalid_upload_token', 'Upload token is invalid or expired.');
+  const expiresAt =
+    typeof config.uploadExpiresAt === 'string' ? new Date(config.uploadExpiresAt) : null;
+  if (
+    !expectedHash ||
+    !equalToken(uploadToken, expectedHash) ||
+    !expiresAt ||
+    expiresAt < new Date()
+  ) {
+    throw new AgentKnowledgeInputError(
+      'invalid_upload_token',
+      'Upload token is invalid or expired.',
+    );
   }
 
   const directory = posix.dirname(source.storagePath);
   const fileName = posix.basename(source.storagePath);
-  const { data, error } = await getSupabase().storage
-    .from(AGENT_KNOWLEDGE_BUCKET)
+  const { data, error } = await getSupabase()
+    .storage.from(AGENT_KNOWLEDGE_BUCKET)
     .list(directory, { search: fileName, limit: 10 });
   if (error || !data?.some((entry) => entry.name === fileName)) {
     throw new AgentKnowledgeInputError('upload_not_found', 'Upload has not completed.');
   }
-  const nextConfig = { ...config };
-  delete nextConfig.uploadTokenHash;
-  delete nextConfig.uploadExpiresAt;
+  const nextConfig = Object.fromEntries(
+    Object.entries(config).filter(
+      ([key]) => key !== 'uploadTokenHash' && key !== 'uploadExpiresAt',
+    ),
+  );
   const [updated] = await db
     .update(agentKnowledgeSources)
-    .set({ status: 'pending', sourceConfig: nextConfig, nextSyncAt: new Date(), updatedAt: new Date() })
+    .set({
+      status: 'pending',
+      sourceConfig: nextConfig,
+      nextSyncAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(agentKnowledgeSources.projectId, projectId),

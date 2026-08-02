@@ -22,8 +22,10 @@ import { db } from '../shared/db';
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
 const userId = crypto.randomUUID();
+const otherUserId = crypto.randomUUID();
 const connectorId = crypto.randomUUID();
 const connectorProfileId = crypto.randomUUID();
+const otherMemberProfileId = crypto.randomUUID();
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId, name: 'agent-knowledge-source-test' });
@@ -50,6 +52,16 @@ beforeAll(async () => {
     label: 'Team drive',
     isDefault: true,
     createdBy: userId,
+  });
+  await db.insert(executorConnectionProfiles).values({
+    profileId: otherMemberProfileId,
+    accountId,
+    projectId,
+    connectorId,
+    ownerType: 'member',
+    ownerId: otherUserId,
+    label: 'Other member drive',
+    createdBy: otherUserId,
   });
   await db.insert(executorConnectorActions).values([
     {
@@ -91,6 +103,31 @@ afterAll(async () => {
 });
 
 describe('private knowledge source isolation', () => {
+  test("rejects another member's private connector profile", async () => {
+    await expect(
+      createAgentKnowledgeSourceRecord({
+        accountId,
+        projectId,
+        agentName: 'connector-agent',
+        userId,
+        input: {
+          type: 'connector',
+          title: 'Foreign private drive',
+          connectorProfileId: otherMemberProfileId,
+          resourceId: 'file-private',
+          connectorAction: 'files.get',
+          resourceArgument: 'file_id',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'connector_profile_not_found' });
+
+    const rows = await db
+      .select({ sourceId: agentKnowledgeSources.sourceId })
+      .from(agentKnowledgeSources)
+      .where(eq(agentKnowledgeSources.connectorProfileId, otherMemberProfileId));
+    expect(rows).toEqual([]);
+  });
+
   test('stores only a validated read action for a selected connector resource', async () => {
     await expect(
       createAgentKnowledgeSourceRecord({

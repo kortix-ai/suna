@@ -37,11 +37,14 @@ import { db } from '../shared/db';
 const run = promisify(execFile);
 const ACCOUNT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
+const VIEWER = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const CONNECTOR = crypto.randomUUID();
 const CONNECTOR_PROFILE = crypto.randomUUID();
 let token = '';
 let tokenId = '';
+let viewerToken = '';
+let viewerTokenId = '';
 let root = '';
 
 beforeAll(async () => {
@@ -114,6 +117,12 @@ Resolve customer issues with cited evidence.
     accountRole: 'member',
     isSuperAdmin: false,
   });
+  await db.insert(accountMembers).values({
+    accountId: ACCOUNT,
+    userId: VIEWER,
+    accountRole: 'member',
+    isSuperAdmin: false,
+  });
   await db.insert(projects).values({
     projectId: PROJECT,
     accountId: ACCOUNT,
@@ -128,6 +137,12 @@ Resolve customer issues with cited evidence.
     projectId: PROJECT,
     userId: OWNER,
     projectRole: 'editor',
+  });
+  await db.insert(projectMembers).values({
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    userId: VIEWER,
+    projectRole: 'member',
   });
   await db.insert(executorConnectors).values({
     connectorId: CONNECTOR,
@@ -167,6 +182,14 @@ Resolve customer issues with cited evidence.
   });
   token = created.secretKey;
   tokenId = created.tokenId;
+  const viewerCreated = await createAccountToken({
+    accountId: ACCOUNT,
+    userId: VIEWER,
+    projectId: PROJECT,
+    name: 'agent-profile-route-viewer-token',
+  });
+  viewerToken = viewerCreated.secretKey;
+  viewerTokenId = viewerCreated.tokenId;
 });
 
 afterAll(async () => {
@@ -175,24 +198,32 @@ afterAll(async () => {
   await db.delete(agentProfileDrafts).where(eq(agentProfileDrafts.projectId, PROJECT));
   await db.delete(changeRequests).where(eq(changeRequests.projectId, PROJECT));
   await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
+  await db.execute(sql`delete from kortix.account_tokens where token_id = ${viewerTokenId}`);
   await db.delete(projectMembers).where(eq(projectMembers.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, OWNER)));
+  await db
+    .delete(accountMembers)
+    .where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, VIEWER)));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   await rm(root, { recursive: true, force: true });
 });
 
-function request(method: string, path: string, body?: unknown) {
+function requestWithToken(authToken: string, method: string, path: string, body?: unknown) {
   return app.request(path, {
     method,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${authToken}`,
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+}
+
+function request(method: string, path: string, body?: unknown) {
+  return requestWithToken(token, method, path, body);
 }
 
 describe('agent profile HTTP route', () => {
@@ -233,6 +264,13 @@ describe('agent profile HTTP route', () => {
     expect(conflict.current_revision).toBe(1);
     expect(conflict.conflicting_sections).toEqual(['instructions']);
     expect(conflict.active_editors[0].user_id).toBe(OWNER);
+
+    const viewerPreview = await requestWithToken(
+      viewerToken,
+      'POST',
+      `/v1/projects/${PROJECT}/agents/support/profile/preview`,
+    );
+    expect(viewerPreview.status).toBe(403);
 
     const preview = await request('POST', `/v1/projects/${PROJECT}/agents/support/profile/preview`);
     expect(preview.status).toBe(200);

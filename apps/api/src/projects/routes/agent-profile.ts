@@ -890,7 +890,7 @@ profileOpenApi(
     responses: { 200: json(z.any(), 'Profile preview'), ...errors(400, 403, 404, 409, 502) },
   }),
   async (c) => {
-    const context = await loadProfileContext(c, 'read');
+    const context = await loadProfileContext(c, 'write');
     if (isResponse(context)) return context;
     const draft = await draftAtRevision(c, context);
     if (draft instanceof Response) return draft;
