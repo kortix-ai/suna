@@ -148,8 +148,16 @@ describe('buildProjectTableRows', () => {
   // to read `offset > 0`, which a short first page satisfies, so the
   // subtraction ran against 25 of 40 projects and rendered the other 15
   // projects' spend ($0.34425 on the seed account) under the "Unassigned"
-  // label. No prior fixture had `projects.length < total` at `offset === 0`,
-  // which is exactly why 208 passing tests never saw it.
+  // label.
+  //
+  // Why 208 passing tests never saw it, stated correctly: it is NOT that no
+  // fixture had this shape. The pagination test below (`total: 30, offset: 0`
+  // over `twoProjectPage`) is exactly `projects.length < total` at
+  // `offset === 0`. It stayed green because it goes through
+  // `baseContentProps`, which defaults `summary: undefined`, so the `!summary`
+  // half of the guard returns before the subtraction is ever reached. The
+  // broken shape was fixtured; it was never fixtured together with a summary.
+  // Hence this test supplies both.
   test('omits the unassigned row on a first page that is shorter than the whole result', () => {
     const rows = buildProjectTableRows(
       {
@@ -673,6 +681,14 @@ describe('ProjectsLevelContent', () => {
     expect(footerHtml).toContain('$4.25');
     // Total: $10 + $3.25 + $6.75 (unassigned) = $20.00 — the account total.
     expect(footerHtml).toContain('$20.00');
+
+    // Read the four assertions above literally: each footer cell equals the
+    // sum of ITS column. They do not equal each other across the row —
+    // $9.00 + $4.25 = $13.25, not $20.00. That is not a defect in the sum; the
+    // API reports unassigned spend without an LLM/compute split, so the row
+    // contributes to Total alone and renders the other two cells as an em
+    // dash. "The footer adds up to itself" is a claim that holds only in the
+    // row-HIDDEN state. See `buildProjectTableRows`' consequence 2.
   });
 
   // The test that actually proves the footer sums the *rendered rows*,
@@ -750,7 +766,10 @@ describe('ProjectsLevelContent', () => {
   // Defect 3. Project names are user-supplied and unbounded; at 1440px a
   // 69-character name widened the Project column to 582px and clipped 52px
   // off the Total column. The cell caps and truncates instead, and keeps the
-  // full name reachable through `title`.
+  // full name reachable on hover through `title`. "On hover" is the whole of
+  // it: truncation is visual, so the text node is intact and a screen reader
+  // still announces the full name — the gap is sighted keyboard-only users,
+  // and `title` does not close it.
   test('a long project name is truncated in its own cell rather than widening the column', () => {
     const longName = 'A'.repeat(69);
     const html = renderContent({

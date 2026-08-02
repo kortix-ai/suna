@@ -54,13 +54,17 @@ export interface ProjectTableRow {
 }
 
 /**
- * Appends a synthetic "Unassigned" row so the table's footer reconciles with
- * the account total. `/usage/cost-by-project` sums only spend the API can
- * attribute to a project that still exists; `/usage/cost-summary` totals
- * every dollar the account was billed, including spend whose session (and
- * therefore project) no longer resolves. The gap between the two is
- * unassigned spend, and it belongs in the table — not a banner that never
- * reconciles with the rows beneath it (design spec, defect #7).
+ * Appends a synthetic "Unassigned" row so the table's Total column reconciles
+ * with the account total — when the row is shown at all, and on that one
+ * column only. Both qualifications are load-bearing; see the two paragraphs
+ * at the end of this comment.
+ *
+ * `/usage/cost-by-project` sums only spend the API can attribute to a project
+ * that still exists; `/usage/cost-summary` totals every dollar the account was
+ * billed, including spend whose session (and therefore project) no longer
+ * resolves. The gap between the two is unassigned spend, and it belongs in the
+ * table — not a banner that never reconciles with the rows beneath it (design
+ * spec, defect #7).
  *
  * The subtraction only means "unassigned" when `page.projects` holds EVERY
  * project in the result. Both guards below are required:
@@ -76,13 +80,26 @@ export interface ProjectTableRow {
  *  - **Only when positive.** Floating-point noise between two independently
  *    computed rollups must never invent a negative (or effectively-zero) row.
  *
- * **Consequence, and it is deliberate:** an account with more spending
- * projects than one page holds never sees this row, on any page. That is most
- * real accounts. Showing no number beats showing a wrong one on a cost tool,
- * so the row's absence here is a correctness decision, not an oversight. The
- * complete fix is for the API to return the unassigned total as its own field
- * — then the client never subtracts one query's result from another's — and
- * that is filed separately, not done here.
+ * **Consequence 1, and it is deliberate:** any account whose spending projects
+ * exceed one page never sees this row, on any page. How common that is in
+ * production is not known from here and is not claimed — the local seed data
+ * has one such account out of four with spend, which establishes nothing about
+ * the real distribution. What is certain is the mechanism, and that showing no
+ * number beats showing a wrong one on a cost tool, so the row's absence is a
+ * correctness decision rather than an oversight. The complete fix is for the
+ * API to return the unassigned total as its own field — then the client never
+ * subtracts one query's result from another's — and that is filed separately,
+ * not done here.
+ *
+ * **Consequence 2, a residual this function does not close:** even in the
+ * row-SHOWN state the footer reconciles on Total only, not across the row. The
+ * API reports unassigned spend as one figure with no LLM/compute split, so
+ * this row carries `llm_cost: 0` and `compute_cost: 0` and `ProjectRow`
+ * honestly renders those cells as an em dash — but the footer sums them as
+ * zero. `projects-level.test.tsx`'s own reconciliation fixture shows it: footer
+ * LLM $9.00 + Compute $4.25 = $13.25 against a Total cell of $20.00. Only the
+ * row-HIDDEN state has a footer that adds up across its own columns. Splitting
+ * unassigned spend by kind needs the same API change as consequence 1.
  */
 export function buildProjectTableRows(
   page: ProjectCostPage,
@@ -357,10 +374,25 @@ function ProjectRow({
           column, a long one pushes the money columns past the table's
           `overflow-x-auto` edge — measured at 1440px, a 69-character name
           widened this column to 582px and clipped 52px off Total, the one
-          column the surface exists to show. The cap is on the inner block so
-          it binds under `table-layout: auto`, where a `max-width` on the
-          `<td>` itself is advisory. Same cell/`truncate` shape as the Session
-          and Owner cells in sessions-level.tsx. */}
+          column the surface exists to show.
+
+          The cap sits on the inner block, NOT on the `<TableCell>`. Under
+          `table-layout: auto` a `max-width` on a `<td>` is advisory: the
+          browser may render the cell wider than declared, which is precisely
+          what makes an uncapped name able to shove a column off-screen. Two
+          Chromium measurements, both at 1440px: this inner cap binds exactly
+          — the `<p>` reports clientWidth 280 against scrollWidth 546 on the
+          69-character name — while a `<td>` declaring `max-w-[180px]` was
+          measured during review rendering at 333px and at 237px depending on
+          its content.
+
+          This is deliberately NOT the shape used by the Session and Owner
+          cells in sessions-level.tsx, which cap the `<TableCell>`
+          (`max-w-[200px]` / `max-w-[180px]`) and put a bare `truncate` on the
+          inner `<p>`. Those cells hold bounded content — a 36-character
+          session id, a display name — so the advisory cap has never been
+          tested by anything long enough to break it. A project name has no
+          such bound, so the cap has to be the binding one. */}
       <TableCell>
         {/* `title` only on real projects. The unassigned row is the fixed
             10-character `UNASSIGNED_LABEL`, so it never truncates and has
