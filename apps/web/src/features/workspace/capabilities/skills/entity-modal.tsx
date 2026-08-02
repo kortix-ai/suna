@@ -163,16 +163,27 @@ function EntityModalBody({
               above), so repeating it in a 256px rail would be pure duplication
               — for a single-file entity (most commands) the whole rail would
               otherwise restate the header and nothing else. The source path is
-              the one thing the header doesn't already say. */}
+              the one thing the header doesn't already say.
+
+              Deliberately NO loading placeholder for the tree itself. Whether
+              there even IS a tree to show is unknowable until `filesQuery`
+              resolves — a single-file entity has a non-empty `dir` too, so a
+              skeleton gated on `isLoading` would render and then immediately
+              have nothing to hand off to (measured live on `kortix-cli`: ~100ms
+              of two grey bars that resolve to nothing, and single-file is the
+              COMMON case — most commands and most skills are one file). The
+              rail is never empty regardless: it shows the source path
+              immediately, and the right pane already carries its own loading
+              skeleton. So the tree either arrives and adds itself below the
+              path (a one-directional, additive change) or never arrives at
+              all — never a placeholder for content that isn't coming. Do not
+              re-add this behind a delay timer either; that trades a
+              sub-perceptual flash for a timer + extra state + a cleanup path,
+              which is a worse trade than just not showing it. */}
           <div className="border-border/60 shrink-0 space-y-3 border-b px-4 py-3.5 lg:w-64 lg:overflow-y-auto lg:border-r lg:border-b-0">
             <p className="text-muted-foreground/50 truncate font-mono text-[11px]">{sourcePath}</p>
 
-            {filesQuery.isLoading ? (
-              <div className="space-y-1.5" aria-hidden="true">
-                <Skeleton className="h-6 w-full rounded-md" />
-                <Skeleton className="h-6 w-full rounded-md" />
-              </div>
-            ) : nodes.length > 1 ? (
+            {nodes.length > 1 ? (
               <nav aria-label={`${entity.name} files`} className="space-y-0.5">
                 {nodes.map((node) => (
                   <button
