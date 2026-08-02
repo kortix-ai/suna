@@ -3,32 +3,27 @@
 import {
   type AdminConnector,
   type ConnectorAuthorizationStrategy,
-  deleteConnector,
   listConnectionProfiles,
   setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
-import { CheckIcon, KeyIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
+import { CheckIcon, KeyIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   authorizationOwnerTypeForStrategy,
-  connectorAuthorizationStrategyIsEditable,
   connectorAuthorizationUpdateIsPending,
 } from '@/features/workspace/customize/sections/connector-profile-form';
-import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-profile-modal';
 import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
@@ -46,6 +41,7 @@ import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connec
 import { RungAccounts } from './rung-accounts';
 import { RungOverview } from './rung-overview';
 import { RungPermissions } from './rung-permissions';
+import { RungSettings } from './rung-settings';
 
 export interface ConnectorModalProps {
   projectId: string;
@@ -79,11 +75,9 @@ export interface ConnectorModalProps {
  * rename draft, without remounting `Modal`/`ModalContent` (which would replay
  * the open animation and drop focus-trap continuity).
  *
- * INTERIM: Settings still mounts the shipped components for its capabilities
- * verbatim, so nothing in the Capability Inventory becomes unreachable before
- * `rung-settings.tsx` lands. No rung is a stub. Overview, Accounts and
- * Permissions are designed — see `./rung-overview.tsx`, `./rung-accounts.tsx`
- * and `./rung-permissions.tsx`.
+ * No rung is a stub. Overview, Accounts, Permissions and Settings are all
+ * designed — see `./rung-overview.tsx`, `./rung-accounts.tsx`,
+ * `./rung-permissions.tsx` and `./rung-settings.tsx`.
  */
 export function ConnectorModal({
   projectId,
@@ -391,7 +385,7 @@ function ConnectorModalBody({
               />
             ) : null}
             {rung === 'settings' ? (
-              <SettingsRung
+              <RungSettings
                 projectId={projectId}
                 connector={connector}
                 displayName={displayName}
@@ -425,114 +419,6 @@ function ConnectorModalBody({
         onSaved={onChanged}
       />
     </>
-  );
-}
-
-/**
- * Settings — capabilities #4 and #11. Writer-only, and never for a computer
- * connector.
- *
- * Capability #1 (rename) is NOT here: it lives in the header, because a
- * connector's name is not a property of one rung and a computer connector —
- * which has no Settings rung — can be renamed.
- *
- * Task 12 builds the designed version and decides whether #8's connection
- * config moves here from Accounts.
- */
-function SettingsRung({
-  projectId,
-  connector,
-  displayName,
-  canWrite,
-  strategyUpdating,
-  onAuthorizationStrategyChange,
-  onRemoved,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  displayName: string;
-  canWrite: boolean;
-  strategyUpdating: boolean;
-  onAuthorizationStrategyChange: (next: ConnectorAuthorizationStrategy) => void;
-  onRemoved: () => void;
-}) {
-  const isChannel = connector.provider === 'channel';
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const remove = useMutation({
-    mutationFn: () => deleteConnector(projectId, connector.slug),
-    onSuccess: () => {
-      successToast(`Removed ${displayName}`);
-      onRemoved();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to remove'),
-  });
-
-  return (
-    <div className="space-y-5">
-      {/* Capability #4 */}
-      <section className="space-y-2">
-        <Label>Authorization</Label>
-        <div className="bg-popover rounded-md border px-4 py-5">
-          <AuthorizationStrategyField
-            idPrefix={`connector-${connector.slug}`}
-            value={connector.authorizationStrategy}
-            onChange={onAuthorizationStrategyChange}
-            disabled={!canWrite || !connectorAuthorizationStrategyIsEditable(connector.provider)}
-            // Settled once the connector exists. Switching owner after the
-            // fact silently changes WHOSE account every future session runs
-            // as, and orphans the profiles and permission rules already
-            // attached under the old owner — a change that looks like a
-            // toggle and behaves like a migration.
-            lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
-            pending={strategyUpdating}
-          />
-        </div>
-      </section>
-
-      {/* Capability #11. Channel connectors are removed from their own
-          connection form (`ChannelConnectionSection`'s disconnect), which is
-          why the old panel excluded them here too. */}
-      {!isChannel ? (
-        <div className="bg-popover rounded-md border px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-foreground text-sm font-medium">Remove connector</p>
-              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                Deletes it from kortix.yaml. Stored profiles and permission rules are dropped.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0 gap-1.5"
-              onClick={() => setConfirmDelete(true)}
-              disabled={strategyUpdating}
-            >
-              <TrashIcon className="size-3.5 shrink-0" />
-              Remove
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Remove ${displayName}?`}
-        description={
-          <>
-            This removes <code className="font-mono">{connector.slug}</code> from kortix.yaml and
-            drops its stored profile and permission rules. This can’t be undone.
-          </>
-        }
-        confirmLabel="Remove connector"
-        confirmVariant="destructive"
-        confirmIcon={<TrashIcon className="size-4 shrink-0" />}
-        isPending={remove.isPending}
-        onConfirm={() => remove.mutate()}
-      />
-    </div>
   );
 }
 
