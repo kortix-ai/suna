@@ -30,10 +30,6 @@ import {
 } from '@/features/workspace/customize/sections/connector-profile-form';
 import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-profile-modal';
 import {
-  ChannelConnectionSection,
-  ConnectionRoster,
-  ConnectionSection,
-  ConnectionsList,
   ConnectorAppIcon,
   ConnectorStatusBadge,
   PermissionsSection,
@@ -48,6 +44,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
 import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connector-rungs';
+import { RungAccounts } from './rung-accounts';
 import { RungOverview } from './rung-overview';
 
 export interface ConnectorModalProps {
@@ -82,11 +79,12 @@ export interface ConnectorModalProps {
  * rename draft, without remounting `Modal`/`ModalContent` (which would replay
  * the open animation and drop focus-trap continuity).
  *
- * INTERIM: Accounts and Settings still mount the shipped component for their
- * capability verbatim, so nothing in the Capability Inventory becomes
+ * INTERIM: Permissions and Settings still mount the shipped component for
+ * their capability verbatim, so nothing in the Capability Inventory becomes
  * unreachable before the tasks that refine those rung bodies
- * (`rung-accounts.tsx`, `rung-permissions.tsx`, `rung-settings.tsx`) land. No
- * rung is a stub. Overview is designed — see `./rung-overview.tsx`.
+ * (`rung-permissions.tsx`, `rung-settings.tsx`) land. No rung is a stub.
+ * Overview and Accounts are designed — see `./rung-overview.tsx` and
+ * `./rung-accounts.tsx`.
  */
 export function ConnectorModal({
   projectId,
@@ -370,7 +368,7 @@ function ConnectorModalBody({
               />
             ) : null}
             {rung === 'accounts' ? (
-              <AccountsRung
+              <RungAccounts
                 projectId={projectId}
                 connector={connector}
                 displayName={displayName}
@@ -427,114 +425,6 @@ function ConnectorModalBody({
         onSaved={onChanged}
       />
     </>
-  );
-}
-
-/**
- * Accounts — capabilities #7 and #10, and, for the connectors that have no
- * account list, capability #8's shared-credential form.
- *
- * Pipedream connectors hold many authorizations (project + per-member), so they
- * get `ConnectionsList`. Every other connector has at most one credential,
- * which `ConnectionSection` (or `ChannelConnectionSection`) owns.
- *
- * DEVIATION worth flagging to Task 12: the Capability Inventory files
- * `ConnectionSection` under Settings (#8) and Accounts (#7). It is ONE
- * component carrying both the credential row and the transport config, and it
- * cannot be split without editing the frozen `connectors-view.tsx`. Mounting it
- * on both rungs would print the same form twice, so it is mounted once, here —
- * the wider slot, since Accounts exists for readers and Settings does not.
- * Task 12 decides where it finally lives.
- */
-function AccountsRung({
-  projectId,
-  connector,
-  displayName,
-  canWrite,
-  canManageProfiles,
-  strategyUpdating,
-  onChanged,
-  onRemoved,
-  onStartSession,
-  onSetCredential,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  displayName: string;
-  canWrite: boolean;
-  canManageProfiles: boolean;
-  strategyUpdating: boolean;
-  onChanged: () => void;
-  onRemoved: () => void;
-  onStartSession: () => void;
-  onSetCredential: () => void;
-}) {
-  const isPipedream = connector.provider === 'pipedream';
-  const isChannel = connector.provider === 'channel';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  // Capability #10, on the old panel's `showRoster` condition.
-  const showRoster = isPipedream && canManageProfiles && connector.authorizationStrategy === 'user';
-
-  if (isPipedream) {
-    return (
-      <div className="space-y-5">
-        {/* Capability #7, verbatim. */}
-        <ConnectionsList
-          projectId={projectId}
-          connector={connector}
-          displayName={displayName}
-          canManageProfiles={canManageProfiles}
-          onChanged={onChanged}
-          onStartSession={onStartSession}
-          disabled={strategyUpdating}
-        />
-        {showRoster ? (
-          <section className="space-y-2">
-            <Label>Project members</Label>
-            <ConnectionRoster
-              projectId={projectId}
-              connectorSlug={connector.slug}
-              displayName={displayName}
-            />
-          </section>
-        ) : null}
-      </div>
-    );
-  }
-
-  // `ConnectionSection` fetches its config with `enabled: canWrite` and renders
-  // a skeleton until that resolves, so showing it to a reader would leave three
-  // grey bars on screen for good. The old panel had the same gate
-  // (`showProfileTab = canWrite && …`); a reader is told why instead.
-  if (!canWrite) {
-    return (
-      <p className="text-muted-foreground text-sm text-pretty">
-        {displayName} runs on{' '}
-        {usesProjectAuthorization
-          ? 'one account shared by the whole project'
-          : 'each person’s own account'}
-        . You do not have permission to change it — ask a project manager.
-      </p>
-    );
-  }
-
-  // Capability #8.
-  return isChannel ? (
-    <ChannelConnectionSection
-      projectId={projectId}
-      connector={connector}
-      onChanged={onChanged}
-      onRemoved={onRemoved}
-      canWrite={canWrite && !strategyUpdating}
-    />
-  ) : (
-    <ConnectionSection
-      projectId={projectId}
-      connector={connector}
-      onChanged={onChanged}
-      canWrite={canWrite && !strategyUpdating}
-      onSetCredential={usesProjectAuthorization ? onSetCredential : undefined}
-    />
   );
 }
 
