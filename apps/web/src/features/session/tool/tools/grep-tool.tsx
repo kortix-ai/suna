@@ -70,11 +70,13 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </ToolResultCard>
       ) : isNoResults ? (
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound',
-          )}
-        />
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound',
+            )}
+          />
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="grep" />
       ) : null}

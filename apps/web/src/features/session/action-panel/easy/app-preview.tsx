@@ -48,8 +48,8 @@ import {
   ArrowsOutSimpleIcon as Maximize2,
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
-  ArrowClockwiseIcon as RefreshCw,
   SparkleIcon as SparklesSolid,
+  WarningIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
@@ -451,8 +451,8 @@ export function AppPreview({
         {hasError && !noApp && (
           <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-                <AlertTriangle className="text-kortix-orange size-5" />
+              <span className="bg-kortix-yellow/15 flex size-9 items-center justify-center rounded-md">
+                <WarningIcon className="text-kortix-yellow size-5" />
               </span>
               <div>
                 <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
@@ -468,12 +468,11 @@ export function AppPreview({
               </div>
               <div className="flex items-center justify-center gap-2">
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                  <RefreshCw className="size-3.5 shrink-0" />
                   Retry
                 </Button>
                 {onSendToAgent && (
-                  <Button variant="blue" size="sm" className="gap-1.5" onClick={onSendToAgent}>
-                    <SparklesSolid className="size-3.5 shrink-0" />
+                  <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
                     Send to agent
                   </Button>
                 )}

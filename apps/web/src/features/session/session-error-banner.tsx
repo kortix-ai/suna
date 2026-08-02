@@ -201,7 +201,7 @@ export function TurnErrorDisplay({
     return (
       <Checkpoint>
         <CheckpointIcon>
-          <WarningCircleIcon className="text-muted-foreground size-3.5 shrink-0" />
+          <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
         </CheckpointIcon>
 
         <CheckpointLabel>Interrupted</CheckpointLabel>
