@@ -136,7 +136,7 @@ describe('classifyEvent — a message that @-mentions the bot is a mention', () 
     expect(cls).toBe('ignore');
   });
 
-  test('bot_message in a DM is a dm', async () => {
+test('bot_message in a DM is a dm', async () => {
     const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'im', text: 'hello from another bot', bot_id: 'B999' }), BOT);
     expect(cls).toBe('dm');
   });
