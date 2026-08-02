@@ -58,7 +58,13 @@ const SHIKI_MAX_LENGTH = 50_000;
 // fences flow through Shiki so they pick up the same editor foreground as the rest.
 // Keep this list to languages AI agents emit often — rare grammars still load
 // on demand via `ensureLangLoaded`, so a missing entry here is not "unsupported".
-const PRELOAD_LANGS = [
+//
+// Exported because it is the target set `normalizeLanguage`'s alias table has to
+// land on: `highlightSync` gates on `loadedLangs.has(lang)`, which is seeded from
+// this list verbatim. An alias pointing anywhere else still highlights, but only
+// after the async round trip — i.e. with the plain→colour flash this preload
+// exists to prevent. A unit test pins that invariant.
+export const PRELOAD_LANGS = [
   // plain / config
   'text',
   'json',
