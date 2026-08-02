@@ -229,6 +229,25 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.models).toEqual(['glm-5.2']);
   });
 
+  it('retries once with the servable fallback when the session model is rejected', async () => {
+    const attempts: string[] = [];
+    const h = harness({
+      row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+      fallbackModel: async () => 'glm-5.2',
+      generate: async (model) => {
+        attempts.push(model);
+        return model === 'glm-5.2' ? '"Fallback Title"' : null;
+      },
+    });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(attempts).toEqual(['anthropic/claude-opus-4-8', 'glm-5.2']);
+    expect(h.persisted).toEqual(['Fallback Title']);
+    expect(h.minted).toEqual(['k']);
+    expect(h.revoked).toEqual(['key-1']);
+  });
+
   it('generates, sanitizes, and persists a title; always revokes the key', async () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt(

@@ -256,7 +256,10 @@ function platformDefaultModel(): string | null {
  * session untitled anyway. Skipping cheaply is the honest outcome.
  *
  */
-async function resolveFallbackModel(input: GenerateSessionTitleInput): Promise<string | null> {
+async function resolveFallbackModel(
+  input: GenerateSessionTitleInput,
+  excludedModel?: string,
+): Promise<string | null> {
   const [{ getCachedAccountTier }, { tierGrantsAllModels }, resolution] = await Promise.all([
     import('../billing/services/entitlements'),
     import('../billing/services/tiers'),
@@ -271,10 +274,14 @@ async function resolveFallbackModel(input: GenerateSessionTitleInput): Promise<s
       : false,
   };
   const resolved = await resolution.resolveEffectiveModel({ ...scope, explicit: null });
-  const candidate = resolved.model ?? platformDefaultModel();
-  if (!candidate) return null;
-  const model = toWireModel(candidate);
-  return (await resolution.isModelServableForAccount({ ...scope, model })) ? model : null;
+  const candidates = [resolved.model, platformDefaultModel()];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const model = toWireModel(candidate);
+    if (model === excludedModel) continue;
+    if (await resolution.isModelServableForAccount({ ...scope, model })) return model;
+  }
+  return null;
 }
 
 /** The model the session was started with, in gateway wire form. */
@@ -346,7 +353,10 @@ export interface GenerateSessionTitleOptions {
   ) => Promise<{ secret: string; keyId: string } | null>;
   revokeKey?: (projectId: string, keyId: string) => Promise<void>;
   persist?: (row: ProjectSessionRow, title: string) => Promise<void>;
-  fallbackModel?: (input: GenerateSessionTitleInput) => Promise<string | null>;
+  fallbackModel?: (
+    input: GenerateSessionTitleInput,
+    excludedModel?: string,
+  ) => Promise<string | null>;
 }
 
 /**
@@ -415,6 +425,19 @@ export async function generateSessionTitleFromFirstPrompt(
     let title: string | null = null;
     try {
       title = sanitizeGeneratedTitle(await generate(model, `Bearer ${minted.secret}`, promptText));
+      if (!title) {
+        const retryModel = await fallbackModel(input, model);
+        if (retryModel && retryModel !== model) {
+          appLogger.warn('[title-generate] retrying with servable fallback model', {
+            sessionId: input.sessionId,
+            rejectedModel: model,
+            retryModel,
+          });
+          title = sanitizeGeneratedTitle(
+            await generate(retryModel, `Bearer ${minted.secret}`, promptText),
+          );
+        }
+      }
     } finally {
       await revoke(input.projectId, minted.keyId).catch(() => {});
     }
