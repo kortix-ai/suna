@@ -274,6 +274,24 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/guides/self-hosting',
         permanent: true,
       },
+      // Removed pages that may live on in old links and search indexes.
+      // /credits-explained became the help-center credits article; the
+      // /compare section was retired with no direct replacement.
+      {
+        source: '/credits-explained',
+        destination: '/help/credits',
+        permanent: true,
+      },
+      {
+        source: '/compare',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/compare/:path*',
+        destination: '/',
+        permanent: true,
+      },
     ];
   },
 

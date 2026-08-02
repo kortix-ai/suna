@@ -272,7 +272,7 @@ describe('api-router worker', () => {
     expect(await response.json()).toMatchObject({ level: 'none' });
   });
 
-  test('returns automatic maintenance when the database is unavailable and Edge Config is none', async () => {
+  test('returns none (not automatic blocking) when database is unavailable and Edge Config is none', async () => {
     const maintenanceEnv = {
       ...env,
       MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge',
@@ -296,9 +296,11 @@ describe('api-router worker', () => {
       maintenanceEnv,
     );
 
+    // Prefer the Edge Config state (none) over automatic blocking, so a
+    // transient API blip doesn't trigger a full lockdown.
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-Maintenance-Source')).toBe('automatic');
-    expect(await response.json()).toMatchObject({ level: 'blocking' });
+    expect(response.headers.get('X-Maintenance-Source')).toBe('edge-config');
+    expect(await response.json()).toMatchObject({ level: 'none' });
   });
 
   test('allows the authenticated maintenance update route through the blocking gate', async () => {
@@ -430,7 +432,7 @@ describe('api-router worker', () => {
     ]);
   });
 
-  test('fails closed when the independent maintenance state is unavailable', async () => {
+  test('fails open when the independent maintenance state is unavailable', async () => {
     const maintenanceEnv = {
       ...env,
       MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
@@ -449,9 +451,13 @@ describe('api-router worker', () => {
       maintenanceEnv,
     );
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get('X-Maintenance-Mode')).toBe('blocking');
-    expect(fetchedUrls).toEqual(['https://kortix.com/api/maintenance']);
+    // A transient Edge Config / state URL failure should not trigger a
+    // full maintenance lockdown. The request passes through to the origin.
+    expect(response.status).toBe(201);
+    expect(fetchedUrls).toEqual([
+      'https://kortix.com/api/maintenance',
+      'https://api-eks.kortix.com/v1/projects',
+    ]);
   });
 
   test('converts an unavailable API origin into a maintenance response', async () => {

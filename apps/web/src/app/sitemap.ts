@@ -50,6 +50,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
         absoluteUrl(locale === 'en' ? pathname : `/${locale}${pathname === '/' ? '' : pathname}`),
       ]),
     );
+    languages['x-default'] = absoluteUrl(pathname);
     for (const locale of locales) {
       const localizedPath =
         locale === 'en' ? pathname : `/${locale}${pathname === '/' ? '' : pathname}`;
@@ -60,6 +61,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   }
 
   for (const record of records) {
+    if (record.htmlPath === '/use-cases' && !includeUseCases) continue;
     const html = htmlEntry(record.htmlPath, record.lastModified);
     entries.set(html.url, html);
     if (record.markdownPath) {

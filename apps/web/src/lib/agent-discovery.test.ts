@@ -13,6 +13,7 @@ import { GET as getAuthMd } from '@/app/(public)/auth.md/route';
 import { GET as getNegotiatedMarkdown } from '@/app/(public)/markdown-negotiation/route';
 import { registerWebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { handlePublicContentMcp } from '@/lib/mcp/public-content-server';
+import { renderRobotsTxt } from '@/lib/seo/robots';
 import { middleware } from '@/middleware';
 import { NextRequest } from 'next/server';
 
@@ -157,7 +158,7 @@ describe('agent discovery documents', () => {
   });
 
   test('declares content signals and agent discovery routes in robots.txt', () => {
-    const robots = fs.readFileSync(path.join(process.cwd(), 'public', 'robots.txt'), 'utf8');
+    const robots = renderRobotsTxt('kortix.com');
     expect(robots).toContain('Content-Signal: ai-train=no, search=yes, ai-input=yes');
     expect(robots).toContain('Allow: /.well-known/');
     expect(robots).toContain('Allow: /auth.md');
