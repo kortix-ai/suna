@@ -1213,6 +1213,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "请求访问权限。",
+      "privateBody": "只有成员才能打开这个项目。发送一条说明，项目经理就能把你添加进来。",
+      "waitingHeading": "等待批准。",
+      "sentBody": "你的请求已发送给项目经理。其中任何一位批准后，本页面会自动打开。",
+      "alreadyBody": "你之前已经请求过访问权限。项目经理仍需批准。",
+      "notFoundHeading": "这个项目已经不在了。",
+      "notFoundBody": "链接可能有误，或者有人删除了这个项目。",
+      "errorHeading": "这个项目未能加载。",
+      "errorBody": "在检查你的访问权限之前，请求就失败了。",
+      "noteLabel": "给项目经理的说明",
+      "notePlaceholder": "你为什么需要访问权限（可选）",
+      "requestAction": "请求访问权限",
+      "checkNowAction": "立即检查",
+      "tryAgainAction": "重试",
+      "projectsAction": "返回项目列表",
+      "accountLabel": "账户",
+      "projectLabel": "项目",
+      "approvalNote": "任何管理这个项目的人都可以批准你的请求。",
+      "openAsAdmin": "以管理员身份打开",
+      "requestFailed": "无法发送请求。",
+      "bypassFailed": "管理员绕过失败。",
+      "thisAccount": "此账户"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix 移动版",
       "line89JsxTextYourAiWorkerInYourPocket": "你的 AI Worker，随身携带。",
