@@ -9,12 +9,12 @@ import {
   projects,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import {
   SessionKnowledgeAccessError,
   readAgentKnowledgeForSession,
   searchAgentKnowledgeForSession,
-} from './session-knowledge';
+} from '../projects/lib/session-knowledge';
+import { db } from '../shared/db';
 
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
@@ -178,6 +178,7 @@ describe('session-derived agent knowledge isolation', () => {
       projectId,
       requestedSessionId: sessionA,
       authenticatedSessionId: sessionA,
+      authenticatedAgentName: 'agent-a',
       query: 'ALPHA support',
       embedQuery: lexicalOnly,
     });
@@ -198,6 +199,7 @@ describe('session-derived agent knowledge isolation', () => {
       projectId,
       requestedSessionId: sessionA,
       authenticatedSessionId: sessionA,
+      authenticatedAgentName: 'agent-a',
       citationId: citationA,
     });
     expect(read?.content).toBe('ALPHA-ONLY support escalation policy.');
@@ -209,6 +211,7 @@ describe('session-derived agent knowledge isolation', () => {
         projectId,
         requestedSessionId: sessionB,
         authenticatedSessionId: sessionA,
+        authenticatedAgentName: 'agent-a',
         query: 'BRAVO',
         embedQuery: lexicalOnly,
       }),
@@ -218,6 +221,7 @@ describe('session-derived agent knowledge isolation', () => {
       projectId,
       requestedSessionId: sessionA,
       authenticatedSessionId: sessionA,
+      authenticatedAgentName: 'agent-a',
       query: `BRAVO ${sourceB} agent-b-handbook`,
       embedQuery: lexicalOnly,
     });
@@ -227,6 +231,7 @@ describe('session-derived agent knowledge isolation', () => {
         projectId,
         requestedSessionId: sessionA,
         authenticatedSessionId: sessionA,
+        authenticatedAgentName: 'agent-a',
         citationId: citationB,
       }),
     ).toBeNull();
@@ -242,6 +247,7 @@ describe('session-derived agent knowledge isolation', () => {
       projectId,
       requestedSessionId: sessionA,
       authenticatedSessionId: sessionA,
+      authenticatedAgentName: 'agent-a',
       query: 'ALPHA',
       embedQuery: lexicalOnly,
     });
@@ -251,6 +257,7 @@ describe('session-derived agent knowledge isolation', () => {
         projectId,
         requestedSessionId: sessionA,
         authenticatedSessionId: sessionA,
+        authenticatedAgentName: 'agent-a',
         citationId: citationA,
       }),
     ).toBeNull();

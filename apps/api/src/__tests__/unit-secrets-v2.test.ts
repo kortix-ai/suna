@@ -7,15 +7,15 @@
  * resource-side agent allow-list and no per-secret member/group sharing.
  */
 import { describe, expect, test } from 'bun:test';
+import type { AgentGrant } from '@kortix/db';
+import { agentMayUseEnv } from '../iam/agent-scope';
 import {
   AmbiguousSecretGrantError,
+  type ResolvedProjectSecret,
   identifierKeyConflicts,
   isValidIdentifier,
   resolveGrantedSecretEnv,
-  type ResolvedProjectSecret,
 } from '../projects/secrets';
-import { agentMayUseEnv } from '../iam/agent-scope';
-import type { AgentGrant } from '@kortix/db';
 
 describe('isValidIdentifier', () => {
   test('accepts env-var-shaped keys (the default/migrated case)', () => {
@@ -131,7 +131,13 @@ describe('resolveGrantedSecretEnv', () => {
 });
 
 describe('agentMayUseEnv — the sole agent secret-access gate, by identifier', () => {
-  const grant = (env: AgentGrant['env']): AgentGrant => ({ agent: 'a', kortixCli: [], connectors: [], env });
+  const grant = (env: AgentGrant['env']): AgentGrant => ({
+    agent: 'a',
+    kortixCli: [],
+    connectors: [],
+    env,
+    knowledge: [],
+  });
 
   test('no grant (non-agent token) → unrestricted', () => {
     expect(agentMayUseEnv(null, 'GMAPS-primary')).toBe(true);

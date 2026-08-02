@@ -748,3 +748,15 @@ metadata stays in the wrapper's data store. See
 `KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
 `KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
 `KAAB-7` backend idempotency context guard: same key + different `runtime_context` → **409 `IDEMPOTENCY_CONTEXT_CONFLICT`**; a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`**.
+
+---
+
+## 28. Unified Agent Capability Profile
+
+The `agent_profile` experimental feature exposes one shared, revisioned draft
+for instructions, integrations, knowledge, skills, automations, and advanced
+settings. Publication writes one branch and one change request. A stale draft
+update returns `409` with conflicting sections and active editors.
+
+`APROF-1` `GET /projects/:id/agents/:agent/profile` reads the merged profile and shared draft. `PUT .../profile/draft` requires `expectedRevision`. Preview, test, publish, discard, immediate automation pause, and all four skill staging routes require project write access. Anonymous callers receive `401` on every profile route.
+`KNOW-1` Agent knowledge list, URL/connector creation, upload creation/completion, sync, and revoke require project access. Session search and citation read derive the agent from the authenticated session. Anonymous callers receive `401`; a forged or cross-agent session receives `403` or an empty result without source metadata leakage.

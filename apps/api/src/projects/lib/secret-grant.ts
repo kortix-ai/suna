@@ -170,7 +170,8 @@ export function agentGrantDiffers(
   return (
     secretGrantEnvDiffers(sessionGrant?.env, requestedGrant?.env) ||
     grantListKey(sessionGrant?.connectors) !== grantListKey(requestedGrant?.connectors) ||
-    grantListKey(sessionGrant?.kortixCli) !== grantListKey(requestedGrant?.kortixCli)
+    grantListKey(sessionGrant?.kortixCli) !== grantListKey(requestedGrant?.kortixCli) ||
+    grantListKey(sessionGrant?.knowledge ?? []) !== grantListKey(requestedGrant?.knowledge ?? [])
   );
 }
 

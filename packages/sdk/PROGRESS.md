@@ -5357,3 +5357,38 @@ SDK gates:
 
 **Repository delivery shippable to production: NOT YET.**
 The PR, merge, Deploy Dev, and Essentia verification remain.
+
+---
+
+### 2026-08-02 — session `unified-agent-capability-profile`
+
+Added the public agent profile and private knowledge contracts.
+
+- Added `AgentProfile`, `AgentProfileDraft`, `AgentProfileChange`,
+  `AgentKnowledgeSource`, `AgentKnowledgeVersion`, and retrieval citation types.
+- Added typed profile read, draft CAS, preview, test, publish, and discard APIs.
+- Added knowledge upload, source, sync, revoke, session search, and citation read APIs.
+- Added `useAgentProfile` and profile mutation hooks under `@kortix/sdk/react`.
+- Extended agent configuration with explicit `knowledge` grants. The contract does
+  not accept `knowledge: all`.
+- Updated the README, SDK reference, and executable profile example.
+
+The runtime and type surface snapshots contain additive entries only. No public
+name, type, subpath, or field was removed or renamed. No package version was
+changed manually.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk test`: `1402 pass`, `0 fail`,
+  `6075 expect() calls` across `120` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk build`: exit `0`.
+- Packed-install smoke test: `OK: @kortix/sdk imports and constructs from a packed tarball`.
+- Public runtime and type snapshots: additive-only diff.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+The PR, merge, Deploy Dev, and deployed workflow verification remain.

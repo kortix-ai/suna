@@ -12,8 +12,8 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
-import { processNextAgentKnowledgeSync } from './agent-knowledge-worker';
+import { processNextAgentKnowledgeSync } from '../projects/lib/agent-knowledge-worker';
+import { db } from '../shared/db';
 
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
@@ -115,7 +115,8 @@ async function seedSource(input: {
       maxAttempts: input.maxAttempts ?? 5,
     })
     .returning();
-  return { sourceId, jobId: job!.jobId };
+  if (!job) throw new Error('Expected the source sync job to be created.');
+  return { sourceId, jobId: job.jobId };
 }
 
 describe('agent knowledge synchronization worker', () => {
@@ -210,20 +211,22 @@ describe('agent knowledge synchronization worker', () => {
       .where(eq(agentKnowledgeSources.sourceId, seeded.sourceId));
     expect(source).toMatchObject({ status: 'ready', lastError: null });
     expect(source?.activeVersionId).toBeTruthy();
+    if (!source?.activeVersionId) throw new Error('Expected the source to have an active version.');
     const [version] = await db
       .select()
       .from(agentKnowledgeVersions)
-      .where(eq(agentKnowledgeVersions.versionId, source!.activeVersionId!));
+      .where(eq(agentKnowledgeVersions.versionId, source.activeVersionId));
     expect(version).toMatchObject({
       status: 'active',
       chunkCount: 1,
       embeddingModel: 'test-embedding',
       lexicalOnly: false,
     });
+    if (!version) throw new Error('Expected the active knowledge version to exist.');
     const chunks = await db
       .select()
       .from(agentKnowledgeChunks)
-      .where(eq(agentKnowledgeChunks.versionId, version!.versionId));
+      .where(eq(agentKnowledgeChunks.versionId, version.versionId));
     expect(chunks).toHaveLength(1);
     expect(chunks[0]).toMatchObject({
       locator: { heading: 'Escalation' },
@@ -273,6 +276,7 @@ describe('agent knowledge synchronization worker', () => {
       .insert(agentKnowledgeSyncJobs)
       .values({ accountId, projectId, agentName: 'support', sourceId, maxAttempts: 2 })
       .returning();
+    if (!job) throw new Error('Expected the retry sync job to be created.');
     const exactError = 'Connected app returned HTTP 403 for resource resource-403.';
     const deps = {
       database: db,
@@ -296,7 +300,7 @@ describe('agent knowledge synchronization worker', () => {
     let [queued] = await db
       .select()
       .from(agentKnowledgeSyncJobs)
-      .where(eq(agentKnowledgeSyncJobs.jobId, job!.jobId));
+      .where(eq(agentKnowledgeSyncJobs.jobId, job.jobId));
     expect(queued).toMatchObject({ status: 'pending', attempt: 1, lastError: exactError });
     const [oldVersion] = await db
       .select()
@@ -307,7 +311,7 @@ describe('agent knowledge synchronization worker', () => {
     await db
       .update(agentKnowledgeSyncJobs)
       .set({ availableAt: new Date(0) })
-      .where(eq(agentKnowledgeSyncJobs.jobId, job!.jobId));
+      .where(eq(agentKnowledgeSyncJobs.jobId, job.jobId));
     await processNextAgentKnowledgeSync(deps);
 
     [source] = await db
@@ -317,7 +321,7 @@ describe('agent knowledge synchronization worker', () => {
     [queued] = await db
       .select()
       .from(agentKnowledgeSyncJobs)
-      .where(eq(agentKnowledgeSyncJobs.jobId, job!.jobId));
+      .where(eq(agentKnowledgeSyncJobs.jobId, job.jobId));
     expect(source?.activeVersionId).toBe(oldVersionId);
     expect(source?.lastError).toBe(exactError);
     expect(queued).toMatchObject({ status: 'dead_lettered', attempt: 2, lastError: exactError });

@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, agentProfileDrafts, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import {
   AgentProfileRevisionConflictError,
   discardAgentProfileDraftRecord,
   getAgentProfileDraftRecord,
   updateAgentProfileDraftRecord,
-} from './agent-profile-drafts';
+} from '../projects/lib/agent-profile-drafts';
+import { db } from '../shared/db';
 
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
@@ -109,11 +109,13 @@ describe('agent profile shared draft concurrency', () => {
     const researcher = await getAgentProfileDraftRecord(projectId, 'researcher');
     expect(researcher?.sections.knowledge).toEqual(['research-library']);
 
-    await db.delete(agentProfileDrafts).where(
-      and(
-        eq(agentProfileDrafts.projectId, projectId),
-        eq(agentProfileDrafts.agentName, 'researcher'),
-      ),
-    );
+    await db
+      .delete(agentProfileDrafts)
+      .where(
+        and(
+          eq(agentProfileDrafts.projectId, projectId),
+          eq(agentProfileDrafts.agentName, 'researcher'),
+        ),
+      );
   });
 });

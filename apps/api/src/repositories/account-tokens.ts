@@ -1,14 +1,15 @@
-import { eq, and, desc, inArray } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
-import { db } from '../shared/db';
+import type { AgentGrant } from '@kortix/db';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { normalizeAgentGrant } from '../shared/agent-grant';
 import {
-  hashSecretKey,
   candidateSecretKeyHashes,
   generateAccountTokenPair,
-  isApiKeySecretConfigured,
+  hashSecretKey,
   isAccountToken,
+  isApiKeySecretConfigured,
 } from '../shared/crypto';
-import type { AgentGrant } from '@kortix/db';
+import { db } from '../shared/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -383,7 +384,7 @@ export async function validateAccountToken(
       tokenId: row.tokenId,
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
-      agentGrant: row.agentGrant ?? null,
+      agentGrant: normalizeAgentGrant(row.agentGrant),
     };
   } catch (err) {
     console.error('Account token validation error:', err);

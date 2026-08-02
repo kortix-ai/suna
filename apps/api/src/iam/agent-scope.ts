@@ -1,4 +1,5 @@
-import { canonicalConnectorAlias } from '../shared/connector-alias';
+import type { AgentGrant } from '@kortix/db';
+import type { Context } from 'hono';
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
  * authorization.
@@ -14,12 +15,12 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * that hasn't adopted `[[agents]]`) imposes no restriction.
  */
 import { HTTPException } from 'hono/http-exception';
-import type { Context } from 'hono';
-import type { AgentGrant } from '@kortix/db';
+import { normalizeAgentGrant } from '../shared/agent-grant';
+import { canonicalConnectorAlias } from '../shared/connector-alias';
 
 /** Read the agent grant off the request context (set by the auth middleware). */
 export function getAgentGrant(c: Context): AgentGrant | null {
-  return (c.get('agentGrant') as AgentGrant | null | undefined) ?? null;
+  return normalizeAgentGrant(c.get('agentGrant') as AgentGrant | null | undefined);
 }
 
 export function isProjectSessionPrincipal(c: Context): boolean {
@@ -106,8 +107,8 @@ export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): bo
  */
 export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
-  if (agentMayPerform(grant, action)) return;
+  if (!grant || agentMayPerform(grant, action)) return;
   throw new HTTPException(403, {
-    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
+    message: `Agent "${grant.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
   });
 }

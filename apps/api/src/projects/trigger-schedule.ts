@@ -18,9 +18,13 @@ export interface TriggerScheduleSpec {
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
-  if (!timezone.trim()) return 'timezone must not be empty';
+  const normalized = timezone.trim();
+  if (!normalized) return 'timezone must not be empty';
+  if (normalized !== 'UTC' && !normalized.includes('/')) {
+    return `timezone must be a valid IANA name like "UTC" or "America/Los_Angeles" (got "${timezone}")`;
+  }
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    new Intl.DateTimeFormat('en-US', { timeZone: normalized });
     return null;
   } catch {
     return `timezone must be a valid IANA name like "UTC" or "America/Los_Angeles" (got "${timezone}")`;

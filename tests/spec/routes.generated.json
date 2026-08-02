@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 516,
+  "count": 535,
   "routes": [
     {
       "method": "GET",
@@ -1083,6 +1083,74 @@
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge/:sourceId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge/:sourceId/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge/:sourceId/sync"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge/sources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/knowledge/uploads"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/automations/:automationSlug/pause"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/discard"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/draft"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/publish"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/skills/generate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/skills/github"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/skills/import"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/skills/marketplace"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agents/:agentName/profile/test"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/agents/:agentName/scope"
     },
@@ -1645,6 +1713,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/knowledge/:citationId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/knowledge/search"
     },
     {
       "method": "POST",

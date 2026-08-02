@@ -23,10 +23,11 @@
  * every subsequent call.
  */
 
+import { type AgentGrant, accountTokens, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountTokens, projects, type AgentGrant } from '@kortix/db';
-import { db } from '../../shared/db';
 import { config } from '../../config';
+import { normalizeAgentGrant } from '../../shared/agent-grant';
+import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import {
   AgentSecretGrantMismatchError,
@@ -108,6 +109,9 @@ export function remintDecisionFor(
   stored: AgentGrant | null,
   running: AgentGrant | null,
 ): RemintDecision {
+  if (stored && running && stored.agent !== running.agent) {
+    return { action: 'write', grant: running };
+  }
   if (!agentGrantDiffers(stored, running)) return { action: 'skip' };
   if (running === null) {
     return {
@@ -166,7 +170,7 @@ export async function remintGrantForAgentSwitch(input: {
         ),
       )
       .limit(1);
-    stored = token?.agentGrant ?? null;
+    stored = normalizeAgentGrant(token?.agentGrant);
   } catch (err) {
     throw new SessionGrantRemintError(input.sessionId, err);
   }

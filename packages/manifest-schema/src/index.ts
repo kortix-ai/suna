@@ -17,12 +17,11 @@
 
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
-import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
-  CONNECTOR_AUTH_TYPES,
   CONNECTOR_AUTHORIZATION_STRATEGIES,
+  CONNECTOR_AUTH_TYPES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -37,6 +36,7 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
 } from './constants';
+import { type ManifestFormat, parseManifestText } from './format';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
 // imports them itself — but are kept in the re-export block just below for
@@ -389,7 +389,12 @@ export function validateGrantList(
 }
 
 /** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
-function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateAgents(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -557,7 +562,12 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandbox(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -614,13 +624,17 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
   }
 }
 
-function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandboxTemplates(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message:
-        listSectionHint('sandbox.templates', format),
+      message: listSectionHint('sandbox.templates', format),
       severity: 'error',
     });
     return;
@@ -735,7 +749,12 @@ function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[])
   });
 }
 
-function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateTriggers(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -928,7 +947,13 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  version: 1 | 2 = 1,
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1060,8 +1085,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
-        message:
-          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
+        message: `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1163,7 +1187,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
-        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
+        if (
+          t === 'oauth1' &&
+          provider !== 'openapi' &&
+          provider !== 'postman' &&
+          provider !== 'http'
+        ) {
           issues.push({
             path: `${where}.auth.type`,
             message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
@@ -1187,12 +1216,15 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if (entry.headers !== undefined) {
       const parsedHeaders = parseConnectorHeaders(entry.headers);
       if (!parsedHeaders.ok) {
-        issues.push({ path: `${where}.headers`, message: `${parsedHeaders.error}.`, severity: 'error' });
+        issues.push({
+          path: `${where}.headers`,
+          message: `${parsedHeaders.error}.`,
+          severity: 'error',
+        });
       } else if (provider === 'pipedream' || provider === 'channel') {
         issues.push({
           path: `${where}.headers`,
-          message:
-            `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
+          message: `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
           severity: 'warning',
         });
       }
@@ -1234,7 +1266,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
   });
 }
 
-function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateChannels(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1311,8 +1348,10 @@ export function isTable(value: unknown): value is Record<string, unknown> {
 
 /** A valid IANA time-zone name (the runtime rejects anything else). */
 function isValidIanaTimeZone(tz: string): boolean {
+  const normalized = tz.trim();
+  if (normalized !== 'UTC' && !normalized.includes('/')) return false;
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    new Intl.DateTimeFormat('en-US', { timeZone: normalized });
     return true;
   } catch {
     return false;

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accounts,
   agentKnowledgeAssignments,
@@ -7,24 +7,22 @@ import {
   executorConnectionProfiles,
   executorConnectors,
   projects,
-} from "@kortix/db";
-import { eq } from "drizzle-orm";
-import { db } from "../../shared/db";
-import { cleanupExpiredAgentProfileArtifacts } from "./agent-profile-cleanup";
+} from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { cleanupExpiredAgentProfileArtifacts } from '../projects/lib/agent-profile-cleanup';
+import { db } from '../shared/db';
 
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
 const userId = crypto.randomUUID();
 
 beforeAll(async () => {
-  await db
-    .insert(accounts)
-    .values({ accountId, name: "agent-profile-cleanup-test" });
+  await db.insert(accounts).values({ accountId, name: 'agent-profile-cleanup-test' });
   await db.insert(projects).values({
     accountId,
     projectId,
-    name: "agent-profile-cleanup-test",
-    repoUrl: "https://example.test/cleanup.git",
+    name: 'agent-profile-cleanup-test',
+    repoUrl: 'https://example.test/cleanup.git',
   });
 });
 
@@ -33,8 +31,8 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, accountId));
 });
 
-describe("agent profile artifact expiration", () => {
-  test("deletes unused drafts and sources but preserves a published assignment", async () => {
+describe('agent profile artifact expiration', () => {
+  test('deletes unused drafts and sources but preserves a published assignment', async () => {
     const unusedSourceId = crypto.randomUUID();
     const publishedSourceId = crypto.randomUUID();
     const connectorId = crypto.randomUUID();
@@ -46,11 +44,11 @@ describe("agent profile artifact expiration", () => {
         sourceId: unusedSourceId,
         accountId,
         projectId,
-        agentName: "support",
-        slug: "unused-source",
-        sourceType: "url",
-        title: "Unused source",
-        url: "https://docs.example.test/unused",
+        agentName: 'support',
+        slug: 'unused-source',
+        sourceType: 'url',
+        title: 'Unused source',
+        url: 'https://docs.example.test/unused',
         expiresAt: expiredAt,
         createdBy: userId,
       },
@@ -58,11 +56,11 @@ describe("agent profile artifact expiration", () => {
         sourceId: publishedSourceId,
         accountId,
         projectId,
-        agentName: "support",
-        slug: "published-source",
-        sourceType: "url",
-        title: "Published source",
-        url: "https://docs.example.test/published",
+        agentName: 'support',
+        slug: 'published-source',
+        sourceType: 'url',
+        title: 'Published source',
+        url: 'https://docs.example.test/published',
         expiresAt: expiredAt,
         createdBy: userId,
       },
@@ -70,19 +68,19 @@ describe("agent profile artifact expiration", () => {
     await db.insert(agentKnowledgeAssignments).values({
       accountId,
       projectId,
-      agentName: "support",
+      agentName: 'support',
       sourceId: publishedSourceId,
-      manifestRevision: "a".repeat(40),
+      manifestRevision: 'a'.repeat(40),
       active: true,
     });
     await db.insert(executorConnectors).values({
       connectorId,
       accountId,
       projectId,
-      slug: "cleanup-drive",
-      name: "Cleanup Drive",
-      providerType: "pipedream",
-      config: { app: "google_drive" },
+      slug: 'cleanup-drive',
+      name: 'Cleanup Drive',
+      providerType: 'pipedream',
+      config: { app: 'google_drive' },
     });
     await db.insert(executorConnectionProfiles).values([
       {
@@ -90,9 +88,9 @@ describe("agent profile artifact expiration", () => {
         accountId,
         projectId,
         connectorId,
-        label: "Unused draft connection",
+        label: 'Unused draft connection',
         metadata: {
-          agent_profile_draft_agent: "support",
+          agent_profile_draft_agent: 'support',
           agent_profile_draft_expires_at: expiredAt.toISOString(),
         },
         createdBy: userId,
@@ -102,9 +100,9 @@ describe("agent profile artifact expiration", () => {
         accountId,
         projectId,
         connectorId,
-        label: "Referenced draft connection",
+        label: 'Referenced draft connection',
         metadata: {
-          agent_profile_draft_agent: "support",
+          agent_profile_draft_agent: 'support',
           agent_profile_draft_expires_at: expiredAt.toISOString(),
         },
         createdBy: userId,
@@ -113,12 +111,10 @@ describe("agent profile artifact expiration", () => {
     await db.insert(agentProfileDrafts).values({
       accountId,
       projectId,
-      agentName: "support",
+      agentName: 'support',
       baseSections: {},
       sections: {
-        integrations: [
-          { profile_id: referencedProfileId, slug: "cleanup-drive" },
-        ],
+        integrations: [{ profile_id: referencedProfileId, slug: 'cleanup-drive' }],
       },
       updatedBy: userId,
       expiresAt: expiredAt,

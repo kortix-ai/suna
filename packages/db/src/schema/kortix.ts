@@ -53,15 +53,22 @@ export const agentKnowledgeSourceTypeEnum = kortixSchema.enum('agent_knowledge_s
   'connector',
 ]);
 
-export const agentKnowledgeSourceStatusEnum = kortixSchema.enum(
-  'agent_knowledge_source_status',
-  ['draft', 'pending', 'syncing', 'ready', 'degraded', 'error', 'revoked'],
-);
+export const agentKnowledgeSourceStatusEnum = kortixSchema.enum('agent_knowledge_source_status', [
+  'draft',
+  'pending',
+  'syncing',
+  'ready',
+  'degraded',
+  'error',
+  'revoked',
+]);
 
-export const agentKnowledgeVersionStatusEnum = kortixSchema.enum(
-  'agent_knowledge_version_status',
-  ['processing', 'active', 'failed', 'superseded'],
-);
+export const agentKnowledgeVersionStatusEnum = kortixSchema.enum('agent_knowledge_version_status', [
+  'processing',
+  'active',
+  'failed',
+  'superseded',
+]);
 
 export const agentKnowledgeSyncJobStatusEnum = kortixSchema.enum(
   'agent_knowledge_sync_job_status',
@@ -426,7 +433,10 @@ export const agentProfileDrafts = kortixSchema.table(
     baseRevision: text('base_revision'),
     baseSections: jsonb('base_sections').default({}).$type<AgentProfileDraftSections>().notNull(),
     sections: jsonb('sections').default({}).$type<AgentProfileDraftSections>().notNull(),
-    sectionRevisions: jsonb('section_revisions').default({}).$type<Record<string, number>>().notNull(),
+    sectionRevisions: jsonb('section_revisions')
+      .default({})
+      .$type<Record<string, number>>()
+      .notNull(),
     changedSections: jsonb('changed_sections').default([]).$type<string[]>().notNull(),
     changes: jsonb('changes').default([]).$type<AgentProfileDraftChange[]>().notNull(),
     impact: jsonb('impact').default({}).$type<AgentProfileDraftImpact>().notNull(),
@@ -478,8 +488,9 @@ export const agentKnowledgeSources = kortixSchema.table(
     lastError: text('last_error'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),
-    expiresAt: timestamp('expires_at', { withTimezone: true })
-      .default(sql`now() + interval '30 days'`),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).default(
+      sql`now() + interval '30 days'`,
+    ),
     createdBy: uuid('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -605,12 +616,19 @@ export const agentKnowledgeSyncJobs = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_agent_knowledge_sync_jobs_available').on(table.status, table.availableAt, table.leaseUntil),
+    index('idx_agent_knowledge_sync_jobs_available').on(
+      table.status,
+      table.availableAt,
+      table.leaseUntil,
+    ),
     index('idx_agent_knowledge_sync_jobs_source').on(table.sourceId, table.createdAt),
     uniqueIndex('idx_agent_knowledge_sync_jobs_one_active')
       .on(table.sourceId)
       .where(sql`${table.status} in ('pending', 'running')`),
-    check('agent_knowledge_sync_jobs_attempt_check', sql`${table.attempt} between 0 and ${table.maxAttempts}`),
+    check(
+      'agent_knowledge_sync_jobs_attempt_check',
+      sql`${table.attempt} between 0 and ${table.maxAttempts}`,
+    ),
   ],
 );
 
@@ -1012,9 +1030,7 @@ export const projectSessions = kortixSchema.table(
     // null/absent = the caller declared none.
     requiredConnectors: jsonb('required_connectors').$type<string[]>(),
     // Distinguishes omitted connector_bindings from an explicit replacement.
-    connectorBindingsConfigured: boolean('connector_bindings_configured')
-      .default(false)
-      .notNull(),
+    connectorBindingsConfigured: boolean('connector_bindings_configured').default(false).notNull(),
     // When a session sets `connector_bindings`, binding ANY alias normally
     // suppresses the project-default fallback for every OTHER (unbound) alias —
     // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
@@ -2429,9 +2445,9 @@ export interface AgentGrant {
    *  Optional for back-compat with grants minted before this field existed
    *  (treated as 'all'). */
   env?: string[] | 'all';
-  /** Explicit private knowledge source slugs assigned to the agent. Historical
-   *  stored grants can omit this field and are interpreted as an empty list. */
-  knowledge?: string[];
+  /** Explicit private knowledge source slugs assigned to the agent. The API
+   *  normalizes historical stored grants that predate this field to `[]`. */
+  knowledge: string[];
 }
 
 export const accountTokens = kortixSchema.table(
@@ -3621,6 +3637,8 @@ export const changeRequests = kortixSchema.table(
     index('idx_change_requests_project').on(table.projectId),
     index('idx_change_requests_project_status').on(table.projectId, table.status),
     uniqueIndex('idx_change_requests_project_number').on(table.projectId, table.number),
+    // `idx_change_requests_open_agent_profile_agent` is a partial expression
+    // index created concurrently by its hand-written migration.
   ],
 );
 
@@ -4370,9 +4388,7 @@ export const executorConnectors = kortixSchema.table(
      *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Exclusive authorization owner model for this connector profile. */
-    authorizationStrategy: executorConnectorAuthorizationStrategyEnum(
-      'authorization_strategy',
-    )
+    authorizationStrategy: executorConnectorAuthorizationStrategyEnum('authorization_strategy')
       .default('project')
       .notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */

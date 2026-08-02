@@ -2,17 +2,17 @@
 // a separate integration suite that runs only when TEST_DATABASE_URL
 // is set (mirrors the V1 setup).
 
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
+import { agentMayPerform } from '../iam/agent-scope';
 import {
-  scopeForActionV2,
-  deriveEffectiveProjectRole,
-  customPolicyAllows,
+  type CustomAction,
   agentGrantGates,
   computeTokenScope,
-  type CustomAction,
+  customPolicyAllows,
+  deriveEffectiveProjectRole,
+  scopeForActionV2,
 } from '../iam/engine-v2';
-import { agentMayPerform } from '../iam/agent-scope';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 
 describe('scopeForActionV2', () => {
   test('account.* / billing.* / audit.* → account', () => {
@@ -75,8 +75,12 @@ describe('deriveEffectiveProjectRole', () => {
   });
 
   test('member with multiple group grants → max of all', () => {
-    expect(deriveEffectiveProjectRole('member', null, ['member', 'editor', 'member'])).toBe('editor');
-    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'editor'])).toBe('manager');
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'editor', 'member'])).toBe(
+      'editor',
+    );
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'editor'])).toBe(
+      'manager',
+    );
   });
 
   test('owner stays Manager even when group says Member (no demotion)', () => {
@@ -93,26 +97,44 @@ describe('customPolicyAllows (DB custom-role union)', () => {
   const acct = { type: 'account' as const };
 
   test('no custom actions → never allows', () => {
-    expect(customPolicyAllows([], 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1'))).toBe(false);
+    expect(
+      customPolicyAllows([], 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1')),
+    ).toBe(false);
   });
 
   test('project-scoped policy grants only on its own project', () => {
-    const ca: CustomAction[] = [{ scopeType: 'project', scopeId: 'p1', action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE }];
-    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p1'))).toBe(true);
-    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p2'))).toBe(false);
+    const ca: CustomAction[] = [
+      { scopeType: 'project', scopeId: 'p1', action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+    ];
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p1'))).toBe(
+      true,
+    );
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p2'))).toBe(
+      false,
+    );
     // wrong action on the right project
-    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1'))).toBe(false);
+    expect(
+      customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1')),
+    ).toBe(false);
   });
 
   test('account-scoped policy grants on every project AND account actions', () => {
-    const ca: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE }];
-    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('anything'))).toBe(true);
-    const acctCa: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: ACCOUNT_ACTIONS.MEMBER_READ }];
+    const ca: CustomAction[] = [
+      { scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+    ];
+    expect(
+      customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('anything')),
+    ).toBe(true);
+    const acctCa: CustomAction[] = [
+      { scopeType: 'account', scopeId: null, action: ACCOUNT_ACTIONS.MEMBER_READ },
+    ];
     expect(customPolicyAllows(acctCa, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(true);
   });
 
   test('a project-scoped policy can NOT grant an account-scoped action', () => {
-    const ca: CustomAction[] = [{ scopeType: 'project', scopeId: 'p1', action: ACCOUNT_ACTIONS.MEMBER_READ }];
+    const ca: CustomAction[] = [
+      { scopeType: 'project', scopeId: 'p1', action: ACCOUNT_ACTIONS.MEMBER_READ },
+    ];
     expect(customPolicyAllows(ca, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(false);
   });
 
@@ -121,9 +143,23 @@ describe('customPolicyAllows (DB custom-role union)', () => {
       { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_READ },
       { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
     ];
-    expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('company'))).toBe(true);
+    expect(
+      customPolicyAllows(
+        marketing,
+        'project',
+        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+        proj('company'),
+      ),
+    ).toBe(true);
     // gitops.merge omitted → not granted (Git Ops deactivated for this dept role)
-    expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('company'))).toBe(false);
+    expect(
+      customPolicyAllows(
+        marketing,
+        'project',
+        PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+        proj('company'),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -137,7 +173,9 @@ describe('service-account standing identity — authority is policy-ONLY', () =>
   test('an SA with NO policies is denied everything (no member baseline leaks in)', () => {
     const none: CustomAction[] = [];
     expect(customPolicyAllows(none, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(false);
-    expect(customPolicyAllows(none, 'project', PROJECT_ACTIONS.PROJECT_READ, proj('p1'))).toBe(false);
+    expect(customPolicyAllows(none, 'project', PROJECT_ACTIONS.PROJECT_READ, proj('p1'))).toBe(
+      false,
+    );
   });
 
   test('an SA bound to a project-scoped role acts on THAT project only', () => {
@@ -145,24 +183,52 @@ describe('service-account standing identity — authority is policy-ONLY', () =>
       { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
       { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_CR_OPEN },
     ];
-    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, proj('company'))).toBe(true);
+    expect(
+      customPolicyAllows(
+        releaseBot,
+        'project',
+        PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+        proj('company'),
+      ),
+    ).toBe(true);
     // another project → no standing access (the SA is scoped to 'company')
-    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, proj('other'))).toBe(false);
+    expect(
+      customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, proj('other')),
+    ).toBe(false);
     // a capability the SA's role omits → denied even on its own project
-    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('company'))).toBe(false);
+    expect(
+      customPolicyAllows(
+        releaseBot,
+        'project',
+        PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+        proj('company'),
+      ),
+    ).toBe(false);
   });
 
   test('an account-scoped SA role grants the action across every project', () => {
-    const ciBot: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE }];
-    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('a'))).toBe(true);
-    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('b'))).toBe(true);
+    const ciBot: CustomAction[] = [
+      { scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE },
+    ];
+    expect(
+      customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('a')),
+    ).toBe(true);
+    expect(
+      customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('b')),
+    ).toBe(true);
   });
 });
 
 describe('computeTokenScope — token project-scope (D2 standing-identity)', () => {
   const proj = (id: string) => ({ type: 'project' as const, id });
   const acct = { type: 'account' as const };
-  const bind = (over: Partial<{ projectId: string | null; agentGrant: null; serviceAccountId: string | null }> = {}) => ({
+  const bind = (
+    over: Partial<{
+      projectId: string | null;
+      agentGrant: null;
+      serviceAccountId: string | null;
+    }> = {},
+  ) => ({
     projectId: null,
     agentGrant: null,
     serviceAccountId: null,
@@ -213,8 +279,14 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
   });
 
   test('a scoped agent is denied a gated capability it does not hold, but passes exempt + held ones', () => {
-    const grant = { agent: 'marketing', kortixCli: [PROJECT_ACTIONS.PROJECT_CR_OPEN], connectors: 'all' as const };
-    const denied = (action: string) => agentGrantGates('project', action) && !agentMayPerform(grant, action);
+    const grant = {
+      agent: 'marketing',
+      kortixCli: [PROJECT_ACTIONS.PROJECT_CR_OPEN],
+      connectors: 'all' as const,
+      knowledge: [],
+    };
+    const denied = (action: string) =>
+      agentGrantGates('project', action) && !agentMayPerform(grant, action);
     expect(denied(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true); // not in kortixCli + gated → denied
     expect(denied(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(denied(PROJECT_ACTIONS.PROJECT_CR_OPEN)).toBe(false); // held → allowed
@@ -228,7 +300,12 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
   });
 
   test('all-grant and null-grant impose no restriction', () => {
-    const all = { agent: 'kortix', kortixCli: 'all' as const, connectors: 'all' as const };
+    const all = {
+      agent: 'kortix',
+      kortixCli: 'all' as const,
+      connectors: 'all' as const,
+      knowledge: [],
+    };
     expect(agentMayPerform(all, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
     expect(agentMayPerform(null, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
   });

@@ -28,12 +28,17 @@ const citationA = crypto.randomUUID();
 const citationB = crypto.randomUUID();
 const tokenIds: string[] = [];
 let tokenA = '';
+let switchedToken = '';
 let humanToken = '';
 
 beforeAll(async () => {
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
+  await db.execute(
+    sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`,
+  );
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
+  await db.execute(
+    sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`,
+  );
   await db.insert(accounts).values({ accountId, name: 'session-knowledge-route-test' });
   await db.insert(accountMembers).values({ accountId, userId, accountRole: 'member' });
   await db.insert(projects).values({
@@ -111,8 +116,14 @@ beforeAll(async () => {
       lexicalOnly: true,
     },
   ]);
-  await db.update(agentKnowledgeSources).set({ activeVersionId: versionA }).where(eq(agentKnowledgeSources.sourceId, sourceA));
-  await db.update(agentKnowledgeSources).set({ activeVersionId: versionB }).where(eq(agentKnowledgeSources.sourceId, sourceB));
+  await db
+    .update(agentKnowledgeSources)
+    .set({ activeVersionId: versionA })
+    .where(eq(agentKnowledgeSources.sourceId, sourceA));
+  await db
+    .update(agentKnowledgeSources)
+    .set({ activeVersionId: versionB })
+    .where(eq(agentKnowledgeSources.sourceId, sourceB));
   await db.insert(agentKnowledgeChunks).values([
     {
       citationId: citationA,
@@ -168,6 +179,21 @@ beforeAll(async () => {
   });
   tokenA = sessionToken.secretKey;
   tokenIds.push(sessionToken.tokenId);
+  const switchedSessionToken = await createAccountToken({
+    accountId,
+    userId,
+    projectId,
+    sessionId: sessionA,
+    name: 'session-a-switched-to-agent-b',
+    agentGrant: {
+      agent: 'agent-b',
+      kortixCli: ['project.read'],
+      connectors: [],
+      knowledge: ['agent-b-source'],
+    },
+  });
+  switchedToken = switchedSessionToken.secretKey;
+  tokenIds.push(switchedSessionToken.tokenId);
   const human = await createAccountToken({ accountId, userId, projectId, name: 'human-token' });
   humanToken = human.secretKey;
   tokenIds.push(human.tokenId);
@@ -178,9 +204,9 @@ afterAll(async () => {
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   }
   await db.delete(projects).where(eq(projects.projectId, projectId));
-  await db.delete(accountMembers).where(
-    and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
-  );
+  await db
+    .delete(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
   await db.delete(accounts).where(eq(accounts.accountId, accountId));
 });
 
@@ -215,6 +241,26 @@ describe('session knowledge HTTP routes', () => {
     );
     expect(read.status).toBe(200);
     expect((await read.json()).content).toBe('ALPHA route evidence.');
+  });
+
+  test('uses a re-scoped token identity instead of the session creation-time agent', async () => {
+    const response = await request(
+      switchedToken,
+      'POST',
+      `/v1/projects/${projectId}/sessions/${sessionA}/knowledge/search`,
+      { query: 'BRAVO' },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0].citation.citation_id).toBe(citationB);
+
+    const creationTimeCitation = await request(
+      switchedToken,
+      'GET',
+      `/v1/projects/${projectId}/sessions/${sessionA}/knowledge/${citationA}`,
+    );
+    expect(creationTimeCitation.status).toBe(404);
   });
 
   test('rejects forged sessions, citations, and agent fields', async () => {

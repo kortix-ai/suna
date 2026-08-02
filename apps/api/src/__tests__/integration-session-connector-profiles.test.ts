@@ -23,8 +23,8 @@ import {
   resolveCredentialValue,
   resolveProfileCredentialValue,
   upsertCredential,
-  upsertProfileOAuth2Credential,
   upsertProfileCredential,
+  upsertProfileOAuth2Credential,
 } from '../executor/credentials';
 import { makeDbGatewayDeps } from '../executor/db-deps';
 import { finalizePipedreamProfileConnection } from '../executor/pipedream';
@@ -418,7 +418,12 @@ describe('session connector profile isolation', () => {
       projectId: PROJECT_A,
       sessionId,
       subject: { userId, groupIds: [] },
-      agentGrant: { agent: 'veyris', connectors: ['veyris'] as string[], kortixCli: [] },
+      agentGrant: {
+        agent: 'veyris',
+        connectors: ['veyris'] as string[],
+        kortixCli: [],
+        knowledge: [],
+      },
     });
     const depsA = makeDbGatewayDeps(principal(SESSION_A, USER));
     const depsB = makeDbGatewayDeps(principal(SESSION_B, OTHER_USER));
@@ -621,7 +626,12 @@ describe('session connector profile isolation', () => {
       projectId: PROJECT_A,
       sessionId: SESSION_DEFAULT,
       subject: { userId: USER, groupIds: [] },
-      agentGrant: { agent: 'veyris', connectors: ['kortix_email'], kortixCli: [] },
+      agentGrant: {
+        agent: 'veyris',
+        connectors: ['kortix_email'],
+        kortixCli: [],
+        knowledge: [],
+      },
     });
     expect(await deps.loadEmailSessionContext?.(PROJECT_A, SESSION_DEFAULT)).toBeNull();
   });

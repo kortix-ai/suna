@@ -7,20 +7,24 @@
  * Runs against the local Postgres (DATABASE_URL). Applies the additive
  * `agent_grant` column idempotently in beforeAll (mirrors ensureSchema's push).
  */
-import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { createAccountToken, validateAccountToken } from '../repositories/account-tokens';
 import { agentMayPerform, agentMayUseConnector } from '../iam/agent-scope';
+import { createAccountToken, validateAccountToken } from '../repositories/account-tokens';
+import { db } from '../shared/db';
 
 let tokenId: string | null = null;
 
 beforeAll(async () => {
   // Idempotently ensure the columns createAccountToken writes (local DB may be
   // behind on migrations).
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
+  await db.execute(
+    sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`,
+  );
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
+  await db.execute(
+    sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`,
+  );
 });
 
 afterAll(async () => {
@@ -38,14 +42,19 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
       return;
     }
 
-    const grant = { agent: 'release-bot', kortixCli: ['project.cr.open'], connectors: ['github'] };
+    const grant = {
+      agent: 'release-bot',
+      kortixCli: ['project.cr.open'],
+      connectors: ['github'],
+      knowledge: [],
+    };
 
     const minted = await createAccountToken({
       accountId: proj.account_id,
       userId: crypto.randomUUID(),
       projectId: proj.project_id,
       name: 'test-agent-grant-roundtrip',
-      agentGrant: grant as any,
+      agentGrant: grant,
     });
     tokenId = minted.tokenId;
 
@@ -53,13 +62,14 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
     const v = await validateAccountToken(minted.secretKey);
     expect(v.isValid).toBe(true);
     expect(v.agentGrant).toEqual(grant);
+    if (!v.agentGrant) throw new Error('Expected the validated token to include its agent grant.');
 
     // Enforcement reads the validated grant and gates correctly.
-    expect(agentMayPerform(v.agentGrant!, 'project.cr.open')).toBe(true);   // granted
-    expect(agentMayPerform(v.agentGrant!, 'project.cr.merge')).toBe(false); // NOT granted — the destructive case
-    expect(agentMayPerform(v.agentGrant!, 'project.trigger.create')).toBe(false);
-    expect(agentMayUseConnector(v.agentGrant!, 'github')).toBe(true);       // assigned
-    expect(agentMayUseConnector(v.agentGrant!, 'salesforce')).toBe(false);  // not assigned
+    expect(agentMayPerform(v.agentGrant, 'project.cr.open')).toBe(true); // granted
+    expect(agentMayPerform(v.agentGrant, 'project.cr.merge')).toBe(false); // NOT granted — the destructive case
+    expect(agentMayPerform(v.agentGrant, 'project.trigger.create')).toBe(false);
+    expect(agentMayUseConnector(v.agentGrant, 'github')).toBe(true); // assigned
+    expect(agentMayUseConnector(v.agentGrant, 'salesforce')).toBe(false); // not assigned
   });
 
   test('a token minted WITHOUT a grant returns null (full access — backward compatible)', async () => {

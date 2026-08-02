@@ -1,23 +1,23 @@
 import {
   type AgentKnowledgeLocator,
+  agentKnowledgeAssignments,
   agentKnowledgeChunks,
   agentKnowledgeSources,
   agentKnowledgeVersions,
-  agentKnowledgeAssignments,
   agentProfileTestSessions,
   projectSessions,
 } from '@kortix/db';
 import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
-import {
-  type KnowledgeEmbeddingResult,
-  embedKnowledgeTexts,
-} from './agent-knowledge-embeddings';
 import { reciprocalRankFusion } from './agent-knowledge-chunking';
+import { type KnowledgeEmbeddingResult, embedKnowledgeTexts } from './agent-knowledge-embeddings';
 
 export class SessionKnowledgeAccessError extends Error {
-  constructor(readonly code: 'forbidden' | 'session_not_found', message: string) {
+  constructor(
+    readonly code: 'forbidden' | 'session_not_found',
+    message: string,
+  ) {
     super(message);
     this.name = 'SessionKnowledgeAccessError';
   }
@@ -60,6 +60,7 @@ async function resolveSession(input: {
   projectId: string;
   requestedSessionId: string;
   authenticatedSessionId: string | null;
+  authenticatedAgentName: string | null;
 }) {
   if (!input.authenticatedSessionId || input.authenticatedSessionId !== input.requestedSessionId) {
     throw new SessionKnowledgeAccessError(
@@ -85,7 +86,12 @@ async function resolveSession(input: {
   if (!session) {
     throw new SessionKnowledgeAccessError('session_not_found', 'Project session was not found.');
   }
-  return session;
+  return {
+    ...session,
+    // Agent switches re-mint the authenticated token grant. The session row
+    // keeps its creation-time agent and is only a fallback for legacy tokens.
+    agentName: input.authenticatedAgentName ?? session.agentName,
+  };
 }
 
 async function assignedSourceIds(session: Awaited<ReturnType<typeof resolveSession>>) {
@@ -164,12 +170,14 @@ export async function searchAgentKnowledgeForSession(input: {
   projectId: string;
   requestedSessionId: string;
   authenticatedSessionId: string | null;
+  authenticatedAgentName: string | null;
   query: string;
   limit?: number;
   embedQuery?: (texts: string[]) => Promise<KnowledgeEmbeddingResult>;
 }): Promise<SessionKnowledgeSearchResponse> {
   const query = input.query.trim();
-  if (!query || query.length > 8_000) throw new Error('Knowledge query must contain 1 to 8000 characters.');
+  if (!query || query.length > 8_000)
+    throw new Error('Knowledge query must contain 1 to 8000 characters.');
   const limit = input.limit ?? 8;
   if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
     throw new Error('Knowledge result limit must be between 1 and 20.');
@@ -208,8 +216,14 @@ export async function searchAgentKnowledgeForSession(input: {
   const lexicalRows = (await db
     .select(candidateSelection(lexicalScore))
     .from(agentKnowledgeChunks)
-    .innerJoin(agentKnowledgeSources, eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId))
-    .innerJoin(agentKnowledgeVersions, eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId))
+    .innerJoin(
+      agentKnowledgeSources,
+      eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId),
+    )
+    .innerJoin(
+      agentKnowledgeVersions,
+      eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId),
+    )
     .where(
       and(
         activeChunkConditions(session, sourceIds),
@@ -239,24 +253,38 @@ export async function searchAgentKnowledgeForSession(input: {
     if (!embedded.lexicalOnly && queryEmbedding) {
       mode = 'hybrid';
       const vectorLiteral = JSON.stringify(queryEmbedding);
-      const vectorScore = sql<number>`1 - (${agentKnowledgeChunks.embedding} <=> ${vectorLiteral}::vector)`.mapWith(Number);
+      const vectorScore =
+        sql<number>`1 - (${agentKnowledgeChunks.embedding} <=> ${vectorLiteral}::vector)`.mapWith(
+          Number,
+        );
       vectorRows = (await db
         .select(candidateSelection(vectorScore))
         .from(agentKnowledgeChunks)
-        .innerJoin(agentKnowledgeSources, eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId))
-        .innerJoin(agentKnowledgeVersions, eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId))
-        .where(and(activeChunkConditions(session, sourceIds), isNotNull(agentKnowledgeChunks.embedding)))
+        .innerJoin(
+          agentKnowledgeSources,
+          eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId),
+        )
+        .innerJoin(
+          agentKnowledgeVersions,
+          eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId),
+        )
+        .where(
+          and(activeChunkConditions(session, sourceIds), isNotNull(agentKnowledgeChunks.embedding)),
+        )
         .orderBy(desc(vectorScore), agentKnowledgeChunks.chunkId)
         .limit(candidateLimit)) as SearchCandidate[];
       if (assignedVersions.some((version) => version.lexicalOnly)) {
-        degradedReason = 'Some assigned sources are currently available through lexical search only.';
+        degradedReason =
+          'Some assigned sources are currently available through lexical search only.';
       }
     } else {
       degradedReason = embedded.degradedReason;
     }
   }
 
-  const byId = new Map([...lexicalRows, ...vectorRows].map((candidate) => [candidate.chunkId, candidate]));
+  const byId = new Map(
+    [...lexicalRows, ...vectorRows].map((candidate) => [candidate.chunkId, candidate]),
+  );
   const fused = reciprocalRankFusion(
     lexicalRows.map((candidate) => ({ id: candidate.chunkId, score: candidate.score })),
     vectorRows.map((candidate) => ({ id: candidate.chunkId, score: candidate.score })),
@@ -286,6 +314,7 @@ export async function readAgentKnowledgeForSession(input: {
   projectId: string;
   requestedSessionId: string;
   authenticatedSessionId: string | null;
+  authenticatedAgentName: string | null;
   citationId: string;
 }): Promise<{ content: string; citation: SessionKnowledgeCitation } | null> {
   const session = await resolveSession(input);
@@ -294,8 +323,14 @@ export async function readAgentKnowledgeForSession(input: {
   const [candidate] = (await db
     .select(candidateSelection(sql<number>`0`.mapWith(Number)))
     .from(agentKnowledgeChunks)
-    .innerJoin(agentKnowledgeSources, eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId))
-    .innerJoin(agentKnowledgeVersions, eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId))
+    .innerJoin(
+      agentKnowledgeSources,
+      eq(agentKnowledgeSources.sourceId, agentKnowledgeChunks.sourceId),
+    )
+    .innerJoin(
+      agentKnowledgeVersions,
+      eq(agentKnowledgeVersions.versionId, agentKnowledgeChunks.versionId),
+    )
     .where(
       and(
         activeChunkConditions(session, sourceIds),

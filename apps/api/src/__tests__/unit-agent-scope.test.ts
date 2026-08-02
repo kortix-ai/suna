@@ -6,7 +6,7 @@
  * agent ≤ user is preserved (the route's role check provides the ∩ user).
  */
 import { describe, expect, test } from 'bun:test';
-import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
+import type { Context } from 'hono';
 import {
   agentMayPerform,
   agentMayUseConnector,
@@ -14,10 +14,13 @@ import {
   assertAgentScope,
   isProjectSessionPrincipal,
 } from '../iam/agent-scope';
+import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function loadAgents(body: string) {
-  return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
+  return extractAgents(
+    parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`),
+  );
 }
 
 describe('isProjectSessionPrincipal', () => {
@@ -57,6 +60,7 @@ kortix_cli = ["project.trigger.create", "project.cr.open"]
       connectors: ['github'],
       kortixCli: ['project.trigger.create', 'project.cr.open'],
       env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
+      knowledge: [],
     });
   });
 
@@ -71,6 +75,7 @@ kortix_cli = ["project.trigger.create"]
       connectors: [],
       kortixCli: [],
       env: [], // unlisted-but-adopted → default-deny everything, incl. secrets
+      knowledge: [],
     });
   });
 
@@ -86,6 +91,7 @@ kortix_cli = ["project.trigger.create"]
       connectors: [],
       kortixCli: [],
       env: [],
+      knowledge: [],
     });
   });
 
@@ -101,6 +107,7 @@ kortix_cli = "all"
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
+      knowledge: [],
     });
   });
 
@@ -138,6 +145,7 @@ connectors = "all"
       connectors: [],
       kortixCli: [],
       env: [],
+      knowledge: [],
     });
   });
 });
@@ -160,7 +168,7 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
     return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
   }
 
-  test('sentinel resolves to the declared default_agent\'s grant, not null', () => {
+  test("sentinel resolves to the declared default_agent's grant, not null", () => {
     const loaded = loadAgentsV2(`
   support:
     connectors: [github]
@@ -171,6 +179,7 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
       connectors: ['github'],
       kortixCli: ['project.cr.open'],
       env: [], // v2 deny-by-default (secrets omitted)
+      knowledge: [],
     });
   });
 
@@ -186,6 +195,7 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
       connectors: [],
       kortixCli: [],
       env: ['STRIPE_KEY'],
+      knowledge: [],
     });
   });
 
@@ -206,22 +216,46 @@ describe('agentMayUseEnv — per-agent secret gate', () => {
     expect(agentMayUseEnv(null, 'GITHUB_TOKEN')).toBe(true);
   });
   test('missing env (legacy grant) → treated as all', () => {
-    expect(agentMayUseEnv({ agent: 'a', kortixCli: 'all', connectors: 'all' }, 'GITHUB_TOKEN')).toBe(true);
+    expect(
+      agentMayUseEnv(
+        { agent: 'a', kortixCli: 'all', connectors: 'all', knowledge: [] },
+        'GITHUB_TOKEN',
+      ),
+    ).toBe(true);
   });
   test('"all" → every secret allowed', () => {
-    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: 'all' }, 'STRIPE_KEY')).toBe(true);
+    expect(
+      agentMayUseEnv(
+        { agent: 'a', kortixCli: [], connectors: [], env: 'all', knowledge: [] },
+        'STRIPE_KEY',
+      ),
+    ).toBe(true);
   });
   test('explicit list → only listed secrets; others denied', () => {
-    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['BRAND_API'] };
+    const grant = {
+      agent: 'mkt',
+      kortixCli: [],
+      connectors: [],
+      env: ['BRAND_API'],
+      knowledge: [],
+    };
     expect(agentMayUseEnv(grant, 'BRAND_API')).toBe(true);
     expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
   });
   test('empty list → no secrets', () => {
-    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: [] }, 'ANY')).toBe(false);
+    expect(
+      agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: [], knowledge: [] }, 'ANY'),
+    ).toBe(false);
   });
   test('case-insensitive: a lowercase allowlist still admits the UPPERCASE secret', () => {
     // Secrets are canonically UPPERCASE; a hand-written kortix.yaml allowlist may not be.
-    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['openai_api_key'] };
+    const grant = {
+      agent: 'mkt',
+      kortixCli: [],
+      connectors: [],
+      env: ['openai_api_key'],
+      knowledge: [],
+    };
     expect(agentMayUseEnv(grant, 'OPENAI_API_KEY')).toBe(true);
     expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
   });
@@ -232,29 +266,64 @@ describe('agentMayPerform — kortix_cli gate', () => {
     expect(agentMayPerform(null, 'project.cr.merge')).toBe(true);
   });
   test('"all" → allowed', () => {
-    expect(agentMayPerform({ agent: 'kortix', kortixCli: 'all', connectors: 'all' }, 'project.cr.merge')).toBe(true);
+    expect(
+      agentMayPerform(
+        { agent: 'kortix', kortixCli: 'all', connectors: 'all', knowledge: [] },
+        'project.cr.merge',
+      ),
+    ).toBe(true);
   });
   test('granted action → allowed', () => {
-    expect(agentMayPerform({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] }, 'project.cr.open')).toBe(true);
+    expect(
+      agentMayPerform(
+        { agent: 'a', kortixCli: ['project.cr.open'], connectors: [], knowledge: [] },
+        'project.cr.open',
+      ),
+    ).toBe(true);
   });
   test('non-granted action → denied (the cr.open-but-not-merge case)', () => {
-    const grant = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
+    const grant = {
+      agent: 'a',
+      kortixCli: ['project.cr.open'],
+      connectors: [],
+      knowledge: [],
+    };
     expect(agentMayPerform(grant, 'project.cr.merge')).toBe(false);
   });
   test('empty grant → everything denied', () => {
-    expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.trigger.create')).toBe(false);
+    expect(
+      agentMayPerform(
+        { agent: 'a', kortixCli: [], connectors: [], knowledge: [] },
+        'project.trigger.create',
+      ),
+    ).toBe(false);
   });
   test('cr.open ≡ gitops.push alias: holding either satisfies the other (no double-gate)', () => {
-    const crOnly = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
+    const crOnly = {
+      agent: 'a',
+      kortixCli: ['project.cr.open'],
+      connectors: [],
+      knowledge: [],
+    };
     expect(agentMayPerform(crOnly, 'project.gitops.push')).toBe(true); // fold gates the commit as gitops.push
-    const pushOnly = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
+    const pushOnly = {
+      agent: 'a',
+      kortixCli: ['project.gitops.push'],
+      connectors: [],
+      knowledge: [],
+    };
     expect(agentMayPerform(pushOnly, 'project.cr.open')).toBe(true); // route gates CR-create as cr.open
     // merge pair is independent — cr.open does NOT unlock merge
     expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
     expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
   });
   test('cr.merge ≡ gitops.merge alias', () => {
-    const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };
+    const mergeOnly = {
+      agent: 'a',
+      kortixCli: ['project.cr.merge'],
+      connectors: [],
+      knowledge: [],
+    };
     expect(agentMayPerform(mergeOnly, 'project.gitops.merge')).toBe(true);
   });
 });
@@ -264,10 +333,15 @@ describe('agentMayUseConnector — connector gate', () => {
     expect(agentMayUseConnector(null, 'github')).toBe(true);
   });
   test('"all" → allowed', () => {
-    expect(agentMayUseConnector({ agent: 'k', kortixCli: 'all', connectors: 'all' }, 'salesforce')).toBe(true);
+    expect(
+      agentMayUseConnector(
+        { agent: 'k', kortixCli: 'all', connectors: 'all', knowledge: [] },
+        'salesforce',
+      ),
+    ).toBe(true);
   });
   test('assigned connector → allowed; unassigned → denied', () => {
-    const grant = { agent: 'a', kortixCli: [], connectors: ['github'] };
+    const grant = { agent: 'a', kortixCli: [], connectors: ['github'], knowledge: [] };
     expect(agentMayUseConnector(grant, 'github')).toBe(true);
     expect(agentMayUseConnector(grant, 'salesforce')).toBe(false);
   });
@@ -275,7 +349,9 @@ describe('agentMayUseConnector — connector gate', () => {
 
 describe('assertAgentScope — throws 403 on deny', () => {
   function fakeCtx(grant: unknown) {
-    return { get: (k: string) => (k === 'agentGrant' ? grant : undefined) } as any;
+    return {
+      get: (key: string) => (key === 'agentGrant' ? grant : undefined),
+    } as unknown as Context;
   }
   test('throws for a non-granted action', () => {
     const c = fakeCtx({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] });

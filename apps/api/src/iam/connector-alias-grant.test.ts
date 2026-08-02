@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { grantFromLoadedAgents } from '../projects/agents';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import { agentMayUseConnector, canonicalizeGrantConnectors } from './agent-scope';
-import { grantFromLoadedAgents } from '../projects/agents';
 
 /**
  * A grant is compared at THREE gates that historically used three different
@@ -17,8 +17,18 @@ import { grantFromLoadedAgents } from '../projects/agents';
  * but callable. Both are broken, and the first is worse — it looks like it works.
  */
 describe('connector alias spelling must not decide the outcome', () => {
-  const publicSpelling = { agent: 'a', kortixCli: 'all' as const, connectors: ['email'] };
-  const canonicalSpelling = { agent: 'a', kortixCli: 'all' as const, connectors: ['kortix_email'] };
+  const publicSpelling = {
+    agent: 'a',
+    kortixCli: 'all' as const,
+    connectors: ['email'],
+    knowledge: [],
+  };
+  const canonicalSpelling = {
+    agent: 'a',
+    kortixCli: 'all' as const,
+    connectors: ['kortix_email'],
+    knowledge: [],
+  };
 
   test('both spellings admit the connector once the grant is canonicalized', () => {
     for (const grant of [publicSpelling, canonicalSpelling]) {
@@ -31,19 +41,34 @@ describe('connector alias spelling must not decide the outcome', () => {
   });
 
   test('an ungranted connector is still refused under either spelling', () => {
-    const normalized = canonicalizeGrantConnectors({ agent: 'a', kortixCli: 'all' as const, connectors: ['email'] });
+    const normalized = canonicalizeGrantConnectors({
+      agent: 'a',
+      kortixCli: 'all' as const,
+      connectors: ['email'],
+      knowledge: [],
+    });
     expect(agentMayUseConnector(normalized, canonicalConnectorAlias('slack'))).toBe(false);
     expect(agentMayUseConnector(normalized, canonicalConnectorAlias('kortix_slack'))).toBe(false);
   });
 
   test("'all' and a null grant are untouched", () => {
     expect(canonicalizeGrantConnectors(null)).toBeNull();
-    const all = canonicalizeGrantConnectors({ agent: 'a', kortixCli: 'all' as const, connectors: 'all' });
+    const all = canonicalizeGrantConnectors({
+      agent: 'a',
+      kortixCli: 'all' as const,
+      connectors: 'all',
+      knowledge: [],
+    });
     expect(agentMayUseConnector(all, 'anything')).toBe(true);
   });
 
   test('a connector with no alias mapping passes through unchanged', () => {
-    const normalized = canonicalizeGrantConnectors({ agent: 'a', kortixCli: 'all' as const, connectors: ['stripe'] });
+    const normalized = canonicalizeGrantConnectors({
+      agent: 'a',
+      kortixCli: 'all' as const,
+      connectors: ['stripe'],
+      knowledge: [],
+    });
     expect(agentMayUseConnector(normalized, canonicalConnectorAlias('stripe'))).toBe(true);
   });
 
@@ -52,6 +77,7 @@ describe('connector alias spelling must not decide the outcome', () => {
       agent: 'a',
       kortixCli: 'all' as const,
       connectors: ['email', 'kortix_email'],
+      knowledge: [],
     });
     expect(Array.isArray(normalized?.connectors) ? normalized.connectors : []).toEqual([
       'kortix_email',
@@ -88,7 +114,13 @@ describe('the v2 default_agent grant must canonicalize too', () => {
   test('an ungranted connector is still refused on the default agent', () => {
     const loaded = {
       specs: [
-        { name: 'support', enabled: true, kortixCli: 'all' as const, connectors: ['email'], env: 'all' as const },
+        {
+          name: 'support',
+          enabled: true,
+          kortixCli: 'all' as const,
+          connectors: ['email'],
+          env: 'all' as const,
+        },
       ],
       errors: [],
       defaultAgent: 'support',
@@ -116,6 +148,8 @@ describe('a manifest that could not be READ must not widen a grant', () => {
 
   test('a clean project with no agents section is still unrestricted (unchanged)', () => {
     // No [[agents]] and no errors = the project never adopted governance.
-    expect(grantFromLoadedAgents('default', { specs: [], errors: [], defaultAgent: null } as never)).toBeNull();
+    expect(
+      grantFromLoadedAgents('default', { specs: [], errors: [], defaultAgent: null } as never),
+    ).toBeNull();
   });
 });

@@ -16,12 +16,13 @@
  *      (KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN + KORTIX_PROJECT_ID).
  */
 import {
-  createExecutorClient,
   type ExecutorCallResult,
   type ExecutorClient,
+  createExecutorClient,
 } from '@kortix/executor-sdk';
 import { loadAuth } from '../api/auth.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import { type ApiClient, clientFromAuth } from '../api/client.ts';
+import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { CliError } from './io.ts';
 
@@ -61,7 +62,10 @@ export function executorClient(projectOverride?: string): ExecutorClient {
  * management + setup-link minting. Resolves the sandbox env-token host
  * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
  */
-export function executorProjectContext(projectOverride?: string): { client: ApiClient; projectId: string } {
+export function executorProjectContext(projectOverride?: string): {
+  client: ApiClient;
+  projectId: string;
+} {
   const auth = loadAuth();
   if (!auth?.token) {
     throw new CliError(
@@ -72,6 +76,38 @@ export function executorProjectContext(projectOverride?: string): { client: ApiC
   const projectId = resolveProjectId(projectOverride);
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
   return { client: clientFromAuth(auth), projectId };
+}
+
+function executorKnowledgeContext(projectOverride?: string) {
+  const auth = loadAuth();
+  if (!auth?.token) {
+    throw new CliError(
+      'not authenticated - KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN missing.',
+      'MISSING_ENV',
+    );
+  }
+  const projectId = resolveProjectId(projectOverride);
+  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim();
+  if (!sessionId) {
+    throw new CliError(
+      'knowledge tools require a running Kortix session (KORTIX_SESSION_ID is not set).',
+      'MISSING_ENV',
+    );
+  }
+  return { knowledge: kortixFromAuth(auth).session(projectId, sessionId).knowledge };
+}
+
+/** Search private knowledge assigned to the authenticated session's agent. */
+export function searchKnowledge(query: string, limit?: number, projectOverride?: string) {
+  const { knowledge } = executorKnowledgeContext(projectOverride);
+  return knowledge.search({ query, ...(limit === undefined ? {} : { limit }) });
+}
+
+/** Read a cited private-knowledge chunk assigned to the authenticated session's agent. */
+export function readKnowledge(citationId: string, projectOverride?: string) {
+  const { knowledge } = executorKnowledgeContext(projectOverride);
+  return knowledge.read(citationId);
 }
 
 /** Bound so a forgotten approval can't wedge the agent forever:

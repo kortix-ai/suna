@@ -16,8 +16,8 @@
 import { describe, expect, test } from 'bun:test';
 import { validateManifest } from '@kortix/manifest-schema';
 import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
-import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
+import { buildProjectSeedFiles } from '../projects/seed-files';
 import { parseManifestString } from '../projects/triggers';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
@@ -44,7 +44,8 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       marketplaceItems: [],
       now: new Date('2026-07-05T00:00:00Z').toISOString(),
     });
-    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
+    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml');
+    if (!manifestFile) throw new Error('Expected the seed to include kortix.yaml.');
     const result = validateManifest(manifestFile.content, 'yaml');
     expect(result.valid).toBe(true);
     expect(result.issues.filter((i) => i.severity === 'error')).toEqual([]);
@@ -58,7 +59,8 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       marketplaceItems: [],
       now: new Date('2026-07-05T00:00:00Z').toISOString(),
     });
-    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
+    const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml');
+    if (!manifestFile) throw new Error('Expected the seed to include kortix.yaml.');
     const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
     const loaded = extractAgents(manifest);
 
@@ -79,7 +81,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
+      knowledge: [],
     });
   });
-
 });

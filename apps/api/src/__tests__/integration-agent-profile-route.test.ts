@@ -484,6 +484,7 @@ describe('agent profile HTTP route', () => {
       projectId: PROJECT,
       requestedSessionId: testedBody.session_id,
       authenticatedSessionId: testedBody.session_id,
+      authenticatedAgentName: 'support',
       query: 'DRAFTONLY',
     });
     expect(draftSearch.results).toHaveLength(1);
@@ -501,6 +502,7 @@ describe('agent profile HTTP route', () => {
       projectId: PROJECT,
       requestedSessionId: normalSessionId,
       authenticatedSessionId: normalSessionId,
+      authenticatedAgentName: 'support',
       query: 'DRAFTONLY',
     });
     expect(preMergeSearch.results).toEqual([]);

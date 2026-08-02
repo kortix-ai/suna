@@ -19,10 +19,9 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { createChangeRequestForBranch, serializeChangeRequest } from '../change-requests';
+import { serializeChangeRequest } from '../change-requests';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { findOpenAgentConfigChangeRequest } from '../lib/agent-config-change-requests';
 import {
   AgentBranchNameCollisionError,
   changeRequestCreateFailedBody,
@@ -45,6 +44,10 @@ import {
   serializeAgentKnowledgeSource,
   serializeAgentProfileDraft,
 } from '../lib/agent-profile';
+import {
+  createAgentProfileChangeRequest,
+  findOpenAgentProfileChangeRequest,
+} from '../lib/agent-profile-change-requests';
 import { composeAgentProfileFiles } from '../lib/agent-profile-compose';
 import {
   AgentProfileRevisionConflictError,
@@ -978,7 +981,7 @@ profileOpenApi(
       : null;
     if (!existing) {
       try {
-        existing = await findOpenAgentConfigChangeRequest(
+        existing = await findOpenAgentProfileChangeRequest(
           gitProject,
           projectId,
           agentName,
@@ -1075,7 +1078,7 @@ profileOpenApi(
       changeRequest = updated;
       updatedExistingRequest = true;
     } else {
-      const created = await createChangeRequestForBranch({
+      const created = await createAgentProfileChangeRequest({
         accountId: context.loaded.row.accountId,
         projectId,
         userId: context.loaded.userId,

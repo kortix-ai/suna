@@ -8,6 +8,7 @@ const grant = (extra: Partial<AgentGrant> = {}): AgentGrant => ({
   kortixCli: 'all',
   connectors: 'all',
   env: 'all',
+  knowledge: [],
   ...extra,
 });
 
@@ -32,6 +33,16 @@ describe('remintDecisionFor', () => {
     expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
   });
 
+  test('a changed knowledge grant is re-pointed too', () => {
+    const running = grant({ agent: 'b', knowledge: ['support-handbook'] });
+    expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
+  });
+
+  test('a different agent identity is re-pointed when capability lists match', () => {
+    const running = grant({ agent: 'b' });
+    expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
+  });
+
   test('NARROWING to a real grant is written', () => {
     const running = grant({ agent: 'b', connectors: [], kortixCli: [] });
     expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
@@ -48,10 +59,7 @@ describe('remintDecisionFor', () => {
 
   test('order and duplicates in a list are not a change worth writing', () => {
     expect(
-      remintDecisionFor(
-        grant({ connectors: ['b', 'a', 'a'] }),
-        grant({ connectors: ['a', 'b'] }),
-      ),
+      remintDecisionFor(grant({ connectors: ['b', 'a', 'a'] }), grant({ connectors: ['a', 'b'] })),
     ).toEqual({ action: 'skip' });
   });
 });
@@ -62,6 +70,7 @@ describe('remintDecisionFor — the REVERT case (regression)', () => {
     kortixCli: 'all',
     connectors: 'all',
     env: 'all',
+    knowledge: [],
     ...extra,
   });
 

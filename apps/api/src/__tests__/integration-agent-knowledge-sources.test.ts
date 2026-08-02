@@ -10,14 +10,14 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import {
   createAgentKnowledgeSourceRecord,
   enqueueAgentKnowledgeSync,
   getAgentKnowledgeSourceRecord,
   listAgentKnowledgeSourceRecords,
   revokeAgentKnowledgeSourceRecord,
-} from './agent-knowledge-sources';
+} from '../projects/lib/agent-knowledge-sources';
+import { db } from '../shared/db';
 
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
@@ -81,7 +81,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(agentKnowledgeSyncJobs).where(eq(agentKnowledgeSyncJobs.projectId, projectId));
-  await db.delete(agentKnowledgeAssignments).where(eq(agentKnowledgeAssignments.projectId, projectId));
+  await db
+    .delete(agentKnowledgeAssignments)
+    .where(eq(agentKnowledgeAssignments.projectId, projectId));
   await db.delete(agentKnowledgeSources).where(eq(agentKnowledgeSources.projectId, projectId));
   await db.delete(executorConnectors).where(eq(executorConnectors.projectId, projectId));
   await db.delete(projects).where(eq(projects.projectId, projectId));
@@ -157,12 +159,16 @@ describe('private knowledge source isolation', () => {
       },
     });
 
-    expect((await listAgentKnowledgeSourceRecords(projectId, 'agent-a')).map((source) => source.sourceId)).toEqual([
-      sourceA.sourceId,
-    ]);
+    expect(
+      (await listAgentKnowledgeSourceRecords(projectId, 'agent-a')).map(
+        (source) => source.sourceId,
+      ),
+    ).toEqual([sourceA.sourceId]);
     expect(await getAgentKnowledgeSourceRecord(projectId, 'agent-a', sourceB.sourceId)).toBeNull();
     expect(await enqueueAgentKnowledgeSync(projectId, 'agent-a', sourceB.sourceId)).toBe(false);
-    expect(await revokeAgentKnowledgeSourceRecord(projectId, 'agent-a', sourceB.sourceId, userId)).toBe(false);
+    expect(
+      await revokeAgentKnowledgeSourceRecord(projectId, 'agent-a', sourceB.sourceId, userId),
+    ).toBe(false);
 
     const untouched = await getAgentKnowledgeSourceRecord(projectId, 'agent-b', sourceB.sourceId);
     expect(untouched?.status).not.toBe('revoked');
@@ -190,8 +196,15 @@ describe('private knowledge source isolation', () => {
       active: true,
     });
 
-    expect(await revokeAgentKnowledgeSourceRecord(projectId, 'agent-a', source.sourceId, userId)).toBe(true);
-    const revoked = await getAgentKnowledgeSourceRecord(projectId, 'agent-a', source.sourceId, true);
+    expect(
+      await revokeAgentKnowledgeSourceRecord(projectId, 'agent-a', source.sourceId, userId),
+    ).toBe(true);
+    const revoked = await getAgentKnowledgeSourceRecord(
+      projectId,
+      'agent-a',
+      source.sourceId,
+      true,
+    );
     expect(revoked?.status).toBe('revoked');
     const [assignment] = await db
       .select({ active: agentKnowledgeAssignments.active })

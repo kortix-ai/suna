@@ -17,8 +17,8 @@
 // The pure-function helpers (deriveEffectiveProjectRole, scopeForActionV2,
 // customPolicyAllows) are exported so they can be unit-tested without a DB.
 
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  type AgentGrant,
   accountGroupMembers,
   accountMembers,
   accountTokens,
@@ -29,31 +29,28 @@ import {
   projectMembers,
   projects,
   serviceAccounts,
-  type AgentGrant,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { normalizeAgentGrant } from '../shared/agent-grant';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
+import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
+import type { AuthorizeResult, AuthorizeTarget, RequestContext } from './engine';
 import {
   filterAccessibleResourceIds,
   isResourceAccessible,
   loadProjectResourceGrants,
 } from './resource-grants';
-import type {
-  AuthorizeResult,
-  AuthorizeTarget,
-  RequestContext,
-} from './engine';
 import {
+  type AccountRole,
+  type ProjectRole,
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
   normalizeProjectRole,
   projectRoleAllows,
-  type AccountRole,
-  type ProjectRole,
 } from './role-perms';
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
@@ -300,7 +297,12 @@ export function customPolicyAllows(
   for (const ca of customActions) {
     if (ca.action !== action) continue;
     if (ca.scopeType === 'account') return true;
-    if (scope === 'project' && target.type === 'project' && ca.scopeType === 'project' && ca.scopeId === target.id) {
+    if (
+      scope === 'project' &&
+      target.type === 'project' &&
+      ca.scopeType === 'project' &&
+      ca.scopeId === target.id
+    ) {
       return true;
     }
   }
@@ -341,10 +343,7 @@ const loadProjectRoleRows = ttlMemo({
           and(
             eq(projectMembers.projectId, projectId),
             eq(projectMembers.userId, userId),
-            or(
-              isNull(projectMembers.expiresAt),
-              gt(projectMembers.expiresAt, sql`now()`),
-            ),
+            or(isNull(projectMembers.expiresAt), gt(projectMembers.expiresAt, sql`now()`)),
           ),
         )
         .limit(1),
@@ -411,7 +410,11 @@ const loadTokenProjectBinding = ttlMemo({
   keyFn: (tokenId: string) => tokenId,
   loader: async (
     tokenId: string,
-  ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null; serviceAccountId: string | null } | null> => {
+  ): Promise<{
+    projectId: string | null;
+    agentGrant: AgentGrant | null;
+    serviceAccountId: string | null;
+  } | null> => {
     const [row] = await db
       .select({
         projectId: accountTokens.projectId,
@@ -422,7 +425,11 @@ const loadTokenProjectBinding = ttlMemo({
       .where(eq(accountTokens.tokenId, tokenId))
       .limit(1);
     return row
-      ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null, serviceAccountId: row.serviceAccountId ?? null }
+      ? {
+          projectId: row.projectId,
+          agentGrant: normalizeAgentGrant(row.agentGrant),
+          serviceAccountId: row.serviceAccountId ?? null,
+        }
       : null;
   },
   shouldCache: (row) => row !== null,
@@ -460,10 +467,7 @@ export function computeTokenScope(
 // the route's own leaf assertAuthorized is what the grant gates. Every OTHER
 // project action (gitops.*, secret.*, trigger.*, deploy, members.manage, …) is a
 // specific capability the agent must hold in its grant.
-const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
-  'project.read',
-  'project.write',
-]);
+const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set(['project.read', 'project.write']);
 
 /** Should the agent grant gate this action? Pure — exported for unit tests. */
 export function agentGrantGates(scope: ActionScopeV2, action: string): boolean {
@@ -504,7 +508,6 @@ async function resolveActingActor(
   }
   return { actor: await resolveActorV2(userId, accountId), principalId: userId };
 }
-
 
 // ─── Public surface ────────────────────────────────────────────────────────
 
@@ -552,11 +555,7 @@ export async function authorizeV2(
 
   // Account-wide MFA gate. JWT/browser sessions only — PATs gate via
   // their own surface (we just verified scope above).
-  if (
-    actor.accountMfaRequired &&
-    !actingTokenId &&
-    _requestCtx.mfaAal !== 'aal2'
-  ) {
+  if (actor.accountMfaRequired && !actingTokenId && _requestCtx.mfaAal !== 'aal2') {
     return { allowed: false, reason: 'account_mfa_required' };
   }
 
@@ -591,10 +590,12 @@ export async function authorizeV2(
       : null;
   let reason: string | null = null;
   if (effective && projectRoleAllows(effective, action)) reason = 'project_role';
-  else if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) reason = 'custom_policy';
+  else if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget))
+    reason = 'custom_policy';
 
   if (!reason) {
-    if (actor.kind === 'service_account') return { allowed: false, reason: 'service_account_scope_insufficient' };
+    if (actor.kind === 'service_account')
+      return { allowed: false, reason: 'service_account_scope_insufficient' };
     if (!effective) return { allowed: false, reason: 'no_project_membership' };
     return { allowed: false, reason: 'project_role_insufficient' };
   }
@@ -612,7 +613,10 @@ export async function authorizeV2(
     actor.kind === 'member' &&
     !implicitProjectRoleForAccount(actor.accountRole ?? 'member')
   ) {
-    const grants = await loadProjectResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
+    const grants = await loadProjectResourceGrants(
+      effectiveTarget.id,
+      effectiveTarget.resource.type,
+    );
     if (!isResourceAccessible(grants.get(effectiveTarget.resource.id), userId, actor.groupIds)) {
       return { allowed: false, reason: 'resource_scope_insufficient' };
     }
@@ -676,11 +680,7 @@ export async function listAccessibleProjectsV2(
   action: string,
   actingTokenId?: string,
   _requestCtx: RequestContext = {},
-): Promise<
-  | { mode: 'all' }
-  | { mode: 'none' }
-  | { mode: 'allow_only'; allowed: Set<string> }
-> {
+): Promise<{ mode: 'all' } | { mode: 'none' } | { mode: 'allow_only'; allowed: Set<string> }> {
   // Standing identity (opt-in): an activated agent-session SA lists the SA's
   // accessible projects; a role-less agent SA falls back to the launching user.
   // (Mirror authorizeV2 via the shared resolver.)
@@ -704,17 +704,15 @@ export async function listAccessibleProjectsV2(
         { type: 'project', id: binding.projectId },
         actingTokenId,
       );
-      return v.allowed ? { mode: 'allow_only', allowed: new Set([binding.projectId]) } : { mode: 'none' };
+      return v.allowed
+        ? { mode: 'allow_only', allowed: new Set([binding.projectId]) }
+        : { mode: 'none' };
     }
   }
 
   if (actor.isSuperAdmin) return { mode: 'all' };
 
-  if (
-    actor.accountMfaRequired &&
-    !actingTokenId &&
-    _requestCtx.mfaAal !== 'aal2'
-  ) {
+  if (actor.accountMfaRequired && !actingTokenId && _requestCtx.mfaAal !== 'aal2') {
     return { mode: 'none' };
   }
 
@@ -723,9 +721,7 @@ export async function listAccessibleProjectsV2(
   // Owner/admin: implicit Manager on every project. Allowed unless the
   // action isn't in Manager's set.
   if (implicitProjectRoleForAccount(accountRole)) {
-    return projectRoleAllows('manager', action)
-      ? { mode: 'all' }
-      : { mode: 'none' };
+    return projectRoleAllows('manager', action) ? { mode: 'all' } : { mode: 'none' };
   }
 
   // Plain member: union of direct project_members + group-derived grants.

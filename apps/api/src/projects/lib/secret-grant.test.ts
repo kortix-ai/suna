@@ -98,21 +98,22 @@ describe('agentGrantDiffers', () => {
     expect(agentGrantDiffers(grant({}), grant({ kortixCli: ['session.read'] }))).toBe(true);
   });
 
+  test('a DIFFERENT knowledge grant is a switch too', () => {
+    expect(agentGrantDiffers(grant({}), grant({ knowledge: ['support-handbook'] }))).toBe(true);
+  });
+
   test('order and duplicates in a connector list are not a difference', () => {
     expect(
-      agentGrantDiffers(
-        grant({ connectors: ['b', 'a', 'a'] }),
-        grant({ connectors: ['a', 'b'] }),
-      ),
+      agentGrantDiffers(grant({ connectors: ['b', 'a', 'a'] }), grant({ connectors: ['a', 'b'] })),
     ).toBe(false);
   });
 
   test('connector case IS a difference — the call gate matches exactly', () => {
     // agentMayUseConnector uses includes(), not a case-insensitive compare, so
     // calling these equal here would predict the wrong thing at the gate.
-    expect(agentGrantDiffers(grant({ connectors: ['Calendar'] }), grant({ connectors: ['calendar'] }))).toBe(
-      true,
-    );
+    expect(
+      agentGrantDiffers(grant({ connectors: ['Calendar'] }), grant({ connectors: ['calendar'] })),
+    ).toBe(true);
   });
 
   test('a null grant is unrestricted, and equal to an explicit all', () => {
