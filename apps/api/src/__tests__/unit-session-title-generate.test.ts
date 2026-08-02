@@ -50,6 +50,7 @@ describe('sanitizeGeneratedTitle', () => {
     expect(sanitizeGeneratedTitle('   ')).toBeNull();
     expect(sanitizeGeneratedTitle(null)).toBeNull();
     expect(sanitizeGeneratedTitle('New session - 2026-07-28')).toBeNull();
+    expect(sanitizeGeneratedTitle('New agent')).toBeNull();
   });
 });
 
@@ -147,6 +148,11 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN', () => {
       'New sessions of work',
       'Newsession',
       'New session planning doc',
+      'New agent',
+      'NEW AGENT',
+      'New agent - Aug 3',
+      'New agents at work',
+      'New agent planning doc',
       'Set Up MS Graph',
       '',
     ];
@@ -242,7 +248,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.generateCalls()).toBe(0);
   });
 
-  it('skips a user-named session (custom_name) but re-titles a placeholder name', async () => {
+  it('skips a user-named session (custom_name) but re-titles placeholder names', async () => {
     const custom = harness({
       row: row({ custom_name: 'My Name', opencode_model: 'codex/gpt-5.6-sol' }),
     });
@@ -254,6 +260,12 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     });
     await generateSessionTitleFromFirstPrompt(input, placeholder.options);
     expect(placeholder.persisted).toEqual(['Set Up MS Graph']);
+
+    const veyrisPlaceholder = harness({
+      row: row({ name: 'New agent', opencode_model: 'codex/gpt-5.6-sol' }),
+    });
+    await generateSessionTitleFromFirstPrompt(input, veyrisPlaceholder.options);
+    expect(veyrisPlaceholder.persisted).toEqual(['Set Up MS Graph']);
   });
 
   it('falls back to a resolved SERVABLE model when neither the turn nor the row names one', async () => {

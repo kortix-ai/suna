@@ -4249,9 +4249,30 @@ same RED, GREEN, and REFACTOR sequence directly.
 
 Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
-**Status:** IN PROGRESS.
+RED evidence:
 
-**SDK package shippable to production: NOT YET.**
+- The focused SDK test failed because `New agent` stopped the refresh loop.
+- The focused API tests failed because serializers and title generation treated
+  `New agent` as a real title.
+
+GREEN evidence:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1390 pass`, `0 fail`, and
+  `5971 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- API unit suite: `5074 pass`, `62 skip`, `0 fail`, and
+  `20505 expect() calls` across `500` files.
+- Focused real-PostgreSQL integration:
+  `11 pass`, `0 fail`, and `27 expect() calls`.
+
+No public field, type, export, or signature changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository code shippable to production: YES.**
 
 ---
 
