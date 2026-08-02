@@ -251,6 +251,310 @@ triggers:
   ],
 };
 
+const kortixVsQm: BlogPostEntry = {
+  slug: 'kortix-vs-qm',
+  title: 'Kortix vs QM: two open agent platforms, two different units of work',
+  description:
+    'QM and Kortix both give teams persistent agents, isolated computers, Slack and web access, and self-hosting. The decisive difference is deeper: QM organizes work around people and rooms; Kortix organizes it around git-backed projects and reviewable sessions.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Comparisons', 'Architecture', 'Open Source'],
+  coverLogos: [{ domain: 'github.com', name: 'QM' }],
+  readingTime: 11,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'QM and Kortix look similar from thirty thousand feet. Both are open agent platforms for teams. Both put agents in isolated computers, persist work beyond one chat, support Slack and the web, and let an operator run the system in their own cloud. But they are not two implementations of the same product. They choose a different **unit of work**, and that decision changes almost everything below it.',
+    },
+    {
+      type: 'logos',
+      label: 'Compared here:',
+      items: [{ domain: 'github.com', name: 'QM by yc-software' }],
+    },
+    {
+      type: 'p',
+      text: 'This comparison is based on [QM main at `7f2c916`](https://github.com/yc-software/qm/tree/7f2c916360f1797a8ff2a77ce2ce40c5fabab087), its published `@yc-software/qm` `0.1.4` package, and Kortix main at `3006838` on August 2, 2026. We read the runtime, deployment code, security model, storage paths, tests, and operator runbooks. This is a source comparison, not a feature-page comparison.',
+    },
+    { type: 'h2', text: 'The shortest accurate explanation' },
+    {
+      type: 'code',
+      code: `QM
+person or room -> scope -> persistent memory + files + computer
+               -> conversations, schedules, credentials, published apps
+
+Kortix
+git project -> session -> isolated computer + session branch
+            -> agent work -> change request -> reviewed merge to main`,
+    },
+    {
+      type: 'p',
+      text: 'QM starts with the social graph. A person, Slack channel, group message, or project room gets a durable scope. That scope owns memory, files, credentials, schedules, skills, and a computer. Kortix starts with the work graph. A project is a git repository and `kortix.yaml`; each session receives a sandbox and a branch, and durable changes return through a change request.',
+    },
+    {
+      type: 'callout',
+      text: 'QM is closest to a persistent AI colleague for every person and room. Kortix is closest to a versioned operating system where many agents work on isolated branches of the company.',
+    },
+    { type: 'h2', text: 'What they genuinely share' },
+    {
+      type: 'ul',
+      items: [
+        '**Multi-user by design** — neither system is a single-user desktop agent stretched into a team product.',
+        '**Durable work** — both keep state outside the model context and survive process restarts.',
+        '**Real computers** — agents execute commands in isolated Linux environments instead of a narrow function-call sandbox.',
+        '**Slack and web surfaces** — people can work from a browser or the collaboration surface they already use.',
+        '**Background work** — QM has crons and watches; Kortix has cron and signed-webhook triggers.',
+        '**Model choice** — both can use multiple model providers instead of binding the whole platform to one lab.',
+        '**Operator ownership** — both can run in infrastructure controlled by the customer.',
+      ],
+    },
+    { type: 'h2', text: 'Side by side' },
+    {
+      type: 'compare',
+      them: 'QM',
+      rows: [
+        {
+          dimension: 'Primary unit',
+          them: 'Person or room scope',
+          kortix: 'Git-backed project and session',
+          lean: 'both',
+        },
+        {
+          dimension: 'Durable configuration',
+          them: 'Postgres records + deployment layer',
+          kortix: 'Repo files + kortix.yaml + Postgres',
+          lean: 'both',
+        },
+        {
+          dimension: 'Computer lifetime',
+          them: 'Persistent per scope',
+          kortix: 'Isolated per session; stop and resume',
+          lean: 'both',
+        },
+        {
+          dimension: 'Agent runtime',
+          them: 'Pi, OpenCode, Codex, or Claude Code',
+          kortix: 'One OpenCode REST runtime',
+          lean: 'them',
+        },
+        {
+          dimension: 'Model routing',
+          them: 'Provider selected by deployment or admin',
+          kortix: 'Project gateway, budgets, fallbacks, BYOK',
+        },
+        {
+          dimension: 'Collaboration model',
+          them: 'Shared room memory and computer',
+          kortix: 'Shared project, isolated session branches',
+          lean: 'both',
+        },
+        {
+          dimension: 'Durable write path',
+          them: 'Scope store and resident computer',
+          kortix: 'Commit + reviewed change request',
+        },
+        {
+          dimension: 'Tool credentials',
+          them: 'Scoped keychain and resident logins',
+          kortix: 'Server-brokered connectors + explicit secrets',
+          lean: 'both',
+        },
+        {
+          dimension: 'Security policy',
+          them: 'Strict / Auto / Dangerous posture',
+          kortix: 'Per-action allow / ask / block + grants',
+          lean: 'both',
+        },
+        {
+          dimension: 'Client integration',
+          them: 'Core HTTP API; deployment contract package',
+          kortix: 'Published TypeScript SDK + CLI + REST',
+        },
+        {
+          dimension: 'Hosted sandboxes',
+          them: 'Fly or AWS Lambda MicroVMs',
+          kortix: 'Daytona, Platinum, or E2B',
+          lean: 'both',
+        },
+        {
+          dimension: 'Self-host path',
+          them: 'Per-org Fly or AWS deployment repo',
+          kortix: 'Docker Compose stack; managed cloud too',
+          lean: 'both',
+        },
+        {
+          dimension: 'License',
+          them: 'MIT',
+          kortix: 'Elastic License 2.0',
+          lean: 'them',
+        },
+      ],
+    },
+    { type: 'h2', text: 'Runtime: QM chooses portability; Kortix chooses one deep contract' },
+    {
+      type: 'p',
+      text: 'QM treats the agent harness as an interface. Pi, OpenCode, Codex, and Claude Code can drive the same core. That is real architectural portability: an operator can change how the model loop runs without changing the surrounding identity, memory, delivery, or sandbox system.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix makes the opposite trade. Every session exposes one OpenCode REST runtime through the sandbox daemon. `@kortix/sdk` owns session startup, runtime resolution, SSE, files, errors, and the mapping between a Kortix session and its native OpenCode conversation. Web, mobile, CLI, and white-label clients use the same contract.',
+    },
+    {
+      type: 'p',
+      text: 'QM wins if harness interchangeability is the requirement. Kortix wins if every client needs one stable, typed, deeply integrated runtime surface. Kortix still routes many model providers through its gateway; it standardizes the **agent runtime**, not the model vendor.',
+    },
+    { type: 'h2', text: 'State: a durable scope versus a versioned company' },
+    {
+      type: 'p',
+      text: 'QM stores sessions, memory, queues, grants, audit data, and other control-plane state in Postgres. A scope has a durable workspace and home. On its resident-computer path, installed tools and login state remain warm between turns. Shared artifacts resolve through grants between scopes.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix separates operational state from authoritative company configuration. Supabase Postgres stores accounts, projects, sessions, sandboxes, triggers, grants, audit events, usage, and gateway logs. The project repo stores the agents, skills, memory, policies, and runtime configuration people are expected to edit and review. OpenCode state lives outside `/workspace`, so runtime internals do not pollute the company repo.',
+    },
+    {
+      type: 'p',
+      text: 'The practical consequence is important. QM makes continuity of the colleague and room the default. Kortix makes reproducibility, diff, rollback, and promotion to `main` the default. A QM room can keep accumulating local context. A Kortix project can show exactly which agent changed the company and which person accepted it.',
+    },
+    { type: 'h2', text: 'Isolation and lifecycle' },
+    {
+      type: 'p',
+      text: 'QM assigns a durable computer to a scope. Its Fly path uses a persistent home volume and replaces the root filesystem independently during upgrades. Its AWS path uses Lambda MicroVM agent computers and durable object storage. That design favors a warm, laptop-like environment that remembers installed tools and native CLI logins.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix assigns a computer to a session. Daytona, Platinum, E2B, and the experimental local-Docker provider implement one provider interface. The session branch and sandbox share the session identity. The control plane extends a bounded sandbox deadline when it observes a turn start, gateway LLM activity, or authenticated preview traffic. A terminal turn shortens that deadline to the idle grace period. Passive traffic from an open conversation tab cannot keep the sandbox alive, and one continuous running stretch is capped at 24 hours. A stopped session can resume on the same provider identity or recover through the provider-specific path.',
+    },
+    {
+      type: 'p',
+      text: 'Neither lifecycle is universally better. A persistent scope avoids repeating setup for an everyday colleague. A per-session computer provides a clean blast radius and a natural branch for concurrent work. The right choice depends on whether continuity or isolation is the stronger invariant.',
+    },
+    { type: 'h2', text: 'Security: provenance screening versus reviewed change' },
+    {
+      type: 'p',
+      text: 'QM selects one organization security posture. **Strict** pauses harness tool calls for human approval. **Auto** screens provenance-labelled external data before it reaches the model. **Dangerous** removes that screening and the per-tool pause, but the command-policy floor still denies or gates declared destructive commands. Narrower scopes can tighten the organization posture.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix centers authorization on the principal, project, session, agent grant, and action. Connector credentials are brokered server-side and do not enter the sandbox. Project secrets are different: an explicitly granted secret is injected as a real environment value and can be read by commands in that session. Connector policies decide allow, ask, or block, and durable repo changes still face a deny-by-default merge boundary.',
+    },
+    {
+      type: 'callout',
+      text: 'QM puts more policy around what reaches the model and what each tool call may do. Kortix puts more policy around which identity acts, which connector action is allowed, and whether durable work reaches the shared branch.',
+    },
+    { type: 'h2', text: 'APIs and product surfaces' },
+    {
+      type: 'p',
+      text: 'QM has a headless Fastify core, an HTTP API, and optional Slack, web, admin, auth, and portal plugins. Its supported npm programmatic contract is deliberately narrow: deployment-directory parsing, validation, and provider metadata. The web surface uses Lit; Slack uses Bolt.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix treats `@kortix/sdk` as a public product boundary. `createKortix({ getToken })` returns one client for project and session lifecycle, files, streaming, runtime health, previews, and errors. React hooks, a TypeScript server entry, the real `kortix` CLI, mobile, desktop, and the web app build on that package. The API and OpenCode transport are implementation details for host applications.',
+    },
+    {
+      type: 'p',
+      text: 'This is one of the clearest selection criteria. Choose QM when you primarily deploy and operate the included collaboration product. Choose Kortix when you also need to embed the platform, build another host, automate it from a CLI, or expose project/session primitives to customers.',
+    },
+    { type: 'h2', text: 'Deployment and operations' },
+    {
+      type: 'p',
+      text: 'QM initializes a separate deployment repository pinned to `@yc-software/qm`. The operator chooses Fly or AWS, supplies identity and model-provider credentials, publishes the agent-computer image, deploys, and proves the real computer from outside the transcript. QM intentionally does not generate deployment CI. Its Docker target is documented as an evaluation path, not the recommended production topology.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix offers a managed multi-tenant cloud and a self-hosted Docker Compose distribution. The self-hosted stack includes the frontend, API, LLM gateway, Caddy, and the pinned Supabase distribution. Daytona remains outside the box by default, so a persistent public callback domain or tunnel is required. Managed production uses GitOps on EKS, while the web ships separately.',
+    },
+    {
+      type: 'p',
+      text: 'QM gives the operator a cleaner per-organization cloud boundary, at the cost of provisioning more infrastructure. Kortix gives smaller teams a shorter Compose path and a hosted product, at the cost of a broader platform stack. Both still depend on external model billing, and both use external sandbox compute on their recommended paths.',
+    },
+    { type: 'h2', text: 'How to deploy and test QM' },
+    {
+      type: 'p',
+      text: 'For a real organization, QM recommends Fly or AWS. Start in a new organization-owned deployment repository. The initializer pins the exact `@yc-software/qm` package version and writes the provider-specific config, runbook, skill, secret schema, and Slack manifests. Docker exists for a local test drive, but QM does not present it as the production path.',
+    },
+    {
+      type: 'code',
+      code: `npm exec --yes --package=@yc-software/qm@latest -- \\
+  qm init . --org <slug> --target <fly-or-aws> --model-provider <provider>
+npm install
+
+npm exec qm -- check
+npm exec qm -- doctor
+npm exec qm -- infra build-image   # AWS
+npm exec qm -- plan
+npm exec qm -- up --yes
+npm exec qm -- check --live
+npm exec qm -- conformance
+npm exec qm -- outputs --json`,
+    },
+    {
+      type: 'ul',
+      items: [
+        '`check` validates config, computed secret names, tools, skills, and plugins without network access.',
+        '`doctor` performs read-only checks against the selected cloud, identity, model, and deployment prerequisites.',
+        '`plan` renders the mutation before deployment. `up --yes` applies it. AWS builds the Lambda MicroVM image first; Fly publishes its agent-computer image.',
+        '`check --live` detects drift in the deployed workloads and sandbox pins. `conformance` compares the static contract with the core’s resolved deployment layer.',
+        '**The acceptance test is external** — sign in through the real web URL, send one message, receive a real model response, ask the agent to write a fresh UUID into `/root/workspace/qm-computer-proof.txt`, then verify that UUID through the provider outside the transcript. If Slack is enabled, mention the bot in a test channel and require a real response.',
+        '**For source contributors** — run `npm test`, `npm run typecheck`, `npm run lint`, and `npm --prefix cli run test:all`. Postgres and live-provider suites are separate because they require their real dependencies.',
+      ],
+    },
+    { type: 'h2', text: 'Scaling, observability, and performance' },
+    {
+      type: 'ul',
+      items: [
+        '**QM scaling** — durable Postgres stores, background queues, leader leases, multi-instance-safe state, and one computer per active scope. The admin plane exposes sessions, model requests, errors, cost, egress decisions, and audit data.',
+        '**Kortix scaling** — provider-balanced sandbox creation, per-account concurrency limits, control-plane-observed sandbox deadlines, idle and orphan reapers, EKS/GitOps for the managed control plane, and one computer per active session. Provider events, boot timelines, gateway request logs, audit events, and compute metering are durable.',
+        '**No honest benchmark winner yet** — the projects publish different tests and target different lifecycles. QM should be faster on repeated tool use in one warm scope. Kortix should isolate parallel work more cleanly and amortize boot through provider snapshots and resume. Those are architectural expectations, not an apples-to-apples measured result.',
+      ],
+    },
+    { type: 'h2', text: 'Licensing is not a footnote' },
+    {
+      type: 'p',
+      text: 'QM is MIT-licensed. You can modify it, redistribute it, and build a hosted service from it under the MIT terms. Kortix uses the **Elastic License 2.0**. You can inspect, modify, and self-host the source, but the license restricts providing the software to third parties as a competing hosted or managed service. Some enterprise functionality also requires a license entitlement.',
+    },
+    {
+      type: 'p',
+      text: 'If your goal is to create a commercial hosted fork, QM has the more permissive license. If your goal is to run the system for your own organization, both support that deployment model. Read [QM’s license](https://github.com/yc-software/qm/blob/main/LICENSE) and [Kortix’s license](https://github.com/kortix-ai/suna/blob/main/LICENSE) before making a product decision.',
+    },
+    { type: 'h2', text: 'Can you migrate between them?' },
+    {
+      type: 'p',
+      text: 'There is no drop-in migration because the ownership models differ. A practical QM-to-Kortix migration maps scopes to projects, scope skills and memory to repo files, crons to triggers, keychain entries to connectors or secrets, and active work to sessions. The hard part is deciding which room-local state belongs in version control and which should stay operational data.',
+    },
+    {
+      type: 'p',
+      text: 'A Kortix-to-QM migration maps projects or teams to scopes, imports agents and skills into a deployment layer, converts triggers to crons, and replaces change-request promotion with QM’s scope storage and app-publishing model. That direction loses the automatic branch-per-session review boundary unless you rebuild it as a skill and policy.',
+    },
+    { type: 'h2', text: 'When to pick which' },
+    {
+      type: 'verdict',
+      themLabel: 'QM',
+      them: 'your core product is a persistent AI colleague for every person and Slack room, you value interchangeable harnesses, you want resident computer state, and the MIT license matters.',
+      kortix:
+        'your core product is a versioned company or customer project, you need isolated concurrent sessions, reviewed change requests, a published SDK and CLI, managed cloud plus self-hosting, and provider-independent session infrastructure.',
+    },
+    {
+      type: 'p',
+      text: 'They could coexist, but no supported integration exists today. QM could own the conversational scope while Kortix runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as an integration project, not a configuration flag.',
+    },
+    { type: 'h2', text: 'The real conclusion' },
+    {
+      type: 'p',
+      text: 'QM is one of the more serious new open agent architectures because it starts from multiplayer identity instead of adding team features after the fact. Its scope model, harness portability, resident computers, and provenance-aware security are worth studying.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix makes a different bet: the company should be a git repository, agents should work on isolated session branches, and durable changes should pass through review. That gives up some room-local continuity and harness flexibility. In exchange, it makes ownership, embedding, parallel work, rollback, and institutional learning explicit parts of the product.',
+    },
+    {
+      type: 'cta',
+      title: 'Put the project model to work.',
+      body: 'Create a Kortix project, start an isolated session, and review the change your agent brings back. Self-host it or use Kortix Cloud.',
+    },
+  ],
+};
+
 const introducingKortix: BlogPostEntry = {
   slug: 'introducing-kortix',
   title: 'Introducing Kortix: the AI command center for your company',
@@ -1752,7 +2056,8 @@ $ kortix hosts use cloud
 
 const theOnlyMoatThatMatters: BlogPostEntry = {
   slug: 'the-only-moat-that-matters',
-  title: 'The only moat that matters: why your AI platform needs a learning loop, not a better model',
+  title:
+    'The only moat that matters: why your AI platform needs a learning loop, not a better model',
   description:
     'Every AI product is converging on the same architecture. The only defensible advantage is a data flywheel — a learning loop where every interaction makes your system better. Here is what that means, and why Kortix is built for it.',
   date: '2026-08-02',
@@ -1779,7 +2084,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'The same principle applies at the company level. The moat is not the model. The moat is the system that captures what worked, why it worked, and what context mattered — and feeds that back into the next run. Every completed task, every rejected proposal, every human override is a training signal. The company that captures that signal and builds it into its agents\' behavior is compounding. The company that treats each session as a fresh context window is starting from zero every time.',
+      text: "The same principle applies at the company level. The moat is not the model. The moat is the system that captures what worked, why it worked, and what context mattered — and feeds that back into the next run. Every completed task, every rejected proposal, every human override is a training signal. The company that captures that signal and builds it into its agents' behavior is compounding. The company that treats each session as a fresh context window is starting from zero every time.",
     },
     { type: 'h2', text: 'Human capital meets token capital' },
     {
@@ -1797,7 +2102,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     { type: 'h2', text: 'The test: can you swap the model without losing what you built?' },
     {
       type: 'p',
-      text: 'Satya proposed a test that every company should run on its AI platform: can you switch out the model without losing the institutional expertise you have built? If your state lives in a context window, you lose it when the model changes. If your workflows are embedded in a proprietary vendor\'s toolchain, you do not own them. If your company\'s knowledge is training data for a model you do not control, you have not built a moat — you have donated your IP.',
+      text: "Satya proposed a test that every company should run on its AI platform: can you switch out the model without losing the institutional expertise you have built? If your state lives in a context window, you lose it when the model changes. If your workflows are embedded in a proprietary vendor's toolchain, you do not own them. If your company's knowledge is training data for a model you do not control, you have not built a moat — you have donated your IP.",
     },
     {
       type: 'p',
@@ -1806,7 +2111,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     {
       type: 'ul',
       items: [
-        'Your agents\' skills and memory are stored in files you own, not in a vendor\'s database.',
+        "Your agents' skills and memory are stored in files you own, not in a vendor's database.",
         'You can swap the underlying model without rebuilding the system.',
         'Your company\'s private evaluation datasets are yours, and they determine what "good" means.',
         'The feedback loop — the signal that improves your agents — stays inside your perimeter.',
@@ -1824,7 +2129,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: '**Everything is files in a git repo.** The manifest, the agents, the skills, the connectors, the policies, the memory. Versioned, diffable, reviewable, owned by you. When an agent learns something, it goes into a file. When you want to see what changed, you read a diff. Your company\'s AI operation is not a pile of settings in someone else\'s dashboard — it is a repository you control. That means your institutional knowledge is never locked into a proprietary format or a vendor\'s database.',
+      text: "**Everything is files in a git repo.** The manifest, the agents, the skills, the connectors, the policies, the memory. Versioned, diffable, reviewable, owned by you. When an agent learns something, it goes into a file. When you want to see what changed, you read a diff. Your company's AI operation is not a pile of settings in someone else's dashboard — it is a repository you control. That means your institutional knowledge is never locked into a proprietary format or a vendor's database.",
     },
     {
       type: 'p',
@@ -1867,7 +2172,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Start building your learning loop today.',
-      body: 'Kortix is the open-source AI operating system where your company\'s knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.',
+      body: "Kortix is the open-source AI operating system where your company's knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.",
     },
   ],
 };
@@ -2471,6 +2776,7 @@ const goodBusinessesDontNeedMoats: BlogPostEntry = {
 };
 
 export const BLOG_POSTS: BlogPostEntry[] = [
+  kortixVsQm,
   openSourceAiManagementSystem,
   kortixVsPoetic,
   agiReadyArchitecture,
