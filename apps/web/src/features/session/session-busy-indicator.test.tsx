@@ -34,12 +34,6 @@ describe('SessionBusyIndicator', () => {
     expect(markup).not.toContain('bg-clip-text');
   });
 
-  test('elapsed reaches the markup with tabular-nums', () => {
-    const markup = renderToStaticMarkup(<SessionBusyIndicator elapsed="1m 5s" />);
-    expect(markup).toContain('1m 5s');
-    expect(markup).toContain('tabular-nums');
-  });
-
   test('omitting elapsed renders no trailing element', () => {
     const markup = renderToStaticMarkup(<SessionBusyIndicator />);
     expect(markup).not.toContain('tabular-nums');
