@@ -70,13 +70,11 @@ function exposedNames(item: unknown): string[] {
   });
 }
 
-// Every name the outer FROM clause exposes, counted by how many FROM items expose
-// it. This is Postgres's own resolution rule: an unqualified reference is matched
-// against all FROM items at once, so a name exposed by two or more of them is
-// ambiguous (42702) the moment anything references it. Modelling the rule rather
-// than its symptoms covers all three ways this feature has hit it — two subqueries
-// sharing an alias, an alias shadowing a real column, and an alias colliding with
-// a sibling subquery's field.
+// How many times the outer FROM clause exposes each name. This is Postgres's own
+// resolution rule: an unqualified reference is matched against everything the FROM
+// clause exposes, and two or more matches is ambiguous (42702) the moment anything
+// references it. Modelling the rule rather than its symptoms covers all four ways
+// this feature has hit it — see the variant list on the test below.
 function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
   const joined = record.calls
     .filter((call) => call.method === 'innerJoin' || call.method === 'leftJoin')
@@ -84,9 +82,17 @@ function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
 
   const counts = new Map<string, number>();
   for (const item of [record.table, ...joined]) {
-    // Per item, not per occurrence: the count must be "how many FROM items expose
-    // this name", which is what decides ambiguity.
-    for (const name of new Set(exposedNames(item))) {
+    // Per occurrence, NOT per distinct name. Deduping inside a FROM item would
+    // model "how many items expose this name", which is the wrong rule: one
+    // subquery that exposes a name twice is ambiguous on its own.
+    //   select "foo" from (select 1 as foo, 2 as foo) t   -> 42702
+    //   select *     from (select 1 as foo, 2 as foo) t   -> 1 | 2   (legal)
+    // Note this is about exposures, not references. Two references to a single
+    // exposure stay legal, which is why the count is built here and not from the
+    // select list:
+    //   select "x" as a, "x" as b from (select 1 as x) t  -> 1 | 1   (legal)
+    // No false-positive risk: a real table cannot expose one column name twice.
+    for (const name of exposedNames(item)) {
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
   }
@@ -335,15 +341,16 @@ describe('listSessionCosts service', () => {
   });
 
   // Because Drizzle renders every SQL-aliased subquery field unqualified, each one
-  // is resolved against the OUTER query's FROM clause. Three ways that has turned
+  // is resolved against the OUTER query's FROM clause. Four ways that has turned
   // into Postgres 42702, `column reference "..." is ambiguous`, which rejects the
   // whole statement at parse time:
   //   1. two subqueries claim the same alias   (the `last_at` bug this test was added for)
   //   2. an alias matches a real column on an outer table   (e.g. `status`)
   //   3. an alias matches a sibling subquery's field, even one never selected outward
-  // All three are one rule — a name exposed by more than one FROM item — so assert
-  // that rule rather than enumerating its symptoms. None of them are visible to a
-  // row-shape assertion, because a double records SQL instead of executing it.
+  //   4. one subquery exposes the same alias twice   (e.g. two fields both `llm_cost`)
+  // All four are one rule — a name the FROM clause exposes more than once — so
+  // assert that rule rather than enumerating its symptoms. None of them are visible
+  // to a row-shape assertion, because a double records SQL instead of executing it.
   test('the joined session select never references an ambiguous unqualified name', async () => {
     resultForQuery = () => [];
     await listSessionCosts({
@@ -366,6 +373,13 @@ describe('listSessionCosts service', () => {
     // the two assertions below and confirm your new alias is neither exposed by
     // another FROM item nor missing from the exposure map. Adding a field is
     // exactly when a new collision appears, which is why this routes you here.
+    //
+    // One exception, so this comment does not overclaim: a field whose alias is not
+    // a plain identifier — `.as('a.b')` — renders as `"a.b"`, which the filter in
+    // unqualifiedSelectIdentifiers drops, so it neither moves this count nor reaches
+    // the checks below. Postgres accepts such a statement, so nothing is missed; and
+    // because that same filter governs both sides, a misread render can only add a
+    // false positive here, never hide a real collision.
     expect(identifiers).toHaveLength(12);
 
     const exposures = outerFromExposureCounts(baseQuery);
