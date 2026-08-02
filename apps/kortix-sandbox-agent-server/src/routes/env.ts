@@ -18,6 +18,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
+  // Channel sessions can opt into the Executor MCP face after a deploy. This
+  // must restart OpenCode because MCP servers are registered only at spawn.
+  'KORTIX_EXECUTOR_MCP_ENABLED',
 ])
 
 function bearerToken(header: string | undefined): string | null {

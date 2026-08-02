@@ -92,6 +92,8 @@ export interface ContinueSessionCommand {
   sessionId: string;
   text: string;
   userId?: string | null;
+  /** Allow-listed env applied to OpenCode before server-side prompt delivery. */
+  opencodeEnv?: Record<string, string | null>;
 }
 
 export interface StartSessionCommand {

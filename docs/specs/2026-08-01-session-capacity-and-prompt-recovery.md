@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This contract prevents prompt loss when a sandbox provider has no capacity.
+This contract prevents prompt loss when a sandbox provider cannot start a session.
 It also stops automatic retries that cannot make progress.
 
 ## Capacity authority
@@ -12,6 +12,13 @@ A separate capacity check cannot replace the provider create operation.
 Concurrent requests can pass a separate check at the same time.
 
 The API classifies the provider error after the provider rejects the create operation.
+The API maps known errors to stable user messages.
+The API maps an unknown provider error to the generic `sandbox-provider` category.
+The API keeps the raw provider error in diagnostic metadata.
+Self-hosted E2B returns `500: Failed to place sandbox` when its scheduler cannot place the sandbox.
+The API maps this response to `provider-capacity`.
+The `/start` response also normalizes stored generic placement failures at read time.
+Existing failed sessions therefore use the capacity card without a database migration.
 The API does not expose the raw provider error as user text.
 
 ## Retry policy
@@ -61,14 +68,14 @@ The UI does not show a startup spinner for this state.
 2. The create request also stores `pending_prompt` in session metadata.
 3. The API does not add `pending_prompt` to `KORTIX_INITIAL_PROMPT`.
 4. The API does not send `pending_prompt` to the runtime.
-5. A capacity failure keeps `pending_prompt` unchanged.
+5. A terminal provider failure keeps `pending_prompt` unchanged.
 6. The Retry action copies `pending_prompt` into the browser start stash.
 7. The Retry action starts one explicit restart operation.
 8. The runtime sends the prompt through the normal message path.
 9. The web clears `pending_prompt` only after the runtime ACK.
 
 This sequence prevents an unexpected delayed send.
-A user action is necessary after every terminal capacity rejection.
+A user action is necessary after every terminal provider rejection.
 
 ## Attachment rule
 
@@ -76,21 +83,25 @@ Session metadata stores attachment names only.
 The contract accepts a file-only request with an empty text field.
 The current browser tab keeps the local `File` objects in the pending-files store.
 A page reload can remove the local file bytes.
-The capacity card tells the user to reattach files after a reload.
+The provider failure card tells the user to reattach files after a reload.
 
 Cross-device attachment-byte recovery is not part of this contract.
 That feature needs durable file upload before sandbox admission.
 
-## Capacity card
+## Provider failure card
 
-The terminal capacity card shows these controls:
+Every terminal provider failure card shows these controls:
 
 - `Retry` starts one explicit recovery attempt.
 - `Copy prompt` copies the durable prompt text.
 - `Delete` uses the standard session deletion path.
 
-The card states that the prompt is saved.
-The card shows the attachment count when attachment names exist.
+The title and message come from the API error mapping.
+Capacity, Git authentication, and unknown provider errors use the same recovery controls.
+The card shows the saved prompt text.
+The card shows each attachment name when attachment names exist.
+The card uses the same recovery controls for a non-404 `/start` error.
+A `404` response keeps the separate missing-session message.
 
 ## Deletion rule
 
@@ -102,7 +113,8 @@ The existing deletion path owns provider cleanup and database cleanup.
 
 The release test must fill all eight E2B slots.
 The ninth create must fail after one provider call.
-The ninth session must show the capacity card without a spinner.
+The ninth session must show the provider failure card without a spinner.
+Git authentication and unknown provider failures must show the same recovery controls.
 The prompt must remain available through Copy prompt.
 Retry must start only after the user selects Retry.
 Retry must succeed after one running sandbox stops.

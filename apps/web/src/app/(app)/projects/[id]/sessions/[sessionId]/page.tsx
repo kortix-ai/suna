@@ -2,11 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  ArrowCounterClockwiseIcon as RotateCcw,
-  CopyIcon as Copy,
-  TrashIcon as Trash,
-} from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -18,6 +14,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptFromMetadata,
   provisioningFailurePresentation,
@@ -168,7 +165,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
-  const pendingAttachmentCount = pendingPrompt?.attachment_names?.length ?? 0;
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -210,7 +206,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     setResumeAttempts(0);
     restart.restart();
   };
-  const handleCapacityRetry = () => {
+  const handleProvisioningRetry = () => {
     if (pendingPrompt) {
       writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
     }
@@ -417,6 +413,37 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const sandboxLabel = sandbox?.sandbox_id
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
+  const sessionMissing = session.startError?.status === 404 && !sandbox;
+  const recoverableFailure = (() => {
+    if (sessionMissing) return null;
+    const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
+    if (session.failure) {
+      return provisioningFailurePresentation(
+        {
+          ...metadata,
+          failureCategory: session.failure.category,
+          errorMessage: session.failure.message,
+        },
+        sandboxLabel ?? 'session',
+      );
+    }
+    if (sandbox?.status === 'error') {
+      return provisioningFailurePresentation(metadata, sandboxLabel ?? 'session');
+    }
+    if (unmaterializedFailure) {
+      return provisioningFailurePresentation({}, sandboxLabel ?? 'session');
+    }
+    if (session.startError) {
+      return provisioningFailurePresentation(
+        {
+          failureCategory: 'sandbox-provider',
+          errorMessage: session.startError.message,
+        },
+        sandboxLabel ?? 'session',
+      );
+    }
+    return null;
+  })();
   const inner = (() => {
     if (sessionSwitchLoading) {
       return (
@@ -466,27 +493,30 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (session.startError) {
-      const sessionMissing = session.startError.status === 404;
+    if (sessionMissing) {
       return (
         <InlineSessionError
           title="Couldn't start session"
-          message={
-            sessionMissing
-              ? 'This session is no longer available, or you do not have access to it.'
-              : session.startError.message
-          }
+          message="This session is no longer available, or you do not have access to it."
         />
       );
     }
 
-    if (unmaterializedFailure) {
+    if (recoverableFailure) {
       return (
         <InlineSessionError
-          title="Couldn't start session"
-          message="Provisioning this session's computer failed. Restart the session to try again."
+          title={recoverableFailure.title}
+          message={recoverableFailure.message}
           detail={restart.errorMessage ?? undefined}
-          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
+          action={
+            <ProviderFailureRecovery
+              pendingPrompt={pendingPrompt}
+              isRetrying={restart.isPending}
+              onRetry={handleProvisioningRetry}
+              onCopy={() => void copyPendingPrompt()}
+              onDelete={() => setDeleteOpen(true)}
+            />
+          }
         />
       );
     }
@@ -507,80 +537,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     }
 
     if (fatal) {
-      const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
-      if (sandbox?.status === 'error') {
-        const failure = provisioningFailurePresentation(
-          session.failure
-            ? {
-                ...meta,
-                failureCategory: session.failure.category,
-                errorMessage: session.failure.message,
-              }
-            : meta,
-          sandboxLabel ?? 'session',
-        );
-        return (
-          <InlineSessionError
-            title={failure.title}
-            message={failure.message}
-            action={
-              failure.isCapacity ? (
-                <div className="flex flex-col items-center gap-2">
-                  <p className="text-muted-foreground text-xs">
-                    {pendingPrompt ? 'Your prompt is saved.' : 'No prompt was attached.'}
-                  </p>
-                  {pendingAttachmentCount > 0 ? (
-                    <p className="text-muted-foreground/70 text-xs">
-                      {pendingAttachmentCount}{' '}
-                      {pendingAttachmentCount === 1
-                        ? 'attachment is listed. Reattach it after a reload.'
-                        : 'attachments are listed. Reattach them after a reload.'}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCapacityRetry}
-                      disabled={restart.isPending}
-                      aria-busy={restart.isPending}
-                    >
-                      {restart.isPending ? (
-                        <Loading className="size-3.5 shrink-0" />
-                      ) : (
-                        <RotateCcw className="size-3.5 shrink-0" />
-                      )}
-                      {restart.isPending ? 'Retrying…' : 'Retry'}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void copyPendingPrompt()}
-                      disabled={!pendingPrompt}
-                    >
-                      <Copy className="size-3.5 shrink-0" />
-                      Copy prompt
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash className="size-3.5 shrink-0" />
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ) : failure.retryable ? (
-                <RestartSessionButton restart={restart} onRestart={handleRestart} />
-              ) : undefined
-            }
-          />
-        );
-      }
       // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {

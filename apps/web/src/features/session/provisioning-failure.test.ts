@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import {
   pendingSessionPromptFromMetadata,
@@ -18,7 +20,6 @@ describe('provisioningFailurePresentation', () => {
       title: 'Sandbox capacity is full',
       message: 'The sandbox provider is at capacity right now. Try again in a minute.',
       retryable: true,
-      isCapacity: true,
     });
   });
 
@@ -30,6 +31,7 @@ describe('provisioningFailurePresentation', () => {
 
     expect(result.title).toBe('Git access failed');
     expect(result.message).toBe('Check the Git credentials.');
+    expect(result.retryable).toBe(true);
   });
 
   test('uses provider-neutral fallback copy', () => {
@@ -37,8 +39,35 @@ describe('provisioningFailurePresentation', () => {
       title: "Couldn't start Essentia runtime",
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
-      isCapacity: false,
     });
+  });
+});
+
+describe('project session provider-failure recovery', () => {
+  const pageSource = readFileSync(
+    resolve(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+    'utf8',
+  );
+  const recoverySource = readFileSync(
+    resolve(import.meta.dir, './provider-failure-recovery.tsx'),
+    'utf8',
+  );
+
+  test('routes structured provider failures and generic start errors through one surface', () => {
+    expect(pageSource).toContain('const recoverableFailure =');
+    expect(pageSource).toContain('session.failure');
+    expect(pageSource).toContain('session.startError');
+    expect(pageSource).toContain('if (unmaterializedFailure)');
+    expect(pageSource).toContain('<ProviderFailureRecovery');
+  });
+
+  test('shows the saved prompt and exposes one-click recovery controls', () => {
+    expect(recoverySource).toContain('Saved prompt');
+    expect(recoverySource).toContain('{pendingPrompt.text}');
+    expect(recoverySource).toContain('whitespace-pre-wrap');
+    expect(recoverySource).toContain('Copy prompt');
+    expect(recoverySource).toContain('onClick={onRetry}');
+    expect(recoverySource).toContain('onClick={onDelete}');
   });
 });
 

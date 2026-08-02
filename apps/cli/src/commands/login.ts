@@ -208,8 +208,12 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     /* makeActive */ true,
   );
 
+  const loginIdentity = me.token_context?.agent
+    ? `agent ${C.bold}${me.token_context.agent}${C.reset} ` +
+      `(initiator: ${C.bold}${me.email || me.user_id}${C.reset})`
+    : C.bold + (me.email || me.user_id) + C.reset;
   process.stdout.write(
-    `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,
+    `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${loginIdentity}`)}\n`,
   );
 
   // The account step of the funnel: exactly one → auto-select; several →

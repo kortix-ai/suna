@@ -30,9 +30,10 @@ const PROJECT_ID = 'proj-1';
 let sessionRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
-mock.module('../../../config', () => ({ config: {} }));
+mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: (_proj: unknown) => ({
       from: (table: unknown) => ({

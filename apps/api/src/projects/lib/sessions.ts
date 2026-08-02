@@ -73,6 +73,7 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { sessionChannelEnvFromMetadata } from './session-channel-env';
 import {
   TITLE_SOURCE_MAX_CHARS,
   generateSessionTitleFromFirstPrompt,
@@ -222,11 +223,7 @@ export async function checkConcurrentSessionCap(
 
 export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
-/**
- * Re-derive a session's chat-channel env (SLACK_*) from its persisted binding so
- * any (re)provision restores it. Best-effort: a non-channel session (no
- * metadata.slack) returns {}, and a read failure never blocks provisioning.
- */
+/** Re-derive persisted channel env so every cold reprovision restores it. */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
   try {
     const [row] = await db
@@ -234,14 +231,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    const slack = (row?.metadata as { slack?: Record<string, unknown> } | null)?.slack;
-    if (!slack) return {};
-    const env: Record<string, string> = {};
-    if (typeof slack.team_id === 'string') env.SLACK_TEAM_ID = slack.team_id;
-    if (typeof slack.channel === 'string') env.SLACK_CHANNEL_ID = slack.channel;
-    if (typeof slack.thread_ts === 'string') env.SLACK_THREAD_TS = slack.thread_ts;
-    if (typeof slack.user === 'string') env.SLACK_USER_ID = slack.user;
-    return env;
+    return sessionChannelEnvFromMetadata(row?.metadata);
   } catch (err) {
     console.warn('[session-env] failed to restore channel binding', {
       sessionId,

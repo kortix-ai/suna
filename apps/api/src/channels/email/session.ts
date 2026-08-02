@@ -19,6 +19,7 @@ import {
 import { db } from '../../shared/db';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
+import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { AgentMailMessageReceivedEvent } from './types';
 
 const defaultEmailSessionLifecycle = {
@@ -28,6 +29,7 @@ const defaultEmailSessionLifecycle = {
 };
 
 let emailSessionLifecycle = defaultEmailSessionLifecycle;
+let emailSenderPolicyLoader = loadAgentMailSenderPolicyForInbox;
 
 export function setEmailSessionLifecycleForTest(
   overrides: Partial<typeof defaultEmailSessionLifecycle>,
@@ -37,6 +39,13 @@ export function setEmailSessionLifecycleForTest(
 
 export function resetEmailSessionLifecycleForTest() {
   emailSessionLifecycle = defaultEmailSessionLifecycle;
+  emailSenderPolicyLoader = loadAgentMailSenderPolicyForInbox;
+}
+
+export function setEmailSenderPolicyLoaderForTest(
+  loader: typeof loadAgentMailSenderPolicyForInbox,
+) {
+  emailSenderPolicyLoader = loader;
 }
 
 export async function resolveProjectForAgentMailInbox(inboxId: string): Promise<string | null> {
@@ -59,7 +68,7 @@ export async function dispatchAgentMailEvent(event: AgentMailMessageReceivedEven
     });
     return;
   }
-  const policy = await loadAgentMailSenderPolicyForInbox(projectId, event.message.inbox_id);
+  const policy = await emailSenderPolicyLoader(projectId, event.message.inbox_id);
   if (!senderAllowed(event, policy)) {
     console.warn('[email-webhook] sender rejected by AgentMail inbox policy', {
       inboxId: event.message.inbox_id,
@@ -111,6 +120,7 @@ async function spawnEmailAgentTurn(
       source: 'email',
       sessionId: existing.sessionId,
       text: renderFollowUpPrompt(event),
+      opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
     });
     if (outcome === 'delivered') {
       await db
@@ -195,6 +205,7 @@ async function createThreadSession(
         source: 'email',
         sessionId,
         text: renderFollowUpPrompt(event),
+        opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
       });
     }
     return;
@@ -250,11 +261,15 @@ async function createThreadSession(
         inbox_id: inboxId,
         thread_id: threadId,
         message_id: event.message.message_id,
+        address: event.message.to?.[0] ?? '',
         from: messageSender(event),
         subject: messageSubject(event),
       },
     },
     extraEnvVars: {
+      // Email delivery cannot depend on a shell fallback. Enable the
+      // session-scoped MCP face so OpenCode exposes the bound inbox as tools.
+      KORTIX_EXECUTOR_MCP_ENABLED: '1',
       KORTIX_EMAIL_INBOX_ID: inboxId,
       KORTIX_EMAIL_THREAD_ID: threadId,
       KORTIX_EMAIL_MESSAGE_ID: event.message.message_id,
@@ -343,15 +358,36 @@ async function waitForThreadSession(inboxId: string, threadId: string): Promise<
   }
 }
 
-const EMAIL_TURN_INSTRUCTIONS = [
-  'How to work:',
-  '- You are operating an AgentMail inbox assigned to this Kortix project.',
-  '- Use the built-in `email` Executor connector for inbox operations. The AgentMail API key is resolved server-side; do not look for it in the sandbox.',
-  '- Read the current thread before replying when context matters: `email.get_thread` with `inbox_id` and `thread_id`.',
-  '- To answer in the same conversation, call `email.reply_message` with `inbox_id`, `message_id`, `text` or `html`, and attachments when needed.',
-  '- For a brand-new outbound email, call `email.send_message` with `inbox_id`, `to`, `subject`, and body.',
-  '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
-].join('\n');
+function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
+  const readThreadCall = JSON.stringify({
+    connector: 'email',
+    action: 'get_thread',
+    args: {
+      inbox_id: event.message.inbox_id,
+      thread_id: event.message.thread_id,
+    },
+  });
+  const replyCall = JSON.stringify({
+    connector: 'email',
+    action: 'reply_message',
+    args: {
+      inbox_id: event.message.inbox_id,
+      message_id: event.message.message_id,
+      text: '<reply>',
+    },
+  });
+  return [
+    'How to work:',
+    '- You are operating an AgentMail inbox assigned to this Kortix project.',
+    '- Use the Executor MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
+    '- Start with `connectors`. Use `discover` to find an action and `describe` to confirm its input schema before the first call.',
+    `- Read the current thread with \`call\`: \`${readThreadCall}\`.`,
+    `- Reply in the same conversation with \`call\`: \`${replyCall}\`. Use \`html\` instead of \`text\` only when needed.`,
+    '- Start a new outbound email with `call`, connector `email`, action `send_message`, and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- The AgentMail API key is resolved server-side. Do not look for it in the sandbox.',
+    '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
+  ].join('\n');
+}
 
 function renderFollowUpPrompt(event: AgentMailMessageReceivedEvent): string {
   return [
@@ -359,7 +395,7 @@ function renderFollowUpPrompt(event: AgentMailMessageReceivedEvent): string {
     '',
     messageSummary(event),
     '',
-    EMAIL_TURN_INSTRUCTIONS,
+    emailTurnInstructions(event),
   ].join('\n');
 }
 
@@ -384,7 +420,7 @@ function renderAgentPrompt(event: AgentMailMessageReceivedEvent, revived: boolea
     '',
     messageSummary(event),
     '',
-    EMAIL_TURN_INSTRUCTIONS,
+    emailTurnInstructions(event),
   );
   return lines.join('\n');
 }
@@ -428,10 +464,72 @@ function messageSender(event: AgentMailMessageReceivedEvent): string {
   return '';
 }
 
+const MAILBOX_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+
+/**
+ * Resolve the one canonical From mailbox AgentMail delivered.
+ *
+ * A substring match is not an authorization boundary: a crafted value such
+ * as `allowed@example.com <attacker@evil.test>` contains an allowlisted
+ * address even though the actual mailbox is the value in angle brackets.
+ * Accept either a bare address or one ordinary `Display Name <address>`
+ * mailbox, and reject ambiguous/multi-address values entirely.
+ */
 function senderEmail(event: AgentMailMessageReceivedEvent): string | null {
-  const sender = messageSender(event).toLowerCase();
-  const match = sender.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/i);
-  return match?.[0]?.toLowerCase() ?? null;
+  const primary = event.message.from;
+  const alternate = event.message.from_;
+  const primaryMailbox =
+    typeof primary === 'string' && primary.trim() ? canonicalMailbox(primary) : null;
+  const alternateMailbox = canonicalStructuredMailbox(alternate);
+  if (primaryMailbox && alternate !== undefined) {
+    return alternateMailbox === primaryMailbox ? primaryMailbox : null;
+  }
+  if (typeof primary === 'string' && primary.trim()) return primaryMailbox;
+  return alternateMailbox;
+}
+
+function canonicalStructuredMailbox(
+  from: AgentMailMessageReceivedEvent['message']['from_'],
+): string | null {
+  if (Array.isArray(from)) {
+    if (from.length !== 1) return null;
+    const [first] = from;
+    if (typeof first === 'string') return canonicalMailbox(first);
+    if (!first || typeof first !== 'object') return null;
+    const rawEmail = typeof first.email === 'string' ? first.email.trim() : '';
+    const rawAddress = typeof first.address === 'string' ? first.address.trim() : '';
+    const email = rawEmail ? canonicalMailbox(rawEmail) : null;
+    const address = rawAddress ? canonicalMailbox(rawAddress) : null;
+    // AgentMail payload variants have used both keys. Treat them as aliases,
+    // but never choose one silently when a malformed or conflicting second
+    // value is present: either condition makes the sender ambiguous.
+    if ((rawEmail && !email) || (rawAddress && !address)) return null;
+    if (email && address && email !== address) return null;
+    return email ?? address;
+  }
+  return typeof from === 'string' ? canonicalMailbox(from) : null;
+}
+
+function canonicalMailbox(value: string): string | null {
+  const sender = value.trim().toLowerCase();
+  const matches = [...sender.matchAll(MAILBOX_PATTERN)];
+  if (matches.length !== 1) return null;
+  const mailbox = matches[0]?.[0];
+  if (!mailbox) return null;
+  if (sender === mailbox) return mailbox;
+
+  const open = sender.indexOf('<');
+  const close = sender.indexOf('>');
+  if (
+    open <= 0 ||
+    close !== sender.length - 1 ||
+    sender.indexOf('<', open + 1) !== -1 ||
+    sender.indexOf('>', close + 1) !== -1 ||
+    sender.slice(open + 1, close).trim() !== mailbox
+  ) {
+    return null;
+  }
+  return mailbox;
 }
 
 export function isAgentMailSenderAllowedForTest(
@@ -449,11 +547,7 @@ export function isAgentMailSenderAllowedForTest(
     return true;
   }
   if (policy.allowedRegex) {
-    try {
-      return new RegExp(policy.allowedRegex, 'i').test(email);
-    } catch {
-      return false;
-    }
+    return matchesEmailSenderRegex(policy.allowedRegex, email);
   }
   return false;
 }

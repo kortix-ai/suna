@@ -8,11 +8,11 @@ import {
 import {
   executorConnectionProfiles,
   executorConnectors,
+  projectSessionConnectorBindings,
   projectSessions,
   projectTriggerRuntime,
   projects,
   sessionSandboxes,
-  projectSessionConnectorBindings,
 } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
@@ -24,6 +24,7 @@ import {
   isAgentMailInboxLimitError,
   resolveAgentMailApiKey,
 } from '../../channels/agentmail-api';
+import { compileEmailSenderRegex } from '../../channels/email/sender-policy-regex';
 import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
@@ -58,8 +59,6 @@ import {
   relayTurnStep,
 } from '../../channels/turn-relay';
 import { setProjectBotName } from '../../channels/voice-identity';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { config } from '../../config';
 import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
 import { revokeProfileOAuth2 } from '../../executor/oauth2-store';
@@ -75,9 +74,9 @@ import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -101,14 +100,15 @@ import {
   loadProjectForUser,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import { callerKortixSessionId } from '../lib/caller-session';
 import {
-  connectorAuthorizationMatchesStrategy,
-  isTrustedManagedChannelAuthorization,
   type ConnectorAuthorizationOwnerType,
   type ConnectorAuthorizationStrategy,
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
 } from '../lib/connector-authorization-strategy';
+import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -131,6 +131,7 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { listProjectSecretsSnapshot } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
@@ -2142,33 +2143,11 @@ function normalizeAgentMailUsername(input: string | null | undefined): string | 
   return trimmed || null;
 }
 
-// Small static check for the classic catastrophic-backtracking shapes —
-// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
-// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
-// persisted and later run against every inbound email sender.
-const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
-const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
-
-function hasCatastrophicBacktracking(pattern: string): boolean {
-  return NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern);
-}
-
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
   const policy = normalizeSenderPolicy(input);
-  if (policy.allowedRegex) {
-    try {
-      new RegExp(policy.allowedRegex);
-    } catch {
-      throw new Error('Email sender regex is invalid');
-    }
-    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
-      throw new Error(
-        'Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)',
-      );
-    }
-  }
+  if (policy.allowedRegex) compileEmailSenderRegex(policy.allowedRegex);
   return policy;
 }
 

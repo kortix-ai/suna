@@ -23,6 +23,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
+const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
@@ -188,6 +189,23 @@ mock.module('../middleware/auth', () => ({
       c.set('accountId', ACCOUNT_ID);
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_AGENT_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      c.set('agentGrant', {
+        agent: 'contract-agent',
+        connectors: 'all',
+        kortixCli: 'all',
+        env: 'all',
+      });
       await next();
       return;
     }
@@ -1036,6 +1054,37 @@ describe('project session API contract', () => {
     expect(secretRows).toHaveLength(0);
   });
 
+  test('a session agent can verify writes when runtime delivery is narrowed to zero secrets', async () => {
+    sessionRow = { ...sessionRow!, secretsAllowlist: [] };
+    const app = createApp();
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${SESSION_AGENT_PAT}`,
+    };
+
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'test-secret' }),
+    });
+    expect(writeRes.status).toBe(200);
+    expect(await writeRes.json()).toMatchObject({
+      identifier: 'ANTHROPIC_API_KEY',
+      configured: true,
+    });
+
+    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, { headers });
+    expect(listRes.status).toBe(200);
+    expect(await listRes.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          identifier: 'ANTHROPIC_API_KEY',
+          configured: true,
+        }),
+      ],
+    });
+  });
+
   test('stores provider-neutral git credentials outside runtime project secrets', async () => {
     projectRow.repoUrl = 'https://gitlab.com/acme/private-project.git';
     projectRow.metadata = {
@@ -1696,6 +1745,57 @@ describe('project session API contract', () => {
         },
       });
     }
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('dashboard start upgrades a stored E2B placement failure to the capacity contract', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'e2b',
+      error: 'The sandbox provider could not start this session. Try again.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'e2b',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 3,
+          initMaxAttempts: 3,
+          failureCategory: 'sandbox-provider',
+          errorMessage: 'The sandbox provider could not start this session. Try again.',
+          lastProvisioningError: '500: Failed to place sandbox',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
     expect(sandboxProvisionCalls).toBe(0);
   });
 
