@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { catalogEmptyKind, filterSkills, skillScope } from './skill-scope';
+import { filterSkills, skillScope } from './skill-scope';
 
 const skill = (name: string, description: string | null = null) => ({
   name,
@@ -37,18 +37,5 @@ describe('filterSkills', () => {
   });
   test('scope and query compose', () => {
     expect(filterSkills(all, { scope: 'project', query: 'kortix' })).toHaveLength(0);
-  });
-});
-
-describe('catalogEmptyKind', () => {
-  test('nothing at all -> empty', () => {
-    expect(catalogEmptyKind(0, 0)).toBe('empty');
-  });
-  test('items exist but the filter hid all of them -> no-match', () => {
-    expect(catalogEmptyKind(10, 0)).toBe('no-match');
-  });
-  test('anything visible -> null (render the grid, not an empty state)', () => {
-    expect(catalogEmptyKind(10, 3)).toBeNull();
-    expect(catalogEmptyKind(1, 1)).toBeNull();
   });
 });

@@ -29,9 +29,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
+import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid } from '../catalog-grid';
-import { EntityDetailModal } from './entity-modal';
-import { catalogEmptyKind, filterSkills, type SkillScope } from './skill-scope';
+import { EntityDetailModal } from '../entity-modal';
+import { filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
 

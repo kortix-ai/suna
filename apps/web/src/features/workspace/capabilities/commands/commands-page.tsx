@@ -23,9 +23,9 @@ import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
+import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid } from '../catalog-grid';
-import { EntityDetailModal } from '../skills/entity-modal';
-import { catalogEmptyKind } from '../skills/skill-scope';
+import { EntityDetailModal } from '../entity-modal';
 import { filterCommands } from './command-filter';
 
 /**
