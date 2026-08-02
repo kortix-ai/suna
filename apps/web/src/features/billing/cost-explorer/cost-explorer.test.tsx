@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
+import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import {
+  PathnameContext,
+  SearchParamsContext,
+} from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 
 import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { buildCostByProjectQuery, buildCostSummaryQuery } from '@/hooks/billing/use-cost-explorer';
 import {
   buildSessionCostDetailQuery,
@@ -13,10 +22,12 @@ import {
 
 import {
   buildBreadcrumbCrumbs,
+  CostExplorer,
   explorerClockKey,
   nextClockAnchor,
   parseExplorerState,
   serializeExplorerState,
+  useExplorerClockAnchor,
   type ClockAnchor,
   type ExplorerState,
 } from './cost-explorer';
@@ -260,35 +271,135 @@ describe('clock reads across a navigation sequence', () => {
     });
   });
 
-  // `useExplorerClockAnchor` adjusts state during render, which React answers
-  // by re-invoking the component before it renders any child. That only
-  // terminates because the second pass finds a matching key and does NOT call
-  // `setHeld` again. Modelled here — the hook body verbatim, driven twice the
-  // way React drives it — because an unterminated version is an infinite
-  // render loop, and no DOM-free test can observe that directly.
-  test('adjusting state during render settles on the second pass', () => {
-    let held: ClockAnchor | null = null;
-    let reads = 0;
-    let setHeldCalls = 0;
+});
 
-    const renderPass = (key: string) => {
-      const anchor = nextClockAnchor(held, key, () => {
-        reads += 1;
-        return NOW;
-      });
-      if (anchor !== held) {
-        setHeldCalls += 1;
-        held = anchor; // what React does before re-invoking the component
-      }
-      return anchor.now;
-    };
+// ── The hook itself, actually rendered ─────────────────────────────────────
+//
+// This is the piece the rest of the file cannot reach by reasoning about
+// `nextClockAnchor` (pure) or about the source text. Replacing the hook body
+// with `return nextClockAnchor(null, key, () => new Date()).now` — holding
+// removed, storm fully restored — passed every other test in this file. So the
+// hook gets rendered for real.
+//
+// `renderToStaticMarkup` needs no DOM globals and runs React's real
+// render-phase update loop, which is exactly what this hook is: it adjusts
+// state during render, React re-invokes the component before rendering any
+// child, and the second pass must find a matching key and stop. 56 files in
+// `apps/web` already render this way.
+//
+// What it still cannot do is fire events or run effects — so react-query never
+// subscribes under it, and the request-count harness above stays as it is.
 
-    const first = renderPass('|null|null');
-    const second = renderPass('|null|null');
+/** Renders `<Parent>` once and reports how many times each component ran. */
+function renderAnchor(search: string) {
+  let parentInvocations = 0;
+  let childInvocations = 0;
+  const windows: Date[] = [];
 
-    expect(setHeldCalls).toBe(1); // mount only — the second pass is a no-op
-    expect(reads).toBe(1);
-    expect(second).toBe(first); // and no child ever sees a different window
+  function Child({ now }: { now: Date }) {
+    childInvocations += 1;
+    windows.push(now);
+    return <span>{now.toISOString()}</span>;
+  }
+
+  function Parent() {
+    parentInvocations += 1;
+    return <Child now={useExplorerClockAnchor(new URLSearchParams(search))} />;
+  }
+
+  const markup = renderToStaticMarkup(<Parent />);
+  return { parentInvocations, childInvocations, windows, markup };
+}
+
+describe('useExplorerClockAnchor (rendered)', () => {
+  // The mutation this exists for: a hook that never holds renders in ONE pass,
+  // because it never schedules the render-phase update. Two passes is the
+  // signature of the state actually being adjusted and retained.
+  test('adjusts state during render: two parent passes, one child render', () => {
+    const { parentInvocations, childInvocations } = renderAnchor('range=7d');
+    expect({ parentInvocations, childInvocations }).toEqual({
+      parentInvocations: 2,
+      childInvocations: 1,
+    });
+  });
+
+  // The second pass must return the value the first pass computed, or a child
+  // could render against a window its parent has already moved past.
+  test('both passes agree, so the child renders exactly one window', () => {
+    const { windows, markup } = renderAnchor('range=7d');
+    expect(windows).toHaveLength(1);
+    expect(markup).toBe(`<span>${windows[0]!.toISOString()}</span>`);
+  });
+
+  test('resolves a usable instant for the default landing URL', () => {
+    const { windows } = renderAnchor('');
+    expect(windows[0]).toBeInstanceOf(Date);
+    expect(Number.isNaN(windows[0]!.getTime())) .toBe(false);
+  });
+
+  // The hook derives its own key from the params it is handed, so a caller
+  // cannot widen it. Drill-down params are present here and must not appear in
+  // the key — proven by the settle behaviour being identical either way.
+  test('drill-down params do not change how the hook settles', () => {
+    expect(renderAnchor('range=7d&project=p1&session=s1')).toMatchObject({
+      parentInvocations: 2,
+      childInvocations: 1,
+    });
+  });
+});
+
+// ── Navigation, through the real hook ──────────────────────────────────────
+// The tests above walk `nextClockAnchor` directly. These drive the actual hook
+// across a URL change, by having the parent adjust its OWN state during render
+// to swap the params mid-render. Every pass records the instant the hook
+// returned, so "did it re-read the clock" is answered by object identity: a
+// held reading is the same object, a re-read is a new one even when the two
+// land in the same millisecond.
+
+/** Render with `from`, swap to `to` during render, return the hook's value per pass. */
+function renderAcrossNavigation(from: string, to: string): Date[] {
+  const seen: Date[] = [];
+
+  function Parent() {
+    const [search, setSearch] = useState(from);
+    seen.push(useExplorerClockAnchor(new URLSearchParams(search)));
+    if (search === from) setSearch(to);
+    return null;
+  }
+
+  renderToStaticMarkup(<Parent />);
+  return seen;
+}
+
+describe('useExplorerClockAnchor across a URL change (rendered)', () => {
+  test('drilling into a project keeps the very same instant', () => {
+    const seen = renderAcrossNavigation('range=7d', 'range=7d&project=p1');
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((instant) => instant === seen[0])).toBe(true);
+  });
+
+  test('drilling into a session keeps the very same instant', () => {
+    const seen = renderAcrossNavigation('range=7d&project=p1', 'range=7d&project=p1&session=s1');
+    expect(seen.every((instant) => instant === seen[0])).toBe(true);
+  });
+
+  test('an unrelated param keeps the very same instant', () => {
+    const seen = renderAcrossNavigation('range=7d', 'range=7d&tab=transactions');
+    expect(seen.every((instant) => instant === seen[0])).toBe(true);
+  });
+
+  // The other direction: a range change is exactly when the window SHOULD move.
+  test('changing the preset takes a new reading', () => {
+    const seen = renderAcrossNavigation('range=7d', 'range=90d');
+    expect(seen.at(-1)).not.toBe(seen[0]);
+  });
+
+  test('changing a custom range bound takes a new reading', () => {
+    const seen = renderAcrossNavigation(
+      'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z',
+      'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-09T00:00:00.000Z',
+    );
+    expect(seen.at(-1)).not.toBe(seen[0]);
   });
 });
 
@@ -623,85 +734,203 @@ describe('cost explorer request count', () => {
   });
 });
 
-// ── The component's wiring ─────────────────────────────────────────────────
+// ── The real CostExplorer, rendered ────────────────────────────────────────
 //
-// `countRequests` above proves the cycle settles when the explorer resolves
-// its window from a held reading. The one link a hookless harness cannot
-// reach is whether `CostExplorer` actually does that, so it is pinned here by
-// reading the source.
+// `useQuery` builds and registers its `Query` during render (via
+// `getOptimisticResult` -> `queryCache.build`), so a static render of the real
+// component exposes every query key it would fetch — without effects, and so
+// without any fetch. That makes the whole chain assertable end to end:
+// searchParams -> the anchor -> `parseExplorerState` -> the range -> all four
+// query builders.
 //
-// Source assertions are a liability, and this file has to earn the exception.
-// Both of this suite's standing failures — `project-sidebar-header.test.ts:36`
-// and `project-switcher-control.test.ts:56` — are `toContain('<className
-// literal>')` broken by cosmetic edits to correct components. They assert
-// APPEARANCE, so any rewording breaks them and any behavior change slips past.
-//
-// These assert the ABSENCE OF A HAZARD instead, which is a different shape,
-// and three rules keep them that way. Each was demonstrated to matter:
-//
-//  - Count clock reads across every spelling — `new Date(`, `Date.now(` — not
-//    one literal. Counting `/new Date\(\)/g` alone lets `new Date(Date.now())`
-//    through, which restores the entire loop with the suite still green.
-//  - Never match on identifier names. Splitting the call across locals
-//    (`const k = explorerClockKey(p); const now = useExplorerClockAnchor(k);`)
-//    is semantically identical and must stay green.
-//  - Strip comments properly, trailing ones included. Dropping only whole-line
-//    comments lets a trailing `// … new Date() …` inflate the count and fail a
-//    correct file.
-//
-// This still cannot see a clock injected through a helper or a `dayjs()`. Only
-// a real mount closes that, and it is filed separately as a Playwright spec.
+// The property under test is that ONE window reaches all of them. A level that
+// resolved its own window would show a different `to` on one of these keys,
+// which is the shape the original defect took between renders.
 
-/** Comment-free source, so prose about the clock never counts as a clock read.
- *  Block comments first, then line comments — the `[^:]` guard keeps `://` in
- *  a URL from being treated as the start of one. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const staticRouter = {
+  push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch() {},
+} as never;
+
+/** Static-render the explorer at `search`; return the query keys it built. */
+function renderExplorer(search: string): { key: readonly unknown[]; window: string | null }[] {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <AppRouterContext.Provider value={staticRouter}>
+        <PathnameContext.Provider value="/accounts/acct">
+          <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
+            <TooltipProvider>
+              <BillingAccountProvider accountId="acct">
+                <CostExplorer />
+              </BillingAccountProvider>
+            </TooltipProvider>
+          </SearchParamsContext.Provider>
+        </PathnameContext.Provider>
+      </AppRouterContext.Provider>
+    </QueryClientProvider>,
+  );
+
+  return client
+    .getQueryCache()
+    .getAll()
+    .map((query) => {
+      const scope = query.queryKey[2];
+      const bounds =
+        scope && typeof scope === 'object' && 'from' in scope
+          ? `${(scope as { from?: string }).from}|${(scope as { to?: string }).to}`
+          : null;
+      return { key: query.queryKey, window: bounds };
+    });
 }
 
-/** Every way this file could read the wall clock. */
+/** The distinct from|to windows across every window-keyed query in a render. */
+const distinctWindows = (built: ReturnType<typeof renderExplorer>) =>
+  new Set(built.map((entry) => entry.window).filter((window): window is string => window !== null));
+
+describe('CostExplorer (rendered)', () => {
+  test('the projects level builds its two window-keyed queries from one window', () => {
+    const built = renderExplorer('');
+    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'by-project']);
+    expect(distinctWindows(built).size).toBe(1);
+  });
+
+  test('the sessions level builds its three window-keyed queries from one window', () => {
+    const built = renderExplorer('project=p1');
+    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'list', 'list']);
+    expect(distinctWindows(built).size).toBe(1);
+  });
+
+  test('the session ledger level builds its window-keyed query from one window', () => {
+    const built = renderExplorer('project=p1&session=s1');
+    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'detail']);
+    expect(distinctWindows(built).size).toBe(1);
+  });
+
+  // The custom range's bounds must reach the wire exactly as the URL states
+  // them — no clock anywhere in that path.
+  test('a custom range reaches the query keys verbatim', () => {
+    const built = renderExplorer(
+      'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z',
+    );
+    expect([...distinctWindows(built)]).toEqual([
+      '2026-07-01T00:00:00.000Z|2026-07-08T00:00:00.000Z',
+    ]);
+  });
+});
+
+// ── The component's wiring ─────────────────────────────────────────────────
+//
+// Everything above this point is behavioral. What is left for the source text
+// is one narrow question: does anything in this FILE read the wall clock other
+// than the anchor? A stray `new Date()` in the render body would move the
+// window per render again, and no rendered test can see a line that is simply
+// absent from the module under test.
+//
+// Scope honestly: this is a single counting assertion, not a wiring proof.
+// `useExplorerClockAnchor` is proven by rendering it; the component's use of it
+// is proven by nothing here — a component that ignored the hook's return and
+// passed a constant would pass. That is not a realistic hazard (there is no
+// clock left to read), but it is the boundary.
+//
+// Both of this suite's standing failures — `project-sidebar-header.test.ts:36`
+// and `project-switcher-control.test.ts:56` — are `toContain('<className
+// literal>')` on correct components. This assertion is a different shape (a
+// count of a hazard, not an appearance), which is why it survives renames and
+// reformatting, but it is still text and it is kept to the minimum that earns
+// its place.
+//
+// Known hole, out of scope and filed as JAY-252: a clock reached through a
+// helper — `export function clockNow()` elsewhere, called here — is invisible
+// to a count of this file. Only a real request-count spec closes that.
+
+/**
+ * Source with comments removed, so prose about the clock never counts as a
+ * clock read.
+ *
+ * A single scanner rather than two regex passes. The regex version had two
+ * holes, both of which produce a FALSE RED on a correct file: a line comment
+ * that mentions a block-comment opener made the block pass swallow real code
+ * through to the next closer, and a `//` inside a string literal truncated the
+ * line. Neither is reachable in the current file, which is exactly why they
+ * would not have been found until someone hit one. Both are covered below.
+ */
+function stripComments(source: string): string {
+  let out = '';
+  let mode: 'code' | 'line' | 'block' | 'string' = 'code';
+  let quote = '';
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i]!;
+    const next = source[i + 1];
+
+    if (mode === 'line') {
+      if (char === '\n') { mode = 'code'; out += char; }
+      continue;
+    }
+    if (mode === 'block') {
+      if (char === '*' && next === '/') { mode = 'code'; i += 1; }
+      continue;
+    }
+    if (mode === 'string') {
+      if (char === '\\') { out += char + (next ?? ''); i += 1; continue; }
+      if (char === quote) mode = 'code';
+      out += char;
+      continue;
+    }
+    if (char === '/' && next === '/') { mode = 'line'; i += 1; continue; }
+    if (char === '/' && next === '*') { mode = 'block'; i += 1; continue; }
+    if (char === '"' || char === "'" || char === '`') { mode = 'string'; quote = char; }
+    out += char;
+  }
+
+  return out;
+}
+
+/** Every way this file could read the wall clock directly. */
 const CLOCK_READ = /new Date\(|Date\.now\(/g;
 
-describe('CostExplorer clock wiring', () => {
+describe('cost-explorer.tsx clock reads', () => {
   const code = stripComments(readFileSync(join(import.meta.dir, 'cost-explorer.tsx'), 'utf8'));
 
-  test('the file reads the clock exactly once, inside the anchor', () => {
-    const reads = code.match(CLOCK_READ) ?? [];
-    expect(reads).toHaveLength(1);
+  test('the file reads the clock exactly once, and that read is the anchor', () => {
+    expect(code.match(CLOCK_READ) ?? []).toHaveLength(1);
 
-    // And that one read is the anchor's own, not some other line that happens
-    // to be the only one left.
     const anchorBody = code.slice(code.indexOf('function useExplorerClockAnchor'));
     expect(anchorBody.match(CLOCK_READ) ?? []).toHaveLength(1);
   });
 
-  // Asserted by dropping the declaration and checking the name still appears,
-  // so splitting the call across locals stays green — that refactor changes
-  // nothing about behavior and a stricter pattern match would reject it.
-  test('the render body resolves its window through the anchor hook', () => {
-    const calls = code.replace(/function useExplorerClockAnchor\b/, '');
-    expect(calls).toContain('useExplorerClockAnchor(');
-  });
+  // The stripper is load-bearing for that count, so it gets its own tests —
+  // including the two shapes the regex version got wrong.
+  describe('stripComments', () => {
+    test('removes trailing and whole-line comments', () => {
+      expect(stripComments('const a = 1; // new Date()')).toBe('const a = 1; ');
+      expect(stripComments('// new Date()\nconst a = 1;')).toBe('\nconst a = 1;');
+    });
 
-  test('the anchor is keyed by the range params, not the whole URL', () => {
-    const calls = code.replace(/export function explorerClockKey\b/, '');
-    expect(calls).toContain('explorerClockKey(');
-    // `searchParams.toString()` as a key is the round-1 behavior: it re-read
-    // the clock on every drill-down and on Back.
-    expect(code).not.toMatch(/useExplorerClockAnchor\([^)]*toString\(\)/);
-  });
+    test('removes block comments, including multi-line', () => {
+      expect(stripComments('/* new Date() */ const a = 1;')).toBe(' const a = 1;');
+      expect(stripComments('/*\n new Date()\n*/const a = 1;')).toBe('const a = 1;');
+    });
 
-  // The hazard itself: a clock read reaching `parseExplorerState`, whatever it
-  // is spelled or named. Caught regardless of how the arguments are formatted.
-  test('no clock read is ever passed to parseExplorerState', () => {
-    expect(code).not.toMatch(/parseExplorerState\([^)]*(new Date\(|Date\.now\()/);
-  });
+    test('a line comment containing /* does not swallow the code after it', () => {
+      expect(stripComments('// opens /* here\nconst a = 1;')).toBe('\nconst a = 1;');
+    });
 
-  // Guards the stripper itself. Without the trailing-comment branch this input
-  // reads as two clock reads and a correct file fails.
-  test('stripComments removes trailing and block comments, and spares URLs', () => {
-    expect(stripComments('const a = 1; // new Date()')).toBe('const a = 1; ');
-    expect(stripComments('/* new Date() */ const a = 1;')).toBe(' const a = 1;');
-    expect(stripComments("const u = 'https://x.dev';")).toBe("const u = 'https://x.dev';");
+    test('a // inside a string is not a comment', () => {
+      expect(stripComments("const u = 'https://x.dev';")).toBe("const u = 'https://x.dev';");
+      expect(stripComments('const u = "a // b";')).toBe('const u = "a // b";');
+      expect(stripComments('const u = `a // b`;')).toBe('const u = `a // b`;');
+    });
+
+    test('an escaped quote does not end the string early', () => {
+      expect(stripComments("const u = 'a\\'// b';")).toBe("const u = 'a\\'// b';");
+    });
+
+    test('leaves clock reads in real code alone', () => {
+      expect(stripComments('const t = new Date(); // not new Date()')).toBe(
+        'const t = new Date(); ',
+      );
+    });
   });
 });

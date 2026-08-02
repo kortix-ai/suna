@@ -56,10 +56,14 @@ export interface ExplorerState {
  * per render, and since no cost query carries `placeholderData`, every new key
  * is a cache miss that fetches — and that fetch re-renders, so it does not
  * settle. Request count then grows linearly with time on the page for as long
- * as the tab is open. The *rate* is environment-specific and should not be
- * quoted as a constant: `Date` has 1 ms resolution, so no environment can
- * exceed ~1000 cycles/s, and a real browser is slower still because it clamps
- * nested `setTimeout` to 4 ms. Unbounded is the part that matters.
+ * as the tab is open.
+ *
+ * Unbounded is the claim; a rate is not. The one bound that holds everywhere is
+ * `Date`'s 1 ms resolution — two renders inside the same millisecond produce an
+ * identical `to` and no new key — so no environment exceeds ~1000 cycles/s. The
+ * rate in a browser has NOT been measured and no mechanism for it is asserted
+ * here. Note the cycle is not gated on responses: react-query notifies when a
+ * fetch STARTS, so a slow endpoint does not slow the loop down.
  * `useExplorerClockAnchor` below is what supplies a `now` that holds still.
  *
  * A named preset (`24h`/`7d`/`30d`/`90d`) is resolved against `now` — the
@@ -191,6 +195,12 @@ export function nextClockAnchor(
  * goes through the same gate, and "this file reads the clock exactly once" is
  * a thing a test can assert outright.
  *
+ * It takes the raw `URLSearchParams` and calls `explorerClockKey` itself rather
+ * than accepting a prepared key. A key parameter is a seam a caller can widen
+ * — `useExplorerClockAnchor(explorerClockKey(p) + p.get('project'))` type-checks
+ * and silently restores the per-drill-down re-read this exists to prevent.
+ * Owning the derivation makes that unrepresentable instead of merely tested.
+ *
  * `nextClockAnchor` returns the held object unless the key changed, so
  * `setHeld` is reached on mount and on a real range change, and nowhere else.
  * React then re-renders this component immediately, before its children; that
@@ -200,10 +210,14 @@ export function nextClockAnchor(
  * This cannot spin: the key comes from the URL, and nothing a query returns can
  * change the URL. A key that cannot move on its own is what bounds this
  * structurally rather than by convention.
+ *
+ * Exported for its own tests. `renderToStaticMarkup` runs React's real
+ * render-phase update loop, so the holding, the two-pass settle and the single
+ * child render are all assertable directly — see `cost-explorer.test.tsx`.
  */
-function useExplorerClockAnchor(key: string): Date {
+export function useExplorerClockAnchor(params: URLSearchParams): Date {
   const [held, setHeld] = useState<ClockAnchor | null>(null);
-  const anchor = nextClockAnchor(held, key, () => new Date());
+  const anchor = nextClockAnchor(held, explorerClockKey(params), () => new Date());
   if (anchor !== held) setHeld(anchor);
   return anchor.now;
 }
@@ -362,7 +376,7 @@ export function CostExplorer() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const now = useExplorerClockAnchor(explorerClockKey(searchParams));
+  const now = useExplorerClockAnchor(searchParams);
   const state = parseExplorerState(searchParams, now);
 
   const projectsQuery = useSessionCostProjects();
