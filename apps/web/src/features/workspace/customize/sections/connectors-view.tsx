@@ -207,7 +207,7 @@ export function providerLabel(p: AdminConnector['provider']): string {
   return p.toUpperCase();
 }
 
-function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
+export function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async () => {
       const { token, app } = await pipedreamConnect(projectId, slug);
@@ -937,7 +937,7 @@ function ConnectionRow({
  * lists only the current member's accounts.
  */
 
-function ConnectionsList({
+export function ConnectionsList({
   projectId,
   connector,
   displayName,
@@ -1196,7 +1196,7 @@ function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' 
  * account for this connector, and its status. Manage-gated at the API; never
  * shows credentials (only existence + status + owner). Read-only.
  */
-function ConnectionRoster({
+export function ConnectionRoster({
   projectId,
   connectorSlug,
   displayName,
@@ -1837,7 +1837,7 @@ function connectorPlatform(connector: AdminConnector): ChannelProfilePlatform | 
   return null;
 }
 
-function ChannelConnectionSection({
+export function ChannelConnectionSection({
   projectId,
   connector,
   onChanged,
@@ -2782,7 +2782,7 @@ function connectionSig(d: ConnectorDraftInput): string {
   });
 }
 
-function ConnectionSection({
+export function ConnectionSection({
   projectId,
   connector,
   onChanged,
@@ -3036,7 +3036,7 @@ function tsSignature(slug: string, action: ConnectorAction): string {
   return `executor.call("${slug}", "${action.path}", ${argBlock}): Promise<unknown>`;
 }
 
-function PermissionsSection({
+export function PermissionsSection({
   projectId,
   connector,
   onChanged,
@@ -4831,7 +4831,7 @@ export function CustomConnectorForm({
   );
 }
 
-function SetCredentialModal({
+export function SetCredentialModal({
   projectId,
   connector,
   profileId,

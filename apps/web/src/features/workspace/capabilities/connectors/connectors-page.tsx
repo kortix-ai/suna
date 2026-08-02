@@ -31,7 +31,6 @@ import { connectorAuthorizationQueryKeys } from '@/features/workspace/customize/
 import {
   AddAppPanel,
   ConnectorAppIcon,
-  ConnectorDetail,
   ConnectorStatusBadge,
   providerLabel,
 } from '@/features/workspace/customize/sections/connectors-view';
@@ -54,6 +53,7 @@ import {
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
+import { ConnectorModal } from './connector-modal';
 import { DiscoverAddFlow } from './discover-add-flow';
 
 const SCOPE_LABEL: Record<ConnectorScope, string> = {
@@ -100,13 +100,13 @@ type Panel = 'add' | 'rules';
  *  - **Global rules** -> `PoliciesPanel`, unchanged, in a modal. These rules
  *    are project-scope, not per-connector, which is why they live on the page
  *    and not in a connector's own modal.
- *  - **A connector's detail** -> `ConnectorDetail`, unchanged, in a modal.
- *    Interim: a later task replaces the body with a purpose-built rung modal.
- *    Hosting the existing panel now means no capability is unreachable in the
- *    meantime.
+ *  - **A connector's detail** -> `ConnectorModal`, the purpose-built rung
+ *    modal. It mounts the shipped components for each capability, so the
+ *    connector surface is reachable in full while Tasks 9-12 refine the four
+ *    rung bodies.
  *
- * The three imported panels are used verbatim; the only change made to
- * `connectors-view.tsx` was adding `export` to five declarations.
+ * The imported panels are used verbatim; the only change made to
+ * `connectors-view.tsx` was adding `export` to twelve declarations.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
   const canWrite =
@@ -467,33 +467,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         </ModalContent>
       </Modal>
 
-      <Modal
+      {/* Unlike the two panel modals above, this one owns its own header, so
+          it needs no `VisuallyHidden` `ModalTitle` — the connector's name IS
+          the visible `ModalTitle`. */}
+      <ConnectorModal
+        projectId={projectId}
+        connector={selectedConnector}
+        canWrite={canWrite}
         open={selectedConnector !== null}
         onOpenChange={(open) => !open && setDetailSlug(null)}
-      >
-        {/* Same treatment as the Add modal: `ConnectorDetail` renders the
-            connector's name as its own (editable) heading. */}
-        <ModalContent className="lg:max-w-3xl" aria-describedby={undefined}>
-          <ModalBody className="max-h-[75vh] space-y-0 overflow-y-auto p-0">
-            <VisuallyHidden asChild>
-              <ModalTitle>{selectedConnector?.name?.trim() || 'Connector'}</ModalTitle>
-            </VisuallyHidden>
-            {selectedConnector ? (
-              <ConnectorDetail
-                key={selectedConnector.slug}
-                projectId={projectId}
-                connector={selectedConnector}
-                canWrite={canWrite}
-                onChanged={invalidate}
-                onRemoved={() => {
-                  invalidate();
-                  setDetailSlug(null);
-                }}
-              />
-            ) : null}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+        onChanged={invalidate}
+        onRemoved={() => {
+          invalidate();
+          setDetailSlug(null);
+        }}
+      />
     </CapabilityPageShell>
   );
 }
