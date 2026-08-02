@@ -8,7 +8,6 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
@@ -17,7 +16,6 @@ import { MembersView } from '@/features/workspace/customize/sections/view/member
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
-import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
@@ -378,12 +376,8 @@ function SectionContent({
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
-    case 'skills':
-      return <SkillsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
-    case 'connectors':
-      return <ConnectorsView projectId={projectId} />;
     case 'secrets':
       return <SecretsView projectId={projectId} />;
     case 'channels':

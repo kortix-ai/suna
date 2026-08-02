@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +33,11 @@ import { ComposerChatInput, type ComposerOptions } from '@/features/session/comp
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@kortix/sdk/react';
+import {
+  CAPABILITY_TABS,
+  capabilityTabHref,
+  type CapabilityTab,
+} from '@/features/workspace/capabilities/tabs';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -273,7 +279,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections />
+        <ProjectHomeSections projectId={projectId} />
       </div>
     </div>
   );
@@ -430,8 +436,14 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  section: CustomizeSection;
+  // Connectors and Skills graduated out of Customize into their own routed
+  // pages (see capabilities/tabs.ts) — those tiles carry a capability tab key
+  // instead of a CustomizeSection and navigate there directly.
+  section: CustomizeSection | CapabilityTab['key'];
 };
+
+const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
+  CAPABILITY_TABS.some((tab) => tab.key === section);
 
 /** Static navigation does not fetch counts before the user opens Customize. */
 const PROJECT_SETUP_TILES: SetupTile[] = [
@@ -473,8 +485,9 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
   },
 ];
 
-function ProjectHomeSections() {
+function ProjectHomeSections({ projectId }: { projectId: string }) {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
   const tiles = PROJECT_SETUP_TILES;
 
   return (
@@ -487,7 +500,11 @@ function ProjectHomeSections() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => openCustomize(section)}
+              onClick={() =>
+                isCapabilityTabKey(section)
+                  ? router.push(capabilityTabHref(projectId, section))
+                  : openCustomize(section)
+              }
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />

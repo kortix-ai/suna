@@ -1210,7 +1210,14 @@ export function CommandPalette() {
           const href = item.href || '';
 
           const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
-          if (custMatch) {
+          // A bare `/customize` (no section segment) still opens the overlay on
+          // its default section. A named segment only opens the overlay when it
+          // resolves to a REAL overlay section — Connectors/Skills/Commands
+          // graduated out of CustomizeSection, so parseCustomizeSection now
+          // returns null for them. Without this check, a stale `/customize/skills`
+          // href would silently open the overlay on whatever section the user
+          // last viewed instead of navigating anywhere.
+          if (custMatch && (!custMatch[1] || parseCustomizeSection(custMatch[1]))) {
             useCustomizeStore
               .getState()
               .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);

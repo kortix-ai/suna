@@ -34,8 +34,11 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
+  ProjectCommandsNavItem,
+  ProjectConnectorsNavItem,
   ProjectCustomizeNavItem,
   ProjectFilesNavItem,
+  ProjectSkillsNavItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
@@ -370,6 +373,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   gone (offcanvas + hover flyout) it needs a docked entry. Above
                   Customize — files aren't gated behind customize access. */}
               <ProjectFilesNavItem />
+              {/* Connectors, Skills, and Commands graduated out of the
+                  Customize overlay into their own routed pages — mounted
+                  above Customize, same tier as Files. */}
+              <ProjectConnectorsNavItem />
+              <ProjectSkillsNavItem />
+              <ProjectCommandsNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>

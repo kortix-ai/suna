@@ -1,12 +1,19 @@
 'use client';
 
-import { GearSixIcon as Config, FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
+import {
+  CommandIcon as CommandGlyph,
+  GearSixIcon as Config,
+  FolderOpenIcon as FolderOpen,
+  PlugIcon as Plug,
+  SparkleIcon as Sparkle,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { activeCapabilityTab, capabilityTabHref } from '@/features/workspace/capabilities/tabs';
 import { useDevice } from '@/hooks/use-device';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -115,6 +122,123 @@ export function ProjectFilesNavItem() {
         <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
           <FolderOpen />
           Files
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+/**
+ * Connectors — graduated out of the Customize overlay into its own routed
+ * page (see capabilities/tabs.ts). Same pattern as ProjectFilesNavItem: a
+ * real `<Link prefetch>` gated on `project.connector.read`, optimistic while
+ * the probe loads — the entry only disappears on an explicit deny.
+ */
+export function ProjectConnectorsNavItem() {
+  const pathname = usePathname();
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+  const canReadConnectors = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
+  const isActive = !!pathname && activeCapabilityTab(pathname) === 'connectors';
+
+  const handleClick = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+
+  if (!canReadConnectors.allowed && !canReadConnectors.isLoading) return null;
+  if (!projectId) return null;
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={isActive}
+        tooltip="Connectors"
+        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+      >
+        <Link href={capabilityTabHref(projectId, 'connectors')} prefetch onClick={handleClick}>
+          <Plug />
+          Connectors
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+/**
+ * Skills — graduated out of the Customize overlay into its own routed page
+ * (see capabilities/tabs.ts). Same pattern as ProjectFilesNavItem: a real
+ * `<Link prefetch>` gated on `project.skill.read`, optimistic while the
+ * probe loads — the entry only disappears on an explicit deny.
+ */
+export function ProjectSkillsNavItem() {
+  const pathname = usePathname();
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+  const canReadSkills = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_READ);
+  const isActive = !!pathname && activeCapabilityTab(pathname) === 'skills';
+
+  const handleClick = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+
+  if (!canReadSkills.allowed && !canReadSkills.isLoading) return null;
+  if (!projectId) return null;
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={isActive}
+        tooltip="Skills"
+        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+      >
+        <Link href={capabilityTabHref(projectId, 'skills')} prefetch onClick={handleClick}>
+          <Sparkle />
+          Skills
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+/**
+ * Commands — graduated out of the Customize overlay into its own routed page
+ * (see capabilities/tabs.ts). Same pattern as ProjectFilesNavItem: a real
+ * `<Link prefetch>` gated on `project.command.read`, optimistic while the
+ * probe loads — the entry only disappears on an explicit deny.
+ */
+export function ProjectCommandsNavItem() {
+  const pathname = usePathname();
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+  const canReadCommands = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_READ);
+  const isActive = !!pathname && activeCapabilityTab(pathname) === 'commands';
+
+  const handleClick = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+
+  if (!canReadCommands.allowed && !canReadCommands.isLoading) return null;
+  if (!projectId) return null;
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={isActive}
+        tooltip="Commands"
+        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+      >
+        <Link href={capabilityTabHref(projectId, 'commands')} prefetch onClick={handleClick}>
+          <CommandGlyph />
+          Commands
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

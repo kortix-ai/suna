@@ -14,23 +14,23 @@ const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
   ...overrides,
 });
 
-const sectionsOf = (f: RailFlags): CustomizeSection[] =>
+const sectionsOf = (f: RailFlags): string[] =>
   railGroups(f).flatMap((g) => g.items.map((i) => i.section));
 
 describe('isRailItemActive', () => {
   test('matches an item against its own section', () => {
     expect(isRailItemActive(item('agents'), 'agents')).toBe(true);
-    expect(isRailItemActive(item('skills'), 'skills')).toBe(true);
-    expect(isRailItemActive(item('commands'), 'commands')).toBe(true);
+    expect(isRailItemActive(item('secrets'), 'secrets')).toBe(true);
+    expect(isRailItemActive(item('git'), 'git')).toBe(true);
   });
 
-  test('agents, skills, and commands are independent rail items with no shared activation', () => {
-    expect(isRailItemActive(item('agents'), 'skills')).toBe(false);
-    expect(isRailItemActive(item('agents'), 'commands')).toBe(false);
-    expect(isRailItemActive(item('skills'), 'agents')).toBe(false);
-    expect(isRailItemActive(item('skills'), 'commands')).toBe(false);
-    expect(isRailItemActive(item('commands'), 'agents')).toBe(false);
-    expect(isRailItemActive(item('commands'), 'skills')).toBe(false);
+  test('plain items are independent rail items with no shared activation', () => {
+    expect(isRailItemActive(item('agents'), 'secrets')).toBe(false);
+    expect(isRailItemActive(item('agents'), 'git')).toBe(false);
+    expect(isRailItemActive(item('secrets'), 'agents')).toBe(false);
+    expect(isRailItemActive(item('secrets'), 'git')).toBe(false);
+    expect(isRailItemActive(item('git'), 'agents')).toBe(false);
+    expect(isRailItemActive(item('git'), 'secrets')).toBe(false);
   });
 
   test('the llm-management item stands in for every llm-* sub-section', () => {
@@ -46,7 +46,7 @@ describe('isRailItemActive', () => {
   });
 
   test('a plain item does not match a different section', () => {
-    expect(isRailItemActive(item('secrets'), 'connectors')).toBe(false);
+    expect(isRailItemActive(item('secrets'), 'channels')).toBe(false);
     expect(isRailItemActive(item('git'), 'sandbox')).toBe(false);
   });
 });
@@ -109,5 +109,28 @@ describe('railGroups', () => {
     // gated section MUST resolve through isRailItemActive to be reachable.
     const items = railGroups(flags({ reviewEnabled: true })).flatMap((g) => g.items);
     expect(items.some((i) => isRailItemActive(i, 'review'))).toBe(true);
+  });
+});
+
+describe('graduated sections', () => {
+  test('the rail no longer offers connectors, skills, or commands', () => {
+    const sections = sectionsOf(
+      flags({
+        tunnelEnabled: true,
+        marketplaceEnabled: true,
+        llmGatewayAvailable: true,
+        voiceEnabled: true,
+        reviewEnabled: true,
+      }),
+    );
+    expect(sections).not.toContain('connectors');
+    expect(sections).not.toContain('skills');
+    expect(sections).not.toContain('commands');
+  });
+  test('the sections that stay are untouched', () => {
+    const sections = sectionsOf(flags());
+    expect(sections).toContain('agents');
+    expect(sections).toContain('secrets');
+    expect(sections).toContain('channels');
   });
 });
