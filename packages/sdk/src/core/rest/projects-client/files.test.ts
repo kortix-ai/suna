@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectFiles } from './files';
+import { listProjectFiles, readProjectFile } from './files';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -40,6 +40,29 @@ test('listProjectFiles is a silent background read — a 403 never hits the glob
   try {
     nextResponse = { status: 403, body: { message: 'forbidden' } };
     await expect(listProjectFiles('P1')).rejects.toBeTruthy();
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
+test('readProjectFile GETs /projects/:id/files/content with path/ref query', async () => {
+  nextResponse = { status: 200, body: { path: 'a.md', ref: 'main', content: 'hi' } };
+  const result = await readProjectFile('P1', 'a.md', 'main');
+  expect(last().url).toContain('/projects/P1/files/content?path=a.md&ref=main');
+  expect(last().method).toBe('GET');
+  expect(result.content).toBe('hi');
+});
+
+test('readProjectFile is a silent background read — a 403 never hits the global error sink', async () => {
+  // Same editor-tier gate as listProjectFiles above, same reason: a project
+  // detail/skill/command modal reading one file legitimately 403s for a
+  // plain member, and renders its own inline error state — never a toast.
+  const onError = mock(() => {});
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+  try {
+    nextResponse = { status: 403, body: { message: 'forbidden' } };
+    await expect(readProjectFile('P1', 'a.md')).rejects.toBeTruthy();
     expect(onError).not.toHaveBeenCalled();
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
