@@ -82,8 +82,10 @@ function joinCalls(record: QueryRecord): Array<{ method: string; args: unknown[]
 // How many times the outer FROM clause exposes each name. This is Postgres's own
 // resolution rule: an UNQUALIFIED reference is matched against everything the FROM
 // clause exposes, and two or more matches is ambiguous (42702) the moment anything
-// references it. Modelling the rule rather than its symptoms covers all the ways
-// this feature has hit it — see the variant list on the test below.
+// references it. Modelling the rule rather than its symptoms covers the first four
+// ways this feature has hit it — but only through an unqualified reference. A
+// collision reached by a QUALIFIED one is invisible here; subqueryExposureCounts
+// below is what covers that. See the variant list on the test.
 function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
   const joined = joinCalls(record).map((call) => call.args[0]);
 
@@ -399,22 +401,35 @@ describe('listSessionCosts service', () => {
   });
 
   // Because Drizzle renders every SQL-aliased subquery field unqualified, each one
-  // is resolved against the OUTER query's FROM clause. Four ways that has turned
+  // is resolved against the OUTER query's FROM clause. Six ways that has turned
   // into Postgres 42702, `column reference "..." is ambiguous`, which rejects the
   // whole statement at parse time:
   //   1. two subqueries claim the same alias   (the `last_at` bug this test was added for)
   //   2. an alias matches a real column on an outer table   (e.g. `status`)
   //   3. an alias matches a sibling subquery's field, even one never selected outward
   //   4. one subquery exposes the same alias twice   (e.g. two fields both `llm_cost`)
-  // All four are one rule — a name the FROM clause exposes more than once — so
-  // assert that rule rather than enumerating its symptoms. None of them are visible
-  // to a row-shape assertion, because a double records SQL instead of executing it.
+  //   5. the collision is reached only through a join's ON clause   (e.g. `session_id`)
+  //   6. a join column wrapped in sql`` and aliased, so the ON clause itself renders
+  //      unqualified and collides with `project_sessions.session_id`
   //
-  // Scope, stated because the rule above is general and this test is not: it checks
-  // the references this query actually makes, which are the outer select list's
-  // unqualified names and the join conditions' qualified ones. References that live
-  // anywhere else — ORDER BY, WHERE, a composed expression that never surfaces as a
-  // selected field — are not covered.
+  // 1-4 are one rule reached by an UNQUALIFIED reference — a name the FROM clause
+  // exposes more than once. 5 is that same rule reached by a QUALIFIED one, where the
+  // qualifier narrows to a single subquery but does not disambiguate inside it. Both
+  // are asserted as rules rather than as symptoms.
+  //
+  // 6 is not caught by either ambiguity check: it removes a reference rather than
+  // adding a collision, so nothing is left to flag. The join-reference floor below
+  // catches it by noticing the reference went missing. That is the floors earning
+  // their keep, not a third rule.
+  //
+  // None of the six are visible to a row-shape assertion, because a double records
+  // SQL instead of executing it.
+  //
+  // Scope, stated because the rules above are general and this test is not: it checks
+  // only the references this query makes that these checks can see, which are limited
+  // to the outer select list's unqualified names and the join conditions' qualified
+  // ones. References elsewhere — ORDER BY, WHERE, a composed expression that never
+  // surfaces as a selected field — are not covered.
   //
   // (The rule itself has one exception nothing here can reach: USING and NATURAL
   // joins merge the duplicated column instead of leaving it ambiguous. Drizzle only
@@ -466,12 +481,21 @@ describe('listSessionCosts service', () => {
     const joinReferences = joinConditionReferences(baseQuery);
     // Floor and documentation in one: these are the qualified references covered.
     // If this list changes, the assertion below is guarding something different.
+    // It is also the only thing that catches variant 6 — wrapping a join column in
+    // sql`` and aliasing it makes the ON clause render unqualified, so the reference
+    // disappears from this list rather than becoming a detectable collision.
     expect(joinReferences).toEqual([
       ['llm_agg', 'session_id'],
       ['compute_agg', 'session_id'],
     ]);
 
     const perSubquery = subqueryExposureCounts(baseQuery);
+    // Vacuity guard, the counterpart of the one above. The lookup below is keyed by
+    // subquery alias, which the double supplies through a Symbol; if that tag is
+    // removed, renamed, or stops being propagated, every lookup silently returns 0
+    // and the assertion after it passes while seeing nothing.
+    expect([...perSubquery.keys()].sort()).toEqual(['compute_agg', 'llm_agg']);
+
     expect(
       joinReferences.filter(
         ([qualifier, name]) => (perSubquery.get(qualifier)?.get(name) ?? 0) > 1,
