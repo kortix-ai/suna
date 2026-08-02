@@ -6,10 +6,14 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
 import { buildCostByProjectQuery, buildCostSummaryQuery } from '@/hooks/billing/use-cost-explorer';
-import { buildSessionCostsListQuery } from '@/hooks/billing/use-session-costs';
+import {
+  buildSessionCostDetailQuery,
+  buildSessionCostsListQuery,
+} from '@/hooks/billing/use-session-costs';
 
 import {
   buildBreadcrumbCrumbs,
+  explorerClockKey,
   nextClockAnchor,
   parseExplorerState,
   serializeExplorerState,
@@ -166,6 +170,128 @@ describe('nextClockAnchor', () => {
   });
 });
 
+// ── Pure function: explorerClockKey ────────────────────────────────────────
+// Which URL changes are allowed to move the window. Drill-down is not one of
+// them: the levels must agree on the window they report, and Back must be able
+// to hit the cache the level above it already filled.
+
+describe('explorerClockKey', () => {
+  const key = (search: string) => explorerClockKey(new URLSearchParams(search));
+
+  test('a drill-down does not change the key', () => {
+    expect(key('project=p1')).toBe(key(''));
+    expect(key('project=p1&session=s1')).toBe(key(''));
+  });
+
+  test('an explicit preset change does change the key', () => {
+    expect(key('range=7d')).not.toBe(key(''));
+    expect(key('range=90d')).not.toBe(key('range=7d'));
+  });
+
+  test('a custom range keys on both of its bounds', () => {
+    const base = 'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z';
+    expect(key(base)).not.toBe(key(base.replace('07-08', '07-09')));
+    expect(key(base)).not.toBe(key(base.replace('07-01', '07-02')));
+  });
+
+  // The page this explorer lives on already carries `?tab=…`, and may grow
+  // more. None of it is the explorer's window.
+  test('an unrelated param never disturbs the key', () => {
+    expect(key('tab=transactions')).toBe(key(''));
+    expect(key('range=7d&tab=transactions&project=p1')).toBe(key('range=7d'));
+  });
+});
+
+// ── Navigation: which moves re-read the clock, and which do not ────────────
+// Drives `nextClockAnchor` through real navigation sequences with a counting
+// clock. This is the behavioral half of the design decision above.
+
+describe('clock reads across a navigation sequence', () => {
+  /** Walk the URLs a user visits, returning how many times the clock was read. */
+  function walk(searches: string[]): { reads: number; windows: number } {
+    let held: ClockAnchor | null = null;
+    let reads = 0;
+    const seen = new Set<number>();
+
+    for (const search of searches) {
+      const params = new URLSearchParams(search);
+      held = nextClockAnchor(held, explorerClockKey(params), () => {
+        reads += 1;
+        return new Date(NOW.getTime() + reads);
+      });
+      seen.add(held.now.getTime());
+    }
+
+    return { reads, windows: seen.size };
+  }
+
+  test('drilling projects -> sessions -> session reads the clock once', () => {
+    expect(walk(['', 'project=p1', 'project=p1&session=s1'])).toEqual({ reads: 1, windows: 1 });
+  });
+
+  // The whole point of finding 2: one window across the drill-down means the
+  // three levels reconcile under the label they all show ("Last 30 days").
+  test('Back up the hierarchy returns to the SAME window, so the cache still holds', () => {
+    expect(walk(['', 'project=p1', 'project=p1&session=s1', 'project=p1', ''])).toEqual({
+      reads: 1,
+      windows: 1,
+    });
+  });
+
+  test('an explicit range change DOES re-read the clock', () => {
+    expect(walk(['', 'range=7d'])).toEqual({ reads: 2, windows: 2 });
+  });
+
+  test('a range change while drilled in re-reads once, not once per level', () => {
+    expect(walk(['project=p1', 'range=7d&project=p1', 'range=7d&project=p1&session=s1'])).toEqual({
+      reads: 2,
+      windows: 2,
+    });
+  });
+
+  // Paging, sorting and the owner filter live in `useState`, never in the URL,
+  // so they cannot reach the key at all. Pinned as a URL-level invariant: if
+  // any of them is ever promoted to a search param, this test is the tripwire
+  // that says "and now it moves the window".
+  test('repeated renders at one URL never re-read', () => {
+    expect(walk(['project=p1', 'project=p1', 'project=p1', 'project=p1'])).toEqual({
+      reads: 1,
+      windows: 1,
+    });
+  });
+
+  // `useExplorerClockAnchor` adjusts state during render, which React answers
+  // by re-invoking the component before it renders any child. That only
+  // terminates because the second pass finds a matching key and does NOT call
+  // `setHeld` again. Modelled here — the hook body verbatim, driven twice the
+  // way React drives it — because an unterminated version is an infinite
+  // render loop, and no DOM-free test can observe that directly.
+  test('adjusting state during render settles on the second pass', () => {
+    let held: ClockAnchor | null = null;
+    let reads = 0;
+    let setHeldCalls = 0;
+
+    const renderPass = (key: string) => {
+      const anchor = nextClockAnchor(held, key, () => {
+        reads += 1;
+        return NOW;
+      });
+      if (anchor !== held) {
+        setHeldCalls += 1;
+        held = anchor; // what React does before re-invoking the component
+      }
+      return anchor.now;
+    };
+
+    const first = renderPass('|null|null');
+    const second = renderPass('|null|null');
+
+    expect(setHeldCalls).toBe(1); // mount only — the second pass is a no-op
+    expect(reads).toBe(1);
+    expect(second).toBe(first); // and no child ever sees a different window
+  });
+});
+
 // ── Pure function: serializeExplorerState ───────────────────────────────────
 
 describe('serializeExplorerState', () => {
@@ -293,16 +419,22 @@ describe('buildBreadcrumbCrumbs', () => {
 // re-renders the explorer; the re-render re-derives the window; a window that
 // moved mints a new key; a new key has no cached data (no cost query carries
 // `placeholderData` or `keepPreviousData`, deliberately) so it fetches; that
-// fetch notifies and the cycle repeats. Measured on the unfixed code that
-// closes into a self-sustaining loop at ~830 render cycles per second, one
-// request per mounted query per cycle, for as long as the tab is open:
+// fetch notifies and the cycle repeats. Measured on the unfixed code, which
+// closes into a self-sustaining loop — one request per mounted query per
+// cycle, for as long as the tab is open:
 //
 //     window   projects level (2 queries)   sessions level (3 queries)
 //     100 ms   140 requests                 252 requests
 //     200 ms   318 requests                 501 requests
 //     800 ms   1330 requests                2010 requests
 //
-// Linear in time-on-page, on the page that reports what people are spending.
+// The shape is the finding: linear in time-on-page, never converging, on the
+// page that reports what people are spending. The absolute figures are not —
+// they are this harness on this machine and they move with load (a repeat of
+// the same sweep measured 733-813 cycles/s where the table implies ~830). A
+// browser is slower again: it clamps nested `setTimeout` to 4 ms once the
+// chain nests, and `Date`'s 1 ms resolution caps any environment near 1000
+// cycles/s. So these tests assert "settles at one request", never a rate.
 //
 // `apps/web` has no DOM test environment (no jsdom/happy-dom, and registering
 // one would leak globals into every other file — this suite runs without
@@ -340,10 +472,10 @@ async function countRequests(
   let stopped = false;
 
   // The component's own clock discipline, reproduced exactly: one reading per
-  // URL, held across renders.
+  // range selection, held across renders.
   let anchor: ClockAnchor | null = null;
   const parse = () => {
-    anchor = nextClockAnchor(anchor, params.toString(), () => new Date());
+    anchor = nextClockAnchor(anchor, explorerClockKey(params), () => new Date());
     return parseExplorerState(params, anchor.now).range;
   };
 
@@ -444,6 +576,34 @@ describe('cost explorer request count', () => {
     expect(counts).toEqual({ 'cost-summary': 1, 'owner-catalog': 1, 'session-list': 1 });
   });
 
+  // L3. `useCostSummary` here is scoped to a single session but still carries
+  // from/to, so it looped exactly like the levels above it. `useSessionCostDetail`
+  // is NOT window-keyed (the ledger shows every finalized entry regardless of
+  // the selected window) — it is mounted alongside to pin that it stays at one
+  // request and never becomes window-keyed by accident.
+  test('the session ledger level fetches each of its two queries exactly once', async () => {
+    const counts = await countRequests('project=p1&session=s1', [
+      {
+        name: 'cost-summary',
+        build: (range) =>
+          buildCostSummaryQuery(
+            { accountId: 'acct', projectId: 'p1', sessionId: 's1', from: range.from, to: range.to },
+            costSources,
+          ),
+      },
+      {
+        name: 'session-detail',
+        build: () =>
+          buildSessionCostDetailQuery(
+            { accountId: 'acct', projectId: 'p1', sessionId: 's1' },
+            sessionSources,
+          ),
+      },
+    ]);
+
+    expect(counts).toEqual({ 'cost-summary': 1, 'session-detail': 1 });
+  });
+
   // A custom range reads both bounds off the URL and never consults the clock,
   // so it was stable before this fix. Pinned so a future change to the clock
   // discipline cannot regress the one path that never needed it.
@@ -464,31 +624,84 @@ describe('cost explorer request count', () => {
 });
 
 // ── The component's wiring ─────────────────────────────────────────────────
-// `countRequests` above proves the cycle settles when the explorer holds one
-// clock reading per URL. This pins that `CostExplorer` is what does the
-// holding — the one link in the chain a hookless harness cannot reach.
-// Same source-assertion approach as `transactions-surface.test.ts`.
+//
+// `countRequests` above proves the cycle settles when the explorer resolves
+// its window from a held reading. The one link a hookless harness cannot
+// reach is whether `CostExplorer` actually does that, so it is pinned here by
+// reading the source.
+//
+// Source assertions are a liability, and this file has to earn the exception.
+// Both of this suite's standing failures — `project-sidebar-header.test.ts:36`
+// and `project-switcher-control.test.ts:56` — are `toContain('<className
+// literal>')` broken by cosmetic edits to correct components. They assert
+// APPEARANCE, so any rewording breaks them and any behavior change slips past.
+//
+// These assert the ABSENCE OF A HAZARD instead, which is a different shape,
+// and three rules keep them that way. Each was demonstrated to matter:
+//
+//  - Count clock reads across every spelling — `new Date(`, `Date.now(` — not
+//    one literal. Counting `/new Date\(\)/g` alone lets `new Date(Date.now())`
+//    through, which restores the entire loop with the suite still green.
+//  - Never match on identifier names. Splitting the call across locals
+//    (`const k = explorerClockKey(p); const now = useExplorerClockAnchor(k);`)
+//    is semantically identical and must stay green.
+//  - Strip comments properly, trailing ones included. Dropping only whole-line
+//    comments lets a trailing `// … new Date() …` inflate the count and fail a
+//    correct file.
+//
+// This still cannot see a clock injected through a helper or a `dayjs()`. Only
+// a real mount closes that, and it is filed separately as a Playwright spec.
+
+/** Comment-free source, so prose about the clock never counts as a clock read.
+ *  Block comments first, then line comments — the `[^:]` guard keeps `://` in
+ *  a URL from being treated as the start of one. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Every way this file could read the wall clock. */
+const CLOCK_READ = /new Date\(|Date\.now\(/g;
 
 describe('CostExplorer clock wiring', () => {
-  const source = readFileSync(join(import.meta.dir, 'cost-explorer.tsx'), 'utf8');
+  const code = stripComments(readFileSync(join(import.meta.dir, 'cost-explorer.tsx'), 'utf8'));
 
-  test('resolves the window from the held anchor, never from a fresh clock read', () => {
-    expect(source).toContain('useExplorerClockAnchor(searchParams.toString())');
-    expect(source).toContain('parseExplorerState(searchParams, now)');
-    expect(source).not.toContain('parseExplorerState(searchParams, new Date())');
+  test('the file reads the clock exactly once, inside the anchor', () => {
+    const reads = code.match(CLOCK_READ) ?? [];
+    expect(reads).toHaveLength(1);
+
+    // And that one read is the anchor's own, not some other line that happens
+    // to be the only one left.
+    const anchorBody = code.slice(code.indexOf('function useExplorerClockAnchor'));
+    expect(anchorBody.match(CLOCK_READ) ?? []).toHaveLength(1);
   });
 
-  // `resolvePreset(preset, new Date())` is correct in an event handler — a
-  // click is not a render — and wrong in a render body, which is where this
-  // file's code runs. So this file gets exactly one clock read, the anchor's,
-  // and every other consumer of `now` receives it as an argument.
-  test('the only clock read in this file is the anchor itself', () => {
-    const code = source
-      .split('\n')
-      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-      .join('\n');
+  // Asserted by dropping the declaration and checking the name still appears,
+  // so splitting the call across locals stays green — that refactor changes
+  // nothing about behavior and a stricter pattern match would reject it.
+  test('the render body resolves its window through the anchor hook', () => {
+    const calls = code.replace(/function useExplorerClockAnchor\b/, '');
+    expect(calls).toContain('useExplorerClockAnchor(');
+  });
 
-    expect(code.match(/new Date\(\)/g) ?? []).toHaveLength(1);
-    expect(code).toContain('nextClockAnchor(anchorRef.current, key, () => new Date())');
+  test('the anchor is keyed by the range params, not the whole URL', () => {
+    const calls = code.replace(/export function explorerClockKey\b/, '');
+    expect(calls).toContain('explorerClockKey(');
+    // `searchParams.toString()` as a key is the round-1 behavior: it re-read
+    // the clock on every drill-down and on Back.
+    expect(code).not.toMatch(/useExplorerClockAnchor\([^)]*toString\(\)/);
+  });
+
+  // The hazard itself: a clock read reaching `parseExplorerState`, whatever it
+  // is spelled or named. Caught regardless of how the arguments are formatted.
+  test('no clock read is ever passed to parseExplorerState', () => {
+    expect(code).not.toMatch(/parseExplorerState\([^)]*(new Date\(|Date\.now\()/);
+  });
+
+  // Guards the stripper itself. Without the trailing-comment branch this input
+  // reads as two clock reads and a correct file fails.
+  test('stripComments removes trailing and block comments, and spares URLs', () => {
+    expect(stripComments('const a = 1; // new Date()')).toBe('const a = 1; ');
+    expect(stripComments('/* new Date() */ const a = 1;')).toBe(' const a = 1;');
+    expect(stripComments("const u = 'https://x.dev';")).toBe("const u = 'https://x.dev';");
   });
 });

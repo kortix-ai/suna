@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useRef } from 'react';
+import { Fragment, useState } from 'react';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
@@ -54,9 +54,13 @@ export interface ExplorerState {
  * the clock on every render, and both bounds it returns land inside four React
  * Query keys. A window that moves by a millisecond per render mints a new key
  * per render, and since no cost query carries `placeholderData`, every new key
- * is a cache miss that fetches — a self-sustaining request loop, measured at
- * ~830 renders/s. `useExplorerClockAnchor` below is what supplies a `now` that
- * holds still.
+ * is a cache miss that fetches — and that fetch re-renders, so it does not
+ * settle. Request count then grows linearly with time on the page for as long
+ * as the tab is open. The *rate* is environment-specific and should not be
+ * quoted as a constant: `Date` has 1 ms resolution, so no environment can
+ * exceed ~1000 cycles/s, and a real browser is slower still because it clamps
+ * nested `setTimeout` to 4 ms. Unbounded is the part that matters.
+ * `useExplorerClockAnchor` below is what supplies a `now` that holds still.
  *
  * A named preset (`24h`/`7d`/`30d`/`90d`) is resolved against `now` — the
  * window is relative to when the link is opened, not frozen at the moment it
@@ -88,10 +92,38 @@ export function parseExplorerState(params: URLSearchParams, now: Date): Explorer
   return { range, projectId, sessionId };
 }
 
-/** A clock reading held still, and the URL it was taken for. */
+/** A clock reading held still, and the key it was taken for. */
 export interface ClockAnchor {
   key: string;
   now: Date;
+}
+
+/**
+ * Which parts of the URL are allowed to move the resolved window: the range
+ * controls, and nothing else.
+ *
+ * Deliberately NOT the whole search string. `project` and `session` change on
+ * every drill-down, and a drill-down is not a request for a fresher window —
+ * it is a request for a narrower scope of the *same* window. Keying on the
+ * whole URL would re-read the clock there, with two costs:
+ *
+ *  - **The levels would disagree.** The projects table computes Alpha over the
+ *    window that was current when it loaded; the sessions level underneath it
+ *    would compute Alpha over that window plus however long the user spent
+ *    reading. Both are labelled "Last 30 days", and while a session is actively
+ *    spending they need not add up. Two screens disagreeing under one label is
+ *    the exact defect this explorer exists to remove.
+ *  - **Back would never hit cache.** Returning to the projects level would mint
+ *    keys nobody has fetched, so Back means skeletons rather than the instant
+ *    restore it implies. `staleTime` cannot help — a new key is a new `Query`
+ *    with no data in it.
+ *
+ * An explicit range change still advances the window, because that is exactly
+ * what the user asked for. Reading only these three keys also means any param
+ * this page grows later cannot disturb the window by accident.
+ */
+export function explorerClockKey(params: URLSearchParams): string {
+  return [params.get('range'), params.get('from'), params.get('to')].join('|');
 }
 
 /**
@@ -114,39 +146,66 @@ export function nextClockAnchor(
 }
 
 /**
- * The instant this explorer's presets resolve against: read once per URL, then
- * held.
+ * The instant this explorer's presets resolve against: read once per range
+ * selection, then held.
  *
- * Why per URL rather than per render: a preset is a window relative to now, so
- * "now" has to be re-read *sometime* or a long-lived tab would keep reporting a
- * stale window. Every render is far too often — that is the defect this
- * replaces, a request loop rather than a slow drift. Per URL puts the re-read
- * on the events that already mean "the user asked for different data":
- * drilling into a project, changing the range, a back/forward, a reload. A
- * dashboard whose window advances on navigation and refresh, and holds still
- * in between, is the behavior we want anyway.
+ * Why held at all: a preset is a window relative to now, so "now" has to be
+ * re-read *sometime* or a long-lived tab keeps reporting a stale window. Every
+ * render is far too often — that is the defect this replaces, a request loop
+ * rather than a slow drift. `explorerClockKey` above decides the "sometime":
+ * an explicit range change, or a reload. Not a drill-down, and not Back.
  *
- * Why the coarser alternative was not taken: flooring `to` to the minute or
- * hour lowers the rate the key changes at, it does not stop the key changing.
- * Every boundary crossing still re-keys and refetches every mounted query, so
- * a dashboard someone is reading blanks into skeletons on a timer — and the
- * measurement is unambiguous that the grain is the only thing holding it back:
- * flooring to a grain near the render cadence restores the full loop (320
- * requests per 150 ms at a 1 ms grain, against 324 unfloored). A rare failure
- * is worse than a constant one here, because it only surfaces in production.
- * Holding the reading removes the moving input rather than quantizing it.
+ * Why not quantize instead: flooring `to` to the minute or hour lowers the rate
+ * the key changes at, it does not stop the key changing. Every boundary
+ * crossing still re-keys and refetches every mounted query, so a dashboard
+ * someone is reading blanks into skeletons on a timer — and the grain is the
+ * only thing holding it back, since flooring to a grain near the render cadence
+ * restores the loop in full (320 requests per 150 ms at a 1 ms grain, against
+ * 324 unfloored). A failure that appears at unpredictable moments is worse than
+ * a constant one, because only the constant one shows up in a local run.
+ * Holding the reading removes the moving input rather than sampling it slower.
  *
- * Why a ref and not `useMemo`: React documents `useMemo` as a performance hint
- * it may discard, and a discarded cache here does not cost a recomputation, it
- * silently restores the request loop. A ref is retained for the life of the
- * mount. The render-phase write is keyed and idempotent — it runs only when the
- * URL differs from the reading already held, so a StrictMode double-render or a
- * re-render at the same URL takes the early return.
+ * Why derived state rather than `useMemo` or a ref. All three work; the
+ * argument is about what each one costs, and it is narrower than it looks:
+ *
+ *  - `useMemo` would very probably be fine. React documents its cache as a hint
+ *    it may discard, but it has never actually done so outside a hidden
+ *    `<Activity>` tree, and StrictMode's second pass reuses it. A discard here
+ *    would also NOT restore the loop: it costs one extra clock read and one
+ *    refetch, the same price already accepted for a concurrent render below.
+ *    Looping would need a discard on *every* render. So "the memo might be
+ *    dropped" is a real but small cost, not the catastrophe it first looks.
+ *  - A ref would work too, but writing `ref.current` during render is against
+ *    React's documented rules. It goes unflagged here only because this repo
+ *    pins `eslint-plugin-react-hooks@5.2.0` with `exhaustive-deps` as its one
+ *    enabled rule and React Compiler is off — `react-hooks/refs` in v6 would
+ *    flag it, and the compiler bails out of any component that does it. Buying
+ *    a guarantee with a compiler bailout is a bad trade.
+ *  - `useState` gives the retention guarantee outright (state is never
+ *    discarded) with no rule to bend, and adjusting it during render is a
+ *    documented React pattern for exactly this — a value that has to reset when
+ *    an input changes. So: no memo semantics to rely on, no compiler bailout.
+ *
+ * State starts as `null` rather than a lazily-initialized reading so that
+ * `nextClockAnchor` is the file's ONE clock read — every path, mount included,
+ * goes through the same gate, and "this file reads the clock exactly once" is
+ * a thing a test can assert outright.
+ *
+ * `nextClockAnchor` returns the held object unless the key changed, so
+ * `setHeld` is reached on mount and on a real range change, and nowhere else.
+ * React then re-renders this component immediately, before its children; that
+ * second pass sees the matching key and stops. Both passes return the same,
+ * correct anchor, so no child ever renders against a stale window.
+ *
+ * This cannot spin: the key comes from the URL, and nothing a query returns can
+ * change the URL. A key that cannot move on its own is what bounds this
+ * structurally rather than by convention.
  */
 function useExplorerClockAnchor(key: string): Date {
-  const anchorRef = useRef<ClockAnchor | null>(null);
-  anchorRef.current = nextClockAnchor(anchorRef.current, key, () => new Date());
-  return anchorRef.current.now;
+  const [held, setHeld] = useState<ClockAnchor | null>(null);
+  const anchor = nextClockAnchor(held, key, () => new Date());
+  if (anchor !== held) setHeld(anchor);
+  return anchor.now;
 }
 
 /**
@@ -288,8 +347,10 @@ function SessionLedgerLevel({
  * back up the hierarchy one level at a time and a mid-drill-down link is
  * shareable. The one thing the URL cannot hold is the instant a *preset*
  * resolves against, so that comes from `useExplorerClockAnchor` — one clock
- * reading per URL, held across renders, because both bounds it produces sit
- * inside the query keys of every level below.
+ * reading per range selection, held across renders and across drill-downs,
+ * because both bounds it produces sit inside the query keys of every level
+ * below. All three levels therefore report the same window, and Back up the
+ * hierarchy restores from cache instead of refetching.
  *
  * Every push clears this component's own keys first (`EXPLORER_PARAM_KEYS`)
  * and re-applies `serializeExplorerState`'s output on top of the *current*
@@ -301,7 +362,7 @@ export function CostExplorer() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const now = useExplorerClockAnchor(searchParams.toString());
+  const now = useExplorerClockAnchor(explorerClockKey(searchParams));
   const state = parseExplorerState(searchParams, now);
 
   const projectsQuery = useSessionCostProjects();
