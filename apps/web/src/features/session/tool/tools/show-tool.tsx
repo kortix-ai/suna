@@ -299,7 +299,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
           variant="accent"
           size="sm"
           data-component="tool-trigger"
-          className="w-fit max-w-full justify-start gap-2 border font-normal"
+          className="border-border w-fit max-w-full justify-start gap-2 border font-normal"
         >
           {/* `Loading`'s base sets `in-data-[slot=button]:text-background`, which
               is invisible on the subtle accent surface. The same trailing-`!`
