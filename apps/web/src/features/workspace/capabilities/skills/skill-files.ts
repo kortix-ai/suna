@@ -22,11 +22,39 @@ export function entityDirectory(path: string): string {
 }
 
 /**
+ * Compares two paths' segments below the entity directory so siblings stay
+ * grouped as a real tree, not a flat lexicographic list.
+ *
+ * Sorting the joined path as one string (the original approach here) put
+ * `scripts/templates/comments.xml` ahead of `scripts/unpack.py`, because
+ * `"t" < "u"` — visually wrong: `unpack.py` is a direct sibling of
+ * `accept_changes.py`/`comment.py`/`pack.py`, but rendered outdented beneath
+ * the entire `templates/` folder, reading as orphaned. Comparing segment by
+ * segment fixes it: at the first differing position, a segment that is the
+ * END of its own path (a leaf/file) sorts before one that continues further
+ * (an intermediate directory) — so every file in a directory lists before
+ * that directory's own subdirectories, regardless of alphabetical value.
+ * Otherwise (both leaves, or both intermediate directories at this position)
+ * `localeCompare` that segment.
+ */
+function compareSegments(a: readonly string[], b: readonly string[]): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a[i] === b[i]) continue;
+    const aIsLeaf = i === a.length - 1;
+    const bIsLeaf = i === b.length - 1;
+    if (aIsLeaf !== bIsLeaf) return aIsLeaf ? -1 : 1;
+    return a[i].localeCompare(b[i]);
+  }
+  return a.length - b.length;
+}
+
+/**
  * The entity's own files, from a repo listing already scoped to its directory.
  * SKILL.md sorts first because it is the entry point every reader wants; the
- * rest sort by path so `references/`/`scripts/` stays grouped and stable
- * between renders — including a nested `scripts/templates/` sitting under
- * `scripts/`, since path order groups every descendant under its parent.
+ * rest sort by path segments (`compareSegments`) so a directory's own files
+ * stay grouped above its subdirectories — see that function's doc comment for
+ * the exact bug this fixes.
  */
 export function buildFileTree(paths: readonly string[], dir: string): FileNode[] {
   const prefix = dir ? `${dir}/` : '';
@@ -34,18 +62,16 @@ export function buildFileTree(paths: readonly string[], dir: string): FileNode[]
     .filter((p) => (dir ? p.startsWith(prefix) : !p.includes('/')))
     .map((p) => {
       const rel = p.slice(prefix.length);
-      return {
-        path: p,
-        name: rel.split('/').pop() ?? rel,
-        depth: rel.split('/').length - 1,
-      };
+      const segments = rel.split('/');
+      return { path: p, name: segments[segments.length - 1] ?? rel, depth: segments.length - 1, segments };
     })
     .sort((a, b) => {
       const aEntry = a.name === 'SKILL.md' && a.depth === 0;
       const bEntry = b.name === 'SKILL.md' && b.depth === 0;
       if (aEntry !== bEntry) return aEntry ? -1 : 1;
-      return a.path.localeCompare(b.path);
-    });
+      return compareSegments(a.segments, b.segments);
+    })
+    .map(({ path, name, depth }) => ({ path, name, depth }));
 }
 
 function extensionOf(path: string): string {

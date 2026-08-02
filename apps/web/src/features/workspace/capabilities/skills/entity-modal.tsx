@@ -57,7 +57,7 @@ const WRITE_ACTION: Record<EntityKind, string> = {
 };
 
 /**
- * The skill/command detail modal: an `About` blurb + file tree on the left,
+ * The skill/command detail modal: the source path + file tree on the left,
  * the selected file's rendered content on the right. One component for both
  * kinds — the only difference is the write-permission action probed and the
  * `/name` slash treatment in the title.
@@ -75,9 +75,21 @@ export function EntityDetailModal({
   open,
   onOpenChange,
 }: EntityDetailModalProps) {
+  // A skill/command with no description renders no `ModalDescription`, so
+  // Radix's Dialog can't find one to auto-associate via `aria-describedby`
+  // and logs a dev-only "Missing Description" warning. Passing
+  // `aria-describedby={undefined}` explicitly (as its own prop key, not just
+  // omitting the attribute) is Radix's documented opt-out — the warning
+  // message itself names this exact fix. Only applied when there truly is no
+  // description; when one exists, `ModalDescription` wires up normally.
+  const suppressDescriptionWarning = !entity?.description;
+
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-4xl">
+      <ModalContent
+        className="lg:max-w-4xl"
+        {...(suppressDescriptionWarning ? { 'aria-describedby': undefined } : {})}
+      >
         {entity ? (
           <EntityModalBody
             key={entity.path}
@@ -144,22 +156,23 @@ function EntityModalBody({
 
       <ModalBody className="max-h-[70vh] overflow-hidden p-0">
         <div className="flex min-h-0 flex-col overflow-y-auto lg:h-[70vh] lg:flex-row lg:overflow-hidden">
-          {/* Left — About + file tree. Always present; the tree portion below
-              it only renders once there is more than one file to pick from. */}
-          <div className="border-border/60 shrink-0 space-y-4 border-b px-4 py-3.5 lg:w-64 lg:overflow-y-auto lg:border-r lg:border-b-0">
-            <div className="space-y-1.5">
-              <p className="text-muted-foreground/60 text-[11px] font-medium tracking-wide uppercase">
-                About
-              </p>
-              <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-                {entity.description ?? 'No description.'}
-              </p>
-              <p className="text-muted-foreground/50 truncate font-mono text-[11px]">
-                {sourcePath}
-              </p>
-            </div>
+          {/* Left — source path + file tree. Always present; the tree portion
+              below it only renders once there is more than one file to pick
+              from. No separate "About" description here: the header already
+              carries that exact sentence in the same viewport (`ModalDescription`
+              above), so repeating it in a 256px rail would be pure duplication
+              — for a single-file entity (most commands) the whole rail would
+              otherwise restate the header and nothing else. The source path is
+              the one thing the header doesn't already say. */}
+          <div className="border-border/60 shrink-0 space-y-3 border-b px-4 py-3.5 lg:w-64 lg:overflow-y-auto lg:border-r lg:border-b-0">
+            <p className="text-muted-foreground/50 truncate font-mono text-[11px]">{sourcePath}</p>
 
-            {nodes.length > 1 ? (
+            {filesQuery.isLoading ? (
+              <div className="space-y-1.5" aria-hidden="true">
+                <Skeleton className="h-6 w-full rounded-md" />
+                <Skeleton className="h-6 w-full rounded-md" />
+              </div>
+            ) : nodes.length > 1 ? (
               <nav aria-label={`${entity.name} files`} className="space-y-0.5">
                 {nodes.map((node) => (
                   <button

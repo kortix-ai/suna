@@ -61,7 +61,13 @@ describe('buildFileTree', () => {
 
   // Real fixture: the `docx` skill, 12 files across three depths
   // (`.kortix/opencode/skills/docx/…`, `scripts/…`, `scripts/templates/…`).
-  test('sorts a three-depth tree with SKILL.md first and depth-2 entries grouped under their parent', () => {
+  // Confirmed live in the browser against this exact skill (task-5 review):
+  // sorting the joined path as one string put `scripts/templates/comments.xml`
+  // (depth 2) ahead of its own sibling `scripts/unpack.py` (depth 1) —
+  // `unpack.py` rendered outdented beneath the whole `templates/` folder,
+  // reading as orphaned. `compareSegments` fixes this: a file sorts before
+  // its own directory's subdirectories, regardless of alphabetical value.
+  test('sorts a three-depth tree so each directory groups its own files before its subdirectories', () => {
     const realDir = '.kortix/opencode/skills/docx';
     const paths = [
       `${realDir}/CREATION.md`,
@@ -81,26 +87,24 @@ describe('buildFileTree', () => {
 
     expect(tree).toHaveLength(12);
     expect(tree[0]).toMatchObject({ name: 'SKILL.md', depth: 0 });
-    // Sort is pure `path.localeCompare` (after the forced SKILL.md-first
-    // rule), so `scripts/templates/…` (depth 2) sorts before `scripts/unpack.py`
-    // (depth 1) — "templates" < "unpack" lexicographically. Depth is a
-    // per-row indent, not a guarantee that the list is grouped in strict
-    // ascending-depth order.
-    expect(tree.map((n) => n.name)).toEqual([
-      'SKILL.md',
-      'CREATION.md',
-      'EDITING.md',
-      'accept_changes.py',
-      'comment.py',
-      'pack.py',
-      'comments.xml',
-      'commentsExtended.xml',
-      'commentsExtensible.xml',
-      'commentsIds.xml',
-      'people.xml',
-      'unpack.py',
+    expect(tree.map((n) => n.path)).toEqual([
+      `${realDir}/SKILL.md`,
+      `${realDir}/CREATION.md`,
+      `${realDir}/EDITING.md`,
+      `${realDir}/scripts/accept_changes.py`,
+      `${realDir}/scripts/comment.py`,
+      `${realDir}/scripts/pack.py`,
+      `${realDir}/scripts/unpack.py`,
+      `${realDir}/scripts/templates/comments.xml`,
+      `${realDir}/scripts/templates/commentsExtended.xml`,
+      `${realDir}/scripts/templates/commentsExtensible.xml`,
+      `${realDir}/scripts/templates/commentsIds.xml`,
+      `${realDir}/scripts/templates/people.xml`,
     ]);
-    expect(tree.map((n) => n.depth)).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 1]);
+    // `scripts/unpack.py` (depth 1) now sorts before `scripts/templates/*`
+    // (depth 2) — it is a file sibling of accept_changes/comment/pack, listed
+    // with them, ahead of the `templates/` subdirectory.
+    expect(tree.map((n) => n.depth)).toEqual([0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2]);
     expect(tree.every((n) => n.path.startsWith(`${realDir}/`))).toBe(true);
   });
 });
