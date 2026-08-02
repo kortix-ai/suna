@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { resolvePreset } from '@/components/ui/date-range-picker';
+import { formatRangeLabel, resolvePreset } from '@/components/ui/date-range-picker';
 
 import {
   CostExportButtonView,
@@ -28,14 +28,79 @@ function plainRows(count: number): string[] {
 }
 
 describe('buildExportFilename', () => {
-  test('names the file by scope and window', () => {
+  test('names the file by scope and the days the export includes', () => {
+    // `to` is the EXCLUSIVE bound of the half-open query window, so this file
+    // holds spend through the 7th and nothing from the 8th. The name says so.
     expect(
       buildExportFilename('sessions', {
         preset: 'custom',
         from: '2026-07-01T00:00:00.000Z',
         to: '2026-07-08T00:00:00.000Z',
       }),
-    ).toBe('kortix-sessions-2026-07-01-to-2026-07-08.csv');
+    ).toBe('kortix-sessions-2026-07-01-to-2026-07-07.csv');
+  });
+
+  test('names the same last day the range picker labels for that window', () => {
+    // The cross-surface lock. A user picks "Jul 1 – Jul 7" and must receive a
+    // file that says Jul 7 — two surfaces disagreeing under one label is the
+    // defect this naming exists to avoid.
+    const range = {
+      preset: 'custom' as const,
+      from: '2026-07-01T00:00:00.000Z',
+      to: '2026-07-08T00:00:00.000Z',
+    };
+    expect(formatRangeLabel(range)).toBe('Jul 1 – Jul 7, 2026');
+    expect(buildExportFilename('sessions', range)).toContain('to-2026-07-07');
+  });
+
+  test('steps back across a month boundary', () => {
+    // `to` on the 1st means the export stops at the end of the previous
+    // month. Day arithmetic that does not normalise would produce `-08-00`.
+    expect(
+      buildExportFilename('projects', {
+        preset: 'custom',
+        from: '2026-07-25T00:00:00.000Z',
+        to: '2026-08-01T00:00:00.000Z',
+      }),
+    ).toBe('kortix-projects-2026-07-25-to-2026-07-31.csv');
+  });
+
+  test('steps back across a year boundary', () => {
+    expect(
+      buildExportFilename('sessions', {
+        preset: 'custom',
+        from: '2026-12-25T00:00:00.000Z',
+        to: '2027-01-01T00:00:00.000Z',
+      }),
+    ).toBe('kortix-sessions-2026-12-25-to-2026-12-31.csv');
+  });
+
+  test('does not step back a bound that lands partway through a day', () => {
+    // Only a UTC-midnight `to` is the half-open boundary where the window
+    // stops before the day begins. A `to` of 23:00Z still covers most of its
+    // own day, so the 7th IS the last day included. Reachable only from a
+    // hand-edited URL — `toUtcDayRange` always emits midnight.
+    expect(
+      buildExportFilename('sessions', {
+        preset: 'custom',
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-07-07T23:00:00.000Z',
+      }),
+    ).toBe('kortix-sessions-2026-07-01-to-2026-07-07.csv');
+  });
+
+  test('reads the last included day in UTC, not in the host timezone', () => {
+    // Asserted on the produced string, so it holds under every TZ this file is
+    // run in (see the TZ matrix in the task report). Under a negative UTC
+    // offset, 2026-07-08T00:00:00Z is still the 7th locally, so a
+    // local-calendar-parts implementation would step back to the 6th here.
+    expect(
+      buildExportFilename('projects', {
+        preset: 'custom',
+        from: '2026-07-08T00:00:00.000Z',
+        to: '2026-07-09T00:00:00.000Z',
+      }),
+    ).toBe('kortix-projects-2026-07-08-to-2026-07-08.csv');
   });
 
   test('uses the preset token when one is set', () => {
@@ -69,12 +134,13 @@ describe('buildExportFilename', () => {
         from: '2026-07-01T01:00:00+02:00',
         to: '2026-07-08T00:00:00.000Z',
       }),
-    ).toBe('kortix-sessions-2026-06-30-to-2026-07-08.csv');
+    ).toBe('kortix-sessions-2026-06-30-to-2026-07-07.csv');
   });
 
-  test('falls back to an undated name rather than throwing on an unparseable bound', () => {
-    // `new Date('not-a-date').toISOString()` throws RangeError, which would
-    // take down the whole download for a URL nobody can fix from the UI.
+  test('falls back to an undated name rather than an NaN-filled one on an unparseable bound', () => {
+    // Reading UTC calendar parts off an Invalid Date yields NaN, which would
+    // otherwise name the file `kortix-projects-NaN-NaN-NaN-to-…` for a URL
+    // nobody can fix from the UI.
     expect(
       buildExportFilename('projects', { preset: 'custom', from: 'not-a-date', to: 'also-bad' }),
     ).toBe('kortix-projects-export.csv');

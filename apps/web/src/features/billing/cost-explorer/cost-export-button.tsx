@@ -28,34 +28,65 @@ export type CostExportKind = 'projects' | 'sessions';
  * later, and two exports of "last 30 days" taken on different days do not
  * collide under a name that claims to be about a fixed window.
  *
- * A custom range is named by its literal `[from, to)` bounds. Note `to` is
- * the EXCLUSIVE upper bound, so `…-2026-07-01-to-2026-07-08.csv` holds spend
- * through the 7th — the same instants the request carried, but one day wider
- * than the inclusive label `formatRangeLabel` prints on the range picker for
- * that same window.
+ * A custom range is named by the FIRST AND LAST DAY THE EXPORT INCLUDES —
+ * `…-2026-07-01-to-2026-07-07.csv` for the window `[2026-07-01, 2026-07-08)`.
+ * The query window is half-open, so its `to` is the exclusive bound and the
+ * file contains nothing from that day. Naming the file by the raw bound would
+ * claim a day of spend the file does not hold, and would contradict the
+ * control that produced it: `formatRangeLabel` prints "Jul 1 – Jul 7, 2026"
+ * for that same window. Do not "fix" this back to the raw `to`.
  */
 export function buildExportFilename(kind: CostExportKind, range: CostRange): string {
   if (range.preset !== 'custom') return `kortix-${kind}-last-${range.preset}.csv`;
 
-  const from = utcDay(range.from);
-  const to = utcDay(range.to);
+  const from = utcDay(range.from, 'start');
+  const to = utcDay(range.to, 'end');
   // `parseExplorerState` (cost-explorer.tsx) takes a custom window's bounds
   // straight from the URL without validating them, so an edited or truncated
-  // link can reach here with a string `Date` cannot parse. `toISOString()`
-  // throws RangeError on that, which would fail the download itself — an
-  // undated filename is the smaller loss.
+  // link can reach here with a string `Date` cannot parse. Reading calendar
+  // parts off an Invalid Date yields NaN, which would name the file
+  // `kortix-sessions-NaN-NaN-NaN…` — an undated filename is the smaller loss.
   if (from === null || to === null) return `kortix-${kind}-export.csv`;
 
   return `kortix-${kind}-${from}-to-${to}.csv`;
 }
 
-/** `YYYY-MM-DD` in UTC, or `null` when the value is not a parseable instant.
- *  Goes through `Date` rather than slicing the string, so a bound carrying a
- *  non-UTC offset is named by the UTC day it actually falls on. */
-function utcDay(value: string): string | null {
+/**
+ * `YYYY-MM-DD` for one bound of a custom window, in UTC, or `null` when the
+ * value is not a parseable instant.
+ *
+ * `'end'` names the last day the window INCLUDES, not the raw bound. Only a
+ * bound landing exactly on UTC midnight steps back a day: that is the
+ * half-open boundary, where the window stops before the day begins. A bound
+ * partway through a day (reachable only from a hand-edited URL — the picker's
+ * `toUtcDayRange` always emits midnight) still covers part of its own day, so
+ * that day is the last one included and must not be stepped back.
+ *
+ * Every step reads and rebuilds UTC calendar parts, and the result is
+ * assembled from those parts rather than from `toISOString()`. `Date.UTC`
+ * normalises an out-of-range day — 0 becomes the last day of the previous
+ * month, which rolls the year at January — so month and year boundaries need
+ * no special-casing.
+ */
+function utcDay(value: string, bound: 'start' | 'end'): string | null {
   const instant = new Date(value);
   if (Number.isNaN(instant.getTime())) return null;
-  return instant.toISOString().slice(0, 10);
+
+  const atUtcMidnight =
+    instant.getUTCHours() === 0 &&
+    instant.getUTCMinutes() === 0 &&
+    instant.getUTCSeconds() === 0 &&
+    instant.getUTCMilliseconds() === 0;
+  const dayDelta = bound === 'end' && atUtcMidnight ? -1 : 0;
+
+  const day = new Date(
+    Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate() + dayDelta),
+  );
+  return `${day.getUTCFullYear()}-${pad2(day.getUTCMonth() + 1)}-${pad2(day.getUTCDate())}`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
 }
 
 /**
