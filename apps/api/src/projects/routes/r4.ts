@@ -18,6 +18,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import {
+  agentMailProvisioningClientIds,
   agentMailUpstreamStatus,
   createAgentMailInbox,
   createAgentMailWebhook,
@@ -1953,7 +1954,7 @@ projectsApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
-    const clientId = `kortix-project-${projectId}`;
+    const clientIds = agentMailProvisioningClientIds(projectId, connectorSlug);
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
     if (existingInboxId && existingEmail) {
@@ -1979,7 +1980,7 @@ projectsApp.openapi(
           username,
           domain,
           displayName,
-          clientId,
+          clientId: clientIds.inbox,
           metadata: {
             provider: 'kortix',
             project_id: projectId,
@@ -2001,7 +2002,7 @@ projectsApp.openapi(
         apiKey,
         inboxId: inbox.inbox_id,
         url: `${agentMailWebhookBaseUrl(c.req.url)}/v1/webhooks/email/agentmail`,
-        clientId: `kortix-email-${projectId}`,
+        clientId: clientIds.webhook,
       });
       webhookId = webhook.webhook_id;
       webhookSecret = webhook.secret;

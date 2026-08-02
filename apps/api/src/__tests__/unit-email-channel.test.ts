@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import {
   AgentMailApiError,
+  agentMailProvisioningClientIds,
   createAgentMailInbox,
   createAgentMailWebhook,
   isAgentMailInboxLimitError,
@@ -213,6 +214,22 @@ describe('AgentMail credential resolution', () => {
     } finally {
       (config as { AGENTMAIL_API_KEY: string | undefined }).AGENTMAIL_API_KEY = original;
     }
+  });
+});
+
+describe('AgentMail provisioning idempotency', () => {
+  test('scopes inbox and webhook client ids to the project profile tuple', () => {
+    const alpha = agentMailProvisioningClientIds('project-1', 'veyris_email_alpha');
+    const alphaRetry = agentMailProvisioningClientIds('project-1', 'VEYRIS_EMAIL_ALPHA');
+    const beta = agentMailProvisioningClientIds('project-1', 'veyris_email_beta');
+    const otherProject = agentMailProvisioningClientIds('project-2', 'veyris_email_alpha');
+
+    expect(alphaRetry).toEqual(alpha);
+    expect(beta.inbox).not.toBe(alpha.inbox);
+    expect(beta.webhook).not.toBe(alpha.webhook);
+    expect(otherProject.inbox).not.toBe(alpha.inbox);
+    expect(alpha.inbox).toMatch(/^kortix-inbox-[a-f0-9]{40}$/);
+    expect(alpha.webhook).toMatch(/^kortix-webhook-[a-f0-9]{40}$/);
   });
 });
 
