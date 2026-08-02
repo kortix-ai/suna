@@ -353,7 +353,24 @@ function ProjectRow({
   // only Total carries the real figure.
   const cells = (
     <>
-      <TableCell>{row.project_name}</TableCell>
+      {/* Project names are user-supplied and unbounded. Left to size the
+          column, a long one pushes the money columns past the table's
+          `overflow-x-auto` edge — measured at 1440px, a 69-character name
+          widened this column to 582px and clipped 52px off Total, the one
+          column the surface exists to show. The cap is on the inner block so
+          it binds under `table-layout: auto`, where a `max-width` on the
+          `<td>` itself is advisory. Same cell/`truncate` shape as the Session
+          and Owner cells in sessions-level.tsx. */}
+      <TableCell>
+        {/* `title` only on real projects. The unassigned row is the fixed
+            10-character `UNASSIGNED_LABEL`, so it never truncates and has
+            nothing to reveal — and its whole `<tr>` is already a `Hint`
+            trigger, so a native tooltip here would open a second one over
+            the same hover. */}
+        <p className="max-w-[280px] truncate" title={clickable ? row.project_name : undefined}>
+          {row.project_name}
+        </p>
+      </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
         {clickable ? row.session_count.toLocaleString('en-US') : '—'}
       </TableCell>

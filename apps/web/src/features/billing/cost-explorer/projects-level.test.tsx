@@ -747,6 +747,27 @@ describe('ProjectsLevelContent', () => {
     expect(footerHtml).not.toContain('>Total<');
   });
 
+  // Defect 3. Project names are user-supplied and unbounded; at 1440px a
+  // 69-character name widened the Project column to 582px and clipped 52px
+  // off the Total column. The cell caps and truncates instead, and keeps the
+  // full name reachable through `title`.
+  test('a long project name is truncated in its own cell rather than widening the column', () => {
+    const longName = 'A'.repeat(69);
+    const html = renderContent({
+      page: {
+        ...twoProjectPage,
+        projects: [{ ...twoProjectPage.projects[0]!, project_name: longName }],
+        total: 1,
+      },
+    });
+
+    const nameMatch = html.match(/<p[^>]*>A{69}<\/p>/);
+    expect(nameMatch).not.toBeNull();
+    expect(nameMatch![0]).toContain('truncate');
+    expect(nameMatch![0]).toContain('max-w-[280px]');
+    expect(html).toContain(`title="${longName}"`);
+  });
+
   test('pagination caption and Previous/Next disabled state reflect the page', () => {
     const html = renderContent({ page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 } });
     expect(html).toContain('Showing 1-2 of 30 projects');
