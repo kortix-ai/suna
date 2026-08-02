@@ -1,0 +1,166 @@
+#!/usr/bin/env bun
+/**
+ * Execute every Cost Explorer query against a REAL Postgres.
+ *
+ * Why this exists: the feature shipped proven only against a test double that
+ * records SQL without running it, and a double cannot reject a statement. That
+ * hid an ambiguous `last_at` subquery alias which made Postgres reject every
+ * listSessionCosts call with 42702, while the unit suite stayed green. Rendering
+ * SQL is not executing it. This script executes it.
+ *
+ * Executing without a rejection IS the assertion. Row contents do not matter
+ * here: this checks that Postgres accepts and plans each statement, not that the
+ * numbers are right — the unit suite owns the arithmetic.
+ *
+ *   cd apps/api && DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+ *     SUPABASE_URL="http://127.0.0.1:54321" INTERNAL_KORTIX_ENV="dev" \
+ *     FRONTEND_URL="http://localhost:3000" bun scripts/verify-cost-queries.ts
+ *
+ * The extra env vars are only there because `config` validates the whole
+ * environment at import time and a worktree's .env is dotenvx-encrypted. They are
+ * throwaway local values — never put a real secret on this command line.
+ *
+ * The script anchors on the busiest real session it can find so the statements
+ * run over actual rows. Against an empty database it falls back to placeholder
+ * ids: each statement still has to parse and plan, but getSessionCostRecord then
+ * short-circuits on the missing session and its three follow-up queries never
+ * run. The output states which mode the run used.
+ */
+import { gatewayRequestLogs, projectSessions } from '@kortix/db';
+import { desc, eq, sql } from 'drizzle-orm';
+import { getCostSummary, listCostByProject } from '../src/shared/cost-rollups';
+import { db } from '../src/shared/db';
+import {
+  getSessionCostRecord,
+  listProjectGatewaySessionSpend,
+  listSessionCosts,
+} from '../src/shared/session-costs';
+
+interface Anchor {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  ownerId: string;
+  real: boolean;
+}
+
+// Ids that cannot match a row. Valid UUIDs, so Postgres still parses, plans and
+// runs every statement — it just returns nothing.
+const PLACEHOLDER: Anchor = {
+  accountId: '00000000-0000-0000-0000-000000000001',
+  projectId: '00000000-0000-0000-0000-0000000000ff',
+  sessionId: '00000000-0000-0000-0000-0000000000fd',
+  ownerId: '00000000-0000-0000-0000-0000000000fe',
+  real: false,
+};
+
+// The session with the most gateway logs, so the detail queries have something
+// to aggregate rather than trivially returning empty.
+async function resolveAnchor(): Promise<Anchor> {
+  const [busiest] = await db
+    .select({
+      accountId: projectSessions.accountId,
+      projectId: projectSessions.projectId,
+      sessionId: projectSessions.sessionId,
+      ownerId: projectSessions.createdBy,
+    })
+    .from(projectSessions)
+    .leftJoin(gatewayRequestLogs, eq(gatewayRequestLogs.sessionId, projectSessions.sessionId))
+    .groupBy(
+      projectSessions.accountId,
+      projectSessions.projectId,
+      projectSessions.sessionId,
+      projectSessions.createdBy,
+    )
+    .orderBy(desc(sql`count(${gatewayRequestLogs.logId})`))
+    .limit(1);
+
+  if (!busiest) return PLACEHOLDER;
+  return {
+    accountId: busiest.accountId,
+    projectId: busiest.projectId,
+    sessionId: busiest.sessionId,
+    ownerId: busiest.ownerId ?? PLACEHOLDER.ownerId,
+    real: true,
+  };
+}
+
+// Wide enough to contain any local data, and half-open like the production
+// window so the bound comparisons are the ones the routes actually issue.
+function costWindow() {
+  const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const from = new Date(to.getTime() - 366 * 24 * 60 * 60 * 1000);
+  return { from, to };
+}
+
+// The driver puts the entire failed statement in `message`; the Postgres error
+// that explains the rejection is on `cause`. Report the latter — an ambiguous
+// column is a one-line diagnosis buried under a 4 KB SELECT.
+function describeRejection(error: unknown): string {
+  const cause = (error as { cause?: { code?: string; message?: string } }).cause;
+  if (cause?.message) return `${cause.code ?? 'error'}: ${cause.message}`;
+  return (error as Error).message?.split('\n')[0] ?? String(error);
+}
+
+function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
+  const { accountId, projectId, sessionId, ownerId } = anchor;
+  const window = costWindow();
+  const page = { window, limit: 25, offset: 0 };
+
+  return [
+    [
+      'listSessionCosts sort=total_desc',
+      () => listSessionCosts({ accountId, sort: 'total_desc', ...page }),
+    ],
+    [
+      'listSessionCosts sort=total_asc',
+      () => listSessionCosts({ accountId, sort: 'total_asc', ...page }),
+    ],
+    [
+      'listSessionCosts sort=recent',
+      () => listSessionCosts({ accountId, sort: 'recent', ...page }),
+    ],
+    [
+      'listSessionCosts + projectId + ownerId',
+      () => listSessionCosts({ accountId, projectId, ownerId, sort: 'total_desc', ...page }),
+    ],
+    [
+      'listCostByProject sort=total_desc',
+      () => listCostByProject({ accountId, sort: 'total_desc', ...page }),
+    ],
+    [
+      'listCostByProject sort=name_asc',
+      () => listCostByProject({ accountId, sort: 'name_asc', ...page }),
+    ],
+    ['getCostSummary account-wide', () => getCostSummary({ accountId, window })],
+    ['getCostSummary project-scoped', () => getCostSummary({ accountId, projectId, window })],
+    ['getSessionCostRecord', () => getSessionCostRecord({ accountId, sessionId })],
+    [
+      'listProjectGatewaySessionSpend',
+      () => listProjectGatewaySessionSpend({ accountId, projectId, days: 30 }),
+    ],
+  ];
+}
+
+const anchor = await resolveAnchor();
+console.log(
+  anchor.real
+    ? `anchor: real session ${anchor.sessionId} (project ${anchor.projectId})`
+    : 'anchor: placeholder ids — database has no sessions, detail queries will short-circuit',
+);
+
+const cases = buildCases(anchor);
+let rejected = 0;
+for (const [name, run] of cases) {
+  try {
+    await run();
+    console.log(`PASS  ${name}`);
+  } catch (error) {
+    rejected += 1;
+    console.log(`FAIL  ${name}`);
+    console.log(`      ${describeRejection(error)}`);
+  }
+}
+
+console.log(`\n${cases.length - rejected} executed / ${rejected} rejected`);
+process.exit(rejected > 0 ? 1 : 0);

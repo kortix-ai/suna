@@ -375,7 +375,11 @@ function llmAggregateSubquery(accountId: string, window: CostWindow) {
       cachedTokens: llmAggregateFields.cachedTokens.as('cached_tokens'),
       cacheWriteTokens: llmAggregateFields.cacheWriteTokens.as('cache_write_tokens'),
       modelCount: llmAggregateFields.modelCount.as('model_count'),
-      lastAt: llmAggregateFields.lastAt.as('last_at'),
+      // Prefixed, not `last_at`: Drizzle renders a SQL-aliased subquery field
+      // unqualified, so this name resolves against the outer query's FROM clause.
+      // Sharing `last_at` with the compute aggregate below made the joined select
+      // ambiguous and Postgres rejected it at parse time (42702).
+      lastAt: llmAggregateFields.lastAt.as('llm_last_at'),
     })
     .from(gatewayRequestLogs)
     .where(
@@ -400,7 +404,8 @@ function computeAggregateSubquery(accountId: string, window: CostWindow) {
       sessionId: sandboxComputeSessions.sessionId,
       computeCost: computeAggregateFields.computeCost.as('compute_cost'),
       computeSeconds: computeAggregateFields.computeSeconds.as('compute_seconds'),
-      lastAt: computeAggregateFields.lastAt.as('last_at'),
+      // Prefixed for the same reason as llm_last_at above.
+      lastAt: computeAggregateFields.lastAt.as('compute_last_at'),
     })
     .from(sandboxComputeSessions)
     .where(

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@kortix/db';
-import { type SQL, sql } from 'drizzle-orm';
+import { Column, SQL, type SQLWrapper, is, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { CostSort } from './cost-window';
 
@@ -31,7 +31,36 @@ function renderOrderBy(record: QueryRecord | undefined): string[] {
   return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
 }
 
+// Drizzle renders a SQL-aliased subquery field UNQUALIFIED, so each one resolves
+// against the OUTER query's FROM clause rather than against its own subquery.
+// Collect exactly those bare identifiers off a recorded select list.
+function unqualifiedSelectIdentifiers(record: QueryRecord | undefined): string[] {
+  if (!record) throw new Error('query was not recorded');
+  const dialect = new PgDialect();
+  return Object.values(record.fields)
+    .map((field) => dialect.sqlToQuery(sql`${field as SQLWrapper}`).sql)
+    .filter((rendered) => /^"[^".]+"$/.test(rendered));
+}
+
 const SESSION_ID_TIEBREAK = '"kortix"."project_sessions"."session_id" asc';
+
+// How Drizzle actually renders one field of a `.as(alias)` subquery. The two
+// kinds render differently, and the difference is the whole point:
+//   - a plain column     -> QUALIFIED,   `"llm_agg"."session_id"`
+//   - a sql`...`.as('x') -> UNQUALIFIED, a bare `"x"`
+// Measured against drizzle-orm 0.45.2, not assumed. An unqualified field is
+// resolved against the outer FROM clause, so two subqueries that reuse an alias
+// make the outer select ambiguous (Postgres 42702) instead of merely oddly
+// named. A double that qualifies every field cannot express that failure.
+function renderSubqueryField(alias: string, key: string, field: unknown): SQL {
+  // Drizzle keeps the string passed to `.as('...')` on SQL.Aliased.fieldAlias.
+  // Reading the JS key instead would hide a wrong alias as well as a colliding one.
+  if (is(field, SQL.Aliased)) return sql.raw(`"${field.fieldAlias}"`);
+  if (is(field, Column)) return sql.raw(`"${alias}"."${field.name}"`);
+  // Neither an aliased expression nor a column, so no alias string exists to
+  // read: fall back to the JS key. No query in this file takes this path today.
+  return sql.raw(`"${alias}"."${key}"`);
+}
 
 function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   const builder: Record<string, unknown> = {};
@@ -50,12 +79,15 @@ function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
     };
   }
   // Mirrors Drizzle's subquery terminator: `.as(alias)` ends the builder chain
-  // and yields an object whose keys are the selected columns, addressable as
-  // `"alias"."column"` by the outer query.
+  // and yields an object still keyed by the JS field names the caller selected,
+  // each holding the SQL the outer query will render for it.
   builder.as = (alias: string) => {
     record.calls.push({ method: 'as', args: [alias] });
     return Object.fromEntries(
-      Object.keys(record.fields).map((column) => [column, sql.raw(`"${alias}"."${column}"`)]),
+      Object.entries(record.fields).map(([key, field]) => [
+        key,
+        renderSubqueryField(alias, key, field),
+      ]),
     );
   };
   // biome-ignore lint/suspicious/noThenProperty: The Drizzle query mock must be awaitable.
@@ -251,6 +283,33 @@ describe('listSessionCosts service', () => {
     ]);
   });
 
+  // Two subqueries that reuse an alias do not merely read oddly. Because Drizzle
+  // renders every SQL-aliased field unqualified, the outer select ends up listing
+  // the same bare identifier twice and Postgres rejects the whole statement at
+  // parse time with 42702, `column reference "..." is ambiguous`. That is invisible
+  // to every row-shape assertion in this file, so assert on the select list itself.
+  test('the joined session select never repeats an unqualified identifier', async () => {
+    resultForQuery = () => [];
+    await listSessionCosts({
+      accountId,
+      window: costWindow,
+      sort: 'total_desc',
+      limit: 25,
+      offset: 0,
+    });
+
+    const identifiers = unqualifiedSelectIdentifiers(
+      queryRecords.find(
+        (query) => query.table === projectSessions && 'projectName' in query.fields,
+      ),
+    );
+    // Non-vacuity guard: if the double ever stops modelling the unqualified
+    // rendering there is nothing left to collide, and the check below would pass
+    // on a fiction rather than on the query.
+    expect(identifiers.length).toBeGreaterThan(0);
+    expect(identifiers.filter((name, index) => identifiers.indexOf(name) !== index)).toEqual([]);
+  });
+
   test('windows the unassigned-cost reconciliation on the same bounds', async () => {
     resultForQuery = () => [];
     await listSessionCosts({
@@ -297,19 +356,18 @@ describe('listSessionCosts service', () => {
     );
   }
 
+  // The spend terms render as bare aliases, not as `"llm_agg"."llm_cost"`, because
+  // Drizzle emits SQL-aliased subquery fields unqualified. Naming both aliases in
+  // full also makes this fail if either one is renamed out from under the sort.
   test('total_desc orders by the coalesced spend of both subqueries, descending', async () => {
     const [spend, tiebreak] = await orderByFor('total_desc');
-    expect(spend).toMatch(
-      /^\(coalesce\("llm_agg"\..+, 0\) \+ coalesce\("compute_agg"\..+, 0\)\) desc$/,
-    );
+    expect(spend).toBe('(coalesce("llm_cost", 0) + coalesce("compute_cost", 0)) desc');
     expect(tiebreak).toBe(SESSION_ID_TIEBREAK);
   });
 
   test('total_asc orders by the same expression, ascending', async () => {
     const [spend, tiebreak] = await orderByFor('total_asc');
-    expect(spend).toMatch(
-      /^\(coalesce\("llm_agg"\..+, 0\) \+ coalesce\("compute_agg"\..+, 0\)\) asc$/,
-    );
+    expect(spend).toBe('(coalesce("llm_cost", 0) + coalesce("compute_cost", 0)) asc');
     expect(tiebreak).toBe(SESSION_ID_TIEBREAK);
   });
 
