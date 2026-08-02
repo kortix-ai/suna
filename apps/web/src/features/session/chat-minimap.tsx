@@ -211,7 +211,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
               // user still needs a ring they can locate — it goes on the ROW,
               // because a ring around a 3px dash is unreadable.
               className={cn(
-                'hit-area-x-5 last:hit-area-b-3 first:hit-area-t-3 flex cursor-pointer items-center justify-start rounded-sm px-3',
+                'hit-area-x-5 last:hit-area-b-3 first:hit-area-t-3 flex cursor-pointer items-center justify-start rounded-sm px-0.5',
                 'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
               )}
               onPointerEnter={() => focusRow(row)}
