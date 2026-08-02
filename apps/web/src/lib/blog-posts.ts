@@ -1872,6 +1872,604 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
   ],
 };
 
+const twoKindsOfCapital: BlogPostEntry = {
+  slug: 'two-kinds-of-capital',
+  title: 'Your company needs two kinds of capital: human and token',
+  description:
+    'Satya Nadella\u2019s frontier-ecosystem framework reveals the most important strategic idea in AI: every company must build human capital and token capital, and they compound together.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Vision', 'Strategy', 'Enterprise'],
+  readingTime: 8,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'Satya Nadella published something recently that I think is the most important strategic idea in AI right now. He calls it the **frontier-ecosystem** framework. The core insight: every company needs two kinds of capital \u2014 **human capital** and **token capital** \u2014 and they compound together. If you are building an AI strategy without this framework, you are flying blind.',
+    },
+    {
+      type: 'h2',
+      text: 'Human capital is not going away',
+    },
+    {
+      type: 'p',
+      text: 'A common fear I hear from founders: "AI will make our people obsolete." I think the opposite is true. Human capital \u2014 the knowledge, judgment, relationships, and pattern recognition of your people \u2014 becomes *more* valuable as token capital grows, not less.',
+    },
+    {
+      type: 'p',
+      text: 'Here is why. Humans set goals. Humans connect dots across domains. Humans build trust with customers and partners. Humans recognize when the model is confidently wrong. Without human direction, compute runs in circles. It optimizes the wrong thing, or it optimizes the right thing into the ground.',
+    },
+    {
+      type: 'p',
+      text: 'I saw this firsthand when Writer.com cloned Kortix\u2019s open-source code and raised $200M. They took the token capital we publicly shared. What they could not clone was the human capital: the years of judgment about what makes an AI agent actually useful in production, the relationships with our early users, the accumulated pattern recognition of what breaks and why.',
+    },
+    {
+      type: 'callout',
+      text: 'Human capital does not depreciate when token capital appreciates. It compounds. The people who know the domain, the customers, and the failure modes become the most leveraged asset in the company.',
+    },
+    {
+      type: 'h2',
+      text: 'Token capital is the new balance sheet item',
+    },
+    {
+      type: 'p',
+      text: 'Token capital is the AI capability your firm builds and owns. Not the models you rent \u2014 the stuff you build. Skills. Workflows. Persistent memory. Private evaluation datasets. Reinforcement learning from your own human feedback.',
+    },
+    {
+      type: 'p',
+      text: 'Most companies are burning token capital without realizing it. Every prompt you type into a closed chat interface is a donation. Your institutional knowledge goes into a context window, gets processed, and disappears. The model learns nothing about your domain. You get an answer, but you do not build capability.',
+    },
+    {
+      type: 'p',
+      text: 'Token capital is not the API key. It is the system you build *around* the API key that captures signal, evaluates outputs, and improves over time.',
+    },
+    {
+      type: 'h2',
+      text: 'The learning loop is the moat',
+    },
+    {
+      type: 'p',
+      text: 'The compound interest happens in the loop between people and AI systems. Every completed task, every rejected proposal, every human override is a training signal. If you capture it and feed it back, your system gets smarter. If you do not, you are starting from zero every time.',
+    },
+    {
+      type: 'p',
+      text: 'This is not abstract. It is a concrete architectural decision. Does your platform capture signal and feed it back? Or does it treat every interaction as stateless?',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Private evals** \u2014 your own definition of what "good" looks like. This is the new IP of the firm.',
+        '**Private RL environments** \u2014 the ability to practice, fail, and improve in a safe loop before touching production.',
+        '**Persistent memory** \u2014 the system that remembers what worked last time, for this user, in this context.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'A company that builds these three things owns its trajectory. A company that relies on the provider\u2019s eval set, the provider\u2019s RLHF, and a fresh context window every time is renting intelligence, not building it.',
+    },
+    {
+      type: 'h2',
+      text: 'Offload the task, not the learning',
+    },
+    {
+      type: 'p',
+      text: 'Nadella put it simply: "You can offload a task but never offload your learning." This is the line every company needs to draw. Delegate execution to AI. Keep the learning in-house.',
+    },
+    {
+      type: 'p',
+      text: 'When you offload a task, you get efficiency. When you offload learning, you get dependency. The platform learns; you do not. The vendor improves; you stagnate. Over time, your cost goes down but your capability ceiling hardens.',
+    },
+    {
+      type: 'callout',
+      text: 'The test: if you stopped paying the vendor tomorrow, what would you keep? If the answer is "nothing," you have offloaded learning, not just tasks.',
+    },
+    {
+      type: 'h2',
+      text: 'Where Kortix fits',
+    },
+    {
+      type: 'p',
+      text: 'We built Kortix around this idea. Skills are procedural memory \u2014 repeatable expertise encoded in code, not context windows. Everything is files in a git repo, so your token capital is versioned, forkable, and portable. The sandbox is the feedback loop where humans evaluate, correct, and improve. Every interaction builds the system, not just the answer.',
+    },
+    {
+      type: 'p',
+      text: 'Human capital and token capital. Build both. They compound.',
+    },
+    {
+      type: 'cta',
+      title: 'Start building your token capital',
+      body: 'Kortix is the open-source AI OS where your company\u2019s knowledge compounds. Free to start, free to self-host, free to own your learning loop.',
+    },
+  ],
+};
+
+const testOfSovereignty: BlogPostEntry = {
+  slug: 'the-test-of-sovereignty',
+  title: 'The test of sovereignty: can you swap the model without losing what you built?',
+  description:
+    'The most important question for any company adopting AI: can you switch out the model without losing the institutional expertise you have built? A sovereignty checklist for evaluating your AI platform.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Architecture', 'Enterprise', 'Open Source'],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'There is one question that matters more than any other when evaluating an AI platform: **can you switch out the model without losing what you built?** If your state lives in a context window, you lose it when the model changes. If your workflows are embedded in a proprietary vendor\u2019s toolchain, you do not own them. If your company\u2019s knowledge is training data for a model you do not control, you have not built a moat. You have donated your IP.',
+    },
+    {
+      type: 'h2',
+      text: 'The sovereignty checklist',
+    },
+    {
+      type: 'p',
+      text: 'Here are the five criteria I use to evaluate whether an AI platform respects your sovereignty:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Model independence** \u2014 can you swap the underlying LLM without rewriting your skills, workflows, and memory?',
+        '**Data portability** \u2014 can you export everything your system has learned in a standard format?',
+        '**Self-hostability** \u2014 can you run the entire stack on your own infrastructure?',
+        '**Open source** \u2014 can you audit, modify, and fork the platform itself?',
+        '**Stateless vs. stateful** \u2014 does the platform treat your knowledge as persistent state you own, or ephemeral context you rent?',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'Most AI platforms fail at least four of these. That is not an accident. It is a business model.',
+    },
+    {
+      type: 'h2',
+      text: 'Why most platforms fail this test',
+    },
+    {
+      type: 'p',
+      text: 'The dominant AI platform model today is the walled garden. You bring your data, your prompts, your workflows into a proprietary system. The platform learns from your usage. The platform improves its models. Your company gets faster answers \u2014 but the platform captures the compound learning.',
+    },
+    {
+      type: 'p',
+      text: 'When Writer.com cloned Kortix\u2019s open-source code, they copied our token capital \u2014 the skills, the agent architecture, the prompts we had published. What they could not copy was the fact that our code is open. Anyone can audit it. Anyone can fork it. Anyone can self-host it. The barrier to entry is not the code. It is the learning loop. And the learning loop is ours because the platform is ours.',
+    },
+    {
+      type: 'callout',
+      text: 'A closed platform is a rental agreement on your own intelligence. The rent goes up every year. The eviction terms are written by the landlord.',
+    },
+    {
+      type: 'h2',
+      text: 'Renting a moat vs. building one',
+    },
+    {
+      type: 'p',
+      text: 'There is a seductive pitch: "Use our platform, and you will be so deeply integrated that switching becomes impossible." That is not a moat. That is golden handcuffs. A real moat is something you build that makes you better over time, not something that makes you stuck.',
+    },
+    {
+      type: 'p',
+      text: 'The difference is clear when you look at what happens if the model provider changes their pricing, their safety policy, or their availability. If you are locked into one provider\u2019s embeddings, one provider\u2019s tool-use format, one provider\u2019s context window \u2014 you do not have options. You have a dependency.',
+    },
+    {
+      type: 'h2',
+      text: 'Model independence is the foundation',
+    },
+    {
+      type: 'p',
+      text: 'Model independence is not just about avoiding vendor lock-in. It is about being able to choose the right model for each task. A 7B parameter model running locally might be better for a latency-sensitive internal tool than GPT-5. A fine-tuned open model might outperform a frontier model on your specific domain. A model that costs 10x less might be 95% as good for most tasks.',
+    },
+    {
+      type: 'p',
+      text: 'If your platform is tied to one provider, you cannot make these tradeoffs. You are paying the frontier premium for every task, including the ones that do not need it.',
+    },
+    {
+      type: 'h2',
+      text: 'Open source is the only verifiable path',
+    },
+    {
+      type: 'p',
+      text: 'I have come to believe that open source is not optional for enterprise AI. Not because of ideology. Because of verifiability.',
+    },
+    {
+      type: 'p',
+      text: 'With a closed platform, you cannot verify what happens to your data. You cannot verify how the model is evaluated. You cannot verify what the vendor learns from your usage. You have to trust. And trust is not a security strategy.',
+    },
+    {
+      type: 'p',
+      text: 'With open source, you can verify everything. You can audit the code. You can inspect the data flows. You can run the system on an air-gapped network. You can fork it and extend it in directions the original authors never imagined.',
+    },
+    {
+      type: 'callout',
+      text: 'The test of sovereignty is simple: can you swap the model without losing what you built? If the answer is yes, you own your AI future. If the answer is no, you are renting it.',
+    },
+    {
+      type: 'h2',
+      text: 'Where Kortix stands',
+    },
+    {
+      type: 'p',
+      text: 'Kortix passes every item on the sovereignty checklist. Model-agnostic gateway \u2014 swap any LLM without rewriting your skills. Everything is files in a git repo \u2014 your token capital is versioned, portable, forkable. Fully self-hostable. Open source under a permissive license.',
+    },
+    {
+      type: 'p',
+      text: 'We built it this way because we believe the company that owns its learning loop wins. Not the company that rents the best API.',
+    },
+    {
+      type: 'cta',
+      title: 'Run the test on your AI platform',
+      body: 'Kortix passes the test of sovereignty. Free to start, free to self-host, free to own your AI future.',
+    },
+  ],
+};
+
+const staticSoftwareIsDead: BlogPostEntry = {
+  slug: 'static-software-is-dead',
+  title: 'Static software is dead: the shift from code to feedback loops',
+  description:
+    'The way we build software is fundamentally changing. Static software no longer creates a defensible advantage. The shift is to dynamic software that improves through feedback loops.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Architecture', 'Vision', 'Engineering'],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'The way we build software is fundamentally changing. Static software \u2014 code you write once and run forever \u2014 no longer creates a defensible advantage. The shift is to **dynamic software**: systems that improve through feedback loops, where the environment provides a deterministic pass/fail signal, and the product gets better with every interaction.',
+    },
+    {
+      type: 'h2',
+      text: 'Why coding agents actually work',
+    },
+    {
+      type: 'p',
+      text: 'Coding agents work for a specific reason. The environment provides a deterministic boolean signal. Did the test pass? Did the API return 200? Did the build succeed? The shell, the file system, the running process \u2014 these are ground truth. An agent can try something, observe the result, and try again. That feedback loop is what makes autonomous coding possible.',
+    },
+    {
+      type: 'p',
+      text: 'This is not magic. It is a well-defined environment with a clear success criterion. The same principle applies to any domain where you can define a pass/fail signal.',
+    },
+    {
+      type: 'h2',
+      text: 'Static software is a document',
+    },
+    {
+      type: 'p',
+      text: 'Most software today is static. You write it, you ship it, and it does the same thing until a human changes it. It is a document. A frozen artifact. It does not learn. It does not adapt. It sits there, accumulating cruft, until a developer rewrites it.',
+    },
+    {
+      type: 'p',
+      text: 'Dynamic software is different. It is a process that compounds. Every interaction improves the system. Every user session generates signal. The product gets smarter the more people use it.',
+    },
+    {
+      type: 'callout',
+      text: 'Static software is a document. Dynamic software is a process that compounds. The difference is the feedback loop.',
+    },
+    {
+      type: 'h2',
+      text: 'At 10,000 tokens per second',
+    },
+    {
+      type: 'p',
+      text: 'Generation is effectively free. At 10,000 tokens per second, everything is instantly generated. The code itself is a commodity. The real complexity shifts to building the reinforcement environments \u2014 the sandboxes, the test harnesses, the evaluation pipelines \u2014 that agents can learn from.',
+    },
+    {
+      type: 'p',
+      text: 'The moat moves from writing code to building the feedback loop. The value shifts from the artifact to the environment. If you cannot generate a deterministic signal from your domain, you cannot build dynamic software.',
+    },
+    {
+      type: 'h2',
+      text: 'What this means for engineers',
+    },
+    {
+      type: 'p',
+      text: 'Your job shifts from writing code to designing environments that agents can learn from. Instead of hand-writing every function, you define the constraints, the test harness, the evaluation criteria. The agent generates the implementations. You curate what works.',
+    },
+    {
+      type: 'p',
+      text: 'This is not a reduction in engineering value. It is a shift. The hard part becomes: can you define a signal for what good looks like? Can you build a repeatable environment where the agent can fail safely and learn quickly?',
+    },
+    {
+      type: 'h2',
+      text: 'The Kortix approach',
+    },
+    {
+      type: 'p',
+      text: 'The sandbox is the feedback loop. Every Kortix session is an isolated environment with a deterministic signal. The agent tries, observes, and iterates. Skills are the accumulated output of that loop \u2014 compressed experience, not static code. This is why we invest in the sandbox architecture. It is the foundation.',
+    },
+    {
+      type: 'cta',
+      title: 'Stop building static software. Start building feedback loops.',
+      body: 'Kortix is the platform for dynamic software. Deploy on-prem, own your data, and build systems that learn.',
+    },
+  ],
+};
+
+const theConvergenceOfAiProducts: BlogPostEntry = {
+  slug: 'the-convergence-of-ai-products',
+  title: 'Every AI product is the same: the convergence nobody is talking about',
+  description:
+    'Open any agent platform \u2014 they are architecturally identical. The marginal differences are not defensible. The only thing that diverges is the learning loop.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Market', 'Vision', 'Comparisons'],
+  readingTime: 5,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'Open any agent platform today. Perplexity Computer, Manus, GenSpark, OpenClaw, Hermes, Claude Cowork, Notion AI, Lovable, Cursor, Replit. Architecturally, they are nearly identical. An LLM with tools. A sandboxed execution environment. A memory layer. A multi-step loop. The differences are UX, a handful of custom integrations, and how they handle memory. None of that takes more than a few months to replicate.',
+    },
+    {
+      type: 'h2',
+      text: 'The convergence is real',
+    },
+    {
+      type: 'p',
+      text: 'This is not a criticism. It is a structural observation. The underlying architecture of an AI agent platform is converging to a minimum viable set of components. The LLM is a commodity. The sandbox is a commodity. The tool integration pattern is a commodity. The memory layer is the only variable, and even that is converging to a small set of approaches.',
+    },
+    {
+      type: 'p',
+      text: 'Writer.com raised a $200 million series C. They cloned Kortix\u2019s open-source code to build their agent layer. This is not unusual. It is the norm. If you build something useful, someone will copy the architecture. The question is: what happens after they copy it?',
+    },
+    {
+      type: 'callout',
+      text: 'If your competitive advantage is your architecture, you do not have a competitive advantage. Architectures are commodities. Feedback loops are moats.',
+    },
+    {
+      type: 'h2',
+      text: 'What is not defensible',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**UX** \u2014 good design matters, but it is not a moat. A competitor can match it in a quarter.',
+        '**Custom tools** \u2014 integrations are implementation work, not differentiation. Everyone will build the same connectors.',
+        '**Memory handling** \u2014 the approach converges. Short-term, long-term, episodic. Everyone is building the same abstractions.',
+      ],
+    },
+    {
+      type: 'h2',
+      text: 'What actually diverges',
+    },
+    {
+      type: 'p',
+      text: 'The one thing that genuinely differentiates is the feedback loop. The system that captures signal and compounds it. The pipeline that takes every user interaction, every success, every failure, and turns it into a better model, a better skill, a better outcome.',
+    },
+    {
+      type: 'p',
+      text: 'This is hard. It requires infrastructure. It requires data that you own. It requires a product that people actually use in production. Most platforms skip this part because it is expensive and slow. They compete on features instead.',
+    },
+    {
+      type: 'h2',
+      text: 'What this means for builders',
+    },
+    {
+      type: 'p',
+      text: 'Do not compete on the architecture. Compete on the data flywheel. If you are building an AI product, ask yourself: does every user session make your product better? If the answer is no, you are building static software with an AI wrapper.',
+    },
+    {
+      type: 'h2',
+      text: 'What this means for buyers',
+    },
+    {
+      type: 'p',
+      text: 'Do not buy the architecture. Buy the platform that gets better with use. The platform that has real users generating real signal. The platform where the learning loop is not a roadmap item, but the core product.',
+    },
+    {
+      type: 'callout',
+      text: 'The architecture is a commodity. The learning loop is the differentiator. Everything else is table stakes.',
+    },
+    {
+      type: 'cta',
+      title: 'The architecture is a commodity. The learning loop is the differentiator.',
+      body: 'Kortix is built on the feedback loop. Deploy it, use it, and watch it compound. Start building yours.',
+    },
+  ],
+};
+
+const frontierEcosystem: BlogPostEntry = {
+  slug: 'the-frontier-ecosystem',
+  title: 'A frontier without an ecosystem is not stable',
+  description:
+    'The first phase of globalization hollowed out industrial economies. The AI era cannot repeat that. The priority has to be building a frontier ecosystem, not just a frontier model.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Vision', 'Open Source', 'Industry'],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'Satya Nadella said something recently that has stuck with me: **"There is no societal permission for an AI future that hollows out entire industries."** It is one of the most important things any tech CEO has said about this moment, and I think most people in AI missed it.',
+    },
+    {
+      type: 'p',
+      text: 'The first phase of globalization did exactly that. It hollowed out industrial economies across the American Midwest, the British north, and the German Ruhr. GDP kept growing. The stock market was fine. But the displacement was real, and the consequences \u2014 populism, declining life expectancy, political instability \u2014 are still being felt decades later.',
+    },
+    {
+      type: 'p',
+      text: 'If you measure the economy by aggregate output, globalization was a success. If you measure it by who captured the gains and who bore the costs, it was a disaster. The AI industry is on track to repeat that same dynamic, only faster.',
+    },
+    {
+      type: 'h2',
+      text: 'The centralization problem',
+    },
+    {
+      type: 'p',
+      text: 'Right now, the AI industry is organized around a small number of frontier models. A handful of labs control the most capable systems. Value flows to them. Everyone else is a consumer of intelligence, not a producer of it.',
+    },
+    {
+      type: 'p',
+      text: 'This is not stable. If every company, every industry, and every country has to rent its intelligence from the same three providers, the system concentrates power in exactly the way that hollowed out the industrial heartland. The surface-level metrics will look great. The distribution will be brutal.',
+    },
+    {
+      type: 'callout',
+      text: 'The lesson of the last thirty years is that when value concentrates, the system breaks. Not eventually \u2014 it is already breaking.',
+    },
+    {
+      type: 'h2',
+      text: 'What a frontier ecosystem looks like',
+    },
+    {
+      type: 'p',
+      text: 'A frontier ecosystem is the opposite of that. Every company owns its learning loop. Every industry has its own models, trained on its own data, optimized for its own workflows. Every country can build AI that reflects its own language, culture, and regulatory environment.',
+    },
+    {
+      type: 'p',
+      text: 'This is not a nice-to-have. It is the only way the AI transition can work at scale. If intelligence is a commodity that everyone can produce rather than a service that everyone must buy, the gains are distributed. The displacement is manageable. The system is stable.',
+    },
+    {
+      type: 'h2',
+      text: 'Open source is the only viable model',
+    },
+    {
+      type: 'p',
+      text: 'None of this happens under closed, proprietary models. A closed model is a rent-extraction machine by design. The more value it captures, the less value is available for everyone else. Open source is the opposite: a platform that enables more value on top than it captures inside.',
+    },
+    {
+      type: 'p',
+      text: 'This is why the tension between model labs and the ecosystem is real, and it is not going away. The labs are incentivized to centralize. The ecosystem is incentivized to distribute. These are fundamentally incompatible. The labs will try to frame this as a debate about safety, but it is really a debate about who controls the value.',
+    },
+    {
+      type: 'h2',
+      text: 'This is not altruism',
+    },
+    {
+      type: 'p',
+      text: 'I am not arguing for open source because it is virtuous. I am arguing for it because it is the only stable equilibrium. A world where three companies control all frontier intelligence is a world that will face the same political backlash that globalization created, only faster and with more at stake.',
+    },
+    {
+      type: 'p',
+      text: 'The labs that figure out how to build a real ecosystem around their models \u2014 where the ecosystem captures more value than the lab itself \u2014 will be the ones that survive. The ones that try to capture everything will be regulated, broken up, or replaced.',
+    },
+    {
+      type: 'h2',
+      text: 'Where Kortix fits',
+    },
+    {
+      type: 'p',
+      text: 'Kortix is open-source, self-hostable, and model-agnostic for exactly this reason. We want every company to build its own compounding advantage on top of AI, not rent it from someone else. The data flywheel that makes your company better over time should belong to you, not to a model provider in San Francisco.',
+    },
+    {
+      type: 'p',
+      text: 'We are not trying to be the only AI platform. We are trying to be the platform that enables every company to be its own AI company.',
+    },
+    {
+      type: 'cta',
+      title: 'The frontier ecosystem needs builders',
+      body: 'Kortix is open-source and built for companies that want to own their AI future. Self-host it, connect your own models, and build something that compounds.',
+    },
+  ],
+};
+
+const goodBusinessesDontNeedMoats: BlogPostEntry = {
+  slug: 'good-businesses-dont-need-moats',
+  title: 'Good businesses don\u2019t need moats (and why that\u2019s fine)',
+  description:
+    'The startup world is obsessed with moats. Every pitch deck has a slide. Every investor asks. But most great businesses do not have a true moat, and they are still great businesses.',
+  date: '2026-08-02',
+  author: 'marko',
+  cover: '/banner.png',
+  tags: ['Strategy', 'Business', 'Vision'],
+  readingTime: 6,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'Every pitch deck has a moat slide. Every investor asks about it. Founders spend weeks agonizing over how to frame their defensibility. And I think the whole conversation is mostly wrong.',
+    },
+    {
+      type: 'p',
+      text: 'The truth is: most great businesses do not have a true moat, and they are still great businesses. The obsession with moats is a VC narrative, not a business reality. It comes from a venture industry that needs winner-take-all stories to justify the math of a fund that needs one portfolio company to return the whole thing.',
+    },
+    {
+      type: 'h2',
+      text: 'The WordPress example',
+    },
+    {
+      type: 'p',
+      text: 'WordPress runs something like 43% of the web. It has created an estimated **$44 billion economy** of developers, agencies, hosting companies, and plugin builders. The company behind it, Automattic, makes around $800 million per year in revenue.',
+    },
+    {
+      type: 'p',
+      text: 'Is there a moat? Not really. Anyone can spin up a WordPress site. Anyone can build a competing hosting service. The code is open-source. The plugins are open-source. The barriers to entry are essentially zero.',
+    },
+    {
+      type: 'p',
+      text: 'And yet, the business is real. It is large. It compounds. Year after year, it grows. Not because it is defensible in the VC sense, but because it has execution, distribution, brand, and customer relationships that compound over time.',
+    },
+    {
+      type: 'h2',
+      text: 'Consultancies are the counterexample that proves the point',
+    },
+    {
+      type: 'p',
+      text: 'McKinsey, Deloitte, BCG, Bain \u2014 these are massive, profitable businesses. They are also, at the core, indistinguishable from each other. They hire from the same schools. They use the same frameworks. They compete for the same clients. There is no technology moat, no network effect, no data advantage.',
+    },
+    {
+      type: 'p',
+      text: 'And yet, they are some of the most durable businesses in the world. Why? Because they have **execution, brand trust, and relationships** that take decades to build and are not easily replicated. These are not moats in the Warren Buffett sense. They are something more mundane and more real.',
+    },
+    {
+      type: 'callout',
+      text: 'The obsession with moats confuses the condition for venture-scale returns with the condition for a good business. They are not the same thing.',
+    },
+    {
+      type: 'h2',
+      text: 'What actually matters',
+    },
+    {
+      type: 'p',
+      text: 'If you are building a real business \u2014 not a lottery ticket, not a flip \u2014 the things that matter are:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Execution velocity.** Can you ship faster and better than everyone else?',
+        '**Distribution.** Do you have a channel that compounds? Referral loops, content engines, sales relationships.',
+        '**Brand.** Do people trust you? Would they recommend you?',
+        '**Customer relationships.** Do they stay? Do they expand? Do they churn less than your competitors?',
+        '**Operational excellence.** Are you running a tight ship? Do you have real margins?',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'None of these are moats in the traditional sense. They are not defensible in the way a network effect is defensible. But they are real, and they compound. A business that does all of these well is a business that will outlast most of its competitors, even if a well-funded copycat could, in theory, replicate every feature.',
+    },
+    {
+      type: 'h2',
+      text: 'Moats are for the winner-take-all story',
+    },
+    {
+      type: 'p',
+      text: 'True moats exist. Network effects are real. Data flywheels are real. Scale economies are real. But they are the exception, not the rule. They are the condition for a venture-scale outcome, not the condition for a good business.',
+    },
+    {
+      type: 'p',
+      text: 'The problem is that the startup world has internalized the VC frame so deeply that founders think they need a moat or they are not building anything real. This is wrong. It leads to bad strategy: chasing defensibility at the expense of actually building something people want.',
+    },
+    {
+      type: 'h2',
+      text: 'Where this lands for Kortix',
+    },
+    {
+      type: 'p',
+      text: 'Kortix is open-source. Anyone can clone the repo. Anyone can self-host. Anyone can build a competing product. There is no moat in the VC sense.',
+    },
+    {
+      type: 'p',
+      text: 'But the cloud business is real. The brand is real. The open-source community is real. The customer relationships are real. And most importantly, the **data flywheel** is real \u2014 every company that uses Kortix builds a compounding advantage that belongs to them, not to us. That is not a moat around Kortix. It is a moat around our customers.',
+    },
+    {
+      type: 'p',
+      text: 'That is a better trade. We would rather build the platform that makes every customer stronger than build the fortress that keeps everyone out.',
+    },
+    {
+      type: 'cta',
+      title: 'Build a business that compounds',
+      body: 'Kortix is the platform for companies that want to own their AI learning loop. Self-host it, connect your models, and build something that compounds over time.',
+    },
+  ],
+};
+
 export const BLOG_POSTS: BlogPostEntry[] = [
   openSourceAiManagementSystem,
   kortixVsPoetic,
@@ -1884,4 +2482,10 @@ export const BLOG_POSTS: BlogPostEntry[] = [
   beyondTheChatBox,
   introducingKortix,
   theOnlyMoatThatMatters,
+  twoKindsOfCapital,
+  testOfSovereignty,
+  staticSoftwareIsDead,
+  theConvergenceOfAiProducts,
+  frontierEcosystem,
+  goodBusinessesDontNeedMoats,
 ];
