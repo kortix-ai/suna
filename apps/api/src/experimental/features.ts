@@ -156,6 +156,15 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'agent_profile',
+    name: 'Agent Capability Profile',
+    description:
+      'Configure an agent\'s instructions, integrations, private knowledge, skills, and automations in one reviewed draft.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

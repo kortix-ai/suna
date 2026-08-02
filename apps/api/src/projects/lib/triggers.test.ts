@@ -131,6 +131,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
+      knowledge: [],
     });
   });
 

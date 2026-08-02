@@ -31,7 +31,7 @@ import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import type { Command } from '@kortix/sdk/react';
+import { AgentProfileRail } from '@/features/workspace/agent-profile/agent-profile-rail';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -43,6 +43,7 @@ import {
   listProjectSandboxes,
   type SandboxTemplate,
 } from '@kortix/sdk';
+import type { Command } from '@kortix/sdk/react';
 import { chalkColors } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
@@ -105,6 +106,12 @@ export function ProjectHome({
     ...Q,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
+  const projectDetail = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    ...Q,
+  });
+  const agentProfileEnabled = projectDetail.data?.project.experimental?.agent_profile === true;
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
@@ -137,89 +144,95 @@ export function ProjectHome({
   };
 
   return (
-    <div
-      className={cn('bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5')}
-    >
-      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-        <SessionWelcome />
-      </div>
-      {showSidebarToggle && (
-        <Button
-          type="button"
-          aria-label={sidebarToggleLabel}
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
-          onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
-          className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-        >
-          <PanelLeft className="cn-rtl-flip size-4" />
-        </Button>
-      )}
-      {pendingAccessCount > 0 ? (
-        <div className="absolute top-4 right-4 z-20">
-          <Hint
-            label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() => openCustomize('members')}
-              aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
-            >
-              <Bell className="size-4" />
-              <Badge
-                size="xs"
-                variant="new"
-                className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums"
-              >
-                {pendingAccessCount}
-              </Badge>
-            </Button>
-          </Hint>
+    <div className="bg-background relative flex min-h-0 flex-1 overflow-hidden">
+      <div className="bg-background relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-4.5">
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+          <SessionWelcome />
         </div>
-      ) : null}
-
-      <ProjectHomeWelcomeBody
-        projectId={projectId}
-        onPickSuggestion={applySuggestion}
-        composer={
-          <ComposerChatInput
-            onSend={handleSend}
-            onCommand={handleCommand}
-            projectId={projectId}
-            // `busy` here means "create in flight" — spinner in the send slot,
-            // input locked. NOT isBusy (that renders agent-running stop-button
-            // semantics, which leave the composer with no button at all here).
-            isSending={busy}
-            disabled={busy}
-            // The home composer navigates to the new session on send — don't clear
-            // it first (that only flashes an empty box before the route swaps, and
-            // would drop the text on a gated send). The message rides across via the
-            // start-stash and reappears as the instant shell's optimistic turn.
-            clearOnSend={false}
-            autoFocus
-            cardClassName="rounded-xl"
-            placeholder={tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+        {showSidebarToggle && (
+          <Button
+            type="button"
+            aria-label={sidebarToggleLabel}
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+            onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+            className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+          >
+            <PanelLeft className="cn-rtl-flip size-4" />
+          </Button>
+        )}
+        {pendingAccessCount > 0 ? (
+          <div
+            className={cn(
+              'absolute top-4 z-20',
+              agentProfileEnabled ? 'right-24 min-[1280px]:right-4' : 'right-4',
             )}
-            prefill={prefill}
-            toolbarSlot={
-              showSandboxPicker ? (
-                <SandboxPicker
-                  items={sandboxItems}
-                  activeSlug={activeSlug}
-                  selectedSlug={selectedSlug}
-                  onSelect={setSelectedSlug}
-                />
-              ) : null
-            }
-          />
-        }
-      />
+          >
+            <Hint
+              label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="bg-background/80 relative backdrop-blur-sm"
+                onClick={() => openCustomize('members')}
+                aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+              >
+                <Bell className="size-4" />
+                <Badge
+                  size="xs"
+                  variant="new"
+                  className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums"
+                >
+                  {pendingAccessCount}
+                </Badge>
+              </Button>
+            </Hint>
+          </div>
+        ) : null}
+
+        <ProjectHomeWelcomeBody
+          projectId={projectId}
+          onPickSuggestion={applySuggestion}
+          composer={
+            <ComposerChatInput
+              onSend={handleSend}
+              onCommand={handleCommand}
+              projectId={projectId}
+              // `busy` here means "create in flight" — spinner in the send slot,
+              // input locked. NOT isBusy (that renders agent-running stop-button
+              // semantics, which leave the composer with no button at all here).
+              isSending={busy}
+              disabled={busy}
+              // The home composer navigates to the new session on send — don't clear
+              // it first (that only flashes an empty box before the route swaps, and
+              // would drop the text on a gated send). The message rides across via the
+              // start-stash and reappears as the instant shell's optimistic turn.
+              clearOnSend={false}
+              autoFocus
+              cardClassName="rounded-xl"
+              placeholder={tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+              )}
+              prefill={prefill}
+              toolbarSlot={
+                showSandboxPicker ? (
+                  <SandboxPicker
+                    items={sandboxItems}
+                    activeSlug={activeSlug}
+                    selectedSlug={selectedSlug}
+                    onSelect={setSelectedSlug}
+                  />
+                ) : null
+              }
+            />
+          }
+        />
+      </div>
+      <AgentProfileRail projectId={projectId} enabled={agentProfileEnabled} />
     </div>
   );
 }

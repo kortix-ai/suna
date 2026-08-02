@@ -628,6 +628,48 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Set the agent used when a new project session does not name one explicitly. */
       setDefaultAgent: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
 
+      /** Shared capability profile for one canonical project agent. */
+      agents: {
+        profile: (agentName: string) => ({
+          get: () => P.getAgentProfile(projectId, agentName),
+          updateDraft: (...a: DropFirst2<Parameters<typeof P.updateAgentProfileDraft>>) =>
+            P.updateAgentProfileDraft(projectId, agentName, ...a),
+          preview: () => P.previewAgentProfile(projectId, agentName),
+          testDraft: (...a: DropFirst2<Parameters<typeof P.testAgentProfileDraft>>) =>
+            P.testAgentProfileDraft(projectId, agentName, ...a),
+          publish: (...a: DropFirst2<Parameters<typeof P.publishAgentProfile>>) =>
+            P.publishAgentProfile(projectId, agentName, ...a),
+          discard: (...a: DropFirst2<Parameters<typeof P.discardAgentProfileDraft>>) =>
+            P.discardAgentProfileDraft(projectId, agentName, ...a),
+          pauseAutomation: (...a: DropFirst2<Parameters<typeof P.pauseAgentProfileAutomation>>) =>
+            P.pauseAgentProfileAutomation(projectId, agentName, ...a),
+          skills: {
+            importArchive: (...a: DropFirst2<Parameters<typeof P.importAgentProfileSkillArchive>>) =>
+              P.importAgentProfileSkillArchive(projectId, agentName, ...a),
+            installMarketplace: (...a: DropFirst2<Parameters<typeof P.installAgentProfileMarketplaceSkill>>) =>
+              P.installAgentProfileMarketplaceSkill(projectId, agentName, ...a),
+            importGitHub: (...a: DropFirst2<Parameters<typeof P.importAgentProfileSkillFromGitHub>>) =>
+              P.importAgentProfileSkillFromGitHub(projectId, agentName, ...a),
+            generate: (...a: DropFirst2<Parameters<typeof P.generateAgentProfileSkill>>) =>
+              P.generateAgentProfileSkill(projectId, agentName, ...a),
+          },
+          knowledge: {
+            list: () => P.listAgentKnowledgeSources(projectId, agentName),
+            createSource: (...a: DropFirst2<Parameters<typeof P.createAgentKnowledgeSource>>) =>
+              P.createAgentKnowledgeSource(projectId, agentName, ...a),
+            createUpload: (...a: DropFirst2<Parameters<typeof P.createAgentKnowledgeUpload>>) =>
+              P.createAgentKnowledgeUpload(projectId, agentName, ...a),
+            completeUpload: (...a: DropFirst2<Parameters<typeof P.completeAgentKnowledgeUpload>>) =>
+              P.completeAgentKnowledgeUpload(projectId, agentName, ...a),
+            uploadFile: (...a: DropFirst2<Parameters<typeof P.uploadAgentKnowledgeFile>>) =>
+              P.uploadAgentKnowledgeFile(projectId, agentName, ...a),
+            sync: (...a: DropFirst2<Parameters<typeof P.syncAgentKnowledgeSource>>) =>
+              P.syncAgentKnowledgeSource(projectId, agentName, ...a),
+            revoke: (...a: DropFirst2<Parameters<typeof P.revokeAgentKnowledgeSource>>) =>
+              P.revokeAgentKnowledgeSource(projectId, agentName, ...a),
+          },
+        }),
+      },
       /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
       sandbox: {
         list: () => P.listProjectSandboxes(projectId),
@@ -1080,6 +1122,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         mkdir: async (dirPath: string) => F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
         rename: async (from: string, to: string) =>
           F.renameFile(from, to, (await ensureReady()).runtimeUrl),
+      },
+      knowledge: {
+        search: (...a: DropFirst2<Parameters<typeof P.searchSessionKnowledge>>) =>
+          P.searchSessionKnowledge(projectId, sessionId, ...a),
+        read: (...a: DropFirst2<Parameters<typeof P.readSessionKnowledge>>) =>
+          P.readSessionKnowledge(projectId, sessionId, ...a),
       },
     };
   }

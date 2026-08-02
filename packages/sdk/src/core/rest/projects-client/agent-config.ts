@@ -61,6 +61,8 @@ export interface AgentConfigBlock {
   connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
+  /** Explicit private knowledge source slugs. The `all` sentinel is not valid. */
+  knowledge?: string[];
   kortix_cli?: AgentGrantSetV2;
   workspace?: 'runtime' | 'read' | 'branch';
   opencode?: OpencodeAgentConfig;

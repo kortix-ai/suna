@@ -141,6 +141,7 @@
     "cmdk": "^0.2.1",
     "cobe": "^0.6.5",
     "color-bits": "^1.1.0",
+    "croner": "^9.1.0",
     "date-fns": "^3.6.0",
     "diff": "^8.0.3",
     "emojibase-data": "^17.0.0",

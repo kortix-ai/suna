@@ -29,7 +29,9 @@ import {
   executorClient,
   mintConnectLink,
   mintSecretLink,
+  readKnowledge,
   removeConnector,
+  searchKnowledge,
 } from './gateway.ts';
 
 interface JsonRpcRequest {
@@ -192,7 +194,39 @@ export async function encodeAttachmentFiles(
  * The fixed meta-tool surface. Stable regardless of how many connectors or
  * actions a session has — that's the whole point versus exploding the catalog.
  */
-const META_TOOLS = [
+export const META_TOOLS = [
+  {
+    name: 'knowledge_search',
+    description:
+      'Search private knowledge assigned to this agent. Returns up to 8 cited results by default. Use the returned citation_id with knowledge_read when you need the complete cited chunk.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The question or terms to search for.' },
+        limit: { type: 'number', description: 'Maximum results from 1 to 20 (default 8).' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  },
+  {
+    name: 'knowledge_read',
+    description:
+      'Read one private-knowledge chunk by citation_id. Only citations assigned to this authenticated session agent are readable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        citation_id: {
+          type: 'string',
+          description: 'The citation_id returned by knowledge_search.',
+        },
+      },
+      required: ['citation_id'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  },
   {
     name: 'connectors',
     description:
@@ -400,8 +434,60 @@ function content(data: unknown) {
   return [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }];
 }
 
-async function runMetaTool(executor: ExecutorClient, name: string, args: Record<string, unknown>) {
+export interface KnowledgeToolRuntime {
+  searchKnowledge(query: string, limit?: number): Promise<unknown>;
+  readKnowledge(citationId: string): Promise<unknown>;
+}
+
+const defaultKnowledgeRuntime: KnowledgeToolRuntime = {
+  searchKnowledge,
+  readKnowledge,
+};
+
+export async function runMetaTool(
+  executor: ExecutorClient,
+  name: string,
+  args: Record<string, unknown>,
+  knowledgeRuntime: KnowledgeToolRuntime = defaultKnowledgeRuntime,
+) {
   switch (name) {
+    case 'knowledge_search': {
+      const query = typeof args.query === 'string' ? args.query.trim() : '';
+      if (!query) {
+        return { content: content({ ok: false, error: 'query is required' }), isError: true };
+      }
+      const limit = typeof args.limit === 'number' ? args.limit : undefined;
+      try {
+        const result = await knowledgeRuntime.searchKnowledge(query, limit);
+        return { content: content(result), isError: false };
+      } catch (err) {
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
+      }
+    }
+
+    case 'knowledge_read': {
+      const citationId =
+        typeof args.citation_id === 'string' ? args.citation_id.trim() : '';
+      if (!citationId) {
+        return {
+          content: content({ ok: false, error: 'citation_id is required' }),
+          isError: true,
+        };
+      }
+      try {
+        const result = await knowledgeRuntime.readKnowledge(citationId);
+        return { content: content(result), isError: false };
+      } catch (err) {
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
+      }
+    }
+
     case 'connectors': {
       const connectors = await executor.connectors();
       return {

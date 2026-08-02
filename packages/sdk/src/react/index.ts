@@ -94,6 +94,7 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
+export { useAgentProfile, useAgentProfileMutations, agentProfileKey } from './use-agent-profile';
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback

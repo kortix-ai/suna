@@ -74,7 +74,7 @@ kortix_cli = ["project.trigger.create"]
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'rogue-agent', connectors: [], kortixCli: [], env: [] },
+      grant: { agent: 'rogue-agent', connectors: [], kortixCli: [], env: [], knowledge: [] },
     });
   });
 
@@ -112,7 +112,7 @@ enabled = false
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: 'all', knowledge: [] },
     });
   });
 
@@ -159,7 +159,7 @@ connectors = ["github"]
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: 'all', knowledge: [] },
     });
   });
 
@@ -212,7 +212,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: [] },
+      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: [], knowledge: [] },
     });
   });
 
@@ -227,7 +227,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: [] },
+      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: [], knowledge: [] },
     });
   });
 
@@ -244,7 +244,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'billing', connectors: [], kortixCli: [], env: ['STRIPE_KEY'] },
+      grant: { agent: 'billing', connectors: [], kortixCli: [], env: ['STRIPE_KEY'], knowledge: [] },
     });
   });
 
@@ -311,6 +311,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
+      knowledge: [],
     });
   });
 

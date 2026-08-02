@@ -94,6 +94,10 @@ import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
 } from './projects/provider-transition/provider-transition-worker';
+import {
+  startAgentKnowledgeWorker,
+  stopAgentKnowledgeWorker,
+} from './projects/lib/agent-knowledge-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -1269,6 +1273,7 @@ async function startSingletonWorkers() {
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
   startProviderTransitionWorker();
+  startAgentKnowledgeWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1282,6 +1287,7 @@ async function stopSingletonWorkers() {
   stopProjectMaintenance();
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
+  stopAgentKnowledgeWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }

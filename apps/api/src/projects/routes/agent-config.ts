@@ -86,6 +86,7 @@ const AgentBlockSchema = z
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
+    knowledge: z.array(z.string().regex(SLUG_RE)).max(500).optional(),
     kortix_cli: GrantSetSchema.optional(),
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
     opencode: OpencodeAgentConfigSchema.optional(),

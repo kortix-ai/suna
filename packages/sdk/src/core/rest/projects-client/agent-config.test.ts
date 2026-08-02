@@ -45,6 +45,13 @@ describe('AgentConfigBlock', () => {
     };
     expect(block.connectors_required).toEqual(['gmail']);
   });
+
+  test('accepts only an explicit knowledge source list', () => {
+    const block: AgentConfigBlock = {
+      knowledge: ['support-handbook', 'pricing-faq'],
+    };
+    expect(block.knowledge).toEqual(['support-handbook', 'pricing-faq']);
+  });
 });
 
 describe('updateAgentConfig', () => {

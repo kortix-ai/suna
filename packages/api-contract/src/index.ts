@@ -53,6 +53,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   voice: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
+  agent_profile: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 

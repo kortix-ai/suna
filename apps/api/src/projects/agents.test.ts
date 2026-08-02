@@ -90,6 +90,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
+      knowledge: [],
     });
   });
 
@@ -233,5 +234,65 @@ describe('connectors_required — v2 agent required-connector declaration', () =
     expect(
       manifestHashForAgent({ ...base, connectorsRequired: ['gmail'] }),
     ).not.toBe(manifestHashForAgent(base));
+  });
+});
+
+describe('knowledge — v2 agent private-source grant', () => {
+  test('carries an explicit knowledge list into the concrete and default-sentinel grants', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    knowledge: [support-handbook, pricing-faq]',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs[0]?.knowledge).toEqual(['support-handbook', 'pricing-faq']);
+
+    const direct = resolveGovernedAgentGrant('support', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    const defaultAgent = resolveGovernedAgentGrant(DEFAULT_AGENT_SENTINEL, loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    expect(direct).toEqual({
+      ok: true,
+      grant: expect.objectContaining({ knowledge: ['support-handbook', 'pricing-faq'] }),
+    });
+    expect(defaultAgent).toEqual({
+      ok: true,
+      grant: expect.objectContaining({ knowledge: ['support-handbook', 'pricing-faq'] }),
+    });
+  });
+
+  test('defaults a declared v2 agent to no private knowledge', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support: {}',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+    const result = resolveGovernedAgentGrant('support', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    expect(result).toEqual({
+      ok: true,
+      grant: expect.objectContaining({ knowledge: [] }),
+    });
   });
 });

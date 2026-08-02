@@ -147,6 +147,9 @@ export interface AgentBlockV2 {
    *  something the author has to express by hand-writing glob rules in the
    *  agent's own frontmatter. */
   skills?: GrantSetV2;
+  /** Private knowledge source slugs assigned to this agent. This is always an
+   *  explicit allowlist. The `all` sentinel is intentionally unsupported. */
+  knowledge?: string[];
   kortix_cli?: GrantSetV2;
   workspace?: WorkspaceModeV2;
 }
@@ -525,6 +528,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
   validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  validateKnowledgeList(entry.knowledge, `${where}.knowledge`, issues);
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
   validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true, 2);
@@ -538,6 +542,41 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
         severity: 'error',
       });
     }
+  }
+}
+
+function validateKnowledgeList(
+  value: unknown,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    issues.push({
+      path: where,
+      message: 'must be an explicit array of private knowledge source slugs; "all" is not supported.',
+      severity: 'error',
+    });
+    return;
+  }
+
+  const seen = new Set<string>();
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    const path = `${where}[${index}]`;
+    if (typeof item !== 'string' || !SLUG_RE.test(item)) {
+      issues.push({
+        path,
+        message: 'must be a non-empty source slug using lowercase letters, digits, dashes, or underscores.',
+        severity: 'error',
+      });
+      continue;
+    }
+    if (seen.has(item)) {
+      issues.push({ path, message: `duplicates source slug "${item}".`, severity: 'error' });
+      continue;
+    }
+    seen.add(item);
   }
 }
 

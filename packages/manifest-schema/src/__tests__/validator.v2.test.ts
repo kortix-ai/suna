@@ -191,6 +191,52 @@ describe('validateManifest — kortix_version 2 happy path', () => {
   });
 });
 
+describe('validateManifest — agent knowledge grants', () => {
+  test('accepts an explicit list of private knowledge source slugs', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    knowledge: [support-handbook, pricing-faq]
+`);
+
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('rejects knowledge: all because private sources require explicit assignment', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    knowledge: all
+`);
+
+    expect(valid).toBe(false);
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        path: 'agents.support.knowledge',
+        severity: 'error',
+      }),
+    );
+  });
+
+  test('rejects duplicate, blank, and invalid knowledge source slugs', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    knowledge: [valid-source, valid-source, "", "Not Valid"]
+`);
+
+    expect(valid).toBe(false);
+    expect(issues.filter((issue) => issue.path.startsWith('agents.support.knowledge'))).not.toEqual([]);
+  });
+});
+
 describe('validateManifest — per-agent sandbox templates', () => {
   test('accepts a declared template and the reserved platform default', () => {
     const { valid, issues } = summarize(`

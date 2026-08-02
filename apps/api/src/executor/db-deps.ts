@@ -470,7 +470,16 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
-export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
+export interface DbGatewayOptions {
+  /** Server-owned jobs can bind one exact profile without creating a session binding. */
+  profileIdOverride?: string;
+  enforcePolicies?: boolean;
+}
+
+export function makeDbGatewayDeps(
+  principal: ExecutorPrincipal,
+  options: DbGatewayOptions = {},
+): GatewayDeps {
   return {
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
@@ -479,13 +488,29 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
         .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      const profile = await resolveSessionConnectorProfile({
-        accountId: principal.accountId,
-        projectId,
-        sessionId: principal.sessionId,
-        alias: slug,
-        actingUserId: principal.userId,
-      });
+      const profile = options.profileIdOverride
+        ? ((
+            await db
+              .select()
+              .from(executorConnectionProfiles)
+              .where(
+                and(
+                  eq(executorConnectionProfiles.profileId, options.profileIdOverride),
+                  eq(executorConnectionProfiles.accountId, principal.accountId),
+                  eq(executorConnectionProfiles.projectId, projectId),
+                  eq(executorConnectionProfiles.connectorId, row.connectorId),
+                  eq(executorConnectionProfiles.status, 'active'),
+                ),
+              )
+              .limit(1)
+          )[0] ?? null)
+        : await resolveSessionConnectorProfile({
+            accountId: principal.accountId,
+            projectId,
+            sessionId: principal.sessionId,
+            alias: slug,
+            actingUserId: principal.userId,
+          });
       if (!profile || profile.status !== 'active') return null;
       return toGatewayConnector(row, profile);
     },
@@ -698,7 +723,7 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
       return { ok: true, data: { call_id: callId, join_url: joinUrl } };
     },
     fetchImpl: nodeFetch,
-    enforcePolicies: true,
+    enforcePolicies: options.enforcePolicies ?? true,
   };
 }
 

@@ -21,7 +21,8 @@ export type ExperimentalFeatureKey =
   | 'teams'
   | 'voice'
   | 'llm_gateway'
-  | 'review_center';
+  | 'review_center'
+  | 'agent_profile';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

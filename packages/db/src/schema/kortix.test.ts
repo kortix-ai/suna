@@ -35,6 +35,13 @@ import {
   accountSsoProviders,
   executorConnectorAuthorizationStrategyEnum,
   executorConnectors,
+  agentProfileDrafts,
+  agentKnowledgeSourceTypeEnum,
+  agentKnowledgeSources,
+  agentKnowledgeVersions,
+  agentKnowledgeChunks,
+  agentKnowledgeSyncJobs,
+  agentKnowledgeAssignments,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -152,6 +159,61 @@ describe('kortix enums', () => {
 describe('connector profiles', () => {
   test('store one authorization strategy on each connector profile', () => {
     expect(columnNames(executorConnectors)).toContain('authorization_strategy');
+  });
+});
+
+describe('unified agent profile persistence', () => {
+  test('stores one revisioned shared draft per project and canonical agent name', () => {
+    expect(getTableConfig(agentProfileDrafts).name).toBe('agent_profile_drafts');
+    expect(columnNames(agentProfileDrafts)).toEqual(
+      expect.arrayContaining([
+        'project_id',
+        'agent_name',
+        'revision',
+        'base_revision',
+        'base_sections',
+        'sections',
+        'section_revisions',
+        'active_editors',
+        'expires_at',
+      ]),
+    );
+    const uniqueDraft = getTableConfig(agentProfileDrafts).indexes.find(
+      (candidate) => candidate.config.name === 'idx_agent_profile_drafts_project_agent',
+    );
+    expect(uniqueDraft?.config.unique).toBe(true);
+  });
+});
+
+describe('private agent knowledge persistence', () => {
+  test('supports uploads, URLs, and connected-app resources', () => {
+    expect(agentKnowledgeSourceTypeEnum.enumValues).toEqual(['upload', 'url', 'connector']);
+  });
+
+  test('keys sources, versions, chunks, jobs, and assignments by project and agent', () => {
+    for (const table of [
+      agentKnowledgeSources,
+      agentKnowledgeVersions,
+      agentKnowledgeChunks,
+      agentKnowledgeSyncJobs,
+      agentKnowledgeAssignments,
+    ]) {
+      expect(columnNames(table)).toEqual(expect.arrayContaining(['project_id', 'agent_name']));
+    }
+  });
+
+  test('stores hybrid retrieval data with stable citations', () => {
+    const columns = getTableConfig(agentKnowledgeChunks).columns;
+    expect(columns.find((column) => column.name === 'embedding')?.getSQLType()).toBe('vector(1536)');
+    expect(columns.find((column) => column.name === 'search_document')?.getSQLType()).toBe('tsvector');
+    expect(columnNames(agentKnowledgeChunks)).toEqual(
+      expect.arrayContaining(['citation_id', 'content', 'token_count', 'locator']),
+    );
+  });
+
+  test('indexes due sync work and source isolation', () => {
+    expect(indexNames(agentKnowledgeSyncJobs)).toContain('idx_agent_knowledge_sync_jobs_available');
+    expect(indexNames(agentKnowledgeChunks)).toContain('idx_agent_knowledge_chunks_agent_source');
   });
 });
 

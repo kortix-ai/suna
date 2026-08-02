@@ -16,7 +16,10 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { readAgentBlockV2 } from '../lib/agent-config-v2';
+import { reconcilePublishedAgentKnowledge } from '../lib/agent-knowledge-assignments';
 import { normalizeString, readBody } from '../lib/serializers';
+import { readManifest } from '../triggers';
 
 projectsApp.openapi(
   createRoute({
@@ -150,6 +153,44 @@ projectsApp.openapi(
 
     invalidateProjectMirror(projectId);
 
+    let knowledgeReconcile: { assigned: string[]; missing: string[] } | null = null;
+    const crMetadata = (cr.metadata as Record<string, unknown> | null) ?? {};
+    const profileMetadata = crMetadata.agent_profile as Record<string, unknown> | undefined;
+    const profileAgentName = normalizeString(profileMetadata?.agent_name);
+    if (profileAgentName) {
+      try {
+        const mergedManifest = await readManifest(projectForGit, {
+          forceRefresh: true,
+          rethrowReadErrors: true,
+        });
+        if (!mergedManifest) throw new Error('Merged manifest is missing.');
+        const profileBlock = readAgentBlockV2(mergedManifest, profileAgentName);
+        if (!profileBlock.ok || !profileBlock.block) {
+          throw new Error(profileBlock.ok ? 'Merged agent block is missing.' : profileBlock.error);
+        }
+        const knowledge = Array.isArray(profileBlock.block.knowledge)
+          ? profileBlock.block.knowledge.filter(
+              (entry): entry is string => typeof entry === 'string',
+            )
+          : [];
+        knowledgeReconcile = await reconcilePublishedAgentKnowledge({
+          accountId: loaded.row.accountId,
+          projectId,
+          agentName: profileAgentName,
+          sourceSlugs: knowledge,
+          manifestRevision: result.merge_commit_sha,
+          changeRequestId: crId,
+        });
+      } catch (error) {
+        console.error(
+          '[change-requests] agent knowledge reconcile failed',
+          projectId,
+          profileAgentName,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     // A merged CR may have edited a `sandbox.templates` Dockerfile or spec.
     // Reconcile this project's own templates and pre-build any whose identity
     // drifted, so the next session boots off cache instead of a cold build. The
@@ -183,6 +224,7 @@ projectsApp.openapi(
     return c.json({
       change_request: serializeChangeRequest(row),
       merge: result,
+      knowledge_reconcile: knowledgeReconcile,
     });
   },
 );

@@ -105,6 +105,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       voice: false,
       llm_gateway: true,
       review_center: false,
+      agent_profile: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -561,6 +562,7 @@ describe('envelopes', () => {
       'voice',
       'llm_gateway',
       'review_center',
+      'agent_profile',
     ]);
   });
 

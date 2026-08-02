@@ -33,6 +33,18 @@ export {
   gatewayBudgets,
   // Kortix tables
   projects,
+  agentProfileRiskEnum,
+  agentProfileDrafts,
+  agentKnowledgeSourceTypeEnum,
+  agentKnowledgeSourceStatusEnum,
+  agentKnowledgeVersionStatusEnum,
+  agentKnowledgeSyncJobStatusEnum,
+  agentKnowledgeSources,
+  agentKnowledgeVersions,
+  agentKnowledgeChunks,
+  agentKnowledgeSyncJobs,
+  agentKnowledgeAssignments,
+  agentProfileTestSessions,
   projectGitConnections,
   projectGitCredentials,
   projectMembers,
@@ -197,7 +209,14 @@ export {
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant } from './schema/kortix';
+export type {
+  AgentGrant,
+  AgentProfileDraftSections,
+  AgentProfileDraftChange,
+  AgentProfileDraftImpact,
+  AgentProfileDraftEditor,
+  AgentKnowledgeLocator,
+} from './schema/kortix';
 export type {
   SecretEgressPolicy,
   SecretEgressRule,

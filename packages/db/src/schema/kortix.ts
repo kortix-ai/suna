@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -16,6 +17,7 @@ import {
   uniqueIndex,
   uuid,
   varchar,
+  vector,
 } from 'drizzle-orm/pg-core';
 
 export const kortixSchema = pgSchema('kortix');
@@ -38,6 +40,37 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
+
+export const agentProfileRiskEnum = kortixSchema.enum('agent_profile_risk', [
+  'low',
+  'medium',
+  'high',
+]);
+
+export const agentKnowledgeSourceTypeEnum = kortixSchema.enum('agent_knowledge_source_type', [
+  'upload',
+  'url',
+  'connector',
+]);
+
+export const agentKnowledgeSourceStatusEnum = kortixSchema.enum(
+  'agent_knowledge_source_status',
+  ['draft', 'pending', 'syncing', 'ready', 'degraded', 'error', 'revoked'],
+);
+
+export const agentKnowledgeVersionStatusEnum = kortixSchema.enum(
+  'agent_knowledge_version_status',
+  ['processing', 'active', 'failed', 'superseded'],
+);
+
+export const agentKnowledgeSyncJobStatusEnum = kortixSchema.enum(
+  'agent_knowledge_sync_job_status',
+  ['pending', 'running', 'succeeded', 'failed', 'dead_lettered'],
+);
+
+const tsvector = customType<{ data: string }>({
+  dataType: () => 'tsvector',
+});
 
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
@@ -344,6 +377,269 @@ export const projects = kortixSchema.table(
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
     index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+  ],
+);
+
+export interface AgentProfileDraftSections {
+  instructions?: Record<string, unknown>;
+  integrations?: Array<Record<string, unknown>>;
+  knowledge?: string[];
+  skills?: Array<Record<string, unknown>>;
+  automations?: Array<Record<string, unknown>>;
+  advanced?: Record<string, unknown>;
+}
+
+export interface AgentProfileDraftChange {
+  section: string;
+  risk: 'low' | 'medium' | 'high';
+  kind: 'add' | 'update' | 'remove' | 'revoke' | 'pause';
+  summary: string;
+  resource_id?: string;
+}
+
+export interface AgentProfileDraftImpact {
+  data_access: string[];
+  actions: string[];
+  schedule_changes: string[];
+  cost_sensitive_settings: string[];
+}
+
+export interface AgentProfileDraftEditor {
+  userId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  lastSeenAt: string;
+}
+
+export const agentProfileDrafts = kortixSchema.table(
+  'agent_profile_drafts',
+  {
+    draftId: uuid('draft_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    revision: integer('revision').default(0).notNull(),
+    baseRevision: text('base_revision'),
+    baseSections: jsonb('base_sections').default({}).$type<AgentProfileDraftSections>().notNull(),
+    sections: jsonb('sections').default({}).$type<AgentProfileDraftSections>().notNull(),
+    sectionRevisions: jsonb('section_revisions').default({}).$type<Record<string, number>>().notNull(),
+    changedSections: jsonb('changed_sections').default([]).$type<string[]>().notNull(),
+    changes: jsonb('changes').default([]).$type<AgentProfileDraftChange[]>().notNull(),
+    impact: jsonb('impact').default({}).$type<AgentProfileDraftImpact>().notNull(),
+    highestRisk: agentProfileRiskEnum('highest_risk').default('low').notNull(),
+    activeEditors: jsonb('active_editors').default([]).$type<AgentProfileDraftEditor[]>().notNull(),
+    branchName: text('branch_name'),
+    changeRequestId: uuid('change_request_id'),
+    updatedBy: uuid('updated_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '30 days'`)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_agent_profile_drafts_project_agent').on(table.projectId, table.agentName),
+    index('idx_agent_profile_drafts_account').on(table.accountId),
+    index('idx_agent_profile_drafts_expires').on(table.expiresAt),
+  ],
+);
+
+export const agentKnowledgeSources = kortixSchema.table(
+  'agent_knowledge_sources',
+  {
+    sourceId: uuid('source_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    slug: varchar('slug', { length: 200 }).notNull(),
+    sourceType: agentKnowledgeSourceTypeEnum('source_type').notNull(),
+    title: varchar('title', { length: 500 }).notNull(),
+    privacy: varchar('privacy', { length: 32 }).default('private').notNull(),
+    status: agentKnowledgeSourceStatusEnum('status').default('draft').notNull(),
+    url: text('url'),
+    storagePath: text('storage_path'),
+    connectorProfileId: uuid('connector_profile_id'),
+    resourceId: text('resource_id'),
+    sourceConfig: jsonb('source_config').default({}).$type<Record<string, unknown>>().notNull(),
+    automaticSync: boolean('automatic_sync').default(true).notNull(),
+    syncIntervalHours: integer('sync_interval_hours').default(24),
+    activeVersionId: uuid('active_version_id'),
+    lastSuccessfulSyncAt: timestamp('last_successful_sync_at', { withTimezone: true }),
+    lastSyncAttemptAt: timestamp('last_sync_attempt_at', { withTimezone: true }),
+    nextSyncAt: timestamp('next_sync_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '30 days'`),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_agent_knowledge_sources_project_agent_slug').on(
+      table.projectId,
+      table.agentName,
+      table.slug,
+    ),
+    index('idx_agent_knowledge_sources_account').on(table.accountId),
+    index('idx_agent_knowledge_sources_sync_due').on(table.status, table.nextSyncAt),
+    check('agent_knowledge_sources_private_check', sql`${table.privacy} = 'private'`),
+    check(
+      'agent_knowledge_sources_sync_interval_check',
+      sql`${table.syncIntervalHours} is null or ${table.syncIntervalHours} between 1 and 8760`,
+    ),
+  ],
+);
+
+export const agentKnowledgeVersions = kortixSchema.table(
+  'agent_knowledge_versions',
+  {
+    versionId: uuid('version_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => agentKnowledgeSources.sourceId, { onDelete: 'cascade' }),
+    status: agentKnowledgeVersionStatusEnum('status').default('processing').notNull(),
+    contentHash: varchar('content_hash', { length: 64 }),
+    chunkCount: integer('chunk_count').default(0).notNull(),
+    embeddingModel: varchar('embedding_model', { length: 200 }),
+    lexicalOnly: boolean('lexical_only').default(false).notNull(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    error: text('error'),
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_agent_knowledge_versions_project_agent').on(table.projectId, table.agentName),
+    index('idx_agent_knowledge_versions_source_created').on(table.sourceId, table.createdAt),
+  ],
+);
+
+export interface AgentKnowledgeLocator {
+  page?: number;
+  url?: string;
+  heading?: string;
+  row?: number;
+}
+
+export const agentKnowledgeChunks = kortixSchema.table(
+  'agent_knowledge_chunks',
+  {
+    chunkId: uuid('chunk_id').defaultRandom().primaryKey(),
+    citationId: uuid('citation_id').defaultRandom().notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => agentKnowledgeSources.sourceId, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => agentKnowledgeVersions.versionId, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    locator: jsonb('locator').default({}).$type<AgentKnowledgeLocator>().notNull(),
+    searchDocument: tsvector('search_document')
+      .generatedAlwaysAs(sql`to_tsvector('english', coalesce(content, ''))`)
+      .notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_agent_knowledge_chunks_citation').on(table.citationId),
+    uniqueIndex('idx_agent_knowledge_chunks_version_index').on(table.versionId, table.chunkIndex),
+    index('idx_agent_knowledge_chunks_agent_source').on(
+      table.projectId,
+      table.agentName,
+      table.sourceId,
+    ),
+    index('idx_agent_knowledge_chunks_search').using('gin', table.searchDocument),
+    check('agent_knowledge_chunks_token_count_check', sql`${table.tokenCount} > 0`),
+  ],
+);
+
+export const agentKnowledgeSyncJobs = kortixSchema.table(
+  'agent_knowledge_sync_jobs',
+  {
+    jobId: uuid('job_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => agentKnowledgeSources.sourceId, { onDelete: 'cascade' }),
+    status: agentKnowledgeSyncJobStatusEnum('status').default('pending').notNull(),
+    attempt: integer('attempt').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(5).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    leaseOwner: varchar('lease_owner', { length: 200 }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    lastError: text('last_error'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_agent_knowledge_sync_jobs_available').on(table.status, table.availableAt, table.leaseUntil),
+    index('idx_agent_knowledge_sync_jobs_source').on(table.sourceId, table.createdAt),
+    uniqueIndex('idx_agent_knowledge_sync_jobs_one_active')
+      .on(table.sourceId)
+      .where(sql`${table.status} in ('pending', 'running')`),
+    check('agent_knowledge_sync_jobs_attempt_check', sql`${table.attempt} between 0 and ${table.maxAttempts}`),
+  ],
+);
+
+export const agentKnowledgeAssignments = kortixSchema.table(
+  'agent_knowledge_assignments',
+  {
+    assignmentId: uuid('assignment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => agentKnowledgeSources.sourceId, { onDelete: 'cascade' }),
+    manifestRevision: varchar('manifest_revision', { length: 64 }).notNull(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_agent_knowledge_assignments_project_agent_source').on(
+      table.projectId,
+      table.agentName,
+      table.sourceId,
+    ),
+    index('idx_agent_knowledge_assignments_source').on(table.sourceId),
   ],
 );
 
@@ -779,6 +1075,40 @@ export const projectSessions = kortixSchema.table(
     // It is intentionally NOT declared here: re-adding it would make `db:generate`
     // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
     // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
+  ],
+);
+
+/**
+ * Server-owned grant for an ephemeral Agent Profile "Test draft" session.
+ * This table is separate from project_sessions.metadata because clients can
+ * edit session metadata. Retrieval treats these source ids as an exact
+ * replacement for merged manifest assignments until the grant expires.
+ */
+export const agentProfileTestSessions = kortixSchema.table(
+  'agent_profile_test_sessions',
+  {
+    sessionId: text('session_id')
+      .primaryKey()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    agentName: varchar('agent_name', { length: 200 }).notNull(),
+    draftRevision: integer('draft_revision').notNull(),
+    branchName: text('branch_name').notNull(),
+    sourceIds: uuid('source_ids').array().default([]).notNull(),
+    excludedIntegrations: text('excluded_integrations').array().default([]).notNull(),
+    createdBy: uuid('created_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_agent_profile_test_sessions_project_agent').on(table.projectId, table.agentName),
+    index('idx_agent_profile_test_sessions_expires').on(table.expiresAt),
+    check('agent_profile_test_sessions_revision_check', sql`${table.draftRevision} > 0`),
   ],
 );
 
@@ -2099,6 +2429,9 @@ export interface AgentGrant {
    *  Optional for back-compat with grants minted before this field existed
    *  (treated as 'all'). */
   env?: string[] | 'all';
+  /** Explicit private knowledge source slugs assigned to the agent. Historical
+   *  stored grants can omit this field and are interpreted as an empty list. */
+  knowledge?: string[];
 }
 
 export const accountTokens = kortixSchema.table(

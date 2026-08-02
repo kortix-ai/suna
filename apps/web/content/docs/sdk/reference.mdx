@@ -172,6 +172,63 @@ await p.llmCatalog();
 | `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
 | `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
 
+#### `p.agents.profile(agentName)` — unified capability profile
+
+The profile handle binds a canonical agent name. It manages one shared server
+draft across instructions, integrations, private knowledge, skills,
+automations, and advanced settings.
+
+| method | what |
+| --- | --- |
+| `get()` | read the published profile, current draft, sources, revision, and active editors |
+| `updateDraft({ expectedRevision, sections })` | replace draft sections with optimistic concurrency protection |
+| `preview()` | return the deterministic impact summary, risk changes, and technical diff |
+| `testDraft(input)` | create an expiring branch-backed test session |
+| `publish(input)` · `discard(input)` | update one change request · discard the shared draft |
+| `skills.importArchive(input)` · `skills.installMarketplace(input)` | stage a validated archive · stage a marketplace skill |
+| `skills.importGitHub(input)` · `skills.generate(input)` | stage a GitHub folder · create a skill from a brief |
+| `knowledge.list()` · `knowledge.createSource(input)` | list private sources · add a URL or connected resource |
+| `knowledge.uploadFile(input)` | upload and complete one private source through signed storage |
+| `knowledge.sync(sourceId)` · `knowledge.revoke(sourceId)` | queue synchronization · revoke access immediately |
+| `pauseAutomation(slug)` | pause a schedule immediately without changing the published manifest |
+
+`updateDraft`, `testDraft`, `publish`, and `discard` require the current
+revision. A stale write returns HTTP `409` with conflicting sections and active
+editors. High-risk publication also requires `acknowledgeHighRisk: true`.
+
+```ts
+const profile = p.agents.profile('researcher');
+const current = await profile.get();
+
+await profile.updateDraft({
+  expectedRevision: current.revision,
+  sections: {
+    ...(current.draft?.sections ?? current.sections),
+    knowledge: ['customer-handbook'],
+  },
+});
+
+const preview = await profile.preview();
+console.log(preview.impact.data_access);
+```
+
+Private knowledge is distinct from `.kortix/memory`. A source becomes available
+to normal sessions only after its assignment merges into the default branch.
+Session retrieval never accepts an agent name:
+
+```ts
+const result = await kortix.session(projectId, sessionId).knowledge.search({
+  query: 'What is the refund policy?',
+});
+
+const citedPassage = await kortix
+  .session(projectId, sessionId)
+  .knowledge.read(result.results[0].citation.citation_id);
+```
+
+Search returns eight cited results by default. `mode: 'lexical'` and
+`degraded_reason` make embedding fallback visible.
+
 #### `p.tokens` — project-scoped API keys
 
 Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.

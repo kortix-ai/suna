@@ -111,6 +111,47 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+### Agent capability profiles
+
+`project(id).agents.profile(agentName)` binds the canonical agent name. It owns
+one revisioned draft for instructions, integrations, private knowledge, skills,
+automations, and advanced settings. Every draft update must send the last read
+`expectedRevision`; a stale update returns a conflict instead of overwriting a
+newer editor.
+
+```ts
+const profile = kortix.project(pid).agents.profile("researcher");
+const current = await profile.get();
+
+await profile.updateDraft({
+  expectedRevision: current.revision,
+  sections: {
+    ...(current.draft?.sections ?? current.sections),
+    knowledge: ["customer-handbook"],
+  },
+});
+
+const preview = await profile.preview();
+console.log(preview.impact, preview.changes);
+
+// Immediate safety action. The published manifest is unchanged until the
+// corresponding draft cleanup is reviewed and merged.
+await profile.pauseAutomation("daily-digest");
+```
+
+Knowledge retrieval is session-scoped. The API derives the agent identity from
+the authenticated session and does not accept an agent name in search or read
+requests.
+
+```ts
+const results = await kortix.session(pid, sid).knowledge.search({
+  query: "What is the refund policy?",
+});
+const passage = await kortix
+  .session(pid, sid)
+  .knowledge.read(results.results[0].citation.citation_id);
+```
+
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults. A per-call choice
@@ -150,14 +191,15 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.project(id)` | id-bound handle: `.agents.profile(agentName)` · `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · `.knowledge.{search,read}` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
 multi-tenant server-wrapper pattern, headless transcript rendering, cost
-pass-through / re-billing, and session files + project secrets. Each file's
+pass-through / re-billing, session files + project secrets, and agent capability
+profiles. Each file's
 header comment states the env vars and the exact `bun run examples/….ts`
 invocation.
 

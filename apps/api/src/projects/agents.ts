@@ -96,6 +96,8 @@ export interface AgentSpec {
    *  omitted — a NEW dimension, so omitting it must not starve existing
    *  agents); an explicit list narrows it; `[]` = none. */
   env: GrantSet;
+  /** Private knowledge source slugs. Always explicit and deny-by-default. */
+  knowledge: string[];
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
   /**
@@ -336,6 +338,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
       kortixCli: spec.kortixCli,
       connectors: spec.connectors,
       env: spec.env,
+      knowledge: spec.knowledge,
     });
   }
 
@@ -369,6 +372,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
           kortixCli: declared.kortixCli,
           connectors: declared.connectors,
           env: declared.env,
+          knowledge: declared.knowledge,
         });
       }
     }
@@ -388,7 +392,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // allowed to use gets nothing, which is the same rule the secrets path
     // already follows (secret-grant.ts passes rethrowReadErrors for this).
     if (loaded.errors.length > 0) {
-      return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+      return { agent: agentName, kortixCli: [], connectors: [], env: [], knowledge: [] };
     }
     return null;
   }
@@ -396,7 +400,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // Governance adopted but this concrete agent is unlisted → default-deny
   // everything, including secrets/env (an unlisted agent receives no project
   // secrets).
-  return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+  return { agent: agentName, kortixCli: [], connectors: [], env: [], knowledge: [] };
 }
 
 /** Resolve the selected agent's sandbox template without repository I/O. */
@@ -509,7 +513,7 @@ export function resolveGovernedAgentGrant(
     }
     return {
       ok: true,
-      grant: { agent: declaredDefault, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env },
+      grant: { agent: declaredDefault, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env, knowledge: spec.knowledge },
     };
   }
 
@@ -521,7 +525,7 @@ export function resolveGovernedAgentGrant(
       error: `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
     };
   }
-  return { ok: true, grant: { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env } };
+  return { ok: true, grant: { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env, knowledge: spec.knowledge } };
 }
 
 /**
@@ -589,6 +593,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     connectorsRequired: spec.connectorsRequired,
     kortixCli: spec.kortixCli,
     env: spec.env,
+    knowledge: spec.knowledge,
     file: spec.file,
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -641,6 +646,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
       env: envParsed.value,
+      knowledge: [],
       file,
       model,
       sandbox: null,
@@ -721,6 +727,9 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   // onto AgentSpec's `env` field, which the rest of the pipeline (secret
   // scoping in sessions.ts, `agentMayUseEnv`) already consumes.
   const secretsResolved = resolveGrantSet(normalizedRow.secrets, 'none');
+  const knowledge = Array.isArray(normalizedRow.knowledge)
+    ? normalizedRow.knowledge.filter((value): value is string => typeof value === 'string')
+    : [];
 
   return {
     ok: true,
@@ -732,6 +741,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       connectorsRequired,
       kortixCli: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
+      knowledge,
       file,
       model,
       sandbox,

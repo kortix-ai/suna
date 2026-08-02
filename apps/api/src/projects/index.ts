@@ -34,6 +34,8 @@ import './routes/r10';
 import './routes/r11';
 import './routes/agent-scope';
 import './routes/agent-config';
+import './routes/agent-profile';
+import './routes/session-knowledge';
 import './routes/gateway';
 import './routes/channel-bindings';
 

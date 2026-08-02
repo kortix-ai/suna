@@ -23,6 +23,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('teams')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
+    expect(isExperimentalFeatureKey('agent_profile')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -57,6 +58,17 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
     ).toBe(false);
+  });
+
+  test('agent profile is available and explicit opt-in', () => {
+    expect(resolveExperimentalFeature({}, 'agent_profile')).toBe(false);
+    expect(
+      resolveExperimentalFeature({ experimental: { agent_profile: true } }, 'agent_profile'),
+    ).toBe(true);
+    expect(
+      resolveExperimentalFeature({ experimental: { agent_profile: false } }, 'agent_profile'),
+    ).toBe(false);
+    expect(findCatalogFeature('agent_profile').available).toBe(true);
   });
 
   test('teams is explicit opt-in and needs no operator env var', () => {
