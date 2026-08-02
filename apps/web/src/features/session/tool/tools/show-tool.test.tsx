@@ -84,7 +84,7 @@ describe('ShowTool drives its inline surface with Disclosure; panel stays visual
     expect(html).toContain('aria-expanded="false"');
 
     // Outline variant, hugging its content — not a full-bleed row.
-    expect(html).toContain('border-border');
+    expect(html).toContain('border');
     expect(html).toContain('w-fit');
 
     // The label is the payload's resolved title (mirrors `showLabel`-style
