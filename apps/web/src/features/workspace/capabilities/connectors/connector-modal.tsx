@@ -17,8 +17,9 @@ import {
   TrashIcon,
   UsersIcon,
 } from '@phosphor-icons/react';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -209,6 +210,24 @@ function ConnectorModalBody({
 
   const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
     useState<ConnectorAuthorizationStrategy | null>(null);
+  // Ported from `connectors-view.tsx:1371-1375`. Clear the submitted value the
+  // moment the refetched connector reports it — NOT in the mutation's
+  // `onSuccess`.
+  //
+  // The state exists to hold the field locked across the gap between the
+  // mutation resolving and `onChanged`'s refetch landing. Clearing it in
+  // `onSuccess` closes that gap: `mutationPending` drops in the same tick, so
+  // `strategyUpdating` goes false while `connector.authorizationStrategy` is
+  // still the OLD value, and the user watches their change appear not to have
+  // taken until the refetch arrives. Clearing on catch-up fixes the real
+  // defect — a submitted value outliving its request, which would re-lock
+  // every rung if the server later moved the strategy again — without
+  // reopening that window.
+  useEffect(() => {
+    if (authorizationStrategyAwaitingRefresh === connector.authorizationStrategy) {
+      setAuthorizationStrategyAwaitingRefresh(null);
+    }
+  }, [authorizationStrategyAwaitingRefresh, connector.authorizationStrategy]);
   const updateAuthorizationStrategy = useMutation({
     mutationFn: (next: ConnectorAuthorizationStrategy) =>
       setConnectorAuthorizationStrategy(projectId, connector.slug, next),
@@ -247,7 +266,15 @@ function ConnectorModalBody({
       <ModalHeader className="flex-row items-start gap-3.5 pr-14">
         <ConnectorAppIcon connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
-          <ModalTitle className="truncate text-lg">{displayName}</ModalTitle>
+          {/* Capability #1 */}
+          <HeaderName
+            projectId={projectId}
+            slug={connector.slug}
+            displayName={displayName}
+            canWrite={canWrite}
+            disabled={strategyUpdating}
+            onChanged={onChanged}
+          />
           {/* Capability #2 */}
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <Badge variant="outline" size="sm">
@@ -386,7 +413,6 @@ function ConnectorModalBody({
                   setAuthorizationStrategyAwaitingRefresh(next);
                   updateAuthorizationStrategy.mutate(next);
                 }}
-                onChanged={onChanged}
                 onRemoved={onRemoved}
               />
             ) : null}
@@ -722,8 +748,12 @@ function AccountsRung({
 }
 
 /**
- * Settings — capabilities #1, #4 and #11. Writer-only, and never for a
- * computer connector.
+ * Settings — capabilities #4 and #11. Writer-only, and never for a computer
+ * connector.
+ *
+ * Capability #1 (rename) is NOT here: it lives in the header, because a
+ * connector's name is not a property of one rung and a computer connector —
+ * which has no Settings rung — can be renamed.
  *
  * Task 12 builds the designed version and decides whether #8's connection
  * config moves here from Accounts.
@@ -735,7 +765,6 @@ function SettingsRung({
   canWrite,
   strategyUpdating,
   onAuthorizationStrategyChange,
-  onChanged,
   onRemoved,
 }: {
   projectId: string;
@@ -744,7 +773,6 @@ function SettingsRung({
   canWrite: boolean;
   strategyUpdating: boolean;
   onAuthorizationStrategyChange: (next: ConnectorAuthorizationStrategy) => void;
-  onChanged: () => void;
   onRemoved: () => void;
 }) {
   const isChannel = connector.provider === 'channel';
@@ -761,15 +789,6 @@ function SettingsRung({
 
   return (
     <div className="space-y-5">
-      {/* Capability #1 */}
-      <NameField
-        projectId={projectId}
-        slug={connector.slug}
-        displayName={displayName}
-        disabled={strategyUpdating}
-        onChanged={onChanged}
-      />
-
       {/* Capability #4 */}
       <section className="space-y-2">
         <Label>Authorization</Label>
@@ -836,22 +855,47 @@ function SettingsRung({
   );
 }
 
-/** Capability #1 — edit in place, the same interaction the old header had. */
-function NameField({
+/**
+ * Capability #1 — the connector's name, edited in place, exactly where the
+ * panel this replaces put it.
+ *
+ * It belongs in the header rather than a rung: renaming applies to the whole
+ * connector, not to one rung's subject, and a rung placement silently made it
+ * unreachable for `computer` connectors, which have no Settings rung but can
+ * be renamed today.
+ *
+ * `ModalTitle` is Radix's `Dialog.Title` and is the dialog's accessible name,
+ * so it stays MOUNTED while the form is up — visually hidden, not unmounted.
+ * Unmounting it would strip the dialog's accessible name for the duration of
+ * the edit and trip Radix's missing-title warning. The announced name is the
+ * one still stored on the server, which is the honest thing to announce while
+ * a new one is being typed.
+ */
+function HeaderName({
   projectId,
   slug,
   displayName,
+  canWrite,
   disabled,
   onChanged,
 }: {
   projectId: string;
   slug: string;
   displayName: string;
+  canWrite: boolean;
   disabled: boolean;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(displayName);
+
+  // Ported from `connectors-view.tsx:1367-1370`. A rename landing (or any
+  // refetch that changes the stored name) closes the editor and re-seeds the
+  // draft, so the field can never sit on a name the server has moved past.
+  useEffect(() => {
+    setEditing(false);
+    setDraft(displayName);
+  }, [displayName]);
 
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, slug, draft.trim()),
@@ -863,70 +907,74 @@ function NameField({
     onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
   });
 
-  return (
-    <section className="space-y-2">
-      <Label>Name</Label>
-      <div className="bg-popover rounded-md border px-4 py-5">
-        {editing ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (draft.trim() && draft.trim() !== displayName) rename.mutate();
-              else setEditing(false);
-            }}
+  if (editing && canWrite) {
+    return (
+      <>
+        <VisuallyHidden asChild>
+          <ModalTitle>{displayName}</ModalTitle>
+        </VisuallyHidden>
+        <form
+          className="flex items-center gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (draft.trim() && draft.trim() !== displayName) rename.mutate();
+            else setEditing(false);
+          }}
+        >
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="h-9 max-w-xs text-lg font-semibold"
+            autoFocus
+            disabled={disabled}
+          />
+          <Button
+            type="submit"
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9"
+            disabled={rename.isPending || disabled}
+            aria-label="Save name"
           >
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="h-9 max-w-xs"
-              autoFocus
-              disabled={disabled}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9"
-              disabled={rename.isPending || disabled}
-              aria-label="Save name"
-            >
-              {rename.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <CheckIcon className="size-4 shrink-0" />
-              )}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setEditing(false);
-                setDraft(displayName);
-              }}
-              disabled={rename.isPending || disabled}
-            >
-              Cancel
-            </Button>
-          </form>
-        ) : (
-          <div className="group flex items-center gap-2">
-            <p className="text-foreground min-w-0 truncate text-sm font-medium">{displayName}</p>
-            <Hint label="Rename">
-              <button
-                type="button"
-                onClick={() => !disabled && setEditing(true)}
-                disabled={disabled}
-                aria-label="Rename"
-                className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              >
-                <PencilSimpleIcon className="size-3.5 shrink-0" />
-              </button>
-            </Hint>
-          </div>
-        )}
-      </div>
-    </section>
+            {rename.isPending ? (
+              <Loading className="size-4 shrink-0" />
+            ) : (
+              <CheckIcon className="size-4 shrink-0" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(false);
+              setDraft(displayName);
+            }}
+            disabled={rename.isPending || disabled}
+          >
+            Cancel
+          </Button>
+        </form>
+      </>
+    );
+  }
+
+  return (
+    <div className="group flex items-center gap-2">
+      <ModalTitle className="truncate text-lg">{displayName}</ModalTitle>
+      {canWrite ? (
+        <Hint label="Rename">
+          <button
+            type="button"
+            onClick={() => !disabled && setEditing(true)}
+            disabled={disabled}
+            aria-label="Rename"
+            className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <PencilSimpleIcon className="size-3.5 shrink-0" />
+          </button>
+        </Hint>
+      ) : null}
+    </div>
   );
 }
