@@ -355,7 +355,7 @@ describe('house dialect', () => {
       });
     }
     // The quiet spinner every other auth sub-surface shows while it resolves.
-    expect(componentSource).toContain('<AuthPendingScreen />');
+    expect(componentSource).toContain('<AuthPendingScreen ');
   });
 
   test('does not re-introduce a bespoke frame, card or wallpaper', () => {

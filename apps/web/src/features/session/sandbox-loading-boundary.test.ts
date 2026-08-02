@@ -35,8 +35,16 @@ describe('session navigation loading boundaries', () => {
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
     expect(projectAccessSource).toContain('if (query.isLoading)');
-    expect(projectAccessSource).toContain('<AuthPendingScreen />');
+    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
     expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+  });
+
+  test('the first-fetch loader carries no legal footer', () => {
+    // It resolves into the project shell, which has no footer of its own, so a
+    // pinned Terms/Privacy line would flash once per project open and vanish.
+    // The gate screens below it keep theirs — they are terminal pages.
+    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(projectAccessSource).toContain('<AuthFrame>');
   });
 
   test('the access boundary uses the lightweight project route', () => {

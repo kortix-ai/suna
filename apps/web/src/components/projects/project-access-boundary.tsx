@@ -220,8 +220,12 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
 
   if (query.isSuccess) return <>{children}</>;
 
-  // The same quiet spinner every auth sub-surface shows while it resolves.
-  if (query.isLoading) return <AuthPendingScreen />;
+  // The same quiet spinner every auth sub-surface shows while it resolves —
+  // minus the legal footer. This branch resolves into the project shell, which
+  // carries no footer, so keeping it would flash Terms/Privacy for the length
+  // of one fetch on every project open. The gate screens below still show it:
+  // they are terminal, and there they are the whole page.
+  if (query.isLoading) return <AuthPendingScreen footer={false} />;
 
   return (
     <AccessGateScreen
