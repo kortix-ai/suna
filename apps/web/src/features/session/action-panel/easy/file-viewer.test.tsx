@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, test } from 'bun:test';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -168,5 +170,54 @@ describe('FileViewer share control', () => {
     const md = renderShareable('notes.txt', 'hi');
     expect(md).toContain('title="Copy public link"');
     expect(md).toContain('aria-label="Full screen"');
+  });
+});
+
+// ── YAML frontmatter ────────────────────────────────────────────────────────
+// The viewer handed the raw file to the markdown renderer, frontmatter and all.
+// Markdown then read the block as prose: the opening `---` became a thematic
+// break and the closing `---` turned everything above it into a setext <h2>.
+// An agent definition therefore rendered as a stray horizontal rule followed by
+// its entire metadata as one giant bold heading — while the SAME file in the
+// chat's inline preview showed a tidy key/value card.
+
+const AGENT_MD = `---
+description: Veyris internal admin & build agent. Full access.
+mode: primary
+permission:
+  "*": allow
+---
+
+You are **Veyris Internal**.
+`;
+
+const FILE_VIEWER_SOURCE = readFileSync(
+  new URL('./file-viewer.tsx', import.meta.url),
+  'utf8',
+);
+
+describe('FileViewer — markdown frontmatter', () => {
+  // Rendered assertions live in markdown-frontmatter.test.ts: `parseFrontmatter`
+  // owns the behaviour and is tested directly there. DocMarkdown needs the full
+  // i18n + sandbox-proxy provider stack, which this suite does not stand up (the
+  // other cases here only render non-markdown paths), so what is asserted here
+  // is the WIRING — that the viewer splits the file before the markdown parser
+  // can see the fences.
+
+  test('the markdown branch splits frontmatter off instead of passing raw content', () => {
+    // The bug: `<DocMarkdown content={content} />`. Markdown then read `---` as
+    // a thematic break and the closing `---` as a setext underline, turning the
+    // whole metadata block into one giant <h2>.
+    expect(FILE_VIEWER_SOURCE).toContain('parseFrontmatter');
+    expect(FILE_VIEWER_SOURCE).not.toMatch(/<DocMarkdown\s+content=\{content\}/);
+  });
+
+  test('the parsed body — not the original file — reaches DocMarkdown', () => {
+    expect(FILE_VIEWER_SOURCE).toMatch(/<DocMarkdown[\s\S]{0,120}content=\{body\}/);
+  });
+
+  test('the metadata renders through the shared card, not a bespoke one', () => {
+    // Same component the chat's inline preview uses, so the two panes agree.
+    expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
   });
 });

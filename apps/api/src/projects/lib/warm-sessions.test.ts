@@ -137,6 +137,44 @@ describe('warm project session coordinator', () => {
     expect(result).toEqual({ session: winner, reused: true });
   });
 
+  test('stores a durable pending prompt when it claims a warm session', async () => {
+    let claimedMetadata: Record<string, unknown> | undefined;
+    const available = record();
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: async () => available,
+      create: async () => {
+        throw new Error('create must not run');
+      },
+      discard: async () => {
+        throw new Error('discard must not run');
+      },
+      claim: async (_sessionId, metadata) => {
+        claimedMetadata = metadata;
+        return { ...available, metadata };
+      },
+      now: () => new Date('2026-07-26T13:00:00.000Z'),
+    });
+
+    await coordinator.claim({
+      sessionId: available.sessionId,
+      pendingPrompt: {
+        text: 'Map this parcel.',
+        attachment_names: ['parcel.geojson'],
+      },
+    });
+
+    expect(claimedMetadata).toMatchObject({
+      pending_prompt: {
+        text: 'Map this parcel.',
+        attachment_names: ['parcel.geojson'],
+      },
+      warm_session: {
+        state: 'claimed',
+        claimed_at: '2026-07-26T13:00:00.000Z',
+      },
+    });
+  });
+
   test('serializes simultaneous ensure requests before either request creates a session', async () => {
     let available: WarmProjectSessionRecord | null = null;
     let createCalls = 0;

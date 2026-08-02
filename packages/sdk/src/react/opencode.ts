@@ -39,6 +39,7 @@ export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
 export * from './use-model-defaults';
+export * from './use-model-enablement';
 export * from './use-session-model-selection';
 export * from './use-opencode-mcp';
 export * from './use-opencode-pty';
@@ -130,12 +131,13 @@ export * from './provider-refresh';
 // picker BEFORE a session runtime exists (e.g. on a "new session" screen) by
 // feeding `project(id).llmCatalog()` through these, with correct provider/model
 // ids — no guessing the gateway-vs-BYOK key format.
-export { flattenModels, type FlatModel } from './model-flatten';
+export { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 export {
   GATEWAY_PROVIDER_IDS,
   LLM_PROVIDER_CREDENTIALS,
   connectedGatewayProviderIdsFromSecretNames,
   filterToGatewayProviders,
+  applyEnablementToProviderList,
   filterToNativeProviders,
   mergeProjectSecretConnectedProviders,
   mergeProviderLists,

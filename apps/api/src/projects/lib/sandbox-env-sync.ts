@@ -209,6 +209,8 @@ export async function syncSandboxEnvForPrompt(args: {
    *  grant is resolved from THIS, not from the session's create-time agent —
    *  see resolveOwnerRawEnv. Null/'default' means "the session's own agent". */
   requestedAgent?: string | null;
+  /** Runtime env the daemon applies before the prompt reaches OpenCode. */
+  opencodeEnv?: Record<string, string | null>;
 }): Promise<void> {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(
@@ -224,6 +226,7 @@ export async function syncSandboxEnvForPrompt(args: {
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
+    opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',

@@ -37,6 +37,13 @@ export interface ExperimentalFeatureView {
   overridden: boolean;
 }
 
+/** A project's named-glyph icon. `name` is a Phosphor identifier from the
+ *  server's fixed catalogue; `color` is one of eight palette names. */
+export interface ProjectGlyph {
+  name: string;
+  color: string;
+}
+
 export interface KortixProject {
   project_id: string;
   account_id: string;
@@ -65,6 +72,15 @@ export interface KortixProject {
   default_sandbox_provider?: SandboxProviderName | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
   available_sandbox_providers?: SandboxProviderName[];
+  /** Per-project emoji shown on the project card. Server-validated: exactly one
+   *  emoji grapheme, or null. Stored in `metadata.icon`; surfaced top-level so
+   *  clients never cast the metadata bag. */
+  icon?: string | null;
+  /** A named glyph + colour, the alternative to `icon`. At most one of the two
+   *  is ever set — the API deletes the other whenever either is written.
+   *  Stored in `metadata.icon_glyph`; surfaced top-level so callers do not read
+   *  raw metadata. Server-validated against a fixed catalogue, or null. */
+  icon_glyph?: ProjectGlyph | null;
 }
 
 export interface ProjectConfigSummary {
@@ -145,15 +161,35 @@ export interface GatewayCatalogModel {
   last_updated?: string;
   /**
    * Whether the project OFFERS this model — server-owned per-project
-   * enablement, resolved by the API and enforced by the gateway. Served by
-   * `/model-picker`; absent on the raw `/llm-catalog` (sandbox config) path,
-   * where enablement doesn't apply.
+   * enablement, resolved by the API. Display-only: pickers hide a disabled
+   * model, but the gateway still serves it if a caller names it outright.
+   * Served by `/model-picker`; absent on the raw `/llm-catalog` (sandbox
+   * config) path, where enablement doesn't apply.
    */
   enabled?: boolean;
 }
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /**
+   * The project's stored EXCEPTIONS to the default model set
+   * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
+   * one model can PUT the merged map back. Read `GatewayCatalogModel.enabled`
+   * for the RESOLVED answer — this is only the delta.
+   */
+  modelOverrides?: Record<string, boolean>;
+  /**
+   * True while the project has made no exceptions and is running on the pure
+   * catalog default. What "reset to defaults" acts on; not derivable from the
+   * `enabled` flags alone.
+   */
+  usingDefaults?: boolean;
+  /**
+   * The wire model `auto` resolves to for this project. It can never be turned
+   * off (the PUT refuses it with 409 — disabling it would break every default
+   * request), so surfaces with a per-model switch must render this one locked.
+   */
+  defaultModel?: string;
 }
 
 export interface ProjectInput {
@@ -162,6 +198,30 @@ export interface ProjectInput {
   repo_url: string;
   default_branch?: string;
   manifest_path?: string;
+  /**
+   * The project's emoji icon. Nullable because `PATCH /projects/:id` reads
+   * THREE states off this member and only the request body can tell them
+   * apart — see {@link updateProject}:
+   *
+   * - omit the key   → the stored icon is left alone
+   * - `null`         → the stored icon is removed
+   * - `'🚀'`         → the stored icon is replaced
+   *
+   * An invalid value is dropped server-side; it never fails the update, and it
+   * never removes the existing icon.
+   */
+  icon?: string | null;
+  /**
+   * The project's glyph icon. Nullable because `PATCH /projects/:id` reads
+   * present-and-null differently from absent:
+   *
+   * - omit the key → the stored glyph is left alone
+   * - `null`       → the stored glyph is removed
+   * - an object    → the stored glyph is replaced, and the emoji `icon` cleared
+   *
+   * A malformed value is ignored and never removes the existing glyph.
+   */
+  icon_glyph?: ProjectGlyph | null;
 }
 
 export interface CreateProjectRepoInput {
@@ -173,6 +233,12 @@ export interface CreateProjectRepoInput {
   starter_template?: 'general-knowledge-worker' | 'minimal';
   /** Clone a `registry:project` item into the new GitHub repository. */
   source_item_id?: string;
+  /** Optional emoji icon for the new project. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
+  /** Optional glyph icon for the new project. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: ProjectGlyph;
 }
 
 export interface ProvisionProjectInput {
@@ -186,6 +252,12 @@ export interface ProvisionProjectInput {
    *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
    *  seed_starter and takes precedence over starter_template. */
   source_item_id?: string;
+  /** Optional emoji icon for the new project. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
+  /** Optional glyph icon for the new project. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: ProjectGlyph;
 }
 
 export interface RepoCollaboratorInvite {
@@ -414,6 +486,14 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
   }
 }
 
+/**
+ * Patch a project's editable fields. Only the members present in `input` are
+ * touched — this is a real PATCH, not a replace.
+ *
+ * `icon` is the one member where present-and-null differs from absent: pass
+ * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
+ * Everything else ignores an empty value.
+ */
 export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
   return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }

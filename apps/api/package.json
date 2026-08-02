@@ -44,6 +44,7 @@
     "jose": "^5.9.6",
     "livekit-server-sdk": "^2.17.0",
     "postgres": "^3.4.8",
+    "re2js": "2.8.6",
     "smol-toml": "^1.6.1",
     "stripe": "^14.0.0",
     "yaml": "^2.8.2",

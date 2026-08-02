@@ -339,6 +339,8 @@ export interface StartStashReplayOptions<TReady> {
    * surfacing the classified error).
    */
   onFailure?: (stash: StartStash, error: unknown, classified: KortixSendError) => void;
+  /** Called after the runtime acknowledges the prompt. */
+  onSuccess?: (stash: StartStash) => void;
   getClient?: () => OpenCodeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   timers?: StashReplayTimers;
@@ -371,6 +373,7 @@ export function replayStartStash<TReady>(
     onReadinessTimeout,
     prepare,
     onFailure,
+    onSuccess,
     getClient: getClientOpt,
     classify,
   } = options;
@@ -403,6 +406,7 @@ export function replayStartStash<TReady>(
       }
       try {
         await promptOpenCodeMessage({ sessionId, parts, options: prepared.sendOptions });
+        if (!cancelled) onSuccess?.(stash);
       } catch (err) {
         if (!cancelled) fail(stash, prepared.messageId, err);
       }

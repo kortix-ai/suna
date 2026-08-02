@@ -283,6 +283,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
+      expect(env.KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED).toBe('false');
     });
 
     // Account-creation restriction is the one feature flag that defaults ON
@@ -389,6 +390,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
       expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
       expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}');
+      expect(frontendEnv.KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED).toBe('${KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED}');
 
       // kortix-api gets these via `env_file: .env` (loads every .env key) —
       // no explicit `environment:` entry, since one would win over env_file

@@ -169,6 +169,7 @@ import {
   shouldShowToolPart,
   splitUserParts,
 } from '@/ui';
+import { updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type KortixSendError,
@@ -3821,6 +3822,13 @@ export function SessionChat({
           id: Date.now(),
         });
       },
+      onSuccess: () => {
+        void updateProjectSession(projectId, projectSessionId, {
+          metadata: { pending_prompt: null },
+        }).catch((error) => {
+          console.warn('[session-chat] failed to clear the acknowledged pending prompt', error);
+        });
+      },
     });
 
     return () => handle.cancel();
@@ -3834,6 +3842,8 @@ export function SessionChat({
     localModelVisible,
     localVariantSet,
     lockedAgentName,
+    projectId,
+    projectSessionId,
     session?.directory,
   ]);
 

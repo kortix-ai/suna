@@ -17,8 +17,8 @@ import { Icon } from '@/features/icon/icon';
 import { AppHeader } from '@/features/layout/app-header';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { EditProjectModal } from '@/features/projects/modal/edit-project-modal';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
-import { RenameProjectDialog } from '@/features/projects/modal/rename-project-modal';
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -95,7 +95,7 @@ export default function ProjectsPage() {
   const { viewMode, setViewMode } = useProjectsViewStore();
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<KortixProject | null>(null);
+  const [editTarget, setEditTarget] = useState<KortixProject | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<KortixProject | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
@@ -492,7 +492,7 @@ export default function ProjectsPage() {
                       key={project.project_id}
                       project={project}
                       onOpen={() => router.push(`/projects/${project.project_id}`)}
-                      onRename={() => setRenameTarget(project)}
+                      onEdit={() => setEditTarget(project)}
                       onArchive={() => setArchiveTarget(project)}
                       archiving={archivingId === project.project_id}
                     />
@@ -586,7 +586,7 @@ export default function ProjectsPage() {
                             setSelectedAccountId(group.account.account_id);
                             router.push(`/projects/${project.project_id}`);
                           }}
-                          onRename={() => setRenameTarget(project)}
+                          onEdit={() => setEditTarget(project)}
                           onArchive={() => setArchiveTarget(project)}
                           archiving={archivingId === project.project_id}
                         />
@@ -612,12 +612,14 @@ export default function ProjectsPage() {
         sourceItemId={cloneSourceItemId}
       />
 
-      <RenameProjectDialog
-        projectId={renameTarget?.project_id ?? null}
-        currentName={renameTarget?.name}
-        open={!!renameTarget}
+      <EditProjectModal
+        projectId={editTarget?.project_id ?? null}
+        currentName={editTarget?.name}
+        currentIcon={editTarget?.icon ?? null}
+        currentGlyph={editTarget?.icon_glyph ?? null}
+        open={!!editTarget}
         onOpenChange={(o) => {
-          if (!o) setRenameTarget(null);
+          if (!o) setEditTarget(null);
         }}
       />
 

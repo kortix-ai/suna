@@ -4,6 +4,9 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { serviceKeyForExternalId } from '../../platform/service-key';
+import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -12,6 +15,7 @@ import {
   runtimeContextConflicts,
 } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
+import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
@@ -411,6 +415,45 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
+  if (command.opencodeEnv) {
+    const sandbox = opened.sandbox as {
+      external_id?: string | null;
+      provider?: string | null;
+    } | null;
+    const externalId = sandbox?.external_id ?? null;
+    const providerName = sandbox?.provider ?? null;
+    if (!externalId || !isProviderName(providerName)) {
+      console.warn('[session-lifecycle] runtime env sync target is incomplete', {
+        sessionId,
+        hasExternalId: !!externalId,
+        provider: providerName,
+      });
+      return 'pending';
+    }
+    try {
+      const [serviceKey, ingress] = await Promise.all([
+        serviceKeyForExternalId(externalId),
+        resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' }),
+      ]);
+      if (!serviceKey) throw new Error('sandbox service key is unavailable');
+      await syncSandboxEnvForPrompt({
+        projectId: session.projectId,
+        sessionId,
+        serviceKey,
+        previewUrl: ingress.url,
+        providerHeaders: ingress.headers,
+        providerName,
+        opencodeEnv: command.opencodeEnv,
+      });
+    } catch (err) {
+      console.warn('[session-lifecycle] runtime env sync failed before prompt delivery', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return 'pending';
+    }
+  }
+
   // Runtime is ready — hand off the prompt, healing + retrying through the
   // transient failures a freshly-woken sandbox throws (rotated opencode session
   // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
@@ -739,6 +782,15 @@ function sandboxExternalId(
   result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
 ): string | null {
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
+}
+
+function isProviderName(value: string | null): value is ProviderName {
+  return (
+    value === 'daytona' ||
+    value === 'platinum' ||
+    value === 'e2b' ||
+    value === 'local-docker'
+  );
 }
 
 async function postPrompt(

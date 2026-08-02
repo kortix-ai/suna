@@ -21,6 +21,10 @@ let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
 let listOpts: Record<string, unknown> | undefined;
 let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) => fakeSandbox(sandboxId);
 let createFactory: () => FakeSandbox = () => fakeSandbox('sb-created');
+let killFactory: (sandboxId: string) => boolean | Promise<boolean> = (sandboxId) => {
+  killed.push(sandboxId);
+  return true;
+};
 
 class FakeSandboxNotFoundError extends Error {}
 
@@ -88,8 +92,7 @@ class FakeSandboxApi {
   }
 
   static async kill(sandboxId: string) {
-    killed.push(sandboxId);
-    return true;
+    return killFactory(sandboxId);
   }
 
   static async getInfo() {
@@ -136,6 +139,10 @@ beforeEach(() => {
   listOpts = undefined;
   connectFactory = (sandboxId) => fakeSandbox(sandboxId);
   createFactory = () => fakeSandbox('sb-created');
+  killFactory = (sandboxId) => {
+    killed.push(sandboxId);
+    return true;
+  };
 });
 
 describe('E2B provider admission and registry', () => {
@@ -339,8 +346,25 @@ describe('E2B provider lifecycle', () => {
     const provider = new E2BProvider();
     infoState = 'missing';
     expect(await provider.getStatus('sb-missing')).toBe('removed');
+
     await provider.remove('sb-remove');
     expect(killed).toEqual(['sb-remove']);
+
+    killFactory = () => {
+      throw new FakeSandboxNotFoundError('sandbox not found');
+    };
+    await expect(provider.remove('sb-remove')).resolves.toBeUndefined();
+  });
+
+  test('permanent removal rejects within its outer timeout when the E2B SDK never settles', async () => {
+    killFactory = () => new Promise<boolean>(() => {});
+    const provider = new E2BProvider(25);
+
+    const startedAt = performance.now();
+    await expect(provider.remove('sb-hung')).rejects.toThrow(
+      'E2B kill(sb-hung) timed out after 25ms',
+    );
+    expect(performance.now() - startedAt).toBeLessThan(500);
   });
 
   test('the orphan reaper list is scoped to Kortix and the current environment', async () => {

@@ -10,12 +10,23 @@ describe('warm project session send', () => {
     expect(
       buildWarmSessionClaimInput(
         { session_id: 'session-1' },
-        { agent_name: 'reviewer', sandbox_slug: 'large' },
+        {
+          agent_name: 'reviewer',
+          sandbox_slug: 'large',
+          pending_prompt: {
+            text: 'Map this parcel.',
+            attachment_names: ['parcel.geojson'],
+          },
+        },
       ),
     ).toEqual({
       session_id: 'session-1',
       agent_name: 'reviewer',
       sandbox_slug: 'large',
+      pending_prompt: {
+        text: 'Map this parcel.',
+        attachment_names: ['parcel.geojson'],
+      },
     });
   });
 

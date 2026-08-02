@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
-import { config } from '../config';
 import {
   AgentMailApiError,
   createAgentMailInbox,
@@ -8,8 +7,9 @@ import {
   isAgentMailInboxLimitError,
   resolveAgentMailApiKey,
 } from '../channels/agentmail-api';
-import { verifyAgentMailSignature } from '../channels/email/verify';
 import type { AgentMailMessageReceivedEvent } from '../channels/email/types';
+import { verifyAgentMailSignature } from '../channels/email/verify';
+import { config } from '../config';
 
 let dbResults: unknown[][] = [];
 
@@ -42,13 +42,31 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-let continueCalls: Array<{ sessionId: string; text: string }> = [];
+let continueCalls: Array<{
+  sessionId: string;
+  text: string;
+  opencodeEnv?: Record<string, string | null>;
+}> = [];
 let createCalls: Array<any> = [];
+
+function expectExecutorEmailPrompt(prompt: string) {
+  for (const tool of ['connectors', 'discover', 'describe', 'call']) {
+    expect(prompt).toContain(`\`${tool}\``);
+  }
+  expect(prompt).toContain('"connector":"email"');
+  expect(prompt).toContain('"action":"reply_message"');
+  expect(prompt).toContain('"inbox_id":"inb-1"');
+  expect(prompt).toContain('"message_id":"msg-1"');
+  expect(prompt).toContain('"text":"<reply>"');
+  expect(prompt).toContain('Use `html` instead of `text` only when needed.');
+  expect(prompt).not.toContain('call `email.reply_message`');
+}
 
 const {
   dispatchAgentMailEvent,
   isAgentMailSenderAllowedForTest,
   resetEmailSessionLifecycleForTest,
+  setEmailSenderPolicyLoaderForTest,
   setEmailSessionLifecycleForTest,
 } = await import('../channels/email/session');
 const { emailWebhookApp } = await import('../channels/email/app');
@@ -89,7 +107,11 @@ beforeEach(() => {
   setEmailSessionLifecycleForTest({
     resolveProjectAutomationActor: async () => 'user-1',
     continueSession: async (input) => {
-      continueCalls.push({ sessionId: input.sessionId, text: input.text });
+      continueCalls.push({
+        sessionId: input.sessionId,
+        text: input.text,
+        opencodeEnv: input.opencodeEnv,
+      });
       return 'delivered';
     },
     createSession: async (input) => {
@@ -272,6 +294,7 @@ describe('dispatchAgentMailEvent', () => {
           name: 'Support',
         },
       ],
+      [{ agentName: 'veyris', opencodeModel: null }],
       [{ eventId: 'email:threadcreate:inb-1:thr-1' }],
       [
         {
@@ -301,10 +324,13 @@ describe('dispatchAgentMailEvent', () => {
       }),
     ]);
     expect(createCalls[0].postCreate[1].text).toContain('Need help');
+    expectExecutorEmailPrompt(createCalls[0].postCreate[1].text);
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe('inb-1');
+    expect(createCalls[0].extraEnvVars.KORTIX_EXECUTOR_MCP_ENABLED).toBe('1');
     expect(createCalls[0].body.connector_bindings).toEqual({
       email: { authorization_id: 'profile-email-1' },
     });
+    expect(createCalls[0].body.agent_name).toBe('veyris');
     expect(createCalls[0].body.initial_prompt).toBeUndefined();
   });
 
@@ -334,6 +360,7 @@ describe('dispatchAgentMailEvent', () => {
           name: 'Support',
         },
       ],
+      [],
       [{ eventId: 'email:threadcreate:inb-1:thr-unwrapped' }],
       [
         {
@@ -382,6 +409,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
+    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_EXECUTOR_MCP_ENABLED: '1' });
   });
 
   test('known thread routes a new email into the existing session', async () => {
@@ -409,7 +437,33 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
+    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_EXECUTOR_MCP_ENABLED: '1' });
     expect(continueCalls[0].text).toContain('Customer <customer@example.com>');
+    expectExecutorEmailPrompt(continueCalls[0].text);
+  });
+
+  test('a rejected sender never claims the message or creates or continues a session', async () => {
+    setEmailSenderPolicyLoaderForTest(async () => ({
+      mode: 'restricted',
+      allowedEmails: ['approved@example.com'],
+      allowedDomains: [],
+      allowedRegex: null,
+    }));
+    dbResults = [
+      [{ eventId: 'email:event:evt-1' }],
+      [{ projectId: 'proj-1' }],
+      // If dispatch moves past policy enforcement, these sentinels would let
+      // it claim the inbound message and create a new thread/session.
+      [],
+      [{ eventId: 'email:msg:inb-1:msg-1' }],
+      [],
+    ];
+
+    await dispatchAgentMailEvent(event);
+
+    expect(createCalls).toHaveLength(0);
+    expect(continueCalls).toHaveLength(0);
+    expect(dbResults).toHaveLength(3);
   });
 
   test('sender allow policy supports exact emails, domains, and regex', () => {
@@ -447,6 +501,97 @@ describe('dispatchAgentMailEvent', () => {
         {
           ...event,
           message: { ...event.message, from: 'Other <other@external.test>' },
+        },
+        policy,
+      ),
+    ).toBe(false);
+  });
+
+  test('sender regex runtime stays linear for ambiguous repetition and fails closed on unsupported syntax', () => {
+    const adversarialSender = `${'a'.repeat(50_000)}!@example.com`;
+    const allowed = (allowedRegex: string) =>
+      isAgentMailSenderAllowedForTest(
+        {
+          ...event,
+          message: {
+            ...event.message,
+            from: adversarialSender,
+            from_: undefined,
+          },
+        },
+        {
+          mode: 'restricted',
+          allowedEmails: [],
+          allowedDomains: [],
+          allowedRegex,
+        },
+      );
+    const startedAt = performance.now();
+
+    expect(allowed('^(a{1,3})+@example\\.com$')).toBe(false);
+    expect(allowed('^(a|aa)+@example\\.com$')).toBe(false);
+    expect(allowed('^(?=a)a+@example\\.com$')).toBe(false);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  test('sender allow policy rejects ambiguous or attacker-controlled From values', () => {
+    const policy = {
+      mode: 'restricted' as const,
+      allowedEmails: ['customer@example.com'],
+      allowedDomains: [],
+      allowedRegex: null,
+    };
+    const allowed = (from: AgentMailMessageReceivedEvent['message']['from']) =>
+      isAgentMailSenderAllowedForTest(
+        { ...event, message: { ...event.message, from, from_: undefined } },
+        policy,
+      );
+
+    expect(allowed('Customer <customer@example.com>')).toBe(true);
+    expect(allowed('customer@example.com')).toBe(true);
+    expect(allowed('customer@example.com <attacker@evil.test>')).toBe(false);
+    expect(allowed('Attacker <attacker@evil.test>, customer@example.com')).toBe(false);
+    expect(allowed('Customer <customer@example.com> trailing')).toBe(false);
+    expect(allowed('Customer customer@example.com')).toBe(false);
+  });
+
+  test('sender allow policy requires exactly one structured From mailbox', () => {
+    const policy = {
+      mode: 'restricted' as const,
+      allowedEmails: ['customer@example.com'],
+      allowedDomains: [],
+      allowedRegex: null,
+    };
+    const allowed = (from_: AgentMailMessageReceivedEvent['message']['from_']) =>
+      isAgentMailSenderAllowedForTest(
+        { ...event, message: { ...event.message, from: undefined, from_ } },
+        policy,
+      );
+
+    expect(allowed([{ email: 'customer@example.com', name: 'Customer' }])).toBe(true);
+    expect(allowed([{ address: 'customer@example.com' }])).toBe(true);
+    expect(
+      allowed([
+        {
+          email: ' Customer@Example.COM ',
+          address: 'customer@example.com',
+        },
+      ]),
+    ).toBe(true);
+    expect(allowed([{ email: '', address: 'customer@example.com' }])).toBe(true);
+    expect(allowed([{ email: 'customer@example.com', address: 'attacker@evil.test' }])).toBe(false);
+    expect(allowed([{ email: 'not a mailbox', address: 'customer@example.com' }])).toBe(false);
+    expect(allowed([{ name: 'customer@example.com' }])).toBe(false);
+    expect(allowed(['customer@example.com', 'attacker@evil.test'])).toBe(false);
+    expect(
+      isAgentMailSenderAllowedForTest(
+        {
+          ...event,
+          message: {
+            ...event.message,
+            from: 'customer@example.com',
+            from_: 'attacker@evil.test',
+          },
         },
         policy,
       ),

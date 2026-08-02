@@ -354,13 +354,17 @@ describe('full self-host Docker distribution', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
       services: Record<string, { mem_limit?: string; mem_reservation?: string; oom_score_adj?: number }>;
     };
-    const toMb = (value: string) => Number(value.replace(/m$/, ''));
+    const toMb = (value: string) => {
+      const defaultValue = value.match(/:-([0-9]+m)}$/)?.[1] ?? value;
+      return Number(defaultValue.replace(/m$/, ''));
+    };
     for (const [name, service] of Object.entries(document.services)) {
       expect(service.mem_limit, name).toBeDefined();
       expect(service.mem_reservation, name).toBeDefined();
     }
     const db = document.services['supabase-db'];
     expect(db?.oom_score_adj).toBeLessThan(0);
+    expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-640m}');
     const analytics = document.services['supabase-analytics'];
     const vector = document.services['supabase-vector'];
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);

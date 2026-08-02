@@ -27,6 +27,10 @@
  */
 
 import { TextWithPaths } from '@/components/common/clickable-path';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
@@ -712,9 +716,16 @@ export function ShowContentRenderer({
   // Markdown — rendered
   // ═════════════════════════════════════════════════════════════════════════
   if (isMarkdown && content) {
+    // Same split the file viewer does. Handed the raw file, markdown reads a
+    // leading `---` block as prose — thematic break, then a setext underline
+    // that turns the whole metadata into one giant heading. Only the explicit
+    // markdown branch does this: a `---` in a plain TEXT file is a rule the
+    // author meant, and `parseFrontmatter` would be wrong to eat it.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
-        <UnifiedMarkdown content={content} />
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+        <UnifiedMarkdown content={body} />
       </div>
     );
   }

@@ -16,6 +16,7 @@ export interface ClaimWarmProjectSessionConfiguration {
   sessionId: string;
   agentName?: string;
   sandboxSlug?: string;
+  pendingPrompt?: Record<string, unknown>;
 }
 
 interface WarmProjectSessionMarker {
@@ -186,14 +187,15 @@ export function createWarmProjectSessionCoordinator<T extends WarmProjectSession
         );
       }
 
-      const claimed = await dependencies.claim(
-        available.sessionId,
-        withMarker(available, {
-          ...marker,
-          state: 'claimed',
-          claimed_at: now().toISOString(),
-        }),
-      );
+      const claimedMetadata = withMarker(available, {
+        ...marker,
+        state: 'claimed',
+        claimed_at: now().toISOString(),
+      });
+      if (configuration.pendingPrompt) {
+        claimedMetadata.pending_prompt = configuration.pendingPrompt;
+      }
+      const claimed = await dependencies.claim(available.sessionId, claimedMetadata);
       if (!claimed) {
         throw new WarmProjectSessionError(
           'The warm session is no longer available',

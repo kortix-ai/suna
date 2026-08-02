@@ -61,3 +61,14 @@ describe('RuntimeEnvSchema — RESTRICT_ACCOUNT_CREATION', () => {
     expect(env.RESTRICT_ACCOUNT_CREATION).toBe(true);
   });
 });
+
+describe('RuntimeEnvSchema — WARM_PROJECT_SESSIONS_ENABLED', () => {
+  test('defaults to true for Kortix Cloud', () => {
+    expect(parseRuntimeEnv(REQUIRED).WARM_PROJECT_SESSIONS_ENABLED).toBe(true);
+  });
+
+  test('can disable speculative project-index sessions', () => {
+    const env = parseRuntimeEnv({ ...REQUIRED, WARM_PROJECT_SESSIONS_ENABLED: false });
+    expect(env.WARM_PROJECT_SESSIONS_ENABLED).toBe(false);
+  });
+});

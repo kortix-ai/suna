@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accounts,
+  chatChannelBindings,
   chatInstalls,
   executorConnectionProfiles,
   executorConnectorPolicies,
@@ -1104,6 +1105,57 @@ describe('session connector profile isolation', () => {
       .from(executorConnectionProfiles)
       .where(eq(executorConnectionProfiles.profileId, profileB.profileId));
     expect(afterFinal?.status).toBe('revoked');
+  });
+
+  test('AgentMail installation persists and removes its explicit channel-agent binding', async () => {
+    const profileSlug = 'veyris_bound';
+    const inboxId = 'inbox-veyris-bound';
+    await saveAgentMailInstall({
+      projectId: PROJECT_A,
+      profileSlug,
+      inboxId,
+      email: 'veyris-bound@example.test',
+      displayName: 'Veyris bound inbox',
+      apiKey: 'agentmail-key',
+      agentName: 'veyris',
+    });
+
+    const [binding] = await db
+      .select({
+        projectId: chatChannelBindings.projectId,
+        channelId: chatChannelBindings.channelId,
+        channelName: chatChannelBindings.channelName,
+        channelType: chatChannelBindings.channelType,
+        agentName: chatChannelBindings.agentName,
+      })
+      .from(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'email'),
+          eq(chatChannelBindings.workspaceId, inboxId),
+          eq(chatChannelBindings.channelId, profileSlug),
+        ),
+      );
+    expect(binding).toEqual({
+      projectId: PROJECT_A,
+      channelId: profileSlug,
+      channelName: 'veyris-bound@example.test',
+      channelType: 'inbox',
+      agentName: 'veyris',
+    });
+
+    await deleteAgentMailInstall(PROJECT_A, profileSlug);
+    const rows = await db
+      .select({ bindingId: chatChannelBindings.bindingId })
+      .from(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'email'),
+          eq(chatChannelBindings.workspaceId, inboxId),
+          eq(chatChannelBindings.channelId, profileSlug),
+        ),
+      );
+    expect(rows).toEqual([]);
   });
 
   test('saveAgentMailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
