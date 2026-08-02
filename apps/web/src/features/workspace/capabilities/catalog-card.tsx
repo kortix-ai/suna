@@ -29,6 +29,12 @@ export interface CatalogCardProps {
  * whole page flexing rather than a button depressing. Press feedback belongs
  * on the smaller buttons nested inside a card's `trailing` slot, not the
  * card itself — do not add it back here.
+ *
+ * Resting border is dimmed to `border-border/60`: `globals.css`'s universal
+ * `* { @apply border-border ... }` reset already gives a bare `border` the
+ * full-strength color, so without the `/60` a `hover:border-border` would be
+ * a same-color no-op. Same shape as `admin/page.tsx` and
+ * `config-entity-view.tsx`'s bordered cards.
  */
 export function CatalogCard({
   leading,
@@ -45,7 +51,7 @@ export function CatalogCard({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'bg-popover group flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left',
+        'bg-popover group flex w-full items-start gap-3 rounded-md border-border/60 border px-4 py-3.5 text-left',
         'transition-[background-color,border-color] duration-150 ease-out',
         'hover:bg-primary/[0.03] hover:border-border',
         'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',

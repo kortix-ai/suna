@@ -1,4 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+
+import { CATALOG_CARD_HEIGHT_CLASSNAME, GRID_CLASSNAME } from './catalog-grid';
 
 /**
  * Placeholder chrome for the three capability routes (connectors, skills,
@@ -13,6 +16,13 @@ import { Skeleton } from '@/components/ui/skeleton';
  * capability-page-shell.tsx's doc comment: "a 3-up card grid does not fit in
  * max-w-2xl") rather than today's `EmptyState` stub content, so this does not
  * need to change again once a later task wires that shell into the pages.
+ *
+ * The grid breakpoint and the card height both come from `catalog-grid.tsx`
+ * (`GRID_CLASSNAME`, `CATALOG_CARD_HEIGHT_CLASSNAME`) instead of being
+ * restated here — two hand-typed copies of the same number drift apart
+ * silently, which is exactly how this file's breakpoint and card height
+ * previously disagreed with the real grid. Importing the one real constant
+ * removes the possibility, rather than just matching it by hand again.
  */
 export function CapabilitiesSkeleton() {
   return (
@@ -25,9 +35,12 @@ export function CapabilitiesSkeleton() {
           </div>
           <Skeleton className="h-9 w-full rounded-md sm:max-w-xs" />
         </header>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className={cn('grid-cols-1', GRID_CLASSNAME)}>
           {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-28 w-full rounded-md" />
+            <Skeleton
+              key={index}
+              className={cn(CATALOG_CARD_HEIGHT_CLASSNAME, 'w-full rounded-md')}
+            />
           ))}
         </div>
       </div>
