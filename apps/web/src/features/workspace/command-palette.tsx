@@ -29,7 +29,7 @@ import {
   OPEN_COMMAND_PALETTE_EVENT,
 } from '@/features/workspace/open-command-palette';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { parseCustomizeSection } from '@/lib/customize-sections';
+import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -1209,18 +1209,12 @@ export function CommandPalette() {
         case 'navigate': {
           const href = item.href || '';
 
-          const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
-          // A bare `/customize` (no section segment) still opens the overlay on
-          // its default section. A named segment only opens the overlay when it
-          // resolves to a REAL overlay section — Connectors/Skills/Commands
-          // graduated out of CustomizeSection, so parseCustomizeSection now
-          // returns null for them. Without this check, a stale `/customize/skills`
-          // href would silently open the overlay on whatever section the user
-          // last viewed instead of navigating anywhere.
-          if (custMatch && (!custMatch[1] || parseCustomizeSection(custMatch[1]))) {
-            useCustomizeStore
-              .getState()
-              .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);
+          // See resolveCustomizeOverlayHref's doc comment for why a stale
+          // `/customize/<graduated-or-unknown-section>` href must fall through
+          // to router.push below instead of opening the overlay.
+          const overlayMatch = resolveCustomizeOverlayHref(href);
+          if (overlayMatch.opensOverlay) {
+            useCustomizeStore.getState().openCustomize(overlayMatch.section);
             close();
             break;
           }

@@ -5,6 +5,7 @@ import {
   DEFAULT_CUSTOMIZE_SECTION,
   legacyCustomizeRedirect,
   parseCustomizeSection,
+  resolveCustomizeOverlayHref,
 } from './customize-sections';
 
 describe('customize sections', () => {
@@ -54,5 +55,49 @@ describe('legacyCustomizeRedirect', () => {
   test('leaves overlay sections alone', () => {
     expect(legacyCustomizeRedirect('p1', 'agents')).toBeNull();
     expect(legacyCustomizeRedirect('p1', null)).toBeNull();
+  });
+});
+
+describe('resolveCustomizeOverlayHref', () => {
+  test('a non-customize href never opens the overlay', () => {
+    expect(resolveCustomizeOverlayHref('/projects/p1/skills')).toEqual({ opensOverlay: false });
+    expect(resolveCustomizeOverlayHref('/projects/p1/sessions')).toEqual({ opensOverlay: false });
+  });
+
+  test('a bare /customize href opens the overlay on the default (undefined) section', () => {
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize')).toEqual({
+      opensOverlay: true,
+      section: undefined,
+    });
+  });
+
+  test('a named segment that resolves to a real section opens the overlay on it', () => {
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/agents')).toEqual({
+      opensOverlay: true,
+      section: 'agents',
+    });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/secrets?tab=x')).toEqual({
+      opensOverlay: true,
+      section: 'secrets',
+    });
+  });
+
+  test('a graduated or unknown segment does NOT open the overlay — the regression tripwire', () => {
+    // This is the exact bug this function exists to prevent: before the fix,
+    // an unresolvable segment fell back to `openCustomize(undefined)`, which
+    // silently opened the overlay on whatever section the user last viewed
+    // instead of navigating anywhere.
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
+      opensOverlay: false,
+    });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+      opensOverlay: false,
+    });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/connectors')).toEqual({
+      opensOverlay: false,
+    });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/nonsense')).toEqual({
+      opensOverlay: false,
+    });
   });
 });

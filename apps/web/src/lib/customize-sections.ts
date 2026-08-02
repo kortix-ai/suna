@@ -89,3 +89,31 @@ export function parseCustomizeSection(raw: string | null | undefined): Customize
   if (!raw) return null;
   return (CUSTOMIZE_SECTIONS as readonly string[]).includes(raw) ? (raw as CustomizeSection) : null;
 }
+
+/** Whether an href matching `/customize(/<segment>)?` should open the overlay. */
+export type CustomizeOverlayMatch =
+  | { opensOverlay: true; section: CustomizeSection | undefined }
+  | { opensOverlay: false };
+
+/**
+ * Decide whether a menu-registry href should open the Customize overlay, and
+ * on which section — the command palette's only use of this is a pure lookup,
+ * so it is extracted here to be unit-tested without mounting the palette.
+ *
+ * A bare `/customize` (no segment) opens the overlay on its default section.
+ * A named segment only opens the overlay when it resolves through
+ * `parseCustomizeSection` to a REAL overlay section. Connectors/Skills/
+ * Commands graduated out of `CustomizeSection`, so a stale `/customize/skills`
+ * href (or any other unresolvable segment) must NOT open the overlay —
+ * `openCustomize(undefined)` would otherwise silently reopen it on whatever
+ * section the user last viewed instead of navigating anywhere. The caller is
+ * expected to fall through to a normal `router.push(href)` when this returns
+ * `{ opensOverlay: false }`.
+ */
+export function resolveCustomizeOverlayHref(href: string): CustomizeOverlayMatch {
+  const match = href.match(/\/customize(?:\/([^/?#]+))?/);
+  if (!match) return { opensOverlay: false };
+  if (!match[1]) return { opensOverlay: true, section: undefined };
+  const section = parseCustomizeSection(match[1]);
+  return section ? { opensOverlay: true, section } : { opensOverlay: false };
+}

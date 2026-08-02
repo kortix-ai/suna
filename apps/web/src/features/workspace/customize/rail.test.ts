@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { CustomizeSection } from '@/lib/customize-sections';
 import { type RailFlags, isRailItemActive, railGroups } from './rail';
 import type { RailItem } from './type';
 
