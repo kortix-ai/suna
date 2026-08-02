@@ -8,16 +8,19 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import {
-  invalidateProjectMirror,
   MergeConflictError,
+  invalidateProjectMirror,
   mergeBranches,
   readManifestFromRepo,
 } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { readAgentBlockV2 } from '../lib/agent-config-v2';
+import {
+  type AgentKnowledgeReconcileResult,
+  reconcilePublishedAgentKnowledge,
+} from '../lib/agent-knowledge-assignments';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { readAgentBlockV2 } from '../lib/agent-config-v2';
-import { reconcilePublishedAgentKnowledge } from '../lib/agent-knowledge-assignments';
 import { normalizeString, readBody } from '../lib/serializers';
 import { readManifest } from '../triggers';
 
@@ -37,6 +40,7 @@ projectsApp.openapi(
       ...errors(404, 409, 422, 502),
     },
   }),
+  // biome-ignore lint/suspicious/noExplicitAny: required by Hono's OpenAPI response union
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
@@ -84,7 +88,7 @@ projectsApp.openapi(
         manifestCandidatePaths(projectForGit.manifestPath).map((cand) => cand.path),
         cr.headRef,
       );
-      if (found && found.content.trim()) {
+      if (found?.content.trim()) {
         const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
         if (!verdict.valid) {
           return c.json(
@@ -153,10 +157,23 @@ projectsApp.openapi(
 
     invalidateProjectMirror(projectId);
 
-    let knowledgeReconcile: { assigned: string[]; missing: string[] } | null = null;
+    let knowledgeReconcile:
+      | AgentKnowledgeReconcileResult
+      | { status: 'pending_retry'; error: string }
+      | null = null;
     const crMetadata = (cr.metadata as Record<string, unknown> | null) ?? {};
     const profileMetadata = crMetadata.agent_profile as Record<string, unknown> | undefined;
     const profileAgentName = normalizeString(profileMetadata?.agent_name);
+    const profileDraftRevision =
+      typeof profileMetadata?.draft_revision === 'number' &&
+      Number.isInteger(profileMetadata.draft_revision)
+        ? profileMetadata.draft_revision
+        : undefined;
+    const profileConnectorProfileIds = Array.isArray(profileMetadata?.connector_profile_ids)
+      ? profileMetadata.connector_profile_ids.filter(
+          (profileId): profileId is string => typeof profileId === 'string',
+        )
+      : undefined;
     if (profileAgentName) {
       try {
         const mergedManifest = await readManifest(projectForGit, {
@@ -173,15 +190,22 @@ projectsApp.openapi(
               (entry): entry is string => typeof entry === 'string',
             )
           : [];
-        knowledgeReconcile = await reconcilePublishedAgentKnowledge({
+        const reconcileResult = await reconcilePublishedAgentKnowledge({
           accountId: loaded.row.accountId,
           projectId,
           agentName: profileAgentName,
           sourceSlugs: knowledge,
           manifestRevision: result.merge_commit_sha,
           changeRequestId: crId,
+          draftRevision: profileDraftRevision,
+          connectorProfileIds: profileConnectorProfileIds,
         });
+        knowledgeReconcile = reconcileResult;
       } catch (error) {
+        knowledgeReconcile = {
+          status: 'pending_retry',
+          error: 'Knowledge assignments will retry automatically.',
+        };
         console.error(
           '[change-requests] agent knowledge reconcile failed',
           projectId,
@@ -246,6 +270,7 @@ projectsApp.openapi(
       ...errors(404, 409),
     },
   }),
+  // biome-ignore lint/suspicious/noExplicitAny: required by Hono's OpenAPI response union
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
@@ -293,6 +318,7 @@ projectsApp.openapi(
       ...errors(404, 409),
     },
   }),
+  // biome-ignore lint/suspicious/noExplicitAny: required by Hono's OpenAPI response union
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');

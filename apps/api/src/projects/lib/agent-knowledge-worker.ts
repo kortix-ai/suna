@@ -13,19 +13,14 @@ import { handleCall } from '../../executor/gateway';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
+import { retryPendingAgentProfileKnowledgeReconciliations } from './agent-knowledge-assignments';
 import { chunkKnowledgeDocument } from './agent-knowledge-chunking';
-import {
-  type KnowledgeEmbeddingResult,
-  embedKnowledgeTexts,
-} from './agent-knowledge-embeddings';
+import { type KnowledgeEmbeddingResult, embedKnowledgeTexts } from './agent-knowledge-embeddings';
 import {
   type ExtractKnowledgeDocumentInput,
   extractKnowledgeDocument,
 } from './agent-knowledge-extract';
-import {
-  AGENT_KNOWLEDGE_BUCKET,
-  AGENT_KNOWLEDGE_MAX_FILE_SIZE,
-} from './agent-knowledge-sources';
+import { AGENT_KNOWLEDGE_BUCKET, AGENT_KNOWLEDGE_MAX_FILE_SIZE } from './agent-knowledge-sources';
 import { fetchAgentKnowledgeUrl } from './agent-knowledge-url';
 import { cleanupExpiredAgentProfileArtifacts } from './agent-profile-cleanup';
 
@@ -111,16 +106,12 @@ async function leaseNextJob(
     : null;
 }
 
-function connectedDocument(
-  data: unknown,
-  source: KnowledgeSource,
-): ExtractKnowledgeDocumentInput {
+function connectedDocument(data: unknown, source: KnowledgeSource): ExtractKnowledgeDocumentInput {
   const record =
     data && typeof data === 'object' && !Array.isArray(data)
       ? (data as Record<string, unknown>)
       : null;
-  const rawContent =
-    record?.content ?? record?.text ?? record?.body ?? record?.data ?? data;
+  const rawContent = record?.content ?? record?.text ?? record?.body ?? record?.data ?? data;
   const content =
     typeof rawContent === 'string'
       ? rawContent
@@ -139,9 +130,7 @@ function connectedDocument(
         ? contentTypeValue
         : 'text/plain',
     fileName:
-      typeof fileNameValue === 'string' && fileNameValue.trim()
-        ? fileNameValue
-        : source.title,
+      typeof fileNameValue === 'string' && fileNameValue.trim() ? fileNameValue : source.title,
   };
 }
 
@@ -191,14 +180,14 @@ async function loadConnectedAppDocument(
   });
   if (result.status !== 'ok' || result.risk !== 'read') {
     const reason = 'reason' in result ? result.reason : 'read_action_required';
-    throw new Error(
-      `Connected app could not read resource ${source.resourceId}: ${reason}.`,
-    );
+    throw new Error(`Connected app could not read resource ${source.resourceId}: ${reason}.`);
   }
   return connectedDocument(result.data, source);
 }
 
-async function loadDefaultDocument(source: KnowledgeSource): Promise<ExtractKnowledgeDocumentInput> {
+async function loadDefaultDocument(
+  source: KnowledgeSource,
+): Promise<ExtractKnowledgeDocumentInput> {
   if (source.sourceType === 'url') {
     if (!source.url) throw new Error('Knowledge URL source has no URL.');
     const response = await fetchAgentKnowledgeUrl(source.url);
@@ -206,8 +195,8 @@ async function loadDefaultDocument(source: KnowledgeSource): Promise<ExtractKnow
   }
   if (source.sourceType === 'upload') {
     if (!source.storagePath) throw new Error('Knowledge upload has no private storage path.');
-    const { data, error } = await getSupabase().storage
-      .from(AGENT_KNOWLEDGE_BUCKET)
+    const { data, error } = await getSupabase()
+      .storage.from(AGENT_KNOWLEDGE_BUCKET)
       .download(source.storagePath);
     if (error || !data) throw new Error(error?.message ?? 'Knowledge upload could not be read.');
     if (data.size > AGENT_KNOWLEDGE_MAX_FILE_SIZE) {
@@ -220,8 +209,7 @@ async function loadDefaultDocument(source: KnowledgeSource): Promise<ExtractKnow
         (typeof sourceConfig.contentType === 'string' && sourceConfig.contentType) ||
         data.type ||
         'application/octet-stream',
-      fileName:
-        typeof sourceConfig.fileName === 'string' ? sourceConfig.fileName : source.title,
+      fileName: typeof sourceConfig.fileName === 'string' ? sourceConfig.fileName : source.title,
     };
   }
   return loadConnectedAppDocument(source);
@@ -243,7 +231,9 @@ async function embedAll(
 }
 
 function exactError(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).trim() || 'Knowledge sync failed.';
+  return (
+    (error instanceof Error ? error.message : String(error)).trim() || 'Knowledge sync failed.'
+  );
 }
 
 async function failJob(input: {
@@ -463,8 +453,16 @@ export async function enqueueDueAgentKnowledgeSyncs(database: Database = db): Pr
   return rows.length;
 }
 
-export async function runAgentKnowledgeSyncTick(): Promise<{ enqueued: number; processed: number }> {
+export async function runAgentKnowledgeSyncTick(): Promise<{
+  enqueued: number;
+  processed: number;
+}> {
   await cleanupExpiredAgentProfileArtifacts();
+  await retryPendingAgentProfileKnowledgeReconciliations().catch((error) =>
+    logger.error('[agent-profile] knowledge reconciliation sweep failed', {
+      error: exactError(error),
+    }),
+  );
   const enqueued = await enqueueDueAgentKnowledgeSyncs();
   const batch = Math.max(1, Number(process.env.KORTIX_AGENT_KNOWLEDGE_WORKER_BATCH) || 5);
   let processed = 0;
@@ -490,7 +488,9 @@ export function startAgentKnowledgeWorker(): void {
     if (running) return;
     running = true;
     runAgentKnowledgeSyncTick()
-      .catch((error) => logger.error('[agent-knowledge-worker] tick failed', { error: exactError(error) }))
+      .catch((error) =>
+        logger.error('[agent-knowledge-worker] tick failed', { error: exactError(error) }),
+      )
       .finally(() => {
         running = false;
       });

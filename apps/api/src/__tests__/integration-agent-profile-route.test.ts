@@ -26,6 +26,10 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { app } from '../index';
+import {
+  reconcilePublishedAgentKnowledge,
+  retryPendingAgentProfileKnowledgeReconciliations,
+} from '../projects/lib/agent-knowledge-assignments';
 import { searchAgentKnowledgeForSession } from '../projects/lib/session-knowledge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
@@ -521,6 +525,27 @@ describe('agent profile HTTP route', () => {
     expect(publish.status).toBe(201);
     const publishBody = await publish.json();
 
+    const publishedDraftProfile = await (
+      await request('GET', `/v1/projects/${PROJECT}/agents/support/profile`)
+    ).json();
+    const unpublishedEdit = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/agents/support/profile/draft`,
+      {
+        expectedRevision: publishBody.revision,
+        sections: {
+          instructions: {
+            ...publishedDraftProfile.draft.sections.instructions,
+            prompt: 'This edit must remain a draft after the published revision merges.',
+          },
+          integrations: [],
+        },
+      },
+    );
+    expect(unpublishedEdit.status).toBe(200);
+    const unpublishedDraft = await unpublishedEdit.json();
+    expect(unpublishedDraft.revision).toBe(publishBody.revision + 1);
+
     const merge = await request(
       'POST',
       `/v1/projects/${PROJECT}/change-requests/${publishBody.change_request.cr_id}/merge`,
@@ -533,6 +558,38 @@ describe('agent profile HTTP route', () => {
       .where(eq(agentKnowledgeAssignments.sourceId, publishableSource.source_id));
     expect(assignments).toHaveLength(1);
     expect(assignments[0]?.active).toBe(true);
+    const [mergedChangeRequest] = await db
+      .select({ metadata: changeRequests.metadata })
+      .from(changeRequests)
+      .where(eq(changeRequests.crId, publishBody.change_request.cr_id));
+    const mergedProfileMetadata = (
+      mergedChangeRequest?.metadata as Record<string, Record<string, unknown>>
+    )?.agent_profile;
+    expect(mergedProfileMetadata?.knowledge).toEqual([publishableSource.slug]);
+    expect(mergedProfileMetadata?.connector_profile_ids).toEqual([CONNECTOR_PROFILE]);
+    expect(mergedProfileMetadata?.knowledge_reconciled_at).toBeString();
+
+    await db
+      .update(agentKnowledgeAssignments)
+      .set({ active: false })
+      .where(eq(agentKnowledgeAssignments.sourceId, publishableSource.source_id));
+    const retryMetadata = structuredClone(
+      (mergedChangeRequest?.metadata as Record<string, unknown>) ?? {},
+    );
+    delete (retryMetadata.agent_profile as Record<string, unknown>).knowledge_reconciled_at;
+    await db
+      .update(changeRequests)
+      .set({ metadata: retryMetadata })
+      .where(eq(changeRequests.crId, publishBody.change_request.cr_id));
+    expect(await retryPendingAgentProfileKnowledgeReconciliations()).toMatchObject({
+      reconciled: 1,
+      failed: 0,
+    });
+    const [retriedAssignment] = await db
+      .select({ active: agentKnowledgeAssignments.active })
+      .from(agentKnowledgeAssignments)
+      .where(eq(agentKnowledgeAssignments.sourceId, publishableSource.source_id));
+    expect(retriedAssignment?.active).toBe(true);
     const [publishedSourceRecord] = await db
       .select({ expiresAt: agentKnowledgeSources.expiresAt })
       .from(agentKnowledgeSources)
@@ -552,7 +609,9 @@ describe('agent profile HTTP route', () => {
     expect(mergedBody.sections.skills.map((skill: { slug: string }) => skill.slug)).toContain(
       'cited-support',
     );
-    expect(mergedBody.draft).toBeNull();
+    expect(mergedBody.draft.revision).toBe(unpublishedDraft.revision);
+    expect(mergedBody.draft.sections.instructions.prompt).toContain('must remain a draft');
+    expect(mergedBody.draft.sections.integrations).toEqual([]);
     const committedSkill = await run('git', [
       '--git-dir',
       join(root, 'profile.git'),
@@ -560,6 +619,61 @@ describe('agent profile HTTP route', () => {
       'main:.kortix/opencode/skills/cited-support/SKILL.md',
     ]);
     expect(committedSkill.stdout).toContain('include a citation');
+
+    const newerChangeRequestId = crypto.randomUUID();
+    const newerMergeCommit = 'b'.repeat(40);
+    await db.insert(changeRequests).values({
+      crId: newerChangeRequestId,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      number: 2_000_000_000,
+      title: 'Newer support profile publication',
+      baseRef: 'main',
+      headRef: 'kortix/agents/profile/support-newer',
+      status: 'merged',
+      createdBy: OWNER,
+      mergedAt: new Date(Date.now() + 10_000),
+      mergedBy: OWNER,
+      mergeCommitSha: newerMergeCommit,
+      metadata: {
+        agent_profile: {
+          agent_name: 'support',
+          draft_revision: unpublishedDraft.revision,
+          paths: [],
+          knowledge: [],
+          knowledge_reconciled_at: new Date().toISOString(),
+        },
+      },
+    });
+    await db
+      .update(agentKnowledgeAssignments)
+      .set({ active: false })
+      .where(eq(agentKnowledgeAssignments.sourceId, publishableSource.source_id));
+    const staleReconcile = await reconcilePublishedAgentKnowledge({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      agentName: 'support',
+      sourceSlugs: [publishableSource.slug],
+      manifestRevision: publishBody.change_request.head_commit_sha,
+      changeRequestId: publishBody.change_request.cr_id,
+      draftRevision: publishBody.revision,
+    });
+    expect(staleReconcile.status).toBe('superseded');
+    const [staleAssignment] = await db
+      .select({ active: agentKnowledgeAssignments.active })
+      .from(agentKnowledgeAssignments)
+      .where(eq(agentKnowledgeAssignments.sourceId, publishableSource.source_id));
+    expect(staleAssignment?.active).toBe(false);
+    await db.delete(changeRequests).where(eq(changeRequests.crId, newerChangeRequestId));
+
+    const discarded = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/agents/support/profile/discard`,
+      { expectedRevision: unpublishedDraft.revision },
+    );
+    expect(discarded.status).toBe(200);
+    const cleanProfile = await request('GET', `/v1/projects/${PROJECT}/agents/support/profile`);
+    expect((await cleanProfile.json()).draft).toBeNull();
   });
 
   test('pauses runtime immediately while leaving repository cleanup for the profile draft', async () => {

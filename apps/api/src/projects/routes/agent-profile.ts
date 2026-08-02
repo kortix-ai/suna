@@ -630,6 +630,8 @@ function reusableChangeRequestMetadata(
   agentName: string,
   revision: number,
   paths: string[],
+  knowledge: string[],
+  connectorProfileIds: string[],
 ) {
   return {
     ...((row.metadata as Record<string, unknown> | null) ?? {}),
@@ -643,6 +645,8 @@ function reusableChangeRequestMetadata(
       agent_name: agentName,
       draft_revision: revision,
       paths,
+      knowledge: [...new Set(knowledge)].sort(),
+      connector_profile_ids: [...new Set(connectorProfileIds)].sort(),
     },
   };
 }
@@ -1052,6 +1056,14 @@ profileOpenApi(
     }
 
     const paths = composed.files.map((file: { path: string }) => file.path);
+    const publishedKnowledge = Array.isArray(draft.sections.knowledge)
+      ? draft.sections.knowledge.filter((slug): slug is string => typeof slug === 'string')
+      : [];
+    const publishedConnectorProfileIds = Array.isArray(draft.sections.integrations)
+      ? draft.sections.integrations
+          .map((integration) => integration.profile_id)
+          .filter((profileId): profileId is string => typeof profileId === 'string')
+      : [];
     let changeRequest: typeof changeRequests.$inferSelect;
     let updatedExistingRequest = false;
     if (existing) {
@@ -1061,7 +1073,14 @@ profileOpenApi(
           title: `Update ${agentName} agent profile`,
           description: `Publishes revision ${draft.revision} of the unified agent capability profile.`,
           headCommitSha: commitSha,
-          metadata: reusableChangeRequestMetadata(existing, agentName, draft.revision, paths),
+          metadata: reusableChangeRequestMetadata(
+            existing,
+            agentName,
+            draft.revision,
+            paths,
+            publishedKnowledge,
+            publishedConnectorProfileIds,
+          ),
           updatedAt: new Date(),
         })
         .where(and(eq(changeRequests.crId, existing.crId), eq(changeRequests.status, 'open')))
@@ -1094,6 +1113,8 @@ profileOpenApi(
           agentName,
           draft.revision,
           paths,
+          publishedKnowledge,
+          publishedConnectorProfileIds,
         ),
       }).catch(async (error) => {
         if (createdBranch) await cleanupAgentChangeBranch(gitProject, branch);
