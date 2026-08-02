@@ -1,6 +1,7 @@
 import { projectSessions, projects } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
+import { cleanupExpiredExecutorAttachments } from '../executor/attachments';
 import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
@@ -234,6 +235,7 @@ export async function runProjectMaintenance(): Promise<void> {
       computeTick,
       staleBuilds,
       snapshotGc,
+      executorAttachments,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -324,6 +326,16 @@ export async function runProjectMaintenance(): Promise<void> {
           dryRun: false,
         };
       }),
+      // Private Executor email attachments expire after 24 hours. Successful
+      // sends become non-replayable immediately, then this sweep deletes them
+      // after the signed-URL ingestion grace window.
+      cleanupExpiredExecutorAttachments().catch((err) => {
+        console.warn(
+          '[project-maintenance] executor-attachment cleanup failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { deleted: 0, errors: 1 };
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -342,7 +354,9 @@ export async function runProjectMaintenance(): Promise<void> {
         computeTick.reconciled ||
         staleBuilds.closedReady ||
         staleBuilds.closedFailed ||
-        snapshotGc.deleted,
+        snapshotGc.deleted ||
+        executorAttachments.deleted ||
+        executorAttachments.errors,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -355,6 +369,7 @@ export async function runProjectMaintenance(): Promise<void> {
         computeTick,
         staleBuilds,
         snapshotGc,
+        executorAttachments,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any

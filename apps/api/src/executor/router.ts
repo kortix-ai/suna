@@ -29,6 +29,11 @@ import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
+import {
+  type ExecutorAttachmentStore,
+  MAX_EXECUTOR_ATTACHMENT_BYTES,
+  type StageExecutorAttachmentInput,
+} from './attachments';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import type { ExecutorAuth } from './execute';
 import { type GatewayDeps, handleCall } from './gateway';
@@ -111,6 +116,17 @@ const SyncResultSchema = z
 const CrudOkSchema = z.object({ ok: z.boolean(), sync: z.any().optional() }).passthrough();
 const AuthDiscoverySchema = z.record(z.string(), z.any());
 const OpaqueSchema = z.record(z.string(), z.any());
+const AttachmentUploadResponseSchema = z
+  .object({
+    attachment_id: z.string().uuid(),
+    filename: z.string(),
+    content_type: z.string(),
+    content_disposition: z.enum(['attachment', 'inline']),
+    content_id: z.string().optional(),
+    size: z.number().int().positive(),
+    expires_at: z.string(),
+  })
+  .openapi('ExecutorAttachmentUpload');
 
 export interface ExecutorPrincipal {
   userId: string;
@@ -200,6 +216,8 @@ export interface ExecutorRouterDeps {
   makeGatewayDeps(p: ExecutorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
   listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]>;
+  /** Private raw-byte staging used by the MCP attachment transport. */
+  attachmentStore?: ExecutorAttachmentStore;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
     c: Context,
@@ -398,6 +416,72 @@ function featureNotSupportedResponse(c: Context, feature: string) {
   );
 }
 
+function decodedAttachmentHeader(c: Context, name: string): string {
+  const value = c.req.header(name);
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value).trim();
+  } catch {
+    throw new Error(`${name} is not valid URI-encoded text`);
+  }
+}
+
+function attachmentMetadata(c: Context): Omit<StageExecutorAttachmentInput, 'bytes'> {
+  const filename = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Filename');
+  const contentType = (c.req.header('content-type') ?? '').split(';', 1).at(0)?.trim() ?? '';
+  const disposition = c.req.header('X-Kortix-Attachment-Disposition') ?? 'attachment';
+  const contentId = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Content-Id');
+  if (!filename || filename.length > 512) {
+    throw new Error('X-Kortix-Attachment-Filename is required and must not exceed 512 characters');
+  }
+  if (!contentType || contentType.length > 255) {
+    throw new Error('Content-Type is required and must not exceed 255 characters');
+  }
+  if (disposition !== 'attachment' && disposition !== 'inline') {
+    throw new Error('X-Kortix-Attachment-Disposition must be attachment or inline');
+  }
+  if (contentId.length > 512) {
+    throw new Error('X-Kortix-Attachment-Content-Id must not exceed 512 characters');
+  }
+  return {
+    filename,
+    contentType,
+    contentDisposition: disposition,
+    ...(contentId ? { contentId } : {}),
+  };
+}
+
+async function readAttachmentBytes(c: Context): Promise<Uint8Array> {
+  const body = c.req.raw.body;
+  if (!body) return new Uint8Array();
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_EXECUTOR_ATTACHMENT_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error('attachment exceeds the 25 MiB limit');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
@@ -499,6 +583,55 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }
   };
 
+  const attachmentResponse = async (c: Context, p: ExecutorPrincipal) => {
+    if (!deps.attachmentStore) return featureNotSupportedResponse(c, 'executor_attachments');
+    let metadata: Omit<StageExecutorAttachmentInput, 'bytes'>;
+    try {
+      metadata = attachmentMetadata(c);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const declaredSize = Number(c.req.header('content-length') ?? '');
+    if (Number.isFinite(declaredSize) && declaredSize > MAX_EXECUTOR_ATTACHMENT_BYTES) {
+      return c.json({ error: 'attachment exceeds the 25 MiB limit' }, 413);
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await readAttachmentBytes(c);
+    } catch (error) {
+      if ((error as Error).message.includes('25 MiB')) {
+        return c.json({ error: (error as Error).message }, 413);
+      }
+      throw error;
+    }
+    try {
+      return c.json(
+        await deps.attachmentStore.stage(
+          {
+            accountId: p.accountId,
+            projectId: p.projectId,
+            sessionId: p.sessionId,
+            userId: p.userId,
+          },
+          { ...metadata, bytes },
+        ),
+        201,
+      );
+    } catch (error) {
+      const message = (error as Error).message || 'attachment_upload_failed';
+      if (message.includes('25 MiB')) return c.json({ error: message }, 413);
+      if (
+        message === 'attachment is empty' ||
+        message === 'filename must be a plain filename' ||
+        message === 'content_type is required'
+      ) {
+        return c.json({ error: message }, 400);
+      }
+      console.error('[executor-attachments] upload failed', error);
+      return c.json({ error: 'attachment_upload_failed' }, 500);
+    }
+  };
+
   // ── Gateway: list usable connectors ──────────────────────────────────────
   app.openapi(
     createRoute({
@@ -516,6 +649,29 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
       return catalogResponse(c, p);
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/attachments',
+      tags: ['executor'],
+      summary: 'Stage a private attachment from raw bytes',
+      ...auth,
+      responses: {
+        201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
+        400: json(OpaqueSchema, 'Invalid attachment metadata or empty body'),
+        401: json(OpaqueSchema, 'Unauthorized'),
+        413: json(OpaqueSchema, 'Attachment exceeds the size limit'),
+        500: json(OpaqueSchema, 'Attachment storage failure'),
+        501: json(OpaqueSchema, 'Attachment staging is unavailable'),
+      },
+    }),
+    async (c: Context) => {
+      const p = await deps.resolvePrincipal(c);
+      if (!p) return c.json({ error: 'unauthorized' }, 401);
+      return attachmentResponse(c, p);
     },
   );
 
@@ -551,6 +707,32 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/attachments',
+      tags: ['executor'],
+      summary: 'Stage a private attachment in a project from raw bytes',
+      ...auth,
+      request: { params: ProjectParam },
+      responses: {
+        201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
+        400: json(OpaqueSchema, 'Invalid attachment metadata or empty body'),
+        403: json(OpaqueSchema, 'Denied'),
+        413: json(OpaqueSchema, 'Attachment exceeds the size limit'),
+        500: json(OpaqueSchema, 'Attachment storage failure'),
+        501: json(OpaqueSchema, 'Attachment staging is unavailable'),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId');
+      if (!projectId) return c.json({ error: 'forbidden' }, 403);
+      const p = await deps.resolveProjectPrincipal(c, projectId);
+      if (!p) return c.json({ error: 'forbidden' }, 403);
+      return attachmentResponse(c, p);
     },
   );
 

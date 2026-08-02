@@ -143,7 +143,7 @@ describe('channelCatalog(email)', () => {
     ]);
   });
 
-  test('describes both supported AgentMail attachment transports', () => {
+  test('describes opaque handles and URL transport without exposing base64', () => {
     for (const path of ['send_message', 'reply_message', 'reply_all_message']) {
       const props = objectSchema(action(path).inputSchema).properties;
       const attachments = props.attachments as {
@@ -155,10 +155,11 @@ describe('channelCatalog(email)', () => {
       };
       expect(attachments.items.required).toEqual(['filename']);
       expect(attachments.items.anyOf).toEqual([
-        { required: ['content'] },
+        { required: ['attachment_id'] },
         { required: ['url'] },
       ]);
-      expect(attachments.items.properties.content?.description).toContain('Base64');
+      expect(attachments.items.properties.attachment_id?.description).toContain('Opaque');
+      expect(attachments.items.properties.content).toBeUndefined();
       expect(attachments.items.properties.url?.description).toContain('URL');
     }
   });
@@ -537,6 +538,174 @@ describe('handleCall — channel (slack)', () => {
 });
 
 describe('handleCall — channel (email)', () => {
+  test('resolves opaque handles to signed URLs only at provider execution and consumes on success', async () => {
+    const lifecycle: string[] = [];
+    const fetchCalls: Array<{ body?: string }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => EMAIL,
+      loadAction: async () => EMAIL_REPLY,
+      resolveCredential: async () => 'am_project_token',
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      attachmentStore: {
+        stage: async () => {
+          throw new Error('not used');
+        },
+        claimForEmail: async (scope, args) => {
+          lifecycle.push(`claim:${scope.projectId}:${scope.sessionId}:${scope.userId}`);
+          return {
+            args: {
+              ...args,
+              attachments: [
+                {
+                  filename: 'memo.pdf',
+                  content_type: 'application/pdf',
+                  content_disposition: 'attachment',
+                  url: 'https://storage.test/signed-on-execute',
+                },
+              ],
+            },
+            claimToken: 'claim-1',
+            attachmentIds: ['019fc40d-04dd-7f52-a591-65ab13d2a245'],
+          };
+        },
+        completeClaim: async (claimToken) => {
+          lifecycle.push(`complete:${claimToken}`);
+        },
+        releaseClaim: async (claimToken) => {
+          lifecycle.push(`release:${claimToken}`);
+        },
+      },
+      fetchImpl: async (_url, init) => {
+        fetchCalls.push(init);
+        return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'email',
+      actionPath: 'reply_message',
+      args: {
+        inbox_id: 'inb_1',
+        message_id: 'msg_1',
+        text: 'Attached',
+        attachments: [
+          {
+            filename: 'memo.pdf',
+            content_type: 'application/pdf',
+            content_disposition: 'attachment',
+            attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe('ok');
+    expect(lifecycle).toEqual(['claim:proj-1:sess-1:u1', 'complete:claim-1']);
+    const providerBody = JSON.parse(expectDefined(fetchCalls[0]?.body));
+    expect(providerBody.attachments[0]).toMatchObject({
+      filename: 'memo.pdf',
+      url: 'https://storage.test/signed-on-execute',
+    });
+    expect(providerBody.attachments[0].attachment_id).toBeUndefined();
+  });
+
+  test('releases a claim after an AgentMail failure so the same approved call can retry', async () => {
+    const lifecycle: string[] = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => EMAIL,
+      loadAction: async () => EMAIL_REPLY,
+      resolveCredential: async () => 'am_project_token',
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      attachmentStore: {
+        stage: async () => {
+          throw new Error('not used');
+        },
+        claimForEmail: async (_scope, args) => ({
+          args,
+          claimToken: 'claim-1',
+          attachmentIds: ['019fc40d-04dd-7f52-a591-65ab13d2a245'],
+        }),
+        completeClaim: async () => {
+          lifecycle.push('complete');
+        },
+        releaseClaim: async () => {
+          lifecycle.push('release');
+        },
+      },
+      fetchImpl: async () => ({
+        status: 500,
+        ok: false,
+        text: async () => '{"error":"provider_failed"}',
+      }),
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'email',
+      actionPath: 'reply_message',
+      args: {
+        inbox_id: 'inb_1',
+        message_id: 'msg_1',
+        attachments: [{ attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245' }],
+      },
+    });
+
+    expect(res.status).toBe('error');
+    expect(lifecycle).toEqual(['release']);
+  });
+
+  test('does not claim or sign attachments while human approval is pending', async () => {
+    let claimCount = 0;
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => EMAIL,
+      loadAction: async () => EMAIL_REPLY,
+      resolveCredential: async () => 'am_project_token',
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [
+        { match: 'kortix_email.reply_message', action: 'require_approval', position: 0 },
+      ],
+      loadDefaultMode: async () => 'allow_all',
+      enforcePolicies: true,
+      recordExecution: async () => 'execution-1',
+      waitForApprovalDecision: async () => 'timeout',
+      attachmentStore: {
+        stage: async () => {
+          throw new Error('not used');
+        },
+        claimForEmail: async (_scope, args) => {
+          claimCount++;
+          return { args, claimToken: null, attachmentIds: [] };
+        },
+        completeClaim: async () => {},
+        releaseClaim: async () => {},
+      },
+      fetchImpl: async () => {
+        throw new Error('provider must not run before approval');
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'email',
+      actionPath: 'reply_message',
+      args: {
+        inbox_id: 'inb_1',
+        message_id: 'msg_1',
+        attachments: [{ attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245' }],
+      },
+    });
+
+    expect(res.status).toBe('pending_approval');
+    expect(claimCount).toBe(0);
+  });
+
   test('legacy connector="email" calls use kortix_email and build AgentMail requests', async () => {
     const fetchCalls: Array<{
       url: string;

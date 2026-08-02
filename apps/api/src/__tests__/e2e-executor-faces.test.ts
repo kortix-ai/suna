@@ -25,6 +25,7 @@ const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 interface World {
   executions: ExecutionRecord[];
   upstream: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }>;
+  attachmentUploads: Array<{ filename: string; bytes: string }>;
 }
 
 let world: World;
@@ -101,7 +102,41 @@ function catalogFor(_p: ExecutorPrincipal): CatalogConnector[] {
 }
 
 function makeDeps(): ExecutorRouterDeps {
+  const attachmentStore = {
+    stage: async (
+      _scope: unknown,
+      input: {
+        filename: string;
+        bytes: Uint8Array;
+        contentType: string;
+        contentDisposition: 'attachment' | 'inline';
+        contentId?: string;
+      },
+    ) => {
+      world.attachmentUploads.push({
+        filename: input.filename,
+        bytes: new TextDecoder().decode(input.bytes),
+      });
+      return {
+        attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
+        filename: input.filename,
+        content_type: input.contentType,
+        content_disposition: input.contentDisposition,
+        ...(input.contentId ? { content_id: input.contentId } : {}),
+        size: input.bytes.byteLength,
+        expires_at: '2026-08-03T20:00:00.000Z',
+      };
+    },
+    claimForEmail: async (_scope: unknown, args: Record<string, unknown>) => ({
+      args,
+      claimToken: null,
+      attachmentIds: [],
+    }),
+    completeClaim: async () => {},
+    releaseClaim: async () => {},
+  };
   const gateway: GatewayDeps = {
+    attachmentStore,
     loadConnectorBySlug: async (_projectId, slug) => (slug === connector.slug ? connector : null),
     loadAction: async (connectorId, relPath) => {
       if (connectorId !== connector.connectorId) return null;
@@ -126,6 +161,7 @@ function makeDeps(): ExecutorRouterDeps {
   };
 
   return {
+    attachmentStore,
     resolvePrincipal: async (c) => c.req.header('authorization') === `Bearer ${TOKEN}` ? principal() : null,
     // Project-explicit gateway: same principal, but the project comes from the
     // path (the production impl accepts a logged-in user token here — this is the
@@ -181,7 +217,7 @@ async function requestMcp(proc: Bun.Subprocess<'pipe', 'pipe', 'pipe'>, reader: 
 }
 
 beforeEach(() => {
-  world = { executions: [], upstream: [] };
+  world = { executions: [], upstream: [], attachmentUploads: [] };
   const app = createExecutorRouter(makeDeps());
   server = Bun.serve({
     port: 0,
@@ -413,7 +449,7 @@ describe('MCP face', () => {
     }
   });
 
-  test('reads attachment_files inside the MCP process and sends encoded attachments', async () => {
+  test('uploads attachment_files as raw bytes and sends only opaque handles', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'kortix-executor-mcp-'));
     const output = join(workspace, 'output');
     const memo = join(output, 'memo.pdf');
@@ -458,10 +494,16 @@ describe('MCP face', () => {
             filename: 'Investment Memo.pdf',
             content_type: 'application/pdf',
             content_disposition: 'attachment',
-            content: Buffer.from('real-pdf-bytes').toString('base64'),
+            attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
           },
         ],
       });
+      expect(world.attachmentUploads).toEqual([
+        { filename: 'Investment Memo.pdf', bytes: 'real-pdf-bytes' },
+      ]);
+      expect(JSON.stringify(payload.data.body)).not.toContain(
+        Buffer.from('real-pdf-bytes').toString('base64'),
+      );
     } finally {
       proc.kill();
       await proc.exited;

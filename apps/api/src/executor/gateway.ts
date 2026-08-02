@@ -1,5 +1,6 @@
 import { logger } from '../lib/logger';
 import { buildArgsPreview, summarizeArgsPreview } from './args-preview';
+import type { ExecutorAttachmentStore } from './attachments';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -126,6 +127,8 @@ export interface GatewayDeps {
   ): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
+  /** Private attachment staging/claim lifecycle for native email actions. */
+  attachmentStore?: ExecutorAttachmentStore;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -440,6 +443,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
+  let attachmentClaim: Awaited<ReturnType<ExecutorAttachmentStore['claimForEmail']>> | null = null;
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
@@ -746,13 +750,31 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         throw new Error(`pipedream connector has unexpected binding kind "${b.kind}"`);
       }
     } else {
+      let providerArgs = executionArgs;
+      if (connector.provider === 'channel' && connector.platform === 'email') {
+        if (!deps.attachmentStore && hasAttachmentHandles(executionArgs)) {
+          throw new Error('executor_attachment_transport_unavailable');
+        }
+        if (deps.attachmentStore) {
+          attachmentClaim = await deps.attachmentStore.claimForEmail(
+            {
+              accountId: input.accountId,
+              projectId: input.projectId,
+              sessionId: input.sessionId ?? null,
+              userId: input.subject.userId,
+            },
+            executionArgs,
+          );
+          providerArgs = attachmentClaim.args;
+        }
+      }
       result = await executeCall({
         binding: action.binding,
         baseUrl: connector.baseUrl,
         auth: connector.auth,
         headers: connector.headers,
         secret: executionSecret,
-        args: executionArgs,
+        args: providerArgs,
         paramHints: paramHintsFromSchema(action.inputSchema),
         fetchImpl: deps.fetchImpl,
       });
@@ -762,10 +784,25 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
     }
     if (result.ok) {
+      if (attachmentClaim?.claimToken) {
+        await deps.attachmentStore
+          ?.completeClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+          .catch((error) => {
+            logger.error('[executor] attachment completion failed after provider success', {
+              error: error instanceof Error ? error.message : String(error),
+              attachment_count: attachmentClaim?.attachmentIds.length ?? 0,
+            });
+          });
+      }
       await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
       });
       return { status: 'ok', data: result.data, risk: action.risk };
+    }
+    if (attachmentClaim?.claimToken) {
+      await deps.attachmentStore
+        ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+        .catch(() => {});
     }
     const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
@@ -777,6 +814,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     );
     return { status: 'error', reason };
   } catch (e) {
+    if (attachmentClaim?.claimToken) {
+      await deps.attachmentStore
+        ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+        .catch(() => {});
+    }
     const reason = (e as Error).message + fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
@@ -784,6 +826,17 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
     return { status: 'error', reason };
   }
+}
+
+function hasAttachmentHandles(args: Record<string, unknown>): boolean {
+  if (!Array.isArray(args.attachments)) return false;
+  return args.attachments.some(
+    (value) =>
+      value != null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      typeof (value as Record<string, unknown>).attachment_id === 'string',
+  );
 }
 
 /**

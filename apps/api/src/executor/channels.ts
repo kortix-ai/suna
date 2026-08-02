@@ -120,7 +120,7 @@ interface ChannelActionDef {
 const EMAIL_ATTACHMENT_SCHEMA = {
   type: 'array',
   description:
-    'Optional attachments. Each item must include filename plus either base64 content or a fetchable URL.',
+    'Optional attachments. Use an opaque attachment_id returned by the Executor attachment upload route, or a fetchable URL.',
   items: {
     type: 'object',
     properties: {
@@ -132,11 +132,14 @@ const EMAIL_ATTACHMENT_SCHEMA = {
         description: 'How the recipient email client should display the file.',
       },
       content_id: { type: 'string', description: 'Optional content ID for an inline attachment.' },
-      content: { type: 'string', description: 'Base64-encoded file content.' },
-      url: { type: 'string', description: 'Public URL from which AgentMail can fetch the file.' },
+      attachment_id: {
+        type: 'string',
+        description: 'Opaque handle returned after uploading raw bytes to the Executor.',
+      },
+      url: { type: 'string', description: 'URL from which AgentMail can fetch the file.' },
     },
     required: ['filename'],
-    anyOf: [{ required: ['content'] }, { required: ['url'] }],
+    anyOf: [{ required: ['attachment_id'] }, { required: ['url'] }],
     additionalProperties: false,
   },
 } satisfies Record<string, unknown> & { type: string; description: string };

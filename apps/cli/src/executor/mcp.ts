@@ -75,12 +75,12 @@ interface LocalAttachmentFile {
   content_id?: string;
 }
 
-interface EncodedAttachment {
+interface UploadedAttachment {
   filename: string;
   content_type: string;
   content_disposition: 'attachment' | 'inline';
   content_id?: string;
-  content: string;
+  attachment_id: string;
 }
 
 function isWithinRoot(path: string, root: string): boolean {
@@ -113,14 +113,15 @@ function localAttachment(value: unknown, index: number): LocalAttachmentFile {
   };
 }
 
-export async function encodeAttachmentFiles(
+export async function uploadAttachmentFiles(
   value: unknown,
+  executor: Pick<ExecutorClient, 'uploadAttachment'>,
   options: {
     workspaceRoot?: string;
     maxBytes?: number;
     afterOpen?: (path: string, index: number) => Promise<void>;
   } = {},
-): Promise<EncodedAttachment[]> {
+): Promise<UploadedAttachment[]> {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('attachment_files must be a non-empty array');
   }
@@ -134,7 +135,7 @@ export async function encodeAttachmentFiles(
   const allowedRoots = DEFAULT_ATTACHMENT_ROOTS.map((name) => resolve(workspaceRoot, name));
   const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
   let totalBytes = 0;
-  const encoded: EncodedAttachment[] = [];
+  const uploaded: UploadedAttachment[] = [];
 
   for (let index = 0; index < value.length; index++) {
     const item = localAttachment(value[index], index);
@@ -173,19 +174,24 @@ export async function encodeAttachmentFiles(
       }
       const contentType =
         item.content_type || ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] || 'application/octet-stream';
-      const content = (await file.readFile()).toString('base64');
-      encoded.push({
+      const result = await executor.uploadAttachment(await file.readFile(), {
+        filename,
+        contentType,
+        contentDisposition: item.content_disposition ?? 'attachment',
+        ...(item.content_id ? { contentId: item.content_id } : {}),
+      });
+      uploaded.push({
         filename,
         content_type: contentType,
         content_disposition: item.content_disposition ?? 'attachment',
         ...(item.content_id ? { content_id: item.content_id } : {}),
-        content,
+        attachment_id: result.attachment_id,
       });
     } finally {
       await file.close();
     }
   }
-  return encoded;
+  return uploaded;
 }
 
 /**
@@ -238,7 +244,7 @@ const META_TOOLS = [
   {
     name: 'call',
     description:
-      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk } on success, or a denial / pending-approval result. For email attachments, pass small local file references in attachment_files; this MCP reads and encodes the files outside the model tool payload. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
+      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk } on success, or a denial / pending-approval result. For email attachments, pass local file references in attachment_files; this MCP uploads raw bytes outside the model and JSON-RPC payloads. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -254,7 +260,7 @@ const META_TOOLS = [
         attachment_files: {
           type: 'array',
           description:
-            'Local files for an email action that supports attachments. Paths must be absolute and inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables. The MCP encodes them after the tool call, so never paste base64 into args.',
+            'Local files for an email action that supports attachments. Paths must be absolute and inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables. The MCP uploads raw bytes and passes opaque attachment handles, so never paste base64 into args.',
           items: {
             type: 'object',
             properties: {
@@ -483,7 +489,7 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
           };
         }
         try {
-          const files = await encodeAttachmentFiles(args.attachment_files);
+          const files = await uploadAttachmentFiles(args.attachment_files, executor);
           const existing = callArgs.attachments;
           if (existing !== undefined && !Array.isArray(existing)) {
             throw new Error('args.attachments must be an array when attachment_files is used');
