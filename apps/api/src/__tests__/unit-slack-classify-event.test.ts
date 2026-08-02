@@ -136,6 +136,21 @@ describe('classifyEvent — a message that @-mentions the bot is a mention', () 
     expect(cls).toBe('ignore');
   });
 
+  test('bot_message in a DM is a dm', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'im', text: 'hello from another bot', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('bot_message with a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'channel', text: '<@B1> analyze this report', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  test('bot_message without mention in a channel is ignored (no pickup)', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'channel', text: 'other bot chatter', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
   test('other subtypes like thread_broadcast are still ignored', async () => {
     const cls = await classifyEvent('T1', ev({ subtype: 'thread_broadcast', channel_type: 'channel', text: 'broadcast' }), BOT);
     expect(cls).toBe('ignore');

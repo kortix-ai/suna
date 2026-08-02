@@ -434,13 +434,16 @@ export async function classifyEvent(
     // Allow these user-generated subtypes through:
     //   file_share   — audio messages, images, documents, etc. (agent sees file info)
     //   me_message   — /me actions (e.g. "/me waves hello")
-    // All other subtypes (message_changed, message_deleted, bot_message,
-    // thread_broadcast, channel_join, etc.) remain ignored to avoid loops,
-    // redundancy, or system noise.
+    //   bot_message  — messages from OTHER bots (our own bot is blocked by the
+    //                  separate bot_id/user===botUserId gate in dispatchSlackEvent)
+    // All other subtypes (message_changed, message_deleted, thread_broadcast,
+    // channel_join, etc.) remain ignored to avoid loops, redundancy, or system noise.
     if (event.subtype === 'file_share' && event.files?.length) {
       // pass through
     } else if (event.subtype === 'me_message') {
       // pass through — user-generated /me action
+    } else if (event.subtype === 'bot_message') {
+      // pass through — other bots' messages (our bot_id gate prevents self-loops)
     } else {
       return 'ignore';
     }
