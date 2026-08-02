@@ -2,8 +2,8 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { AgentAvatar } from '@/components/ui/agent-avatar';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
+import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { Reveal } from '../../reveal';
@@ -67,16 +67,8 @@ export function AssistantTurn({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.25 }}
-            className="flex items-center gap-1.5 py-0.5"
           >
-            <span className="relative flex size-2.5 shrink-0">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-2.5 rounded-full" />
-            </span>
-            <AnimatedThinkingText
-              statusText={sc.thinkingLabel}
-              className="text-muted-foreground text-xs"
-            />
+            <SessionBusyIndicator ambient statusText={sc.thinkingLabel} />
           </motion.div>
         )}
       </AnimatePresence>
