@@ -124,9 +124,9 @@ describe('channelCatalog(email)', () => {
       method: 'POST',
       path: '/inboxes/{inbox_id}/messages/{message_id}/reply',
     });
-    const props = objectSchema(a.inputSchema).properties as Record<string, any>;
-    expect(props.inbox_id['x-in']).toBe('path');
-    expect(props.message_id['x-in']).toBe('path');
+    const props = objectSchema(a.inputSchema).properties;
+    expect(props.inbox_id).toMatchObject({ 'x-in': 'path' });
+    expect(props.message_id).toMatchObject({ 'x-in': 'path' });
     expect(a.risk).toBe('write');
   });
 
@@ -141,6 +141,26 @@ describe('channelCatalog(email)', () => {
     expect(objectSchema(action('reply_message').inputSchema).required ?? []).toEqual([
       'message_id',
     ]);
+  });
+
+  test('describes both supported AgentMail attachment transports', () => {
+    for (const path of ['send_message', 'reply_message', 'reply_all_message']) {
+      const props = objectSchema(action(path).inputSchema).properties;
+      const attachments = props.attachments as {
+        items: {
+          required: string[];
+          anyOf: Array<{ required: string[] }>;
+          properties: Record<string, { description: string }>;
+        };
+      };
+      expect(attachments.items.required).toEqual(['filename']);
+      expect(attachments.items.anyOf).toEqual([
+        { required: ['content'] },
+        { required: ['url'] },
+      ]);
+      expect(attachments.items.properties.content?.description).toContain('Base64');
+      expect(attachments.items.properties.url?.description).toContain('URL');
+    }
   });
 
   test('api base + default slug', () => {

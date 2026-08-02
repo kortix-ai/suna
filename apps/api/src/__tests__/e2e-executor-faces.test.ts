@@ -4,7 +4,9 @@
  * invocation against a live Hono router backed by the real gateway path.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createExecutorClient } from '../../../../packages/executor-sdk/src/index';
 import { createExecutorRouter, type CatalogConnector, type ExecutorPrincipal, type ExecutorRouterDeps } from '../executor/router';
@@ -53,6 +55,20 @@ const action: GatewayAction = {
   binding: { kind: 'http', method: 'GET', path: '/anything' },
 };
 
+const attachmentAction: GatewayAction = {
+  path: 'echo.reply',
+  relPath: 'reply',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      text: { type: 'string' },
+      attachments: { type: 'array' },
+    },
+  },
+  risk: 'write',
+  binding: { kind: 'http', method: 'POST', path: '/reply' },
+};
+
 function principal(): ExecutorPrincipal {
   return {
     userId: USER,
@@ -74,20 +90,24 @@ function catalogFor(_p: ExecutorPrincipal): CatalogConnector[] {
     name: 'Echo',
     provider: connector.provider,
     status: 'active',
-    actions: [{
-      path: action.relPath,
-      name: action.path,
-      description: 'Echo a query value',
-      risk: action.risk,
-      inputSchema: action.inputSchema,
-    }],
+    actions: [action, attachmentAction].map((item) => ({
+      path: item.relPath,
+      name: item.path,
+      description: item === action ? 'Echo a query value' : 'Echo a message with attachments',
+      risk: item.risk,
+      inputSchema: item.inputSchema,
+    })),
   }];
 }
 
 function makeDeps(): ExecutorRouterDeps {
   const gateway: GatewayDeps = {
     loadConnectorBySlug: async (_projectId, slug) => (slug === connector.slug ? connector : null),
-    loadAction: async (connectorId, relPath) => (connectorId === connector.connectorId && relPath === action.relPath ? action : null),
+    loadAction: async (connectorId, relPath) => {
+      if (connectorId !== connector.connectorId) return null;
+      if (relPath === action.relPath) return action;
+      return relPath === attachmentAction.relPath ? attachmentAction : null;
+    },
     resolveCredential: async () => SERVER_SECRET,
     loadPolicies: async () => [],
     recordExecution: async (rec) => { world.executions.push(rec); return null; },
@@ -154,7 +174,8 @@ async function requestMcp(proc: Bun.Subprocess<'pipe', 'pipe', 'pipe'>, reader: 
     line += decoder.decode(chunk.value);
   }
   const [first] = line.split('\n');
-  const json = JSON.parse(first!);
+  if (!first) throw new Error('MCP process returned an empty response');
+  const json = JSON.parse(first);
   if (json.error) throw new Error(json.error.message);
   return json.result;
 }
@@ -200,19 +221,21 @@ describe('TS SDK face', () => {
 
     const [match] = await sdk.discover('query value', { limit: 1 });
     expect(match).toMatchObject({ tool: 'echo.get', connector: 'echo', action: 'get' });
+    if (!match) throw new Error('expected Executor discovery match');
 
-    const schema = await sdk.describe(match!.tool);
+    const schema = await sdk.describe(match.tool);
     expect(schema?.inputSchema).toMatchObject({
       type: 'object',
       properties: { q: { type: 'string', 'x-in': 'query' } },
     });
 
-    const first = await sdk.call<{ auth: string; url: string }>(match!.connector, match!.action, { q: 'step-1' });
+    const first = await sdk.call<{ auth: string; url: string }>(match.connector, match.action, { q: 'step-1' });
     expect(first.ok).toBe(true);
     expect(first.data?.auth).toBe(`Bearer ${SERVER_SECRET}`);
+    if (!first.data) throw new Error('expected first Executor call data');
 
-    const nextQuery = first.data!.url.endsWith('step-1') ? 'step-2' : 'unexpected';
-    const second = await sdk.call<{ auth: string; url: string }>(match!.connector, match!.action, { q: nextQuery });
+    const nextQuery = first.data.url.endsWith('step-1') ? 'step-2' : 'unexpected';
+    const second = await sdk.call<{ auth: string; url: string }>(match.connector, match.action, { q: nextQuery });
     expect(second.ok).toBe(true);
     expect(second.data?.url).toBe('https://example.test/anything?q=step-2');
 
@@ -226,7 +249,10 @@ describe('TS SDK face', () => {
 
 describe('CLI face', () => {
   test('connectors, discover, describe, and call work as an executable', async () => {
-    expect((await runCli(['connectors'])).connectors[0]).toMatchObject({ slug: 'echo', tools: ['echo.get'] });
+    expect((await runCli(['connectors'])).connectors[0]).toMatchObject({
+      slug: 'echo',
+      tools: ['echo.get', 'echo.reply'],
+    });
     expect((await runCli(['discover', 'query'])).matches[0]).toMatchObject({ tool: 'echo.get', risk: 'read' });
     expect((await runCli(['describe', 'echo.get'])).inputSchema).toMatchObject({ type: 'object' });
     const call = await runCli(['call', 'echo', 'get', '{"q":"cli"}']);
@@ -305,7 +331,10 @@ describe('Project-explicit gateway face (the local-executor unlock)', () => {
     // .kortix/link.json or --project) makes `kortix executor` use the routes that
     // accept a plain user token. Same command, same result as in-sandbox.
     const connectors = await runCli(['connectors'], { KORTIX_PROJECT_ID: PROJECT });
-    expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', tools: ['echo.get'] });
+    expect(connectors.connectors[0]).toMatchObject({
+      slug: 'echo',
+      tools: ['echo.get', 'echo.reply'],
+    });
     const call = await runCli(['call', 'echo', 'get', '{"q":"proj-cli"}'], { KORTIX_PROJECT_ID: PROJECT });
     expect(call).toMatchObject({ ok: true, risk: 'read' });
     expect(call.data.url).toBe('https://example.test/anything?q=proj-cli');
@@ -355,7 +384,7 @@ describe('MCP face', () => {
       const connectors = JSON.parse(
         (await requestMcp(proc, reader, 3, 'tools/call', { name: 'connectors', arguments: {} })).content[0].text,
       );
-      expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', provider: 'http', tools: 1 });
+      expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', provider: 'http', tools: 2 });
 
       // discover → intent search across usable tools.
       const discovered = JSON.parse(
@@ -381,6 +410,62 @@ describe('MCP face', () => {
     } finally {
       proc.kill();
       await proc.exited;
+    }
+  });
+
+  test('reads attachment_files inside the MCP process and sends encoded attachments', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'kortix-executor-mcp-'));
+    const output = join(workspace, 'output');
+    const memo = join(output, 'memo.pdf');
+    await mkdir(output);
+    await writeFile(memo, 'real-pdf-bytes');
+
+    const proc = Bun.spawn({
+      cmd: ['bun', CLI_ENTRY, 'executor', 'mcp'],
+      cwd: REPO_ROOT,
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        KORTIX_API_URL: apiUrl,
+        KORTIX_EXECUTOR_TOKEN: TOKEN,
+        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
+      },
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const reader = proc.stdout.getReader();
+    try {
+      const listed = await requestMcp(proc, reader, 1, 'tools/list');
+      const callTool = listed.tools.find((tool: { name: string }) => tool.name === 'call');
+      expect(callTool.inputSchema.properties.attachment_files.items.required).toEqual(['path']);
+
+      const called = await requestMcp(proc, reader, 2, 'tools/call', {
+        name: 'call',
+        arguments: {
+          connector: 'echo',
+          action: 'reply',
+          args: { text: 'attached' },
+          attachment_files: [{ path: memo, filename: 'Investment Memo.pdf' }],
+        },
+      });
+      expect(called.isError).toBe(false);
+      const payload = JSON.parse(called.content[0].text);
+      expect(payload.data.body).toEqual({
+        text: 'attached',
+        attachments: [
+          {
+            filename: 'Investment Memo.pdf',
+            content_type: 'application/pdf',
+            content_disposition: 'attachment',
+            content: Buffer.from('real-pdf-bytes').toString('base64'),
+          },
+        ],
+      });
+    } finally {
+      proc.kill();
+      await proc.exited;
+      await rm(workspace, { recursive: true, force: true });
     }
   });
 });
