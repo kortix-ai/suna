@@ -51,25 +51,46 @@ function unqualifiedSelectIdentifiers(record: QueryRecord): string[] {
     .map((rendered) => rendered.slice(1, -1));
 }
 
-// Every real column name reachable from the outer FROM clause. An unqualified
-// alias is resolved against these, so one that matches any of them is ambiguous
-// even though it appears only once in the select list.
-//
-// Derived from the schema through getTableColumns, never hand-listed: a literal
-// list of column names would rot the moment a column is added or renamed, and
-// silently stop guarding — the same class of staleness this test exists to catch.
-function outerTableColumnNames(record: QueryRecord): Set<string> {
+// What one FROM item makes available to an unqualified reference.
+function exposedNames(item: unknown): string[] {
+  // A real table exposes its columns under their SQL names. Derived through
+  // getTableColumns, never hand-listed, so this cannot rot when a column is added
+  // or renamed — that staleness is the same class this test exists to catch.
+  if (is(item, Table)) return Object.values(getTableColumns(item)).map((column) => column.name);
+  // A joined subquery arrives as the plain object the `.as()` double returns. Its
+  // output name is the trailing segment of each field's rendered SQL: an aliased
+  // expression renders bare (`"llm_cost"`), a passed-through column renders
+  // qualified (`"llm_agg"."session_id"`), and both expose that last name. Every
+  // field counts, including ones the outer query never selects outward.
+  if (!item || typeof item !== 'object') return [];
+  const dialect = new PgDialect();
+  return Object.values(item as Record<string, unknown>).map((field) => {
+    const rendered = dialect.sqlToQuery(sql`${field as SQLWrapper}`).sql;
+    return rendered.slice(rendered.lastIndexOf('.') + 1).replaceAll('"', '');
+  });
+}
+
+// Every name the outer FROM clause exposes, counted by how many FROM items expose
+// it. This is Postgres's own resolution rule: an unqualified reference is matched
+// against all FROM items at once, so a name exposed by two or more of them is
+// ambiguous (42702) the moment anything references it. Modelling the rule rather
+// than its symptoms covers all three ways this feature has hit it — two subqueries
+// sharing an alias, an alias shadowing a real column, and an alias colliding with
+// a sibling subquery's field.
+function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
   const joined = record.calls
     .filter((call) => call.method === 'innerJoin' || call.method === 'leftJoin')
     .map((call) => call.args[0]);
-  const names = new Set<string>();
-  for (const candidate of [record.table, ...joined]) {
-    // Joined subqueries arrive as the plain object the `.as()` double returns.
-    // Only real tables contribute columns an unqualified alias can resolve to.
-    if (!is(candidate, Table)) continue;
-    for (const column of Object.values(getTableColumns(candidate))) names.add(column.name);
+
+  const counts = new Map<string, number>();
+  for (const item of [record.table, ...joined]) {
+    // Per item, not per occurrence: the count must be "how many FROM items expose
+    // this name", which is what decides ambiguity.
+    for (const name of new Set(exposedNames(item))) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
   }
-  return names;
+  return counts;
 }
 
 const SESSION_ID_TIEBREAK = '"kortix"."project_sessions"."session_id" asc';
@@ -314,14 +335,16 @@ describe('listSessionCosts service', () => {
   });
 
   // Because Drizzle renders every SQL-aliased subquery field unqualified, each one
-  // is resolved against the OUTER query's FROM clause. Two ways that turns into
-  // Postgres 42702, `column reference "..." is ambiguous`, which rejects the whole
-  // statement at parse time:
-  //   1. two subqueries claim the same alias  (the `last_at` bug this test was added for)
-  //   2. one alias matches a real column on an outer table (e.g. `status`)
-  // Both are invisible to every row-shape assertion in this file, because a double
-  // records SQL rather than executing it. So assert on the select list itself.
-  test('the joined session select never repeats or shadows an unqualified identifier', async () => {
+  // is resolved against the OUTER query's FROM clause. Three ways that has turned
+  // into Postgres 42702, `column reference "..." is ambiguous`, which rejects the
+  // whole statement at parse time:
+  //   1. two subqueries claim the same alias   (the `last_at` bug this test was added for)
+  //   2. an alias matches a real column on an outer table   (e.g. `status`)
+  //   3. an alias matches a sibling subquery's field, even one never selected outward
+  // All three are one rule — a name exposed by more than one FROM item — so assert
+  // that rule rather than enumerating its symptoms. None of them are visible to a
+  // row-shape assertion, because a double records SQL instead of executing it.
+  test('the joined session select never references an ambiguous unqualified name', async () => {
     resultForQuery = () => [];
     await listSessionCosts({
       accountId,
@@ -337,15 +360,23 @@ describe('listSessionCosts service', () => {
     // A real floor, not a non-zero one. The select carries exactly 12 unqualified
     // fields — 9 from the LLM aggregate, 3 from the compute aggregate — so a
     // `> 0` check would still pass if 11 of them silently stopped rendering and
-    // the two checks below would then be guarding almost nothing. Adding a
-    // subquery field is also exactly when a new collision can appear, so making
-    // that update this number deliberately routes the author through this test.
+    // the checks below would then be guarding almost nothing.
+    //
+    // If you added a subquery field and landed here: bump this to 13, then re-read
+    // the two assertions below and confirm your new alias is neither exposed by
+    // another FROM item nor missing from the exposure map. Adding a field is
+    // exactly when a new collision appears, which is why this routes you here.
     expect(identifiers).toHaveLength(12);
 
-    expect(identifiers.filter((name, index) => identifiers.indexOf(name) !== index)).toEqual([]);
+    const exposures = outerFromExposureCounts(baseQuery);
 
-    const outerColumns = outerTableColumnNames(baseQuery);
-    expect(identifiers.filter((name) => outerColumns.has(name))).toEqual([]);
+    // Self-consistency, and a vacuity guard for the assertion after it: every
+    // selected identifier must resolve to at least one FROM item. A name missing
+    // from the map means the two derivations disagree, and the ambiguity check
+    // would then be comparing against nothing and passing for that reason.
+    expect(identifiers.filter((name) => !exposures.has(name))).toEqual([]);
+
+    expect(identifiers.filter((name) => (exposures.get(name) ?? 0) > 1)).toEqual([]);
   });
 
   test('windows the unassigned-cost reconciliation on the same bounds', async () => {

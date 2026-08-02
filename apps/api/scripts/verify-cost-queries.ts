@@ -22,9 +22,12 @@
  *
  * The script anchors on the busiest real session it can find so the statements
  * run over actual rows. Against an empty database it falls back to placeholder
- * ids: each statement still has to parse and plan, but getSessionCostRecord then
- * short-circuits on the missing session and its three follow-up queries never
- * run. The output states which mode the run used.
+ * ids, and that run proves strictly less: each statement still has to parse and
+ * plan, but getSessionCostRecord returns null at its very first query, so
+ * everything downstream of it — both all-time total queries, the model usage
+ * rollup, both ledger queries, and the owner lookup — never executes at all. The
+ * output states which mode the run used, so a green result is never ambiguous
+ * about which of the two it is.
  */
 import { gatewayRequestLogs, projectSessions } from '@kortix/db';
 import { desc, eq, sql } from 'drizzle-orm';
