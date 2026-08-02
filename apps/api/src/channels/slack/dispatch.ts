@@ -184,7 +184,7 @@ export async function maybePostPicker(
   const event = envelope.event;
   if (!event || !event.channel || event.bot_id) return;
   const isMention = event.type === 'app_mention';
-  const isDm = event.type === 'message' && event.channel_type === 'im' && !event.subtype;
+  const isDm = event.type === 'message' && event.channel_type === 'im' && (!event.subtype || event.subtype === 'file_share');
   if (!isMention && !isDm) return;
 
   await postProjectPicker({
@@ -430,7 +430,13 @@ export async function classifyEvent(
 ): Promise<EventClass> {
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
-  if (event.subtype) return 'ignore';
+  if (event.subtype) {
+    // Allow file_share events through (audio messages, images, documents, etc.)
+    // The agent will see the file info in the prompt and can download/process it.
+    // All other subtypes (message_changed, message_deleted, bot_message, etc.)
+    // remain ignored.
+    if (event.subtype !== 'file_share' || !event.files?.length) return 'ignore';
+  }
   // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
   // deliver an `app_mention` for a mention made INSIDE an existing thread —
   // notably a thread that predates the bot joining the channel — there it arrives
@@ -552,7 +558,10 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   const msgKey = inboundMessageKey(teamId, event);
   if (msgKey && !(await claimInboundMessage(msgKey))) return;
 
-  if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
+  // A bare @mention with no text is a "what now?" prompt — post help text.
+  // But if the user attached files (e.g. an audio message), the files are the
+  // content, so don't stop here — send them to the agent.
+  if (eventClass === 'mention' && !stripMentions(event.text ?? '') && !event.files?.length) {
     if (config.SLACK_REQUIRE_USER_IDENTITY) {
       const [project] = await db
         .select({ accountId: projects.accountId })

@@ -100,6 +100,26 @@ describe('classifyEvent — a message that @-mentions the bot is a mention', () 
     const cls = await classifyEvent('T1', ev({ subtype: 'message_changed', thread_ts: '90.0', text: '<@B1> edited' }), BOT);
     expect(cls).toBe('ignore');
   });
+
+  test('file_share with no files is ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'im', text: '' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('file_share with files in a DM passes through', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'im', text: '', files: [{ id: 'F1', mimetype: 'audio/wav', name: 'voice-message.wav', size: 12345, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('file_share with files in a channel passes through', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'channel', text: 'listen to this', files: [{ id: 'F1', mimetype: 'audio/mp4', name: 'audio.m4a', size: 54321, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('file_share with files and a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'channel', text: '<@B1> transcribe this', files: [{ id: 'F1', mimetype: 'audio/wav', name: 'voice.wav', size: 9999, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('mention');
+  });
 });
 
 describe('classifyEvent — non-mention routing is unchanged', () => {
