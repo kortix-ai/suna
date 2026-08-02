@@ -30,6 +30,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { CatalogGrid } from '../catalog-grid';
+import { EntityDetailModal } from './entity-modal';
 import { filterSkills, skillsEmptyKind, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
@@ -46,7 +47,10 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
  * about what a project's skills are.
  *
- * Card click is currently a no-op (JAY-267 / Task 5 adds the detail modal).
+ * Card click opens `EntityDetailModal` (file tree + rendered markdown) for
+ * the clicked skill. `selectedPath` is looked up against the unfiltered
+ * `skills` list, not `filtered` — so typing into search while the modal is
+ * open can't yank it shut out from under the user.
  * "New" and the empty state's create path reuse `useConfigureThread` /
  * `newConfigPrompt('skill')` unchanged — creation still happens by an agent
  * editing the repo on a branch, not a form here.
@@ -57,9 +61,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<ScopeFilter>('all');
-  // No detail modal yet (JAY-267 / Task 5) — this only tracks which card was
-  // last clicked so the click handler isn't a bare no-op.
-  const [, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
@@ -85,6 +87,13 @@ export function SkillsPage({ projectId }: { projectId: string }) {
       kortix: filterSkills(skills, { scope: 'kortix', query }).length,
     }),
     [skills, query],
+  );
+
+  // Unfiltered lookup (see the component doc comment above) — deliberately
+  // not `filtered.find(...)`.
+  const selectedSkill = useMemo(
+    () => skills.find((skill) => skill.path === selectedPath) ?? null,
+    [skills, selectedPath],
   );
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
@@ -191,6 +200,15 @@ export function SkillsPage({ projectId }: { projectId: string }) {
           />
         ))}
       </CatalogGrid>
+      <EntityDetailModal
+        projectId={projectId}
+        entity={selectedSkill}
+        kind="skill"
+        open={selectedSkill !== null}
+        onOpenChange={(next) => {
+          if (!next) setSelectedPath(null);
+        }}
+      />
     </CapabilityPageShell>
   );
 }
