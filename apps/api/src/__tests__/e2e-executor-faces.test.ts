@@ -80,6 +80,7 @@ function principal(): ExecutorPrincipal {
       agent: 'test-agent',
       connectors: ['echo'],
       kortixCli: 'all',
+      knowledge: [],
     },
   };
 }
@@ -370,6 +371,8 @@ describe('MCP face', () => {
       // tools/list is the fixed meta-tool surface — NOT one tool per action.
       const listed = await requestMcp(proc, reader, 2, 'tools/list');
       expect(listed.tools.map((t: { name: string }) => t.name)).toEqual([
+        'knowledge_search',
+        'knowledge_read',
         'connectors',
         'discover',
         'describe',
