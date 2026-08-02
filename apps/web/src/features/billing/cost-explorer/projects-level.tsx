@@ -263,7 +263,17 @@ export function ProjectsLevelContent({
         </TableBody>
         <TableFooter>
           <TableRow>
-            <TableCell className="font-medium">Total</TableCell>
+            {/* "Page total", not "Total" — this row sums the rows rendered
+                above it, which is one page of `total` projects. The Total
+                tile above the table is the whole window for this scope, from
+                a different query (`/usage/cost-summary`). Both figures are
+                correct and they differ whenever the result paginates.
+                Measured at 1440px on the 40-project seed account over
+                2026-07-03..2026-08-02: this row read $62.18 against the
+                tile's $62.53, the difference being the $0.34425 that the 15
+                projects on page 2 account for. Two quantities that are not
+                the same quantity do not get the same label. */}
+            <TableCell className="font-medium">Page total</TableCell>
             <TableCell className="text-right font-mono tabular-nums">
               {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
             </TableCell>

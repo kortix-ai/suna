@@ -332,8 +332,17 @@ export function SessionsLevelTable({
         </TableBody>
         <TableFooter>
           <TableRow>
+            {/* "Page total", not "Total" — same rule as the projects level's
+                footer. This row sums `sessions`, which is one page of
+                `total`; the Total tile above the table is this project's
+                whole window, from `/usage/cost-summary`. Measured on the seed
+                account's largest project over 2026-07-01..2026-08-03: 55
+                sessions totalling $24.2324, of which the top 25 are $24.1103
+                — the $0.1221 remainder is sessions 26-55, not a discrepancy.
+                Two quantities that are not the same quantity do not get the
+                same label. */}
             <TableCell colSpan={2} className="font-medium">
-              Total
+              Page total
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
               {sumBy(sessions, (session) => session.request_count).toLocaleString('en-US')}

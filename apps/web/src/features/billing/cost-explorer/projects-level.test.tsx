@@ -734,6 +734,19 @@ describe('ProjectsLevelContent', () => {
     expect(footerHtml).not.toContain('$62.52');
   });
 
+  // Defect 2, projects level. The footer sums one page; the Total tile above
+  // the table is the whole window from `/usage/cost-summary`. They diverge
+  // whenever the result paginates, so they must not both read "Total".
+  test('the footer row is labelled "Page total", never a bare "Total"', () => {
+    const html = renderContent({
+      page: { ...twoProjectPage, total: 40, offset: 0, next_offset: 25 },
+      summary: summaryWithTotal(62.52),
+    });
+    const footerHtml = extractFooterHtml(html);
+    expect(footerHtml).toContain('Page total');
+    expect(footerHtml).not.toContain('>Total<');
+  });
+
   test('pagination caption and Previous/Next disabled state reflect the page', () => {
     const html = renderContent({ page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 } });
     expect(html).toContain('Showing 1-2 of 30 projects');

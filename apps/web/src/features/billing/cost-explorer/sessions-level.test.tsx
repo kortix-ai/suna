@@ -326,6 +326,32 @@ describe('SessionsLevelTable', () => {
     expect(html).toContain('$5.00'); // 1.50 + 3.50 total
   });
 
+  // Defect 2. This footer sums `sessions` — one page — while the Total tile
+  // rendered above the table by `CostLevelShell` is the project's whole
+  // window, from `/usage/cost-summary`. Measured on the seed account's
+  // largest project over 2026-07-01..2026-08-03: 55 sessions totalling
+  // $24.2324, top 25 of them $24.1103. Both figures are right; they are not
+  // the same quantity, so they do not share a label.
+  test('the footer row is labelled "Page total", never a bare "Total"', () => {
+    const html = renderToStaticMarkup(
+      <SessionsLevelTable
+        data={{ ...page, total: 55, next_offset: 25 }}
+        isLoading={false}
+        error={null}
+        onSelectSession={noop}
+        onPreviousPage={noop}
+        onNextPage={noop}
+      />,
+    );
+
+    const footerMatch = html.match(/<tfoot[^>]*>[\s\S]*?<\/tfoot>/);
+    expect(footerMatch).not.toBeNull();
+    expect(footerMatch![0]).toContain('Page total');
+    expect(footerMatch![0]).not.toContain('>Total<');
+    // The page subtotal, not the 55-session figure the tile would show.
+    expect(footerMatch![0]).toContain('$5.00');
+  });
+
   // renderToStaticMarkup strips event-handler props from its HTML output, so
   // "is the row clickable" cannot be asserted with toContain. Calling the
   // (plain, hook-free) component function directly returns the real React
