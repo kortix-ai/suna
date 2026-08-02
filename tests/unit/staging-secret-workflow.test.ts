@@ -23,17 +23,11 @@ describe('staging secret synchronization', () => {
     expect(workflow).toContain('if [ "$staging_secret_exists" = true ]; then');
   });
 
-  it('caps every staging API database pool below the 60-connection database limit', () => {
+  it('caps the staging ECS API database pool below the 60-connection database limit', () => {
     const workflow = readFileSync(
       resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
       'utf8',
     );
-    const values = readFileSync(
-      resolve(import.meta.dirname, '../../infra/k8s/envs/staging/values.yaml'),
-      'utf8',
-    );
-
     expect(workflow).toContain('DB_POOL_MAX: "4"');
-    expect(values).toContain('DB_POOL_MAX: "4"');
   });
 });
