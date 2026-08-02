@@ -31,7 +31,7 @@ import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { CatalogGrid } from '../catalog-grid';
 import { EntityDetailModal } from './entity-modal';
-import { filterSkills, skillsEmptyKind, type SkillScope } from './skill-scope';
+import { catalogEmptyKind, filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
 
@@ -100,7 +100,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // genuinely zero skills vs. skills exist but this filter/search hid all of
   // them. Telling the user "No skills yet" in the second case is false and
   // points at the wrong fix (clear the filter, not create a skill).
-  const emptyKind = skillsEmptyKind(skills.length, filtered.length);
+  const emptyKind = catalogEmptyKind(skills.length, filtered.length);
   const scopeLabel = SCOPE_FILTERS.find((filter) => filter.value === scope)?.label ?? 'All';
 
   const newButton = canWrite ? (

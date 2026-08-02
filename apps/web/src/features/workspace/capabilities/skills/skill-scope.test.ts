@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { filterSkills, skillScope, skillsEmptyKind } from './skill-scope';
+import { catalogEmptyKind, filterSkills, skillScope } from './skill-scope';
 
 const skill = (name: string, description: string | null = null) => ({
   name,
@@ -40,15 +40,15 @@ describe('filterSkills', () => {
   });
 });
 
-describe('skillsEmptyKind', () => {
-  test('no skills at all -> no-skills', () => {
-    expect(skillsEmptyKind(0, 0)).toBe('no-skills');
+describe('catalogEmptyKind', () => {
+  test('nothing at all -> empty', () => {
+    expect(catalogEmptyKind(0, 0)).toBe('empty');
   });
-  test('skills exist but the filter hid all of them -> no-match', () => {
-    expect(skillsEmptyKind(10, 0)).toBe('no-match');
+  test('items exist but the filter hid all of them -> no-match', () => {
+    expect(catalogEmptyKind(10, 0)).toBe('no-match');
   });
   test('anything visible -> null (render the grid, not an empty state)', () => {
-    expect(skillsEmptyKind(10, 3)).toBeNull();
-    expect(skillsEmptyKind(1, 1)).toBeNull();
+    expect(catalogEmptyKind(10, 3)).toBeNull();
+    expect(catalogEmptyKind(1, 1)).toBeNull();
   });
 });

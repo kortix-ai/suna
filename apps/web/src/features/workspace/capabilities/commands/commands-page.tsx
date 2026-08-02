@@ -1,0 +1,167 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import {
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/features/workspace/customize/use-configure-thread';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
+import { getProjectDetail } from '@kortix/sdk';
+import { CommandIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
+
+import { CapabilityPageShell } from '../capability-page-shell';
+import { CatalogCard } from '../catalog-card';
+import { CatalogGrid } from '../catalog-grid';
+import { EntityDetailModal } from '../skills/entity-modal';
+import { catalogEmptyKind } from '../skills/skill-scope';
+import { filterCommands } from './command-filter';
+
+/**
+ * /projects/[id]/commands — the standalone Commands catalog. Reads
+ * `config.commands` off the same `['project-detail', projectId]` query
+ * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
+ * about what a project's commands are.
+ *
+ * Same shape as `SkillsPage`, minus the scope filter: commands have no
+ * `kortix-*` family to split on, so there is no `filters` slot at all here.
+ *
+ * Card click opens `EntityDetailModal` (file tree + rendered markdown) for
+ * the clicked command. `selectedPath` is looked up against the unfiltered
+ * `commands` list, not `filtered` — so typing into search while the modal is
+ * open can't yank it shut out from under the user.
+ * "New" and the empty state's create path reuse `useConfigureThread` /
+ * `newConfigPrompt('command')` unchanged — creation still happens by an agent
+ * editing the repo on a branch, not a form here.
+ */
+export function CommandsPage({ projectId }: { projectId: string }) {
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_WRITE).allowed === true;
+  const configure = useConfigureThread(projectId);
+
+  const [query, setQuery] = useState('');
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  const detailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 10_000,
+  });
+
+  const commands = useMemo(() => {
+    const raw = detailQuery.data?.config.commands;
+    return Array.isArray(raw) ? raw : [];
+  }, [detailQuery.data]);
+
+  const filtered = useMemo(() => filterCommands(commands, { query }), [commands, query]);
+
+  // Unfiltered lookup (see the component doc comment above) — deliberately
+  // not `filtered.find(...)`.
+  const selectedCommand = useMemo(
+    () => commands.find((command) => command.path === selectedPath) ?? null,
+    [commands, selectedPath],
+  );
+
+  // `null` = render the grid. Otherwise which "nothing to show" copy applies:
+  // genuinely zero commands vs. commands exist but this search hid all of
+  // them. Telling the user "No commands yet" in the second case is false and
+  // points at the wrong fix (clear the search, not create a command).
+  const emptyKind = catalogEmptyKind(commands.length, filtered.length);
+
+  const newButton = canWrite ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      onClick={() => configure.start(newConfigPrompt('command'))}
+      disabled={configure.pending}
+    >
+      {configure.pending ? (
+        <Loading className="size-4 shrink-0" />
+      ) : (
+        <PlusIcon className="size-4" />
+      )}
+      New
+    </Button>
+  ) : null;
+
+  return (
+    <CapabilityPageShell
+      title="Commands"
+      description="Slash actions people and agents can run in a session."
+      action={newButton}
+      search={
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder="Search commands"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            variant="popover"
+          />
+          <InputGroupSearchClear onClick={() => setQuery('')} />
+        </InputGroupSearch>
+      }
+    >
+      <CatalogGrid
+        isLoading={detailQuery.isLoading}
+        isError={detailQuery.isError}
+        onRetry={() => detailQuery.refetch()}
+        isEmpty={emptyKind !== null}
+        empty={
+          emptyKind === 'no-match' ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              No matches for <span className="text-foreground font-mono">{query.trim()}</span>.
+            </p>
+          ) : (
+            <EmptyState
+              icon={CommandIcon}
+              size="sm"
+              title="No commands yet"
+              description="Create a command to give agents reusable slash actions."
+            />
+          )
+        }
+      >
+        {filtered.map((command) => (
+          <CatalogCard
+            key={command.path}
+            leading={
+              <span className="bg-primary/[0.06] flex size-9 shrink-0 items-center justify-center rounded-sm">
+                <CommandIcon className="size-5" />
+              </span>
+            }
+            title={
+              <span className="flex items-center gap-1">
+                <span className="text-muted-foreground/40">/</span>
+                {command.name}
+              </span>
+            }
+            description={command.description}
+            onClick={() => setSelectedPath(command.path)}
+          />
+        ))}
+      </CatalogGrid>
+      <EntityDetailModal
+        projectId={projectId}
+        entity={selectedCommand}
+        kind="command"
+        open={selectedCommand !== null}
+        onOpenChange={(next) => {
+          if (!next) setSelectedPath(null);
+        }}
+      />
+    </CapabilityPageShell>
+  );
+}
