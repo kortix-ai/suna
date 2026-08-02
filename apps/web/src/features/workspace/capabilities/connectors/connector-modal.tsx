@@ -32,7 +32,6 @@ import { AuthorizationStrategyField } from '@/features/workspace/customize/secti
 import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
-  PermissionsSection,
   providerLabel,
   SetCredentialModal,
   usePipedreamConnect,
@@ -46,6 +45,7 @@ import { cn } from '@/lib/utils';
 import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connector-rungs';
 import { RungAccounts } from './rung-accounts';
 import { RungOverview } from './rung-overview';
+import { RungPermissions } from './rung-permissions';
 
 export interface ConnectorModalProps {
   projectId: string;
@@ -79,12 +79,11 @@ export interface ConnectorModalProps {
  * rename draft, without remounting `Modal`/`ModalContent` (which would replay
  * the open animation and drop focus-trap continuity).
  *
- * INTERIM: Permissions and Settings still mount the shipped component for
- * their capability verbatim, so nothing in the Capability Inventory becomes
- * unreachable before the tasks that refine those rung bodies
- * (`rung-permissions.tsx`, `rung-settings.tsx`) land. No rung is a stub.
- * Overview and Accounts are designed — see `./rung-overview.tsx` and
- * `./rung-accounts.tsx`.
+ * INTERIM: Settings still mounts the shipped components for its capabilities
+ * verbatim, so nothing in the Capability Inventory becomes unreachable before
+ * `rung-settings.tsx` lands. No rung is a stub. Overview, Accounts and
+ * Permissions are designed — see `./rung-overview.tsx`, `./rung-accounts.tsx`
+ * and `./rung-permissions.tsx`.
  */
 export function ConnectorModal({
   projectId,
@@ -382,12 +381,13 @@ function ConnectorModalBody({
               />
             ) : null}
             {rung === 'permissions' ? (
-              // Capability #9, verbatim.
-              <PermissionsSection
+              <RungPermissions
                 projectId={projectId}
                 connector={connector}
+                displayName={displayName}
+                canWrite={canWrite}
+                disabled={strategyUpdating}
                 onChanged={onChanged}
-                canWrite={canWrite && !strategyUpdating}
               />
             ) : null}
             {rung === 'settings' ? (
