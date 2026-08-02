@@ -81,6 +81,63 @@ describe('applyBulkPolicy', () => {
     applyBulkPolicy(rules, ['a'], 'block');
     expect(rules).toEqual([{ match: 'a', action: 'always_run' }]);
   });
+
+  // The engine compiles every matcher with the `i` flag (`globToRegex`,
+  // apps/api/src/executor/policy.ts:69), so `GetPetById` already governs
+  // `getpetbyid`. De-duping on exact string equality would leave the old rule
+  // in front of the new one, dead behind it — the same defect class as the
+  // ordering bug.
+  test('replaces a mis-cased rule for the same tool, not stacks behind it', () => {
+    const out = applyBulkPolicy(
+      [{ match: 'GetPetById', action: 'block' }],
+      ['getpetbyid'],
+      'always_run',
+    );
+    expect(out).toEqual([{ match: 'getpetbyid', action: 'always_run' }]);
+  });
+
+  test('case folding does not reach pattern rules', () => {
+    const out = applyBulkPolicy([{ match: 'Get*', action: 'block' }], ['getpetbyid'], 'always_run');
+    expect(out).toEqual([
+      { match: 'Get*', action: 'block' },
+      { match: 'getpetbyid', action: 'always_run' },
+    ]);
+  });
+
+  // Fourth state, fourth choice. Without this a tool can be set but never
+  // unset — the shipped picker's `Default` deletes the rule
+  // (`connectors-view.tsx:3128`) and this must too.
+  test("'default' deletes the tool's exact rule instead of writing one", () => {
+    expect(applyBulkPolicy([{ match: 'a', action: 'block' }], ['a'], 'default')).toEqual([]);
+  });
+
+  test("'default' still leaves pattern rules and other tools alone", () => {
+    const out = applyBulkPolicy(
+      [
+        { match: '*', action: 'require_approval' },
+        { match: 'a', action: 'block' },
+        { match: 'b', action: 'block' },
+      ],
+      ['a'],
+      'default',
+    );
+    expect(out).toEqual([
+      { match: '*', action: 'require_approval' },
+      { match: 'b', action: 'block' },
+    ]);
+  });
+
+  test("'default' clears a whole group at once, and a path with no rule is a no-op", () => {
+    expect(
+      applyBulkPolicy([{ match: 'a', action: 'block' }], ['a', 'b', 'c'], 'default'),
+    ).toEqual([]);
+  });
+
+  test("'default' also clears a mis-cased rule", () => {
+    expect(
+      applyBulkPolicy([{ match: 'GetPetById', action: 'block' }], ['getpetbyid'], 'default'),
+    ).toEqual([]);
+  });
 });
 
 describe('isPatternRule', () => {
@@ -164,6 +221,9 @@ describe('toolChoice', () => {
   test('nothing anywhere is default', () => {
     expect(toolChoice('send_email', [], [])).toBe('default');
   });
+  test('the fallback matches case-insensitively, exactly as the engine does', () => {
+    expect(toolChoice('getpetbyid', [{ match: 'GetPetById', action: 'block' }], [])).toBe('block');
+  });
 });
 
 describe('previewEffective', () => {
@@ -183,5 +243,22 @@ describe('previewEffective', () => {
   });
   test('an empty effective list stays empty — nothing is invented', () => {
     expect(previewEffective([], ['a'], 'block')).toEqual([]);
+  });
+  // Returning the tool to default drops its resolved entry rather than
+  // guessing one: what it falls back to (a glob, the risk default, allow_all)
+  // is the engine's call, and `toolChoice` reads 'default' from the absence.
+  test("'default' drops the entry rather than inventing the fallback action", () => {
+    expect(
+      previewEffective(
+        [eff('a', 'block', 'connector'), eff('b', 'block', 'connector')],
+        ['a'],
+        'default',
+      ),
+    ).toEqual([eff('b', 'block', 'connector')]);
+  });
+  test("'default' still never touches a project-scope entry", () => {
+    expect(previewEffective([eff('a', 'block', 'project')], ['a'], 'default')).toEqual([
+      eff('a', 'block', 'project'),
+    ]);
   });
 });

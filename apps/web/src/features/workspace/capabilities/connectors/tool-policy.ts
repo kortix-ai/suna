@@ -34,9 +34,20 @@ export function isLockedByProject(
 }
 
 /**
- * Apply one action to a set of exact tool paths. Pattern rules (`*`, `/re/`)
+ * Apply one choice to a set of exact tool paths. Pattern rules (`*`, `/re/`)
  * are left untouched: they are a different, coarser instrument, and silently
  * dropping one while the user clicked a group header would be a data loss.
+ *
+ * `'default'` DELETES the tools' exact rules rather than writing one, which is
+ * what returning a tool to the connector default means and what the shipped
+ * picker did (`connectors-view.tsx:3128`). Without it a tool could be set and
+ * never unset.
+ *
+ * Replacement is case-INSENSITIVE, because that is how the engine matches: it
+ * compiles every glob with the `i` flag (`globToRegex`,
+ * apps/api/src/executor/policy.ts:69), so a rule written `GetPetById` already
+ * governs `getpetbyid`. De-duping on exact string equality would leave that
+ * rule sitting in front of the new one, dead behind it.
  *
  * The result is a SET of rules, not a wire payload — run it through
  * `orderPolicyRules` before sending, because the runtime is first-match-wins.
@@ -44,11 +55,14 @@ export function isLockedByProject(
 export function applyBulkPolicy(
   rules: readonly ConnectorPolicyRule[],
   paths: readonly string[],
-  action: ConnectorPolicyAction,
+  choice: PolicyChoice,
 ): ConnectorPolicyRule[] {
-  const targets = new Set(paths);
-  const kept = rules.filter((r) => !targets.has(r.match));
-  return [...kept, ...paths.map((match) => ({ match, action }))];
+  const targets = new Set(paths.map((path) => path.toLowerCase()));
+  // Only an exact rule can name one tool. A glob is never replaced by a
+  // per-tool decision, even when it happens to cover the same tool.
+  const kept = rules.filter((r) => isPatternRule(r.match) || !targets.has(r.match.toLowerCase()));
+  if (choice === 'default') return kept;
+  return [...kept, ...paths.map((match) => ({ match, action: choice }))];
 }
 
 /**
@@ -94,7 +108,9 @@ export function toolChoice(
   effective: readonly ConnectorEffectivePolicy[],
 ): PolicyChoice {
   if (effective.some((e) => e.path === path)) return effectiveChoice(path, effective);
-  const exact = policies.find((p) => p.match === path);
+  // Case-insensitive, like the engine — `GetPetById` governs `getpetbyid`.
+  const needle = path.toLowerCase();
+  const exact = policies.find((p) => !isPatternRule(p.match) && p.match.toLowerCase() === needle);
   return exact ? exact.action : 'default';
 }
 
@@ -106,16 +122,23 @@ export function toolChoice(
  * and the refetch, because the row reads `effective`, not `policies`. A
  * project-scope entry is left alone: the server would not move it either, and
  * those rows are disabled anyway.
+ *
+ * `'default'` DROPS the entry instead of guessing a replacement action. What
+ * the tool falls back to — a surviving glob, the risk default, `allow_all` —
+ * is the engine's decision, and inventing one here would put a value on screen
+ * the server never said. `toolChoice` reads `'default'` from the absence, so
+ * the control lands on Default immediately and the refetch fills in the truth.
  */
 export function previewEffective(
   effective: readonly ConnectorEffectivePolicy[],
   paths: readonly string[],
-  action: ConnectorPolicyAction,
+  choice: PolicyChoice,
 ): ConnectorEffectivePolicy[] {
   const targets = new Set(paths);
+  const touched = (entry: ConnectorEffectivePolicy) =>
+    targets.has(entry.path) && entry.source !== 'project';
+  if (choice === 'default') return effective.filter((entry) => !touched(entry));
   return effective.map((entry) =>
-    targets.has(entry.path) && entry.source !== 'project'
-      ? { path: entry.path, action, source: 'connector' as const }
-      : entry,
+    touched(entry) ? { path: entry.path, action: choice, source: 'connector' as const } : entry,
   );
 }

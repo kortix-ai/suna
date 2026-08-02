@@ -62,10 +62,15 @@ import {
   isLockedByProject,
   isPatternRule,
   orderPolicyRules,
+  type PolicyChoice,
   previewEffective,
   toolChoice,
 } from './tool-policy';
-import { POLICY_ACTION_LABEL, ToolPolicyControl } from './tool-policy-control';
+import {
+  POLICY_CHOICE_LABEL,
+  POLICY_SEGMENTS,
+  ToolPolicyControl,
+} from './tool-policy-control';
 
 /** The shipped panel's threshold (`connectors-view.tsx:3201`). Below it the
  *  field is clutter; above it the list is unusable without one. */
@@ -80,7 +85,7 @@ type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 
 /**
  * One write of the whole rule list, plus what it means for the tools on
- * screen. `paths` + `action` exist so the optimistic update can move the
+ * screen. `paths` + `choice` exist so the optimistic update can move the
  * server-resolved `effective` entries too — the rows read those, not
  * `policies`, so patching only `policies` would let every control snap back to
  * its old value until the refetch landed.
@@ -88,7 +93,7 @@ type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 interface PolicyWrite {
   rules: ConnectorPolicyRule[];
   paths?: readonly string[];
-  action?: ConnectorPolicyAction;
+  choice?: PolicyChoice;
 }
 
 interface PatternDraftRow {
@@ -207,8 +212,8 @@ export function RungPermissions({
               ...old,
               policies: orderPolicyRules(write.rules),
               effective:
-                write.paths && write.action
-                  ? previewEffective(old.effective ?? [], write.paths, write.action)
+                write.paths && write.choice
+                  ? previewEffective(old.effective ?? [], write.paths, write.choice)
                   : old.effective,
             }
           : old,
@@ -241,11 +246,11 @@ export function RungPermissions({
   const busy = writePolicies.isPending || sensitiveMutation.isPending;
   const frozen = disabled || !canWrite;
 
-  const setToolPolicy = (path: string, action: ConnectorPolicyAction) =>
+  const setToolPolicy = (path: string, choice: PolicyChoice) =>
     writePolicies.mutate({
-      rules: applyBulkPolicy(policies, [path], action),
+      rules: applyBulkPolicy(policies, [path], choice),
       paths: [path],
-      action,
+      choice,
     });
 
   // ── Bulk apply ──────────────────────────────────────────────────────────
@@ -253,9 +258,7 @@ export function RungPermissions({
   // is not visible from the control, so it goes through ConfirmDialog with the
   // exact count. Project-locked paths are excluded: writing a connector rule
   // under a project rule changes nothing.
-  const [bulk, setBulk] = useState<{ group: ToolGroup; action: ConnectorPolicyAction } | null>(
-    null,
-  );
+  const [bulk, setBulk] = useState<{ group: ToolGroup; choice: PolicyChoice } | null>(null);
   const bulkPathsFor = (group: ToolGroup) =>
     group.actions
       .map((action) => action.path)
@@ -372,7 +375,7 @@ export function RungPermissions({
           icon={WrenchIcon}
           size="sm"
           title="No tools yet"
-          description={`${displayName} hasn’t reported any tools. Once it syncs, each one gets its own Block · Ask · Allow control here.`}
+          description={`${displayName} hasn’t reported any tools. Once it syncs, each one gets its own Default · Block · Ask · Allow control here.`}
         />
       ) : groups.length === 0 ? (
         <p className="text-muted-foreground px-3 py-6 text-center text-xs">
@@ -401,17 +404,17 @@ export function RungPermissions({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-32">
-                  {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
-                    (action) => (
-                      <DropdownMenuItem
-                        key={action}
-                        className="text-xs"
-                        onSelect={() => setBulk({ group, action })}
-                      >
-                        {POLICY_ACTION_LABEL[action]}
-                      </DropdownMenuItem>
-                    ),
-                  )}
+                  {/* The same four choices the rows offer. Without `Default`
+                      a group could be set and never cleared in bulk. */}
+                  {POLICY_SEGMENTS.map((segment) => (
+                    <DropdownMenuItem
+                      key={segment.choice}
+                      className="text-xs"
+                      onSelect={() => setBulk({ group, choice: segment.choice })}
+                    >
+                      {segment.label}
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -550,11 +553,14 @@ export function RungPermissions({
                     <SelectTrigger className="h-8 w-[104px] shrink-0 text-xs">
                       <SelectValue />
                     </SelectTrigger>
+                    {/* Three, not four: a stored rule always names an action.
+                        "Default" for a pattern means deleting it, which is
+                        what the trash button beside this does. */}
                     <SelectContent>
                       {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
                         (action) => (
                           <SelectItem key={action} value={action} className="text-xs">
-                            {POLICY_ACTION_LABEL[action]}
+                            {POLICY_CHOICE_LABEL[action]}
                           </SelectItem>
                         ),
                       )}
@@ -631,30 +637,45 @@ export function RungPermissions({
         onOpenChange={(open) => {
           if (!open) setBulk(null);
         }}
-        title={
+        title={bulk ? bulkConfirmTitle(bulkPaths.length, bulk.choice) : ''}
+        description={bulk ? bulkConfirmDescription(bulk.group.label, bulk.choice) : ''}
+        confirmLabel={
           bulk
-            ? `Set ${bulkPaths.length} ${bulkPaths.length === 1 ? 'tool' : 'tools'} to ${POLICY_ACTION_LABEL[bulk.action]}?`
-            : ''
+            ? bulk.choice === 'default'
+              ? 'Return to default'
+              : `Set to ${POLICY_CHOICE_LABEL[bulk.choice]}`
+            : 'Confirm'
         }
-        description={
-          bulk
-            ? `Every tool listed under ${bulk.group.label} right now is set to ${POLICY_ACTION_LABEL[bulk.action]}. Pattern rules are left alone, and you can change any tool individually afterwards.`
-            : ''
-        }
-        confirmLabel={bulk ? `Set to ${POLICY_ACTION_LABEL[bulk.action]}` : 'Confirm'}
         isPending={writePolicies.isPending}
         onConfirm={() => {
           if (!bulk) return;
           writePolicies.mutate({
-            rules: applyBulkPolicy(policies, bulkPaths, bulk.action),
+            rules: applyBulkPolicy(policies, bulkPaths, bulk.choice),
             paths: bulkPaths,
-            action: bulk.action,
+            choice: bulk.choice,
           });
           setBulk(null);
         }}
       />
     </div>
   );
+}
+
+/** "Set 10 tools to Block?" does not describe clearing them, so Default gets
+ *  its own sentence rather than a label substituted into the wrong verb. */
+function bulkConfirmTitle(count: number, choice: PolicyChoice): string {
+  const tools = `${count} ${count === 1 ? 'tool' : 'tools'}`;
+  return choice === 'default'
+    ? `Return ${tools} to the connector default?`
+    : `Set ${tools} to ${POLICY_CHOICE_LABEL[choice]}?`;
+}
+
+function bulkConfirmDescription(groupLabel: string, choice: PolicyChoice): string {
+  const tail =
+    'Pattern rules are left alone, and you can change any tool individually afterwards.';
+  return choice === 'default'
+    ? `Deletes the per-tool rule for every tool listed under ${groupLabel} right now, so each one follows the connector default again. ${tail}`
+    : `Every tool listed under ${groupLabel} right now is set to ${POLICY_CHOICE_LABEL[choice]}. ${tail}`;
 }
 
 /**

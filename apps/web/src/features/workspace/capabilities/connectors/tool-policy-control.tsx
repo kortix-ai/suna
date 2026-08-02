@@ -1,7 +1,5 @@
 'use client';
 
-import type { ConnectorPolicyAction } from '@kortix/sdk';
-
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
@@ -10,71 +8,92 @@ import { cn } from '@/lib/utils';
 import type { PolicyChoice } from './tool-policy';
 
 interface PolicySegment {
-  action: ConnectorPolicyAction;
+  choice: PolicyChoice;
   label: string;
   /** Applied when the segment is the current choice. */
   tint: string;
-  /** Previewed on hover, so an unselected control is not a three-colour smear. */
+  /** Previewed on hover, so an unselected control is not a four-colour smear. */
   hoverTint: string;
 }
 
 /**
- * Block · Ask · Allow, in that order — least trust on the left, most on the
- * right, so the row reads as a dial rather than three unrelated buttons.
+ * Default · Block · Ask · Allow.
  *
- * The tints are the ones the shipped panel already uses for these three
- * actions (`POLICY_LABEL`, `connectors-view.tsx:2929`), so a reader who has
- * seen the old Permissions tab meets the same colour language here.
+ * FOUR segments, because there are genuinely four states and every one of them
+ * has to be reachable. `default` means "no rule of its own — follow the
+ * connector default", and selecting it DELETES the tool's exact rule, exactly
+ * as the shipped picker's `Default` did (`connectors-view.tsx:3128`). Rendering
+ * it as a display-only state would leave a set tool with no way back: pressing
+ * a lit segment does not clear it, and the pattern editor never holds a live
+ * tool's exact rule. Toggling-off a pressed segment was the alternative and is
+ * worse — an undiscoverable interaction is the wrong thing to hide a
+ * permissions reset behind.
+ *
+ * It sits first because it is the state every tool starts in, and because the
+ * remaining three then read left-to-right as a trust dial: least on the left,
+ * most on the right.
+ *
+ * Default carries no tint. Inheriting is not a decision, and colouring it
+ * would put a fourth hue in every row of a 60-tool connector. The other three
+ * reuse the shipped panel's tints (`POLICY_LABEL`,
+ * `connectors-view.tsx:2929`), so a reader who has seen the old Permissions tab
+ * meets the same colour language here.
  */
 export const POLICY_SEGMENTS: readonly PolicySegment[] = [
   {
-    action: 'block',
+    choice: 'default',
+    label: 'Default',
+    tint: 'text-muted-foreground',
+    hoverTint: 'hover:text-foreground',
+  },
+  {
+    choice: 'block',
     label: 'Block',
     tint: 'text-destructive',
     hoverTint: 'hover:text-destructive',
   },
   {
-    action: 'require_approval',
+    choice: 'require_approval',
     label: 'Ask',
     tint: 'text-kortix-yellow',
     hoverTint: 'hover:text-kortix-yellow',
   },
   {
-    action: 'always_run',
+    choice: 'always_run',
     label: 'Allow',
     tint: 'text-kortix-green',
     hoverTint: 'hover:text-kortix-green',
   },
 ];
 
-export const POLICY_ACTION_LABEL: Record<ConnectorPolicyAction, string> = {
+export const POLICY_CHOICE_LABEL: Record<PolicyChoice, string> = {
+  default: 'Default',
   block: 'Block',
   require_approval: 'Ask',
   always_run: 'Allow',
 };
 
 export interface ToolPolicyControlProps {
-  /** `'default'` selects NO segment — see the note on the fourth state below. */
   value: PolicyChoice;
-  onChange: (action: ConnectorPolicyAction) => void;
+  /** Never fires for the already-selected segment — a re-press is not a write. */
+  onChange: (choice: PolicyChoice) => void;
   /** Names the group for a screen reader, e.g. `Permission for send_email`. */
   label: string;
   /** A write is in flight, or the caller may not write. */
   disabled?: boolean;
   /** Set when a project rule decides this tool: disables the group and says why. */
   lockedReason?: string;
-  /** Shown while `value` is `'default'` — what the platform does instead. */
+  /** Shown while `value` is `'default'` — what following the default DOES. */
   defaultHint?: string;
 }
 
 /**
- * The per-tool decision: three segments, four states.
+ * The per-tool decision: four segments, four states, every one reachable in
+ * both directions.
  *
- * The fourth state is `'default'`, and it selects nothing. Highlighting Allow
- * for a tool the platform merely allows by default would claim a choice nobody
- * made, and would hide that moving the connector default moves that tool with
- * it. An unlit control plus a `Hint` naming the current default is the honest
- * rendering.
+ * `'default'` presses its own segment and a `Hint` names what the default
+ * actually does, because "Default" alone does not tell a reader whether the
+ * tool runs or asks.
  *
  * `transition-[…,scale]`, not `transition-transform`: Tailwind v4's `scale-*`
  * utility sets the standalone `scale` property, which
@@ -96,16 +115,20 @@ export function ToolPolicyControl({
   const group = (
     <ButtonGroup aria-label={label} className="shrink-0">
       {POLICY_SEGMENTS.map((segment) => {
-        const selected = value === segment.action;
+        const selected = value === segment.choice;
         return (
           <Button
-            key={segment.action}
+            key={segment.choice}
             type="button"
             size="sm"
             variant={selected ? 'secondary-outline' : 'outline'}
             aria-pressed={selected}
             disabled={disabled || locked}
-            onClick={() => onChange(segment.action)}
+            // Re-pressing the current choice is a no-op, not a redundant PUT
+            // that rewrites the rule set to what it already is.
+            onClick={() => {
+              if (!selected) onChange(segment.choice);
+            }}
             className={cn(
               'px-2.5 text-xs font-medium',
               'transition-[color,background-color,scale] duration-150 active:scale-[0.96]',
