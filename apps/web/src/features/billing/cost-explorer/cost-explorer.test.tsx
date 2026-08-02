@@ -356,7 +356,23 @@ describe('useExplorerClockAnchor (rendered)', () => {
 // held reading is the same object, a re-read is a new one even when the two
 // land in the same millisecond.
 
-/** Render with `from`, swap to `to` during render, return the hook's value per pass. */
+/**
+ * Render with `from`, swap to `to` during render, return the hook's value per
+ * pass.
+ *
+ * Guards its own vacuity. Every caller's assertion is over `seen`, and
+ * `seen.every(...)` is trivially true at length 1 — so a call that produced a
+ * single pass would pass its test while proving nothing. Asserted here rather
+ * than in each test so it cannot be forgotten when one is added; `from === to`
+ * is the way to reach it, since that schedules no second pass.
+ *
+ * The single mount is the point: a lazy-initializer probe in this parent counts
+ * ONE invocation, so the URL swap really does drive one mount across a
+ * navigation rather than two separate mounts. That is also why callers compare
+ * with `toBe` — two mounts inside the same millisecond produce equal
+ * `getTime()` but distinct identity, so value equality would pass against a
+ * re-reading hook.
+ */
 function renderAcrossNavigation(from: string, to: string): Date[] {
   const seen: Date[] = [];
 
@@ -368,13 +384,13 @@ function renderAcrossNavigation(from: string, to: string): Date[] {
   }
 
   renderToStaticMarkup(<Parent />);
+  expect(seen.length).toBeGreaterThan(1);
   return seen;
 }
 
 describe('useExplorerClockAnchor across a URL change (rendered)', () => {
   test('drilling into a project keeps the very same instant', () => {
     const seen = renderAcrossNavigation('range=7d', 'range=7d&project=p1');
-    expect(seen.length).toBeGreaterThan(1);
     expect(seen.every((instant) => instant === seen[0])).toBe(true);
   });
 
@@ -788,36 +804,45 @@ function renderExplorer(search: string): { key: readonly unknown[]; window: stri
 const distinctWindows = (built: ReturnType<typeof renderExplorer>) =>
   new Set(built.map((entry) => entry.window).filter((window): window is string => window !== null));
 
-describe('CostExplorer (rendered)', () => {
-  test('the projects level builds its two window-keyed queries from one window', () => {
-    const built = renderExplorer('');
-    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'by-project']);
-    expect(distinctWindows(built).size).toBe(1);
-  });
+/** An explicit window, and the `from|to` it must produce untouched. */
+const CUSTOM_SEARCH = 'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z';
+const CUSTOM_WINDOW = '2026-07-01T00:00:00.000Z|2026-07-08T00:00:00.000Z';
 
-  test('the sessions level builds its three window-keyed queries from one window', () => {
-    const built = renderExplorer('project=p1');
-    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'list', 'list']);
-    expect(distinctWindows(built).size).toBe(1);
-  });
+const LEVELS = [
+  { name: 'projects', drill: '', keys: ['projects', 'summary', 'by-project'] },
+  { name: 'sessions', drill: 'project=p1', keys: ['projects', 'summary', 'list', 'list'] },
+  { name: 'session ledger', drill: 'project=p1&session=s1', keys: ['projects', 'summary', 'detail'] },
+] as const;
 
-  test('the session ledger level builds its window-keyed query from one window', () => {
-    const built = renderExplorer('project=p1&session=s1');
-    expect(built.map((entry) => entry.key[1])).toEqual(['projects', 'summary', 'detail']);
-    expect(distinctWindows(built).size).toBe(1);
-  });
+for (const level of LEVELS) {
+  describe(`CostExplorer, ${level.name} level (rendered)`, () => {
+    test('builds exactly the queries this level mounts', () => {
+      expect(renderExplorer(level.drill).map((entry) => entry.key[1])).toEqual([...level.keys]);
+    });
 
-  // The custom range's bounds must reach the wire exactly as the URL states
-  // them — no clock anywhere in that path.
-  test('a custom range reaches the query keys verbatim', () => {
-    const built = renderExplorer(
-      'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z',
-    );
-    expect([...distinctWindows(built)]).toEqual([
-      '2026-07-01T00:00:00.000Z|2026-07-08T00:00:00.000Z',
-    ]);
+    test('every window-keyed query shares one window', () => {
+      expect(distinctWindows(renderExplorer(level.drill)).size).toBe(1);
+    });
+
+    // The assertion above has teeth against PARTIAL divergence — one query
+    // wired to a different window than its siblings — and none against
+    // wholesale substitution. A whole static render completes inside one
+    // millisecond, so a level that re-resolves the SAME preset from its own
+    // clock read produces a byte-identical window; wire all of that level's
+    // inputs to it and the queries still agree with each other. Measured: a
+    // sessions level self-resolving all three inputs passed 60/60, five runs
+    // running.
+    //
+    // A custom range is the clock-free control. Its bounds come off the URL and
+    // no code path consults `now`, so the correct window is a known constant
+    // that a self-resolved one cannot coincide with — whatever the preset and
+    // however consistently it is applied.
+    test('a custom range reaches every query key verbatim', () => {
+      const search = level.drill ? `${CUSTOM_SEARCH}&${level.drill}` : CUSTOM_SEARCH;
+      expect([...distinctWindows(renderExplorer(search))]).toEqual([CUSTOM_WINDOW]);
+    });
   });
-});
+}
 
 // ── The component's wiring ─────────────────────────────────────────────────
 //
