@@ -25,3 +25,22 @@ export function filterSkills(
     );
   });
 }
+
+/**
+ * Which "nothing to show" copy applies, given the project's total skill count
+ * and the count left after the current scope/query filter.
+ *
+ * `null` means there is content to render — the caller shouldn't reach for
+ * either empty variant. `'no-skills'` is the project genuinely has zero
+ * skills (the "Create a skill" invitation is honest here). `'no-match'` is
+ * skills exist but the current filter/search hid all of them — telling the
+ * user "No skills yet" in that case is false and points at the wrong action
+ * (they need to clear the filter, not create anything).
+ */
+export function skillsEmptyKind(
+  totalCount: number,
+  filteredCount: number,
+): 'no-skills' | 'no-match' | null {
+  if (filteredCount > 0) return null;
+  return totalCount === 0 ? 'no-skills' : 'no-match';
+}

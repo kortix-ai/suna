@@ -30,7 +30,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { CatalogGrid } from '../catalog-grid';
-import { filterSkills, type SkillScope } from './skill-scope';
+import { filterSkills, skillsEmptyKind, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
 
@@ -87,10 +87,34 @@ export function SkillsPage({ projectId }: { projectId: string }) {
     [skills, query],
   );
 
+  // `null` = render the grid. Otherwise which "nothing to show" copy applies:
+  // genuinely zero skills vs. skills exist but this filter/search hid all of
+  // them. Telling the user "No skills yet" in the second case is false and
+  // points at the wrong fix (clear the filter, not create a skill).
+  const emptyKind = skillsEmptyKind(skills.length, filtered.length);
+  const scopeLabel = SCOPE_FILTERS.find((filter) => filter.value === scope)?.label ?? 'All';
+
+  const newButton = canWrite ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      onClick={() => configure.start(newConfigPrompt('skill'))}
+      disabled={configure.pending}
+    >
+      {configure.pending ? (
+        <Loading className="size-4 shrink-0" />
+      ) : (
+        <PlusIcon className="size-4" />
+      )}
+      New
+    </Button>
+  ) : null;
+
   return (
     <CapabilityPageShell
       title="Skills"
       description="Reusable instructions your agents load on demand."
+      action={newButton}
       search={
         <InputGroupSearch>
           <InputGroupSearchIcon>
@@ -106,56 +130,51 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        <>
-          <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
-            <TabsListCompact>
-              {SCOPE_FILTERS.map((filter) => (
-                <TabsTriggerCompact key={filter.value} value={filter.value}>
-                  {filter.label}
-                  <Badge variant="secondary" size="sm">
-                    {counts[filter.value]}
-                  </Badge>
-                </TabsTriggerCompact>
-              ))}
-            </TabsListCompact>
-          </Tabs>
-          {canWrite ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => configure.start(newConfigPrompt('skill'))}
-              disabled={configure.pending}
-            >
-              {configure.pending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <PlusIcon className="size-4" />
-              )}
-              New
-            </Button>
-          ) : null}
-        </>
+        <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
+          <TabsListCompact>
+            {SCOPE_FILTERS.map((filter) => (
+              <TabsTriggerCompact key={filter.value} value={filter.value}>
+                {filter.label}
+                <Badge variant="secondary" size="sm">
+                  {counts[filter.value]}
+                </Badge>
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+        </Tabs>
       }
     >
       <CatalogGrid
         isLoading={detailQuery.isLoading}
         isError={detailQuery.isError}
         onRetry={() => detailQuery.refetch()}
-        isEmpty={filtered.length === 0}
+        isEmpty={emptyKind !== null}
         empty={
-          <EmptyState
-            icon={SparkleIcon}
-            size="sm"
-            title="No skills yet"
-            description="Create a skill to give agents reusable capabilities."
-            action={
-              <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                <a href="https://opencode.ai/docs/skills/" target="_blank" rel="noopener noreferrer">
-                  Docs
-                </a>
-              </Button>
-            }
-          />
+          emptyKind === 'no-match' ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              {query.trim() ? (
+                <>
+                  No matches for <span className="text-foreground font-mono">{query}</span>.
+                </>
+              ) : (
+                <>No matches in {scopeLabel}.</>
+              )}
+            </p>
+          ) : (
+            <EmptyState
+              icon={SparkleIcon}
+              size="sm"
+              title="No skills yet"
+              description="Create a skill to give agents reusable capabilities."
+              action={
+                <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                  <a href="https://opencode.ai/docs/skills/" target="_blank" rel="noopener noreferrer">
+                    Docs
+                  </a>
+                </Button>
+              }
+            />
+          )
         }
       >
         {filtered.map((skill) => (

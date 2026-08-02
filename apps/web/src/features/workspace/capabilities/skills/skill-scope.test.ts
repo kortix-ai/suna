@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { filterSkills, skillScope } from './skill-scope';
+import { filterSkills, skillScope, skillsEmptyKind } from './skill-scope';
 
 const skill = (name: string, description: string | null = null) => ({
   name,
@@ -37,5 +37,18 @@ describe('filterSkills', () => {
   });
   test('scope and query compose', () => {
     expect(filterSkills(all, { scope: 'project', query: 'kortix' })).toHaveLength(0);
+  });
+});
+
+describe('skillsEmptyKind', () => {
+  test('no skills at all -> no-skills', () => {
+    expect(skillsEmptyKind(0, 0)).toBe('no-skills');
+  });
+  test('skills exist but the filter hid all of them -> no-match', () => {
+    expect(skillsEmptyKind(10, 0)).toBe('no-match');
+  });
+  test('anything visible -> null (render the grid, not an empty state)', () => {
+    expect(skillsEmptyKind(10, 3)).toBeNull();
+    expect(skillsEmptyKind(1, 1)).toBeNull();
   });
 });

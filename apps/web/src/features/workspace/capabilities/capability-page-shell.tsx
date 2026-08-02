@@ -5,6 +5,12 @@ import type { ReactNode } from 'react';
 interface CapabilityPageShellProps {
   title: string;
   description: string;
+  /** Primary page-level action (e.g. "New"), rendered in the header row
+   *  beside the title/description — same treatment as
+   *  `CustomizeSectionWrapper`'s `action` prop (`mt-2 shrink-0 sm:mt-0`,
+   *  opposite the heading). Optional: omitting it renders the header exactly
+   *  as before this prop existed. */
+  action?: ReactNode;
   search?: ReactNode;
   filters?: ReactNode;
   children: ReactNode;
@@ -20,6 +26,7 @@ interface CapabilityPageShellProps {
 export function CapabilityPageShell({
   title,
   description,
+  action,
   search,
   filters,
   children,
@@ -32,6 +39,7 @@ export function CapabilityPageShell({
             <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
             <p className="text-muted-foreground text-sm text-balance">{description}</p>
           </div>
+          {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
           {search ? <div className="w-full shrink-0 sm:max-w-xs">{search}</div> : null}
         </header>
         {filters ? (
