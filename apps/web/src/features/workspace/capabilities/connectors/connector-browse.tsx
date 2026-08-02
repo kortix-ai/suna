@@ -19,7 +19,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useDebounce } from '@/hooks/use-debounce';
 
 import { CatalogCard } from '../catalog-card';
-import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid, GRID_CLASSNAME } from '../catalog-grid';
 import { CATEGORY_ROW_CAP, groupByCategory, humanizeCategory } from './connector-categories';
 
@@ -195,15 +194,16 @@ export function ConnectorBrowse({
         onRetry={state.refetch}
         isEmpty
         empty={
-          searching || catalogEmptyKind(items.length, filtered.length) === 'no-match' ? (
+          // Only two reachable states, not three. A picked category can never
+          // come up empty: the `Select`'s options ARE `groups`, and a group
+          // exists only because it has at least one item. So with no query,
+          // `filtered.length === items.length` and the only way to get here is
+          // a catalog that returned nothing — which is why `catalogEmptyKind`
+          // is not consulted in this branch. It could only ever answer
+          // `'empty'`.
+          searching ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              {searching ? (
-                <>
-                  No matches for <span className="text-foreground font-mono">{activeQuery}</span>.
-                </>
-              ) : (
-                <>No matches in {humanizeCategory(activeCategory)}.</>
-              )}
+              No matches for <span className="text-foreground font-mono">{activeQuery}</span>.
             </p>
           ) : (
             <EmptyState

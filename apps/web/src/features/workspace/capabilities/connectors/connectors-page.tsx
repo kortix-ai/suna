@@ -1,9 +1,11 @@
 'use client';
 
 import { getProjectDetail, listConnectors, type DiscoverIntegration } from '@kortix/sdk';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +25,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { connectorAuthorizationQueryKeys } from '@/features/workspace/customize/sections/connector-profile-form';
 import {
@@ -63,6 +66,26 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 type Panel = 'add' | 'rules';
 
 /**
+ * Two of the three modals host a panel that already prints its own visible
+ * heading, so their `ModalTitle` exists only to give Radix the accessible name
+ * it requires. It is hidden with `VisuallyHidden asChild` rather than an
+ * `sr-only` class, deliberately:
+ *
+ *  - `asChild` puts the hiding on the `<h2>` ITSELF, so `getComputedStyle` on
+ *    the title reports `position: absolute` and `clip: rect(0,0,0,0)`. With
+ *    `sr-only` on a wrapping `ModalHeader`, the title's own computed `clip` is
+ *    `auto` even when it is correctly hidden, which makes the fix impossible
+ *    to confirm by measuring the heading.
+ *  - Radix applies those rules as an inline `style` object, so no utility
+ *    class, cascade layer or `tailwind-merge` decision can undo them.
+ *
+ * The title sits inside `ModalBody` (which carries `space-y-0`) instead of a
+ * `ModalHeader`: a header would contribute `px-5 pt-5` of padding above a
+ * panel that supplies its own, and `ModalContent`'s `space-y-4` would put a
+ * 16px gap under a 1px element.
+ */
+
+/**
  * /projects/[id]/connectors — the standalone Connectors catalog.
  *
  * Reads the project's own connectors off `['project-connectors', projectId]`,
@@ -94,8 +117,39 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const [scopeChoice, setScopeChoice] = useState<ConnectorScope | null>(null);
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [detailSlug, setDetailSlug] = useState<string | null>(null);
   const [browseTarget, setBrowseTarget] = useState<DiscoverIntegration | null>(null);
+
+  // Which connector's detail is open lives in `?c=<slug>`, not in component
+  // state, and that is load-bearing rather than cosmetic. `SetCredentialModal`
+  // (rendered by `ConnectorDetail`) starts an OAuth 2.0 authorization-code
+  // grant by sending the browser to the provider with
+  // `success_redirect_uri = window.location.href` minus the two `oauth2*`
+  // params. The user comes back through a full page load, so any React state
+  // saying "this connector's modal was open" is gone — but `?c=` survives,
+  // because the redirect URL is built from the current one. URL-backed state
+  // is therefore what reopens the right connector on return; it also makes a
+  // connector's detail deep-linkable, which the master-detail it replaced
+  // already was.
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const detailSlug = search?.get('c') ?? null;
+
+  const replaceParams = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(search?.toString() ?? '');
+      mutate(params);
+      const suffix = params.toString();
+      router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+    },
+    [pathname, router, search],
+  );
+
+  const setDetailSlug = useCallback(
+    (slug: string | null) =>
+      replaceParams((params) => (slug ? params.set('c', slug) : params.delete('c'))),
+    [replaceParams],
+  );
 
   const connectorsQuery = useQuery({
     queryKey: ['project-connectors', projectId],
@@ -118,11 +172,38 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const browseEnabled = experimental?.connectors_api_discover === true;
   const emailChannelEnabled = experimental?.agentmail_email === true;
 
-  const invalidate = () => {
-    for (const key of connectorAuthorizationQueryKeys(projectId)) {
+  const authorizationQueryKeys = useMemo(
+    () => connectorAuthorizationQueryKeys(projectId),
+    [projectId],
+  );
+  const invalidate = useCallback(() => {
+    for (const key of authorizationQueryKeys) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
-  };
+  }, [authorizationQueryKeys, queryClient]);
+
+  // The OAuth 2.0 return leg. `SetCredentialModal` sends the user off-site and
+  // the provider bounces them back here with `?oauth2=connected|error`. The
+  // effect that consumes those params used to live in `ConnectorsMasterDetail`,
+  // which is no longer mounted anywhere — without this, a completed
+  // authorization landed on a stale grid: no confirmation, no refetch, and the
+  // params stuck in the URL.
+  //
+  // Confirm, refetch every authorization-derived query, then strip only the
+  // two `oauth2*` params. `?c=` is deliberately left in place, so the detail
+  // modal reopens on the connector the user just authorized.
+  const oauth2Result = search?.get('oauth2');
+  const oauth2Error = search?.get('oauth2_error');
+  useEffect(() => {
+    if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
+    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
+    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
+    invalidate();
+    replaceParams((params) => {
+      params.delete('oauth2');
+      params.delete('oauth2_error');
+    });
+  }, [invalidate, oauth2Error, oauth2Result, replaceParams]);
 
   // Visibility uses the UNQUERIED attention count, so typing cannot make the
   // tab the user is standing on disappear; the badge uses the queried count,
@@ -270,7 +351,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         />
       ) : (
         <CatalogGrid
-          isLoading={connectorsQuery.isLoading}
+          // `!settled`, not `connectorsQuery.isLoading`: the empty state's
+          // wording and the scope it describes both depend on `projectQuery`
+          // too. Gating on the connector list alone let a flagged project with
+          // no connectors flash "No connectors yet" for one render before the
+          // flag arrived and moved it to Browse. Same gate as the filter row.
+          isLoading={!settled}
           isError={connectorsQuery.isError}
           onRetry={() => connectorsQuery.refetch()}
           isEmpty={emptyKind !== null}
@@ -354,12 +440,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         {/* `AddAppPanel` prints its own "Add a connector" heading, so the
             dialog's required accessible name is supplied out of view rather
             than as a second visible title. `aria-describedby={undefined}` is
-            Radix's documented opt-out for a dialog with no description. */}
+            Radix's documented opt-out for a dialog with no description.
+            See `hiddenTitle` above for why this is `VisuallyHidden asChild`
+            and not an `sr-only` class. */}
         <ModalContent className="lg:max-w-4xl" aria-describedby={undefined}>
-          <ModalHeader className="sr-only">
-            <ModalTitle>Add a connector</ModalTitle>
-          </ModalHeader>
-          <ModalBody className="max-h-[75vh] overflow-y-auto p-0">
+          <ModalBody className="max-h-[75vh] space-y-0 overflow-y-auto p-0">
+            <VisuallyHidden asChild>
+              <ModalTitle>Add a connector</ModalTitle>
+            </VisuallyHidden>
             <AddAppPanel
               projectId={projectId}
               emailChannelEnabled={emailChannelEnabled}
@@ -386,10 +474,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         {/* Same treatment as the Add modal: `ConnectorDetail` renders the
             connector's name as its own (editable) heading. */}
         <ModalContent className="lg:max-w-3xl" aria-describedby={undefined}>
-          <ModalHeader className="sr-only">
-            <ModalTitle>{selectedConnector?.name?.trim() || 'Connector'}</ModalTitle>
-          </ModalHeader>
-          <ModalBody className="max-h-[75vh] overflow-y-auto p-0">
+          <ModalBody className="max-h-[75vh] space-y-0 overflow-y-auto p-0">
+            <VisuallyHidden asChild>
+              <ModalTitle>{selectedConnector?.name?.trim() || 'Connector'}</ModalTitle>
+            </VisuallyHidden>
             {selectedConnector ? (
               <ConnectorDetail
                 key={selectedConnector.slug}

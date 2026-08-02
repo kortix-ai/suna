@@ -22,13 +22,17 @@ export function connectorNeedsAttention(c: AdminConnector): boolean {
  * tab at all — and therefore cannot default to it. Such a project lands on its
  * own list instead, which is empty and invites "Add connector". That is
  * truthful: discovery really is off for them.
+ *
+ * This **fails closed**: `browse` requires an explicit `browseEnabled: true`.
+ * An omitted or unknown flag means no browse. Gating an experimental surface
+ * is not something a caller should get by forgetting an argument.
  */
 export function defaultConnectorScope(
   connectors: readonly AdminConnector[],
   opts: { browseEnabled?: boolean } = {},
 ): ConnectorScope {
   if (connectors.length > 0) return 'project';
-  return opts.browseEnabled === false ? 'project' : 'browse';
+  return opts.browseEnabled === true ? 'browse' : 'project';
 }
 
 /**

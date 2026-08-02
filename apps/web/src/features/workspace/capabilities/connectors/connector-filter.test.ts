@@ -43,17 +43,20 @@ describe('defaultConnectorScope', () => {
   test('lands on the project list when the project has connectors', () => {
     expect(defaultConnectorScope([conn()])).toBe('project');
   });
-  test('lands on browse when the project has none', () => {
-    expect(defaultConnectorScope([])).toBe('browse');
+  // `connectors_api_discover` is off by default, and the catalog Browse reads
+  // is an experimental surface. With no Browse tab to land on, an empty
+  // project lands on its own (empty) list, which invites "Add connector".
+  test('lands on browse when the project has none and browse is available', () => {
+    expect(defaultConnectorScope([], { browseEnabled: true })).toBe('browse');
   });
-  // `connectors_api_discover` is off by default, and the catalog it browses is
-  // an experimental surface. With no Browse tab to land on, an empty project
-  // has to land on its own (empty) list, which invites "Add connector".
   test('falls back to the project list when browse is unavailable', () => {
     expect(defaultConnectorScope([], { browseEnabled: false })).toBe('project');
   });
-  test('browse stays the empty-project default when browse is available', () => {
-    expect(defaultConnectorScope([], { browseEnabled: true })).toBe('browse');
+  // Fails CLOSED. Gating an experimental surface must not be something a
+  // caller gets by forgetting an argument.
+  test('an omitted flag means no browse, not browse', () => {
+    expect(defaultConnectorScope([])).toBe('project');
+    expect(defaultConnectorScope([], {})).toBe('project');
   });
   test('a project with connectors is unaffected by the browse flag', () => {
     expect(defaultConnectorScope([conn()], { browseEnabled: false })).toBe('project');
