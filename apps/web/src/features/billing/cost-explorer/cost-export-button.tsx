@@ -100,6 +100,13 @@ function pad2(value: number): string {
  * body on newlines counts that one row twice.
  *
  * Blank records are skipped, so a trailing newline never becomes a row.
+ *
+ * One shape is NOT handled: a body with an unterminated quote. Everything
+ * after the opening quote is read as one field, so
+ * `header\r\ns0,"never closed\r\ns1,…\r\ns2,…` counts 1 record, not 3.
+ * `toCsv` always balances its quotes, so this is unreachable from either
+ * export route; and the error direction is an undercount, which can only
+ * suppress the row-cap warning, never raise a false one.
  */
 export function countCsvDataRows(body: string): number {
   let records = 0;
@@ -193,14 +200,7 @@ export interface CostExportButtonViewProps {
  *  is assertable without driving a click. */
 export function CostExportButtonView({ isExporting, onExport }: CostExportButtonViewProps) {
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={isExporting}
-      onClick={onExport}
-      aria-label="Export CSV"
-    >
+    <Button type="button" variant="outline" size="sm" disabled={isExporting} onClick={onExport}>
       {isExporting ? (
         <Loading className="size-3.5 shrink-0" />
       ) : (
@@ -227,13 +227,29 @@ export type CostExportButtonProps = { range: CostRange } & (
  * The full export query: the level's filters, plus the window and the account
  * the level's own table is already scoped to.
  *
- * `accountId` is not optional-by-omission here. Both export routes resolve an
- * absent `account_id` to the caller's PRIMARY account
- * (`resolveScopedAccountId(c, 'query')`), so on a team account's billing page
- * an export that dropped it would silently return a different account's spend
- * than the table above it. Carrying `undefined` through is correct — the SDK's
- * URL builder omits a falsy `accountId`, which is exactly the
- * "no provider, use the primary account" case.
+ * `accountId` is not optional-by-omission here. An absent `account_id` does
+ * not necessarily resolve to the account this page is showing — neither route
+ * can see the page's billing context, so each applies its own default. On a
+ * team account's billing page, dropping it risks an export whose scope
+ * silently differs from the table above it.
+ *
+ * The two routes default differently. This is NOT "both routes fall back to
+ * the primary account":
+ *  - `/usage/cost-by-project` (`usage.ts:629`) resolves an absent
+ *    `account_id` through `resolveScopedAccountId(c, 'query')` — the caller's
+ *    PRIMARY account, which on a team billing page is the wrong one.
+ *  - `/usage/session-costs` (`resolveSessionCostAccountId`, `usage.ts:48`)
+ *    resolves it to the PROJECT's account whenever `project_id` is present,
+ *    after asserting `PROJECT_GATEWAY_SPEND_READ`; only a request with
+ *    neither falls through to `resolveScopedAccountId`. The sole sessions
+ *    caller here (`SessionsLevel`, via `buildSessionsLevelExportFilters`)
+ *    always sends `project_id`, so that fallback is unreachable from it
+ *    today. Passing `accountId` keeps the export on the same branch the
+ *    table's own query already takes.
+ *
+ * Carrying `undefined` through is still correct — the SDK's URL builder omits
+ * a falsy `accountId`, which is the "no BillingAccountProvider, so let the
+ * route decide" case.
  */
 export function buildCostExportOptions<Filters extends object>(
   range: CostRange,

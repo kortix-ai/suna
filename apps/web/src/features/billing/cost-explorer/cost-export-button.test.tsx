@@ -167,10 +167,11 @@ describe('buildCostExportOptions', () => {
   });
 
   test('carries the account even for a level that passes no filters at all', () => {
-    // Both export routes resolve an absent account_id to the caller's PRIMARY
-    // account (`resolveScopedAccountId(c, 'query')`), so on a team billing
-    // page a dropped accountId exports a different account's spend than the
-    // table above it.
+    // An absent account_id does not necessarily resolve to the account this
+    // page is showing — neither route falls back to it — so on a team billing
+    // page a dropped accountId risks an export scoped differently from the
+    // table above it. See `buildCostExportOptions` for how the two routes
+    // differ; they do NOT share one fallback.
     expect(buildCostExportOptions(range, 'acc_team').accountId).toBe('acc_team');
   });
 
@@ -305,7 +306,11 @@ describe('CostExportButtonView', () => {
     const html = renderToStaticMarkup(
       <CostExportButtonView isExporting={false} onExport={() => {}} />,
     );
-    expect(html).toContain('Export CSV');
+    // The button's accessible name is its visible text, with no `aria-label`
+    // duplicating it — a redundant label is a no-op until the visible text
+    // changes, at which point the two silently disagree.
+    expect(html).toContain('Export CSV</button>');
+    expect(html).not.toContain('aria-label');
     // The attribute, not the bare word — Button's base class carries
     // `disabled:pointer-events-none` on every render, disabled or not.
     expect(html).not.toContain('disabled=""');
