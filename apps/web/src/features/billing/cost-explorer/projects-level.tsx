@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 
-import type { CostSummary, ProjectCostPage } from '@kortix/sdk';
+import type { CostSummary, ProjectCostPage, ProjectCostSort } from '@kortix/sdk';
 import { ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { COST_PAGE_SIZE, useCostByProject, useCostSummary } from '@/hooks/billing/use-cost-explorer';
 
+import { CostExportButton } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { formatSessionCostUsd } from '../session-cost-format';
 
@@ -29,6 +30,11 @@ import { formatSessionCostUsd } from '../session-cost-format';
  *  forthcoming explorer shell — see the plan's Task 15 — defaults new URL
  *  state to it too). Used here only as the target `onResetRange` resets to. */
 const DEFAULT_RANGE_PRESET = '30d';
+
+/** This level's only sort. Named once because the table query and the CSV
+ *  export both send it — the export must run the same filtered query the
+ *  table shows, not a differently ordered one. */
+const PROJECTS_LEVEL_SORT: ProjectCostSort = 'total_desc';
 
 const UNASSIGNED_LABEL = 'Unassigned';
 const UNASSIGNED_TOOLTIP_COPY = 'Spend recorded against sessions that no longer exist.';
@@ -268,6 +274,9 @@ export function ProjectsLevelContent({
       summary={summary}
       isSummaryLoading={isSummaryLoading}
       summaryError={summaryError}
+      controls={
+        <CostExportButton kind="projects" range={range} filters={{ sort: PROJECTS_LEVEL_SORT }} />
+      }
     >
       <div className="space-y-3">
         {tableSlot}
@@ -374,7 +383,7 @@ export function ProjectsLevel({ range, onRangeChange, onSelectProject }: Project
   const projectsQuery = useCostByProject({
     from: range.from,
     to: range.to,
-    sort: 'total_desc',
+    sort: PROJECTS_LEVEL_SORT,
     offset,
   });
 

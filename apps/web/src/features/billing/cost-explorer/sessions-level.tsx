@@ -31,6 +31,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
 import { SESSION_COST_PAGE_SIZE, useSessionCosts } from '@/hooks/billing/use-session-costs';
 
+import { CostExportButton, type SessionCostExportFilters } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { formatSessionCostUsd } from '../session-cost-format';
 
@@ -145,6 +146,31 @@ export function buildSessionsLevelOwnerCatalogInput(
     from: range.from,
     to: range.to,
     sort: 'total_desc',
+  };
+}
+
+/**
+ * Filters for this level's CSV export — the same project, owner and sort the
+ * visible table is narrowed by, so the file holds the query the user is
+ * looking at rather than the whole project.
+ *
+ * Deliberately carries no page. `format=csv` ignores the request's pagination
+ * outright — the route hardcodes `limit: CSV_ROW_CAP, offset: 0` — and
+ * `SessionCostExportOptions` has no `limit`/`offset` fields to send anyway.
+ * An export is the whole filtered query, never the page on screen.
+ *
+ * Extracted as its own pure function for the same reason
+ * `buildSessionsLevelListInput` is — so the pass-through is assertable without
+ * rendering the hook-owning component.
+ */
+export function buildSessionsLevelExportFilters(
+  projectId: string,
+  filters: SessionsLevelFilters,
+): SessionCostExportFilters {
+  return {
+    projectId,
+    ownerId: filters.ownerId ?? undefined,
+    sort: filters.sort,
   };
 }
 
@@ -443,6 +469,12 @@ export function SessionsLevel({
           ))}
         </SelectContent>
       </Select>
+
+      <CostExportButton
+        kind="sessions"
+        range={range}
+        filters={buildSessionsLevelExportFilters(projectId, filters)}
+      />
     </>
   );
 

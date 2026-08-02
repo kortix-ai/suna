@@ -429,6 +429,19 @@ const twoProjectPage: ProjectCostPage = {
 };
 
 describe('ProjectsLevelContent', () => {
+  test('offers the CSV export beside the range picker', () => {
+    const html = renderContent({ page: twoProjectPage });
+    expect(html).toContain('Export CSV');
+  });
+
+  test('keeps the CSV export available while the table is still loading', () => {
+    // The export is a server-side re-run of the same filtered query, not a
+    // dump of the rendered rows — so it does not depend on this page having
+    // arrived, and gating it on the table would only make it flicker.
+    const html = renderContent({ isProjectsLoading: true });
+    expect(html).toContain('Export CSV');
+  });
+
   test('shows a loading skeleton, never a spinner icon, while projects have not loaded', () => {
     const html = renderContent({ isProjectsLoading: true });
     expect(html).toContain('aria-label="Loading projects"');

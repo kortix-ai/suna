@@ -2,18 +2,27 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ApiError, type SessionCostsPage, type SessionCostSummary } from '@kortix/sdk';
-import { focusManager, QueryClient, QueryObserver } from '@tanstack/react-query';
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from '@tanstack/react-query';
 
 import { TableRow } from '@/components/ui/table';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   buildSessionCostsListQuery,
   SESSION_COST_PAGE_SIZE,
 } from '@/hooks/billing/use-session-costs';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 
 import {
+  buildSessionsLevelExportFilters,
   buildSessionsLevelListInput,
   buildSessionsLevelOwnerCatalogInput,
   collectOwnerOptions,
+  SessionsLevel,
   SessionsLevelTable,
 } from './sessions-level';
 
@@ -104,6 +113,45 @@ describe('buildSessionsLevelListInput', () => {
       offset: 0,
     });
     expect(input.ownerId).toBeUndefined();
+  });
+});
+
+describe('buildSessionsLevelExportFilters', () => {
+  test('exports the same project, owner and sort the table is narrowed by', () => {
+    expect(
+      buildSessionsLevelExportFilters('project-1', {
+        ownerId: 'owner-9',
+        sort: 'recent',
+        offset: 50,
+      }),
+    ).toEqual({ projectId: 'project-1', ownerId: 'owner-9', sort: 'recent' });
+  });
+
+  test('omits the owner filter (not a null) when no owner is selected', () => {
+    // `costExportUrl` skips a falsy ownerId, so `null` would also never reach
+    // the wire — asserted anyway because the export options type says
+    // `ownerId?: string`, and a null there is a lie the compiler stops
+    // catching the moment someone widens it.
+    const filters = buildSessionsLevelExportFilters('project-1', {
+      ownerId: null,
+      sort: 'total_desc',
+      offset: 0,
+    });
+    expect(filters.ownerId).toBeUndefined();
+  });
+
+  test('carries no page — the export is the whole filtered query, not the page on screen', () => {
+    // `format=csv` hardcodes `limit: CSV_ROW_CAP, offset: 0` on the route, so
+    // a page cannot narrow an export even if one were sent. Pinned so a
+    // future "keep the export in sync with the table" change does not start
+    // forwarding `filters.offset` in the belief that it does something.
+    const filters = buildSessionsLevelExportFilters('project-1', {
+      ownerId: null,
+      sort: 'total_desc',
+      offset: 75,
+    });
+    expect(filters).not.toHaveProperty('offset');
+    expect(filters).not.toHaveProperty('limit');
   });
 });
 
@@ -568,6 +616,42 @@ describe('the state a failed /usage/session-costs request hands the table', () =
     } finally {
       client.clear();
     }
+  });
+});
+
+// `SessionsLevel` itself, not a stand-in: the export button lives in the
+// control row this component assembles, so nothing below it can prove the
+// control actually reaches the screen. `renderToStaticMarkup` runs no
+// effects, and React Query subscribes (and therefore fetches) from an effect,
+// so this renders the real component's first pass with no request going out.
+describe('SessionsLevel', () => {
+  function renderLevel(): string {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      return renderToStaticMarkup(
+        <QueryClientProvider client={client}>
+          <BillingAccountProvider accountId="acc_1">
+            <TooltipProvider>
+              <SessionsLevel
+                projectId="project-1"
+                range={range}
+                onRangeChange={() => {}}
+                onSelectSession={() => {}}
+              />
+            </TooltipProvider>
+          </BillingAccountProvider>
+        </QueryClientProvider>,
+      );
+    } finally {
+      client.clear();
+    }
+  }
+
+  test('offers the CSV export in the control row, beside the owner and sort filters', () => {
+    const html = renderLevel();
+    expect(html).toContain('Export CSV');
+    expect(html).toContain('Filter sessions by owner');
+    expect(html).toContain('Sort sessions');
   });
 });
 
