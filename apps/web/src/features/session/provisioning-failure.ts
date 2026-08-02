@@ -5,7 +5,6 @@ export interface ProvisioningFailurePresentation {
   title: string;
   message: string;
   retryable: boolean;
-  isCapacity: boolean;
 }
 
 /** Build stable error-card copy from API-owned sandbox failure metadata. */
@@ -20,18 +19,17 @@ export function provisioningFailurePresentation(
     'The sandbox provider could not start this session. Try again.';
 
   if (category === 'provider-capacity') {
-    return { title: 'Sandbox capacity is full', message, retryable: true, isCapacity: true };
+    return { title: 'Sandbox capacity is full', message, retryable: true };
   }
 
   if (category === 'git-auth') {
-    return { title: 'Git access failed', message, retryable: true, isCapacity: false };
+    return { title: 'Git access failed', message, retryable: true };
   }
 
   return {
     title: `Couldn't start ${sandboxLabel}`,
     message,
     retryable: true,
-    isCapacity: false,
   };
 }
 

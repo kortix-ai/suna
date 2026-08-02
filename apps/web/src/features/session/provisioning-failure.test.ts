@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import {
   pendingSessionPromptFromMetadata,
@@ -18,7 +20,6 @@ describe('provisioningFailurePresentation', () => {
       title: 'Sandbox capacity is full',
       message: 'The sandbox provider is at capacity right now. Try again in a minute.',
       retryable: true,
-      isCapacity: true,
     });
   });
 
@@ -30,6 +31,7 @@ describe('provisioningFailurePresentation', () => {
 
     expect(result.title).toBe('Git access failed');
     expect(result.message).toBe('Check the Git credentials.');
+    expect(result.retryable).toBe(true);
   });
 
   test('uses provider-neutral fallback copy', () => {
@@ -37,8 +39,26 @@ describe('provisioningFailurePresentation', () => {
       title: "Couldn't start Essentia runtime",
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
-      isCapacity: false,
     });
+  });
+});
+
+describe('project session provider-failure recovery', () => {
+  const pageSource = readFileSync(
+    resolve(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+    'utf8',
+  );
+  const failureStart = pageSource.indexOf("if (sandbox?.status === 'error')");
+  const failureEnd = pageSource.indexOf('// Stopped but resumable', failureStart);
+  const failureSurface = pageSource.slice(failureStart, failureEnd);
+
+  test('does not reserve prompt-safe recovery controls for capacity errors', () => {
+    expect(failureStart).toBeGreaterThan(-1);
+    expect(failureEnd).toBeGreaterThan(failureStart);
+    expect(failureSurface).not.toContain('failure.isCapacity');
+    expect(failureSurface).toContain('onClick={handleProvisioningRetry}');
+    expect(failureSurface).toContain('Copy prompt');
+    expect(failureSurface).toContain('onClick={() => setDeleteOpen(true)}');
   });
 });
 

@@ -210,7 +210,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     setResumeAttempts(0);
     restart.restart();
   };
-  const handleCapacityRetry = () => {
+  const handleProvisioningRetry = () => {
     if (pendingPrompt) {
       writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
     }
@@ -524,59 +524,55 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             title={failure.title}
             message={failure.message}
             action={
-              failure.isCapacity ? (
-                <div className="flex flex-col items-center gap-2">
-                  <p className="text-muted-foreground text-xs">
-                    {pendingPrompt ? 'Your prompt is saved.' : 'No prompt was attached.'}
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {pendingPrompt ? 'Your prompt is saved.' : 'No prompt was attached.'}
+                </p>
+                {pendingAttachmentCount > 0 ? (
+                  <p className="text-muted-foreground/70 text-xs">
+                    {pendingAttachmentCount}{' '}
+                    {pendingAttachmentCount === 1
+                      ? 'attachment is listed. Reattach it after a reload.'
+                      : 'attachments are listed. Reattach them after a reload.'}
                   </p>
-                  {pendingAttachmentCount > 0 ? (
-                    <p className="text-muted-foreground/70 text-xs">
-                      {pendingAttachmentCount}{' '}
-                      {pendingAttachmentCount === 1
-                        ? 'attachment is listed. Reattach it after a reload.'
-                        : 'attachments are listed. Reattach them after a reload.'}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCapacityRetry}
-                      disabled={restart.isPending}
-                      aria-busy={restart.isPending}
-                    >
-                      {restart.isPending ? (
-                        <Loading className="size-3.5 shrink-0" />
-                      ) : (
-                        <RotateCcw className="size-3.5 shrink-0" />
-                      )}
-                      {restart.isPending ? 'Retrying…' : 'Retry'}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void copyPendingPrompt()}
-                      disabled={!pendingPrompt}
-                    >
-                      <Copy className="size-3.5 shrink-0" />
-                      Copy prompt
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash className="size-3.5 shrink-0" />
-                      Delete
-                    </Button>
-                  </div>
+                ) : null}
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleProvisioningRetry}
+                    disabled={restart.isPending}
+                    aria-busy={restart.isPending}
+                  >
+                    {restart.isPending ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : (
+                      <RotateCcw className="size-3.5 shrink-0" />
+                    )}
+                    {restart.isPending ? 'Retrying…' : 'Retry'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copyPendingPrompt()}
+                    disabled={!pendingPrompt}
+                  >
+                    <Copy className="size-3.5 shrink-0" />
+                    Copy prompt
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash className="size-3.5 shrink-0" />
+                    Delete
+                  </Button>
                 </div>
-              ) : failure.retryable ? (
-                <RestartSessionButton restart={restart} onRestart={handleRestart} />
-              ) : undefined
+              </div>
             }
           />
         );

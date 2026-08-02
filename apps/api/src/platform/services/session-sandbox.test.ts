@@ -376,7 +376,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
   });
 
   test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
-    providerCreateErrors.e2b = 'Maximum number of concurrent E2B sandboxes reached';
+    providerCreateErrors.e2b = '500: Failed to place sandbox';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
     });

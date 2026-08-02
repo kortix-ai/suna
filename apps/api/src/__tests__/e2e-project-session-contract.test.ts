@@ -1748,6 +1748,57 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('dashboard start upgrades a stored E2B placement failure to the capacity contract', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'e2b',
+      error: 'The sandbox provider could not start this session. Try again.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'e2b',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 3,
+          initMaxAttempts: 3,
+          failureCategory: 'sandbox-provider',
+          errorMessage: 'The sandbox provider could not start this session. Try again.',
+          lastProvisioningError: '500: Failed to place sandbox',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
     const app = createApp();
     sessionRow = {

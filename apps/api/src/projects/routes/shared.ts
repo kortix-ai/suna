@@ -7,6 +7,7 @@ import type {
 } from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
+import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -501,16 +502,31 @@ export function sessionStartFailureFromSandbox(
   if (row.status !== 'error') return null;
   const metadata = sandboxMetadata(row);
   const rawCategory = metadata.failureCategory;
-  const category =
+  const storedCategory =
     rawCategory === 'provider-capacity' ||
     rawCategory === 'git-auth' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
+  const rawProviderError =
+    typeof metadata.lastProvisioningError === 'string'
+      ? metadata.lastProvisioningError
+      : typeof metadata.provisioningError === 'string'
+        ? metadata.provisioningError
+        : null;
+  const inferredFailure = rawProviderError
+    ? classifySandboxProvisioningFailure(rawProviderError)
+    : null;
+  const inferredSpecificFailure =
+    storedCategory === 'sandbox-provider' && inferredFailure?.category !== 'sandbox-provider'
+      ? inferredFailure
+      : null;
+  const category = inferredSpecificFailure?.category ?? storedCategory;
   const message =
-    typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
+    inferredSpecificFailure?.userMessage ??
+    (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
       ? metadata.errorMessage
-      : 'The sandbox provider could not start this session. Try again.';
+      : 'The sandbox provider could not start this session. Try again.');
   return { category, message, retryable: true };
 }
 
