@@ -146,7 +146,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       } else {
         capabilities = {
           reasoning: model.reasoning ?? false,
-          vision: model.modalities?.input?.includes('image') ?? false,
+          vision: model.modalities?.input?.includes('image') ?? model.attachment ?? false,
           toolcall: model.tool_call ?? false,
         };
       }
