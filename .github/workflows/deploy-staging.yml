@@ -95,6 +95,8 @@ jobs:
     name: Sync staging secret bundle
     needs: preflight
     runs-on: ubuntu-latest
+    env:
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
       - uses: aws-actions/configure-aws-credentials@v6
         with:
