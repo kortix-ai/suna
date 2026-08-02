@@ -2,25 +2,22 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { projectSessionStartSeed } from '@kortix/sdk';
 import type { ProjectSession } from '@kortix/sdk';
+import { projectSessionStartSeed } from '@kortix/sdk';
 
 // Regression for Better Stack pattern e6d0e044 —
 // `TypeError: Cannot read properties of null (reading 'slice')` thrown on the
 // co-worker session page (`/projects/:id/sessions/:sessionId`). A render-path
 // `.slice()` on `sandbox.sandbox_id` crashed when `sandbox` was truthy but
-// `sandbox_id` resolved to `null`. The null reached the page through the
-// `SessionCacheWarmer` → `projectSessionStartSeed` cache seed: the
+// `sandbox_id` resolved to `null`. The null reached the page through a
+// `projectSessionStartSeed` cache seed: the
 // `project_sessions.sandbox_id` column is nullable (legacy Suna-migration rows
 // are minted with it null and provisioning only writes `sandbox_url`), so the
 // seed produced a `ProjectSessionSandbox` carrying a `null` `sandbox_id`, which
 // `useSession` then handed straight to the page.
 
 const pageSource = readFileSync(
-  join(
-    import.meta.dir,
-    '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
-  ),
+  join(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 

@@ -132,7 +132,9 @@ describe('session inventory identity and access labels', () => {
       ),
     ).toBe('backend-debugger');
     expect(
-      sessionOwnerLabel(makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null })),
+      sessionOwnerLabel(
+        makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+      ),
     ).toBe('Unknown owner');
   });
 
@@ -194,7 +196,11 @@ describe('sessionDetailFields', () => {
     });
     const cronFields = sessionDetailFields(cron, FORMATTED);
     expect(cronFields).toContainEqual({ label: 'Source', value: 'Scheduled', mono: undefined });
-    expect(cronFields).toContainEqual({ label: 'Trigger', value: 'nightly-audit', mono: undefined });
+    expect(cronFields).toContainEqual({
+      label: 'Trigger',
+      value: 'nightly-audit',
+      mono: undefined,
+    });
   });
 
   test('drops a chat session from 18 fields to a readable handful', () => {
@@ -344,12 +350,16 @@ describe('mapWithConcurrency', () => {
     let inFlight = 0;
     let peak = 0;
 
-    await mapWithConcurrency(Array.from({ length: 12 }, (_, i) => i), 3, async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      inFlight -= 1;
-    });
+    await mapWithConcurrency(
+      Array.from({ length: 12 }, (_, i) => i),
+      3,
+      async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+      },
+    );
 
     expect(peak).toBeLessThanOrEqual(3);
   });
@@ -371,7 +381,19 @@ describe('filterProjectSessions', () => {
       session_id: 'newer',
       name: 'Slack deploy',
       metadata: { source: 'slack' },
-      updated_at: '2026-07-21T10:00:00.000Z',
+      // Bookkeeping is older, but the conversation itself is newer.
+      updated_at: '2026-07-19T10:00:00.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-newer',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: null,
+          updated_at: Date.parse('2026-07-21T10:00:00.000Z'),
+          archived_at: null,
+        },
+      ],
     });
     const unrelated = makeSession({ session_id: 'third', name: 'Email report' });
 
