@@ -28,6 +28,10 @@ import {
   consumePendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
 } from '@/features/workspace/open-command-palette';
+import {
+  sessionLastActivityAt,
+  sortSessionsByLastActivity,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -793,9 +797,7 @@ export function CommandPalette() {
   }, [sortedProjects, query]);
 
   const recentProjectSessions = useMemo(() => {
-    return [...(projectSessionsList ?? [])]
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      .slice(0, 5);
+    return sortSessionsByLastActivity(projectSessionsList ?? []).slice(0, 5);
   }, [projectSessionsList]);
 
   const recentProjects = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
@@ -810,9 +812,7 @@ export function CommandPalette() {
 
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(projectSessionsList ?? [])].sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    );
+    const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
       0,
       50,
@@ -1497,7 +1497,9 @@ export function CommandPalette() {
                             <MessageCircle className="size-4 flex-shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
                             <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(new Date(session.updated_at).getTime())}
+                              {formatRelativeTime(
+                                new Date(sessionLastActivityAt(session)).getTime(),
+                              )}
                             </span>
                           </CommandItem>
                         ))}
@@ -1630,7 +1632,9 @@ export function CommandPalette() {
                               <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
                             )}
                             <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(new Date(session.updated_at).getTime())}
+                              {formatRelativeTime(
+                                new Date(sessionLastActivityAt(session)).getTime(),
+                              )}
                             </span>
                           </CommandItem>
                         ))}
@@ -1974,7 +1978,7 @@ export function CommandPalette() {
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                        {formatRelativeTime(new Date(session.updated_at).getTime())}
+                        {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
                       </span>
                       {session.session_id === params?.sessionId && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />

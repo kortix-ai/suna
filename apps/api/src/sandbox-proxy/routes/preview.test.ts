@@ -16,13 +16,22 @@ import {
 describe('shouldAutoResumeStoppedSandbox', () => {
   test('a passive principal OpenCode read never resumes a stopped sandbox', () => {
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { method: 'GET' }),
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+        method: 'GET',
+      }),
     ).toBe(false);
   });
 
   test('an explicit principal OpenCode mutation resumes a stopped sandbox', () => {
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { method: 'POST' }),
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+        method: 'POST',
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 4096, 'principal', {
+        method: 'POST',
+      }),
     ).toBe(true);
   });
 
@@ -38,17 +47,24 @@ describe('shouldAutoResumeStoppedSandbox', () => {
   // intent as clicking into the session.
   test('REGRESSION: a human LOADING a preview page resumes the box', () => {
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal', { browserNavigation: true }),
+      shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal', {
+        browserNavigation: true,
+      }),
     ).toBe(true);
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 5173, 'principal', { browserNavigation: true }),
+      shouldAutoResumeStoppedSandbox('stopped', 5173, 'principal', {
+        browserNavigation: true,
+      }),
     ).toBe(true);
   });
 
   test('a page load on a SESSION-DATA port is still not a preview resume', () => {
-    // 4096 carries the conversation; only the 8000 daemon branch may resume it.
+    // 4096 carries the conversation. A navigation-style GET remains passive.
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 4096, 'principal', { browserNavigation: true }),
+      shouldAutoResumeStoppedSandbox('stopped', 4096, 'principal', {
+        browserNavigation: true,
+        method: 'GET',
+      }),
     ).toBe(false);
   });
 
@@ -56,7 +72,9 @@ describe('shouldAutoResumeStoppedSandbox', () => {
   // traffic could resume it, the self-renewing lease is rebuilt through the proxy.
   test('a request the SANDBOX authored never resumes it, on any port', () => {
     expect(
-      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { sandboxAuthored: true }),
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', {
+        sandboxAuthored: true,
+      }),
     ).toBe(false);
     expect(
       shouldAutoResumeStoppedSandbox('stopped', 3000, 'principal', {

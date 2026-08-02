@@ -42,8 +42,8 @@ import {
 } from '@/features/session/session-terminal-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
-import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
@@ -399,17 +399,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     submitted: shellSubmitted,
   });
 
-  // `sandbox_id` is nullable on the wire: the `/start` path always serves a
-  // non-null id (it serializes the `session_sandboxes` uuid PK), but the
-  // optimistic cache seed (`projectSessionStartSeed`, fed by the
-  // `project_sessions` row) can carry a `null` `sandbox_id` — e.g. a legacy
-  // Suna-migration session whose `project_sessions.sandbox_id` was minted null
-  // and never back-filled by provisioning (which only writes `sandbox_url`).
-  // The `SessionCacheWarmer` seeds that into React Query, so `useSession` can
-  // hand us a truthy `sandbox` whose `sandbox_id` is null; guard the `.slice`
-  // so a null id degrades to the bare label instead of crashing the page
-  // (Better Stack pattern e6d0e044 — `Cannot read properties of null (reading
-  // 'slice')` on this exact line).
+  // `sandbox_id` was nullable on legacy project-session inventory rows. Keep
+  // this render guard even though the current `/start` response serializes the
+  // non-null `session_sandboxes` primary key. A malformed cached response must
+  // degrade to the bare label instead of crashing the page (Better Stack pattern
+  // e6d0e044 — `Cannot read properties of null (reading 'slice')`).
   const sandboxLabel = sandbox?.sandbox_id
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
