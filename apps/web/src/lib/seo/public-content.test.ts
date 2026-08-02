@@ -17,6 +17,7 @@ import {
 } from '@/lib/seo/public-content';
 import { resetAiIndexRateLimitsForTests } from '@/lib/seo/rate-limit';
 import { markdownResponse } from '@/lib/seo/response';
+import { renderRobotsTxt } from '@/lib/seo/robots';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
 const originalUseCases = process.env.NEXT_PUBLIC_USE_CASES_ENABLED;
@@ -318,11 +319,21 @@ describe('bounded public agent index', () => {
     expect(response.headers.get('Retry-After')).toBeTruthy();
   });
 
-  test('robots explicitly allows the machine-readable routes', () => {
-    const robots = fs.readFileSync(path.join(process.cwd(), 'public', 'robots.txt'), 'utf8');
+  test('robots explicitly allows the machine-readable routes on the canonical host', () => {
+    const robots = renderRobotsTxt('kortix.com');
     for (const route of SEO_COVERAGE_MANIFEST.machineRoutes) {
       expect(robots).toContain(`Allow: ${route}`);
     }
     expect(robots).toContain('Allow: /markdown/');
+    expect(robots).toContain(`Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml`);
+  });
+
+  test('robots blocks crawling on every non-canonical host', () => {
+    for (const host of ['dev.kortix.com', 'staging.kortix.com', 'seo-fix.vercel.app', null]) {
+      const robots = renderRobotsTxt(host);
+      expect(robots, String(host)).toContain('Disallow: /');
+      expect(robots, String(host)).not.toContain('Sitemap:');
+    }
+    expect(renderRobotsTxt('localhost:3000')).toContain('Allow: /');
   });
 });

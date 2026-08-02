@@ -775,7 +775,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/credits-explained',
+    href: '/help/credits',
     keywords: 'credits coins billing usage tokens cost explain',
   },
 

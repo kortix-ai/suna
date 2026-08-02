@@ -15,6 +15,11 @@ const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+// Maintenance interstitial — never a search result.
+export const metadata = {
+  robots: { index: false, follow: false },
+};
+
 // Only allow same-origin relative paths as a redirect target. Blocks
 // protocol-relative (`//evil.com`) and backslash tricks so the `from` param
 // can't be turned into an open redirect.
