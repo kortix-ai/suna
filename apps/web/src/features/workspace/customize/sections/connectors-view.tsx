@@ -199,7 +199,7 @@ const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
-function providerLabel(p: AdminConnector['provider']): string {
+export function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
@@ -493,7 +493,7 @@ function statusDot(c: AdminConnector): string {
   return 'bg-kortix-green';
 }
 
-function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
+export function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const status = connectorSetupStatus(connector);
   if (status === 'error')
@@ -726,7 +726,7 @@ function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
 }
 
-function ConnectorAppIcon({
+export function ConnectorAppIcon({
   connector,
   size = 'lg',
 }: {
@@ -1255,7 +1255,7 @@ function ConnectionRoster({
   );
 }
 
-function ConnectorDetail({
+export function ConnectorDetail({
   projectId,
   connector,
   onChanged,
@@ -3630,7 +3630,7 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
   );
 }
 
-function AddAppPanel({
+export function AddAppPanel({
   projectId,
   emailChannelEnabled,
   discoverEnabled,
