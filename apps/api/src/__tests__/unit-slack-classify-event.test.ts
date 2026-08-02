@@ -120,6 +120,31 @@ describe('classifyEvent — a message that @-mentions the bot is a mention', () 
     const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'channel', text: '<@B1> transcribe this', files: [{ id: 'F1', mimetype: 'audio/wav', name: 'voice.wav', size: 9999, url_private_download: 'https://...' }] }), BOT);
     expect(cls).toBe('mention');
   });
+
+  test('me_message in a DM is a dm', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'im', text: 'waves hello' }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('me_message with a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'channel', text: '<@B1> laughs at your joke' }), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  test('me_message in a channel without mention is ignored (no pickup)', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'channel', text: 'waves goodbye' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('other subtypes like thread_broadcast are still ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'thread_broadcast', channel_type: 'channel', text: 'broadcast' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('other subtypes like message_changed are still ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'message_changed', channel_type: 'channel', text: 'edited' }), BOT);
+    expect(cls).toBe('ignore');
+  });
 });
 
 describe('classifyEvent — non-mention routing is unchanged', () => {

@@ -431,11 +431,19 @@ export async function classifyEvent(
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
   if (event.subtype) {
-    // Allow file_share events through (audio messages, images, documents, etc.)
-    // The agent will see the file info in the prompt and can download/process it.
-    // All other subtypes (message_changed, message_deleted, bot_message, etc.)
-    // remain ignored.
-    if (event.subtype !== 'file_share' || !event.files?.length) return 'ignore';
+    // Allow these user-generated subtypes through:
+    //   file_share   — audio messages, images, documents, etc. (agent sees file info)
+    //   me_message   — /me actions (e.g. "/me waves hello")
+    // All other subtypes (message_changed, message_deleted, bot_message,
+    // thread_broadcast, channel_join, etc.) remain ignored to avoid loops,
+    // redundancy, or system noise.
+    if (event.subtype === 'file_share' && event.files?.length) {
+      // pass through
+    } else if (event.subtype === 'me_message') {
+      // pass through — user-generated /me action
+    } else {
+      return 'ignore';
+    }
   }
   // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
   // deliver an `app_mention` for a mention made INSIDE an existing thread —
