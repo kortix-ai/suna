@@ -8,15 +8,7 @@ import {
   setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
-import {
-  CheckIcon,
-  KeyIcon,
-  LockIcon,
-  MonitorIcon,
-  PencilSimpleIcon,
-  TrashIcon,
-  UsersIcon,
-} from '@phosphor-icons/react';
+import { CheckIcon, KeyIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -25,7 +17,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,9 +46,9 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 
 import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connector-rungs';
+import { RungOverview } from './rung-overview';
 
 export interface ConnectorModalProps {
   projectId: string;
@@ -91,11 +82,11 @@ export interface ConnectorModalProps {
  * rename draft, without remounting `Modal`/`ModalContent` (which would replay
  * the open animation and drop focus-trap continuity).
  *
- * INTERIM: each rung mounts the shipped component for its capability verbatim,
- * so nothing in the Capability Inventory becomes unreachable between this task
- * and the four that refine the rung bodies (`rung-overview.tsx`,
- * `rung-accounts.tsx`, `rung-permissions.tsx`, `rung-settings.tsx`). No rung is
- * a stub.
+ * INTERIM: Accounts and Settings still mount the shipped component for their
+ * capability verbatim, so nothing in the Capability Inventory becomes
+ * unreachable before the tasks that refine those rung bodies
+ * (`rung-accounts.tsx`, `rung-permissions.tsx`, `rung-settings.tsx`) land. No
+ * rung is a stub. Overview is designed — see `./rung-overview.tsx`.
  */
 export function ConnectorModal({
   projectId,
@@ -366,7 +357,7 @@ function ConnectorModalBody({
 
           <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
             {rung === 'overview' ? (
-              <OverviewRung
+              <RungOverview
                 connector={connector}
                 displayName={displayName}
                 canWrite={canWrite}
@@ -436,206 +427,6 @@ function ConnectorModalBody({
         onSaved={onChanged}
       />
     </>
-  );
-}
-
-/**
- * Overview — capabilities #5, #6 and #13, on the conditions the old panel used
- * line for line, plus a plain statement of the connection state when none of
- * the three applies (otherwise a connected connector's first rung would be
- * blank).
- *
- * Task 9 replaces the body with the designed version; the conditions and the
- * flows they fire are what must survive that edit unchanged.
- */
-function OverviewRung({
-  connector,
-  displayName,
-  canWrite,
-  connected,
-  strategyUpdating,
-  reconnectPending,
-  onReconnect,
-  onSetCredential,
-  onClose,
-}: {
-  connector: AdminConnector;
-  displayName: string;
-  canWrite: boolean;
-  connected: boolean;
-  strategyUpdating: boolean;
-  reconnectPending: boolean;
-  onReconnect: () => void;
-  onSetCredential: () => void;
-  onClose: () => void;
-}) {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const isPipedream = connector.provider === 'pipedream';
-  const isChannel = connector.provider === 'channel';
-  const isComputer = connector.provider === 'computer';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-
-  const showProjectConnect =
-    Boolean(connector.authSecret) && !connected && !isChannel && usesProjectAuthorization;
-  const showPersonalConnect =
-    Boolean(connector.authSecret) &&
-    !isPipedream &&
-    !isChannel &&
-    !isComputer &&
-    !usesProjectAuthorization;
-  // Nothing to act on — say where the connector stands instead of showing an
-  // empty rung.
-  const showState = !showProjectConnect && !showPersonalConnect && !isComputer;
-
-  return (
-    <div className="space-y-4">
-      {/* Capability #13. Computers stayed in the Customize overlay when
-          Connectors, Skills and Commands graduated to routes, so this is a
-          deliberate cross-surface jump: close the modal, then open the overlay
-          on that section. `setSection` alone — what the old panel called, back
-          when it was itself inside the overlay — would now mutate overlay state
-          without ever showing it. */}
-      {isComputer ? (
-        <InfoBanner
-          tone="info"
-          icon={MonitorIcon}
-          title={`${displayName} is managed in Computers`}
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => {
-                onClose();
-                openCustomize('computers');
-              }}
-            >
-              <MonitorIcon className="size-4 shrink-0" />
-              Open Computers
-            </Button>
-          }
-        >
-          Connect a machine, and grant or revoke per-capability access, in the Computers tab. Here
-          you control who can use it and review its tools.
-        </InfoBanner>
-      ) : null}
-
-      {/* Capability #5. Project-owned profiles accept only project-managed
-          authorizations. */}
-      {showProjectConnect ? (
-        <InfoBanner
-          tone="info"
-          icon={UsersIcon}
-          title={`Connect ${displayName} for the project`}
-          action={
-            canWrite ? (
-              <Button
-                size="lg"
-                className="h-11 shrink-0 gap-2 px-5 font-semibold"
-                onClick={() => (isPipedream ? onReconnect() : onSetCredential())}
-                disabled={strategyUpdating || (isPipedream && reconnectPending)}
-              >
-                {isPipedream && reconnectPending ? <Loading className="size-4 shrink-0" /> : null}
-                {isPipedream ? 'Connect for the project' : 'Set shared credential'}
-              </Button>
-            ) : undefined
-          }
-        >
-          {isPipedream
-            ? `One project-managed ${displayName} account is available to allowed sessions and triggers.`
-            : 'One shared credential that everyone on this project uses — the agent and your triggers run on it.'}
-        </InfoBanner>
-      ) : null}
-
-      {/* Capability #6. Deliberately NOT gated on `canWrite`: a member always
-          manages their own private credential. */}
-      {showPersonalConnect ? (
-        <InfoBanner
-          tone="info"
-          icon={LockIcon}
-          title={`Connect ${displayName} for your sessions`}
-          action={
-            <Button
-              size="lg"
-              className="h-11 shrink-0 gap-2 px-5 font-semibold"
-              onClick={onSetCredential}
-              disabled={strategyUpdating}
-            >
-              <KeyIcon className="size-4 shrink-0" />
-              Set or replace my credential
-            </Button>
-          }
-        >
-          Your credential is private to your account. Only your private sessions can use this
-          connector authorization.
-        </InfoBanner>
-      ) : null}
-
-      {showState ? (
-        <ConnectorStatePanel
-          connector={connector}
-          displayName={displayName}
-          connected={connected}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Where the connector stands, read off its own record — no invented copy, and
- * no claim the record cannot support.
- *
- * `connected` only means something under project authorization (it is
- * `authorizationStrategy === 'project' && secretSet`). A user-strategy
- * connector has one credential per person, none of which this record knows
- * about, so it must never be reported here as "not connected" — that account
- * list is the Accounts rung's job.
- */
-function ConnectorStatePanel({
-  connector,
-  displayName,
-  connected,
-}: {
-  connector: AdminConnector;
-  displayName: string;
-  connected: boolean;
-}) {
-  const toolCount = connector.actions.length;
-  const isChannel = connector.provider === 'channel';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-
-  // A channel's install state lives in the platform installation, not on this
-  // record, so state the kind and defer the state to the rung that knows it.
-  const headline = isChannel
-    ? `${displayName} is a channel your agent talks through.`
-    : !connector.authSecret
-      ? 'No credential is needed.'
-      : usesProjectAuthorization
-        ? connected
-          ? 'Connected.'
-          : 'Not connected yet.'
-        : 'Each person connects their own account.';
-
-  const detail = isChannel
-    ? 'Its connection, and what the agent may send through it, are managed under Accounts.'
-    : usesProjectAuthorization
-      ? 'Sessions in this project run on one shared account.'
-      : 'A session runs on the account of whoever started it, and only their private sessions can use it.';
-
-  return (
-    <section className="space-y-2">
-      <Label>Status</Label>
-      <div className="bg-popover space-y-1.5 rounded-md border px-4 py-5">
-        <p className="text-foreground text-sm font-medium">{headline}</p>
-        <p className="text-muted-foreground text-sm text-pretty">{detail}</p>
-        <p className="text-muted-foreground text-sm">
-          {toolCount > 0
-            ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'} available to the agent.`
-            : 'No tools have been synchronized for this connector yet.'}
-        </p>
-      </div>
-    </section>
   );
 }
 
