@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -47,7 +47,27 @@ describe('Executor MCP attachment_files', () => {
     await writeFile(secret, 'do-not-send');
     await symlink(secret, link);
 
-    await expect(encodeAttachmentFiles([{ path: link }], { workspaceRoot: root })).rejects.toThrow('must be inside /workspace/{output,artifacts,reports,deliverables}');
+    await expect(encodeAttachmentFiles([{ path: link }], { workspaceRoot: root })).rejects.toThrow(
+      'must not be a symbolic link',
+    );
+  });
+
+  test('rejects a path that changes after the file descriptor is opened', async () => {
+    const root = await fixture();
+    const report = join(root, 'output', 'report.txt');
+    const secret = join(root, 'secret.txt');
+    await writeFile(report, 'safe-report');
+    await writeFile(secret, 'do-not-send');
+
+    await expect(
+      encodeAttachmentFiles([{ path: report }], {
+        workspaceRoot: root,
+        afterOpen: async () => {
+          await rm(report);
+          await symlink(secret, report);
+        },
+      }),
+    ).rejects.toThrow('must be inside /workspace/{output,artifacts,reports,deliverables}');
   });
 
   test('rejects aggregate payloads over the local safety limit', async () => {

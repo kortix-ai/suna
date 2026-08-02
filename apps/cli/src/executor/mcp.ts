@@ -20,7 +20,8 @@
  * skips the host/update notices for `executor`, so this stays clean.
  */
 import type { ExecutorClient } from '@kortix/executor-sdk';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   addConnector,
@@ -114,7 +115,11 @@ function localAttachment(value: unknown, index: number): LocalAttachmentFile {
 
 export async function encodeAttachmentFiles(
   value: unknown,
-  options: { workspaceRoot?: string; maxBytes?: number } = {},
+  options: {
+    workspaceRoot?: string;
+    maxBytes?: number;
+    afterOpen?: (path: string, index: number) => Promise<void>;
+  } = {},
 ): Promise<EncodedAttachment[]> {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('attachment_files must be a non-empty array');
@@ -136,35 +141,49 @@ export async function encodeAttachmentFiles(
     if (!isAbsolute(item.path)) {
       throw new Error(`attachment_files[${index}].path must be absolute`);
     }
-    const path = await realpath(item.path);
-    if (!allowedRoots.some((root) => isWithinRoot(path, root))) {
-      throw new Error(
-        `attachment_files[${index}].path must be inside /workspace/{${DEFAULT_ATTACHMENT_ROOTS.join(',')}}`,
-      );
-    }
-    const details = await stat(path);
-    if (!details.isFile()) throw new Error(`attachment_files[${index}].path is not a file`);
-    totalBytes += details.size;
-    if (totalBytes > maxBytes) {
-      throw new Error(
-        `attachment_files exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MiB aggregate limit`,
-      );
-    }
-
-    const filename = item.filename || basename(path);
-    if (!filename || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\')) {
-      throw new Error(`attachment_files[${index}].filename must be a plain filename`);
-    }
-    const contentType =
-      item.content_type || ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] || 'application/octet-stream';
-    const content = (await readFile(path)).toString('base64');
-    encoded.push({
-      filename,
-      content_type: contentType,
-      content_disposition: item.content_disposition ?? 'attachment',
-      ...(item.content_id ? { content_id: item.content_id } : {}),
-      content,
+    const file = await open(item.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
+      if (asRecord(error).code === 'ELOOP') {
+        throw new Error(`attachment_files[${index}].path must not be a symbolic link`);
+      }
+      throw error;
     });
+    try {
+      await options.afterOpen?.(item.path, index);
+      const path = await realpath(item.path);
+      if (!allowedRoots.some((root) => isWithinRoot(path, root))) {
+        throw new Error(
+          `attachment_files[${index}].path must be inside /workspace/{${DEFAULT_ATTACHMENT_ROOTS.join(',')}}`,
+        );
+      }
+      const [details, pathDetails] = await Promise.all([file.stat(), stat(path)]);
+      if (!details.isFile()) throw new Error(`attachment_files[${index}].path is not a file`);
+      if (details.dev !== pathDetails.dev || details.ino !== pathDetails.ino) {
+        throw new Error(`attachment_files[${index}].path changed while it was being opened`);
+      }
+      totalBytes += details.size;
+      if (totalBytes > maxBytes) {
+        throw new Error(
+          `attachment_files exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MiB aggregate limit`,
+        );
+      }
+
+      const filename = item.filename || basename(path);
+      if (!filename || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\')) {
+        throw new Error(`attachment_files[${index}].filename must be a plain filename`);
+      }
+      const contentType =
+        item.content_type || ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] || 'application/octet-stream';
+      const content = (await file.readFile()).toString('base64');
+      encoded.push({
+        filename,
+        content_type: contentType,
+        content_disposition: item.content_disposition ?? 'attachment',
+        ...(item.content_id ? { content_id: item.content_id } : {}),
+        content,
+      });
+    } finally {
+      await file.close();
+    }
   }
   return encoded;
 }
