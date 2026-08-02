@@ -6,10 +6,9 @@ name: Deploy Preview (PR)
 #
 #   build-api  → builds kortix/kortix-api:pr-<head-sha> (FULL head SHA — matches
 #                the Argo CD ApplicationSet PullRequest generator's {{.head_sha}},
-#                which deploys it into an ephemeral kortix-pr-<number> namespace
-#                on dev-eks at pr-<number>.preview-api.kortix.com). amd64-only:
-#                dev-eks nodes are x86 (m6i). Internal-branch PRs only (needs
-#                Docker Hub secrets, unavailable to forks).
+#                which deploys it into an ephemeral kortix-pr-<number> namespace).
+#                amd64-only. Internal-branch PRs only (needs Docker Hub secrets,
+#                unavailable to forks).
 #   wire        → points the PR's Vercel preview frontend at its OWN backend
 #                (KORTIX_PUBLIC_BACKEND_URL / NEXT_PUBLIC_BACKEND_URL =
 #                https://pr-<n>.preview-api.kortix.com/v1) via branch-scoped

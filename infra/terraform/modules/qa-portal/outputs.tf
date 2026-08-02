@@ -8,7 +8,7 @@ output "bucket_arn" {
 }
 
 output "role_arn" {
-  description = "IRSA role ARN — put on the portal ServiceAccount's eks.amazonaws.com/role-arn annotation (envs/qa/values.yaml serviceAccount.roleArn)."
+  description = "IRSA role ARN — put on the portal ServiceAccount's role-arn annotation."
   value       = aws_iam_role.portal.arn
 }
 
