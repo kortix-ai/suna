@@ -19,14 +19,26 @@ export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
-/** The latest user-visible activity for a session. Reused scheduled sessions
- *  keep their original `created_at`, while `updated_at` advances on each run. */
+/** The latest conversation activity for a session.
+ *
+ * `project_sessions.updated_at` is bookkeeping. Runtime stop/resume, title
+ * sync, branch telemetry, and mapping repairs all advance it without a user or
+ * agent turn. OpenCode's scoped session snapshot records conversation activity,
+ * so it is the only safe source for a "last activity" label. A session without
+ * a snapshot falls back to creation time rather than inventing activity. */
 export function sessionLastActivityAt(session: ProjectSession): string {
-  return session.updated_at || session.created_at;
+  let latestActivityMs: number | null = null;
+  for (const openCodeSession of session.opencode_sessions ?? []) {
+    const activityMs = openCodeSession.updated_at;
+    if (typeof activityMs !== 'number' || !Number.isFinite(activityMs)) continue;
+    const parsed = new Date(activityMs).getTime();
+    if (!Number.isFinite(parsed)) continue;
+    latestActivityMs = latestActivityMs === null ? parsed : Math.max(latestActivityMs, parsed);
+  }
+  return latestActivityMs === null ? session.created_at : new Date(latestActivityMs).toISOString();
 }
 
-/** Newest-first sort by last activity. This keeps reused scheduled sessions
- *  visible when a new trigger run updates an older session. */
+/** Newest-first sort by conversation activity. */
 export function sortSessionsByLastActivity(sessions: ProjectSession[]): ProjectSession[] {
   return sessions.slice().sort((a, b) => {
     const parsedA = new Date(sessionLastActivityAt(a)).getTime();
