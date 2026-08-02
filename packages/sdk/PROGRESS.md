@@ -5357,3 +5357,24 @@ SDK gates:
 
 **Repository delivery shippable to production: NOT YET.**
 The PR, merge, Deploy Dev, and Essentia verification remain.
+
+---
+
+### 2026-08-03 — session `session-title-source-of-truth` claim
+
+No **Now** task claimed. This is a narrow cross-host session-title bug fix.
+
+Scope:
+
+- Treat Veyris's historical `New agent` name as a Kortix placeholder.
+- Keep the SDK title-refresh loop active until Kortix replaces that placeholder.
+- Preserve all published names and signatures.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
