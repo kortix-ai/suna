@@ -3823,6 +3823,7 @@ export function SessionChat({
         });
       },
       onSuccess: () => {
+        if (!projectId || !projectSessionId) return;
         void updateProjectSession(projectId, projectSessionId, {
           metadata: { pending_prompt: null },
         }).catch((error) => {
