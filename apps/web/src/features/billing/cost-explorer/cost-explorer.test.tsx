@@ -360,11 +360,25 @@ describe('useExplorerClockAnchor (rendered)', () => {
  * Render with `from`, swap to `to` during render, return the hook's value per
  * pass.
  *
- * Guards its own vacuity. Every caller's assertion is over `seen`, and
- * `seen.every(...)` is trivially true at length 1 — so a call that produced a
- * single pass would pass its test while proving nothing. Asserted here rather
- * than in each test so it cannot be forgotten when one is added; `from === to`
- * is the way to reach it, since that schedules no second pass.
+ * Guards its own vacuity: every caller asserts over `seen`, and
+ * `seen.every(...)` is trivially true at length 1, so a single-pass render
+ * would pass its test while proving nothing.
+ *
+ * That guard is defence-in-depth for a future refactor of THIS helper, not a
+ * live check — as written, no input can reach it, and both obvious routes to
+ * it are closed for different reasons (both measured):
+ *
+ *  - `from === to` does not produce one pass. `search === from` then stays true
+ *    forever, so the parent schedules render-phase updates without end and
+ *    `renderToStaticMarkup` throws `Too many re-renders` on the line above,
+ *    before the guard is reached.
+ *  - Removing the swap entirely still gives `seen.length === 2`, because
+ *    `useExplorerClockAnchor` is itself what drives the second pass: `held`
+ *    starts `null`, so mounting always fires `setHeld` and React re-invokes the
+ *    parent regardless of what this helper does.
+ *
+ * So the guard earns its place only if the hook ever stops adjusting state on
+ * mount, which is exactly the change that would quietly hollow these tests out.
  *
  * The single mount is the point: a lazy-initializer probe in this parent counts
  * ONE invocation, so the URL swap really does drive one mount across a
@@ -539,6 +553,33 @@ describe('buildBreadcrumbCrumbs', () => {
     expect(crumbs[1]!.label).toBe('project-w');
   });
 });
+
+// ── How to re-verify this file: mutate, and demand a NAMED failure ─────────
+//
+// Nearly every test below was written against a specific mutation, and several
+// earlier versions of them passed against the very defect they advertised. So
+// the check that matters is not "the suite is green" — it is "this mutation
+// produces a named failing test". A mutation that leaves the suite green is a
+// contradiction, and the counts alone will not tell you: two of the holes found
+// in review were tests that passed while their sibling did all the work.
+//
+// The loop, for each mutation: confirm the baseline is 0 fail, apply the
+// mutation, run, record WHICH tests failed by name, then revert and `diff` to
+// confirm byte-identical. Treat zero failures as a finding about this file, not
+// about the mutation.
+//
+// The mutations that currently have teeth, with the test that catches each:
+//
+//   parseExplorerState re-reads the clock      -> 'a later now does move the window'
+//   nextClockAnchor early return deleted       -> 'returns the SAME object for the same key'
+//   explorerClockKey returns params.toString() -> 'a drill-down does not change the key'
+//   the hook bypasses explorerClockKey         -> 'drilling into a project keeps the very same instant'
+//   the hook stops holding (body gutted)       -> 'two parent passes, one child render'
+//   any level re-resolves its own window       -> that level's 'custom range … verbatim'
+//
+// Note the last one has to be written to dodge the clock-read count to be a
+// fair test — e.g. `const C = Date; new C()` — or the count catches it for the
+// wrong reason and the window assertion is never exercised.
 
 // ── Request count: the explorer must settle, not loop ──────────────────────
 //
