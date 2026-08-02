@@ -26,7 +26,7 @@ describe('session navigation loading boundaries', () => {
   test('the project shell cannot be replaced by a route-wide sandbox fallback', () => {
     expect(projectLayoutSource).not.toContain('SandboxLoadingBoundary');
     expect(projectLayoutSource).toContain('<ProjectAccessBoundary projectId={projectId}>');
-    expect(projectLayoutSource).toContain('<SessionCacheWarmer projectId={projectId} />');
+    expect(projectLayoutSource).not.toContain('SessionCacheWarmer');
     expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
   });
 

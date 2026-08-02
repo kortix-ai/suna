@@ -10,12 +10,20 @@ import {
   shouldAutoResumeStoppedSandbox,
 } from './preview';
 
-// The data-path proxy may only wake a stopped box on ACTIVE user traffic to the
-// OpenCode daemon (port 8000, principal). Everything else must still 503 so we
-// never resurrect an idle-quiesced box on passive asset/preview traffic.
+// The data-path proxy may only wake a stopped box on explicit user intent.
+// Passive transcript reads must still 503 so cached inventory cannot resurrect
+// an idle-quiesced box.
 describe('shouldAutoResumeStoppedSandbox', () => {
-  test('stopped + daemon port 8000 + principal → resume', () => {
-    expect(shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal')).toBe(true);
+  test('a passive principal OpenCode read never resumes a stopped sandbox', () => {
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { method: 'GET' }),
+    ).toBe(false);
+  });
+
+  test('an explicit principal OpenCode mutation resumes a stopped sandbox', () => {
+    expect(
+      shouldAutoResumeStoppedSandbox('stopped', 8000, 'principal', { method: 'POST' }),
+    ).toBe(true);
   });
 
   test('a non-daemon port never resumes on passive (asset / XHR) traffic', () => {
