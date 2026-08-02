@@ -30,20 +30,31 @@ export const GRID_CLASSNAME = 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3';
 
 /**
  * Height of a real `CatalogCard`, sized to the common two-line-description
- * case so the loading skeleton and the settled card never reflow vertically:
+ * case so the loading skeleton and the settled card never reflow vertically.
  *
- *   py-3.5                                                    = 28px (14 + 14)
+ * Measured against the running app's compiled stylesheet: **83.42px** for a
+ * two-line description. The math below reproduces that to within a
+ * sub-pixel-rounding fraction — it must use this repo's actual spacing
+ * token, `--spacing: 0.23rem` (`globals.css:670`), not Tailwind's framework
+ * default of `0.25rem`, and it must count the button's own 1px top + 1px
+ * bottom border, which is easy to forget because it isn't a `padding` line:
+ *
+ *   border (button, 1px top + 1px bottom)                       =  2.00px
+ * + py-3.5 (2 x 3.5 x 0.23rem x 16px/rem)                        = 25.76px
  * + max(
- *     leading tile (size-9)                                   = 36px,
- *     title row (text-sm, 20px line-height)
- *       + space-y-1 gap                                       =  4px
- *       + two clamped description lines (text-xs, 16px each)  = 32px
- *                                                         total = 56px,
+ *     leading tile (size-9 = 9 x 0.23rem x 16px/rem)             = 33.12px,
+ *     title row (text-sm line-height, 20px)
+ *       + space-y-1 gap (1 x 0.23rem x 16px/rem)                 =  3.68px
+ *       + two clamped description lines (text-xs, 16px each)     = 32.00px
+ *                                                           total = 55.68px,
  *   )
- * = 28 + 56 = 84px
+ * = 2.00 + 25.76 + 55.68 = 83.44px  (measured: 83.42px; the ~0.02px gap is
+ *   the browser's own sub-pixel layout rounding, not an error in this math)
  *
- * Exported and reused by `capabilities-skeleton.tsx` (see its doc comment)
- * so the two heights cannot drift apart the way the grid breakpoint once did.
+ * Rounded up to 84px so the skeleton is never a hair shorter than the real
+ * card. Exported and reused by `capabilities-skeleton.tsx` (see its doc
+ * comment) so the two heights cannot drift apart the way the grid breakpoint
+ * once did.
  */
 export const CATALOG_CARD_HEIGHT_CLASSNAME = 'h-[84px]';
 

@@ -65,7 +65,12 @@ export function CatalogCard({
           {badges}
         </span>
         {description ? (
-          <span className="text-muted-foreground line-clamp-2 block text-xs text-pretty">
+          // No `block` here: `-webkit-box` (set by `line-clamp-2`) is already
+          // block-level, and Tailwind's compiled output always places `.block`
+          // after `.line-clamp-2` regardless of source order, so adding
+          // `block` back overrides the clamp's own display value and the
+          // clamp silently stops working. See catalog-card-description.test.ts.
+          <span className="text-muted-foreground line-clamp-2 text-xs text-pretty">
             {description}
           </span>
         ) : null}
