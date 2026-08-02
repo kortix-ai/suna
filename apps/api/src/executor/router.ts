@@ -585,6 +585,9 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
 
   const attachmentResponse = async (c: Context, p: ExecutorPrincipal) => {
     if (!deps.attachmentStore) return featureNotSupportedResponse(c, 'executor_attachments');
+    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias('kortix_email'))) {
+      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    }
     let metadata: Omit<StageExecutorAttachmentInput, 'bytes'>;
     try {
       metadata = attachmentMetadata(c);
@@ -663,6 +666,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
         400: json(OpaqueSchema, 'Invalid attachment metadata or empty body'),
         401: json(OpaqueSchema, 'Unauthorized'),
+        403: json(OpaqueSchema, 'Denied'),
         413: json(OpaqueSchema, 'Attachment exceeds the size limit'),
         500: json(OpaqueSchema, 'Attachment storage failure'),
         501: json(OpaqueSchema, 'Attachment staging is unavailable'),
