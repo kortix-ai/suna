@@ -1861,10 +1861,6 @@ export function SessionChat({
         });
       },
       onSuccess: () => {
-        // Both ids are optional on this component (a session can render
-        // outside the /projects/:id/sessions/:id route), and there is no
-        // pending prompt to clear when there is no project session — so the
-        // guard is the honest form of the call, not just a type appeasement.
         if (!projectId || !projectSessionId) return;
         void updateProjectSession(projectId, projectSessionId, {
           metadata: { pending_prompt: null },

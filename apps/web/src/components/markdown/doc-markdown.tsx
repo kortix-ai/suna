@@ -179,11 +179,37 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
           <tbody className="divide-border divide-y">{children}</tbody>
         ),
         tr: ({ children }: { children?: React.ReactNode }) => <tr>{children}</tr>,
-        th: ({ children }: { children?: React.ReactNode }) => (
-          <th className="text-foreground px-4 py-2 text-left font-semibold">{children}</th>
+        // cn() is twMerge: the last same-group class wins. Static classes go
+        // last here so an incoming className can't strip whitespace-nowrap/break-normal.
+        th: ({
+          children,
+          className: thClassName,
+          node: _node,
+          ...props
+        }: React.ThHTMLAttributes<HTMLTableCellElement> & { node?: unknown }) => (
+          <th
+            className={cn(
+              thClassName,
+              'text-foreground px-4 py-2 text-left font-semibold break-normal whitespace-nowrap',
+            )}
+            {...props}
+          >
+            {children}
+          </th>
         ),
-        td: ({ children }: { children?: React.ReactNode }) => (
-          <td className="text-foreground px-4 py-2 text-left font-normal">
+        td: ({
+          children,
+          className: tdClassName,
+          node: _node,
+          ...props
+        }: React.TdHTMLAttributes<HTMLTableCellElement> & { node?: unknown }) => (
+          <td
+            className={cn(
+              tdClassName,
+              'text-foreground px-4 py-2 text-left font-normal break-normal',
+            )}
+            {...props}
+          >
             {wrapChildrenWithPaths(children)}
           </td>
         ),

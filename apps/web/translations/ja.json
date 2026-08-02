@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "アクセスをリクエストしてください。",
+      "privateBody": "このプロジェクトを開けるのはメンバーだけです。メッセージを送ると、プロジェクトマネージャーがあなたを追加できます。",
+      "waitingHeading": "承認をお待ちください。",
+      "sentBody": "リクエストはプロジェクトマネージャーに届いています。いずれかのマネージャーが承認すると、このページは自動的に開きます。",
+      "alreadyBody": "以前にアクセスをリクエスト済みです。プロジェクトマネージャーの承認がまだ必要です。",
+      "notFoundHeading": "このプロジェクトはありません。",
+      "notFoundBody": "リンクが間違っているか、誰かがこのプロジェクトを削除した可能性があります。",
+      "errorHeading": "プロジェクトを読み込めませんでした。",
+      "errorBody": "アクセスを確認する前にリクエストが失敗しました。",
+      "noteLabel": "プロジェクトマネージャーへのメッセージ",
+      "notePlaceholder": "アクセスが必要な理由（任意）",
+      "requestAction": "アクセスをリクエスト",
+      "checkNowAction": "今すぐ確認",
+      "tryAgainAction": "再試行",
+      "projectsAction": "プロジェクト一覧に戻る",
+      "accountLabel": "アカウント",
+      "projectLabel": "プロジェクト",
+      "approvalNote": "このプロジェクトを管理している人なら誰でも、あなたのリクエストを承認できます。",
+      "openAsAdmin": "管理者として開く",
+      "requestFailed": "リクエストを送信できませんでした。",
+      "bypassFailed": "管理者バイパスに失敗しました。",
+      "thisAccount": "このアカウント"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "モバイル版Kortix",
       "line89JsxTextYourAiWorkerInYourPocket": "あなたのAIワーカーを、ポケットに。",

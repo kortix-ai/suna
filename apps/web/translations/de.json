@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Bitten Sie um Zugriff.",
+      "privateBody": "Nur Mitglieder können dieses Projekt öffnen. Senden Sie eine Nachricht, dann kann ein Projektmanager Sie hinzufügen.",
+      "waitingHeading": "Warten auf Genehmigung.",
+      "sentBody": "Ihre Anfrage liegt bei den Projektmanagern. Sobald einer von ihnen sie genehmigt, öffnet sich diese Seite von selbst.",
+      "alreadyBody": "Sie haben den Zugriff bereits angefragt. Ein Projektmanager muss ihn noch genehmigen.",
+      "notFoundHeading": "Dieses Projekt ist weg.",
+      "notFoundBody": "Der Link ist möglicherweise falsch, oder jemand hat das Projekt gelöscht.",
+      "errorHeading": "Dieses Projekt wurde nicht geladen.",
+      "errorBody": "Die Anfrage ist fehlgeschlagen, bevor wir Ihren Zugriff prüfen konnten.",
+      "noteLabel": "Nachricht an den Projektmanager",
+      "notePlaceholder": "Warum Sie Zugriff benötigen (optional)",
+      "requestAction": "Zugriff anfordern",
+      "checkNowAction": "Jetzt prüfen",
+      "tryAgainAction": "Erneut versuchen",
+      "projectsAction": "Zurück zu den Projekten",
+      "accountLabel": "Konto",
+      "projectLabel": "Projekt",
+      "approvalNote": "Jeder, der dieses Projekt verwaltet, kann Ihre Anfrage genehmigen.",
+      "openAsAdmin": "Als Admin öffnen",
+      "requestFailed": "Die Anfrage konnte nicht gesendet werden.",
+      "bypassFailed": "Admin-Bypass fehlgeschlagen.",
+      "thisAccount": "dieses Konto"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix für Mobilgeräte",
       "line89JsxTextYourAiWorkerInYourPocket": "Dein KI-Worker für die Hosentasche.",
