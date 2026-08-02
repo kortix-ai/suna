@@ -2320,6 +2320,114 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   return true;
 }
 
+// Supabase gotrue `TOKEN_EXPIRED` auth-session rejection noise — a Supabase
+// auth session JWT expired mid-flight (during a page load after a Google OAuth
+// redirect, or during a stale session transition), and a fire-and-forget
+// `.then()` on a Supabase auth call (e.g. `supabase.auth.getUser()` or session
+// refresh) rejected with the plain gotrue error object
+// `{ code: 400, message: "TOKEN_EXPIRED", status: "INVALID_ARGUMENT" }`.
+// Because the rejected value is a plain object (NOT an Error), Sentry's
+// GlobalHandlers `onunhandledrejection` integration cannot extract a stack from
+// it: it serializes the object's own enumerable keys into `extra.__serialized__`
+// and sets the exception value to the synthetic
+// "Object captured as promise rejection with keys: code, message, status" with
+// NO stacktrace frames. Better Stack pattern
+// 63b0cde714048bca4c42129afacd5f8ec56813e0e663fbdb41265fdba6ed28a4
+// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`, 2
+// occurrences, 0 identified users (anonymous), first 2026-08-01 13:22:03 UTC,
+// last 2026-08-01 13:22:27 UTC, mechanisms
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary), `synthetic:true`, releases
+// `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
+// `https://kortix.com/auth` (first occurrence) and
+// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
+// 151.0.0.0 on Windows. Breadcrumbs: `https://supa.kortix.com/auth/v1/user`
+// (Supabase gotrue), `/_vercel/insights/view`, google-analytics,
+// `/api/maintenance`, cookieyes — marketing/analytics + the Supabase user fetch.
+// The `__serialized__` extra is `{"code":400,"message":"TOKEN_EXPIRED","status":"INVALID_ARGUMENT"}`.
+// Stack trace: NONE — `call_site_file`/`call_site_function` are null,
+// `call_stack_hash` is null, no frames at all.
+//
+// DISTINCT from the EIP-1193 wallet-extension plain-object rejection class
+// (`isExtensionRejectedObjectNoise`, PR #4720, Better Stack `0f78b2f8…`):
+// that one rejects with `{ code, message, stack }` (keys include `stack` with
+// an extension content-script origin) and the message is "Object captured as
+// promise rejection with keys: code, message, stack". THIS class rejects with
+// `{ code, message, status }` (keys include `status` instead of `stack`) and
+// the message is "Object captured as promise rejection with keys: code, message,
+// status". The two matchers are disjoint because the wallet-extension matcher
+// requires a serialized `stack` with an extension-origin protocol prefix, which
+// this event lacks (no `stack` key in `__serialized__`). The wallet-extension
+// matcher's `SYNTHETIC_OBJECT_REJECTION_PATTERN` is a prefix match
+// (`/^Object captured as promise rejection with keys:/`) that would match BOTH
+// messages, but the extension-origin stack check rejects this event (there is
+// no `stack` key), so the wallet-extension matcher returns false for this class.
+//
+// The synthetic "Object captured as promise rejection with keys: code, message,
+// status" message is Sentry's generic signature for ANY non-Error plain-object
+// rejection whose enumerable keys are `code`, `message`, `status`. A real
+// first-party `Promise.reject({ code: 400, message: "TOKEN_EXPIRED", status:
+// "INVALID_ARGUMENT" })` would produce the SAME signature — so matching on the
+// message alone would swallow a real app bug. Require BOTH the exact message
+// (with the specific `code, message, status` key set) AND a NEGATIVE guard: if
+// the event has ANY resolved stack frame OR a resolved first-party
+// `apps/web/src/…` frame, keep reporting (a real first-party
+// `Promise.reject({ code, message, status })` we can attribute should still
+// surface). The production noise pattern has NO frames at all; only the
+// frameless capture is dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// plain-object rejection the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate.
+const SUPABASE_TOKEN_EXPIRED_REJECTION_PATTERN =
+  /^Object captured as promise rejection with keys: code, message, status$/;
+
+/**
+ * Whether a Sentry event is the Supabase gotrue `TOKEN_EXPIRED` auth-session
+ * rejection noise class: a Supabase auth session JWT expired mid-flight (during
+ * a page load after a Google OAuth redirect, or during a stale session
+ * transition), and a fire-and-forget `.then()` on a Supabase auth call rejected
+ * with the plain gotrue error object `{ code: 400, message: "TOKEN_EXPIRED",
+ * status: "INVALID_ARGUMENT" }`. Sentry's GlobalHandlers
+ * `onunhandledrejection` integration serializes the plain object's enumerable
+ * keys into `extra.__serialized__` and sets the exception value to the
+ * synthetic "Object captured as promise rejection with keys: code, message,
+ * status" with NO stacktrace frames. Requires the EXACT message (with the
+ * specific `code, message, status` key set — distinct from the wallet-extension
+ * `code, message, stack` key set matched by `isExtensionRejectedObjectNoise`)
+ * AND a NEGATIVE guard: if any frame resolves to a de-minified first-party
+ * `apps/web/src/…` source path OR any resolvable frame location at all, the
+ * event keeps reporting (a real first-party `Promise.reject({ code, message,
+ * status })` we can attribute should still surface). The production noise
+ * pattern has NO frames at all; only the frameless capture is dropped. See
+ * `SUPABASE_TOKEN_EXPIRED_REJECTION_PATTERN` for the full rationale.
+ */
+export function isSupabaseTokenExpiredNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!SUPABASE_TOKEN_EXPIRED_REJECTION_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code rejected a promise with a `{ code, message, status }` object →
+  // actionable; keep reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 // Transient WebSocket / Server-Sent-Events (SSE) transport-close noise.
 // `Connection closed.` is the CANONICAL transport-close message a client-side
 // WebSocket/SSE library throws when the server closes the connection — a deploy
@@ -3309,6 +3417,28 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
+    return true;
+  }
+
+  // Supabase gotrue `TOKEN_EXPIRED` auth-session rejection noise — a Supabase
+  // auth session JWT expired mid-flight (during a page load after a Google
+  // OAuth redirect, or during a stale session transition), and a fire-and-
+  // forget `.then()` on a Supabase auth call rejected with the plain gotrue
+  // error object `{ code: 400, message: "TOKEN_EXPIRED", status:
+  // "INVALID_ARGUMENT" }`. Sentry's GlobalHandlers `onunhandledrejection`
+  // integration serializes the plain object's enumerable keys into
+  // `extra.__serialized__` and sets the exception value to the synthetic
+  // "Object captured as promise rejection with keys: code, message, status"
+  // with NO stacktrace frames. Requires the EXACT message (with the specific
+  // `code, message, status` key set — distinct from the wallet-extension
+  // `code, message, stack` key set matched by `isExtensionRejectedObjectNoise`)
+  // AND NEGATIVE guards: any resolved first-party `apps/web/src/…` frame OR
+  // any resolvable frame location → keep reporting (a real first-party
+  // `Promise.reject({ code, message, status })` we can attribute should still
+  // surface). The production noise pattern has NO frames at all; only the
+  // frameless capture is dropped. See `isSupabaseTokenExpiredNoise`. NOT in
+  // `ignoreErrors` (no frame context there).
+  if (isSupabaseTokenExpiredNoise({ message, frames })) {
     return true;
   }
 
