@@ -1,6 +1,5 @@
 'use client';
 
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -11,6 +10,7 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -73,16 +73,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         className="overflow-hidden p-0"
       >
         {content ? (
-          // <div className="bg-card">
-          //   <BetterCodeBlock
-          //     code={content}
-          //     language={ext}
-          //     showBackgroundColors={false}
-          //     border={false}
-          //     className="p-0"
-          //   />
-          // </div>
-          null
+          <ToolCodeCard code={content} language={ext} />
         ) : parsed?.type === 'directory' && parsed.entries && parsed.entries.length > 0 ? (
           <div data-scrollable className="max-h-96 space-y-0.5 overflow-auto px-3 py-2">
             {parsed.entries.map((entry, i) => {

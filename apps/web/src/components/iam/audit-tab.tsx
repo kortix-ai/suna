@@ -10,9 +10,9 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
+import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -1009,14 +1009,16 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
           JSON
         </Badge>
       </div>
-      <BetterCodeBlock
-        code={code}
-        language="json"
-        showBackgroundColors={false}
-        border={false}
-        padding="p-3 [&>pre]:p-3"
-        className="max-h-64 rounded-none font-mono text-xs leading-relaxed"
-      />
+      <CopyOverlay code={code}>
+        {/* The capped scroller sits inside the overlay so the copy button stays
+            pinned while the JSON scrolls. `HighlightedCode` hardcodes
+            `text-sm leading-[1.65]` on its own `<code>`; a `[&_code]:` selector
+            is one specificity step above that class, so this pane's smaller type
+            wins without `!important`. */}
+        <div className="max-h-64 overflow-auto p-3 [&_code]:text-xs [&_code]:leading-relaxed">
+          <HighlightedCode code={code} language="json" />
+        </div>
+      </CopyOverlay>
     </div>
   );
 }

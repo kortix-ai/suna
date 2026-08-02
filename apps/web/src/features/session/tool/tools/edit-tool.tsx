@@ -1,6 +1,5 @@
 'use client';
 
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -13,11 +12,14 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  TOOL_INDENT,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
@@ -83,20 +85,16 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
         </div>
       ) : codeEdit ? (
-        <div className="bg-card">
+        <>
+          {/* Morph's instructions describe the edit the card below carries, so
+              they share its indent rather than sitting flush with the row. */}
           {morphInstructions && (
-            <div className="text-muted-foreground px-3 pt-2 text-xs italic">
+            <div className={cn('text-muted-foreground mt-1.5 text-xs italic', TOOL_INDENT)}>
               {morphInstructions}
             </div>
           )}
-          <BetterCodeBlock
-            code={codeEdit}
-            language={ext}
-            showBackgroundColors={false}
-            border={false}
-            className="p-0"
-          />
-        </div>
+          <ToolCodeCard code={codeEdit} language={ext} />
+        </>
       ) : isStalePending ? (
         <div className="p-4 pt-0">
           <TextShimmer>

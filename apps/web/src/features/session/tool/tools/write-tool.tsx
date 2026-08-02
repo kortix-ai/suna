@@ -1,7 +1,6 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -13,6 +12,7 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
@@ -62,15 +62,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {isError ? (
         <ToolOutputFallback output={output} toolName="write" />
       ) : content ? (
-        <div className="bg-card">
-          <BetterCodeBlock
-            code={content}
-            language={ext}
-            showBackgroundColors={false}
-            border={false}
-            className="p-0"
-          />
-        </div>
+        <ToolCodeCard code={content} language={ext} />
       ) : isStalePending ? (
         <div className="p-4 pt-0">
           <TextShimmer>

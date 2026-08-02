@@ -27,11 +27,12 @@
  */
 
 import { TextWithPaths } from '@/components/common/clickable-path';
+import { CodeHighlight } from '@/components/markdown/code';
 import {
   MarkdownFrontmatterCard,
   parseFrontmatter,
 } from '@/components/markdown/markdown-frontmatter';
-import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';

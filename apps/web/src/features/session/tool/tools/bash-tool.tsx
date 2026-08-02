@@ -1,6 +1,6 @@
 'use client';
 
-import { HighlightedCode } from '@/components/markdown/unified-markdown';
+import { HighlightedCode } from '@/components/markdown/code';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -10,10 +10,12 @@ import {
   partStatus,
   partStreamingInput,
   StructuredOutput,
+  TOOL_INDENT,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { cn } from '@/lib/utils';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -174,10 +176,12 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       forceOpen={forceOpen}
       locked={locked}
     >
-      {/* 28px = the trigger's icon column (`size-4`) plus its `gap-3`, so the
-			    block starts exactly where the command in the row above does. */}
+      {/* Shared with read / write / edit so all four code blocks line up: the
+			    trigger's icon column is `size-4` and TOOL_ROW_CLASS sets `gap-1.5`,
+			    which puts the text — and therefore this block — 22px in. The old
+			    `ml-7` here was computed against a `gap-3` the row class never had. */}
       {command && (
-        <div className="mt-1.5 ml-7">
+        <div className={cn('mt-1.5', TOOL_INDENT)}>
           <CommandBlock command={command} output={plainOutput} richOutput={richOutput} />
         </div>
       )}

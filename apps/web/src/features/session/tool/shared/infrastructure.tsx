@@ -1,8 +1,9 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
+import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
-import { HighlightedCode, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
@@ -1194,6 +1195,43 @@ export function BasicTool({
     <CollapsibleToolRow header={header} locked={locked} open={open} onOpenChange={handleOpenChange}>
       {children}
     </CollapsibleToolRow>
+  );
+}
+
+/**
+ * A file's contents inside an expanded tool row, in the same card `bash` draws
+ * around a command — so read / write / edit / bash all present code the one way.
+ *
+ * `TOOL_INDENT` lines the card up with the trigger's text, not its icon:
+ * {@link ToolHeaderRow} renders a `size-4` icon and {@link TOOL_ROW_CLASS} sets
+ * `gap-1.5`, so the text column starts 22px in. (`bash` used to hardcode `ml-7`
+ * against a `gap-3` that this row class does not have, which put its block 6px
+ * past the text above it.)
+ */
+export const TOOL_INDENT = 'ml-5.5';
+
+export function ToolCodeCard({
+  code,
+  language,
+  className,
+}: {
+  code: string;
+  language: string;
+  className?: string;
+}) {
+  if (!code) return null;
+  return (
+    <div className={cn('mt-1.5', TOOL_INDENT, className)}>
+      <div className="border-border bg-popover relative rounded-md border">
+        {/* The scroller sits INSIDE the overlay so the copy button stays pinned
+            to the card while long content scrolls under it. */}
+        <CopyOverlay code={code}>
+          <div data-scrollable className="max-h-96 overflow-auto p-3">
+            <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
   );
 }
 
