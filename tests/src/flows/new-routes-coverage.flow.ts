@@ -441,10 +441,9 @@ flow(
     });
 
     await ctx.step('unknown project blocks session scope reads and mutations', async () => {
-      const scopeRead = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/scope',
-        { params: sessionParams },
-      );
+      const scopeRead = await owner.get('/v1/projects/:projectId/sessions/:sessionId/scope', {
+        params: sessionParams,
+      });
       scopeRead.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
@@ -461,3 +460,67 @@ flow(
     });
   },
 );
+
+// COV-11 — exhaustive /v1/usage group_by enum + per-enum response shape +
+// timestamp-validation + empty-window. COV-9 covers `model` + invalid-group_by
+// + start>end, but not the OTHER two valid enums (provider, day), the distinct
+// breakdown-row shape each enum produces, malformed timestamps (≠ start>end),
+// or the empty-result-window invariant (a window with no usage_events must
+// still 200 with zeroed totals + empty breakdown, never 500/404).
+flow('COV-11', { domain: 'coverage', routes: ['GET /v1/usage'] }, async (ctx) => {
+  const owner = ctx.client.as(ctx.P.OWNER);
+
+  await ctx.step('group_by=provider → 200 with breakdown (provider-only shape)', async () => {
+    const r = await owner.get('/v1/usage', { query: { group_by: 'provider' } });
+    r.status(200).body().exists('$.data').exists('$.breakdown');
+    const breakdown = r.json<{ breakdown?: Array<Record<string, unknown>> }>().breakdown ?? [];
+    for (const row of breakdown) {
+      if ('day' in row) throw new Error('provider breakdown row leaked a `day` field');
+      if ('model' in row) throw new Error('provider breakdown row leaked a `model` field');
+    }
+  });
+  await ctx.step('group_by=day → 200 with breakdown (day-shaped rows)', async () => {
+    const r = await owner.get('/v1/usage', { query: { group_by: 'day' } });
+    r.status(200).body().exists('$.data').exists('$.breakdown');
+    const breakdown = r.json<{ breakdown?: Array<Record<string, unknown>> }>().breakdown ?? [];
+    for (const row of breakdown) {
+      if (typeof row.day !== 'string')
+        throw new Error(`day breakdown row missing string \`day\`: ${JSON.stringify(row)}`);
+      if ('model' in row) throw new Error('day breakdown row leaked a `model` field');
+      if ('provider' in row) throw new Error('day breakdown row leaked a `provider` field');
+    }
+  });
+  await ctx.step(
+    'group_by=model → 200 with model+provider rows (distinct from provider-only)',
+    async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'model' } });
+      r.status(200).body().exists('$.breakdown');
+      const breakdown = r.json<{ breakdown?: Array<Record<string, unknown>> }>().breakdown ?? [];
+      for (const row of breakdown) {
+        if ('day' in row) throw new Error('model breakdown row leaked a `day` field');
+        if (typeof row.model !== 'string')
+          throw new Error(`model breakdown row missing string \`model\`: ${JSON.stringify(row)}`);
+      }
+    },
+  );
+  await ctx.step('malformed start timestamp → 400 (not 500)', async () => {
+    const r = await owner.get('/v1/usage', { query: { start: 'not-a-date' } });
+    r.status(400);
+  });
+  await ctx.step('malformed end timestamp → 400 (not 500)', async () => {
+    const r = await owner.get('/v1/usage', { query: { end: '2026-13-99T99:99:99Z' } });
+    r.status(400);
+  });
+  await ctx.step('empty-result window → 200 zeroed totals + empty breakdown (no 500)', async () => {
+    const r = await owner.get('/v1/usage', {
+      query: { start: '2019-01-01T00:00:00Z', end: '2019-01-02T00:00:00Z', group_by: 'model' },
+    });
+    r.status(200);
+    const body = r.json<{ data: Record<string, number>; breakdown?: unknown[] }>();
+    if (body.data.count !== 0) throw new Error(`expected count 0, got ${body.data.count}`);
+    if (body.data.total_cost !== 0)
+      throw new Error(`expected total_cost 0, got ${body.data.total_cost}`);
+    if (!Array.isArray(body.breakdown) || body.breakdown.length !== 0)
+      throw new Error(`expected empty breakdown, got ${body.breakdown?.length}`);
+  });
+});
