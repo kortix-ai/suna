@@ -51,7 +51,11 @@ function unqualifiedSelectIdentifiers(record: QueryRecord): string[] {
     .map((rendered) => rendered.slice(1, -1));
 }
 
-// What one FROM item makes available to an unqualified reference.
+// Set by the `.as()` double on each subquery it returns, so a qualified reference
+// can be traced back to the FROM item it points at.
+const SUBQUERY_ALIAS = Symbol('subqueryAlias');
+
+// What one FROM item makes available to a reference.
 function exposedNames(item: unknown): string[] {
   // A real table exposes its columns under their SQL names. Derived through
   // getTableColumns, never hand-listed, so this cannot rot when a column is added
@@ -70,15 +74,18 @@ function exposedNames(item: unknown): string[] {
   });
 }
 
+// The recorded joins, which are what the outer FROM clause is built from.
+function joinCalls(record: QueryRecord): Array<{ method: string; args: unknown[] }> {
+  return record.calls.filter((call) => call.method === 'innerJoin' || call.method === 'leftJoin');
+}
+
 // How many times the outer FROM clause exposes each name. This is Postgres's own
-// resolution rule: an unqualified reference is matched against everything the FROM
+// resolution rule: an UNQUALIFIED reference is matched against everything the FROM
 // clause exposes, and two or more matches is ambiguous (42702) the moment anything
-// references it. Modelling the rule rather than its symptoms covers all four ways
+// references it. Modelling the rule rather than its symptoms covers all the ways
 // this feature has hit it — see the variant list on the test below.
 function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
-  const joined = record.calls
-    .filter((call) => call.method === 'innerJoin' || call.method === 'leftJoin')
-    .map((call) => call.args[0]);
+  const joined = joinCalls(record).map((call) => call.args[0]);
 
   const counts = new Map<string, number>();
   for (const item of [record.table, ...joined]) {
@@ -97,6 +104,45 @@ function outerFromExposureCounts(record: QueryRecord): Map<string, number> {
     }
   }
   return counts;
+}
+
+// Per joined subquery, how many times it exposes each name. A QUALIFIED reference
+// such as `"llm_agg"."session_id"` is resolved inside that one subquery, so it is
+// ambiguous when that subquery exposes the name twice — the qualifier narrows the
+// search to one FROM item, it does not disambiguate within it:
+//   select t.foo from (select 1 as foo, 2 as foo) t   -> 42702
+// Real tables are deliberately absent: a table cannot expose one column name
+// twice, so a qualified reference into a table is never ambiguous.
+function subqueryExposureCounts(record: QueryRecord): Map<string, Map<string, number>> {
+  const bySubquery = new Map<string, Map<string, number>>();
+  for (const call of joinCalls(record)) {
+    const item = call.args[0] as Record<PropertyKey, unknown> | null | undefined;
+    const alias = item?.[SUBQUERY_ALIAS];
+    if (typeof alias !== 'string') continue;
+    const counts = new Map<string, number>();
+    for (const name of exposedNames(item)) counts.set(name, (counts.get(name) ?? 0) + 1);
+    bySubquery.set(alias, counts);
+  }
+  return bySubquery;
+}
+
+// The qualified references each join's ON condition makes, as [qualifier, name].
+// A two-segment render (`"llm_agg"."session_id"`) points at a joined subquery; a
+// three-segment one (`"kortix"."project_sessions"."session_id"`) points at a table
+// and is dropped, since a table cannot expose a duplicate name.
+function joinConditionReferences(record: QueryRecord): Array<[string, string]> {
+  const dialect = new PgDialect();
+  const references: Array<[string, string]> = [];
+  for (const call of joinCalls(record)) {
+    const condition = call.args[1];
+    if (!condition) continue;
+    const rendered = dialect.sqlToQuery(condition as SQL).sql;
+    for (const match of rendered.matchAll(/"[^"]+"(?:\."[^"]+")+/g)) {
+      const segments = match[0].split('.').map((segment) => segment.replaceAll('"', ''));
+      if (segments.length === 2) references.push([segments[0], segments[1]]);
+    }
+  }
+  return references;
 }
 
 const SESSION_ID_TIEBREAK = '"kortix"."project_sessions"."session_id" asc';
@@ -135,17 +181,29 @@ function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
       return builder;
     };
   }
-  // Mirrors Drizzle's subquery terminator: `.as(alias)` ends the builder chain
-  // and yields an object still keyed by the JS field names the caller selected,
-  // each holding the SQL the outer query will render for it.
+  // Stands in for Drizzle's subquery terminator: `.as(alias)` ends the builder
+  // chain and yields an object still keyed by the JS field names the caller
+  // selected, each holding the SQL the outer query will render for it.
+  //
+  // It reproduces Drizzle's ACCESS shape — `llm.llmCost` renders what Drizzle
+  // renders — but not its ENUMERATION shape: a real Drizzle subquery keeps its
+  // fields behind a proxy, so `Object.values` on one does not yield them. The
+  // exposure checks below enumerate, and therefore only work against this double.
+  // They fail loudly rather than silently if that ever changes, because the
+  // self-consistency assertion would report every identifier as unresolved.
   builder.as = (alias: string) => {
     record.calls.push({ method: 'as', args: [alias] });
-    return Object.fromEntries(
+    const subquery = Object.fromEntries(
       Object.entries(record.fields).map(([key, field]) => [
         key,
         renderSubqueryField(alias, key, field),
       ]),
     );
+    // Non-enumerable, so it stays out of the Object.values() enumeration above.
+    // It lets the outer query resolve a qualified reference like
+    // `"llm_agg"."session_id"` back to the FROM item it points at.
+    Object.defineProperty(subquery, SUBQUERY_ALIAS, { value: alias });
+    return subquery;
   };
   // biome-ignore lint/suspicious/noThenProperty: The Drizzle query mock must be awaitable.
   builder.then = (resolve: (value: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
@@ -351,7 +409,17 @@ describe('listSessionCosts service', () => {
   // All four are one rule — a name the FROM clause exposes more than once — so
   // assert that rule rather than enumerating its symptoms. None of them are visible
   // to a row-shape assertion, because a double records SQL instead of executing it.
-  test('the joined session select never references an ambiguous unqualified name', async () => {
+  //
+  // Scope, stated because the rule above is general and this test is not: it checks
+  // the references this query actually makes, which are the outer select list's
+  // unqualified names and the join conditions' qualified ones. References that live
+  // anywhere else — ORDER BY, WHERE, a composed expression that never surfaces as a
+  // selected field — are not covered.
+  //
+  // (The rule itself has one exception nothing here can reach: USING and NATURAL
+  // joins merge the duplicated column instead of leaving it ambiguous. Drizzle only
+  // emits ON joins.)
+  test('the joined session query never makes an ambiguous column reference', async () => {
     resultForQuery = () => [];
     await listSessionCosts({
       accountId,
@@ -369,17 +437,16 @@ describe('listSessionCosts service', () => {
     // `> 0` check would still pass if 11 of them silently stopped rendering and
     // the checks below would then be guarding almost nothing.
     //
-    // If you added a subquery field and landed here: bump this to 13, then re-read
-    // the two assertions below and confirm your new alias is neither exposed by
-    // another FROM item nor missing from the exposure map. Adding a field is
-    // exactly when a new collision appears, which is why this routes you here.
+    // If you added a subquery field selected outward and landed here: bump this to
+    // 13, then re-read the assertions below and confirm your new alias is neither
+    // exposed by another FROM item nor missing from the exposure map. Adding a field
+    // is exactly when a new collision appears, which is why this routes you here.
     //
-    // One exception, so this comment does not overclaim: a field whose alias is not
-    // a plain identifier — `.as('a.b')` — renders as `"a.b"`, which the filter in
-    // unqualifiedSelectIdentifiers drops, so it neither moves this count nor reaches
-    // the checks below. Postgres accepts such a statement, so nothing is missed; and
-    // because that same filter governs both sides, a misread render can only add a
-    // false positive here, never hide a real collision.
+    // One exception, so this comment does not overclaim: a field aliased with a
+    // non-identifier name — `.as('a.b')` — renders as `"a.b"` and is filtered out by
+    // unqualifiedSelectIdentifiers, so it moves neither this count nor the checks
+    // below. That is safe only while such an alias is unique. Two colliding dotted
+    // aliases are 42702 and this test will not see them.
     expect(identifiers).toHaveLength(12);
 
     const exposures = outerFromExposureCounts(baseQuery);
@@ -391,6 +458,25 @@ describe('listSessionCosts service', () => {
     expect(identifiers.filter((name) => !exposures.has(name))).toEqual([]);
 
     expect(identifiers.filter((name) => (exposures.get(name) ?? 0) > 1)).toEqual([]);
+
+    // The join conditions are the query's other references, and they are qualified,
+    // so the select-list check above cannot see them: a subquery field that collides
+    // with `session_id` is never listed unqualified in the select, but the ON clause
+    // references it and Postgres rejects the statement.
+    const joinReferences = joinConditionReferences(baseQuery);
+    // Floor and documentation in one: these are the qualified references covered.
+    // If this list changes, the assertion below is guarding something different.
+    expect(joinReferences).toEqual([
+      ['llm_agg', 'session_id'],
+      ['compute_agg', 'session_id'],
+    ]);
+
+    const perSubquery = subqueryExposureCounts(baseQuery);
+    expect(
+      joinReferences.filter(
+        ([qualifier, name]) => (perSubquery.get(qualifier)?.get(name) ?? 0) > 1,
+      ),
+    ).toEqual([]);
   });
 
   test('windows the unassigned-cost reconciliation on the same bounds', async () => {

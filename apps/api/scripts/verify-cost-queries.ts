@@ -98,18 +98,24 @@ function costWindow() {
 
 // The driver puts the entire failed statement in `message`; the Postgres error
 // that explains the rejection is on `cause`. Report the latter — an ambiguous
-// column is a one-line diagnosis buried under a 4 KB SELECT.
+// column is a one-line diagnosis buried under a ~2.7 KB SELECT.
 function describeRejection(error: unknown): string {
   const cause = (error as { cause?: { code?: string; message?: string } }).cause;
   if (cause?.message) return `${cause.code ?? 'error'}: ${cause.message}`;
   return (error as Error).message?.split('\n')[0] ?? String(error);
 }
 
-// Every query path the feature can issue. Asserted rather than trusted: a case
-// list that got trimmed or mis-filtered still prints "N executed / 0 rejected"
-// and exits 0, so a green run would prove almost nothing — the exact failure this
-// script exists to prevent. Same reasoning as KORTIX_MIN_TEST_FILES in test.sh.
-const EXPECTED_CASE_COUNT = 10;
+// The query paths the /usage routes can issue, including every optional predicate
+// they pass: project scope on the session list and the summary, owner scope on the
+// list, project scope on the session detail, and session scope on the summary.
+// (`listCostByProject`'s sort is not among them — sortProjectRows orders in memory,
+// so the two sort cases below exercise one statement, not two.)
+//
+// Asserted rather than trusted: a case list that got trimmed or mis-filtered still
+// prints "N executed / 0 rejected" and exits 0, so a green run would prove almost
+// nothing — the exact failure this script exists to prevent. Same reasoning as
+// KORTIX_MIN_TEST_FILES in test.sh.
+const EXPECTED_CASE_COUNT = 12;
 
 function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
   const { accountId, projectId, sessionId, ownerId } = anchor;
@@ -143,7 +149,16 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
     ],
     ['getCostSummary account-wide', () => getCostSummary({ accountId, window })],
     ['getCostSummary project-scoped', () => getCostSummary({ accountId, projectId, window })],
+    // GET /usage/cost-summary passes session_id through, and it adds a predicate to
+    // both aggregates, so it is a distinct statement from the two above.
+    ['getCostSummary session-scoped', () => getCostSummary({ accountId, sessionId, window })],
     ['getSessionCostRecord', () => getSessionCostRecord({ accountId, sessionId })],
+    // GET /usage/session-costs/:sessionId passes project_id through, which adds a
+    // predicate the unscoped case above never exercises.
+    [
+      'getSessionCostRecord project-scoped',
+      () => getSessionCostRecord({ accountId, projectId, sessionId }),
+    ],
     [
       'listProjectGatewaySessionSpend',
       () => listProjectGatewaySessionSpend({ accountId, projectId, days: 30 }),
