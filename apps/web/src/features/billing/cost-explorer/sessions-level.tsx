@@ -212,7 +212,18 @@ export function SessionsLevelTable({
     );
   }
 
-  if (isLoading && !data) {
+  // `!data` — not `isLoading && !data`. The empty state below is a factual
+  // claim about this project's sessions, so it may only render once a page
+  // has actually come back. `isLoading` is `isPending && isFetching`, and a
+  // query can be pending WITHOUT fetching: `enabled: false` while the
+  // billing account id resolves, a fetch that was cancelled, and — the one
+  // that produced this bug — a retry loop that React Query paused because
+  // the document is hidden or the browser is offline (`canContinue()` in
+  // query-core's retryer). In every one of those, `isLoading` is false,
+  // `error` is null and `data` is undefined: a failed `/usage/session-costs`
+  // request rendered as "No sessions" and stayed there. Not knowing yet is
+  // the loading state, never an empty one.
+  if (isLoading || !data) {
     return (
       <div className="space-y-2" aria-label="Loading sessions">
         {Array.from({ length: 5 }, (_, index) => (
@@ -222,9 +233,9 @@ export function SessionsLevelTable({
     );
   }
 
-  const sessions = data?.sessions ?? [];
-  const offset = data?.offset ?? 0;
-  const total = data?.total ?? 0;
+  const sessions = data.sessions;
+  const offset = data.offset;
+  const total = data.total;
   const start = total === 0 ? 0 : offset + 1;
   const end = Math.min(offset + sessions.length, total);
 
@@ -333,7 +344,7 @@ export function SessionsLevelTable({
               type="button"
               variant="outline"
               size="sm"
-              disabled={data?.next_offset == null}
+              disabled={data.next_offset == null}
               onClick={onNextPage}
             >
               Next

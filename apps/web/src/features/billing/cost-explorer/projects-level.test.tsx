@@ -442,6 +442,37 @@ describe('ProjectsLevelContent', () => {
     expect(html).toContain('Last 30 days');
   });
 
+  // ── "no page was ever read" is not "this account has no spend" ───────────
+  //
+  // Same defect class as `SessionsLevelTable`'s (see the note in
+  // sessions-level.test.tsx, and its reproduction against a real
+  // `QueryObserver`): `isProjectsLoading` is React Query's `isPending &&
+  // isFetching`, so it is FALSE in every pending-but-not-fetching state —
+  // query disabled while the billing account id resolves, fetch cancelled,
+  // or a retry loop paused because the document is hidden / the browser is
+  // offline. There `page` is undefined and `projectsError` is null, and
+  // `rows.length === 0` used to render "No spend recorded yet" — a factual
+  // claim about spend that was never read.
+  test('renders the loading state, not a "no spend" claim, when no page has been read and nothing is in flight', () => {
+    const html = renderContent({ page: undefined, isProjectsLoading: false, projectsError: null });
+    expect(html).toContain('aria-label="Loading projects"');
+    expect(html).not.toContain('No spend recorded yet');
+    expect(html).not.toContain('No spend in this range');
+  });
+
+  // Ordering lock: a failed refetch on top of an already-read empty page has
+  // BOTH an error and zero rows. The error must win.
+  test('a failed refetch over an already-read empty page shows the error, not a "no spend" claim', () => {
+    const html = renderContent({
+      page: { projects: [], total: 0, limit: 25, offset: 0, next_offset: null },
+      summary: summaryWithTotal(0),
+      projectsError: new Error('projects-error-marker'),
+    });
+    expect(html).toContain('projects-error-marker');
+    expect(html).not.toContain('No spend recorded yet');
+    expect(html).not.toContain('No spend in this range');
+  });
+
   // Scenario 1 from the fix-round review: the account has genuine spend
   // history (the *previous* window had real spend), but the *current*
   // default 30d window happens to be quiet. Before this fix, the branch

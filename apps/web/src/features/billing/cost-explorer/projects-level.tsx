@@ -180,7 +180,16 @@ export function ProjectsLevelContent({
         {projectsError.message}
       </InfoBanner>
     );
-  } else if (isProjectsLoading && !page) {
+  } else if (isProjectsLoading || !page) {
+    // `!page` — not `isProjectsLoading && !page`. Both empty states below are
+    // factual claims about spend ("no spend recorded yet" / "nothing in this
+    // window"), so neither may render for a page that was never read.
+    // `isProjectsLoading` is React Query's `isPending && isFetching`, which is
+    // false in every pending-but-not-fetching state: query disabled while the
+    // billing account id resolves, a cancelled fetch, or a retry loop paused
+    // because the document is hidden / the browser is offline. Same defect
+    // that made a failed `/usage/session-costs` request read as "No sessions"
+    // (see sessions-level.tsx).
     tableSlot = (
       <div className="space-y-2" aria-label="Loading projects">
         {Array.from({ length: 5 }, (_, index) => (
