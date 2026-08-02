@@ -15,7 +15,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
@@ -407,7 +407,18 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
       },
     responses: {
-        200: json(z.array(SecretSchema), 'Secrets'),
+        200: json(
+          z.object({
+            items: z.array(SecretSchema),
+            required: z.array(z.string()),
+            optional: z.array(z.string()),
+            can_manage: z.boolean(),
+            manifest_status: z.enum(['loaded', 'missing', 'error']),
+            manifest_path: z.string(),
+            manifest_error: z.string().optional(),
+          }),
+          'Secret configuration metadata',
+        ),
         ...errors(404),
     },
   }),
@@ -444,41 +455,19 @@ projectsApp.openapi(
   }
 
   // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
-  // it's granted (mirrors the env-injection narrowing), so it can't enumerate
-  // secrets outside its allowlist. No-op for non-agent tokens / 'all' / null
-  // grants. This is the ONLY gate — every project member with read access sees
-  // every secret; there is no per-secret member/group sharing.
+  // in its standing agent grant. A session secretsAllowlist is a delivery
+  // policy, not a configuration-plane read policy. Applying it here made a
+  // session with `secrets_allowlist: []` accept a shared write and then hide the
+  // written row from the same caller. Runtime materialization still intersects
+  // the agent grant with the session allowlist in sandbox-env-sync.ts.
+  //
+  // This route returns metadata only. It never returns a secret value. The
+  // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
-
-  // KaaB per-session narrowing: a session-bound token (the executor PAT carries
-  // sessionId) must not ENUMERATE identifiers its session allowlist hides —
-  // otherwise the narrowing that scrubs those secrets from $ENV still leaks
-  // their names/metadata here. Mirror the env-injection intersection.
-  const boundSessionId = c.get('sessionId') as string | undefined;
-  let sessionAllowUpper: Set<string> | null = null;
-  if (boundSessionId) {
-    const [sessionRow] = await db
-      .select({ secretsAllowlist: projectSessions.secretsAllowlist })
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.sessionId, boundSessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
-      )
-      .limit(1);
-    // Any non-null allowlist narrows the enumeration — including the empty array
-    // (`[]` = enumerate ZERO secrets). Guard on `!= null`, not truthiness alone,
-    // to make that intent explicit (an empty Set filters everything out below).
-    if (sessionRow?.secretsAllowlist != null) {
-      sessionAllowUpper = new Set(sessionRow.secretsAllowlist.map((id) => id.toUpperCase()));
-    }
-  }
 
   const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
     .filter((item) => !item.system)
-    .filter((item) => agentMayUseEnv(agentGrant, item.identifier))
-    .filter((item) => !sessionAllowUpper || sessionAllowUpper.has(item.identifier.toUpperCase()));
+    .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
   return c.json({
     items,

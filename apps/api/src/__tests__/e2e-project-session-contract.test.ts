@@ -23,6 +23,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
+const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
@@ -188,6 +189,23 @@ mock.module('../middleware/auth', () => ({
       c.set('accountId', ACCOUNT_ID);
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_AGENT_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      c.set('agentGrant', {
+        agent: 'contract-agent',
+        connectors: 'all',
+        kortixCli: 'all',
+        env: 'all',
+      });
       await next();
       return;
     }
@@ -1034,6 +1052,37 @@ describe('project session API contract', () => {
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
+  });
+
+  test('a session agent can verify writes when runtime delivery is narrowed to zero secrets', async () => {
+    sessionRow = { ...sessionRow!, secretsAllowlist: [] };
+    const app = createApp();
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${SESSION_AGENT_PAT}`,
+    };
+
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'test-secret' }),
+    });
+    expect(writeRes.status).toBe(200);
+    expect(await writeRes.json()).toMatchObject({
+      identifier: 'ANTHROPIC_API_KEY',
+      configured: true,
+    });
+
+    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, { headers });
+    expect(listRes.status).toBe(200);
+    expect(await listRes.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          identifier: 'ANTHROPIC_API_KEY',
+          configured: true,
+        }),
+      ],
+    });
   });
 
   test('stores provider-neutral git credentials outside runtime project secrets', async () => {
