@@ -62,12 +62,27 @@ export interface ProjectTableRow {
  * unassigned spend, and it belongs in the table — not a banner that never
  * reconciles with the rows beneath it (design spec, defect #7).
  *
- * Two guards, both required:
- *  - **Only the first page.** Every later page is a subset of `projects`, so
- *    `summary.totals.total_cost` minus *that* subset is not "unassigned" —
- *    it is "everything not on this page", which is meaningless.
+ * The subtraction only means "unassigned" when `page.projects` holds EVERY
+ * project in the result. Both guards below are required:
+ *
+ *  - **Only a page that covers the whole result** (`projects.length ===
+ *    total`). Against any partial page — a later page, or a first page
+ *    shorter than `total` — `summary.totals.total_cost` minus that subset is
+ *    "everything not on this page", which is not a quantity the user has a
+ *    name for. Measured on the 40-project seed account at `COST_PAGE_SIZE =
+ *    25`: the first page rendered $0.34425 under the Unassigned label, which
+ *    was exactly the spend of the 15 projects sitting on page 2. True
+ *    unassigned spend on that data is $0.00.
  *  - **Only when positive.** Floating-point noise between two independently
  *    computed rollups must never invent a negative (or effectively-zero) row.
+ *
+ * **Consequence, and it is deliberate:** an account with more spending
+ * projects than one page holds never sees this row, on any page. That is most
+ * real accounts. Showing no number beats showing a wrong one on a cost tool,
+ * so the row's absence here is a correctness decision, not an oversight. The
+ * complete fix is for the API to return the unassigned total as its own field
+ * — then the client never subtracts one query's result from another's — and
+ * that is filed separately, not done here.
  */
 export function buildProjectTableRows(
   page: ProjectCostPage,
@@ -75,7 +90,7 @@ export function buildProjectTableRows(
 ): ProjectTableRow[] {
   const rows: ProjectTableRow[] = page.projects.map((project) => ({ ...project }));
 
-  if (!summary || page.offset > 0) return rows;
+  if (!summary || page.projects.length !== page.total) return rows;
 
   const attributed = page.projects.reduce((sum, project) => sum + project.total_cost, 0);
   const unassigned = Number((summary.totals.total_cost - attributed).toFixed(10));

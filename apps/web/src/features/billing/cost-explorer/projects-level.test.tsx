@@ -112,10 +112,13 @@ describe('buildProjectTableRows', () => {
     expect(rows).toHaveLength(1);
   });
 
-  // Guard 1: pagination. A page 2+ is a subset of `projects` — subtracting
-  // the account total against only that subset is not "unassigned", it is
-  // "everything not on this page", which is meaningless. This must hold even
-  // when the raw difference would be positive if the guard were ignored.
+  // Guard 1 (completeness), case A: a page after the first. It is a subset of
+  // `projects`, so subtracting it from the account total yields "everything
+  // not on this page", which is not a quantity the user has a name for. This
+  // must hold even when the raw difference would be positive if the guard
+  // were ignored. Pinned as pre-existing behavior — the guard that produces
+  // it changed from `offset > 0` to `projects.length !== total`, the outcome
+  // here did not (1 project rendered, total 40).
   test('omits the unassigned row on any page after the first, even though the raw difference is positive', () => {
     const rows = buildProjectTableRows(
       {
@@ -138,6 +141,77 @@ describe('buildProjectTableRows', () => {
       summaryWithTotal(670.35),
     );
     expect(rows).toHaveLength(1);
+  });
+
+  // Guard 1 (completeness), case B: the FIRST page, when it is shorter than
+  // the whole result. This is the case that shipped broken — the guard used
+  // to read `offset > 0`, which a short first page satisfies, so the
+  // subtraction ran against 25 of 40 projects and rendered the other 15
+  // projects' spend ($0.34425 on the seed account) under the "Unassigned"
+  // label. No prior fixture had `projects.length < total` at `offset === 0`,
+  // which is exactly why 208 passing tests never saw it.
+  test('omits the unassigned row on a first page that is shorter than the whole result', () => {
+    const rows = buildProjectTableRows(
+      {
+        projects: [
+          {
+            project_id: 'p1',
+            project_name: 'Main',
+            session_count: 2,
+            llm_cost: 1,
+            compute_cost: 1,
+            total_cost: 2,
+            last_activity_at: null,
+          },
+        ],
+        total: 40,
+        limit: 25,
+        offset: 0,
+        next_offset: 25,
+      },
+      summaryWithTotal(670.35),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows.some((row) => row.project_id === null)).toBe(false);
+  });
+
+  // The positive half of the same guard: a single page that holds every
+  // project in the result is the one shape where the subtraction is
+  // meaningful, and there the row must still appear with the exact figure.
+  // `next_offset: null` and `projects.length === total` together are what
+  // "this page is the whole result" looks like on the wire.
+  test('appends the unassigned row when one page holds every project in the result', () => {
+    const rows = buildProjectTableRows(
+      {
+        projects: [
+          {
+            project_id: 'p1',
+            project_name: 'Alpha',
+            session_count: 2,
+            llm_cost: 4,
+            compute_cost: 1,
+            total_cost: 5,
+            last_activity_at: null,
+          },
+          {
+            project_id: 'p2',
+            project_name: 'Beta',
+            session_count: 1,
+            llm_cost: 2,
+            compute_cost: 0.5,
+            total_cost: 2.5,
+            last_activity_at: null,
+          },
+        ],
+        total: 2,
+        limit: 25,
+        offset: 0,
+        next_offset: null,
+      },
+      summaryWithTotal(9),
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toMatchObject({ project_id: null, project_name: 'Unassigned', total_cost: 1.5 });
   });
 
   test('omits the unassigned row entirely when the summary has not loaded yet', () => {
@@ -639,6 +713,25 @@ describe('ProjectsLevelContent', () => {
     expect(footerHtml).toContain('$1.50');
     expect(footerHtml).toContain('$4.00');
     expect(footerHtml).not.toContain('999');
+  });
+
+  // The rendered half of the guard-1 fix. `total: 40` with two rows on
+  // screen is a first page that does not cover the result; the account-wide
+  // summary is deliberately far above the page's own $13.25 so a leaked
+  // subtraction would be unmissable ($62.52 - $13.25 = $49.27).
+  test('a first page shorter than the whole result renders no Unassigned row, and the footer sums only that page', () => {
+    const html = renderContent({
+      page: { ...twoProjectPage, total: 40, offset: 0, next_offset: 25 },
+      summary: summaryWithTotal(62.52),
+    });
+
+    expect(html).not.toContain('Unassigned');
+    expect(html).not.toContain('$49.27');
+
+    const footerHtml = extractFooterHtml(html);
+    // Alpha $10.00 + Beta $3.25 — the two rows actually on screen.
+    expect(footerHtml).toContain('$13.25');
+    expect(footerHtml).not.toContain('$62.52');
   });
 
   test('pagination caption and Previous/Next disabled state reflect the page', () => {
