@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@kortix/db';
-import { Column, SQL, type SQLWrapper, is, sql } from 'drizzle-orm';
+import { Column, SQL, type SQLWrapper, Table, getTableColumns, is, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { CostSort } from './cost-window';
 
@@ -31,15 +31,45 @@ function renderOrderBy(record: QueryRecord | undefined): string[] {
   return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
 }
 
+// The paginated session page, which is the only query here that joins subqueries.
+function requireBaseSessionQuery(): QueryRecord {
+  const record = queryRecords.find(
+    (query) => query.table === projectSessions && 'projectName' in query.fields,
+  );
+  if (!record) throw new Error('the joined session query was not recorded');
+  return record;
+}
+
 // Drizzle renders a SQL-aliased subquery field UNQUALIFIED, so each one resolves
 // against the OUTER query's FROM clause rather than against its own subquery.
-// Collect exactly those bare identifiers off a recorded select list.
-function unqualifiedSelectIdentifiers(record: QueryRecord | undefined): string[] {
-  if (!record) throw new Error('query was not recorded');
+// Collect exactly those bare identifiers, unquoted, off a recorded select list.
+function unqualifiedSelectIdentifiers(record: QueryRecord): string[] {
   const dialect = new PgDialect();
   return Object.values(record.fields)
     .map((field) => dialect.sqlToQuery(sql`${field as SQLWrapper}`).sql)
-    .filter((rendered) => /^"[^".]+"$/.test(rendered));
+    .filter((rendered) => /^"[^".]+"$/.test(rendered))
+    .map((rendered) => rendered.slice(1, -1));
+}
+
+// Every real column name reachable from the outer FROM clause. An unqualified
+// alias is resolved against these, so one that matches any of them is ambiguous
+// even though it appears only once in the select list.
+//
+// Derived from the schema through getTableColumns, never hand-listed: a literal
+// list of column names would rot the moment a column is added or renamed, and
+// silently stop guarding — the same class of staleness this test exists to catch.
+function outerTableColumnNames(record: QueryRecord): Set<string> {
+  const joined = record.calls
+    .filter((call) => call.method === 'innerJoin' || call.method === 'leftJoin')
+    .map((call) => call.args[0]);
+  const names = new Set<string>();
+  for (const candidate of [record.table, ...joined]) {
+    // Joined subqueries arrive as the plain object the `.as()` double returns.
+    // Only real tables contribute columns an unqualified alias can resolve to.
+    if (!is(candidate, Table)) continue;
+    for (const column of Object.values(getTableColumns(candidate))) names.add(column.name);
+  }
+  return names;
 }
 
 const SESSION_ID_TIEBREAK = '"kortix"."project_sessions"."session_id" asc';
@@ -283,12 +313,15 @@ describe('listSessionCosts service', () => {
     ]);
   });
 
-  // Two subqueries that reuse an alias do not merely read oddly. Because Drizzle
-  // renders every SQL-aliased field unqualified, the outer select ends up listing
-  // the same bare identifier twice and Postgres rejects the whole statement at
-  // parse time with 42702, `column reference "..." is ambiguous`. That is invisible
-  // to every row-shape assertion in this file, so assert on the select list itself.
-  test('the joined session select never repeats an unqualified identifier', async () => {
+  // Because Drizzle renders every SQL-aliased subquery field unqualified, each one
+  // is resolved against the OUTER query's FROM clause. Two ways that turns into
+  // Postgres 42702, `column reference "..." is ambiguous`, which rejects the whole
+  // statement at parse time:
+  //   1. two subqueries claim the same alias  (the `last_at` bug this test was added for)
+  //   2. one alias matches a real column on an outer table (e.g. `status`)
+  // Both are invisible to every row-shape assertion in this file, because a double
+  // records SQL rather than executing it. So assert on the select list itself.
+  test('the joined session select never repeats or shadows an unqualified identifier', async () => {
     resultForQuery = () => [];
     await listSessionCosts({
       accountId,
@@ -298,16 +331,21 @@ describe('listSessionCosts service', () => {
       offset: 0,
     });
 
-    const identifiers = unqualifiedSelectIdentifiers(
-      queryRecords.find(
-        (query) => query.table === projectSessions && 'projectName' in query.fields,
-      ),
-    );
-    // Non-vacuity guard: if the double ever stops modelling the unqualified
-    // rendering there is nothing left to collide, and the check below would pass
-    // on a fiction rather than on the query.
-    expect(identifiers.length).toBeGreaterThan(0);
+    const baseQuery = requireBaseSessionQuery();
+    const identifiers = unqualifiedSelectIdentifiers(baseQuery);
+
+    // A real floor, not a non-zero one. The select carries exactly 12 unqualified
+    // fields — 9 from the LLM aggregate, 3 from the compute aggregate — so a
+    // `> 0` check would still pass if 11 of them silently stopped rendering and
+    // the two checks below would then be guarding almost nothing. Adding a
+    // subquery field is also exactly when a new collision can appear, so making
+    // that update this number deliberately routes the author through this test.
+    expect(identifiers).toHaveLength(12);
+
     expect(identifiers.filter((name, index) => identifiers.indexOf(name) !== index)).toEqual([]);
+
+    const outerColumns = outerTableColumnNames(baseQuery);
+    expect(identifiers.filter((name) => outerColumns.has(name))).toEqual([]);
   });
 
   test('windows the unassigned-cost reconciliation on the same bounds', async () => {
@@ -349,11 +387,7 @@ describe('listSessionCosts service', () => {
     queryRecords = [];
     resultForQuery = () => [];
     await listSessionCosts({ accountId, window: costWindow, sort, limit: 25, offset: 0 });
-    return renderOrderBy(
-      queryRecords.find(
-        (query) => query.table === projectSessions && 'projectName' in query.fields,
-      ),
-    );
+    return renderOrderBy(requireBaseSessionQuery());
   }
 
   // The spend terms render as bare aliases, not as `"llm_agg"."llm_cost"`, because

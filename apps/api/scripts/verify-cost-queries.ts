@@ -102,6 +102,12 @@ function describeRejection(error: unknown): string {
   return (error as Error).message?.split('\n')[0] ?? String(error);
 }
 
+// Every query path the feature can issue. Asserted rather than trusted: a case
+// list that got trimmed or mis-filtered still prints "N executed / 0 rejected"
+// and exits 0, so a green run would prove almost nothing — the exact failure this
+// script exists to prevent. Same reasoning as KORTIX_MIN_TEST_FILES in test.sh.
+const EXPECTED_CASE_COUNT = 10;
+
 function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
   const { accountId, projectId, sessionId, ownerId } = anchor;
   const window = costWindow();
@@ -150,6 +156,15 @@ console.log(
 );
 
 const cases = buildCases(anchor);
+if (cases.length !== EXPECTED_CASE_COUNT) {
+  // Exit 2, not 1: the script itself is wrong, which is a different failure from
+  // Postgres rejecting a query, and a caller should be able to tell them apart.
+  console.error(
+    `case list holds ${cases.length}, expected ${EXPECTED_CASE_COUNT} — refusing to report a partial run as green`,
+  );
+  process.exit(2);
+}
+
 let rejected = 0;
 for (const [name, run] of cases) {
   try {
