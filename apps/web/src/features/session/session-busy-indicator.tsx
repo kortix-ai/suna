@@ -89,7 +89,7 @@ export function SessionBusyIndicator({
     >
       <span className="relative min-w-0 flex-1" aria-hidden>
         {isRetrying ? (
-          <TextShimmer className="truncate text-sm leading-5">{label}</TextShimmer>
+          <span className="text-muted-foreground/70 block truncate text-sm leading-5">{label}</span>
         ) : (
           <span className="relative block min-w-0 overflow-hidden leading-5">
             <AnimatePresence mode="popLayout">

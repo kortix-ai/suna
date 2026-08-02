@@ -854,10 +854,12 @@ function InlineTriggerTitle({
   running: boolean;
   onSubtitleClick?: () => void;
 }) {
+  const args = trigger.args ?? [];
+
   return (
     <>
       <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
-      {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+      {(trigger.subtitle || args.length > 0) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
@@ -884,6 +886,17 @@ function InlineTriggerTitle({
                 {trigger.subtitle}
               </span>
             ))}
+          {args.length > 0 && (
+            <>
+              {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
+              <span
+                className="text-muted-foreground/60 min-w-0 truncate font-mono text-sm"
+                title={args.join(' · ')}
+              >
+                {args.join(' · ')}
+              </span>
+            </>
+          )}
         </div>
       )}
     </>
