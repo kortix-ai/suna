@@ -81,9 +81,13 @@ export function RungSettings({
       {/* Capability #4. `AuthorizationStrategyField`'s own locked branch
           already renders a labelled, bordered `bg-popover` box (see
           `connector-profile-modal.tsx`) — wrapping it in a second one here
-          would nest two rounded boxes and print "Who it connects as" right
-          above the field's own "Authorization owner" label. The section only
-          adds the plain-language line the field itself has no room for. */}
+          would nest two rounded boxes. `hideLabel` also drops the field's own
+          "Authorization owner" label, so the plain-language "Who it connects
+          as" below is the ONLY label — two names for one control is exactly
+          the confusion this rung exists to remove. `hideLabel` was added to
+          `AuthorizationStrategyField` itself (not to the frozen
+          `connectors-view.tsx`, which the field does not live in) — it
+          defaults to `false`, so every other caller is unaffected. */}
       <section className="space-y-2">
         <Label>Who it connects as</Label>
         <p className="text-muted-foreground text-xs text-pretty">
@@ -92,15 +96,29 @@ export function RungSettings({
         <AuthorizationStrategyField
           idPrefix={`connector-${connector.slug}`}
           value={connector.authorizationStrategy}
+          // `onAuthorizationStrategyChange`, `disabled` and `pending` are all
+          // wired to the real thing below, not stubs — the field is
+          // unreachable only BY DESIGN, not because the write path is
+          // missing. `onAuthorizationStrategyChange` calls the actual
+          // `setConnectorAuthorizationStrategy` mutation (`connector-modal.tsx`);
+          // `disabled` and `pending` compute their real values every render.
+          // `lockedReason` below is the only thing forcing the control off —
+          // re-enabling editing later means deleting that one prop, not
+          // rewiring the mutation or these two flags.
           onChange={onAuthorizationStrategyChange}
           disabled={!canWrite || !connectorAuthorizationStrategyIsEditable(connector.provider)}
+          pending={strategyUpdating}
           // Settled once the connector exists. Switching owner after the fact
           // silently changes WHOSE account every future session runs as, and
           // orphans the profiles and permission rules already attached under
           // the old owner — a change that looks like a toggle and behaves
           // like a migration.
           lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
-          pending={strategyUpdating}
+          // The section's own "Who it connects as" label above is the plain-
+          // language name the brief specifies; the field's built-in
+          // "Authorization owner" label would repeat the same fact in a
+          // second vocabulary directly beneath it.
+          hideLabel
         />
       </section>
 

@@ -50,4 +50,20 @@ describe('connector authorization owner is locked after creation', () => {
   test('the backend path is still wired, so this stays a one-prop revert', () => {
     expect(VIEW).toContain('updateAuthorizationStrategy');
   });
+
+  // `hideLabel` (capabilities/connectors/rung-settings.tsx) lets a caller that
+  // already prints its own plain-language label for this control ("Who it
+  // connects as") suppress the field's own "Authorization owner" label, so
+  // the two never stack. Added here rather than to `connectors-view.tsx`,
+  // which does not define this component and is frozen this milestone.
+  test('hideLabel defaults to false — every existing caller is unaffected', () => {
+    expect(MODAL).toContain('hideLabel = false');
+  });
+
+  test('hideLabel suppresses the label in BOTH the locked and editable branches', () => {
+    expect(MODAL).toContain('{hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}');
+    expect(MODAL).toContain(
+      '{hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}',
+    );
+  });
 });

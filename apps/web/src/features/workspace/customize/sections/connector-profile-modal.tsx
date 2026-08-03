@@ -41,6 +41,7 @@ export function AuthorizationStrategyField({
   disabled = false,
   pending = false,
   lockedReason,
+  hideLabel = false,
 }: {
   idPrefix: string;
   value: ConnectorAuthorizationStrategy;
@@ -55,6 +56,14 @@ export function AuthorizationStrategyField({
    * happens, and nothing says why. The reason belongs where the control is.
    */
   lockedReason?: string;
+  /**
+   * Skips this field's own "Authorization owner" label. For a caller that
+   * already prints its own plain-language label for this exact control
+   * directly above it (the connector Settings rung's "Who it connects as") —
+   * so the two do not stack and repeat the same fact in two vocabularies.
+   * Defaults to `false`; every other caller is unaffected.
+   */
+  hideLabel?: boolean;
 }) {
   const id = `${idPrefix}-authorization-strategy`;
 
@@ -66,7 +75,7 @@ export function AuthorizationStrategyField({
     const isProject = value === 'project';
     return (
       <Field>
-        <FieldLabel>Authorization owner</FieldLabel>
+        {hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}
         <div className="bg-popover flex items-start gap-3 rounded-md border px-3 py-2.5">
           <span
             className={cn(
@@ -101,7 +110,7 @@ export function AuthorizationStrategyField({
   return (
     <Field>
       <div className="flex items-center justify-between gap-2">
-        <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>
+        {hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}
         {pending ? <Loading className="size-4 shrink-0" /> : null}
       </div>
       <Select

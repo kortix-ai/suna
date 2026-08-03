@@ -83,4 +83,34 @@ describe('rung-settings write path', () => {
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('deleteConnector('));
     expect(callers).toEqual(['connectors/rung-settings.tsx']);
   });
+
+  test('the field is called with hideLabel, so "Who it connects as" stays the only label', () => {
+    // "Who it connects as" is the plain-language section label; `hideLabel`
+    // (asserted structurally against `connector-profile-modal.tsx` in
+    // `connector-authorization-lock.test.ts`) suppresses
+    // `AuthorizationStrategyField`'s own "Authorization owner" label so the
+    // two never stack. Scoped to the call site itself, not the whole file —
+    // the surrounding comments legitimately name "Authorization owner" in
+    // prose to explain why it is suppressed.
+    expect(source).toContain('Who it connects as');
+    const fieldBlock = source.slice(
+      source.indexOf('<AuthorizationStrategyField'),
+      source.indexOf('/>', source.indexOf('<AuthorizationStrategyField')) + 2,
+    );
+    expect(fieldBlock).toContain('hideLabel');
+  });
+
+  test('the write path is documented as unreachable by design, not by accident', () => {
+    // Restores the hazard note the legacy `connectors-view.tsx` carried
+    // (`onAuthorizationStrategyChange`, `disabled`, `pending` stay fully
+    // wired to the real mutation while the field is locked; only
+    // `lockedReason` forces it off, and re-enabling editing later is
+    // deleting that one prop).
+    const fieldBlock = source.slice(
+      source.indexOf('<AuthorizationStrategyField'),
+      source.indexOf('/>', source.indexOf('<AuthorizationStrategyField')),
+    );
+    expect(fieldBlock).toMatch(/unreachable.*design/i);
+    expect(fieldBlock).toContain('deleting that one prop');
+  });
 });
