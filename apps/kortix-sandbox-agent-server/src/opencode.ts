@@ -70,7 +70,8 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
-//   1. the optional Kortix Executor MCP server (KORTIX_EXECUTOR_MCP_ENABLED=1)
+//   1. the Kortix Executor MCP server (default-on with session credentials;
+//      KORTIX_EXECUTOR_MCP_ENABLED=0 opts out)
 //   2. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
 //   3. a Slack permission override            (when this is a Slack session)
 //   4. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
@@ -102,9 +103,8 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // with a placeholder token; otherwise it receives the real session token.
   const executorProxyUrl = env.KORTIX_EXECUTOR_PROXY_URL
   const executorProxyMode = !!executorProxyUrl
-  const executorMcpEnabled = ['1', 'true', 'yes', 'on'].includes(
-    (env.KORTIX_EXECUTOR_MCP_ENABLED ?? '').trim().toLowerCase(),
-  )
+  const executorMcpSetting = (env.KORTIX_EXECUTOR_MCP_ENABLED ?? '').trim().toLowerCase()
+  const executorMcpEnabled = !['0', 'false', 'no', 'off'].includes(executorMcpSetting)
 
   // Direct mode needs both token+url; proxy mode needs only the proxy URL.
   const hasExecutorMcp = executorMcpEnabled && (executorProxyMode || (!!executorToken && !!apiUrl))
@@ -145,7 +145,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   }
   const out: Record<string, unknown> = { ...base }
 
-  // (1) Optional Kortix Executor MCP server. CLI remains the primary agent path.
+  // (1) Kortix Executor MCP server. The CLI remains available for scripts.
   if (hasExecutorMcp) {
     const mcp =
       out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)

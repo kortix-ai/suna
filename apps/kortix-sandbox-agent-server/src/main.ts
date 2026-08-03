@@ -556,11 +556,11 @@ async function runWarmSeedMode(
     const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
     const exUrl = startExecutorProxy(exPort)
     if (exUrl) {
-      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
-      // The proxy is harmless when unused; the CLI remains the primary path.
+      // Seen by buildOpencodeConfigContent unless KORTIX_EXECUTOR_MCP_ENABLED
+      // explicitly disables it. The CLI shares this proxy with the MCP server.
       process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
       bootMark('seed-executor-proxy-started')
-      logger.info('[seed] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
+      logger.info('[seed] executor hot-swap proxy up for executor CLI and MCP', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint

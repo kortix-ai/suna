@@ -31,12 +31,22 @@ afterEach(() => {
   globalThis.fetch = realFetch
 })
 
-describe('buildOpencodeConfigContent — optional executor MCP server', () => {
-  test('does not register executor MCP by default; CLI is the primary Executor path', async () => {
-    expect(await buildOpencodeConfigContent(ENV)).toBeUndefined()
+describe('buildOpencodeConfigContent — executor MCP server', () => {
+  test('registers executor MCP by default when the session has executor credentials', async () => {
+    const raw = await buildOpencodeConfigContent(ENV)
+    expect(raw).toBeDefined()
+    const config = JSON.parse(raw!)
+    expect(config.mcp['kortix-executor']).toMatchObject({
+      type: 'local',
+      enabled: true,
+      environment: {
+        KORTIX_EXECUTOR_TOKEN: 'tok-123',
+        KORTIX_API_URL: 'https://api.kortix.test/v1',
+      },
+    })
   })
 
-  test('registers the executor MCP server only when explicitly enabled', async () => {
+  test('accepts an explicit enabled setting', async () => {
     const raw = await buildOpencodeConfigContent({ ...ENV, KORTIX_EXECUTOR_MCP_ENABLED: '1' })
     expect(raw).toBeDefined()
     const config = JSON.parse(raw!)
@@ -53,7 +63,7 @@ describe('buildOpencodeConfigContent — optional executor MCP server', () => {
     expect(server.command).toEqual(['/usr/local/bin/kortix', 'executor', 'mcp'])
   })
 
-  test('returns undefined when no contributor applies', async () => {
+  test('returns undefined without complete credentials or when executor MCP is disabled', async () => {
     expect(await buildOpencodeConfigContent({})).toBeUndefined()
     expect(await buildOpencodeConfigContent({ KORTIX_EXECUTOR_TOKEN: 'tok-123' })).toBeUndefined()
     expect(await buildOpencodeConfigContent({ KORTIX_API_URL: 'https://api.kortix.test/v1' })).toBeUndefined()
@@ -164,14 +174,14 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(config.model).toBe('kortix/anthropic/claude-sonnet-4.6')
   })
 
-  test('does not include executor MCP alongside the provider unless explicitly enabled', async () => {
+  test('includes executor MCP alongside the provider by default', async () => {
     stageGatewayCatalog(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, ...GATEWAY_ENV }))!)
     expect(config.provider.kortix).toBeDefined()
-    expect(config.mcp).toBeUndefined()
+    expect(config.mcp['kortix-executor']).toBeDefined()
   })
 
-  test('can include the optional executor MCP alongside the provider', async () => {
+  test('can explicitly enable executor MCP alongside the provider', async () => {
     stageGatewayCatalog(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent({
       ...ENV,

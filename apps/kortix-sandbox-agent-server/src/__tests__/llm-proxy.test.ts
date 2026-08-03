@@ -111,7 +111,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     JSON.stringify({ models: { 'kortix/test-model': { id: 'kortix/test-model', name: 'Test' } } }),
   )
 
-  test('PROXY mode: session-independent provider by default, no executor MCP unless enabled', async () => {
+  test('PROXY mode: session-independent provider and executor MCP by default', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
       KORTIX_EXECUTOR_PROXY_URL: 'http://127.0.0.1:4320',
@@ -129,8 +129,14 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(cfg.provider.kortix.options.apiKey).toBe(LLM_PROXY_PLACEHOLDER_KEY)
     expect(cfg.provider.kortix.options.apiKey).not.toBe('real-session-llm-key')
 
-    // Executor MCP is an optional compatibility face. The CLI is primary.
-    expect(cfg.mcp).toBeUndefined()
+    // Executor MCP also points at the proxy. No real session token is baked.
+    expect(cfg.mcp['kortix-executor'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
+    expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).toBe(
+      EXECUTOR_PROXY_PLACEHOLDER_KEY,
+    )
+    expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).not.toBe(
+      'real-session-exec-token',
+    )
 
     // full catalog came from the baked file
     expect(Object.keys(cfg.provider.kortix.models)).toContain('kortix/test-model')
@@ -156,7 +162,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).not.toBe('real-session-exec-token')
   })
 
-  test('DIRECT mode (cold/Daytona): real key + token baked, unchanged', async () => {
+  test('DIRECT mode (cold/Daytona): real provider and executor credentials are configured', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
@@ -168,7 +174,12 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     const cfg = JSON.parse(json!)
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
     expect(cfg.provider.kortix.options.apiKey).toBe('real-session-llm-key')
-    expect(cfg.mcp).toBeUndefined()
+    expect(cfg.mcp['kortix-executor'].environment.KORTIX_API_URL).toBe(
+      'https://api.kortix.test/v1',
+    )
+    expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).toBe(
+      'real-session-exec-token',
+    )
   })
 })
 
