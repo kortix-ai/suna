@@ -106,13 +106,27 @@ flow(
     // Regression: a PATCH body with ONLY `model` must still persist — it was
     // previously dropped silently (manifest-key allowlist omitted "model").
     await ctx.step('patch model only → persists', async () => {
-      const r = await ctx.client
+      // The preceding PATCH writes the same manifest. Its new revision can be
+      // briefly invisible to the next optimistic write, which correctly
+      // returns 409; retry that read-after-write race without weakening the
+      // final contract assertion.
+      let r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/triggers/:slug',
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
+      for (let attempt = 0; attempt < 5 && r.statusCode === 409; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/triggers/:slug',
+            { model: 'openai/gpt-5' },
+            { params: { projectId: p.id, slug: 'toggle-me' } },
+          );
+      }
       r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
     });
   },

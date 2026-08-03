@@ -154,7 +154,10 @@ flow(
     routes: ["DELETE /v1/projects/:projectId/channels/email/installation"],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
+    // This route reconciles the project's connector manifest. Keep the
+    // destructive write isolated from the Slack disconnect flow, which runs in
+    // parallel and otherwise races on the shared project's repository.
+    const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -260,7 +263,10 @@ flow(
     routes: ["DELETE /v1/projects/:projectId/channels/slack/installation"],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
+    // This route reconciles the project's connector manifest. Keep the
+    // destructive write isolated from the email disconnect flow, which runs in
+    // parallel and otherwise races on the shared project's repository.
+    const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
