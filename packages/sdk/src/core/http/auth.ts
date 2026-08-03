@@ -156,9 +156,16 @@ export async function authenticatedFetch(
   init?: RequestInit,
   options?: {
     retryOnAuthError?: boolean;
+    /**
+     * Override the default 30s request deadline. For request bodies large
+     * enough that 30s is a throughput limit rather than a hang detector — see
+     * `uploadTimeoutMsForBytes` in `core/files/client.ts`. A caller-supplied
+     * `init.signal` still composes with this; whichever fires first wins.
+     */
+    timeoutMs?: number;
   },
 ): Promise<Response> {
-  const { retryOnAuthError = true } = options ?? {};
+  const { retryOnAuthError = true, timeoutMs } = options ?? {};
 
   const token = await getAuthTokenWithRetry();
 
@@ -173,7 +180,10 @@ export async function authenticatedFetch(
   // 30s default timeout for everything EXCEPT the long-lived SSE event
   // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
   // never have a hung sandbox/daemon request wedge its handler forever.
-  const signal = withDefaultTimeout(input, init);
+  const signal =
+    timeoutMs === undefined
+      ? withDefaultTimeout(input, init)
+      : withDefaultTimeout(input, init, timeoutMs);
 
   // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.

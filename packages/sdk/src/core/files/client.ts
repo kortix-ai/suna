@@ -212,6 +212,53 @@ const UPLOAD_RETRY_DELAYS_MS = [400, 1200];
 const isTransient = (s: number) => s === 408 || s === 429 || s === 502 || s === 503 || s === 504;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * A thrown request that retrying cannot fix.
+ *
+ * The status path has always discriminated (see `isTransient`); the throw path
+ * did not, and retried everything. So a body too large for the deadline blew
+ * that same deadline on all three attempts, and the caller waited roughly three
+ * times the timeout to be told `Upload failed: signal timed out`. Re-sending an
+ * identical body against an identical budget cannot succeed — the only thing
+ * the retries bought was a longer wait for the same answer.
+ *
+ * `TimeoutError` is what `AbortSignal.timeout()` raises; `AbortError` is a
+ * caller cancelling on purpose, which must never be "retried" back to life.
+ */
+function isUnretryableThrow(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/** The floor for any upload — the platform-wide default request deadline. */
+const UPLOAD_TIMEOUT_FLOOR_MS = 30_000;
+/** The ceiling. A stuck upload must not wedge a server-side handler forever. */
+const UPLOAD_TIMEOUT_CEILING_MS = 15 * 60_000;
+/**
+ * Assumed floor throughput. Deliberately pessimistic: the deadline exists to
+ * catch a *stuck* upload, not to race a slow one, so erring long costs a late
+ * error message while erring short costs a failed upload that would have
+ * succeeded. ~256 KB/s ≈ a weak mobile uplink.
+ */
+const UPLOAD_ASSUMED_BYTES_PER_MS = 256;
+
+/**
+ * How long to give an upload of `bytes`.
+ *
+ * A flat 30s is the platform default for every request, which is right for a
+ * JSON call and wrong for a body: a 200 KB screenshot and a 30 MB zip were
+ * getting the same budget, and the zip lost. Scales with size, clamped at both
+ * ends. Exported so callers (and tests) can reason about the deadline they are
+ * about to be held to.
+ */
+export function uploadTimeoutMsForBytes(bytes?: number): number {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) {
+    return UPLOAD_TIMEOUT_FLOOR_MS;
+  }
+  const scaled = UPLOAD_TIMEOUT_FLOOR_MS + bytes / UPLOAD_ASSUMED_BYTES_PER_MS;
+  return Math.min(UPLOAD_TIMEOUT_CEILING_MS, Math.max(UPLOAD_TIMEOUT_FLOOR_MS, Math.round(scaled)));
+}
+
 async function uploadErrorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
   let parsed: { error?: string; message?: string; data?: { message?: string } } | null = null;
@@ -237,6 +284,8 @@ async function uploadWithRetry(
       res = await send(buildForm());
     } catch (err) {
       lastError = err;
+      // A timeout or a deliberate abort is terminal — see `isUnretryableThrow`.
+      if (isUnretryableThrow(err)) break;
       if (attempt === UPLOAD_RETRY_DELAYS_MS.length) break;
       await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
       continue;
@@ -263,6 +312,10 @@ export function uploadFile(
   filename?: string,
   baseUrl: string = getActiveOpenCodeUrl(),
 ): Promise<UploadResult[]> {
+  // The deadline follows the body. The platform-wide 30s is a hang detector
+  // for a JSON call; against a 30 MB attachment it is a throughput limit, and
+  // the attachment loses.
+  const timeoutMs = uploadTimeoutMsForBytes(file.size);
   return uploadWithRetry(
     () => {
       const form = new FormData();
@@ -272,7 +325,8 @@ export function uploadFile(
       else form.append('file', file);
       return form;
     },
-    (form) => authenticatedFetch(`${baseUrl}/file/upload`, { method: 'POST', body: form }),
+    (form) =>
+      authenticatedFetch(`${baseUrl}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
   );
 }
 

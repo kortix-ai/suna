@@ -1802,7 +1802,8 @@
     "toDaemonPath",
     "toSandboxAbsolutePath",
     "toWorkspaceRelative",
-    "uploadFile"
+    "uploadFile",
+    "uploadTimeoutMsForBytes"
   ],
   "./session": [
     "appendPreviewToken",
