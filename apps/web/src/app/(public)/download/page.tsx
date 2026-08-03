@@ -1,6 +1,7 @@
 import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/brand/brand-logos';
 import { ConsentGate } from '@/components/consent-gate';
 import { DesktopCardImage, MobileCardImage } from '@/features/marketing/download/card-images';
+import { DownloadCloseButton } from '@/features/marketing/download/close-button';
 import {
   DESKTOP_CARD,
   DESKTOP_ROWS,
@@ -103,6 +104,9 @@ export default async function DownloadPage({
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col justify-center px-6 py-16 md:py-0">
       <ConsentGate />
+
+      {/* This route renders no nav and no footer, so it is the only way out. */}
+      <DownloadCloseButton />
 
       <header className="mb-10 text-center">
         <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
