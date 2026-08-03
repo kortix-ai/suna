@@ -394,6 +394,13 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       // /v1/projects/:id/secrets/NAME[/personal]
       const name = s[3] && s[3] !== ':id' ? s[3] : null;
       const personal = s[4] === 'personal';
+      if (m === 'PUT' && s[4] === 'strategy') {
+        return {
+          title: 'Updated secret delivery strategy',
+          detail: name ?? undefined,
+          kind: 'update',
+        };
+      }
       if (m === 'PUT') {
         return {
           title: personal ? 'Set personal secret' : 'Set shared secret',

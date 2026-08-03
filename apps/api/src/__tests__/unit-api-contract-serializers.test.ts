@@ -258,6 +258,48 @@ describe('buildSecretView ⇄ SecretSchema', () => {
     });
     expect(SecretSchema.strict().parse(out)).toEqual(out);
     expect(out.effective_source).toBe('shared');
+    expect(out).toMatchObject({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+      delivery_status: 'available',
+      egress_policy: null,
+      strategy_locked: false,
+      last_rotated_at: null,
+      requires_rotation: false,
+    });
+  });
+
+  test('denied secret metadata reports disabled delivery and required rotation', () => {
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({ strategy: 'denied', rotatedAt: null }),
+      canManageShared: true,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out).toMatchObject({
+      strategy: 'denied',
+      consumer: null,
+      delivery_status: 'disabled',
+      requires_rotation: true,
+    });
+  });
+
+  test('denied delivery requires a rotation newer than the strategy change', () => {
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({
+        strategy: 'denied',
+        rotatedAt: new Date('2026-08-03T09:00:00.000Z'),
+        updatedAt: new Date('2026-08-03T10:00:00.000Z'),
+      }),
+      canManageShared: true,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out.requires_rotation).toBe(true);
   });
 
   test('two identifiers sharing the same key parse as independent secrets', () => {

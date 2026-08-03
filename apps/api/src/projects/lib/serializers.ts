@@ -308,6 +308,28 @@ export function buildSecretView(input: {
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
     personal && mineActive ? 'mine' : shared ? 'shared' : 'none';
+  const deliveryRow = shared ?? personal;
+  const strategy = deliveryRow?.strategy ?? 'runtime';
+  const requiresRotation =
+    strategy !== 'runtime' &&
+    (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
+  const backend = deliveryRow?.egressPolicy?.backend;
+  const consumer =
+    strategy === 'runtime'
+      ? 'sandbox'
+      : strategy === 'denied'
+        ? null
+        : strategy === 'egress'
+          ? 'network'
+          : backend === 'llm_gateway'
+            ? 'llm_gateway'
+            : backend === 'executor'
+              ? 'executor'
+              : backend === 'git_proxy'
+                ? 'git_proxy'
+                : backend === 'kortix_fetch'
+                  ? 'http_broker'
+                  : null;
   return {
     identifier,
     name,
@@ -331,6 +353,14 @@ export function buildSecretView(input: {
     effective_source: effectiveSource,
     // Members manage only their own override; editors also manage the shared row.
     can_manage_shared: canManageShared && !system,
+    strategy,
+    consumer,
+    delivery_status:
+      strategy === 'runtime' ? 'available' : strategy === 'denied' ? 'disabled' : 'unavailable',
+    egress_policy: deliveryRow?.egressPolicy ?? null,
+    strategy_locked: deliveryRow?.strategyLocked ?? false,
+    last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
+    requires_rotation: requiresRotation,
   };
 }
 

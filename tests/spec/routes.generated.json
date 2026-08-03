@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 518,
+  "count": 521,
   "routes": [
     {
       "method": "GET",
@@ -9,6 +9,10 @@
     {
       "method": "GET",
       "path": "/health/live"
+    },
+    {
+      "method": "GET",
+      "path": "/health/ready"
     },
     {
       "method": "POST",
@@ -708,6 +712,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/executor/attachments"
+    },
+    {
+      "method": "POST",
       "path": "/v1/executor/call"
     },
     {
@@ -717,6 +725,10 @@
     {
       "method": "GET",
       "path": "/v1/executor/connectors"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/attachments"
     },
     {
       "method": "POST",
@@ -837,6 +849,10 @@
     {
       "method": "GET",
       "path": "/v1/health/live"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/health/ready"
     },
     {
       "method": "GET",
@@ -1605,6 +1621,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/secrets"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/secrets/:identifier/strategy"
     },
     {
       "method": "DELETE",

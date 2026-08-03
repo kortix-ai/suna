@@ -5638,3 +5638,50 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 **Status:** IN PROGRESS.
 
 **SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-03 — session `secret-delivery-control-plane` claim
+
+No **Now** task claimed. This is the first public secret-delivery control-plane
+slice defined in `docs/SECRET_DELIVERY_CONTROL_PLANE.md`.
+
+Scope:
+
+- Expose stored secret delivery metadata through the project secrets API.
+- Add an admin-only route for delivery-strategy changes.
+- Expose the additive contract through `@kortix/sdk`.
+- Record central audit events for secret administration without secret values.
+- Keep `broker` and `egress` unavailable until their adapters exist.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-03 — session `secret-delivery-control-plane` completion
+
+Added delivery strategy, consumer, status, rotation, and egress-policy metadata
+to the project secret contract. Added `setProjectSecretStrategy()` and
+`kortix.project(id).secrets.setStrategy()` without removing or renaming a
+published export.
+
+The type-surface snapshot adds eight entries. The runtime-surface snapshot adds
+two entries. All changes are additive.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1391 pass`, `0 fail`, and `5975 expect()`
+  calls across `117` files.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
