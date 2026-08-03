@@ -14,7 +14,9 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
+
 import { finalizeOrphanedTurn } from '../main'
+import { inspectOpencodeRoot, opencodeTurnInFlight } from '../opencode-turn-state'
 
 const BASE = 'http://127.0.0.1:4096'
 const WORKSPACE = '/workspace'
@@ -100,3 +102,45 @@ describe('finalizeOrphanedTurn', () => {
     expect(calls.every((c) => !c.includes('ses/1'))).toBe(true)
   })
 })
+
+describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
+  test('a successful read is known', async () => {
+    stubFetch(assistantTurn(undefined));
+    const result = await inspectOpencodeRoot(BASE, WORKSPACE, SESSION);
+    expect(result).toEqual({ hasMessages: true, lastTurnIncomplete: true, known: true });
+  });
+
+  test('an EMPTY session is known-idle, not unknown', async () => {
+    // Nothing has run. That is a definite answer and the reload gate may act on it.
+    stubFetch([]);
+    expect((await inspectOpencodeRoot(BASE, WORKSPACE, SESSION)).known).toBe(true);
+  });
+
+  test('an unreadable list is UNKNOWN, not idle', async () => {
+    // Reporting idle here let the reload restart opencode while a turn was
+    // running and opencode was merely slow to answer — defeating the one
+    // promise the gate makes.
+    stubFetch(null, { messagesOk: false });
+    const result = await inspectOpencodeRoot(BASE, WORKSPACE, SESSION);
+    expect(result.known).toBe(false);
+    expect(result.lastTurnIncomplete).toBe(false);
+  });
+});
+
+describe('opencodeTurnInFlight — the reload gate reads this', () => {
+  test('no root is a definite false — nothing has ever run in this sandbox', async () => {
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, null)).toBe(false)
+  });
+
+  test('a running turn is true', async () => {
+    stubFetch(assistantTurn(undefined));
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+  });
+
+  test('an unreadable box is NULL, so the gate refuses instead of restarting', async () => {
+    // The bug this closes: returning false here handed the reload a green light
+    // while a turn was running and opencode was merely slow to answer.
+    stubFetch(null, { messagesOk: false });
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBeNull();
+  });
+});

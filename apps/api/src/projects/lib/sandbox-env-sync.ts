@@ -15,7 +15,10 @@ import {
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import {
+  agentConfigEtag,
+  resolveCompiledAgentConfigForSession,
+} from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 /**
@@ -482,7 +485,12 @@ export async function pushSessionAgentConfigToSandbox(input: {
       providerHeaders: headers,
       serviceKey,
       snapshot,
-      opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG: compiled },
+      opencodeEnv: {
+        KORTIX_COMPILED_AGENT_CONFIG: compiled,
+        // Pushed with the config so the box's reported etag never lags what it
+        // is actually running.
+        KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(compiled) ?? '',
+      },
       // Restarts opencode so it rebuilds its config against the new agents.
       refreshModels: true,
     });

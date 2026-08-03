@@ -76,6 +76,15 @@ Subcommands:
   preview <session-id> [port]       Print a clickable preview URL for a port
                                     in the session's sandbox (default 3000).
                                     Root-served (assets work). --port, --json.
+  reload <session-id>               Pull the repo and recompile the session's
+                                    agent config from git, into the RUNNING
+                                    sandbox — the way to pick up a merged
+                                    agent change without starting over.
+                                    Restarts the agent runtime, so it refuses
+                                    mid-turn unless you pass --force.
+                                    --no-repo skips the git pull.
+                                    --status only reports whether the session
+                                    is behind, changing nothing. --json.
   restart <session-id>              Restart (re-provision) a session.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
@@ -184,6 +193,8 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts, json);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
+    case 'reload':
+      return sessionsReload(rest[0], rest.slice(1), ctxOpts);
     case 'rename':
       return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
@@ -550,6 +561,93 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
   }
   process.stdout.write(`${status.ok(`Restarting ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`);
   return 0;
+}
+
+/**
+ * Reload a running session's config.
+ *
+ * The gap this closes: merging an agent change left every open session running
+ * the config it booted with, and nothing short of a new session picked it up —
+ * `git pull` updates the working tree but the compiled agent config never came
+ * from there, and restarting re-read the same env.
+ */
+async function sessionsReload(
+  sessionId: string | undefined,
+  args: string[],
+  opts: CtxOpts,
+): Promise<number> {
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n`);
+    return 2;
+  }
+  const json = args.includes('--json');
+  const statusOnly = args.includes('--status');
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions reload ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId } = located.located;
+
+  if (statusOnly) {
+    try {
+      const state = await client.get<{
+        running_etag: string | null;
+        latest_etag: string | null;
+        stale: boolean | null;
+        sandbox_reachable: boolean;
+      }>(`/projects/${projectId}/sessions/${sessionId}/config`);
+      if (json) {
+        process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+        return 0;
+      }
+      if (state.stale === null) {
+        // Never claim "up to date" when the answer is "could not ask".
+        process.stdout.write(
+          `${status.warn(
+            state.sandbox_reachable
+              ? 'This project has no compiled agent config to compare.'
+              : 'Sandbox unreachable — cannot tell whether this session is current.',
+          )}\n`,
+        );
+        return 0;
+      }
+      process.stdout.write(
+        state.stale
+          ? `${status.warn(`Behind — running ${C.bold}${state.running_etag}${C.reset}, latest is ${C.bold}${state.latest_etag}${C.reset}. Run \`kortix sessions reload ${shortId(sessionId)}\`.`)}\n`
+          : `${status.ok(`Up to date (${state.running_etag}).`)}\n`,
+      );
+      return 0;
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+
+  try {
+    const result = await client.post<{
+      applied: boolean;
+      previous_etag: string | null;
+      etag: string | null;
+      repo_refreshed: boolean;
+      detail: string;
+    }>(`/projects/${projectId}/sessions/${sessionId}/reload`, {
+      refresh_repo: !args.includes('--no-repo'),
+      force: args.includes('--force'),
+    });
+    if (json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    process.stdout.write(
+      result.applied
+        ? `${status.ok(`Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}. The next prompt runs the new config.${C.reset}`)}\n`
+        : `${status.warn(result.detail)}\n`,
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }
 
 async function sessionsRename(

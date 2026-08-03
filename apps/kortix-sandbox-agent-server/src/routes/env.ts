@@ -31,6 +31,10 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // behaviour did not, and nothing short of a new session reconciled the two.
   // Same mechanism as the model above — accept it, then restart.
   'KORTIX_COMPILED_AGENT_CONFIG',
+  // Its content hash, echoed by /kortix/health so a client can ask what this box
+  // is really running. Pushed with the config; allowlisted so the two cannot
+  // drift apart on a live update.
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
 ])
 
 function bearerToken(header: string | undefined): string | null {
