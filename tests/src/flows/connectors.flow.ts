@@ -560,6 +560,11 @@ flow(
   'COVD-1',
   {
     domain: 'connectors',
+    // This flow performs multiple managed-repository writes and manifest
+    // re-reads. On staging it routinely needs more than the 120s default; a
+    // timeout retry cannot cancel the first attempt and lets its teardown race
+    // the retry. Give the real lifecycle one bounded attempt window instead.
+    timeoutMs: 360_000,
     routes: [
       'GET /v1/projects/:projectId/connector-profiles',
       'POST /v1/projects/:projectId/connector-profiles',
