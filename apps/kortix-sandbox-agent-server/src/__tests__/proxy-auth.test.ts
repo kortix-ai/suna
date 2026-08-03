@@ -61,6 +61,13 @@ function fakeOpencode(
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
     restart: async () => hooks.restart?.(),
+    // The env route calls reloadConfig now, which applies config in place via
+    // dispose and falls back to restart. Both land here so a test counting
+    // "was the new config applied" keeps counting exactly that.
+    reloadConfig: async () => {
+      hooks.restart?.()
+      return 'restarted' as const
+    },
   } as unknown as Opencode
 }
 

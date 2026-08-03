@@ -175,12 +175,23 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           writeAgentEnvFile(projectEnv)
         }
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
-          logger.info('[env] model-affecting env changed; restarting opencode', {
+          // reloadConfig, not restart: opencode re-reads its config file in
+          // place via /global/dispose in ~51ms, against ~8s for a respawn
+          // (measured on the pinned 1.17.11). It falls back to a restart on its
+          // own if dispose is unavailable, so this is never less correct — only
+          // faster, and it does not sever an in-flight turn when dispose wins.
+          // A change to the spawn-time deny-list cannot be applied by a
+          // dispose — see reloadConfig. Anything else lives in the config file
+          // and takes the fast path.
+          const mustRespawn = opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')
+          const how = await opencode.reloadConfig({ mustRespawn })
+          logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
             opencodeEnvNames,
+            how,
+            mustRespawn,
           })
-          await opencode.restart()
         }
 
         return c.json({
