@@ -1,0 +1,3 @@
+Runtime reliability, session controls, and infrastructure updates
+
+Promotes the full candidate verified on staging. Prevents passive session reads and project navigation from waking stopped sandboxes; corrects session activity timestamps; adds session access, reload, cost, and guarded secret-delivery controls; improves channel, email, executor, chat, download, PPTX, and account-usage behavior; and completes the ECS-focused infrastructure and deployment updates. Fast-track note: staging image build and deployment passed. One unrelated landing-page accessibility assertion for a scrollable pre element failed; the four browser interaction tests, login accessibility, and migration tests passed.
