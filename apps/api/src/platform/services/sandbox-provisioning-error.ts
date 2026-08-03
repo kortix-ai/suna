@@ -17,7 +17,7 @@ export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
   'The sandbox provider could not start this session. Try again.';
 
 const CAPACITY_PATTERN =
-  /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
+  /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
 
 const GIT_AUTH_PATTERN =
   /could not read Username|terminal prompts disabled|Authentication failed|fatal: could not read|Invalid username or password|remote: Repository not found|HTTP 401|HTTP 403|access denied|Permission denied \(publickey\)/i;

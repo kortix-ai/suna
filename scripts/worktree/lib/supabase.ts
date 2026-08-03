@@ -113,6 +113,18 @@ export function primarySupabaseStatusEnv(root: string): Record<string, string> {
 export async function ensurePrimarySupabase(root: string): Promise<Record<string, string>> {
   let env = primarySupabaseStatusEnv(root);
   if (env.API_URL && env.DB_URL && env.SERVICE_ROLE_KEY && env.ANON_KEY) return env;
+  // Status came back incomplete, so the primary stack is down or half-up. Clear
+  // it before starting: `supabase start` only checks that the containers EXIST,
+  // not that they are healthy, so against containers SIGKILLed by Docker Desktop
+  // quitting (or the Mac sleeping) it reports "already running" and then dies on
+  // "container is not running: exited". Unconditional — unlike
+  // startSupabaseFullStack's port probe — because a half-up stack still holds
+  // the API port while the db container is dead, and that is the case a port
+  // probe would wave through into the same failure.
+  //
+  // NEVER add --no-backup: it deletes the data volumes, i.e. the primary
+  // checkout's local Postgres that every shared-db worktree runs against.
+  await run(['supabase', 'stop'], { cwd: root });
   const started = await run(['supabase', 'start'], { cwd: root });
   if (started !== 0) return {};
   env = primarySupabaseStatusEnv(root);

@@ -32,6 +32,7 @@
  * read/parse/compile failure) resolves to `null`, which is the "v1 byte-for-
  * byte unaffected" contract the session-env wiring depends on.
  */
+import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
   manifestCandidatePaths,
@@ -381,12 +382,46 @@ function applySkillsGovernance(
  * `KORTIX_COMPILED_AGENT_CONFIG` carries), or `null` for a v1 project / no
  * manifest / any failure.
  */
+/**
+ * A short content hash of a compiled agent config — the thing a session can
+ * compare to answer "am I running the latest?".
+ *
+ * The compiled JSON already exists at every point that matters (boot, push,
+ * recompile), so hashing it costs nothing and needs no new storage. Content, not
+ * a commit sha: `refreshWarmSessionWorkspace` advances a box's commit while
+ * deliberately skipping the restart, so a sandbox can report the newest commit
+ * while running config compiled days earlier. Two commits that do not touch any
+ * agent also produce the same config, and calling that "stale" would send people
+ * reloading for nothing.
+ *
+ * 16 hex chars — enough that a collision is not a practical concern for an
+ * equality check, short enough to read in a CLI line.
+ */
+export function agentConfigEtag(compiled: string | null | undefined): string | null {
+  if (!compiled) return null;
+  return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
+}
+
 export async function resolveCompiledAgentConfigForSession(
   project: GitBackedProject,
+  /**
+   * The ref this SESSION runs on (`project_sessions.base_ref`), when it differs
+   * from the project default.
+   *
+   * Without it every session compiled from `defaultBranch`, so a session started
+   * on a feature branch ran main's agent config from its very first turn — you
+   * could edit an agent, push the branch, start a session on it, and watch the
+   * agent behave exactly as before. That reads as "the config never reloads",
+   * but nothing had gone stale: the branch's config was never read at all.
+   *
+   * Falls back to the default branch, which is what every caller got before.
+   */
+  baseRef?: string | null,
 ): Promise<string | null> {
+  const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -402,7 +437,7 @@ export async function resolveCompiledAgentConfigForSession(
       Object.keys(agents).map(async (name) => {
         const path = agentMarkdownPath(raw, name);
         try {
-          agentMdFiles[path] = await readRepoFile(project, path, project.defaultBranch);
+          agentMdFiles[path] = await readRepoFile(project, path, ref);
         } catch (err) {
           console.warn(
             `[compile-agent-config] project ${project.projectId}: failed to read agent "${name}"'s behavior file "${path}": ${(err as Error).message}`,

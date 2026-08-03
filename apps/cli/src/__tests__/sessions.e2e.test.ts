@@ -247,6 +247,23 @@ describe('sessions new CLI flow', () => {
     expect(sessionCreateBody).not.toHaveProperty('agent_name');
   });
 
+  test('creates a session with explicit connector scope', async () => {
+    const code = await runSessions([
+      'new',
+      '--no-connectors',
+      '--require-connector',
+      'gmail',
+      '--require-connector',
+      'gmail',
+    ]);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).toMatchObject({
+      connector_bindings: {},
+      require_connectors: ['gmail'],
+    });
+  });
+
   test('a removed session attribution option exits before an API request', async () => {
     const removedFlag = ['--', 'origin', '-ref'].join('');
     const code = await runSessions(['new', removedFlag, 'customer-42']);

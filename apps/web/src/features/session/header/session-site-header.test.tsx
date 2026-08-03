@@ -81,12 +81,37 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
     expect(devToolsIndex).toBeGreaterThan(approvalsIndex);
   });
 
-  test('the panel toggle stays the last control in the trailing cluster', () => {
-    const panelToggleIndex = source.lastIndexOf('PanelRight');
-    const devToolsIndex = source.indexOf('label="Developer tools"');
-    const moreMenuIndex = source.indexOf('MoreHorizontal');
-    expect(panelToggleIndex).toBeGreaterThan(devToolsIndex);
-    expect(panelToggleIndex).toBeGreaterThan(moreMenuIndex);
+  // The side-panel toggle used to live here, last in the trailing cluster.
+  // It is gone: the right-hand panel is a pure DETAIL view now, opened by
+  // whatever gives it something to show and closed by its own X or Escape, so
+  // a button that opened it empty had nothing to open it to. The floating
+  // action panel carries its own chevron over the chat instead — along with
+  // the ready-chip dot this button used to wear.
+  test('the header no longer carries a side-panel toggle', () => {
+    expect(source).not.toContain('PanelRight');
+    expect(source).not.toContain('onToggleSidePanel');
+    expect(source).not.toContain('isSidePanelOpen');
+  });
+
+  // Below 768px there is no room for a column beside the chat, so the cards
+  // live in the bottom drawer and this is the only way into them. Gated on the
+  // viewport, not a CSS breakpoint class, so it can never coexist with the
+  // desktop column's own chevron.
+  test('the header carries a mobile-only action-panel toggle', () => {
+    expect(source).toContain('isMobileViewport && (');
+    expect(source).toContain('toggleActionPanel');
+    expect(source).toContain('CaretDoubleLeftIcon');
+  });
+
+  test('that toggle drives the action panel, never the detail panel', () => {
+    expect(source).toContain('useIsActionPanelOpen');
+    expect(source).not.toContain('setIsSidePanelOpen');
+    expect(source).not.toContain('openSidePanel');
+  });
+
+  test('the ready-chip badge rides on it, and clears with it', () => {
+    expect(source).toContain('readyChip?.sessionId === sessionId && !isActionPanelOpen');
+    expect(source).toContain('bg-kortix-green');
   });
 });
 

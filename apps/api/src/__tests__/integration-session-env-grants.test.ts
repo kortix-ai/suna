@@ -40,6 +40,9 @@ const RESTARTER = crypto.randomUUID();
 const OVERRIDE_IDENT = `E2E_OVR_${SUFFIX}`;
 const OVERRIDE_KEY = `E2E_OVR_KEY_${SUFFIX}`;
 const PRINCIPAL_SESSION = `e2e-principal-${crypto.randomUUID()}`;
+const VEYRIS_API_IDENT = `veyris-api-url-${SUFFIX}`;
+const VEYRIS_TOKEN_IDENT = `veyris-agent-token-${SUFFIX}`;
+const VEYRIS_SESSION = `e2e-veyris-${crypto.randomUUID()}`;
 
 beforeAll(async () => {
   const rows = (await db.execute(
@@ -94,18 +97,37 @@ beforeAll(async () => {
     createdBy: OWNER,
     agentName: 'default',
   });
+  await db.insert(projectSessions).values({
+    sessionId: VEYRIS_SESSION,
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    branchName: `kaab-veyris-${SUFFIX}`,
+    createdBy: USER,
+    agentName: 'veyris',
+    // Same two-identifier narrowing Veyris sends on create; the test suffix
+    // keeps this fixture isolated from any real Veyris rows in the local DB.
+    secretsAllowlist: [VEYRIS_API_IDENT, VEYRIS_TOKEN_IDENT],
+  });
 });
 
 afterAll(async () => {
   if (!ctx) return;
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, VEYRIS_SESSION));
   await db
     .delete(projectSecrets)
     .where(
       and(
         eq(projectSecrets.projectId, ctx.projectId),
-        inArray(projectSecrets.identifier, [PRIMARY, BACKUP, UNSCOPED, OVERRIDE_IDENT]),
+        inArray(projectSecrets.identifier, [
+          PRIMARY,
+          BACKUP,
+          UNSCOPED,
+          OVERRIDE_IDENT,
+          VEYRIS_API_IDENT,
+          VEYRIS_TOKEN_IDENT,
+        ]),
       ),
     );
 });
@@ -219,6 +241,58 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       llmGatewayEnabled: false,
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
+  });
+
+  test('sandbox boot snapshots the latest committed Veyris capability secrets without caching', async () => {
+    if (!ctx) return;
+    await writeSharedProjectSecret({
+      projectId: ctx.projectId,
+      identifier: VEYRIS_API_IDENT,
+      name: 'VEYRIS_API_URL',
+      value: 'https://stale.veyris.example.test',
+    });
+    await writeSharedProjectSecret({
+      projectId: ctx.projectId,
+      identifier: VEYRIS_TOKEN_IDENT,
+      name: 'VEYRIS_AGENT_TOKEN',
+      value: 'stale-capability',
+    });
+
+    // Mirrors the correct wrapper ordering: both upsert responses have landed
+    // before session create is allowed to snapshot the environment.
+    await Promise.all([
+      writeSharedProjectSecret({
+        projectId: ctx.projectId,
+        identifier: VEYRIS_API_IDENT,
+        name: 'VEYRIS_API_URL',
+        value: 'https://fresh.veyris.example.test',
+      }),
+      writeSharedProjectSecret({
+        projectId: ctx.projectId,
+        identifier: VEYRIS_TOKEN_IDENT,
+        name: 'VEYRIS_AGENT_TOKEN',
+        value: 'fresh-capability',
+      }),
+    ]);
+
+    // defaultBranch omitted deliberately: the session allowlist is still
+    // applied and proves these identifiers survive Suna's boot-time grant fold.
+    const env = await buildSessionSandboxEnvVars({
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      sessionId: VEYRIS_SESSION,
+      userId: USER,
+      repoUrl: 'https://example.test/veyris.git',
+      baseRef: 'main',
+      agentName: 'veyris',
+      llmGatewayEnabled: false,
+    });
+    expect(env.VEYRIS_API_URL).toBe('https://fresh.veyris.example.test');
+    expect(env.VEYRIS_AGENT_TOKEN).toBe('fresh-capability');
+    expect(env.KORTIX_PROJECT_SECRET_NAMES?.split(',').sort()).toEqual([
+      'VEYRIS_AGENT_TOKEN',
+      'VEYRIS_API_URL',
+    ]);
   });
 });
 

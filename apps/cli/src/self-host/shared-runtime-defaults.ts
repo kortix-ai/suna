@@ -61,8 +61,6 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   // in commands/self-host.ts). Custom connectors (OpenAPI/GraphQL/MCP/HTTP)
   // and Slack/email channels are unaffected — they don't depend on Pipedream.
   KORTIX_PUBLIC_CONNECTORS_ENABLED: 'false',
-  // Do not reserve sandbox capacity when a user only opens a project.
-  KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED: 'false',
   // Account-creation restriction: DEFAULT ON for self-host — a VPS operator
   // usually wants to be the only one who can spin up new organizations on
   // their own instance. Signups, existing teams, and SSO/JIT membership are

@@ -1220,6 +1220,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Demandez l’accès.",
+      "privateBody": "Seuls les membres peuvent ouvrir ce projet. Envoyez un mot et un chef de projet pourra vous ajouter.",
+      "waitingHeading": "En attente d’approbation.",
+      "sentBody": "Votre demande est entre les mains des chefs de projet. Cette page s’ouvrira d’elle-même dès que l’un d’eux l’approuvera.",
+      "alreadyBody": "Vous avez déjà demandé l’accès. Un chef de projet doit encore l’approuver.",
+      "notFoundHeading": "Ce projet n’existe plus.",
+      "notFoundBody": "Le lien est peut-être erroné, ou quelqu’un a supprimé le projet.",
+      "errorHeading": "Ce projet n’a pas pu être chargé.",
+      "errorBody": "La requête a échoué avant que nous puissions vérifier votre accès.",
+      "noteLabel": "Mot pour le chef de projet",
+      "notePlaceholder": "Pourquoi vous avez besoin d’un accès (facultatif)",
+      "requestAction": "Demander l’accès",
+      "checkNowAction": "Vérifier maintenant",
+      "tryAgainAction": "Réessayer",
+      "projectsAction": "Retour aux projets",
+      "accountLabel": "Compte",
+      "projectLabel": "Projet",
+      "approvalNote": "Toute personne qui gère ce projet peut approuver votre demande.",
+      "openAsAdmin": "Ouvrir en tant qu’admin",
+      "requestFailed": "Impossible d’envoyer la demande.",
+      "bypassFailed": "Le contournement admin a échoué.",
+      "thisAccount": "ce compte"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix pour mobile",
       "line89JsxTextYourAiWorkerInYourPocket": "Votre travailleur IA, dans votre poche.",

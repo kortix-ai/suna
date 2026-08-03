@@ -84,7 +84,7 @@ import {
   SparkleIcon as SparkleBase,
   TagIcon as TagBase,
   TargetIcon as TargetBase,
-  TerminalIcon as TerminalBase,
+  TerminalWindowIcon as TerminalBase,
   TicketIcon as TicketBase,
   TrendDownIcon as TrendDownBase,
   TrendUpIcon as TrendUpBase,

@@ -806,8 +806,56 @@ export async function resolveSessionConnectorProfile(input: {
     if (connectorBindingsConfigured && !inheritUnbound) return null;
   }
 
+  // Hand the project-default fallback the SAME principal identity the original
+  // inlined branch used: when a session is in scope, the session-resolved
+  // service-account flag (line 715) is authoritative and detection must NOT
+  // re-run (the original skipped it when `input.sessionId` was set). When no
+  // session is in scope, pass the RAW caller value so the helper's
+  // `=== undefined` detection runs exactly as before.
+  const fallbackFromDefault = await resolveProjectDefaultConnectorProfile({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    alias,
+    actingUserId,
+    actingPrincipalIsServiceAccount: input.sessionId
+      ? actingPrincipalIsServiceAccount
+      : input.actingPrincipalIsServiceAccount,
+    visibility,
+  });
+  return fallbackFromDefault;
+}
+
+/**
+ * Project-default profile resolution — the fallback an UNBOUND alias resolves
+ * to when no session binding covers it (or no session is in scope at all).
+ *
+ * Strategy/visibility/connectivity-aware: it walks the connector's active
+ * profiles (default first), keeps the first that matches the connector's
+ * authorization strategy, the session's visibility, and is actually
+ * connected, and stamps it `source: 'default'`.
+ *
+ * Extracted from `resolveSessionConnectorProfile` so the Executor catalog can
+ * apply it as a SAFETY NET: a session created before the create-path default
+ * fix (`inherit_unbound` absent → `false`) would otherwise hide every unbound
+ * connector. Listing falls back to the project default for aliases with NO
+ * durable session binding — a present-but-revoked binding still fails closed
+ * (the catalog safety net never runs for a connector that HAS a binding row;
+ * see `listCatalog` in db-deps.ts).
+ */
+export async function resolveProjectDefaultConnectorProfile(input: {
+  accountId: string;
+  projectId: string;
+  alias: string;
+  actingUserId?: string;
+  actingPrincipalIsServiceAccount?: boolean;
+  visibility?: 'private' | 'project' | 'restricted';
+}): Promise<ResolvedSessionConnectorProfile | null> {
+  const alias = canonicalConnectorAlias(input.alias);
+  let actingUserId = input.actingUserId ?? '';
+  let actingPrincipalIsServiceAccount = input.actingPrincipalIsServiceAccount ?? false;
+  let visibility: 'private' | 'project' | 'restricted' = input.visibility ?? 'private';
+
   if (
-    !input.sessionId &&
     input.actingPrincipalIsServiceAccount === undefined &&
     actingUserId.length > 0
   ) {

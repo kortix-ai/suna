@@ -76,6 +76,12 @@ import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
+  isConfigStale,
+  latestAgentConfigEtag,
+  readSandboxConfigState,
+  reloadSessionConfig,
+} from '../lib/session-reload';
+import {
   canonicalConnectorAlias,
   publicConnectorAlias,
 } from '../../shared/connector-alias';
@@ -438,6 +444,12 @@ projectsApp.openapi(
         sessionId,
         agentName: normalizeString(body.agent_name) ?? undefined,
         sandboxSlug: normalizeString(body.sandbox_slug) ?? undefined,
+        pendingPrompt:
+          body.pending_prompt &&
+          typeof body.pending_prompt === 'object' &&
+          !Array.isArray(body.pending_prompt)
+            ? (body.pending_prompt as Record<string, unknown>)
+            : undefined,
       });
       return c.json(
         serializeSession(claimed, {
@@ -2151,6 +2163,140 @@ projectsApp.openapi(
       dropped_bindings: [],
       retroactive: true,
       detail: 'Current session scope.',
+    });
+  },
+);
+
+// GET /v1/projects/:projectId/sessions/:sessionId/config
+// Is this session running the latest agent config? Compares what the BOX says
+// it spawned with against what the manifest compiles to right now.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/config',
+    tags: ['sessions'],
+    summary: "Whether a session's agent config is the latest",
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(z.any(), 'Config freshness'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // `loadProjectForUser(..., 'session')` is the coarse access level, not a
+    // read grant. Without this an agent-scoped or read-restricted token could
+    // read a session's commit sha and config hash — small, but it is session
+    // state, and every other session READ on this router asserts the same leaf.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
+    const [running, latest] = await Promise.all([
+      readSandboxConfigState({ sessionId }),
+      latestAgentConfigEtag({ projectId, accountId: loaded.row.accountId, baseRef }),
+    ]);
+    return c.json({
+      base_ref: baseRef,
+      running_etag: running.etag,
+      latest_etag: latest,
+      commit_sha: running.commitSha,
+      // `null` when it cannot be told — an unreachable box or a project with no
+      // compiled config. Never `false`, which would read as "up to date" when
+      // the truth is "did not ask".
+      stale: isConfigStale(running.etag, latest),
+      sandbox_reachable: running.reachable,
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/:sessionId/reload
+// Pull the workspace and recompile the agent config into a RUNNING session.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/reload',
+    tags: ['sessions'],
+    summary: "Reload a running session's agent config from git",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+    },
+    responses: { 200: json(z.any(), 'Reload result'), ...errors(400, 403, 404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Same gate as re-scoping and changing the model: seeing a session is not
+    // permission to restart the runtime underneath someone else's work.
+    if (!mayChangeSessionModel(visible)) {
+      return c.json(
+        { error: 'Only the session owner or a project manager can reload this session' },
+        403,
+      );
+    }
+
+    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+
+    const result = await reloadSessionConfig({
+      projectId,
+      accountId: loaded.row.accountId,
+      sessionId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath,
+      baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+      refreshRepo: body?.refresh_repo !== false,
+      force: body?.force === true,
+    });
+    // A reload restarts opencode, which ENDS the turn in flight. Refused by
+    // default rather than discarding someone's work without saying so.
+    if (
+      result.reason === 'session is mid-turn' ||
+      result.reason === 'could not confirm the session is idle'
+    ) {
+      return c.json(
+        {
+          ...result,
+          error:
+            result.reason === 'session is mid-turn'
+              ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+              : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+          code: 'SESSION_BUSY',
+        },
+        409,
+      );
+    }
+    return c.json({
+      ...result,
+      detail: result.applied
+        ? 'Reloaded. The next prompt runs the new config.'
+        : `Nothing to apply: ${result.reason ?? 'unchanged'}.`,
     });
   },
 );

@@ -1,7 +1,17 @@
 // Secrets — project/shared + personal secret overrides, provider OAuth, git creds.
 
 import { backendApi } from '../../http/api-client';
-import { unwrap, type ConnectorSharing, type ProjectGitConnection } from './shared';
+import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shared';
+
+export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
+export type SecretConsumer =
+  | 'sandbox'
+  | 'llm_gateway'
+  | 'executor'
+  | 'git_proxy'
+  | 'http_broker'
+  | 'network';
+export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
 
 /**
  * One project secret: `{ identifier, name (the env var KEY), value }`.
@@ -37,6 +47,18 @@ export interface ProjectSecret {
   effective_source: 'mine' | 'shared' | 'none';
   /** I'm allowed to edit the shared row (project manager). */
   can_manage_shared: boolean;
+  /** Stored delivery policy. Optional for compatibility with older servers. */
+  strategy?: SecretDeliveryStrategy;
+  /** Service that consumes the value. Null when no consumer is configured. */
+  consumer?: SecretConsumer | null;
+  /** Whether the selected delivery path is usable in this deployment. */
+  delivery_status?: SecretDeliveryStatus;
+  /** Network policy metadata. The secret value is never present. */
+  egress_policy?: Record<string, unknown> | null;
+  strategy_locked?: boolean;
+  last_rotated_at?: string | null;
+  /** The stored value may have entered an earlier sandbox and must be replaced. */
+  requires_rotation?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -85,6 +107,19 @@ export async function upsertProjectSecret(
 ) {
   return unwrap(
     await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
+  );
+}
+
+export async function setProjectSecretStrategy(
+  projectId: string,
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+) {
+  return unwrap(
+    await backendApi.put<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
+      { strategy },
+    ),
   );
 }
 

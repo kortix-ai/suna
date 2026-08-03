@@ -38,6 +38,23 @@ export interface ExecutorCallResult<T = unknown> {
   retryable?: boolean;
 }
 
+export interface ExecutorAttachmentUploadInput {
+  filename: string;
+  contentType: string;
+  contentDisposition?: 'attachment' | 'inline';
+  contentId?: string;
+}
+
+export interface ExecutorAttachmentUploadResult {
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  content_disposition: 'attachment' | 'inline';
+  content_id?: string;
+  size: number;
+  expires_at: string;
+}
+
 export interface ExecutorClientOptions {
   apiUrl: string;
   token: string;
@@ -97,6 +114,13 @@ export class ExecutorClient {
       : '/executor/call';
   }
 
+  /** Raw-byte upload endpoint — project-explicit when a projectId is set. */
+  private attachmentPath(): string {
+    return this.projectId
+      ? `/executor/projects/${encodeURIComponent(this.projectId)}/attachments`
+      : '/executor/attachments';
+  }
+
   async connectors(): Promise<ExecutorConnector[]> {
     const body = await this.request<{ connectors?: ExecutorConnector[] } | null>(
       this.catalogPath(),
@@ -142,6 +166,32 @@ export class ExecutorClient {
     });
   }
 
+  async uploadAttachment(
+    content: Uint8Array | ArrayBuffer | Blob,
+    input: ExecutorAttachmentUploadInput,
+  ): Promise<ExecutorAttachmentUploadResult> {
+    const filename = input.filename.trim();
+    const contentType = input.contentType.trim();
+    if (!filename) throw new Error('filename is required');
+    if (!contentType) throw new Error('contentType is required');
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.token}`,
+      'Content-Type': contentType,
+      'X-Kortix-Attachment-Filename': encodeURIComponent(filename),
+      'X-Kortix-Attachment-Disposition': input.contentDisposition ?? 'attachment',
+    };
+    if (input.contentId?.trim()) {
+      headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+    }
+    const res = await this.fetchImpl(buildUrl(this.apiUrl, this.attachmentPath()), {
+      method: 'POST',
+      headers,
+      body: content as BodyInit,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    return this.parseResponse<ExecutorAttachmentUploadResult>(res);
+  }
+
   async request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
     const res = await this.fetchImpl(buildUrl(this.apiUrl, path), {
       method: init.method ?? 'GET',
@@ -149,6 +199,10 @@ export class ExecutorClient {
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       signal: AbortSignal.timeout(this.timeoutMs),
     });
+    return this.parseResponse<T>(res);
+  }
+
+  private async parseResponse<T>(res: Response): Promise<T> {
     const text = await res.text();
     const body = parseBody(text);
     if (!res.ok) {

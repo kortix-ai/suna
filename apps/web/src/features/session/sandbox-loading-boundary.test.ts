@@ -31,9 +31,20 @@ describe('session navigation loading boundaries', () => {
   });
 
   test('first project access still keeps its intentional full-page loader', () => {
-    expect(projectAccessSource).toContain('function ProjectAccessLoading()');
-    expect(projectAccessSource).toContain('<KortixHyperLogo');
-    expect(projectAccessSource).toContain('min-h-screen');
+    // The mirror of the `return null` rule above: a runtime-not-ready RETRY
+    // must stay invisible, but the very FIRST project fetch owns the whole
+    // viewport, so it has to show something rather than a blank screen.
+    expect(projectAccessSource).toContain('if (query.isLoading)');
+    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+  });
+
+  test('the first-fetch loader carries no legal footer', () => {
+    // It resolves into the project shell, which has no footer of its own, so a
+    // pinned Terms/Privacy line would flash once per project open and vanish.
+    // The gate screens below it keep theirs — they are terminal pages.
+    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(projectAccessSource).toContain('<AuthFrame>');
   });
 
   test('the access boundary uses the lightweight project route', () => {
@@ -42,7 +53,11 @@ describe('session navigation loading boundaries', () => {
   });
 
   test('project home does not start the members query before Customize opens', () => {
-    expect(projectAccessSource).toContain("queryKey: ['project-access-boundary', projectId]");
+    // The boundary reads the lightweight project route under its own key. The
+    // key is a constant now because three call sites share it, so assert the
+    // constant's value and its use rather than one inlined literal.
+    expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
+    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
     expect(projectAccessSource).not.toContain("queryKey: ['project-access', projectId]");
     expect(projectHomeSource).not.toContain("queryKey: ['project-access', projectId]");
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');

@@ -108,6 +108,24 @@ describe('SessionCostDetailContent', () => {
     expect(failed).toContain('detail failed');
   });
 
+  // Level 3 of the cost explorer, checked against the same defect that made
+  // Levels 1 and 2 present a failed fetch as an empty one (see
+  // sessions-level.test.tsx). This component was already correct — its
+  // skeleton is gated on `isLoading || !detail`, not `isLoading && !detail`
+  // — so a detail that was never read renders as loading, never as "no cost
+  // entries". Pinned here so the safe form cannot be "tidied" into the
+  // broken one: React Query reports `isLoading: false` with a null error and
+  // no data in every pending-but-not-fetching state (query disabled, fetch
+  // cancelled, retry loop paused while the document is hidden or offline).
+  test('a ledger that was never read renders as loading, never as an empty ledger', () => {
+    const html = renderToStaticMarkup(
+      <SessionCostDetailContent detail={undefined} isLoading={false} error={null} />,
+    );
+
+    expect(html).toContain('Loading session cost details');
+    expect(html).not.toContain('No cost entries');
+  });
+
   test('renders an explicit empty ledger', () => {
     const html = renderToStaticMarkup(
       <SessionCostDetailContent
@@ -119,5 +137,46 @@ describe('SessionCostDetailContent', () => {
 
     expect(html).toContain('No cost entries');
     expect(html).toContain('This session has no finalized LLM or compute entries.');
+  });
+
+  // ── The six-tile grid's hairlines ────────────────────────────────────────
+  //
+  // These were `divide-x divide-y`, which Tailwind compiles to `> * + *` —
+  // every child after the first, in DOM order, with no knowledge of rows or
+  // columns. At `sm:grid-cols-3` that gave tiles 2 and 3 a top border inside
+  // row one and tile 4 a left border at the start of row two. Drawing the
+  // lines with the grid gap instead makes them follow the real geometry.
+  //
+  // Same treatment as `CostSummaryTiles`, and it carries the same constraint:
+  // an empty grid track shows the container's border colour. Six tiles is the
+  // one count that fills its rows at BOTH declared column counts, which is
+  // why this grid needs no filler cells — and why the count is pinned here.
+  test('draws the tile hairlines with the grid gap, never with divide utilities', () => {
+    const html = renderToStaticMarkup(
+      <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
+    );
+
+    const gridMatch = html.match(/<div class="[^"]*grid[^"]*grid-cols-2[^"]*"/);
+    expect(gridMatch, 'expected the tile grid container').not.toBeNull();
+    const grid = gridMatch![0];
+
+    expect(grid).toContain('gap-px');
+    expect(grid).toContain('bg-border');
+    expect(grid).not.toContain('divide-x');
+    expect(grid).not.toContain('divide-y');
+  });
+
+  test('renders exactly six tiles, so no grid track is left empty at either column count', () => {
+    const html = renderToStaticMarkup(
+      <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
+    );
+
+    const tiles = html.match(/<div class="bg-popover px-3 py-2\.5">/g) ?? [];
+    expect(tiles).toHaveLength(6);
+    // The layout declares `grid-cols-2 sm:grid-cols-3`; both must divide the
+    // tile count exactly or an empty track renders as a block of border
+    // colour under the gap-px hairlines.
+    expect(tiles.length % 2).toBe(0);
+    expect(tiles.length % 3).toBe(0);
   });
 });

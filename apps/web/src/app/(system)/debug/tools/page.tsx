@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
+import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
@@ -967,6 +968,31 @@ const EASY_PARTS = [
   part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
 ];
 
+/**
+ * Easy mode takes no props any more — it reads the derived outputs/context/
+ * apps from `SessionPanelProvider`, which in the real app is mounted at
+ * `SessionLayout` above both panel surfaces. So the debug fixtures feed the
+ * PROVIDER and the panel renders whatever it finds there.
+ *
+ * `AdvancedPanel` is untouched by that split and still takes props directly,
+ * which is why only the Easy call sites are wrapped.
+ */
+function EasyFixture({
+  sessionId,
+  messages,
+  isSessionBusy,
+}: {
+  sessionId: string;
+  messages: MessageWithParts[];
+  isSessionBusy?: boolean;
+}) {
+  return (
+    <SessionPanelProvider sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy}>
+      <EasyPanel />
+    </SessionPanelProvider>
+  );
+}
+
 const EASY_MESSAGES: MessageWithParts[] = [
   {
     info: { id: 'm_easy', role: 'assistant' },
@@ -1128,7 +1154,7 @@ export default function DebugToolsPage() {
               Easy
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+              <EasyFixture sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1144,7 +1170,7 @@ export default function DebugToolsPage() {
               Easy — empty (no tool calls yet)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
+              <EasyFixture sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1152,7 +1178,7 @@ export default function DebugToolsPage() {
               Easy — completed with deliverables (W2/W3/W11)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-completed"
                 messages={COMPLETED_MESSAGES}
                 isSessionBusy={false}
@@ -1164,7 +1190,7 @@ export default function DebugToolsPage() {
               Easy — failed run (W7)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-failed"
                 messages={FAILED_MESSAGES}
                 isSessionBusy={false}
@@ -1188,7 +1214,7 @@ export default function DebugToolsPage() {
               Easy — stopped by you (W7)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-stopped"
                 messages={STOPPED_MESSAGES}
                 isSessionBusy={false}

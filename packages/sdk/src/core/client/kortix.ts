@@ -359,6 +359,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
           P.upsertProjectSecret(projectId, input),
+        setStrategy: (...a: DropFirst<Parameters<typeof P.setProjectSecretStrategy>>) =>
+          P.setProjectSecretStrategy(projectId, ...a),
         remove: (name: string) => P.deleteProjectSecret(projectId, name),
         setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
           P.setPersonalProjectSecret(projectId, ...a),

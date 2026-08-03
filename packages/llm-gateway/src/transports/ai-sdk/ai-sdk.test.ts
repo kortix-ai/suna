@@ -364,7 +364,7 @@ describe('ai-sdk request conversion', () => {
     );
   });
 
-  it('translates image_url user parts', () => {
+  it('translates image_url user parts, decoding data: URLs to bytes', () => {
     const { messages } = toModelMessages([
       {
         role: 'user',
@@ -374,13 +374,14 @@ describe('ai-sdk request conversion', () => {
         ],
       },
     ]);
-    expect(messages[0]).toMatchObject({
-      role: 'user',
-      content: [
-        { type: 'text', text: 'what is this' },
-        { type: 'image', image: 'data:image/png;base64,AAAA' },
-      ],
-    });
+    const imagePart = (messages[0]?.content as Array<{ type: string; image: unknown }>).find(
+      (p) => p.type === 'image',
+    );
+    expect(imagePart).toBeDefined();
+    // data: URL decoded to Uint8Array so Bedrock treats it as inline data
+    // (not a URL reference, which Bedrock rejects).
+    expect(imagePart!.image).toBeInstanceOf(Uint8Array);
+    expect(Array.from(imagePart!.image as Uint8Array)).toEqual([0, 0, 0]); // bytes of "AAAA"
   });
 
   it('defaults maxOutputTokens for anthropic/bedrock (non-thinking), maps reasoning_effort + tool_choice', () => {

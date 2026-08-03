@@ -28,7 +28,7 @@ function harness(reply: (url: string, init: any) => { status?: number; body?: un
       url: String(url),
       method: init?.method ?? 'GET',
       headers,
-      body: init?.body ? JSON.parse(init.body as string) : undefined,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body,
     });
     const r = reply(String(url), init);
     const payload = r.body === undefined ? '' : typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
@@ -135,6 +135,71 @@ describe('call', () => {
     const { fetchImpl, calls } = harness(() => ({ body: { ok: true } }));
     await createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).call('slack', 'auth_test');
     expect(calls[0]!.body).toEqual({ connector: 'slack', action: 'auth_test', args: {} });
+  });
+});
+
+/* ─── attachment upload ──────────────────────────────────────────────────── */
+
+describe('uploadAttachment', () => {
+  test('streams raw bytes to the flat attachment route', async () => {
+    const { fetchImpl, calls } = harness(() => ({
+      body: {
+        attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
+        filename: 'Investment Memo.pdf',
+        content_type: 'application/pdf',
+        content_disposition: 'attachment',
+        size: 9,
+        expires_at: '2026-08-03T20:00:00.000Z',
+      },
+    }));
+    const bytes = new TextEncoder().encode('pdf-bytes');
+    const result = await createExecutorClient({
+      apiUrl: 'http://x',
+      token: 'sek',
+      fetchImpl,
+    }).uploadAttachment(bytes, {
+      filename: 'Investment Memo.pdf',
+      contentType: 'application/pdf',
+    });
+
+    expect(result.attachment_id).toBe('019fc40d-04dd-7f52-a591-65ab13d2a245');
+    expect(calls[0]!.url).toBe('http://x/v1/executor/attachments');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.headers.Authorization).toBe('Bearer sek');
+    expect(calls[0]!.headers['Content-Type']).toBe('application/pdf');
+    expect(calls[0]!.headers['X-Kortix-Attachment-Filename']).toBe(
+      encodeURIComponent('Investment Memo.pdf'),
+    );
+    expect(calls[0]!.body).toBe(bytes);
+  });
+
+  test('uses the project-explicit route and sends optional inline metadata', async () => {
+    const { fetchImpl, calls } = harness(() => ({
+      body: {
+        attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
+        filename: 'chart.png',
+        content_type: 'image/png',
+        content_disposition: 'inline',
+        content_id: 'chart-1',
+        size: 3,
+        expires_at: '2026-08-03T20:00:00.000Z',
+      },
+    }));
+    await createExecutorClient({
+      apiUrl: 'http://x',
+      token: 'sek',
+      projectId: 'p/1',
+      fetchImpl,
+    }).uploadAttachment(new Uint8Array([1, 2, 3]), {
+      filename: 'chart.png',
+      contentType: 'image/png',
+      contentDisposition: 'inline',
+      contentId: 'chart-1',
+    });
+
+    expect(calls[0]!.url).toBe('http://x/v1/executor/projects/p%2F1/attachments');
+    expect(calls[0]!.headers['X-Kortix-Attachment-Disposition']).toBe('inline');
+    expect(calls[0]!.headers['X-Kortix-Attachment-Content-Id']).toBe('chart-1');
   });
 });
 

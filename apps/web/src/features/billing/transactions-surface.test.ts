@@ -12,7 +12,7 @@ describe('account credit transactions surface', () => {
 
     expect(source).toContain('defaultValue="session-costs"');
     expect(source).toContain('Session costs');
-    expect(source).toContain('<SessionCostExplorer />');
+    expect(source).toContain('<CostExplorer />');
     expect(source).toContain('Credit ledger');
     expect(source).toContain('<CreditTransactions />');
   });

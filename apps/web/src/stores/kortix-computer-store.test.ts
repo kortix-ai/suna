@@ -188,8 +188,8 @@ describe('panelSplit (width override for presentation/terminal layers)', () => {
     expect(useKortixComputerStore.getState().panelSplit).toBeNull();
   });
 
-  // ─── the REAL close path: the chat header toggle / ⌘I / mobile drawer all
-  // call setIsSidePanelOpen(false) directly, never closeSidePanel — a stale
+  // ─── the REAL close path: the detail's own close button / Escape / mobile
+  // drawer all call setIsSidePanelOpen(false) directly, never closeSidePanel — a stale
   // panelSplit/isExpanded must not survive a real close into the next open. ──
   test('setIsSidePanelOpen(false) resets panelSplit and isExpanded, snapping (not gliding)', () => {
     const s = useKortixComputerStore.getState();
@@ -399,5 +399,90 @@ describe('mobile tool drawer state', () => {
     useKortixComputerStore.getState().openMobileTool('files');
     useKortixComputerStore.getState().reset();
     expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
+  });
+});
+
+describe('floating action panel vs detail side panel — two flags, zero coupling', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('opening the floating panel never opens the side panel', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsActionPanelOpen(true);
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(true);
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+  });
+
+  test('opening the side panel never opens the floating panel', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(false);
+  });
+
+  test('every side-panel opener leaves the floating panel alone', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.focusToolCall('call_1');
+    s.openSidePanel();
+    s.requestQuickView('terminal');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(false);
+  });
+
+  test('closing the floating panel leaves an open detail at its width', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.setPanelSplit(70);
+    s.setDetailOpen(true);
+    s.setIsActionPanelOpen(true);
+    s.setIsActionPanelOpen(false);
+    const next = useKortixComputerStore.getState();
+    expect(next.isSidePanelOpen).toBe(true);
+    expect(next.panelSplit).toBe(70);
+    expect(next.detailOpen).toBe(true);
+  });
+
+  test('toggle flips only the floating panel', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.toggleActionPanel();
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(true);
+    useKortixComputerStore.getState().toggleActionPanel();
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(false);
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+  });
+
+  test('each session remembers both surfaces independently', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    useKortixComputerStore.getState().setIsActionPanelOpen(true);
+    useKortixComputerStore.getState().setActiveSession('s2');
+    expect(useKortixComputerStore.getState().isActionPanelOpen).toBe(false);
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore.getState().setActiveSession('s1');
+    const back = useKortixComputerStore.getState();
+    expect(back.isActionPanelOpen).toBe(true);
+    expect(back.isSidePanelOpen).toBe(false);
+  });
+
+  test('opening the floating panel clears that session ready chip', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setReadyChip({ sessionId: 's1', outcome: 'ready', count: 2 });
+    s.setIsActionPanelOpen(true);
+    expect(useKortixComputerStore.getState().readyChip).toBeNull();
+  });
+
+  test('opening the floating panel spares another session unseen chip', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setReadyChip({ sessionId: 's2', outcome: 'ready', count: 1 });
+    s.setIsActionPanelOpen(true);
+    expect(useKortixComputerStore.getState().readyChip?.sessionId).toBe('s2');
   });
 });

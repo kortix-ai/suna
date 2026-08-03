@@ -115,6 +115,150 @@ flow(
   },
 );
 
+flow(
+  "SEC-8",
+  {
+    domain: "secrets",
+    routes: [
+      "POST /v1/projects/:projectId/secrets",
+      "GET /v1/projects/:projectId/secrets",
+      "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
+      "GET /v1/accounts/:accountId/audit",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const p = await team.project();
+
+    await ctx.step("create returns explicit runtime delivery metadata", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { name: "CONTROL_PLANE_KEY", value: "control-plane-value" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "runtime")
+        .has("$.consumer", "sandbox")
+        .has("$.delivery_status", "available")
+        .has("$.requires_rotation", false);
+    });
+
+    await ctx.step("manager disables sandbox delivery", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "denied" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "denied")
+        .has("$.consumer", null)
+        .has("$.delivery_status", "disabled")
+        .has("$.requires_rotation", true);
+    });
+
+    await ctx.step("runtime delivery stays disabled until rotation", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "runtime" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(409).body().has("$.code", "secret_rotation_required");
+    });
+
+    for (const strategy of ["broker", "egress"]) {
+      await ctx.step(`${strategy} fails closed until its adapter is available`, async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            "/v1/projects/:projectId/secrets/:identifier/strategy",
+            { strategy },
+            { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          );
+        r.status(409).body().has("$.code", "secret_delivery_unavailable");
+      });
+    }
+
+    await ctx.step("rotation permits runtime delivery", async () => {
+      const rotate = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
+          { params: { projectId: p.id } },
+        );
+      rotate.status(200).body().has("$.strategy", "denied").has("$.requires_rotation", false);
+
+      const restore = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "runtime" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      restore
+        .status(200)
+        .body()
+        .has("$.strategy", "runtime")
+        .has("$.requires_rotation", false);
+    });
+
+    await ctx.step("central audit reconstructs the strategy change without a value", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/audit", {
+        params: { accountId: team.id },
+        query: { project_id: p.id, action: "secret.strategy.changed" },
+      });
+      r.status(200).body().exists("$.events[0]");
+      const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
+      const matchingEvents = events.filter((item) => item.action === "secret.strategy.changed");
+      const event = matchingEvents[0];
+      if (!event || matchingEvents.length < 2) throw new Error("strategy audit events missing");
+      if (
+        event.project_id !== p.id ||
+        event.resource_type !== "project_secret" ||
+        JSON.stringify(matchingEvents).includes("control-plane-value")
+      ) {
+        throw new Error(`unsafe strategy audit event: ${JSON.stringify(event)}`);
+      }
+    });
+  },
+);
+
+flow(
+  "EXEC-ATT-AUTH",
+  {
+    domain: "secrets",
+    routes: [
+      "POST /v1/executor/attachments",
+      "POST /v1/executor/projects/:projectId/attachments",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("anonymous attachment upload is rejected", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/executor/attachments", {});
+      r.status(401);
+    });
+
+    await ctx.step("anonymous project attachment upload is rejected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/executor/projects/:projectId/attachments",
+          {},
+          { params: { projectId: "00000000-0000-4000-a000-000000000000" } },
+        );
+      r.status(401);
+    });
+  },
+);
+
 // SEC-7 — agent-minted secret setup links: the authenticated mint side
 // (POST /secret-requests, projects/routes/setup-links.ts) and the PUBLIC,
 // token-gated consume side (GET/POST /v1/setup-links/secret/:token,

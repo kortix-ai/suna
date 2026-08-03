@@ -7,6 +7,7 @@ import {
   detailCardVariants,
   DetailLayer,
   DetailSidebarToggle,
+  type PersistentLayer,
   SLIDE_TRANSITION,
   terminalLayerMotion,
 } from './detail-view';
@@ -31,9 +32,14 @@ describe('DetailLayer a11y (W6)', () => {
     expect(html).toContain('outline-none');
   });
 
-  test('home is inert while the terminal layer covers it, not only while a detail does', () => {
+  test('home is inert while the persistent layer covers it, not only while a detail does', () => {
     const covered = renderToStaticMarkup(
-      <DetailLayer detail={null} onBack={() => {}} isMobile={false} terminalOpen>
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      >
         <div>home</div>
       </DetailLayer>,
     );
@@ -46,6 +52,82 @@ describe('DetailLayer a11y (W6)', () => {
       </DetailLayer>,
     );
     expect(idle).not.toContain('aria-hidden="true"');
+  });
+});
+
+/** A minimal `PersistentLayer` — the terminal is the only real one. */
+function terminalLayer(over: Partial<PersistentLayer> = {}): PersistentLayer {
+  return {
+    open: false,
+    swap: false,
+    title: 'Terminal',
+    onClose: () => {},
+    body: <div>pty-socket</div>,
+    ...over,
+  };
+}
+
+describe('persistent layer — the terminal lives inside this shell, not beside it', () => {
+  test('it renders inside the detail card frame, and there is only one such frame', () => {
+    const html = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      >
+        <div>home</div>
+      </DetailLayer>,
+    );
+    expect(html).toContain('pty-socket');
+    expect(html).toContain('Terminal');
+    // The shared CARD_FRAME, worn by whichever layer is up. Exactly one card
+    // is on screen here — the duplicated standalone terminal frame this work
+    // deleted would have produced a second.
+    expect(html.match(/inset-y-3 right-3 left-3/g)).toHaveLength(1);
+  });
+
+  test('the body stays mounted once activated, so the PTY survives a close', () => {
+    // Server rendering cannot replay the mount latch across renders, so the
+    // contract is asserted where it actually lives: an activated-but-closed
+    // layer still renders its body, marked inert rather than removed. That is
+    // the whole difference from a `Detail`, whose body the keyed
+    // AnimatePresence tears down on close.
+    const open = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      />,
+    );
+    expect(open).toContain('pty-socket');
+
+    // A detail opening over it must not evict it either — they crossfade.
+    const covered = renderToStaticMarkup(
+      <DetailLayer
+        detail={{ key: 'f', title: 'report.pdf', body: <div>file-body</div> }}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true, swap: true })}
+      />,
+    );
+    expect(covered).toContain('pty-socket');
+    expect(covered).toContain('file-body');
+  });
+
+  test('mobile ignores it — there the terminal is its own drawer', () => {
+    const html = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile
+        persistentLayer={terminalLayer({ open: true })}
+      >
+        <div>home</div>
+      </DetailLayer>,
+    );
+    expect(html).not.toContain('pty-socket');
   });
 });
 

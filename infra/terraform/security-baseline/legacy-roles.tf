@@ -51,20 +51,6 @@ resource "aws_iam_role" "bedrock_logs" {
   tags_all              = {}
 }
 
-# __generated__ by Terraform from "kortix-prod-eks-ebs-csi-driver"
-resource "aws_iam_role" "prod_eks_ebs_csi_driver" {
-  assume_role_policy    = "{\"Statement\":[{\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"oidc.eks.eu-west-2.amazonaws.com/id/3CF875DFB25E8312D43B2203CD389F72:aud\":\"sts.amazonaws.com\",\"oidc.eks.eu-west-2.amazonaws.com/id/3CF875DFB25E8312D43B2203CD389F72:sub\":\"system:serviceaccount:kube-system:ebs-csi-controller-sa\"}},\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::935064898258:oidc-provider/oidc.eks.eu-west-2.amazonaws.com/id/3CF875DFB25E8312D43B2203CD389F72\"}}],\"Version\":\"2012-10-17\"}"
-  description           = null
-  force_detach_policies = false
-  max_session_duration  = 3600
-  name                  = "kortix-prod-eks-ebs-csi-driver"
-  name_prefix           = null
-  path                  = "/"
-  permissions_boundary  = null
-  tags                  = {}
-  tags_all              = {}
-}
-
 # __generated__ by Terraform from "qa-portal"
 resource "aws_iam_role" "qa_portal" {
   assume_role_policy    = "{\"Statement\":[{\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"oidc.eks.us-west-2.amazonaws.com/id/01F423916879E83FBF85E4540EA8E868:aud\":\"sts.amazonaws.com\",\"oidc.eks.us-west-2.amazonaws.com/id/01F423916879E83FBF85E4540EA8E868:sub\":\"system:serviceaccount:kortix-qa:qa-portal\"}},\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::935064898258:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/01F423916879E83FBF85E4540EA8E868\"}}],\"Version\":\"2012-10-17\"}"
@@ -76,13 +62,11 @@ resource "aws_iam_role" "qa_portal" {
   path                  = "/"
   permissions_boundary  = null
   tags = {
-    Cluster   = "kortix-dev-eks"
     Component = "qa-portal"
     ManagedBy = "terraform"
     Project   = "kortix"
   }
   tags_all = {
-    Cluster   = "kortix-dev-eks"
     Component = "qa-portal"
     ManagedBy = "terraform"
     Project   = "kortix"

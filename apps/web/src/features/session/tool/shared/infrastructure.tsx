@@ -1,17 +1,21 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
-import { HighlightedCode, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
+import { CopyButton } from '@/components/markdown/copy-button';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
@@ -23,18 +27,18 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-b
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
+  ArrowSquareOutIcon,
   CheckIcon as Check,
-  CaretRightIcon as ChevronRight,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
-  ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
@@ -229,7 +233,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
           onClick={openInBrowser}
           className={cn(navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-50')}
         >
-          <TbExternalLink className="size-4.5" />
+          <ArrowSquareOutIcon className="size-4.5" />
         </Button>
       </Hint>
       <Hint
@@ -275,7 +279,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
               navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-60',
             )}
           >
-            <TbExternalLink className="text-muted-foreground size-4 shrink-0" />
+            <ArrowSquareOutIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="break-all">{label}</span>
           </Button>
         </Hint>
@@ -677,56 +681,120 @@ export function ToolOutputFallback({
   const parsedJsonFailure = !isStreaming ? parseJsonFailure(output) : null;
   if (parsedJsonFailure) {
     return (
-      <div className="p-0">
+      <ToolResultCard>
         <JsonFailureOutputCard failure={parsedJsonFailure} toolName={toolName} />
-      </div>
+      </ToolResultCard>
     );
   }
 
   const jsonFailure = !isStreaming ? formatJsonFailureOutput(output) : null;
   if (jsonFailure) {
-    return (
-      <div className="p-0">
-        <ToolError error={jsonFailure} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={jsonFailure} toolName={toolName} />;
   }
 
   if (!isStreaming && looksLikeError(output)) {
-    return (
-      <div className="p-0">
-        <ToolError error={output} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={output} toolName={toolName} />;
   }
 
   if (looksLikeJsonPayload(output) || output.length > 4000) {
     return <RawOutputBlock output={output} />;
   }
 
+  // Short, non-JSON output — a fetched page, a summary, an agent's prose. This
+  // branch used to return a bare scroll div: no edge, no copy button, and no
+  // indent, so a fetched article sat flush against the chain rail as loose text
+  // while the very same content over 4000 characters got the full card. Same
+  // shell either way now; only the length differs.
   return (
-    <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
-      <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    <ToolOutputCard copyText={output}>
+      <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+      </div>
+    </ToolOutputCard>
+  );
+}
+
+/**
+ * The shell every expanded tool output shares: hairlined card, copy button
+ * pinned top-right, scrollable body, aligned to the row's label.
+ *
+ * One shell rather than per-branch chrome, because the alternative is what this
+ * file already proved — the card gets added to whichever branch someone is
+ * looking at, and the other paths quietly keep rendering naked text.
+ */
+function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
+  const surface = useContext(ToolSurfaceContext);
+
+  return (
+    <div
+      className={cn(
+        'border-border bg-popover relative rounded-md border',
+        // An inline row leads with a 16px icon and a gap-3, so `ml-7` puts the
+        // card on the label's column. The panel surface has no such gutter and
+        // supplies its own padding, so the same indent would only push the
+        // content off-centre.
+        surface === 'inline' && 'ml-7',
+      )}
+    >
+      {/* Floated rather than in a header bar: a bar would cost a row of height
+		      on every output block, and the button reads clearly against the
+		      surface on its own. `pr-9` on the body keeps the first line from
+		      running under it. */}
+      {copyText && (
+        <CopyButton
+          code={copyText}
+          className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
+        />
+      )}
+      <div data-scrollable className="max-h-72 overflow-auto p-3 pr-9">
+        {children}
+      </div>
     </div>
   );
 }
 
+/**
+ * Raw tool output as its own object: a muted, hairlined card with a copy
+ * button pinned top-right.
+ *
+ * Bare `<pre>` on the page had no edge, so a wall of output bled into the step
+ * around it and there was no way to get the text out except selecting it by
+ * hand. The card gives it a boundary; the copy button gives it an exit.
+ *
+ * Markdown renders as markdown. Agents routinely answer in markdown, and
+ * showing a reader `## Heading` and `**bold**` as literal punctuation is
+ * showing them the transport instead of the message. Detection is conservative
+ * (`looksLikeMarkdown`) — anything short of unambiguous syntax stays in the
+ * monospace block, which is the right home for logs, stack traces, and JSON.
+ *
+ * Copy always sends the FULL original output, never the truncated or
+ * pretty-printed `text` — the copy button is how you get at the part the cap
+ * hid, so handing back the visible slice would defeat it.
+ */
 export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
   const { text, truncatedChars } = useMemo(
     () => formatRawOutput(output, maxChars),
     [output, maxChars],
   );
+  const isMarkdown = useMemo(() => looksLikeMarkdown(text), [text]);
+
   return (
-    <div data-scrollable className="max-h-72 overflow-auto p-2">
-      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-        {text}
-      </pre>
+    <ToolOutputCard copyText={output}>
+      {isMarkdown ? (
+        <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+          <UnifiedMarkdown content={text} />
+        </div>
+      ) : (
+        <pre className="text-muted-foreground font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+          {text}
+        </pre>
+      )}
       {truncatedChars > 0 && (
-        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
-          +{truncatedChars.toLocaleString()} more characters
+        <div className="text-muted-foreground/40 mt-2 text-xs">
+          +{truncatedChars.toLocaleString()} more characters — copy for the full output
         </div>
       )}
-    </div>
+    </ToolOutputCard>
   );
 }
 
@@ -736,9 +804,7 @@ export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-export type ToolSurface = 'inline' | 'panel';
-
-export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+export { ToolSurfaceContext, type ToolSurface } from '@/features/session/tool/shared/surface';
 
 // Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -775,7 +841,7 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
   'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-  '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+  '[&>span:first-child>svg]:size-4 [&>span:first-child>svg]:text-muted-foreground',
 );
 
 // Title + subtitle + args, rendered for the compact inline row layout.
@@ -788,20 +854,22 @@ function InlineTriggerTitle({
   running: boolean;
   onSubtitleClick?: () => void;
 }) {
+  const args = trigger.args ?? [];
+
   return (
     <>
-      <span className="flex-shrink-0 text-xs whitespace-nowrap">{trigger.title}</span>
-      {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+      <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
+      {(trigger.subtitle || args.length > 0) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
-              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
+              <TextShimmer className="min-w-0 truncate font-mono text-sm">
                 {trigger.subtitle}
               </TextShimmer>
             ) : (
               <span
                 className={cn(
-                  'text-muted-foreground min-w-0 truncate font-mono text-xs',
+                  'text-muted-foreground min-w-0 truncate font-mono text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
@@ -818,55 +886,18 @@ function InlineTriggerTitle({
                 {trigger.subtitle}
               </span>
             ))}
-          {!running &&
-            trigger.args &&
-            trigger.args.length > 0 &&
-            trigger.args.map((arg, i) => (
+          {args.length > 0 && (
+            <>
+              {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
               <span
-                key={i}
-                title={arg}
-                className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
+                className="text-muted-foreground/60 min-w-0 truncate font-mono text-sm"
+                title={args.join(' · ')}
               >
-                {arg}
+                {args.join(' · ')}
               </span>
-            ))}
+            </>
+          )}
         </div>
-      )}
-    </>
-  );
-}
-
-// Right-aligned metadata for the inline row: duration, badge, spinner, accessory.
-function ToolRightCluster({
-  running,
-  durationMs,
-  badge,
-  rightAccessory,
-}: {
-  running: boolean;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
-}) {
-  return (
-    <>
-      {!running && durationMs !== undefined && durationMs >= 1000 && (
-        <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-          {Math.round(durationMs / 1000)}s
-        </span>
-      )}
-      {badge && (
-        <span className="text-muted-foreground/60 flex-shrink-0 font-mono text-xs whitespace-nowrap">
-          {badge}
-        </span>
-      )}
-      {running && (
-        <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-      )}
-      {!running && rightAccessory && (
-        <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">
-          {rightAccessory}
-        </span>
       )}
     </>
   );
@@ -878,23 +909,17 @@ function ToolHeaderRow({
   trigger,
   running,
   onSubtitleClick,
-  durationMs,
-  badge,
-  rightAccessory,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
   return (
     <>
-      {icon && <span className="shrink-0">{icon}</span>}
+      {icon && <span className="text-muted-foreground size-4 shrink-0">{icon}</span>}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         {isTriggerTitle(trigger) ? (
           <InlineTriggerTitle
@@ -905,19 +930,7 @@ function ToolHeaderRow({
         ) : (
           trigger
         )}
-        {running && triggerIsEmpty && (
-          <>
-            <span className="bg-muted-foreground/10 h-3 w-16 flex-shrink-0 animate-pulse rounded" />
-            <span className="bg-muted-foreground/10 h-3 w-28 min-w-0 animate-pulse rounded" />
-          </>
-        )}
       </div>
-      <ToolRightCluster
-        running={running}
-        durationMs={durationMs}
-        badge={badge}
-        rightAccessory={rightAccessory}
-      />
     </>
   );
 }
@@ -1104,25 +1117,18 @@ function CollapsibleToolRow({
   onOpenChange: (value: boolean) => void;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <CollapsibleTrigger asChild>
+    <Disclosure open={open} onOpenChange={onOpenChange}>
+      <DisclosureTrigger>
         <div
           data-component="tool-trigger"
           className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
         >
           {header}
-          <ChevronRight
-            className={cn(
-              'text-muted-foreground/30 size-3 flex-shrink-0 transition-all',
-              children && !locked ? 'opacity-40 group-hover:opacity-80' : 'opacity-0',
-              open && children && 'rotate-90 !opacity-100',
-            )}
-          />
         </div>
-      </CollapsibleTrigger>
+      </DisclosureTrigger>
 
       {children && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
-    </Collapsible>
+    </Disclosure>
   );
 }
 
@@ -1180,9 +1186,6 @@ export function BasicTool({
       trigger={trigger}
       running={running}
       onSubtitleClick={onSubtitleClick}
-      durationMs={durationMs}
-      badge={badge}
-      rightAccessory={rightAccessory}
     />
   );
 
@@ -1205,6 +1208,57 @@ export function BasicTool({
     <CollapsibleToolRow header={header} locked={locked} open={open} onOpenChange={handleOpenChange}>
       {children}
     </CollapsibleToolRow>
+  );
+}
+
+/**
+ * A file's contents inside an expanded tool row, in the same card `bash` draws
+ * around a command — so read / write / edit / bash all present code the one way.
+ *
+ * `TOOL_INDENT` lines the card up with the trigger's text, not its icon:
+ * {@link ToolHeaderRow} renders a `size-4` icon and {@link TOOL_ROW_CLASS} sets
+ * `gap-1.5`, so the text column starts 22px in. (`bash` used to hardcode `ml-7`
+ * against a `gap-3` that this row class does not have, which put its block 6px
+ * past the text above it.)
+ */
+export const TOOL_INDENT = 'ml-5.5';
+
+/**
+ * The indent, or nothing, depending on which surface the tool is drawn on.
+ *
+ * An inline row leads with a `size-4` icon and a `gap-1.5`, so its text column
+ * starts 22px in and a card below it has to match. The panel has no icon
+ * gutter and supplies its own `p-4`, so the same indent only pushes the card
+ * 22px off the header it sits under. {@link ToolOutputCard} already guarded its
+ * indent this way; every other site hardcoded `TOOL_INDENT` and drifted.
+ */
+export function useToolIndent(): string {
+  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
+}
+
+export function ToolCodeCard({
+  code,
+  language,
+  className,
+}: {
+  code: string;
+  language: string;
+  className?: string;
+}) {
+  const indent = useToolIndent();
+  if (!code) return null;
+  return (
+    <div className={cn('mt-1.5', indent, className)}>
+      <div className="border-border bg-popover relative rounded-md border">
+        {/* The scroller sits INSIDE the overlay so the copy button stays pinned
+            to the card while long content scrolls under it. */}
+        <CopyOverlay code={code}>
+          <div data-scrollable className="max-h-96 overflow-auto p-3">
+            <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
   );
 }
 

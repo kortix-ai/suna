@@ -1,9 +1,9 @@
+import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import {
   ToolRunningContext,
@@ -43,10 +43,15 @@ function withProviders(node: ReactNode) {
   );
 }
 
-// Task 4: show/show-user joins the shared BasicTool shell on the INLINE
-// (chat) surface only. The PANEL surface keeps its bespoke fill-the-pane
+// show/show-user drives its INLINE (chat) surface with `Disclosure`: a `w-fit`
+// outline Button is the trigger, and the payload renders in
+// `DisclosureContent`. The PANEL surface keeps its bespoke fill-the-pane
 // rendering byte-for-byte — tool-part-renderer.tsx:122 special-cases
 // show/show-user as `fillsPanel` because the preview IS the payload there.
+//
+// `renderToStaticMarkup` runs no effects, so `forceOpen` (a `useEffect`) can't
+// open the disclosure in this harness — the open-state tests drive the
+// synchronous `defaultOpen` prop instead.
 
 function makePart(input: Record<string, unknown>): ToolPart {
   return {
@@ -68,21 +73,33 @@ const PART = makePart({
   content: 'Hello from the payload.',
 });
 
-describe('ShowTool joins the shared shell inline; panel stays visually identical', () => {
-  test('inline surface renders the standard BasicTool row with the payload title as subtitle', () => {
+describe('ShowTool drives its inline surface with Disclosure; panel stays visually identical', () => {
+  test('inline surface renders a w-fit accent button as the disclosure trigger', () => {
     const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
 
-    // Grammar: the collapsible row is BasicTool's inline trigger row.
+    // Grammar: the trigger is a real <button>, still tagged `tool-trigger` so
+    // activity-step.tsx's descendant size overrides keep applying.
     expect(html).toContain('data-component="tool-trigger"');
+    expect(html).toContain('<button');
+    expect(html).toContain('aria-expanded="false"');
 
-    // The row's own title is always "Show" — never the payload title itself,
-    // which is reserved for the subtitle (mirrors `showLabel`-style
+    // Accent variant, hugging its content — not a full-bleed row.
+    expect(html).toContain('bg-foreground/5');
+    expect(html).toContain('border');
+    expect(html).toContain('w-fit');
+
+    // The label is the payload's resolved title (mirrors `showLabel`-style
     // precedence: title > description > basename/domain, never a raw path/URL).
-    expect(html).toContain('Show');
     expect(html).toContain('Quarterly Report Draft');
 
-    // Expanded by default: the shown artifact is the payoff, so the body
-    // (the rich preview) renders immediately, not behind a collapsed row.
+    // Collapsed by default: the payload lives behind the trigger.
+    expect(html).not.toContain('Hello from the payload.');
+  });
+
+  test('an open disclosure renders the payload in its content region', () => {
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} defaultOpen />));
+
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('Hello from the payload.');
   });
 
@@ -102,7 +119,7 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
     expect(html).toContain('flex min-h-0 flex-1 flex-col');
     expect(html).toContain('min-h-0 flex-1 overflow-hidden');
 
-    // No BasicTool shell on the panel surface — the preview still fills the
+    // No disclosure shell on the panel surface — the preview still fills the
     // pane directly, unwrapped.
     expect(html).not.toContain('data-component="tool-trigger"');
 
@@ -154,11 +171,12 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
       ),
     );
 
-    // The BasicTool header already shows the standard running chrome, so the
-    // bespoke loading card must not render a second indicator inline.
+    // The trigger button carries the running indicator itself, so the bespoke
+    // panel loading card must not render a second one inline.
     expect(html).toContain('data-component="tool-trigger"');
+    expect(html).toContain('animate-spinner-orbit');
     expect(html).not.toContain('bg-card');
-    expect(html).not.toContain('items-center justify-center');
+    expect(html).not.toContain('px-5 py-4');
   });
 
   test('a title-less unsafe url never leaks into the row subtitle', () => {
@@ -167,29 +185,31 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
       url: '/internal/session/abc?token=secret123',
     });
 
+    // Collapsed, so the whole markup IS the trigger button.
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
-
-    // The trigger row is everything before the expanded body wrapper
-    // (`mt-1 mb-1 overflow-hidden`, from CollapsibleToolRow).
-    const [rowHtml] = html.split('mt-1 mb-1');
 
     // showDomain() echoes unparseable input verbatim; the safeHttpUrl gate
     // must degrade a relative/non-http(s) url to the literal 'Link' instead.
-    expect(rowHtml).toContain('title="Link"');
-    expect(rowHtml).not.toContain('token=secret123');
-    expect(rowHtml).not.toContain('/internal/session/abc');
+    expect(html).toContain('title="Link"');
+    expect(html).not.toContain('token=secret123');
+    expect(html).not.toContain('/internal/session/abc');
   });
 
   test('a show whose content failed to load still renders a fallback row (never disappears)', () => {
     forceShowContentUnavailable = true;
     try {
       const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
-      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} defaultOpen />));
 
       expect(html).toContain('Preview unavailable');
       // Pre-Task-6 behavior returned null here (empty markup) — this is the
       // exact regression this task fixes: a completed `show` never vanishes.
       expect(html).not.toBe('');
+
+      // Collapsed, the trigger still holds the tool's place in the transcript.
+      const collapsed = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+      expect(collapsed).toContain('data-component="tool-trigger"');
+      expect(collapsed).toContain('Report');
     } finally {
       forceShowContentUnavailable = false;
     }

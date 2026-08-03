@@ -46,14 +46,32 @@ emailWebhookApp.openapi(
     if (!secret) {
       return c.json({ error: 'AgentMail webhook signing is not configured' }, 503);
     }
+    // AgentMail documents the legacy `svix-*` names, while newer Svix /
+    // Standard Webhooks deliveries may use the equivalent `webhook-*` names.
+    // Accept both without weakening verification: the same raw body, timestamp,
+    // message id, signature and per-inbox secret are still required.
+    const svixId = c.req.header('svix-id') ?? c.req.header('webhook-id') ?? '';
+    const svixTimestamp = c.req.header('svix-timestamp') ?? c.req.header('webhook-timestamp') ?? '';
+    const svixSignature = c.req.header('svix-signature') ?? c.req.header('webhook-signature') ?? '';
     const ok = verifyAgentMailSignature({
       rawBody,
       secret,
-      svixId: c.req.header('svix-id') ?? '',
-      svixTimestamp: c.req.header('svix-timestamp') ?? '',
-      svixSignature: c.req.header('svix-signature') ?? '',
+      svixId,
+      svixTimestamp,
+      svixSignature,
     });
-    if (!ok) return c.json({ error: 'Invalid signature' }, 401);
+    if (!ok) {
+      console.warn('[email-webhook] signature verification failed', {
+        inboxId: event.message.inbox_id,
+        hasSvixId: Boolean(c.req.header('svix-id')),
+        hasWebhookId: Boolean(c.req.header('webhook-id')),
+        hasSvixTimestamp: Boolean(c.req.header('svix-timestamp')),
+        hasWebhookTimestamp: Boolean(c.req.header('webhook-timestamp')),
+        hasSvixSignature: Boolean(c.req.header('svix-signature')),
+        hasWebhookSignature: Boolean(c.req.header('webhook-signature')),
+      });
+      return c.json({ error: 'Invalid signature' }, 401);
+    }
 
     void dispatchAgentMailEvent(event).catch((err) => {
       console.error('[email-webhook] handler failed', err);

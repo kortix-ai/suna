@@ -56,7 +56,7 @@ import {
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
   StorefrontIcon as Store,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   TerminalWindowIcon as TerminalSquare,
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
@@ -775,7 +775,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/credits-explained',
+    href: '/help/credits',
     keywords: 'credits coins billing usage tokens cost explain',
   },
 

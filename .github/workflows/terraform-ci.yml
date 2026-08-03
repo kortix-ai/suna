@@ -141,19 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The */platform roots are deliberately absent. They drive the helm and
-        # kubernetes providers, and Helm keeps release state in Kubernetes
-        # Secrets — so planning them from CI would mean granting this role
-        # secret-read inside the production cluster. That is a bigger grant
-        # than drift reporting justifies. Plan them from an operator session.
         root:
-          - infra/terraform/environments/prod-eks/cluster
-          - infra/terraform/environments/dev-eks/cluster
-          # The ECS envs became plannable from a clean checkout once their
-          # non-secret config moved out of gitignored tfvars into variable
-          # defaults (#5771, #5778). Before that a plan here proposed replacing
-          # the production certificate and live DNS, so covering them would
-          # have reported catastrophic false drift every night.
           - infra/terraform/environments/prod
           - infra/terraform/environments/staging
           - infra/terraform/environments/dev
@@ -169,13 +157,6 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: plan -detailed-exitcode
-        # The EKS roots declare a Cloudflare provider and fall back to a dummy
-        # token when none is supplied, which fails the plan with Cloudflare's
-        # auth error 10000 before any drift is reported. Read-only here: plan
-        # never writes DNS.
-        env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ vars.CLOUDFLARE_ZONE_ID }}
         run: |
           set -uo pipefail
           terraform -chdir="${{ matrix.root }}" init -input=false -no-color

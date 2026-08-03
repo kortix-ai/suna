@@ -20,11 +20,6 @@ import {
 }
 
 import {
-  to = aws_iam_role.prod_eks_ebs_csi_driver
-  id = "kortix-prod-eks-ebs-csi-driver"
-}
-
-import {
   to = aws_iam_role.qa_portal
   id = "qa-portal"
 }

@@ -947,7 +947,7 @@ export async function provisionSessionSandbox(opts: {
       const failureCategory = failure.category;
       if (isCapacity) {
         console.warn(
-          `[session-sandbox] provider at capacity for ${sandbox.sandboxId} after retries — bouncing session:`,
+          `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
           bgMessage.slice(0, 200),
         );
       } else if (isGitAuth) {

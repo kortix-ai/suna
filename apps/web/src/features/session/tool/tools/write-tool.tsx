@@ -1,7 +1,6 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -13,14 +12,17 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
+import { getFilename } from '@/ui';
+import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext } from 'react';
 
@@ -33,7 +35,6 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const running = useContext(ToolRunningContext);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
   const content = (input.content as string) || (streamingInput.content as string) || '';
   const ext = filename.split('.').pop() || '';
   const output = partOutput(part);
@@ -46,10 +47,12 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
+      icon={<PencilSimpleIcon className="size-3.5 flex-shrink-0" />}
       trigger={{
         title: 'Write',
-        subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
-        args: directory ? [directory] : undefined,
+        subtitle: isStalePending
+          ? undefined
+          : filename || (isStalePending ? 'Working...' : undefined),
       }}
       onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
       defaultOpen={defaultOpen}
@@ -60,23 +63,15 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {isError ? (
         <ToolOutputFallback output={output} toolName="write" />
       ) : content ? (
-        <div className="bg-card">
-          <BetterCodeBlock
-            code={content}
-            language={ext}
-            showBackgroundColors={false}
-            border={false}
-            className="p-0"
-          />
-        </div>
+        <ToolCodeCard code={content} language={ext} />
       ) : isStalePending ? (
-        <div className='p-4 pt-0'>
+        <ToolResultCard bodyClassName="px-2 py-1.5">
           <TextShimmer>
             {tHardcodedUi.raw(
               'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
             )}
           </TextShimmer>
-        </div>
+        </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
     </BasicTool>

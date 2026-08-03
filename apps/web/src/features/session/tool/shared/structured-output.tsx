@@ -4,10 +4,10 @@ import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import type { OutputSection } from '@/lib/utils/structured-output';
 import {
-  WarningIcon as AlertTriangle,
   ProhibitIcon as Ban,
   CheckCircleIcon as CheckCircle,
   CaretRightIcon as ChevronRight,
+  WarningIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -25,12 +25,12 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
               <div
                 key={i}
                 className={cn(
-                  'flex items-start gap-2 rounded-2xl border px-2.5 py-1.5',
+                  'flex items-start gap-2 rounded-md border px-2.5 py-1.5',
                   STATUS_BORDER.warning,
                   STATUS_BG.warning,
                 )}
               >
-                <AlertTriangle className={cn('mt-0.5 size-3 flex-shrink-0', STATUS_TEXT.warning)} />
+                <WarningIcon className={cn('mt-0.5 size-4 shrink-0', STATUS_TEXT.warning)} />
                 <p
                   className={cn(
                     'font-mono text-xs leading-relaxed break-words',

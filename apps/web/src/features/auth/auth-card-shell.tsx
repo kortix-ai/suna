@@ -20,12 +20,11 @@ import { openExternalRoute } from '@/lib/desktop';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
+/** Which sentence the legal line uses. */
+export type AuthLegalFooterVariant = 'default' | 'signup' | 'continue';
+
 /** Tiny legal line pinned to the bottom of every auth surface. */
-export function AuthLegalFooter({
-  variant = 'default',
-}: {
-  variant?: 'default' | 'signup' | 'continue';
-}) {
+export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFooterVariant }) {
   const onLegalClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (openExternalRoute(href)) event.preventDefault();
   };
@@ -73,7 +72,12 @@ export function AuthFrame({
   footerVariant = 'default',
 }: {
   children: React.ReactNode;
-  footerVariant?: 'default' | 'signup' | 'continue';
+  /**
+   * `none` drops the legal line. Reserve it for frames whose resolved screen is
+   * not an auth surface — on a real auth flow the footer stays pinned so the
+   * page does not jump when the column above it swaps.
+   */
+  footerVariant?: AuthLegalFooterVariant | 'none';
 }) {
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
@@ -81,7 +85,7 @@ export function AuthFrame({
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
         <div className="w-full max-w-[380px]">{children}</div>
       </main>
-      <AuthLegalFooter variant={footerVariant} />
+      {footerVariant === 'none' ? null : <AuthLegalFooter variant={footerVariant} />}
     </div>
   );
 }
