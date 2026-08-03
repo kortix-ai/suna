@@ -2012,6 +2012,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/usage/cost-by-project"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage/cost-summary"
+    },
+    {
+      "method": "GET",
       "path": "/v1/usage/session-costs"
     },
     {
