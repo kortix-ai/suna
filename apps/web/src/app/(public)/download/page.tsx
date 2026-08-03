@@ -1,11 +1,13 @@
 import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/brand/brand-logos';
 import { ConsentGate } from '@/components/consent-gate';
 import { DesktopCardImage, MobileCardImage } from '@/features/marketing/download/card-images';
+import { DownloadCloseButton } from '@/features/marketing/download/close-button';
 import {
   DESKTOP_CARD,
   DESKTOP_ROWS,
   MOBILE_CARD,
   MOBILE_ROWS,
+  MOBILE_STATUS,
   hero,
 } from '@/features/marketing/download/content';
 import type { DesktopOs, MobileOs, Platform } from '@/features/marketing/download/detect-os';
@@ -73,8 +75,7 @@ export default async function DownloadPage({
     id: os,
     label: MOBILE_ROWS[os].label,
     meta: MOBILE_ROWS[os].hint,
-    href: MOBILE_ROWS[os].href,
-    external: true,
+    status: MOBILE_STATUS,
     Mark: MOBILE_MARKS[os],
   }));
 
@@ -98,13 +99,19 @@ export default async function DownloadPage({
       title={MOBILE_CARD.title}
       description={MOBILE_CARD.description}
       rows={mobileRows}
-      filled={onPhone ? detected : null}
+      // Nothing to fill: neither row has a button while both apps are unreleased.
+      // A phone visitor therefore sees no solid button anywhere on the page,
+      // which is accurate — there is nothing here they can install today.
+      filled={null}
     />
   );
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col justify-center px-6 py-16 md:py-0">
       <ConsentGate />
+
+      {/* This route renders no nav and no footer, so it is the only way out. */}
+      <DownloadCloseButton />
 
       <header className="mb-10 text-center">
         <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
