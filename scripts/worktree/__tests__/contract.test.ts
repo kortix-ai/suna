@@ -56,6 +56,64 @@ describe('dependency contract — every external binary the worktree spawns is d
   });
 });
 
+describe('supabase restart contract — a SIGKILLed stack must be cleared before start', () => {
+  // `supabase start` checks that the containers EXIST, not that they are healthy.
+  // Docker Desktop quitting kills all 8 at once (exit 137) and leaves them
+  // `exited`, where start reports "already running" then dies on "container is
+  // not running: exited". Every call site must `stop` first — and must never do
+  // it with --no-backup, which deletes the developer's data volume.
+  // These assert on CODE, so comment lines are dropped first — the prose here and
+  // in the sources deliberately names both `supabase stop` and `--no-backup`.
+  const dropComments = (src: string, prefix: string) =>
+    src.split('\n').filter((l) => !l.trim().startsWith(prefix)).join('\n');
+
+  const devSh = readFileSync(join(REPO, 'scripts', 'dev-local.sh'), 'utf8');
+  const laptopMarker = 'Ensuring local Supabase is running';
+  const supaSrc = readFileSync(join(LIB_DIR, 'supabase.ts'), 'utf8');
+
+  const laptopBranch = (() => {
+    const from = devSh.indexOf(laptopMarker);
+    expect(from, `dev-local.sh no longer contains "${laptopMarker}" — retarget this test`).toBeGreaterThan(-1);
+    return dropComments(devSh.slice(from, devSh.indexOf('\nelse', from)), '#');
+  })();
+
+  const ensurePrimary = (() => {
+    const from = supaSrc.indexOf('export async function ensurePrimarySupabase');
+    expect(from, 'ensurePrimarySupabase is gone — retarget this test').toBeGreaterThan(-1);
+    return dropComments(supaSrc.slice(from, supaSrc.indexOf('\n}', from)), '//');
+  })();
+
+  test('dev-local.sh stops the local stack before starting it', () => {
+    const stop = laptopBranch.indexOf('supabase stop');
+    const start = laptopBranch.indexOf('supabase start');
+    expect(stop, 'the laptop branch runs `supabase start` with no `supabase stop` recovery').toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(-1);
+    expect(stop, '`supabase stop` must run before `supabase start`').toBeLessThan(start);
+  });
+
+  test('dev-local.sh never passes --no-backup against the developer database', () => {
+    expect(
+      laptopBranch.includes('--no-backup'),
+      '--no-backup deletes the data volumes — it is only valid on the throwaway sandbox path',
+    ).toBe(false);
+  });
+
+  test('ensurePrimarySupabase stops the primary stack before starting it', () => {
+    const stop = ensurePrimary.indexOf("'stop'");
+    const start = ensurePrimary.indexOf("'start'");
+    expect(stop, 'ensurePrimarySupabase runs `supabase start` with no `supabase stop` recovery').toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(-1);
+    expect(stop, '`supabase stop` must run before `supabase start`').toBeLessThan(start);
+  });
+
+  test('no supabase call site in lib/ destroys volumes with --no-backup', () => {
+    expect(
+      dropComments(libSrc, '//').includes('--no-backup'),
+      'a worktree lib passes --no-backup — that deletes a data volume',
+    ).toBe(false);
+  });
+});
+
 describe('DEPS are well-formed', () => {
   test('each dep has a check, install hints, and a needed tier', () => {
     for (const d of DEPS) {

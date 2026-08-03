@@ -108,11 +108,6 @@ export const isConnectorsEnabled = (): boolean => {
   return getEnv().CONNECTORS_ENABLED;
 };
 
-/** Whether the project index can reserve one speculative warm session. */
-export const isWarmProjectSessionsEnabled = (): boolean => {
-  return getEnv().WARM_PROJECT_SESSIONS_ENABLED;
-};
-
 /**
  * Whether creating an ADDITIONAL/org account is restricted to platform
  * admins on this deployment. Mirrors the backend's

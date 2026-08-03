@@ -666,6 +666,29 @@ export const UpdateConnectionProfileCredentialInputSchema =
 export type UpdateConnectionProfileCredentialInput =
   UpdateConnectorAuthorizationCredentialInput;
 
+export const PendingSessionPromptSchema = z
+  .object({
+    text: z.string().max(1_000_000),
+    agent: z.string().min(1).nullable().optional(),
+    model: z
+      .object({ providerID: z.string().min(1), modelID: z.string().min(1) })
+      .strict()
+      .nullable()
+      .optional(),
+    variant: z.string().min(1).nullable().optional(),
+    attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.text.trim().length > 0 || (value.attachment_names?.length ?? 0) > 0) return;
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['text'],
+      message: 'A pending prompt requires text or an attachment name.',
+    });
+  });
+export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -673,6 +696,7 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
+    pending_prompt: PendingSessionPromptSchema.optional(),
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     session_id: z
@@ -794,6 +818,7 @@ export const ClaimWarmProjectSessionInputSchema = z
       ),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
+    pending_prompt: PendingSessionPromptSchema.optional(),
   })
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<
@@ -838,6 +863,15 @@ export const SESSION_START_STAGES = [
 export const SessionStartStageSchema = z.enum(SESSION_START_STAGES);
 export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
+export const SessionStartFailureSchema = z
+  .object({
+    category: z.enum(['provider-capacity', 'git-auth', 'sandbox-provider']),
+    message: z.string(),
+    retryable: z.boolean(),
+  })
+  .strict();
+export type SessionStartFailure = z.infer<typeof SessionStartFailureSchema>;
+
 /**
  * The readiness payload of POST /v1/projects/:id/sessions/:id/start — the one
  * object clients poll until `stage === 'ready'`.
@@ -853,6 +887,8 @@ export const SessionStartResultSchema = z.object({
   sandbox: ProjectSessionSandboxSchema.nullable(),
   /** Canonical OpenCode root pin, resolved server-side once the box is up. */
   opencode_session_id: z.string().nullable(),
+  /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
+  failure: SessionStartFailureSchema.nullable().optional(),
   /** Server-selected OpenCode REST transport. */
   runtime_transport: z.literal('rest').optional(),
   /**
@@ -933,6 +969,52 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
  * no per-secret member/group sharing and no resource-side agent allow-list
  * (both retired); every project member with read access sees every secret.
  */
+export const SecretDeliveryStrategySchema = z.enum(['runtime', 'egress', 'broker', 'denied']);
+export type SecretDeliveryStrategy = z.infer<typeof SecretDeliveryStrategySchema>;
+
+export const SecretConsumerSchema = z.enum([
+  'sandbox',
+  'llm_gateway',
+  'executor',
+  'git_proxy',
+  'http_broker',
+  'network',
+]);
+export type SecretConsumer = z.infer<typeof SecretConsumerSchema>;
+
+export const SecretDeliveryStatusSchema = z.enum(['available', 'unavailable', 'disabled']);
+export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
+
+export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
+  z.object({ kind: z.literal('query'), name: z.string() }),
+  z.object({ kind: z.literal('json_body_field'), path: z.string() }),
+]);
+
+export const SecretEgressPolicySchema = z.object({
+  backend: z.enum(['llm_gateway', 'executor', 'git_proxy', 'kortix_fetch']).optional(),
+  base_url_env: z.string().optional(),
+  rules: z.array(
+    z.object({
+      host: z.string(),
+      methods: z.array(z.string()).optional(),
+      path: z.string().optional(),
+      inject: SecretInjectionSlotSchema.optional(),
+    }),
+  ),
+  inject: SecretInjectionSlotSchema,
+  on_no_match: z.enum(['deny', 'observe']).optional(),
+  tls: z.enum(['terminate', 'tunnel']).optional(),
+});
+export type SecretEgressPolicy = z.infer<typeof SecretEgressPolicySchema>;
+
+export const UpdateSecretStrategyInputSchema = z
+  .object({
+    strategy: SecretDeliveryStrategySchema,
+  })
+  .strict();
+export type UpdateSecretStrategyInput = z.infer<typeof UpdateSecretStrategyInputSchema>;
+
 export const SecretSchema = z.object({
   /** Unique per project. The handle an agent's `secrets` grant references. */
   identifier: z.string(),
@@ -956,5 +1038,12 @@ export const SecretSchema = z.object({
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
+  strategy: SecretDeliveryStrategySchema,
+  consumer: SecretConsumerSchema.nullable(),
+  delivery_status: SecretDeliveryStatusSchema,
+  egress_policy: SecretEgressPolicySchema.nullable(),
+  strategy_locked: z.boolean(),
+  last_rotated_at: z.string().nullable(),
+  requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;

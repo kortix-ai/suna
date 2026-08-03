@@ -461,3 +461,54 @@ flow(
     });
   },
 );
+
+flow(
+  'COV-11',
+  {
+    domain: 'coverage',
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/config',
+      'POST /v1/projects/:projectId/sessions/:sessionId/reload',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const sessionParams = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
+
+    await ctx.step('anon cannot read config freshness or reload', async () => {
+      const anon = ctx.client.as(ctx.P.ANON);
+      const read = await anon.get('/v1/projects/:projectId/sessions/:sessionId/config', {
+        params: sessionParams,
+      });
+      read.status(401);
+      const reload = await anon.post(
+        '/v1/projects/:projectId/sessions/:sessionId/reload',
+        {},
+        { params: sessionParams },
+      );
+      reload.status(401);
+    });
+
+    await ctx.step('an unknown project hides both — no existence oracle', async () => {
+      // A reload restarts a session's runtime. Distinguishing "no such project"
+      // from "not yours" here would let anyone probe for live session ids.
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/config', {
+        params: sessionParams,
+      });
+      read.status(404);
+      const reload = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/reload',
+        {},
+        { params: sessionParams },
+      );
+      reload.status(404);
+    });
+
+    await ctx.step('a malformed session id is rejected before any lookup', async () => {
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/config', {
+        params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
+      });
+      read.status(400);
+    });
+  },
+);

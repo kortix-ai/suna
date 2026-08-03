@@ -409,6 +409,32 @@ describe('replayStartStash', () => {
     handle.cancel();
   });
 
+  test('reports successful stash delivery so the host can clear its durable draft', async () => {
+    const timers = createFakeTimers();
+    writeStartStash('sess-1', { prompt: 'durable prompt', model: null, agent: null });
+    const delivery = { prompt: null as string | null };
+
+    const handle = replayStartStash({
+      sessionId: 'sess-1',
+      timers,
+      checkReadiness: () => ({}),
+      prepare: (stash) => ({
+        messageId: 'msg-1',
+        optimisticText: stash.prompt,
+        buildParts: async () => [{ type: 'text', text: stash.prompt }],
+      }),
+      onSuccess: (stash) => {
+        delivery.prompt = stash.prompt;
+      },
+    });
+
+    await timers.runAll();
+    await tick();
+
+    expect(delivery.prompt).toBe('durable prompt');
+    handle.cancel();
+  });
+
   test('cancel() stops a pending write-race retry from ever sending', async () => {
     const timers = createFakeTimers();
     const prepare = mock(() => {

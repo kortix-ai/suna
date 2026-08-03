@@ -17,6 +17,7 @@ import {
 } from '@/lib/seo/public-content';
 import { resetAiIndexRateLimitsForTests } from '@/lib/seo/rate-limit';
 import { markdownResponse } from '@/lib/seo/response';
+import { renderRobotsTxt } from '@/lib/seo/robots';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
 const originalUseCases = process.env.NEXT_PUBLIC_USE_CASES_ENABLED;
@@ -47,6 +48,16 @@ afterEach(() => {
 });
 
 describe('public SEO/AEO content coverage', () => {
+  test('publishes the QM comparison as canonical agent-readable Markdown', () => {
+    const resolved = resolvePublicMarkdown(['blog', 'kortix-vs-qm.md']);
+    expect(resolved?.record.htmlPath).toBe('/blog/kortix-vs-qm');
+    expect(resolved?.markdown).toContain('# Kortix vs QM: two open agent platforms');
+    expect(resolved?.markdown).toContain('| Dimension | QM | Kortix |');
+    expect(resolved?.markdown).toContain('https://github.com/yc-software/qm');
+    expect(resolved?.markdown).toContain('npm exec qm -- check --live');
+    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/blog/kortix-vs-qm.md');
+  });
+
   test('uses one non-www canonical origin and no hardcoded canonical tag', () => {
     expect(CANONICAL_ORIGIN).toBe(SEO_COVERAGE_MANIFEST.canonicalOrigin);
     const appRoot = path.join(process.cwd(), 'src', 'app');
@@ -120,7 +131,9 @@ describe('public SEO/AEO content coverage', () => {
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['docs', 'index.md']);
-    expect(resolved?.markdown).toContain('Create a project, start a session, and merge your first change request');
+    expect(resolved?.markdown).toContain(
+      'Create a project, start a session, and merge your first change request',
+    );
     expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
 
@@ -251,13 +264,7 @@ describe('bounded public agent index', () => {
     // file. When present, every docs and marketing record — which previously
     // had null last_modified — should carry a real ISO timestamp so
     // recency-aware AEO retrievers no longer deprioritize 42% of the index.
-    const manifestPath = path.join(
-      process.cwd(),
-      'src',
-      'lib',
-      'seo',
-      'content-timestamps.json',
-    );
+    const manifestPath = path.join(process.cwd(), 'src', 'lib', 'seo', 'content-timestamps.json');
     const hasManifest = fs.existsSync(manifestPath);
     if (!hasManifest) {
       // Fresh clone / test run without a prior build — skip rather than fail;
@@ -318,11 +325,21 @@ describe('bounded public agent index', () => {
     expect(response.headers.get('Retry-After')).toBeTruthy();
   });
 
-  test('robots explicitly allows the machine-readable routes', () => {
-    const robots = fs.readFileSync(path.join(process.cwd(), 'public', 'robots.txt'), 'utf8');
+  test('robots explicitly allows the machine-readable routes on the canonical host', () => {
+    const robots = renderRobotsTxt('kortix.com');
     for (const route of SEO_COVERAGE_MANIFEST.machineRoutes) {
       expect(robots).toContain(`Allow: ${route}`);
     }
     expect(robots).toContain('Allow: /markdown/');
+    expect(robots).toContain(`Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml`);
+  });
+
+  test('robots blocks crawling on every non-canonical host', () => {
+    for (const host of ['dev.kortix.com', 'staging.kortix.com', 'seo-fix.vercel.app', null]) {
+      const robots = renderRobotsTxt(host);
+      expect(robots, String(host)).toContain('Disallow: /');
+      expect(robots, String(host)).not.toContain('Sitemap:');
+    }
+    expect(renderRobotsTxt('localhost:3000')).toContain('Allow: /');
   });
 });

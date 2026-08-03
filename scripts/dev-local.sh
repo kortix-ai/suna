@@ -628,6 +628,19 @@ DB_IS_LOCAL=0
 if [[ "$SUPABASE_IS_LOCAL" == "1" || "$DB_IS_LOCAL" == "1" ]]; then
   echo "[dev] Ensuring local Supabase is running..."
   if ! (cd "$SUPABASE_DIR" && supabase status >/dev/null 2>&1); then
+    # `supabase start` checks whether the containers EXIST, not whether they are
+    # healthy. Docker Desktop quitting — or the Mac sleeping/restarting — SIGKILLs
+    # all 8 containers at once (exit 137) and leaves them in `exited`. Against
+    # that state `start` prints "supabase start is already running" and then dies
+    # with "supabase_db_<project> container is not running: exited", so every
+    # `pnpm dev` after a reboot failed until the stack was stopped by hand.
+    # Clearing the dead containers first lets `start` recreate them.
+    #
+    # NEVER add --no-backup here. It deletes the data volumes — i.e. the whole
+    # local Postgres. The sandbox path above passes it on purpose because that
+    # stack is throwaway; this one is the developer's real database.
+    echo "[dev] Local Supabase is down or half-up — clearing stale containers…"
+    (cd "$SUPABASE_DIR" && supabase stop >/dev/null 2>&1 || true)
     (cd "$SUPABASE_DIR" && supabase start)
   fi
 else

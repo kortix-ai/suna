@@ -73,16 +73,23 @@ async function readMaintenanceConfig(env) {
       cf: { cacheEverything: true, cacheTtl: 2 },
     });
     if (!response.ok) {
-      return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+      // State URL is unreachable or errored — return null so the router
+      // does not enter maintenance mode. A transient Vercel/Edge Config
+      // blip should not cause a full lockdown.
+      return null;
     }
 
     const config = await response.json();
     if (!config || !MAINTENANCE_LEVELS.has(config.level)) {
-      return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+      return null;
     }
     return { ...DEFAULT_MAINTENANCE, ...config };
   } catch {
-    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    // Network error reaching the state URL — fail open, not closed.
+    // A blocking lockdown should only result from an explicit admin
+    // action persisted in DB + Edge Config, never from a transient
+    // fetch failure.
+    return null;
   }
 }
 
@@ -137,7 +144,7 @@ export default {
     const isGateway = url.hostname.includes('gateway');
 
     const active =
-      (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'eks';
+      (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'ecs-fargate';
     const backends = isGateway
       ? {
           eks: env.GATEWAY_BACKEND_EKS,
@@ -199,11 +206,16 @@ export default {
       }
 
       const fallback = await readMaintenanceConfig(env);
-      if (fallback?.level === 'blocking') {
+      if (fallback) {
         return maintenanceConfigResponse(fallback, active, 'edge-config');
       }
+      // Both API and Edge Config are unreachable — return a safe default.
+      // Prefer none to blocking so a transient API blip (deploy, GC pause)
+      // doesn't flood every user with the maintenance page. If the admin
+      // truly intended a lockdown, it persists in Edge Config and this
+      // path won't be reached.
       return maintenanceConfigResponse(
-        { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
+        { ...DEFAULT_MAINTENANCE, updatedAt: new Date().toISOString() },
         active,
         'automatic',
       );

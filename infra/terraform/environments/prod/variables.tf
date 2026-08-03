@@ -112,7 +112,7 @@ variable "gateway_environment" {
 }
 
 variable "gateway_domain" {
-  description = "FQDN for the gateway ECS origin (the Worker's gateway-eks/ecs-fargate backend). Gets its own ACM cert. gateway.kortix.com itself stays the Worker's hostname."
+  description = "FQDN for the gateway ECS origin (the Worker's ecs-fargate backend). Gets its own ACM cert. gateway.kortix.com itself stays the Worker's hostname."
   type        = string
   default     = "gateway-ecs-fargate.kortix.com"
 }

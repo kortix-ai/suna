@@ -1,6 +1,6 @@
 /**
  * Pure logic for `EasyPanel`, split out from the client component purely so
- * it is unit-testable without a DOM (same reasoning as `progress-summary.ts`).
+ * it is unit-testable without a DOM.
  */
 
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
@@ -347,7 +347,6 @@ export function shouldAutoOpenPayoff(args: {
   hasPrimary: boolean;
   detailOpen: boolean;
   interactedThisRun: boolean;
-  panelOpen: boolean;
 }): boolean {
   return (
     args.wasRunning &&
@@ -355,7 +354,6 @@ export function shouldAutoOpenPayoff(args: {
     args.outcome === 'succeeded' &&
     args.hasPrimary &&
     !args.detailOpen &&
-    !args.interactedThisRun &&
-    args.panelOpen
+    !args.interactedThisRun
   );
 }

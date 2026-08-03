@@ -1,6 +1,5 @@
 'use client';
 
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -11,17 +10,19 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
-import { FileIcon, FolderIcon as Folder } from '@phosphor-icons/react';
+import { getFilename } from '@/ui';
+import { FileIcon, FileTextIcon, FolderIcon as Folder } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
@@ -36,7 +37,6 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(part);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
   const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
   const { toDisplayPath } = useOcFileOpen();
@@ -60,12 +60,12 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   return (
     <>
       <BasicTool
+        icon={<FileTextIcon className="size-3.5 flex-shrink-0" />}
         trigger={{
           title: 'Read',
           subtitle: isStalePending
             ? undefined
             : filename || (isStalePending ? 'Working...' : undefined),
-          args: directory ? [directory] : undefined,
         }}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
         defaultOpen={defaultOpen}
@@ -74,17 +74,9 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         className="overflow-hidden p-0"
       >
         {content ? (
-          <div className="bg-card">
-            <BetterCodeBlock
-              code={content}
-              language={ext}
-              showBackgroundColors={false}
-              border={false}
-              className="p-0"
-            />
-          </div>
+          <ToolCodeCard code={content} language={ext} />
         ) : parsed?.type === 'directory' && parsed.entries && parsed.entries.length > 0 ? (
-          <div data-scrollable className="max-h-96 space-y-0.5 overflow-auto px-3 py-2">
+          <ToolResultCard bodyClassName="space-y-0.5 px-2 py-1.5">
             {parsed.entries.map((entry, i) => {
               const isDir = entry.endsWith('/');
               return (
@@ -101,15 +93,15 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 </div>
               );
             })}
-          </div>
+          </ToolResultCard>
         ) : isStalePending ? (
-          <div className="p-4 pt-0">
+          <ToolResultCard bodyClassName="px-2 py-1.5">
             <TextShimmer>
               {tHardcodedUi.raw(
                 'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
               )}
             </TextShimmer>
-          </div>
+          </ToolResultCard>
         ) : isErrorOutput(output) ? (
           <ToolOutputFallback output={output} toolName="read" />
         ) : null}

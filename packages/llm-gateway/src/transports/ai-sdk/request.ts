@@ -81,7 +81,7 @@ function textOf(content: unknown): string {
 // the provider also depends on).
 const EMPTY_CONTENT_PLACEHOLDER = '(no content)';
 
-type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | string };
+type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | Uint8Array };
 
 // A user message is "empty" for Bedrock unless it carries an image or at least
 // one non-whitespace text part.
@@ -92,6 +92,25 @@ function nonEmptyUserContent(content: string | UserContentPart[]): string | User
   return hasImage || hasText ? content : EMPTY_CONTENT_PLACEHOLDER;
 }
 
+// Decode a `data:` URL into raw bytes suitable for inline file data. The
+// AI SDK's `convertToLanguageModelV4FilePart` converts a plain string URL to
+// `{type:'url', url: URL}`, which `@ai-sdk/amazon-bedrock` rejects with
+// `UnsupportedFunctionalityError: File URL data` — Bedrock's Converse API
+// only accepts inline (base64) image data, not URL references. Converting
+// data URLs to `Uint8Array` makes them reach the SDK as inline data, which
+// Bedrock serializes correctly as `image: { format, source: { bytes } }`.
+function decodeDataUrl(url: string): Uint8Array | URL {
+  if (!url.startsWith('data:')) return new URL(url);
+  const comma = url.indexOf(',');
+  if (comma === -1) return new URL(url);
+  const raw = url.slice(comma + 1);
+  try {
+    return new Uint8Array(atob(raw).split('').map((c) => c.charCodeAt(0)));
+  } catch {
+    return new URL(url);
+  }
+}
+
 function translateUserContent(content: unknown): string | UserContentPart[] {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return textOf(content);
@@ -100,8 +119,7 @@ function translateUserContent(content: unknown): string | UserContentPart[] {
     const part = raw as { type?: string; text?: string; image_url?: { url?: string } };
     if (part?.type === 'text') parts.push({ type: 'text', text: String(part.text ?? '') });
     else if (part?.type === 'image_url' && part.image_url?.url) {
-      const url = part.image_url.url;
-      parts.push({ type: 'image', image: url });
+      parts.push({ type: 'image', image: decodeDataUrl(part.image_url.url) });
     }
   }
   return parts.length ? parts : textOf(content);

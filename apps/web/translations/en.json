@@ -1220,6 +1220,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Ask for access.",
+      "privateBody": "Only members can open this project. Send a note and a project manager can add you.",
+      "waitingHeading": "Waiting on approval.",
+      "sentBody": "Your request is with the project's managers. This page opens on its own once one of them approves it.",
+      "alreadyBody": "You asked for access earlier. A project manager still has to approve it.",
+      "notFoundHeading": "This project is gone.",
+      "notFoundBody": "The link may be wrong, or someone deleted the project.",
+      "errorHeading": "This project didn't load.",
+      "errorBody": "The request failed before we could check your access.",
+      "noteLabel": "Note to the project manager",
+      "notePlaceholder": "Why you need access (optional)",
+      "requestAction": "Request access",
+      "checkNowAction": "Check now",
+      "tryAgainAction": "Try again",
+      "projectsAction": "Back to projects",
+      "accountLabel": "Account",
+      "projectLabel": "Project",
+      "approvalNote": "Anyone who manages this project can approve your request.",
+      "openAsAdmin": "Open as admin",
+      "requestFailed": "Could not send the request.",
+      "bypassFailed": "Admin bypass failed.",
+      "thisAccount": "this account"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix for Mobile",
       "line89JsxTextYourAiWorkerInYourPocket": "Your AI Worker, in your pocket.",

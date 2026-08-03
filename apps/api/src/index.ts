@@ -293,7 +293,7 @@ app.use('*', async (c, next) => {
   // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
   // logs, so a failing/degraded probe stays fully visible).
   const isHealthProbe =
-    path === '/health' || path === '/v1/health' || path.endsWith('/health/live');
+    path === '/health' || path === '/v1/health' || path.endsWith('/health/live') || path.endsWith('/health/ready');
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
@@ -440,6 +440,32 @@ const livenessHandler = (c: any) => {
 // Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
+
+// ─── Readiness gate — returns 503 until the app is fully initialized ──────────
+//
+// The ALB target group health check for ECS Fargate uses this endpoint to
+// decide whether a task is ready to receive traffic. During a rolling deploy:
+//   1. The new task starts, Bun.serve is up, but schema + services may not be
+//      ready yet → returns 503 (ALB keeps it out of the target group).
+//   2. Once bootServices() completes → returns 200 (ALB registers it, traffic
+//      flows to the new task before the old one is drained).
+//   3. On SIGTERM/SIGINT → draining flag is set → returns 503 (ALB deregisters
+//      the old task, giving in-flight requests time to complete within the
+//      deregistration_delay window).
+//
+// This eliminates the "brief 503 during deploy" window that caused the
+// maintenance mode trigger chain.
+const readinessHandler = (c: any) => {
+  if (draining) {
+    return c.json({ status: 'draining', reason: 'shutdown in progress' }, 503);
+  }
+  if (!schemaReady) {
+    return c.json({ status: 'starting', reason: 'schema not ready' }, 503);
+  }
+  return c.json({ status: 'ok' });
+};
+app.get('/health/ready', readinessHandler);
+app.get('/v1/health/ready', readinessHandler);
 
 function hasInternalObservabilityAuth(c: any): boolean {
   const authHeader = c.req.header('Authorization');
@@ -1186,6 +1212,11 @@ runtimeModelCatalog
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
+// Drain flag — set on SIGTERM/SIGINT so the load balancer health check
+// stops routing traffic before the process exits. The ECS deregistration
+// delay (30s) gives the ALB time to notice the 503s and drain in-flight
+// requests.
+let draining = false;
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
@@ -1281,6 +1312,10 @@ async function bootServices() {
 
 // Graceful shutdown
 async function shutdown(signal: string) {
+  // Set draining flag FIRST so the ALB health check starts returning 503
+  // and the load balancer stops routing new requests to this instance.
+  // The deregistration_delay (30s) gives in-flight requests time to complete.
+  draining = true;
   appLogger.info(`Shutting down gracefully`, { signal });
   // Releases the lease (so a peer takes over immediately instead of waiting out
   // the TTL) and stops the singleton workers via onRelease — but only if this

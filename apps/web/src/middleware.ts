@@ -31,14 +31,12 @@ const SELF_HOST_MARKETING_ONLY = [
   '/careers',
   '/blog',
   '/changelog',
-  '/credits-explained',
   '/contact',
   '/developers',
   '/enterprise',
   '/pricing',
   '/use-cases',
   '/solutions',
-  '/compare',
   '/integrations',
   '/security',
 ];
@@ -62,7 +60,6 @@ const PUBLIC_ROUTES = [
   '/support', // Support page should be public
   '/help', // Help center and documentation should be public
   '/docs', // Product documentation (Fumadocs) should be public
-  '/credits-explained', // Credits explained page should be public
   '/about', // About page should be public
   '/agent-computer', // Agent computer marketing page should be public
   '/agents-and-skills', // marketing page should be public
@@ -88,7 +85,6 @@ const PUBLIC_ROUTES = [
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
   '/solutions', // Solutions / persona landing pages should be public
-  '/compare', // Competitor comparison pages should be public
   '/integrations', // Integrations directory + per-tool pages should be public
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth

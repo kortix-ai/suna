@@ -113,9 +113,36 @@ interface ChannelActionDef {
   description: string;
   risk: Risk;
   /** JSON-schema properties using Slack's NATIVE param names (passed through verbatim). */
-  properties: Record<string, { type: string; description: string }>;
+  properties: Record<string, Record<string, unknown> & { type: string; description: string }>;
   required: string[];
 }
+
+const EMAIL_ATTACHMENT_SCHEMA = {
+  type: 'array',
+  description:
+    'Optional attachments. Use an opaque attachment_id returned by the Executor attachment upload route, or a fetchable URL.',
+  items: {
+    type: 'object',
+    properties: {
+      filename: { type: 'string', description: 'Filename shown to the recipient.' },
+      content_type: { type: 'string', description: 'MIME type of the attachment.' },
+      content_disposition: {
+        type: 'string',
+        enum: ['attachment', 'inline'],
+        description: 'How the recipient email client should display the file.',
+      },
+      content_id: { type: 'string', description: 'Optional content ID for an inline attachment.' },
+      attachment_id: {
+        type: 'string',
+        description: 'Opaque handle returned after uploading raw bytes to the Executor.',
+      },
+      url: { type: 'string', description: 'URL from which AgentMail can fetch the file.' },
+    },
+    required: ['filename'],
+    anyOf: [{ required: ['attachment_id'] }, { required: ['url'] }],
+    additionalProperties: false,
+  },
+} satisfies Record<string, unknown> & { type: string; description: string };
 
 /**
  * The Slack catalog — one entry per native Web API method the `slack` CLI
@@ -344,7 +371,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       subject: { type: 'string', description: 'Email subject.' },
       text: { type: 'string', description: 'Plain text body.' },
       html: { type: 'string', description: 'HTML body.' },
-      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+      attachments: EMAIL_ATTACHMENT_SCHEMA,
     },
     required: ['to'],
   },
@@ -364,7 +391,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       bcc: { type: 'array', description: 'Optional BCC recipients.' },
       text: { type: 'string', description: 'Plain text body.' },
       html: { type: 'string', description: 'HTML body.' },
-      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+      attachments: EMAIL_ATTACHMENT_SCHEMA,
     },
     required: ['message_id'],
   },
@@ -380,7 +407,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       message_id: { type: 'string', description: 'Message ID to reply-all to.' },
       text: { type: 'string', description: 'Plain text body.' },
       html: { type: 'string', description: 'HTML body.' },
-      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+      attachments: EMAIL_ATTACHMENT_SCHEMA,
     },
     required: ['message_id'],
   },

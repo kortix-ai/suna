@@ -23,11 +23,13 @@ export async function GET() {
     });
   } catch (err) {
     console.error('[api/maintenance] GET error:', err);
+    // Fail open: a transient error reading the maintenance config should
+    // not trigger a blocking lockdown. Return normal operation.
     return NextResponse.json(
       {
-        level: 'blocking',
-        title: 'Service maintenance',
-        message: 'Kortix is temporarily unavailable. Service will resume automatically.',
+        level: 'none',
+        title: '',
+        message: '',
         updatedAt: new Date().toISOString(),
       },
       { status: 200 },

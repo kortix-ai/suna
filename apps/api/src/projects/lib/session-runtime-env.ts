@@ -1,3 +1,5 @@
+import { agentConfigEtag } from './compile-agent-config';
+
 export interface SessionRuntimeEnvInput {
   projectId: string;
   sessionId: string;
@@ -40,7 +42,14 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
-      ? { KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig }
+      ? {
+          KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig,
+          // Content hash of the line above, echoed by the daemon's /kortix/health.
+          // It is what makes "is this session running the latest config?" a
+          // question anyone can answer — the box reports what it actually
+          // spawned with, rather than the API guessing from what it last sent.
+          KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(input.compiledAgentConfig) ?? '',
+        }
       : {}),
   };
 }

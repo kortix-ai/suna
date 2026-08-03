@@ -150,6 +150,23 @@ async function main() {
   // exactly equivalent to constructing it late.
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+  onUnplannedRespawn: () => {
+      // opencode died on its own and is back. Close whatever turn it was
+      // writing, or the client streams a part that will never complete.
+      const pinned = readPinnedOpencodeSessionId()
+      if (!pinned) return
+      void finalizeOrphanedTurn(
+        opencode.getInternalUrl(),
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        pinned,
+      ).then((finalized) => {
+        if (finalized) {
+          logger.info('[opencode] finalized a turn orphaned by an unplanned exit', {
+            sessionId: pinned,
+          })
+        }
+      })
+    },
   })
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
@@ -558,6 +575,23 @@ async function runWarmSeedMode(
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+  onUnplannedRespawn: () => {
+      // opencode died on its own and is back. Close whatever turn it was
+      // writing, or the client streams a part that will never complete.
+      const pinned = readPinnedOpencodeSessionId()
+      if (!pinned) return
+      void finalizeOrphanedTurn(
+        opencode.getInternalUrl(),
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        pinned,
+      ).then((finalized) => {
+        if (finalized) {
+          logger.info('[opencode] finalized a turn orphaned by an unplanned exit', {
+            sessionId: pinned,
+          })
+        }
+      })
+    },
   })
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
@@ -855,6 +889,33 @@ async function maybeCreateInitialOpencodeSession(
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
+}
+
+/**
+ * End a turn that lost the process writing it.
+ *
+ * A turn ends only when opencode emits `session.idle`/`session.error`. A killed
+ * or crashed opencode emits neither, so the last assistant message stays
+ * incomplete and every client streaming it spins — indefinitely, because the
+ * supervisor's respawn brings the box back without ever closing that turn.
+ *
+ * Boot already did exactly this when it adopted a root whose last turn never
+ * finished; it was simply unreachable from anywhere else. Same two calls, now
+ * callable after an unplanned respawn as well.
+ *
+ * Best-effort by construction: if opencode is not answering yet, or the abort
+ * fails, we log and move on. A stuck spinner is bad; a daemon that cannot
+ * finish booting because it could not tidy up a turn is worse.
+ */
+export async function finalizeOrphanedTurn(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+): Promise<boolean> {
+  const inspection = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!inspection.lastTurnIncomplete) return false
+  await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  return true
 }
 
 /** Best-effort write of the canonical opencode root id to the well-known pin

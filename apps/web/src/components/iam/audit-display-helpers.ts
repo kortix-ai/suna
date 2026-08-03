@@ -132,6 +132,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/openapi.json': 'Viewed OpenAPI specification',
   'GET /v1/billing/account-state': 'Viewed billing status',
   'GET /v1/billing/account-state/minimal': 'Viewed billing summary',
+  'GET /v1/usage/cost-by-project': 'Viewed project cost rollup',
+  'GET /v1/usage/cost-summary': 'Viewed cost summary',
   'POST /internal/gateway/billing': 'Processed gateway billing',
   'POST /internal/gateway/budget-check': 'Checked gateway budget',
   'POST /internal/gateway/models': 'Resolved gateway models',
@@ -392,6 +394,13 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       // /v1/projects/:id/secrets/NAME[/personal]
       const name = s[3] && s[3] !== ':id' ? s[3] : null;
       const personal = s[4] === 'personal';
+      if (m === 'PUT' && s[4] === 'strategy') {
+        return {
+          title: 'Updated secret delivery strategy',
+          detail: name ?? undefined,
+          kind: 'update',
+        };
+      }
       if (m === 'PUT') {
         return {
           title: personal ? 'Set personal secret' : 'Set shared secret',

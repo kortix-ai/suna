@@ -50,8 +50,8 @@ module "qa_portal" {
   name        = "qa-portal"
   bucket_name = "kortix-qa-reports"
 
-  oidc_provider_arn = "arn:aws:iam::935064898258:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/01F423916879E83FBF85E4540EA8E868"
-  oidc_provider_url = "oidc.eks.us-west-2.amazonaws.com/id/01F423916879E83FBF85E4540EA8E868"
+  oidc_provider_arn = ""
+  oidc_provider_url = ""
 
   namespace       = "kortix-qa"
   service_account = "qa-portal"
@@ -71,7 +71,6 @@ module "qa_portal" {
     Project   = "kortix"
     Component = "qa-portal"
     ManagedBy = "terraform"
-    Cluster   = "kortix-dev-eks"
   }
 }
 

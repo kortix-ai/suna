@@ -89,7 +89,7 @@ describe('maintenance store', () => {
     expect(events).toEqual(['database-read', 'edge-read']);
   });
 
-  test('activates automatic blocking when the API is unavailable and Edge Config is none', async () => {
+  test('returns normal (none) when the API is unavailable and Edge Config is none', async () => {
     databaseReadFails = true;
     edgeConfig = {
       level: 'none',
@@ -100,8 +100,10 @@ describe('maintenance store', () => {
 
     const config = await getMaintenanceConfig();
 
-    expect(config.level).toBe('blocking');
-    expect(config.title).toBe('Service maintenance');
+    // Fail open: a transient API blip (deploy, GC pause) should not
+    // trigger blocking maintenance. Only return blocking if Edge Config
+    // explicitly has it.
+    expect(config.level).toBe('none');
   });
 
   test('writes the database before Edge Config', async () => {

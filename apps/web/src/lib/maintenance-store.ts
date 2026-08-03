@@ -148,7 +148,12 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
       return null;
     });
     if (edgeConfig?.level === 'blocking') return edgeConfig;
-    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    // Fail open: when the API is temporarily unavailable (deploy, blip, GC
+    // pause) and Edge Config doesn't have a blocking level, return normal
+    // operation instead of activating automatic maintenance. A blocking
+    // lockdown should only be triggerable by an explicit admin action,
+    // not by a transient API/network failure.
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   }
 }
 

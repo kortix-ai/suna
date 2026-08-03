@@ -1,32 +1,32 @@
 'use client';
 
 /**
- * Picks which panel presentation to render for a session: `EasyPanel` (the
- * plain-language card home) or `AdvancedPanel` (the tool-call stepper),
- * driven by `preferences.panelMode`.
+ * Picks which panel presentation to render: `EasyPanel` (the plain-language
+ * card home) or `AdvancedPanel` (the tool-call stepper), driven by
+ * `preferences.panelMode`.
  *
- * `isSessionBusy` (the session's own busy/retry status, computed once in
- * `session-layout.tsx`) only matters to `EasyPanel` — it ORs this with its own
- * part-derived running flag so an inter-tool-call gap doesn't read as
- * "finished". `AdvancedPanel` derives its own presentation per tool part and
- * never needs a session-wide running flag.
+ * This is the action panel column's root — `session-action-panel-column.tsx`
+ * renders it beside the chat. It takes no props: everything it and the cards
+ * below it need comes from `SessionPanelProvider`, which owns the session's
+ * panel state for both surfaces.
  */
 
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { type PanelMode, useUserPreferencesStore } from '@/stores/user-preferences-store';
-import type { MessageWithParts } from '@/ui';
 import { useEffect } from 'react';
 // import { AdvancedPanel } from './advanced/advanced-panel'; // ADVANCED PANEL TEMPORARILY DISABLED
 import { EasyPanel } from './easy/easy-panel';
+import { useOptionalSessionPanel } from './session-panel-provider';
 
 /**
  * Whether Advanced mode should discard a chip's pending "open with the
- * primary deliverable" request for this session (W7). Only `EasyPanel` reads
- * `pendingPrimaryOpenSessionId`, so Advanced mode never naturally consumes
- * it — left standing, it survives a later switch back to Easy and
- * auto-opens a deliverable the user never asked THIS render to show. Pulled
- * out as a pure predicate (same reasoning as `easy-panel-logic.ts`) so the
- * discard condition is unit-testable without mounting the component or a DOM.
+ * primary deliverable" request for this session (W7). Only `EasyPanel`'s side
+ * of the provider reads `pendingPrimaryOpenSessionId`, so Advanced mode never
+ * naturally consumes it — left standing, it survives a later switch back to
+ * Easy and auto-opens a deliverable the user never asked THIS render to show.
+ * Pulled out as a pure predicate (same reasoning as `easy-panel-logic.ts`) so
+ * the discard condition is unit-testable without mounting the component or a
+ * DOM.
  */
 export function shouldDiscardPendingPrimaryOpen(
   mode: PanelMode,
@@ -36,43 +36,32 @@ export function shouldDiscardPendingPrimaryOpen(
   return mode === 'advanced' && pendingPrimaryOpenSessionId === sessionId;
 }
 
-export function ActionPanel({
-  sessionId,
-  messages,
-  isSessionBusy = false,
-  projectId,
-  projectSessionId,
-}: {
-  sessionId: string;
-  messages: MessageWithParts[] | undefined;
-  isSessionBusy?: boolean;
-  /** Route ids `EasyPanel`'s Terminal/Audit quick-nav needs — see its own
-   *  prop doc. `AdvancedPanel` has its own Terminal/Audit tabs wired from
-   *  `session-layout.tsx` directly, so it ignores these. */
-  projectId?: string;
-  projectSessionId?: string;
-}) {
+export function ActionPanel() {
   // Users with preferences persisted before this shipped have no panelMode key.
   const mode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
+  const panel = useOptionalSessionPanel();
+  const sessionId = panel?.sessionId ?? null;
 
-  // Hooks can't be conditional, so this subscribes unconditionally and only
-  // acts when `shouldDiscardPendingPrimaryOpen` says so (i.e. mode is
+  // Hooks can't be conditional, so these subscribe unconditionally and only
+  // act when `shouldDiscardPendingPrimaryOpen` says so (i.e. mode is
   // 'advanced' and the pending request belongs to this session).
   const pendingPrimaryOpenSessionId = useKortixComputerStore(
     (s) => s.pendingPrimaryOpenSessionId,
   );
   useEffect(() => {
+    if (!sessionId) return;
     if (!shouldDiscardPendingPrimaryOpen(mode, pendingPrimaryOpenSessionId, sessionId)) return;
     useKortixComputerStore.getState().consumePrimaryOpen(sessionId);
   }, [mode, pendingPrimaryOpenSessionId, sessionId]);
 
-  // Same discard contract for the palette's quick-view request: only
-  // `EasyPanel` consumes it, so in Advanced mode it would otherwise survive a
-  // later mode switch and replay a Terminal/Audit open the user never asked
-  // that render for. (Advanced handles the palette command directly via
+  // Same discard contract for the palette's quick-view request: only the Easy
+  // side consumes it, so in Advanced mode it would otherwise survive a later
+  // mode switch and replay a Terminal/Audit open the user never asked that
+  // render for. (Advanced handles the palette command directly via
   // session-browser-store — see command-palette.tsx.)
   const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
   useEffect(() => {
+    if (!sessionId) return;
     if (mode !== 'advanced' || pendingQuickView?.sessionId !== sessionId) return;
     useKortixComputerStore.getState().consumeQuickView(sessionId);
   }, [mode, pendingQuickView, sessionId]);
@@ -82,16 +71,6 @@ export function ActionPanel({
   // (advanced/advanced-panel.tsx, the panelMode preference, the discard
   // effects above) so uncommenting this branch restores it wholesale.
   //
-  // return mode === 'advanced' ? (
-  //   <AdvancedPanel sessionId={sessionId} messages={messages} />
-  // ) : (
-  return (
-    <EasyPanel
-      sessionId={sessionId}
-      messages={messages}
-      isSessionBusy={isSessionBusy}
-      projectId={projectId}
-      projectSessionId={projectSessionId}
-    />
-  );
+  // return mode === 'advanced' ? <AdvancedPanel … /> : (
+  return <EasyPanel />;
 }

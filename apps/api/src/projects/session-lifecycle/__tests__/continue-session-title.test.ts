@@ -14,9 +14,10 @@ let sessionRow: Record<string, unknown> | null = null;
 let titleCalls: Array<Record<string, unknown>> = [];
 let actor: string | null = 'automation-user-1';
 
-mock.module('../../../config', () => ({ config: {} }));
+mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: (_proj: unknown) => ({
       from: (table: unknown) => ({

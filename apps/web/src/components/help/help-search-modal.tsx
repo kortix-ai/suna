@@ -34,7 +34,7 @@ const helpPages: HelpPage[] = [
   {
     title: 'What are Credits?',
     description: 'Learn about credit types, how they are consumed, and pricing',
-    url: '/credits-explained',
+    url: '/help/credits',
     category: 'Billing & Usage',
     icon: Coins,
     keywords: [

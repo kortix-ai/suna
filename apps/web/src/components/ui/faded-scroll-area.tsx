@@ -9,9 +9,16 @@ export const FadedScrollArea = React.forwardRef<
   React.ComponentProps<'div'> & {
     fadeColor?: string;
     orientation?: 'vertical' | 'horizontal';
+    rootClassName?: string;
   }
 >(function FadedScrollArea(
-  { children, className, fadeColor = 'from-sidebar', orientation = 'vertical' },
+  {
+    children,
+    className,
+    fadeColor = 'from-sidebar',
+    orientation = 'vertical',
+    rootClassName,
+  },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -90,6 +97,7 @@ export const FadedScrollArea = React.forwardRef<
       className={cn(
         'relative flex min-h-0 min-w-0',
         isHorizontal ? 'w-full min-w-0 flex-1 self-center' : 'h-full flex-col',
+        rootClassName,
       )}
     >
       <div

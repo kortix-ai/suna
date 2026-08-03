@@ -6,9 +6,21 @@ import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 
-export function CopyButton({ code, className }: { code: string; className?: string }) {
+export function CopyButton({
+  code,
+  className,
+  size,
+}: {
+  code: string;
+  className?: string;
+  size?: 'sm' | 'md' | 'lg';
+}) {
   const [copied, setCopied] = useState(false);
-
+  const sizeClasses = {
+    sm: 'size-6 rounded-sm',
+    md: 'size-7',
+    lg: 'size-9',
+  };
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(code);
@@ -25,11 +37,12 @@ export function CopyButton({ code, className }: { code: string; className?: stri
       onClick={handleCopy}
       aria-label={copied ? 'Copied' : 'Copy code'}
       className={cn(
-        'inline-flex size-7 items-center justify-center rounded-md',
+        'inline-flex items-center justify-center rounded-md',
         'text-foreground hover:text-foreground hover:bg-muted-foreground/10',
         'cursor-pointer transition-colors active:scale-[0.97]',
         'hit-area-3 outline-none focus-visible:outline-none',
         className,
+        sizeClasses[size ?? 'md'],
       )}
     >
       <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
@@ -43,7 +56,7 @@ export function CopyButton({ code, className }: { code: string; className?: stri
             className="absolute inset-0 inline-flex items-center justify-center"
           >
             {copied ? (
-              <CheckIcon className="text-foreground size-4 stroke-2" />
+              <CheckIcon className="text-foreground size-4" />
             ) : (
               <Icon.Copy className="size-4" />
             )}

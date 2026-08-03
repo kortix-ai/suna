@@ -232,6 +232,13 @@
       "when": 1785514015171,
       "tag": "20260731160655_session_required_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785702120462,
+      "tag": "20260802202200_executor_attachments",
+      "breakpoints": true
     }
   ]
 }

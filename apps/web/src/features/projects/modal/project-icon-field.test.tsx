@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
+import { FLOATING_PANEL } from '@/components/ui/menu-recipe';
 
 import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 
@@ -14,7 +15,6 @@ const read = (relative: string) =>
 
 const source = read('./project-icon-field.tsx');
 const pickerSource = read('../../../components/ui/emoji-picker.tsx');
-const popoverSource = read('../../../components/ui/popover.tsx');
 const buttonSource = read('../../../components/ui/button.tsx');
 
 /**
@@ -360,7 +360,9 @@ describe('ProjectIconField popover geometry', () => {
   test('the width allows for the popover border on each side', () => {
     // PopoverContent is border-box, so its 1px border eats into the declared
     // width. Without the correction the grid is 2px short and the cells shrink.
-    const classes = popoverSource.match(/'([^']*rounded-lg[^']*)'/)?.[1]?.split(/\s+/) ?? [];
+    // The surface comes from the shared FLOATING_PANEL recipe, not a literal
+    // in popover.tsx.
+    const classes = FLOATING_PANEL.split(/\s+/);
 
     expect(classes).toContain('border');
     expect(classes.filter((c) => /^border-\d/.test(c))).toEqual([]);

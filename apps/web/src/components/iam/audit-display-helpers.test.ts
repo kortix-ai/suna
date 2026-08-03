@@ -58,6 +58,9 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
       'Streamed session turn',
     );
+    expect(
+      describeAuditAction(`PUT /v1/projects/${UID}/secrets/ANTHROPIC_API_KEY/strategy`).title,
+    ).toBe('Updated secret delivery strategy');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {
