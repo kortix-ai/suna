@@ -536,6 +536,72 @@ export function isErrorOutput(output: string): boolean {
   return !!output && (looksLikeError(output) || parseJsonFailure(output) !== null);
 }
 
+export type ToolOutcome = 'ok' | 'partial' | 'failed';
+
+/**
+ * Whether a settled tool call succeeded, half-succeeded, or failed.
+ *
+ * Three different shapes mean "this failed", and only the first of them used to
+ * reach the row's icon:
+ *   - the call threw            — `state.status === 'error'`
+ *   - the call RETURNED the error — completed, output is `Error: …` or the
+ *     `{success:false,error}` contract
+ *   - the call returned a batch  — completed, `results[]` with some or all
+ *     items `success:false` (scrape_webpage over three URLs, one dead host)
+ *
+ * Every tool renderer hardcodes its own leading icon — `GlobeIcon` for scrape,
+ * a favicon for web_fetch, a terminal for bash — and none of them read the
+ * output, so shapes two and three kept drawing "web page" over a failure. This
+ * is the one predicate they all share; see {@link ToolOutcomeContext}.
+ *
+ * A running call is `ok`: it has no verdict yet. The shimmer already says
+ * "in flight", and painting a warning on unfinished work is a worse lie than
+ * the one this fixes.
+ */
+export function partOutcome(part: Pick<ToolPart, 'state'>): ToolOutcome {
+  const state = part.state;
+  if (state.status === 'error') return 'failed';
+  if (state.status !== 'completed') return 'ok';
+
+  const output = typeof state.output === 'string' ? state.output.trim() : '';
+  if (!output) return 'ok';
+  if (isErrorOutput(output)) return 'failed';
+  return batchOutcome(output);
+}
+
+/**
+ * A batch tool's per-item verdicts collapsed into one outcome.
+ *
+ * `scrape_webpage` returns `{total, successful, failed, results:[{success}]}`.
+ * Two good pages and one dead host is a real and common result that is neither
+ * "ok" nor "failed" — it earns amber, not red. Counted from `results[]` rather
+ * than the sibling `failed` field because that field is optional, while the
+ * array is the thing actually rendered in the card.
+ */
+function batchOutcome(output: string): ToolOutcome {
+  if (!output.startsWith('{')) return 'ok';
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return 'ok';
+  }
+
+  const results = (parsed as { results?: unknown } | null)?.results;
+  if (!Array.isArray(results) || results.length === 0) return 'ok';
+
+  const failed = results.filter(
+    (item) =>
+      item !== null &&
+      typeof item === 'object' &&
+      (item as { success?: unknown }).success === false,
+  ).length;
+
+  if (failed === 0) return 'ok';
+  return failed === results.length ? 'failed' : 'partial';
+}
+
 export function parseJsonFailure(output: string): ParsedJsonFailure | null {
   const trimmed = output.trim();
   if (!trimmed) return null;
@@ -800,6 +866,19 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
 
 export const ToolRunningContext = createContext(false);
 
+/**
+ * This step's verdict, supplied once by `ToolPartRenderer` and read by
+ * {@link BasicTool} — the same ambient-per-part seam `ToolRunningContext` and
+ * `ToolDurationContext` already use.
+ *
+ * It is a context and not a prop because the icon has to change for EVERY
+ * registered renderer, and there are ~40 of them each passing their own
+ * `icon={…}`. Threading a prop through all of them guarantees the next tool
+ * added forgets it; reading it here means a failed call cannot draw a
+ * business-as-usual icon no matter which tool produced it.
+ */
+export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
+
 export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
@@ -838,11 +917,43 @@ export const ToolActivateContext = createContext<((callID: string) => void) | nu
 export const BoundActivateContext = createContext<(() => void) | null>(null);
 
 // Shared class for the compact single-line "row" layout used by every inline mode.
+//
+// The colour rule skips `[data-tone]` icons. It is a descendant selector on the
+// ROW — `(0,2,2)` — so it outranks any `text-*` class the icon carries itself
+// `(0,1,0)`, and it silently repainted every toned leading icon back to muted.
+// Excluding toned icons by attribute is how the failure icon keeps its red
+// without an `!important` arms race inside a shared class.
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
   'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-  '[&>span:first-child>svg]:size-4 [&>span:first-child>svg]:text-muted-foreground',
+  '[&>span:first-child>svg]:size-4 [&>span:first-child>svg:not([data-tone])]:text-muted-foreground',
 );
+
+/**
+ * The leading icon for a step that failed.
+ *
+ * It REPLACES the tool's own icon rather than sitting beside it. A globe next
+ * to a warning reads as "a web page, and separately, a problem"; the row has
+ * one 16px gutter, and the thing the reader needs from it is the verdict — the
+ * tool's identity is still spelled out in the title immediately to its right.
+ *
+ * One glyph, two tones: a wholly failed call is `destructive`, a batch that
+ * half-landed is `warning`. Same triangle `ScrapeResultItem` already puts on a
+ * dead URL inside the card, so the summary row and the row it summarises say
+ * the same thing with the same mark.
+ */
+function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
+  return (
+    <AlertTriangle
+      weight="fill"
+      data-tone={outcome}
+      className={cn(
+        'size-4 shrink-0',
+        outcome === 'failed' ? STATUS_TEXT.destructive : STATUS_TEXT.warning,
+      )}
+    />
+  );
+}
 
 // Title + subtitle + args, rendered for the compact inline row layout.
 function InlineTriggerTitle({
@@ -909,17 +1020,24 @@ function ToolHeaderRow({
   trigger,
   running,
   onSubtitleClick,
+  outcome = 'ok',
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
+  outcome?: ToolOutcome;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
+  // A failed step leads with the verdict, not with the tool. Placed here rather
+  // than in each renderer because every one of them hardcodes its own icon and
+  // none of them look at the output.
+  const leading = outcome === 'ok' ? icon : <ToolOutcomeIcon outcome={outcome} />;
+
   return (
     <>
-      {icon && <span className="text-muted-foreground size-4 shrink-0">{icon}</span>}
+      {leading && <span className="text-muted-foreground size-4 shrink-0">{leading}</span>}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         {isTriggerTitle(trigger) ? (
           <InlineTriggerTitle
@@ -1149,6 +1267,7 @@ export function BasicTool({
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
   const durationMs = durationMsProp ?? contextDuration;
+  const outcome = useContext(ToolOutcomeContext);
   const surface = useContext(ToolSurfaceContext);
   const activate = useContext(BoundActivateContext);
   const [open, setOpen] = useState(defaultOpen);
@@ -1186,6 +1305,7 @@ export function BasicTool({
       trigger={trigger}
       running={running}
       onSubtitleClick={onSubtitleClick}
+      outcome={outcome}
     />
   );
 

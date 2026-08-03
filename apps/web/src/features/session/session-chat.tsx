@@ -9,7 +9,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
-  ArrowDownIcon as ArrowDown,
+  CaretDownIcon,
   CheckCircleIcon as CheckCircle,
   CheckIcon,
   CaretDownIcon as ChevronDown,
@@ -3736,23 +3736,28 @@ export function SessionChat({
                 contentRef={contentRef as React.RefObject<HTMLDivElement>}
               />
 
-              {/* Scroll to bottom FAB */}
               <div
                 className={cn(
-                  'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
+                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2',
+                  'transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)]',
+                  'motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-[opacity]',
                   showScrollButton
-                    ? 'translate-y-0 scale-100 opacity-100'
-                    : 'pointer-events-none translate-y-4 scale-95 opacity-0',
+                    ? 'translate-y-0 scale-100 opacity-100 duration-150'
+                    : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
                 )}
               >
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
+                  variant="secondary"
+                  size="icon-md"
+                  aria-hidden={!showScrollButton}
+                  tabIndex={showScrollButton ? undefined : -1}
+                  className={cn(
+                    'hit-area-2 shadow-xs',
+                    'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
+                  )}
                   onClick={smoothScrollToAbsoluteBottom}
                 >
-                  <ArrowDown className="mr-1 size-3" />
-                  {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
+                  <CaretDownIcon className="size-4" />
                 </Button>
               </div>
             </div>
