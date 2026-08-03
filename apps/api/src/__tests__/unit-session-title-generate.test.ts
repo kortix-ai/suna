@@ -248,6 +248,48 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.revoked).toEqual(['key-1']);
   });
 
+  it('uses the first prompt as a deterministic title when both model attempts fail', async () => {
+    const h = harness({
+      row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+      fallbackModel: async () => 'glm-5.2',
+      generate: async () => null,
+    });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
+    expect(h.revoked).toEqual(['key-1']);
+  });
+
+  it('never turns a placeholder-shaped first prompt back into the placeholder', async () => {
+    const h = harness({ generate: async () => null });
+
+    await generateSessionTitleFromFirstPrompt(
+      { ...input, firstPromptText: 'New agent planning document' },
+      h.options,
+    );
+
+    expect(h.persisted).toEqual(['Topic: New agent planning document']);
+  });
+
+  it(
+    'bounds model attempts and uses the deterministic title when the gateway hangs',
+    async () => {
+      const h = harness({
+        row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+        fallbackModel: async () => 'glm-5.2',
+        generate: async () => new Promise<string | null>(() => {}),
+      });
+      const options = { ...h.options, generationTimeoutMs: 5 } as GenerateSessionTitleOptions;
+
+      await generateSessionTitleFromFirstPrompt(input, options);
+
+      expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
+      expect(h.revoked).toEqual(['key-1']);
+    },
+    200,
+  );
+
   it('generates, sanitizes, and persists a title; always revokes the key', async () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt(
@@ -299,13 +341,13 @@ describe('generateSessionTitleFromFirstPrompt', () => {
 
   it('spends NOTHING when no model is servable — free tier, or no managed provider', async () => {
     // The unconditional platform default is a managed id: on a free tier (or a
-    // deployment with no managed provider) the gateway refuses it, so minting a
-    // key and calling would be a doomed, billed, untitled loop on every prompt.
+    // deployment with no managed provider) the gateway refuses it. The prompt
+    // excerpt still titles the session without minting a key or calling a model.
     const h = harness({ row: row({}), fallbackModel: async () => null });
     await generateSessionTitleFromFirstPrompt(input, h.options);
     expect(h.models).toEqual([]);
     expect(h.minted).toEqual([]);
-    expect(h.persisted).toEqual([]);
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
   });
 
   it('precedence: modelHint beats opencode_model beats the resolved fallback', async () => {
@@ -405,7 +447,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
       },
     });
     await generateSessionTitleFromFirstPrompt(input, h.options);
-    expect(h.persisted).toEqual([]);
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
     expect(h.revoked).toEqual(['key-1']);
   });
 
