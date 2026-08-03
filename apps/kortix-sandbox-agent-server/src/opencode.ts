@@ -700,6 +700,21 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 131_072 },
   },
+  // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
+  // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
+  // `temperature:false` — models.dev advertises Kimi K3 as
+  // `temperature:false` (it rejects a client-sent temperature), matching
+  // capabilitiesOf() in the served catalog. Must NOT advertise temperature
+  // support or OpenCode sends one and 400s the turn.
+  'kimi-k3': {
+    name: 'Kimi K3',
+    provider: 'kortix',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: false,
+    limit: { context: 1_048_576, output: 131_072 },
+  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',
