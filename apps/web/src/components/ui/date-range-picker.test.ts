@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatRangeLabel, resolvePreset, toCalendarSelection, toUtcDayRange } from './date-range-picker';
+import {
+  formatRangeLabel,
+  nextRangeDraft,
+  resolvePreset,
+  toCalendarSelection,
+  toUtcDayRange,
+  WIDEST_RANGE_LABEL,
+} from './date-range-picker';
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
 
@@ -161,5 +168,151 @@ describe('formatRangeLabel', () => {
     // "Jul 16" — the off-by-one this fix round exists to close.
     const range = toUtcDayRange(new Date(2026, 6, 1), new Date(2026, 6, 15));
     expect(formatRangeLabel(range)).toBe('Jul 1 – Jul 15, 2026');
+  });
+});
+
+// ── WIDEST_RANGE_LABEL ─────────────────────────────────────────────────────
+//
+// The trigger reserves this string's rendered width so the control does not
+// resize as the range changes. That reservation is only correct while the
+// string really is the widest thing `formatRangeLabel` can produce, and the
+// formatter can change under it — so the claim is checked against the
+// formatter's actual output over its whole input space rather than asserted by
+// inspection.
+//
+// The whole space is enumerable: four presets, and a custom range that is
+// `MMM D – MMM D, YYYY` for every ordered pair of the twelve months. Length in
+// characters is the right measure here (not px) because the shape is fixed and
+// the digits render `tabular-nums`, so two labels of equal length differ only
+// in month names — and the check below pins the month-name width too.
+
+describe('WIDEST_RANGE_LABEL', () => {
+  /** Every custom label the formatter can emit at its widest day numbers:
+   *  each ordered month pair, two-digit day to two-digit day. Two end days per
+   *  pair — `to` is the exclusive day-after bound, so `endDay + 1` renders
+   *  `endDay` as the inclusive end day the label shows. */
+  function everyWidestCustomLabel(): string[] {
+    const labels: string[] = [];
+    for (let startMonth = 0; startMonth < 12; startMonth += 1) {
+      for (let endMonth = 0; endMonth < 12; endMonth += 1) {
+        for (const endDay of [28, 30]) {
+          labels.push(
+            formatRangeLabel({
+              preset: 'custom',
+              from: new Date(Date.UTC(2026, startMonth, 28)).toISOString(),
+              to: new Date(Date.UTC(2026, endMonth, endDay + 1)).toISOString(),
+            }),
+          );
+        }
+      }
+    }
+    return labels;
+  }
+
+  test('is itself a label the formatter emits — not an invented string', () => {
+    expect(everyWidestCustomLabel()).toContain(WIDEST_RANGE_LABEL);
+  });
+
+  test('no preset label is longer', () => {
+    for (const preset of ['24h', '7d', '30d', '90d'] as const) {
+      const label = formatRangeLabel(resolvePreset(preset, NOW));
+      expect(label.length, `preset ${preset} rendered "${label}"`).toBeLessThanOrEqual(
+        WIDEST_RANGE_LABEL.length,
+      );
+    }
+  });
+
+  test('no custom-range label is longer, across every month pair', () => {
+    for (const label of everyWidestCustomLabel()) {
+      expect(label.length, `custom range rendered "${label}"`).toBeLessThanOrEqual(
+        WIDEST_RANGE_LABEL.length,
+      );
+    }
+  });
+
+  // The reservation assumes every month abbreviation occupies the same three
+  // characters, which is what makes a single sizing string cover all twelve.
+  // An `en-US` locale change that emitted `Sept` would break that silently.
+  test('every month abbreviation the formatter emits is exactly three characters', () => {
+    const months = new Set<string>();
+    for (let month = 0; month < 12; month += 1) {
+      const label = formatRangeLabel({
+        preset: 'custom',
+        from: new Date(Date.UTC(2026, month, 28)).toISOString(),
+        to: new Date(Date.UTC(2026, month, 29)).toISOString(),
+      });
+      months.add(label.slice(0, label.indexOf(' ')));
+    }
+    expect(months.size).toBe(12);
+    for (const month of months) expect(month).toHaveLength(3);
+  });
+
+  // A year-boundary range is the case the width reservation is most often
+  // assumed to be about. It is NOT the worst case: the formatter prints the
+  // year once, at the end, so `Dec 28 – Jan 3, 2027` is shorter than a
+  // same-year two-digit/two-digit range. Pinned so nobody re-sizes the trigger
+  // to a `Dec 28, 2026 – Jan 3, 2027` shape this control never produces.
+  test('a range spanning a year boundary is shorter than the reserved width, not longer', () => {
+    const label = formatRangeLabel({
+      preset: 'custom',
+      from: '2026-12-28T00:00:00.000Z',
+      to: '2027-01-04T00:00:00.000Z',
+    });
+    expect(label).toBe('Dec 28 – Jan 3, 2027');
+    expect(label.length).toBeLessThan(WIDEST_RANGE_LABEL.length);
+  });
+});
+
+describe('nextRangeDraft', () => {
+  const day = (n: number) => new Date(2026, 6, n);
+
+  // The bug this function exists for. Before the fix the picker passed
+  // react-day-picker's own range straight through, and because `selected` is
+  // always a complete range, one click came back complete — so the popover
+  // committed and closed before a second date could be chosen.
+  test('the first click opens a range instead of completing one', () => {
+    const step = nextRangeDraft(undefined, day(10));
+    expect(step.kind).toBe('pending');
+    if (step.kind !== 'pending') throw new Error('expected pending');
+    expect(step.draft.from).toEqual(day(10));
+    expect(step.draft.to).toBeUndefined();
+  });
+
+  test('a click after a committed range still opens rather than extends it', () => {
+    // `draft` is undefined whenever nothing is mid-selection, no matter what
+    // range is committed — so this is the same path as a fresh open.
+    const step = nextRangeDraft(undefined, day(20));
+    expect(step.kind).toBe('pending');
+  });
+
+  test('the second click completes the range', () => {
+    const step = nextRangeDraft({ from: day(10), to: undefined }, day(15));
+    expect(step).toEqual({ kind: 'complete', from: day(10), to: day(15) });
+  });
+
+  test('clicking backwards completes in calendar order, not click order', () => {
+    const step = nextRangeDraft({ from: day(15), to: undefined }, day(10));
+    expect(step).toEqual({ kind: 'complete', from: day(10), to: day(15) });
+  });
+
+  test('clicking the same day twice is a one-day range, not a stuck draft', () => {
+    const step = nextRangeDraft({ from: day(10), to: undefined }, day(10));
+    expect(step).toEqual({ kind: 'complete', from: day(10), to: day(10) });
+  });
+
+  test('a completed draft starts over rather than editing itself', () => {
+    const step = nextRangeDraft({ from: day(10), to: day(15) }, day(20));
+    expect(step.kind).toBe('pending');
+    if (step.kind !== 'pending') throw new Error('expected pending');
+    expect(step.draft.from).toEqual(day(20));
+    expect(step.draft.to).toBeUndefined();
+  });
+
+  test('a one-day completion survives the half-open conversion', () => {
+    const step = nextRangeDraft({ from: day(10), to: undefined }, day(10));
+    if (step.kind !== 'complete') throw new Error('expected complete');
+    const range = toUtcDayRange(step.from, step.to);
+    // [from, to) over a single day is that day's midnight to the next.
+    expect(new Date(range.to).getTime() - new Date(range.from).getTime()).toBe(86_400_000);
   });
 });

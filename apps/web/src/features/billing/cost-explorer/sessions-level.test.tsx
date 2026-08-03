@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ApiError, type SessionCostsPage, type SessionCostSummary } from '@kortix/sdk';
+import {
+  ApiError,
+  type SessionCostsPage,
+  type SessionCostSort,
+  type SessionCostSummary,
+} from '@kortix/sdk';
 import {
   focusManager,
   QueryClient,
@@ -17,13 +22,18 @@ import {
 } from '@/hooks/billing/use-session-costs';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 
+import { CostSortHeader } from './cost-sort-header';
+import { collectElementsByType } from './react-element-tree';
 import {
+  applySessionSort,
   buildSessionsLevelExportFilters,
   buildSessionsLevelListInput,
   buildSessionsLevelOwnerCatalogInput,
   collectOwnerOptions,
+  nextSessionSort,
   SessionsLevel,
   SessionsLevelTable,
+  sessionSortDirection,
 } from './sessions-level';
 
 const range = { preset: '30d' as const, from: '2026-07-01T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' };
@@ -186,6 +196,121 @@ describe('buildSessionsLevelOwnerCatalogInput', () => {
   });
 });
 
+// ── Sorting: the pure half ─────────────────────────────────────────────────
+//
+// `renderToStaticMarkup` cannot fire a click, so what a header click does is
+// asserted on the functions the handler calls. Each is the single place its
+// rule lives, so a mutation to one produces a NAMED failure.
+
+describe('nextSessionSort', () => {
+  test('Total toggles between the two directions the route accepts', () => {
+    expect(nextSessionSort('total_desc', 'total')).toBe('total_asc');
+    expect(nextSessionSort('total_asc', 'total')).toBe('total_desc');
+  });
+
+  test('a first click on Total lands on descending, from any other sort', () => {
+    expect(nextSessionSort('recent', 'total')).toBe('total_desc');
+  });
+
+  // `recent` is the only activity ordering `GET /usage/session-costs` has —
+  // SESSION_COST_SORTS is exactly ['total_desc', 'total_asc', 'recent'] — so
+  // Session is one-way. A repeat click must not invent an "oldest first".
+  test('Session is one-way — a repeat click never asks for an ordering the API has no token for', () => {
+    expect(nextSessionSort('total_desc', 'session')).toBe('recent');
+    expect(nextSessionSort('recent', 'session')).toBe('recent');
+  });
+
+  test('every reachable result is a sort the route accepts', () => {
+    const accepted: SessionCostSort[] = ['total_desc', 'total_asc', 'recent'];
+    for (const active of accepted) {
+      for (const column of ['session', 'total'] as const) {
+        expect(accepted).toContain(nextSessionSort(active, column));
+      }
+    }
+  });
+
+  // `name_asc` is a valid ProjectCostSort and a 400 on this route. The session
+  // headers must never produce it.
+  test('never produces name_asc, which this route rejects', () => {
+    const accepted: SessionCostSort[] = ['total_desc', 'total_asc', 'recent'];
+    for (const active of accepted) {
+      for (const column of ['session', 'total'] as const) {
+        expect(nextSessionSort(active, column)).not.toBe('name_asc');
+      }
+    }
+  });
+});
+
+describe('sessionSortDirection', () => {
+  test('reports the active column and nothing else', () => {
+    expect(sessionSortDirection('total_desc', 'total')).toBe('descending');
+    expect(sessionSortDirection('total_desc', 'session')).toBeUndefined();
+
+    expect(sessionSortDirection('total_asc', 'total')).toBe('ascending');
+    expect(sessionSortDirection('total_asc', 'session')).toBeUndefined();
+  });
+
+  // `recent` is newest-first, which is descending by the date the Session
+  // cell's second line shows.
+  test('recent reads as descending on the Session column', () => {
+    expect(sessionSortDirection('recent', 'session')).toBe('descending');
+    expect(sessionSortDirection('recent', 'total')).toBeUndefined();
+  });
+
+  test('never returns the string "none" — the attribute is absent instead', () => {
+    const sorts: SessionCostSort[] = ['total_desc', 'total_asc', 'recent'];
+    for (const sort of sorts) {
+      for (const column of ['session', 'total'] as const) {
+        expect(sessionSortDirection(sort, column)).not.toBe('none');
+      }
+    }
+  });
+});
+
+// ── The page reset — this is the mutation target ───────────────────────────
+//
+// An offset indexes an ORDERED result, so it means something different under a
+// different order. `applySessionSort` is the only path that changes this
+// level's sort; mutating its `offset: 0` back to `filters.offset` must fail the
+// named test below.
+
+describe('applySessionSort', () => {
+  test('resets to page 1 — a mid-list offset does not survive a sort change', () => {
+    expect(applySessionSort({ ownerId: null, sort: 'total_desc', offset: 50 }, 'total')).toEqual({
+      ownerId: null,
+      sort: 'total_asc',
+      offset: 0,
+    });
+  });
+
+  test('resets to page 1 on the Session column too, not just Total', () => {
+    expect(applySessionSort({ ownerId: null, sort: 'total_desc', offset: 25 }, 'session')).toEqual({
+      ownerId: null,
+      sort: 'recent',
+      offset: 0,
+    });
+  });
+
+  // Session is one-way, so a repeat click leaves the sort alone — but the page
+  // still resets. The reader asked for an ordering; answering from page 3 is
+  // the same disorientation whether or not the order actually moved.
+  test('resets the page even when the sort itself does not change', () => {
+    expect(applySessionSort({ ownerId: null, sort: 'recent', offset: 75 }, 'session')).toEqual({
+      ownerId: null,
+      sort: 'recent',
+      offset: 0,
+    });
+  });
+
+  // The owner filter is a separate dimension and must survive a sort change —
+  // re-sorting is not a request to widen the scope back to every owner.
+  test('preserves the owner filter', () => {
+    expect(applySessionSort({ ownerId: 'owner-9', sort: 'total_desc', offset: 25 }, 'total')).toEqual(
+      { ownerId: 'owner-9', sort: 'total_asc', offset: 0 },
+    );
+  });
+});
+
 // ── SessionsLevelTable — the presentational half, tested the way
 // SessionCostExplorerContent / ProjectsLevelContent already are: plain props,
 // renderToStaticMarkup, no react-query or Supabase context required ────────
@@ -266,6 +391,8 @@ describe('SessionsLevelTable', () => {
         data={page}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -288,6 +415,8 @@ describe('SessionsLevelTable', () => {
         data={page}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -314,6 +443,8 @@ describe('SessionsLevelTable', () => {
         data={page}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -338,6 +469,8 @@ describe('SessionsLevelTable', () => {
         data={{ ...page, total: 55, next_offset: 25 }}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -362,6 +495,8 @@ describe('SessionsLevelTable', () => {
       data: page,
       isLoading: false,
       error: null,
+      sort: 'total_desc',
+      onSort: noop,
       onSelectSession: (sessionId) => selected.push(sessionId),
       onPreviousPage: noop,
       onNextPage: noop,
@@ -381,12 +516,109 @@ describe('SessionsLevelTable', () => {
     expect(selected).toEqual(['session-one', 'session-two']);
   });
 
+  // ── Sortable headers ──────────────────────────────────────────────────
+  //
+  // Only Session and Total, because those are the only two orderings
+  // `GET /usage/session-costs` accepts. Owner, Requests, LLM and Compute have
+  // no server sort, so they stay plain rather than becoming dead controls.
+
+  /** The table's `<thead>`, so header assertions cannot pass by matching a
+   *  body cell or the footer. */
+  function headerHtml(sort: SessionCostSort = 'total_desc'): string {
+    const html = renderToStaticMarkup(
+      <SessionsLevelTable
+        data={page}
+        isLoading={false}
+        error={null}
+        sort={sort}
+        onSort={noop}
+        onSelectSession={noop}
+        onPreviousPage={noop}
+        onNextPage={noop}
+      />,
+    );
+    const match = html.match(/<thead[\s\S]*?<\/thead>/);
+    expect(match, 'expected a table header').not.toBeNull();
+    return match![0];
+  }
+
+  test('Session and Total are buttons; Owner, Requests, LLM and Compute are not', () => {
+    const header = headerHtml();
+    expect((header.match(/<button/g) ?? []).length).toBe(2);
+
+    // Per cell — a whole-header count would pass with the buttons on the
+    // wrong two columns.
+    const cells = header.match(/<th[\s\S]*?<\/th>/g) ?? [];
+    expect(cells).toHaveLength(6);
+    expect(cells.map((cell) => cell.includes('<button'))).toEqual([
+      true, // Session
+      false, // Owner
+      false, // Requests
+      false, // LLM
+      false, // Compute
+      true, // Total
+    ]);
+  });
+
+  test('the sortable headers are real buttons with a visible focus ring', () => {
+    for (const button of headerHtml().match(/<button[^>]*>/g) ?? []) {
+      expect(button).toContain('type="button"');
+      expect(button).toContain('focus-visible:ring-2');
+    }
+  });
+
+  test('aria-sort marks only the active column', () => {
+    const descending = headerHtml('total_desc');
+    expect((descending.match(/aria-sort=/g) ?? []).length).toBe(1);
+    expect(descending).toContain('aria-sort="descending"');
+
+    const ascending = headerHtml('total_asc');
+    expect((ascending.match(/aria-sort=/g) ?? []).length).toBe(1);
+    expect(ascending).toContain('aria-sort="ascending"');
+  });
+
+  test('aria-sort moves to the Session column under the recent sort', () => {
+    const header = headerHtml('recent');
+    const sessionCell = (header.match(/<th[\s\S]*?<\/th>/g) ?? [])[0]!;
+    expect(sessionCell).toContain('aria-sort="descending"');
+    expect((header.match(/aria-sort=/g) ?? []).length).toBe(1);
+  });
+
+  test('the Total header keeps the numeric right alignment', () => {
+    const totalCell = (headerHtml().match(/<th[\s\S]*?<\/th>/g) ?? [])[5]!;
+    expect(totalCell).toContain('text-right');
+    expect(totalCell).not.toContain('float');
+  });
+
+  test('clicking a sortable header reports which column was clicked', () => {
+    const clicked: string[] = [];
+    const tree = SessionsLevelTable({
+      data: page,
+      isLoading: false,
+      error: null,
+      sort: 'total_desc',
+      onSort: (column) => clicked.push(column),
+      onSelectSession: noop,
+      onPreviousPage: noop,
+      onNextPage: noop,
+    });
+
+    const headers = collectElementsByType(tree, CostSortHeader);
+    expect(headers.map((header) => header.props.label)).toEqual(['Session', 'Total']);
+
+    (headers[0]!.props.onSort as () => void)();
+    (headers[1]!.props.onSort as () => void)();
+    expect(clicked).toEqual(['session', 'total']);
+  });
+
   test('shows the loading skeleton, not an empty table, while the first fetch is in flight', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
         data={undefined}
         isLoading={true}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -401,6 +633,8 @@ describe('SessionsLevelTable', () => {
         data={undefined}
         isLoading={false}
         error={new Error('upstream unavailable')}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -416,6 +650,8 @@ describe('SessionsLevelTable', () => {
         data={{ ...page, sessions: [], total: 0 }}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -441,6 +677,8 @@ describe('SessionsLevelTable', () => {
         data={undefined}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -460,6 +698,8 @@ describe('SessionsLevelTable', () => {
         data={{ ...page, sessions: [], total: 0 }}
         isLoading={false}
         error={new Error('upstream unavailable')}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -476,6 +716,8 @@ describe('SessionsLevelTable', () => {
         data={page}
         isLoading={false}
         error={null}
+        sort="total_desc"
+        onSort={noop}
         onSelectSession={noop}
         onPreviousPage={noop}
         onNextPage={noop}
@@ -571,7 +813,9 @@ describe('the state a failed /usage/session-costs request hands the table', () =
           // The narrowing `SessionsLevel` applies at the call site. It is not
           // what dropped the error here: there is no error to narrow.
           error={result.error instanceof Error ? result.error : null}
-          onSelectSession={noop}
+          sort="total_desc"
+        onSort={noop}
+        onSelectSession={noop}
           onPreviousPage={noop}
           onNextPage={noop}
         />,
@@ -629,7 +873,9 @@ describe('the state a failed /usage/session-costs request hands the table', () =
           data={result.data}
           isLoading={result.isLoading}
           error={result.error instanceof Error ? result.error : null}
-          onSelectSession={noop}
+          sort="total_desc"
+        onSort={noop}
+        onSelectSession={noop}
           onPreviousPage={noop}
           onNextPage={noop}
         />,
@@ -673,34 +919,34 @@ describe('SessionsLevel', () => {
     }
   }
 
-  test('offers the CSV export in the control row, beside the owner and sort filters', () => {
+  test('offers the CSV export in the control row, beside the owner filter', () => {
     const html = renderLevel();
     expect(html).toContain('Export CSV');
     expect(html).toContain('Filter sessions by owner');
-    expect(html).toContain('Sort sessions');
+  });
+
+  // The sort `<Select>` ("Highest spend" / "Most recent") is removed. The
+  // Total and Session column headers select both of those orderings directly,
+  // and the headers additionally reach `total_asc`, which the Select never
+  // offered. Two controls for one job is a state the reader has to reconcile —
+  // a dropdown reading "Highest spend" next to a Total header showing an
+  // ascending arrow — and the header is the one that says WHICH column it
+  // orders, so it is the one that stays.
+  test('the sort Select is gone — the column headers are the only sort control', () => {
+    const html = renderLevel();
+    expect(html).not.toContain('Sort sessions');
+  });
+
+  // Counted rather than matched on absent text: a Radix `Select` renders its
+  // items in a portal, so "Highest spend" was never in the static markup even
+  // when the control existed — asserting its absence would have passed before
+  // the removal too. The TRIGGER does render, so counting triggers is what
+  // actually distinguishes one Select from two.
+  test('exactly one Select remains in the control row, and it is the owner filter', () => {
+    const html = renderLevel();
+    const triggers = html.match(/role="combobox"/g) ?? [];
+    expect(triggers).toHaveLength(1);
+    expect(html).toContain('aria-label="Filter sessions by owner"');
   });
 });
 
-/** Test-only tree walker over a React element returned by calling a
- *  hook-free function component directly (not through ReactDOM/SSR) — walks
- *  `.props.children` looking for elements of the given `type`, without
- *  rendering or invoking any nested component functions. */
-function collectElementsByType(
-  node: unknown,
-  type: unknown,
-  acc: { type: unknown; props: Record<string, unknown> }[] = [],
-): { type: unknown; props: Record<string, unknown> }[] {
-  if (node == null || typeof node !== 'object') return acc;
-  if (Array.isArray(node)) {
-    for (const item of node) collectElementsByType(item, type, acc);
-    return acc;
-  }
-  const element = node as { type?: unknown; props?: Record<string, unknown> };
-  if (element.type === type && element.props) {
-    acc.push({ type: element.type, props: element.props });
-  }
-  if (element.props && 'children' in element.props) {
-    collectElementsByType(element.props.children, type, acc);
-  }
-  return acc;
-}

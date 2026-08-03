@@ -24,6 +24,7 @@ import { COST_PAGE_SIZE, useCostByProject, useCostSummary } from '@/hooks/billin
 
 import { CostExportButton } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
+import { CostSortHeader } from './cost-sort-header';
 import { formatSessionCostUsd } from '../session-cost-format';
 
 /** The whole explorer's default landing preset (`parseExplorerState` in the
@@ -31,10 +32,92 @@ import { formatSessionCostUsd } from '../session-cost-format';
  *  state to it too). Used here only as the target `onResetRange` resets to. */
 const DEFAULT_RANGE_PRESET = '30d';
 
-/** This level's only sort. Named once because the table query and the CSV
- *  export both send it — the export must run the same filtered query the
- *  table shows, not a differently ordered one. */
-const PROJECTS_LEVEL_SORT: ProjectCostSort = 'total_desc';
+/** Where this level opens: most expensive project first, which is the question
+ *  the screen exists to answer. Also what a header click falls back to. */
+const DEFAULT_PROJECTS_SORT: ProjectCostSort = 'total_desc';
+
+/**
+ * The columns `GET /usage/cost-by-project` can actually order by.
+ *
+ * NOT every column in the table. The route accepts `total_desc`, `total_asc`,
+ * `recent` and `name_asc` (`PROJECT_COST_SORTS`, `apps/api/src/router/routes/
+ * usage.ts:281`) — so Sessions, LLM and Compute have no server sort and stay
+ * plain headers. Making them look clickable and then not reordering anything
+ * is worse than leaving them alone; sorting one page of 25 client-side would
+ * be worse still, since it would silently reorder a slice of a larger result
+ * under a control that reads as ordering the whole thing.
+ */
+export type ProjectSortColumn = 'name' | 'total';
+
+/**
+ * The sort a click on `column` selects.
+ *
+ * Total toggles, because "who costs the most" and "what is nearly free" are
+ * both real questions. Project does not: the route has no `name_desc`, so a
+ * two-way toggle there would either send a token the API rejects or fake a
+ * direction it is not applying.
+ *
+ * A first click on Total lands on `total_desc` from any other sort — descending
+ * is the useful default for money, and it is also where the level opens.
+ */
+export function nextProjectSort(
+  active: ProjectCostSort,
+  column: ProjectSortColumn,
+): ProjectCostSort {
+  if (column === 'name') return 'name_asc';
+  return active === 'total_desc' ? 'total_asc' : 'total_desc';
+}
+
+/** `aria-sort` for `column`, or `undefined` when it is not the active sort.
+ *  Undefined rather than `'none'`: the attribute's absence is what marks the
+ *  other columns as not participating. */
+export function projectSortDirection(
+  active: ProjectCostSort,
+  column: ProjectSortColumn,
+): 'ascending' | 'descending' | undefined {
+  if (column === 'name') return active === 'name_asc' ? 'ascending' : undefined;
+  if (active === 'total_asc') return 'ascending';
+  if (active === 'total_desc') return 'descending';
+  return undefined;
+}
+
+/** The sort and page this level's table query is built from. One object
+ *  because the two always move together — see `applyProjectSort`. */
+export interface ProjectsLevelQueryState {
+  sort: ProjectCostSort;
+  offset: number;
+}
+
+/**
+ * Applies a sort-header click.
+ *
+ * **The page reset is the point of this function existing.** Offset is an
+ * index into an ordered result, so it means something different under a
+ * different order: re-sorting while on page 2 of 40 projects lands the reader
+ * in the middle of a list they have not seen the start of, under a heading
+ * that says the order changed. Every path that changes the sort goes through
+ * here, so the reset cannot be forgotten at one call site.
+ */
+export function applyProjectSort(
+  state: ProjectsLevelQueryState,
+  column: ProjectSortColumn,
+): ProjectsLevelQueryState {
+  return { sort: nextProjectSort(state.sort, column), offset: 0 };
+}
+
+/**
+ * This level's CSV export filters — the active sort, so the file is ordered
+ * the way the table on screen is.
+ *
+ * This used to be a fixed `total_desc` literal shared with the query. Once the
+ * headers can re-sort, a constant would mean an export silently ordered
+ * differently from the table it was taken from. Deliberately carries no page:
+ * `format=csv` hardcodes `limit: CSV_ROW_CAP, offset: 0` on the route, so an
+ * export is always the whole filtered query.
+ */
+export function buildProjectsLevelExportFilters(sort: ProjectCostSort): { sort: ProjectCostSort } {
+  return { sort };
+}
 
 const UNASSIGNED_LABEL = 'Unassigned';
 const UNASSIGNED_TOOLTIP_COPY = 'Spend recorded against sessions that no longer exist.';
@@ -178,6 +261,10 @@ export interface ProjectsLevelContentProps {
   page: ProjectCostPage | undefined;
   isProjectsLoading: boolean;
   projectsError: Error | null;
+  /** The active sort, so the headers can show which column orders the table
+   *  and the export can follow it. */
+  sort: ProjectCostSort;
+  onSort: (column: ProjectSortColumn) => void;
   onSelectProject: (projectId: string) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
@@ -200,6 +287,8 @@ export function ProjectsLevelContent({
   page,
   isProjectsLoading,
   projectsError,
+  sort,
+  onSort,
   onSelectProject,
   onPreviousPage,
   onNextPage,
@@ -262,11 +351,23 @@ export function ProjectsLevelContent({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Project</TableHead>
+            {/* Only Project and Total are sortable — those are the two the
+                route can order by (see `ProjectSortColumn`). Sessions, LLM and
+                Compute stay plain `TableHead`s rather than dead controls. */}
+            <CostSortHeader
+              label="Project"
+              direction={projectSortDirection(sort, 'name')}
+              onSort={() => onSort('name')}
+            />
             <TableHead className="text-right">Sessions</TableHead>
             <TableHead className="text-right">LLM</TableHead>
             <TableHead className="text-right">Compute</TableHead>
-            <TableHead className="text-right">Total</TableHead>
+            <CostSortHeader
+              label="Total"
+              align="right"
+              direction={projectSortDirection(sort, 'total')}
+              onSort={() => onSort('total')}
+            />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -317,7 +418,11 @@ export function ProjectsLevelContent({
       isSummaryLoading={isSummaryLoading}
       summaryError={summaryError}
       controls={
-        <CostExportButton kind="projects" range={range} filters={{ sort: PROJECTS_LEVEL_SORT }} />
+        <CostExportButton
+          kind="projects"
+          range={range}
+          filters={buildProjectsLevelExportFilters(sort)}
+        />
       }
     >
       <div className="space-y-3">
@@ -446,28 +551,37 @@ export interface ProjectsLevelProps {
 
 /**
  * The Projects level of the Project -> Sessions -> Session drill-down — the
- * screen the whole cost explorer opens on. Owns pagination state and the two
- * queries (`useCostSummary`, `useCostByProject`); rendering itself is
+ * screen the whole cost explorer opens on. Owns sort and pagination state and
+ * the two queries (`useCostSummary`, `useCostByProject`); rendering itself is
  * `ProjectsLevelContent`.
+ *
+ * Sort and offset are ONE state object, not two `useState`s. They are not
+ * independent: an offset is an index into an ordered result, so it is only
+ * meaningful under the sort it was taken against. Holding them together makes
+ * `applyProjectSort` the single place the "reset to page 1" rule lives, instead
+ * of a rule each call site has to remember.
  */
 export function ProjectsLevel({ range, onRangeChange, onSelectProject }: ProjectsLevelProps) {
-  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState<ProjectsLevelQueryState>({
+    sort: DEFAULT_PROJECTS_SORT,
+    offset: 0,
+  });
 
   const summaryQuery = useCostSummary({ from: range.from, to: range.to });
   const projectsQuery = useCostByProject({
     from: range.from,
     to: range.to,
-    sort: PROJECTS_LEVEL_SORT,
-    offset,
+    sort: query.sort,
+    offset: query.offset,
   });
 
   const handleRangeChange = (next: CostRange) => {
-    setOffset(0);
+    setQuery((current) => ({ ...current, offset: 0 }));
     onRangeChange(next);
   };
 
   const handleResetRange = () => {
-    setOffset(0);
+    setQuery((current) => ({ ...current, offset: 0 }));
     onRangeChange(resolvePreset(DEFAULT_RANGE_PRESET, new Date()));
   };
 
@@ -482,9 +596,21 @@ export function ProjectsLevel({ range, onRangeChange, onSelectProject }: Project
       page={projectsQuery.data}
       isProjectsLoading={projectsQuery.isLoading}
       projectsError={projectsQuery.error instanceof Error ? projectsQuery.error : null}
+      sort={query.sort}
+      onSort={(column) => setQuery((current) => applyProjectSort(current, column))}
       onSelectProject={onSelectProject}
-      onPreviousPage={() => setOffset((current) => Math.max(0, current - COST_PAGE_SIZE))}
-      onNextPage={() => setOffset((current) => projectsQuery.data?.next_offset ?? current)}
+      onPreviousPage={() =>
+        setQuery((current) => ({
+          ...current,
+          offset: Math.max(0, current.offset - COST_PAGE_SIZE),
+        }))
+      }
+      onNextPage={() =>
+        setQuery((current) => ({
+          ...current,
+          offset: projectsQuery.data?.next_offset ?? current.offset,
+        }))
+      }
     />
   );
 }

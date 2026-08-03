@@ -24,11 +24,13 @@ import {
   buildBreadcrumbCrumbs,
   CostExplorer,
   explorerClockKey,
+  firstClickableCrumbIndex,
   nextClockAnchor,
   parseExplorerState,
   serializeExplorerState,
   useExplorerClockAnchor,
   type ClockAnchor,
+  type ExplorerCrumb,
   type ExplorerState,
 } from './cost-explorer';
 
@@ -554,6 +556,46 @@ describe('buildBreadcrumbCrumbs', () => {
   });
 });
 
+// ── Pure function: firstClickableCrumbIndex ────────────────────────────────
+//
+// Which crumb gets the leading back chevron. The crumb MODEL is unchanged by
+// this — the reported problem ("when you click on any user, you get confused
+// about where to click to go back to see all the projects") is affordance, not
+// routing — so this is the one new decision the rendering makes, and it is
+// pulled out as a pure function rather than inlined as `index === 0`.
+
+describe('firstClickableCrumbIndex', () => {
+  test('at the projects level there is nowhere up, so no crumb carries the chevron', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, projectId: null, sessionId: null }, null);
+    expect(firstClickableCrumbIndex(crumbs)).toBe(-1);
+  });
+
+  test('at the sessions level the Usage crumb carries it', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: null }, 'Alpha');
+    expect(firstClickableCrumbIndex(crumbs)).toBe(0);
+    expect(crumbs[0]!.key).toBe('usage');
+  });
+
+  // Two crumbs are clickable at the session level. Only the shallowest gets
+  // the chevron — one "go up" target, not a row of them.
+  test('at the session level only the shallowest clickable crumb carries it', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: 's1' }, 'Alpha');
+    expect(crumbs.filter((crumb) => !crumb.current)).toHaveLength(2);
+    expect(firstClickableCrumbIndex(crumbs)).toBe(0);
+  });
+
+  // Keyed on `current`, not on the index. If the crumb model ever grows a
+  // level, or the current level is not the last crumb, the chevron must still
+  // land on a crumb a click can actually reach.
+  test('skips a leading current crumb rather than assuming index 0 is clickable', () => {
+    const crumbs = [
+      { key: 'usage', label: 'Usage', current: true, target: {} },
+      { key: 'project', label: 'Alpha', current: false, target: {} },
+    ] as unknown as ExplorerCrumb[];
+    expect(firstClickableCrumbIndex(crumbs)).toBe(1);
+  });
+});
+
 // ── How to re-verify this file: mutate, and demand a NAMED failure ─────────
 //
 // Nearly every test below was written against a specific mutation, and several
@@ -884,6 +926,139 @@ for (const level of LEVELS) {
     });
   });
 }
+
+// ── The breadcrumb's affordance ────────────────────────────────────────────
+//
+// Jay, using the shipped feature: "when you click on any user, you get
+// confused about where to click to go back to see all the projects."
+//
+// The crumb model already routed correctly — `buildBreadcrumbCrumbs` above is
+// tested for it — so nothing here touches the model or the URL state. What was
+// missing was that a parent crumb did not LOOK clickable: plain text with a
+// pointer cursor, which only exists for someone already hovering it.
+//
+// renderToStaticMarkup cannot fire a click, so these assert the rendered
+// affordance — the shapes a reader can perceive before clicking — and leave the
+// routing to the pure-function tests.
+
+/** Static-render the explorer at `search` and return its markup. */
+function renderExplorerHtml(search: string): string {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    return renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <AppRouterContext.Provider value={staticRouter}>
+          <PathnameContext.Provider value="/accounts/acct">
+            <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
+              <TooltipProvider>
+                <BillingAccountProvider accountId="acct">
+                  <CostExplorer />
+                </BillingAccountProvider>
+              </TooltipProvider>
+            </SearchParamsContext.Provider>
+          </PathnameContext.Provider>
+        </AppRouterContext.Provider>
+      </QueryClientProvider>,
+    );
+  } finally {
+    client.clear();
+  }
+}
+
+/** The breadcrumb `<nav>` only, so crumb assertions cannot pass by matching
+ *  the level's own table or control row further down the page. */
+function breadcrumbHtml(html: string): string {
+  const match = html.match(/<nav aria-label="breadcrumb"[\s\S]*?<\/nav>/);
+  expect(match, 'expected a breadcrumb nav in the rendered output').not.toBeNull();
+  return match![0];
+}
+
+/** Each clickable crumb's own markup. Crumbs do not nest, so the non-greedy
+ *  match is exact. */
+function crumbButtons(html: string): string[] {
+  return breadcrumbHtml(html).match(/<button[\s\S]*?<\/button>/g) ?? [];
+}
+
+/** Back chevrons across the crumbs — counted inside the buttons so the
+ *  separators' own `<svg>`s are not mistaken for one. */
+function chevronCount(html: string): number {
+  return crumbButtons(html).reduce(
+    (count, button) => count + (button.match(/<svg/g) ?? []).length,
+    0,
+  );
+}
+
+describe('CostExplorer breadcrumb affordance', () => {
+  test('a parent crumb is a real button, so it is keyboard reachable', () => {
+    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    expect(crumbs).toContain('<button');
+    expect(crumbs).toContain('type="button"');
+  });
+
+  test('a parent crumb underlines and changes colour on hover, and shows a focus ring', () => {
+    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    const button = crumbs.match(/<button[^>]*>/)![0];
+    expect(button).toContain('hover:underline');
+    expect(button).toContain('hover:text-foreground');
+    // Keyboard users get nothing from a hover treatment. `hover:` in Tailwind
+    // v4 is already scoped to `@media (hover: hover)`, so a touch device gets
+    // nothing from it either — the focus ring is what covers both.
+    expect(button).toContain('focus-visible:ring-2');
+    expect(button).toContain('focus-visible:ring-ring/50');
+  });
+
+  // At least 40px of vertical hit area, without changing the row's density:
+  // `py-2.5` on the crumb (10px + a 20px text line box + 10px = 40px) and
+  // `-my-2.5` on the list, which gives the padding back to the layout.
+  test('crumb hit areas are enlarged and the enlargement is cancelled at the list', () => {
+    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    expect(crumbs.match(/<button[^>]*>/)![0]).toContain('py-2.5');
+    expect(crumbs).toMatch(/<ol[^>]*class="[^"]*-my-2\.5/);
+  });
+
+  // The one "go up" target. One chevron, on the shallowest clickable crumb —
+  // not one per crumb, and not a separate Back button beside the breadcrumb,
+  // which would be a second control doing the crumb's job.
+  //
+  // Counted INSIDE the crumb buttons, not across the nav: `BreadcrumbSeparator`
+  // renders its own `<svg>` between every pair of crumbs, so a nav-wide count
+  // measures separators and would move with the drill-down depth.
+  test('exactly one back chevron renders at the sessions level', () => {
+    expect(chevronCount(renderExplorerHtml('project=p1'))).toBe(1);
+  });
+
+  test('still exactly one back chevron at the session level, where two crumbs are clickable', () => {
+    const html = renderExplorerHtml('project=p1&session=s1');
+    // Two clickable crumbs …
+    expect(crumbButtons(html)).toHaveLength(2);
+    // … and one chevron across both of them.
+    expect(chevronCount(html)).toBe(1);
+  });
+
+  test('no back chevron at the projects level — there is nowhere up', () => {
+    const html = renderExplorerHtml('');
+    expect(crumbButtons(html)).toHaveLength(0);
+    expect(chevronCount(html)).toBe(0);
+  });
+
+  // The current level must stay non-interactive. A crumb that pushes the state
+  // it is already in is a control that does nothing.
+  test('the current crumb stays a BreadcrumbPage, never a button', () => {
+    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    expect(crumbs).toContain('aria-current="page"');
+    const pageMatch = crumbs.match(/<span[^>]*aria-current="page"[^>]*>[\s\S]*?<\/span>/);
+    expect(pageMatch).not.toBeNull();
+    expect(pageMatch![0]).not.toContain('<button');
+  });
+
+  // No second mechanism for the same job. The breadcrumb is the way up; a
+  // "Back" button beside it would be a duplicate with its own state to keep
+  // right.
+  test('no separate Back button is added anywhere on the page', () => {
+    const html = renderExplorerHtml('project=p1&session=s1');
+    expect(html).not.toMatch(/>\s*Back\s*</);
+  });
+});
 
 // ── The component's wiring ─────────────────────────────────────────────────
 //

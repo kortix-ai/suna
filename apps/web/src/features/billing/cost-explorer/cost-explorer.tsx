@@ -13,8 +13,10 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { resolvePreset, type CostRange, type CostRangePreset } from '@/components/ui/date-range-picker';
+import { IconChevronLeft } from '@/components/ui/kortix-icons';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
 import { useSessionCostDetail, useSessionCostProjects } from '@/hooks/billing/use-session-costs';
+import { cn } from '@/lib/utils';
 
 import { CostLevelShell } from './cost-level-shell';
 import { ProjectsLevel } from './projects-level';
@@ -310,6 +312,27 @@ export function buildBreadcrumbCrumbs(
 }
 
 /**
+ * Which crumb carries the leading back chevron: the shallowest one a click can
+ * actually go to, or `-1` when the explorer is already at the top level and
+ * there is nowhere up.
+ *
+ * The reported problem was not that the breadcrumb is wrong — its model is
+ * correct and covered by the tests above — but that after drilling into a
+ * project, nothing on screen looked like a way back. Text that happens to be a
+ * link reads as a heading. One explicit "go up" glyph on the shallowest
+ * clickable crumb gives that target a shape, without adding a second Back
+ * control that would duplicate the crumb's job.
+ *
+ * Derived from `current` rather than from the index, so it stays correct if
+ * the crumb model ever grows a level: `current` is the one flag that means
+ * "this is where you already are", and every crumb that is not current is a
+ * navigation target.
+ */
+export function firstClickableCrumbIndex(crumbs: readonly ExplorerCrumb[]): number {
+  return crumbs.findIndex((crumb) => !crumb.current);
+}
+
+/**
  * Level 3 — a single session's cost ledger. Reuses `SessionCostDetailContent`
  * (built for the old modal) as the shell's body, with the chart hidden: a
  * day-bucketed spend trend for one session carries no information a single
@@ -397,11 +420,15 @@ export function CostExplorer() {
   const handleSelectSession = (sessionId: string) => pushState({ ...state, sessionId });
 
   const crumbs = buildBreadcrumbCrumbs(state, projectLabel);
+  const backIndex = firstClickableCrumbIndex(crumbs);
 
   return (
     <div className="space-y-4">
       <Breadcrumb>
-        <BreadcrumbList>
+        {/* `-my-2.5` cancels the crumbs' own `py-2.5` at the list level, so the
+            enlarged hit areas do not add 20px to the row's height. The row
+            keeps its original density and the targets are 40px tall. */}
+        <BreadcrumbList className="-my-2.5">
           {crumbs.map((crumb, index) => (
             <Fragment key={crumb.key}>
               {index > 0 ? <BreadcrumbSeparator /> : null}
@@ -412,7 +439,29 @@ export function CostExplorer() {
                   </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>
-                    <button type="button" className="cursor-pointer" onClick={() => pushState(crumb.target)}>
+                    {/* Affordance only — the crumb model and the URL state it
+                        pushes are unchanged. A parent crumb was previously
+                        plain text with a pointer cursor, which is invisible to
+                        anyone not already moving a mouse over it, so "how do I
+                        get back to all the projects" had no answer on screen.
+
+                        Three additions, each covering a different reader:
+                        underline-on-hover for the sighted mouse user, a
+                        focus-visible ring for the keyboard user, and
+                        `py-2.5` (20px of line box + 20px padding = 40px) for
+                        the touch/imprecise-pointer user. `-my-2.5` on the list
+                        above keeps all of that free of layout cost. */}
+                    <button
+                      type="button"
+                      onClick={() => pushState(crumb.target)}
+                      className={cn(
+                        'hover:text-foreground focus-visible:ring-ring/50 inline-flex cursor-pointer items-center gap-1 rounded-sm py-2.5 outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2',
+                        crumb.key === 'session' && 'font-mono text-xs',
+                      )}
+                    >
+                      {index === backIndex ? (
+                        <IconChevronLeft aria-hidden="true" className="size-3.5 shrink-0" />
+                      ) : null}
                       {crumb.label}
                     </button>
                   </BreadcrumbLink>

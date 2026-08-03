@@ -112,6 +112,27 @@ export function toCalendarSelection(value: CostRange): { from: Date; to: Date } 
   return { from: utcPartsToLocalDay(value.from), to: utcPartsToLocalDay(value.to, -1) };
 }
 
+/**
+ * The widest label `formatRangeLabel` can ever emit, used to reserve the
+ * trigger's width so the control does not resize when the range changes.
+ *
+ * The shape is fixed: `MMM D – MMM D, YYYY`. Every `en-US` short month name is
+ * three characters, the year is always four digits, and the widest day number
+ * is two digits — so a two-digit/two-digit pair is the maximum at 21
+ * characters. Digits are rendered `tabular-nums` on the trigger, so any
+ * two-digit day is exactly as wide as `28` and this string is not merely the
+ * longest, it is the widest for its digit positions.
+ *
+ * NOT `Dec 28, 2026 – Jan 3, 2027`: `formatRangeLabel` prints the year once,
+ * after the second day, so a range spanning a year boundary is *shorter* than
+ * this (`Dec 28 – Jan 3, 2027`), not longer. Sizing to the two-year shape
+ * would reserve ~5 characters of permanent dead space.
+ *
+ * The four preset labels are all shorter (`Last 24 hours`, 13 characters), so
+ * this one string governs the trigger width in every state.
+ */
+export const WIDEST_RANGE_LABEL = 'Dec 28 – Dec 30, 2026';
+
 /** Human label for the trigger button: the preset name, or both dates for a custom range. */
 export function formatRangeLabel(range: CostRange): string {
   if (range.preset !== 'custom') return PRESET_LABELS[range.preset];
@@ -124,6 +145,47 @@ export function formatRangeLabel(range: CostRange): string {
   return `${day(from)} – ${day(to)}, ${to.getUTCFullYear()}`;
 }
 
+/** One click's effect on a range that is being picked. */
+export type RangeDraftStep =
+  | { kind: 'pending'; draft: DateRange }
+  | { kind: 'complete'; from: Date; to: Date };
+
+/**
+ * What a click on `day` does, given the half-made range currently on screen.
+ *
+ * This deliberately ignores the range `react-day-picker` hands to `onSelect`,
+ * because that value is the bug. Its `addToRange` folds the clicked day into
+ * whatever is currently `selected`, and `selected` is always a *complete*
+ * range here — a preset resolves to real bounds, so `from` and `to` are both
+ * set before the user ever opens the calendar. Feeding a complete range in
+ * takes the `from && to` branch, which returns another complete range from a
+ * single click:
+ *
+ *   addToRange(Jul 10, { from: Jul 1, to: Jul 31 })  ->  { from: Jul 1, to: Jul 10 }
+ *
+ * So the first click looked finished, the picker committed and closed, and a
+ * second date could never be chosen. Worse, the committed range was one the
+ * user never asked for: their click became the *end* of the previous range
+ * instead of the start of a new one.
+ *
+ * Deriving from the clicked day instead makes the two clicks explicit — the
+ * first opens a range, the second closes it, in whichever order they are
+ * clicked. Clicking the same day twice is a legitimate single-day range and
+ * completes normally.
+ */
+export function nextRangeDraft(draft: DateRange | undefined, day: Date): RangeDraftStep {
+  // Nothing pending — this click opens a new range rather than editing the
+  // committed one.
+  if (!draft?.from || draft.to) {
+    return { kind: 'pending', draft: { from: day, to: undefined } };
+  }
+
+  const start = draft.from;
+  return day.getTime() < start.getTime()
+    ? { kind: 'complete', from: day, to: start }
+    : { kind: 'complete', from: start, to: day };
+}
+
 interface DateRangePickerProps {
   value: CostRange;
   onChange: (next: CostRange) => void;
@@ -131,67 +193,121 @@ interface DateRangePickerProps {
 
 /**
  * The main control for all three levels of the cost explorer (project,
- * sessions, session). A Popover holding a preset row above a range Calendar;
- * both paths resolve to concrete UTC ISO bounds before calling `onChange`.
+ * sessions, session). A Popover holding a vertical preset rail beside a range
+ * Calendar; both paths resolve to concrete UTC ISO bounds before calling
+ * `onChange`.
  */
 export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
+  // The range being picked, if the user is mid-selection. While this is set it
+  // is what the calendar shows, so the first click reads as "start here"
+  // instead of silently editing the committed range.
+  const [draft, setDraft] = useState<DateRange | undefined>(undefined);
 
-  const selected = toCalendarSelection(value);
+  const selected: DateRange = draft ?? toCalendarSelection(value);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    // Closing with only a start day chosen abandons it. Keeping it would mean
+    // the next open silently treats an old click as the range's start.
+    if (!next) setDraft(undefined);
+  };
 
   const handlePresetSelect = (preset: Exclude<CostRangePreset, 'custom'>) => {
+    setDraft(undefined);
     onChange(resolvePreset(preset, new Date()));
     setOpen(false);
   };
 
-  const handleCalendarSelect = (range: DateRange | undefined) => {
-    if (!range?.from || !range?.to) return;
-    onChange(toUtcDayRange(range.from, range.to));
+  // `range` is ignored on purpose — see `nextRangeDraft`. The clicked day is
+  // the only trustworthy input react-day-picker gives us here.
+  const handleCalendarSelect = (_range: DateRange | undefined, day: Date) => {
+    const step = nextRangeDraft(draft, day);
+    if (step.kind === 'pending') {
+      setDraft(step.draft);
+      return;
+    }
+    setDraft(undefined);
+    onChange(toUtcDayRange(step.from, step.to));
     setOpen(false);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" size="sm" className="gap-1.5 font-normal">
           <IconCalendar className="size-3.5 shrink-0" />
-          <span>{formatRangeLabel(value)}</span>
+          {/* Width reservation, not decoration. `formatRangeLabel` swings
+              between `Last 30 days` (12 characters) and a custom range's
+              `Jul 1 – Jul 7, 2026` (19), so an auto-width trigger resized
+              every time the range changed and jittered the control row it
+              sits in.
+
+              The two spans share one grid cell, so the column is sized by the
+              wider of them — always `WIDEST_RANGE_LABEL` — and the visible
+              label paints on top of it. This reserves the exact rendered width
+              of the worst case in whatever font is actually applied, which a
+              hand-measured `min-w-[Npx]` cannot do: that number is only right
+              for the font it was measured against, and this control inherits
+              the app font stack rather than pinning one.
+
+              `tabular-nums` because the label is numeric text that changes:
+              without it, a Jul 1 -> Jul 11 selection re-flows the label inside
+              the reserved box even though the box itself holds still. */}
+          <span className="grid text-left tabular-nums">
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1">
+              {WIDEST_RANGE_LABEL}
+            </span>
+            <span className="col-start-1 row-start-1">{formatRangeLabel(value)}</span>
+          </span>
           <IconChevronDown
             className={cn(
-              'size-3 shrink-0 opacity-50 transition-transform duration-200',
+              'size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out',
               open && 'rotate-180',
             )}
           />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="w-auto p-0 shadow-md">
-        <div className="flex flex-wrap items-center gap-1 border-b p-2">
-          {PRESET_ORDER.map((preset) => {
-            const active = value.preset === preset;
-            return (
-              <Button
-                key={preset}
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={active}
-                className={cn(
-                  'h-7 px-2.5 text-xs font-normal',
-                  active ? 'bg-primary/[0.06] text-foreground' : 'text-muted-foreground',
-                )}
-                onClick={() => handlePresetSelect(preset)}
-              >
-                {PRESET_LABELS[preset]}
-              </Button>
-            );
-          })}
+        {/* Rail beside the calendar, not a strip above it. The presets used to
+            be a `flex flex-wrap` row over a fixed-width calendar, so the four
+            labels wrapped into a ragged second row and the popover read as two
+            stacked objects. A rail cannot wrap, and it is the conventional
+            shape for this control.
+
+            Below `sm` the rail moves above the calendar, in a fixed 2x2 grid —
+            fixed columns rather than `flex-wrap`, so the arrangement is
+            declared instead of falling out of whatever width the calendar
+            happens to be. */}
+        <div className="flex flex-col sm:flex-row">
+          <div className="grid grid-cols-2 gap-1 border-b p-2 sm:w-[136px] sm:grid-cols-1 sm:content-start sm:border-r sm:border-b-0">
+            {PRESET_ORDER.map((preset) => {
+              const active = value.preset === preset;
+              return (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={active}
+                  className={cn(
+                    'h-7 w-full justify-start px-2.5 text-xs font-normal',
+                    active ? 'bg-primary/[0.06] text-foreground' : 'text-muted-foreground',
+                  )}
+                  onClick={() => handlePresetSelect(preset)}
+                >
+                  {PRESET_LABELS[preset]}
+                </Button>
+              );
+            })}
+          </div>
+          <Calendar
+            mode="range"
+            selected={selected}
+            onSelect={handleCalendarSelect}
+            defaultMonth={selected.from}
+          />
         </div>
-        <Calendar
-          mode="range"
-          selected={selected}
-          onSelect={handleCalendarSelect}
-          defaultMonth={selected.from}
-        />
       </PopoverContent>
     </Popover>
   );

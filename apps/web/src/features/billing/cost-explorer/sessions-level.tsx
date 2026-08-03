@@ -33,6 +33,7 @@ import { SESSION_COST_PAGE_SIZE, useSessionCosts } from '@/hooks/billing/use-ses
 
 import { CostExportButton, type SessionCostExportFilters } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
+import { CostSortHeader } from './cost-sort-header';
 import { formatSessionCostUsd } from '../session-cost-format';
 
 export interface SessionOwnerOption {
@@ -56,12 +57,61 @@ interface SessionsLevelListInput {
   ownerId?: string;
 }
 
-const SORT_OPTIONS: { value: SessionCostSort; label: string }[] = [
-  { value: 'total_desc', label: 'Highest spend' },
-  { value: 'recent', label: 'Most recent' },
-];
-
 const DEFAULT_FILTERS: SessionsLevelFilters = { ownerId: null, sort: 'total_desc', offset: 0 };
+
+/**
+ * The columns `GET /usage/session-costs` can actually order by.
+ *
+ * The route accepts three sorts — `total_desc`, `total_asc`, `recent`
+ * (`SESSION_COST_SORTS`, `apps/api/src/router/routes/usage.ts:38`) — and
+ * `recent` orders by last activity, which is the second line of the Session
+ * cell. Owner, Requests, LLM and Compute have no server sort, so they stay
+ * plain headers rather than controls that look live and do nothing.
+ */
+export type SessionSortColumn = 'session' | 'total';
+
+/**
+ * The sort a click on `column` selects.
+ *
+ * Total toggles between the two directions the route offers. Session does not:
+ * `recent` is the only activity ordering there is (no `oldest`), so rendering a
+ * two-way toggle would promise a direction the API cannot apply.
+ */
+export function nextSessionSort(
+  active: SessionCostSort,
+  column: SessionSortColumn,
+): SessionCostSort {
+  if (column === 'session') return 'recent';
+  return active === 'total_desc' ? 'total_asc' : 'total_desc';
+}
+
+/** `aria-sort` for `column`, or `undefined` when it is not the active sort.
+ *  `recent` is newest-first, so it reports `descending`. */
+export function sessionSortDirection(
+  active: SessionCostSort,
+  column: SessionSortColumn,
+): 'ascending' | 'descending' | undefined {
+  if (column === 'session') return active === 'recent' ? 'descending' : undefined;
+  if (active === 'total_asc') return 'ascending';
+  if (active === 'total_desc') return 'descending';
+  return undefined;
+}
+
+/**
+ * Applies a sort-header click to this level's filters.
+ *
+ * **The `offset: 0` is the point of this function existing.** An offset is an
+ * index into an ordered result, so re-sorting without resetting it drops the
+ * reader into the middle of a list under a heading that says the order just
+ * changed. Owner changes already reset the page inline for the same reason;
+ * this puts the sort path's reset in one place instead of at each call site.
+ */
+export function applySessionSort(
+  filters: SessionsLevelFilters,
+  column: SessionSortColumn,
+): SessionsLevelFilters {
+  return { ...filters, sort: nextSessionSort(filters.sort, column), offset: 0 };
+}
 
 /**
  * The owner-catalog fetch's page size — deliberately the API's actual
@@ -210,6 +260,9 @@ export interface SessionsLevelTableProps {
   data: SessionCostsPage | undefined;
   isLoading: boolean;
   error: Error | null;
+  /** The active sort, so the headers can show which column orders the table. */
+  sort: SessionCostSort;
+  onSort: (column: SessionSortColumn) => void;
   onSelectSession: (sessionId: string) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
@@ -226,6 +279,8 @@ export function SessionsLevelTable({
   data,
   isLoading,
   error,
+  sort,
+  onSort,
   onSelectSession,
   onPreviousPage,
   onNextPage,
@@ -281,12 +336,25 @@ export function SessionsLevelTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Session</TableHead>
+            {/* Only Session and Total are sortable — those are the two the
+                route can order by (see `SessionSortColumn`). Session maps to
+                `recent`, which orders by the last-activity line inside that
+                same cell. Owner, Requests, LLM and Compute stay plain. */}
+            <CostSortHeader
+              label="Session"
+              direction={sessionSortDirection(sort, 'session')}
+              onSort={() => onSort('session')}
+            />
             <TableHead>Owner</TableHead>
             <TableHead className="text-right">Requests</TableHead>
             <TableHead className="text-right">LLM</TableHead>
             <TableHead className="text-right">Compute</TableHead>
-            <TableHead className="text-right">Total</TableHead>
+            <CostSortHeader
+              label="Total"
+              align="right"
+              direction={sessionSortDirection(sort, 'total')}
+              onSort={() => onSort('total')}
+            />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -413,9 +481,10 @@ export function SessionsLevel({
   const [filters, setFilters] = useState<SessionsLevelFilters>(DEFAULT_FILTERS);
 
   // A stale offset would page past the end of a different project's (usually
-  // shorter) result set. Owner/sort changes reset their own offset inline;
-  // range changes reset via handleRangeChange below — this only covers the
-  // one dimension neither of those paths does.
+  // shorter) result set. The other three dimensions reset their own offset on
+  // their own paths — owner inline in the Select's handler, sort in
+  // `applySessionSort`, range in `handleRangeChange` below — so this covers
+  // only the project switch, which none of them sees.
   useEffect(() => {
     setFilters((current) => (current.offset === 0 ? current : { ...current, offset: 0 }));
   }, [projectId]);
@@ -461,24 +530,14 @@ export function SessionsLevel({
         </SelectContent>
       </Select>
 
-      <Select
-        value={filters.sort}
-        onValueChange={(value) =>
-          setFilters((current) => ({ ...current, sort: value as SessionCostSort, offset: 0 }))
-        }
-      >
-        <SelectTrigger className="h-8 w-[160px]" aria-label="Sort sessions">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {SORT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
+      {/* The sort `<Select>` that used to sit here is gone. It offered
+          "Highest spend" and "Most recent" — `total_desc` and `recent` — both
+          of which the Total and Session column headers now select directly,
+          and the headers additionally reach `total_asc`, which the Select
+          never exposed. Two controls doing one job means a state the reader
+          has to reconcile: a dropdown reading "Highest spend" beside a Total
+          header showing an ascending arrow. The header is the one that says
+          WHICH column it orders, so it is the one that stays. */}
       <CostExportButton
         kind="sessions"
         range={range}
@@ -500,6 +559,8 @@ export function SessionsLevel({
         data={sessionsQuery.data}
         isLoading={sessionsQuery.isLoading}
         error={sessionsQuery.error instanceof Error ? sessionsQuery.error : null}
+        sort={filters.sort}
+        onSort={(column) => setFilters((current) => applySessionSort(current, column))}
         onSelectSession={onSelectSession}
         onPreviousPage={() =>
           setFilters((current) => ({

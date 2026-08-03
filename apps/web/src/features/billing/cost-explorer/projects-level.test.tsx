@@ -1,15 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { CostSummary, ProjectCostPage } from '@kortix/sdk';
+import type { CostSummary, ProjectCostPage, ProjectCostSort } from '@kortix/sdk';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+import { CostExportButton } from './cost-export-button';
+import { CostSortHeader } from './cost-sort-header';
+import { collectElementsByType } from './react-element-tree';
 import {
+  applyProjectSort,
+  buildProjectsLevelExportFilters,
   buildProjectTableRows,
   hasRecentSpendSignal,
   isProjectRowClickable,
+  nextProjectSort,
   ProjectsLevelContent,
+  projectSortDirection,
   type ProjectTableRow,
 } from './projects-level';
 
@@ -368,6 +375,154 @@ describe('buildProjectTableRows', () => {
   });
 });
 
+// ── Sorting: the pure half ─────────────────────────────────────────────────
+//
+// `renderToStaticMarkup` cannot fire a click, so the effect of a header click
+// is asserted here — on the functions the handler calls — rather than through
+// the DOM. Each one is the single place its rule lives, which is what makes a
+// mutation to it produce a NAMED failure rather than a diffuse one.
+
+describe('nextProjectSort', () => {
+  // Total toggles. Both directions are real questions ("what is eating the
+  // budget", "what is nearly free") and the route serves both.
+  test('Total toggles between the two directions the route accepts', () => {
+    expect(nextProjectSort('total_desc', 'total')).toBe('total_asc');
+    expect(nextProjectSort('total_asc', 'total')).toBe('total_desc');
+  });
+
+  test('a first click on Total lands on descending, from any other sort', () => {
+    expect(nextProjectSort('name_asc', 'total')).toBe('total_desc');
+    expect(nextProjectSort('recent', 'total')).toBe('total_desc');
+  });
+
+  // Project does NOT toggle. `GET /usage/cost-by-project` accepts `name_asc`
+  // and has no `name_desc` (PROJECT_COST_SORTS, usage.ts:281), so a two-way
+  // toggle would either send a token the route rejects or claim a direction it
+  // is not applying. Clicking an already-ascending Project header is a no-op,
+  // deliberately.
+  test('Project is one-way — a repeat click never asks for a name_desc the API has no token for', () => {
+    expect(nextProjectSort('total_desc', 'name')).toBe('name_asc');
+    expect(nextProjectSort('name_asc', 'name')).toBe('name_asc');
+  });
+
+  // Whatever a click produces has to be a sort the route actually parses;
+  // anything else is a 400 or a silently ignored parameter.
+  test('every reachable result is a sort the route accepts', () => {
+    const accepted: ProjectCostSort[] = ['total_desc', 'total_asc', 'recent', 'name_asc'];
+    for (const active of accepted) {
+      for (const column of ['name', 'total'] as const) {
+        expect(accepted).toContain(nextProjectSort(active, column));
+      }
+    }
+  });
+});
+
+describe('projectSortDirection', () => {
+  test('reports the active column and nothing else', () => {
+    expect(projectSortDirection('total_desc', 'total')).toBe('descending');
+    expect(projectSortDirection('total_desc', 'name')).toBeUndefined();
+
+    expect(projectSortDirection('total_asc', 'total')).toBe('ascending');
+    expect(projectSortDirection('total_asc', 'name')).toBeUndefined();
+
+    expect(projectSortDirection('name_asc', 'name')).toBe('ascending');
+    expect(projectSortDirection('name_asc', 'total')).toBeUndefined();
+  });
+
+  // `recent` is a sort the route accepts but no header offers. No column may
+  // claim it — a Total header reading "descending" under a date ordering
+  // would be a lie about what the table is showing.
+  test('claims nothing under a sort no header offers', () => {
+    expect(projectSortDirection('recent', 'total')).toBeUndefined();
+    expect(projectSortDirection('recent', 'name')).toBeUndefined();
+  });
+
+  // Undefined, never 'none'. `aria-sort="none"` on the other columns would
+  // announce them as participating in the ordering.
+  test('never returns the string "none"', () => {
+    const columns = ['name', 'total'] as const;
+    const sorts: ProjectCostSort[] = ['total_desc', 'total_asc', 'recent', 'name_asc'];
+    for (const sort of sorts) {
+      for (const column of columns) {
+        expect(projectSortDirection(sort, column)).not.toBe('none');
+      }
+    }
+  });
+});
+
+// ── The page reset — this is the mutation target ───────────────────────────
+//
+// An offset is an index into an ORDERED result, so it means something
+// different under a different order. Re-sorting on page 2 of 40 projects
+// without resetting drops the reader into the middle of a list whose start
+// they have not seen, under a heading that just said the order changed.
+//
+// `applyProjectSort` is the only path that changes this level's sort, so the
+// reset lives in exactly one place. Mutating its `offset: 0` back to
+// `state.offset` must fail the named test below.
+
+describe('applyProjectSort', () => {
+  test('resets to page 1 — a mid-list offset does not survive a sort change', () => {
+    expect(applyProjectSort({ sort: 'total_desc', offset: 50 }, 'total')).toEqual({
+      sort: 'total_asc',
+      offset: 0,
+    });
+  });
+
+  test('resets to page 1 on the Project column too, not just Total', () => {
+    expect(applyProjectSort({ sort: 'total_desc', offset: 25 }, 'name')).toEqual({
+      sort: 'name_asc',
+      offset: 0,
+    });
+  });
+
+  // Even a click that does not change the sort resets the page. `name_asc` is
+  // one-way, so clicking Project twice leaves the order alone — but the reader
+  // still asked for "sort by name", and answering that from page 3 is the same
+  // disorientation.
+  test('resets the page even when the sort itself does not change', () => {
+    expect(applyProjectSort({ sort: 'name_asc', offset: 75 }, 'name')).toEqual({
+      sort: 'name_asc',
+      offset: 0,
+    });
+  });
+
+  test('carries the sort `nextProjectSort` chose, rather than deciding again', () => {
+    const sorts: ProjectCostSort[] = ['total_desc', 'total_asc', 'recent', 'name_asc'];
+    for (const sort of sorts) {
+      for (const column of ['name', 'total'] as const) {
+        expect(applyProjectSort({ sort, offset: 25 }, column).sort).toBe(
+          nextProjectSort(sort, column),
+        );
+      }
+    }
+  });
+});
+
+// ── The CSV export follows the active sort ─────────────────────────────────
+//
+// This was a fixed `total_desc` literal shared between the query and the
+// export. Once the headers can re-sort, a constant means the file is ordered
+// differently from the table it was taken from — silently, since a CSV carries
+// no indication of what produced it.
+
+describe('buildProjectsLevelExportFilters', () => {
+  test('sends whichever sort is active, not a fixed default', () => {
+    expect(buildProjectsLevelExportFilters('name_asc')).toEqual({ sort: 'name_asc' });
+    expect(buildProjectsLevelExportFilters('total_asc')).toEqual({ sort: 'total_asc' });
+    expect(buildProjectsLevelExportFilters('total_desc')).toEqual({ sort: 'total_desc' });
+  });
+
+  // `format=csv` hardcodes `limit: CSV_ROW_CAP, offset: 0` on the route, so a
+  // page could not narrow an export even if one were sent. Pinned so nobody
+  // starts forwarding the offset in the belief that it does something.
+  test('carries no page — an export is the whole filtered query', () => {
+    const filters = buildProjectsLevelExportFilters('total_desc');
+    expect(filters).not.toHaveProperty('offset');
+    expect(filters).not.toHaveProperty('limit');
+  });
+});
+
 // ── Pure function: isProjectRowClickable ────────────────────────────────────
 
 describe('isProjectRowClickable', () => {
@@ -457,6 +612,8 @@ function baseContentProps(overrides: Partial<Parameters<typeof ProjectsLevelCont
     page: undefined,
     isProjectsLoading: false,
     projectsError: null,
+    sort: 'total_desc' as const,
+    onSort: noop,
     onSelectProject: noop,
     onPreviousPage: noop,
     onNextPage: noop,
@@ -514,6 +671,20 @@ describe('ProjectsLevelContent', () => {
   test('offers the CSV export beside the range picker', () => {
     const html = renderContent({ page: twoProjectPage });
     expect(html).toContain('Export CSV');
+  });
+
+  // The builder above proves the shape; this proves the WIRING — that the
+  // active sort actually reaches the export button, rather than the constant
+  // that used to be there. The filters are props, not markup, so this reads
+  // the element tree instead of the HTML.
+  test('the export button is handed the active sort, not a fixed default', () => {
+    for (const sort of ['total_desc', 'total_asc', 'name_asc', 'recent'] as const) {
+      const tree = ProjectsLevelContent(baseContentProps({ page: twoProjectPage, sort }) as never);
+      const exports = collectElementsByType(tree, CostExportButton);
+      expect(exports, `expected one export button under sort ${sort}`).toHaveLength(1);
+      expect(exports[0]!.props.kind).toBe('projects');
+      expect(exports[0]!.props.filters).toEqual({ sort });
+    }
   });
 
   test('keeps the CSV export available while the table is still loading', () => {
@@ -603,6 +774,99 @@ describe('ProjectsLevelContent', () => {
     expect(html).toContain('No spend recorded yet');
     expect(html).not.toContain('No spend in this range');
     expect(html).not.toContain('Reset range');
+  });
+
+  // ── Sortable headers ──────────────────────────────────────────────────
+  //
+  // Only Project and Total are sortable, because those are the only two
+  // orderings `GET /usage/cost-by-project` accepts. The rest must stay plain:
+  // a header that looks clickable and reorders nothing is worse than one that
+  // never invited the click.
+
+  test('Project and Total are buttons; Sessions, LLM and Compute are not', () => {
+    const html = renderContent({ page: twoProjectPage });
+    const header = html.match(/<thead[\s\S]*?<\/thead>/)![0];
+
+    // Two sortable columns, so exactly two buttons in the header row.
+    expect((header.match(/<button/g) ?? []).length).toBe(2);
+
+    // Scoped per cell: a whole-header check would pass with the buttons on
+    // the wrong two columns.
+    const cells = header.match(/<th[\s\S]*?<\/th>/g) ?? [];
+    expect(cells).toHaveLength(5);
+    const hasButton = cells.map((cell) => cell.includes('<button'));
+    expect(hasButton).toEqual([true, false, false, false, true]);
+  });
+
+  test('the sortable headers are real buttons with a visible focus ring', () => {
+    const html = renderContent({ page: twoProjectPage });
+    const header = html.match(/<thead[\s\S]*?<\/thead>/)![0];
+    for (const button of header.match(/<button[^>]*>/g) ?? []) {
+      expect(button).toContain('type="button"');
+      expect(button).toContain('focus-visible:ring-2');
+    }
+  });
+
+  // `aria-sort` is the only thing that tells assistive technology which column
+  // orders the table. It must be on the active column and ABSENT elsewhere —
+  // `aria-sort="none"` on every other column would say all five participate.
+  test('aria-sort marks only the active column, descending by default', () => {
+    const html = renderContent({ page: twoProjectPage, sort: 'total_desc' });
+    const header = html.match(/<thead[\s\S]*?<\/thead>/)![0];
+    expect((header.match(/aria-sort=/g) ?? []).length).toBe(1);
+    expect(header).toContain('aria-sort="descending"');
+  });
+
+  test('aria-sort flips to ascending on the Total column', () => {
+    const header = renderContent({ page: twoProjectPage, sort: 'total_asc' }).match(
+      /<thead[\s\S]*?<\/thead>/,
+    )![0];
+    expect((header.match(/aria-sort=/g) ?? []).length).toBe(1);
+    expect(header).toContain('aria-sort="ascending"');
+  });
+
+  test('aria-sort moves to the Project column under name_asc', () => {
+    const header = renderContent({ page: twoProjectPage, sort: 'name_asc' }).match(
+      /<thead[\s\S]*?<\/thead>/,
+    )![0];
+    const projectCell = (header.match(/<th[\s\S]*?<\/th>/g) ?? [])[0]!;
+    expect(projectCell).toContain('aria-sort="ascending"');
+    expect((header.match(/aria-sort=/g) ?? []).length).toBe(1);
+  });
+
+  // `recent` is reachable through the API but no header selects it, so no
+  // column may claim it.
+  test('no column claims aria-sort under a sort no header offers', () => {
+    const header = renderContent({ page: twoProjectPage, sort: 'recent' }).match(
+      /<thead[\s\S]*?<\/thead>/,
+    )![0];
+    expect(header).not.toContain('aria-sort=');
+  });
+
+  // Right-aligned numeric columns keep their alignment — the indicator sits
+  // inside it rather than being floated out of the flow.
+  test('the Total header keeps the numeric right alignment', () => {
+    const header = renderContent({ page: twoProjectPage }).match(/<thead[\s\S]*?<\/thead>/)![0];
+    const totalCell = (header.match(/<th[\s\S]*?<\/th>/g) ?? [])[4]!;
+    expect(totalCell).toContain('text-right');
+    expect(totalCell).not.toContain('float');
+  });
+
+  // The click contract itself. renderToStaticMarkup strips handlers from its
+  // HTML, so this calls the (hook-free) component function directly and reads
+  // the element tree the same way sessions-level.test.tsx does.
+  test('clicking a sortable header reports which column was clicked', () => {
+    const clicked: string[] = [];
+    const tree = ProjectsLevelContent(
+      baseContentProps({ page: twoProjectPage, onSort: (column) => clicked.push(column) }) as never,
+    );
+
+    const headers = collectElementsByType(tree, CostSortHeader);
+    expect(headers.map((header) => header.props.label)).toEqual(['Project', 'Total']);
+
+    (headers[0]!.props.onSort as () => void)();
+    (headers[1]!.props.onSort as () => void)();
+    expect(clicked).toEqual(['name', 'total']);
   });
 
   test('renders the column headers in order: Project, Sessions, LLM, Compute, Total', () => {
