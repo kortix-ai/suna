@@ -449,14 +449,22 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         existingSlugs={existingSlugs}
         canWrite={canWrite}
         onClose={() => setBrowseTarget(null)}
-        // Byte-for-byte the handler `AddAppPanel` gets below, because the two
-        // run the same journey and used to end differently: on a partial
-        // failure (manifest written, sync failed) `DiscoverAddFlow` passed the
-        // slug and this opened the detail modal on a connector `listConnectors`
-        // may not return yet — leaving `?c=<slug>` stranded in the URL to pop
-        // the modal open unbidden on a later refetch. `AddAppPanel` omits the
-        // slug in that case (`connectors-view.tsx:3813`, `:3982`, `:4704`), and
-        // that is now the one contract.
+        // Shares the slug contract with the handler `AddAppPanel` gets below,
+        // because the two run the same journey and used to end differently: on
+        // a partial failure (manifest written, sync failed) `DiscoverAddFlow`
+        // passed the slug and this opened the detail modal on a connector
+        // `listConnectors` may not return yet — leaving `?c=<slug>` stranded in
+        // the URL to pop the modal open unbidden on a later refetch.
+        // `AddAppPanel` omits the slug in that case (`connectors-view.tsx:3813`,
+        // `:3982`, `:4704`), and that is now the one contract: no slug, no
+        // detail modal, in both places.
+        //
+        // The two are NOT otherwise identical, and deliberately so — only the
+        // dismissal differs. Browse is a full-surface flow, so it closes
+        // unconditionally and returns the user to the grid where the invalidated
+        // list will show the result either way. The add modal below closes only
+        // on success, leaving a failed attempt on screen with its own error so
+        // the user can correct the input and retry instead of losing it.
         onAdded={(slug) => {
           setBrowseTarget(null);
           invalidate();
