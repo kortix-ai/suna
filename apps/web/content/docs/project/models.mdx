@@ -58,6 +58,22 @@ If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.
 </Callout>
 
+## Per-project model enablement
+
+The project controls which models its pickers offer. By default, the newest
+model of each family is offered automatically. Kortix-managed models and any
+model your project's defaults or routing policy reference are always offered —
+a guard never prunes them.
+
+You can override the default for individual models on the **Manage models**
+page (Customize → Models). An exception is stored per project and takes effect
+immediately. The session model picker and the command palette hide anything
+you turn off; new models stay on by default as the catalog grows.
+
+Enablement governs what is offered, not what is served: a request that names a
+disabled model outright (for example through the raw API) still runs. The
+project's default model cannot be turned off — set a different default first.
+
 ## Shared, not private, keys
 
 A connected provider key applies to the whole project. There is no private,

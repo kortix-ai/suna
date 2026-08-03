@@ -150,6 +150,10 @@ export interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
   allowedEmails: string[];
   allowedDomains: string[];
+  /**
+   * Case-insensitive, unanchored RE2-compatible pattern (maximum 256
+   * characters). Backreferences and look-around are intentionally unsupported.
+   */
   allowedRegex: string | null;
 }
 

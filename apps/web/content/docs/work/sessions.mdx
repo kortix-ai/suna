@@ -33,7 +33,11 @@ Kortix also stops an idle session for you:
 - After 5 minutes idle, for a session a trigger started.
 
 An open dashboard tab does not keep a session alive. A busy agent turn blocks
-the stop.
+the stop. The maintenance sweep runs every 5 minutes. A normal automatic Stop
+therefore occurs approximately 15 to 20 minutes after the terminal turn.
+
+Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
+normal idle grace. This setting does not change active-turn protection.
 
 ## What stop and delete keep
 

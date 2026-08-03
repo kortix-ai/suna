@@ -110,6 +110,7 @@ import {
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
+import { toArray } from '@/features/workspace/customize/shared/utils';
 
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
 
@@ -174,7 +175,7 @@ export function MembersView({ projectId }: { projectId: string }) {
         projectId={projectId}
         accountId={project?.account_id ?? null}
         canManage={!!canManage}
-        members={accessQuery.data?.members ?? []}
+        members={toArray(accessQuery.data?.members)}
         isLoading={accessQuery.isLoading}
         isError={accessQuery.isError}
         error={accessQuery.error as Error | null}
@@ -200,7 +201,7 @@ export function MembersView({ projectId }: { projectId: string }) {
           projectId={projectId}
           accountId={project.account_id}
           canManage={!!canManage}
-          members={accessQuery.data?.members ?? []}
+          members={toArray(accessQuery.data?.members)}
         />
       )}
 
@@ -209,7 +210,7 @@ export function MembersView({ projectId }: { projectId: string }) {
           projectId={projectId}
           accountId={project.account_id}
           canManage={!!canManage}
-          members={accessQuery.data?.members ?? []}
+          members={toArray(accessQuery.data?.members)}
         />
       )}
     </div>
@@ -1049,7 +1050,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
     onError: (err: Error) => errorToast(err.message || 'Failed to decline request'),
   });
 
-  const requests = requestsQuery.data?.requests ?? [];
+  const requests = toArray(requestsQuery.data?.requests);
 
   if (!requestsQuery.isLoading && requests.length === 0) return null;
 
@@ -1197,7 +1198,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
     onError: (err: Error) => errorToast(err.message || 'Failed to resend invitation'),
   });
 
-  const pending = invitesQuery.data?.pending ?? [];
+  const pending = toArray(invitesQuery.data?.pending);
 
   if (!invitesQuery.isLoading && pending.length === 0) return null;
 
@@ -1383,7 +1384,7 @@ function ProjectGroupGrantsCard({
   const groupsWithCustomRole = useMemo(
     () =>
       new Set(
-        (policiesQuery.data ?? [])
+        toArray(policiesQuery.data)
           .filter(
             (p) =>
               p.principal_type === 'group' &&
@@ -1396,13 +1397,13 @@ function ProjectGroupGrantsCard({
   );
 
   const grants = useMemo(() => {
-    const raw = grantsQuery.data?.grants ?? [];
+    const raw = toArray(grantsQuery.data?.grants);
     return [...raw].sort((a, b) => {
       const t = a.created_at.localeCompare(b.created_at);
       return t !== 0 ? t : a.group_id.localeCompare(b.group_id);
     });
   }, [grantsQuery.data]);
-  const groups: AccountGroup[] = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const groups: AccountGroup[] = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
   const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
   const available = useMemo(
     () => groups.filter((g) => !attachedIds.has(g.group_id)),
@@ -1834,7 +1835,7 @@ function ResourceAccessCard({
 
   const resources = grantsQuery.data?.resources ?? { agents: [], skills: [], secrets: [] };
   const grants = useMemo(() => {
-    const raw = grantsQuery.data?.grants ?? [];
+    const raw = toArray(grantsQuery.data?.grants);
     return [...raw].sort((a, b) => {
       const t = a.resource_type.localeCompare(b.resource_type);
       if (t !== 0) return t;
@@ -1842,7 +1843,7 @@ function ResourceAccessCard({
       return r !== 0 ? r : a.principal_label.localeCompare(b.principal_label);
     });
   }, [grantsQuery.data]);
-  const groups: AccountGroup[] = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const groups: AccountGroup[] = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
 
   // Display name for a resource id (falls back to the id itself).
   const resourceName = useMemo(() => {
@@ -2233,23 +2234,23 @@ function ProjectRoleAssignmentsCard({
   // apply too, but they're managed on the account page, not per-project).
   const policies = useMemo(
     () =>
-      (policiesQuery.data ?? []).filter(
+      toArray(policiesQuery.data).filter(
         (p) => p.scope_type === 'project' && p.scope_id === projectId,
       ),
     [policiesQuery.data, projectId],
   );
   const customRoles = useMemo(
-    () => (rolesQuery.data ?? []).filter((r) => !r.is_system),
+    () => toArray(rolesQuery.data).filter((r) => !r.is_system),
     [rolesQuery.data],
   );
-  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const groups = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
   const projectAgents = useMemo(
-    () => (agentsQuery.data ?? []).filter((a) => a.project_id === projectId),
+    () => toArray(agentsQuery.data).filter((a) => a.project_id === projectId),
     [agentsQuery.data, projectId],
   );
 
   const roleNameById = useMemo(
-    () => new Map((rolesQuery.data ?? []).map((r) => [r.role_id, r.name])),
+    () => new Map(toArray(rolesQuery.data).map((r) => [r.role_id, r.name])),
     [rolesQuery.data],
   );
   const memberLabelById = useMemo(
@@ -2259,7 +2260,7 @@ function ProjectRoleAssignmentsCard({
   const groupNameById = useMemo(() => new Map(groups.map((g) => [g.group_id, g.name])), [groups]);
   const agentLabelById = useMemo(
     () =>
-      new Map((agentsQuery.data ?? []).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
+      new Map(toArray(agentsQuery.data).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
     [agentsQuery.data],
   );
 

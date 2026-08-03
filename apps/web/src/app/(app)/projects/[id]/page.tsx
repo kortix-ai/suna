@@ -10,7 +10,6 @@ import {
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import {
   billingDialogArgs,
   billingStateAllowsRun,
@@ -40,12 +39,7 @@ export default function ProjectIndexPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const warmSession = useWarmProjectSession(projectId);
-  const newSession = useNewProjectSession(
-    projectId,
-    warmSession.data?.session,
-    warmSession.resolveSession,
-  );
+  const newSession = useNewProjectSession(projectId);
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);
@@ -91,7 +85,17 @@ export default function ProjectIndexPage() {
       // defaults to "default" when unset (see buildNewSessionCreateInput).
       setSending(true);
       newSession({
-        create: buildNewSessionCreateInput(options),
+        create: {
+          ...buildNewSessionCreateInput(options),
+          pending_prompt: {
+            text,
+            agent: options?.agent ?? null,
+            model: options?.model ?? null,
+            variant: options?.variant ?? null,
+            attachment_names:
+              files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
+          },
+        },
         scope: options?.scope,
         // Create failed (already surfaced by the hook) — we never left this
         // page, so just unlock the composer with the text still in it.

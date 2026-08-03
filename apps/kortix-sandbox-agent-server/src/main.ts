@@ -150,6 +150,23 @@ async function main() {
   // exactly equivalent to constructing it late.
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+  onUnplannedRespawn: () => {
+      // opencode died on its own and is back. Close whatever turn it was
+      // writing, or the client streams a part that will never complete.
+      const pinned = readPinnedOpencodeSessionId()
+      if (!pinned) return
+      void finalizeOrphanedTurn(
+        opencode.getInternalUrl(),
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        pinned,
+      ).then((finalized) => {
+        if (finalized) {
+          logger.info('[opencode] finalized a turn orphaned by an unplanned exit', {
+            sessionId: pinned,
+          })
+        }
+      })
+    },
   })
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
@@ -558,6 +575,23 @@ async function runWarmSeedMode(
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+  onUnplannedRespawn: () => {
+      // opencode died on its own and is back. Close whatever turn it was
+      // writing, or the client streams a part that will never complete.
+      const pinned = readPinnedOpencodeSessionId()
+      if (!pinned) return
+      void finalizeOrphanedTurn(
+        opencode.getInternalUrl(),
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        pinned,
+      ).then((finalized) => {
+        if (finalized) {
+          logger.info('[opencode] finalized a turn orphaned by an unplanned exit', {
+            sessionId: pinned,
+          })
+        }
+      })
+    },
   })
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
@@ -855,6 +889,33 @@ async function maybeCreateInitialOpencodeSession(
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
+}
+
+/**
+ * End a turn that lost the process writing it.
+ *
+ * A turn ends only when opencode emits `session.idle`/`session.error`. A killed
+ * or crashed opencode emits neither, so the last assistant message stays
+ * incomplete and every client streaming it spins — indefinitely, because the
+ * supervisor's respawn brings the box back without ever closing that turn.
+ *
+ * Boot already did exactly this when it adopted a root whose last turn never
+ * finished; it was simply unreachable from anywhere else. Same two calls, now
+ * callable after an unplanned respawn as well.
+ *
+ * Best-effort by construction: if opencode is not answering yet, or the abort
+ * fails, we log and move on. A stuck spinner is bad; a daemon that cannot
+ * finish booting because it could not tidy up a turn is worse.
+ */
+export async function finalizeOrphanedTurn(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+): Promise<boolean> {
+  const inspection = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!inspection.lastTurnIncomplete) return false
+  await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  return true
 }
 
 /** Best-effort write of the canonical opencode root id to the well-known pin
@@ -1157,15 +1218,17 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   throw new Error(lastError)
 }
 
-// The relay context for a SLACK-originated session, or null when this is not
-// one. Slack sessions carry SLACK_* env injected by the dispatcher; the four
-// KORTIX_* vars are what we need to reach apps/api. Everywhere else (the web
-// dashboard, the CLI) this returns null so the sandbox stays out of the way and
-// the opencode event is handled natively. Shared by the question + turn-end
-// relays so BOTH gate on Slack identically — the question relay used to skip
-// this gate, which auto-answered the `question` tool in non-Slack sessions.
-function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+type SandboxRelayContext = {
+  projectId: string
+  sessionId: string
+  token: string
+  apiRoot: string
+}
+
+// The control-plane callback context for every project session. The sandbox
+// credential can call the sandbox-identity turn-stream route. This callback is
+// safe for web, CLI, Slack, Teams, and email sessions.
+function sandboxRelayContext(): SandboxRelayContext | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
@@ -1186,6 +1249,13 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
   }
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
   return { projectId, sessionId, token, apiRoot }
+}
+
+// Question relays remain Slack-only. A web session answers the question tool
+// through OpenCode SSE and must not receive the Slack sentinel response.
+function slackRelayContext(): SandboxRelayContext | null {
+  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+  return sandboxRelayContext()
 }
 
 // Relay an opencode `question.asked` event for a SLACK session: post the
@@ -1259,13 +1329,9 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
 }
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
-// turn to apps/api so the Slack live stream gets closed even when the agent
-// ends without `slack send`. Without this, abandoned streams sit until Slack's
-// inactivity timeout paints them as "Something went wrong" — a finished turn
-// that looks like a failed one. opencode fires these events for every session —
-// including subagent (Task tool) children — so we ignore any whose sessionID
-// isn't the root turn session. Only relevant for Slack-originated sessions
-// (SLACK_* env is injected by the Slack dispatcher); a no-op everywhere else.
+// turn to apps/api. The API finalizes channel output and shortens the sandbox
+// deadline to the configured idle grace. OpenCode emits these events for every
+// session, including Task-tool children, so only root events can relay.
 // Turn-end dedup: the last (opencodeSessionId, turnSignature) we already relayed.
 // The signature is the completed turn's identity (last assistant message's
 // completed timestamp), so a turn is finalized EXACTLY ONCE no matter which path
@@ -1288,11 +1354,11 @@ export async function relayTurnEndToApi(
   cfg: Config,
   eventError?: OpencodeTurnError,
 ): Promise<void> {
-  const ctx = slackRelayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx) return
-  // Only the ROOT turn closes the Slack stream — a subagent going idle mid-task
-  // must NOT finalize the user-facing stream. Detected by parentID (objective),
-  // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
+  // Only the root turn closes channel output and shortens the idle deadline. A
+  // subagent can become idle while the root turn still runs. Detect the root by
+  // parentID, not by a session pin that can change after an OpenCode restart.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
   // Resolve the turn's error + completed signature in one read. session.error
@@ -1433,15 +1499,13 @@ async function readRootTurnState(
 // last-turn state directly: if it has already COMPLETED (an assistant message
 // with a completion time), relay a synthetic turn-end so the turn finalizes even
 // though its live event was missed. relayTurnEndToApi dedups by the completed
-// signature, so if the natural idle WASN'T dropped this is a no-op — finalize is
-// independent of subscription timing, and fires exactly once. A no-op outside
-// Slack (relayTurnEndToApi returns early with no relay context) and while the
-// turn is still running (completedAt null).
+// signature, so if the natural idle WASN'T dropped this is a no-op. The callback
+// works for all project sessions and remains a no-op without sandbox identity.
 export async function reconcileFinishedFirstTurn(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
 ): Promise<void> {
-  if (!slackRelayContext()) return
+  if (!sandboxRelayContext()) return
   const rootId = readPinnedOpencodeSessionId()
   if (!rootId) return
   const turn = await readRootTurnState(rootId, opencode, cfg)

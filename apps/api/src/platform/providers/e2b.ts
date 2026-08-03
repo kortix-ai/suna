@@ -2,6 +2,7 @@
 
 import { Sandbox, SandboxNotFoundError, type Sandbox as E2BSandbox } from 'e2b';
 import { config, SANDBOX_VERSION } from '../../config';
+import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import type {
@@ -31,6 +32,13 @@ const KORTIX_HEALTH_WAIT =
   'sleep 1; done; exit 1';
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
+// The E2B SDK accepts requestTimeoutMs, but a live kill call remained pending
+// after that budget. This outer timer bounds all permanent-removal call sites.
+const E2B_REMOVE_TIMEOUT_MS = configuredTimeoutMs(
+  'KORTIX_E2B_REMOVE_TIMEOUT_MS',
+  25_000,
+  1_000,
+);
 
 function apiOpts() {
   return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 20_000 } as const;
@@ -138,6 +146,8 @@ async function ensureKortixEntrypoint(
 export class E2BProvider implements SandboxProvider {
   readonly name: ProviderName = 'e2b';
   readonly requiresPublicCallback = true;
+
+  constructor(private readonly removeTimeoutMs = E2B_REMOVE_TIMEOUT_MS) {}
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
@@ -268,7 +278,11 @@ export class E2BProvider implements SandboxProvider {
   async remove(externalId: string): Promise<void> {
     connectedSandboxes.delete(externalId);
     try {
-      await Sandbox.kill(externalId, apiOpts());
+      await withTimeout(
+        Sandbox.kill(externalId, apiOpts()),
+        this.removeTimeoutMs,
+        `E2B kill(${externalId})`,
+      );
     } catch (error) {
       if (!isMissingSandboxError(error)) throw error;
     }

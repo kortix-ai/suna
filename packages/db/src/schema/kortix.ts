@@ -972,16 +972,26 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column; every model is served. Retained INERT (not dropped) so
-     * a mixed-version rollout can't hit a missing column on the gateway's hot
-     * path — a later contract migration drops it. Do not add new readers.
+     * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
+     * enablement is `overrides[id] ?? defaultEnabledModelIds(catalog).has(id)`
+     * — the newest model per family is on, and this records only what an admin
+     * deliberately changed. Display-only: it decides what the session picker
+     * and "Manage models" OFFER; the gateway never refuses a request over it
+     * (enforcement 400'd in-use models — the #5932 revert).
+     *
+     * Storing EXCEPTIONS rather than the resolved set is load-bearing: a stored
+     * set freezes the moment it's written, so every later catalog addition (a
+     * newly connected provider, next month's Claude) lands OFF and needs a
+     * manual click. Overrides let the default keep tracking "the latest"
+     * forever while still honouring explicit choices. It also removes the
+     * `[]`-means-two-things ambiguity that made the previous `disabled_models`
+     * opt-out list unable to express the default at all.
      */
     modelOverrides: jsonb('model_overrides').default({}).$type<Record<string, boolean>>().notNull(),
     /**
-     * @deprecated Server-side per-project model enablement was reverted. Nothing
-     * reads this column. Retained INERT (not dropped) for the same mixed-version
-     * reason as `modelOverrides`; a later contract migration drops it.
+     * @deprecated Superseded by `modelOverrides`. Retained un-read for one
+     * release so a mixed-version rollout can't hit a missing column on the
+     * gateway's hot path; the contract migration drops it.
      */
     disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
@@ -4541,6 +4551,57 @@ export const executorExecutions = kortixSchema.table(
     index('idx_executor_executions_connector').on(table.connectorId),
     index('idx_executor_executions_profile').on(table.profileId),
     index('idx_executor_executions_status').on(table.status),
+  ],
+);
+
+/**
+ * Private, short-lived files staged for one Executor email call.
+ *
+ * The sandbox receives only `attachment_id`. Raw bytes remain in private
+ * object storage. Ownership fields are checked again when the email gateway
+ * claims the row, after any approval wait and immediately before provider
+ * execution. `claim_token` makes provider ingestion single-flight. Successful
+ * calls mark rows consumed before the signed-URL grace window and object
+ * deletion, so retries cannot replay an attachment while AgentMail completes
+ * provider-side ingestion. Account/project ids intentionally are not foreign
+ * keys: deleting either owner must not cascade away the only object-storage
+ * key before the expiry sweeper can remove the private blob.
+ */
+export const executorAttachments = kortixSchema.table(
+  'executor_attachments',
+  {
+    attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    sessionId: text('session_id'),
+    userId: uuid('user_id').notNull(),
+    objectPath: text('object_path').notNull().unique(),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    contentDisposition: varchar('content_disposition', { length: 16 })
+      .default('attachment')
+      .notNull(),
+    contentId: text('content_id'),
+    sizeBytes: integer('size_bytes').notNull(),
+    status: varchar('status', { length: 16 }).default('uploaded').notNull(),
+    claimToken: uuid('claim_token'),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'executor_attachments_disposition_check',
+      sql`${table.contentDisposition} IN ('attachment', 'inline')`,
+    ),
+    check(
+      'executor_attachments_status_check',
+      sql`${table.status} IN ('uploaded', 'claimed', 'consumed')`,
+    ),
+    check('executor_attachments_size_check', sql`${table.sizeBytes} > 0`),
+    index('idx_executor_attachments_scope').on(table.projectId, table.sessionId, table.userId),
+    index('idx_executor_attachments_expiry').on(table.expiresAt),
   ],
 );
 

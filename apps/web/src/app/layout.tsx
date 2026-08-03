@@ -10,6 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
 import { AuthProvider } from '@/features/providers/auth-provider';
+import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
@@ -149,9 +150,9 @@ export const metadata: Metadata = {
     apple: [{ url: '/logo_black.png', sizes: '180x180' }],
   },
   manifest: '/manifest.json',
-  alternates: {
-    canonical: siteMetadata.url,
-  },
+  // No root canonical: Next.js inherits `alternates` into every page that does
+  // not set its own, which would mark unrelated pages as duplicates of the
+  // homepage. Each indexable page declares its own canonical instead.
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -166,11 +167,18 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // website still loads them as normal. Keeps third-party de-anonymization
   // pixels (Vector/Artisan via GTM, plus the hardcoded loader) out of the
   // authenticated native client.
-  const isDesktopApp = (await headers()).get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
+  const requestHeaders = await headers();
+  const isDesktopApp = requestHeaders.get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
+
+  // Locale-routed marketing pages (/de, /fr, …) are rewritten onto the
+  // unprefixed route by the middleware, which records the locale in x-locale.
+  const requestLocale = requestHeaders.get('x-locale');
+  const htmlLang =
+    requestLocale && locales.includes(requestLocale as Locale) ? requestLocale : 'en';
 
   return (
     <html
-      lang="en"
+      lang={htmlLang}
       translate="no"
       suppressHydrationWarning
       className={cn('notranslate', roobert.variable, roobertMono.variable)}

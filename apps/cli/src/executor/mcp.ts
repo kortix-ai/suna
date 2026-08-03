@@ -1,3 +1,6 @@
+import { constants } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
+import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * `kortix executor mcp` — the Executor exposed as a stdio MCP server.
  *
@@ -39,6 +42,170 @@ interface JsonRpcRequest {
 // The MCP server identity is kept as `kortix-executor` (unchanged from the old
 // standalone shim) so the agent's tool names and registration key don't move.
 const SERVER_INFO = { name: 'kortix-executor', version: '0.3.0' };
+
+const MAX_ATTACHMENT_FILES = 20;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const DEFAULT_ATTACHMENT_ROOTS = ['output', 'artifacts', 'reports', 'deliverables'];
+
+const ATTACHMENT_CONTENT_TYPES: Record<string, string> = {
+  '.csv': 'text/csv',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.json': 'application/json',
+  '.md': 'text/markdown',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.txt': 'text/plain',
+  '.webp': 'image/webp',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.zip': 'application/zip',
+};
+
+interface LocalAttachmentFile {
+  path: string;
+  filename?: string;
+  content_type?: string;
+  content_disposition?: 'attachment' | 'inline';
+  content_id?: string;
+}
+
+interface UploadedAttachment {
+  filename: string;
+  content_type: string;
+  content_disposition: 'attachment' | 'inline';
+  content_id?: string;
+  attachment_id: string;
+}
+
+function isWithinRoot(path: string, root: string): boolean {
+  const offset = relative(root, path);
+  return offset !== '' && !offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset);
+}
+
+function localAttachment(value: unknown, index: number): LocalAttachmentFile {
+  const row = asRecord(value);
+  const path = stringField(row, 'path').trim();
+  if (!path) throw new Error(`attachment_files[${index}].path is required`);
+  const disposition = row.content_disposition;
+  if (disposition !== undefined && disposition !== 'attachment' && disposition !== 'inline') {
+    throw new Error(
+      `attachment_files[${index}].content_disposition must be "attachment" or "inline"`,
+    );
+  }
+  return {
+    path,
+    ...(stringField(row, 'filename').trim()
+      ? { filename: stringField(row, 'filename').trim() }
+      : {}),
+    ...(stringField(row, 'content_type').trim()
+      ? { content_type: stringField(row, 'content_type').trim() }
+      : {}),
+    ...(disposition ? { content_disposition: disposition } : {}),
+    ...(stringField(row, 'content_id').trim()
+      ? { content_id: stringField(row, 'content_id').trim() }
+      : {}),
+  };
+}
+
+export async function uploadAttachmentFiles(
+  value: unknown,
+  executor: Pick<ExecutorClient, 'uploadAttachment'>,
+  options: {
+    workspaceRoot?: string;
+    maxBytes?: number;
+    afterOpen?: (path: string, index: number) => Promise<void>;
+  } = {},
+): Promise<UploadedAttachment[]> {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('attachment_files must be a non-empty array');
+  }
+  if (value.length > MAX_ATTACHMENT_FILES) {
+    throw new Error(`attachment_files supports at most ${MAX_ATTACHMENT_FILES} files`);
+  }
+
+  const workspaceRoot = await realpath(
+    options.workspaceRoot ?? process.env.KORTIX_INTERNAL_WORKSPACE_ROOT ?? '/workspace',
+  );
+  const allowedRoots = DEFAULT_ATTACHMENT_ROOTS.map((name) => resolve(workspaceRoot, name));
+  const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
+  let totalBytes = 0;
+  const uploaded: UploadedAttachment[] = [];
+
+  for (let index = 0; index < value.length; index++) {
+    const item = localAttachment(value[index], index);
+    if (!isAbsolute(item.path)) {
+      throw new Error(`attachment_files[${index}].path must be absolute`);
+    }
+    const file = await open(item.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+      (error: unknown) => {
+        if (asRecord(error).code === 'ELOOP') {
+          throw new Error(`attachment_files[${index}].path must not be a symbolic link`);
+        }
+        throw error;
+      },
+    );
+    try {
+      await options.afterOpen?.(item.path, index);
+      const path = await realpath(item.path);
+      if (!allowedRoots.some((root) => isWithinRoot(path, root))) {
+        throw new Error(
+          `attachment_files[${index}].path must be inside /workspace/{${DEFAULT_ATTACHMENT_ROOTS.join(',')}}`,
+        );
+      }
+      const [details, pathDetails] = await Promise.all([file.stat(), stat(path)]);
+      if (!details.isFile()) throw new Error(`attachment_files[${index}].path is not a file`);
+      if (details.nlink !== 1) {
+        throw new Error(`attachment_files[${index}].path must not have hard links`);
+      }
+      if (details.dev !== pathDetails.dev || details.ino !== pathDetails.ino) {
+        throw new Error(`attachment_files[${index}].path changed while it was being opened`);
+      }
+      totalBytes += details.size;
+      if (totalBytes > maxBytes) {
+        throw new Error(
+          `attachment_files exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MiB aggregate limit`,
+        );
+      }
+
+      const filename = item.filename || basename(path);
+      if (
+        !filename ||
+        filename === '.' ||
+        filename === '..' ||
+        filename.includes('/') ||
+        filename.includes('\\')
+      ) {
+        throw new Error(`attachment_files[${index}].filename must be a plain filename`);
+      }
+      const contentType =
+        item.content_type ||
+        ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] ||
+        'application/octet-stream';
+      const result = await executor.uploadAttachment(await file.readFile(), {
+        filename,
+        contentType,
+        contentDisposition: item.content_disposition ?? 'attachment',
+        ...(item.content_id ? { contentId: item.content_id } : {}),
+      });
+      uploaded.push({
+        filename,
+        content_type: contentType,
+        content_disposition: item.content_disposition ?? 'attachment',
+        ...(item.content_id ? { content_id: item.content_id } : {}),
+        attachment_id: result.attachment_id,
+      });
+    } finally {
+      await file.close();
+    }
+  }
+  return uploaded;
+}
 
 /**
  * The fixed meta-tool surface. Stable regardless of how many connectors or
@@ -90,7 +257,7 @@ const META_TOOLS = [
   {
     name: 'call',
     description:
-      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk } on success, or a denial / pending-approval result. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
+      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk } on success, or a denial / pending-approval result. For email attachments, pass local file references in attachment_files; this MCP uploads raw bytes outside the model and JSON-RPC payloads. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -102,6 +269,28 @@ const META_TOOLS = [
         args: {
           type: 'object',
           description: "Arguments matching the tool's input schema (see describe). Defaults to {}.",
+        },
+        attachment_files: {
+          type: 'array',
+          description:
+            'Local files for an email action that supports attachments. Paths must be absolute and inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables. The MCP uploads raw bytes and passes opaque attachment handles, so never paste base64 into args.',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Absolute local file path.' },
+              filename: { type: 'string', description: 'Optional recipient-visible filename.' },
+              content_type: { type: 'string', description: 'Optional MIME type.' },
+              content_disposition: {
+                type: 'string',
+                enum: ['attachment', 'inline'],
+                description: 'Defaults to attachment.',
+              },
+              content_id: { type: 'string', description: 'Optional inline content ID.' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+          maxItems: MAX_ATTACHMENT_FILES,
         },
       },
       required: ['connector', 'action'],
@@ -298,7 +487,40 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
           isError: true,
         };
       }
-      const callArgs = asRecord(args.args);
+      let callArgs = asRecord(args.args);
+      if (args.attachment_files !== undefined) {
+        const described = await executor.describe(`${connector}.${action}`);
+        const schema = asRecord(described?.inputSchema);
+        const properties = asRecord(schema.properties);
+        if (!described || !properties.attachments) {
+          return {
+            content: content({
+              ok: false,
+              error: `${connector}.${action} does not accept attachments`,
+            }),
+            isError: true,
+          };
+        }
+        try {
+          const files = await uploadAttachmentFiles(args.attachment_files, executor);
+          const existing = callArgs.attachments;
+          if (existing !== undefined && !Array.isArray(existing)) {
+            throw new Error('args.attachments must be an array when attachment_files is used');
+          }
+          callArgs = {
+            ...callArgs,
+            attachments: [...(Array.isArray(existing) ? existing : []), ...files],
+          };
+        } catch (err) {
+          return {
+            content: content({
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+            isError: true,
+          };
+        }
+      }
       // Pauses the run for human approval (indefinite poll, like a question) —
       // shared with `kortix executor call`, see callPausingForApproval.
       const result = await callPausingForApproval(executor, connector, action, callArgs);

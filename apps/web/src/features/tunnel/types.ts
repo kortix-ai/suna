@@ -1,7 +1,7 @@
 import {
   HardDriveIcon as HardDrive,
   MonitorIcon as Monitor,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 

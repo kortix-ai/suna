@@ -63,7 +63,7 @@ variable "secrets" {
 variable "health_check_path" {
   description = "HTTP path for ALB + container health checks."
   type        = string
-  default     = "/v1/health"
+  default     = "/health/ready"
 }
 
 # ── Sizing ────────────────────────────────────────────────────────────────────

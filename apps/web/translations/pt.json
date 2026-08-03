@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Peça acesso.",
+      "privateBody": "Somente membros podem abrir este projeto. Envie uma mensagem e um gerente de projeto poderá adicionar você.",
+      "waitingHeading": "Aguardando aprovação.",
+      "sentBody": "Sua solicitação está com os gerentes do projeto. Esta página abre sozinha assim que um deles aprovar.",
+      "alreadyBody": "Você já pediu acesso antes. Um gerente de projeto ainda precisa aprovar.",
+      "notFoundHeading": "Este projeto não existe mais.",
+      "notFoundBody": "O link pode estar errado, ou alguém excluiu o projeto.",
+      "errorHeading": "Este projeto não carregou.",
+      "errorBody": "A solicitação falhou antes de conseguirmos verificar seu acesso.",
+      "noteLabel": "Mensagem para o gerente de projeto",
+      "notePlaceholder": "Por que você precisa de acesso (opcional)",
+      "requestAction": "Solicitar acesso",
+      "checkNowAction": "Verificar agora",
+      "tryAgainAction": "Tentar novamente",
+      "projectsAction": "Voltar para projetos",
+      "accountLabel": "Conta",
+      "projectLabel": "Projeto",
+      "approvalNote": "Qualquer pessoa que gerencie este projeto pode aprovar sua solicitação.",
+      "openAsAdmin": "Abrir como administrador",
+      "requestFailed": "Não foi possível enviar a solicitação.",
+      "bypassFailed": "O acesso de administrador falhou.",
+      "thisAccount": "esta conta"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix para dispositivos móveis",
       "line89JsxTextYourAiWorkerInYourPocket": "Seu worker de IA, no seu bolso.",
@@ -3899,6 +3923,11 @@
       "line1465JsxTextTrySearchFilesOrADifferentTerm": "Tente “Buscar arquivos” ou outro termo",
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "busca no conteúdo"
+    },
+    "componentsCommonErrorBoundary": {
+      "reload": "Recarregar",
+      "errorDetails": "Detalhes do erro",
+      "copyDetails": "Copiar detalhes do erro"
     },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "Prévia do arquivo:",
@@ -6811,7 +6840,6 @@
     "autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e": "kortix init",
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "Coletando atualizações da noite...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "Histórico de checkpoints",
-    "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "Nome do projeto",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propor alterações",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Ver alterações",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Nova sessão",
@@ -7867,8 +7895,10 @@
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "Nenhuma pré-visualização disponível para este arquivo.",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "Fechar pesquisa",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "Volte",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "Renomear projeto",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124": "Dê um novo nome a este projeto.",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextEditProjecta4dc3833": "Editar projeto",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextChangeThise7a7a4b7": "Altere o nome e o ícone deste projeto.",
+    "autoFeaturesProjectsModalEditProjectModalJsxAttrPlaceholderProject25498193": "Nome do projeto",
+    "autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833": "Editar projeto",
     "autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3": "Criar em",
     "autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89": "mostrado no seletor de modelo",
     "autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2": "Redefinir para os padrões",

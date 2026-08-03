@@ -36,7 +36,7 @@ const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.js
 // MARKETING_RECORDS mapping in src/lib/seo/public-content.ts; both lists must
 // stay in sync. A slug without a backing page.tsx (none today) is skipped.
 const MARKETING_SOURCES = {
-  index: 'apps/web/src/app/(public)/(marketing)/page.tsx',
+  index: 'apps/web/src/app/(public)/(marketing)/(home)/page.tsx',
   about: 'apps/web/src/app/(public)/(seo)/about/page.tsx',
   contact: 'apps/web/src/app/(public)/(marketing)/contact/page.tsx',
   developers: 'apps/web/src/app/(public)/(marketing)/developers/page.tsx',
@@ -65,6 +65,13 @@ const MARKETING_SOURCES = {
   'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
   'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
   'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
+  careers: 'apps/web/src/app/(public)/(seo)/careers/page.tsx',
+  changelog: 'apps/web/src/app/(public)/(seo)/changelog/page.tsx',
+  blog: 'apps/web/src/app/(public)/(seo)/blog/page.tsx',
+  'use-cases': 'apps/web/src/app/(public)/(seo)/use-cases/page.tsx',
+  download: 'apps/web/src/app/(public)/download/page.tsx',
+  help: 'apps/web/src/app/(utility)/help/page.tsx',
+  'help/credits': 'apps/web/src/app/(utility)/help/credits/page.tsx',
 };
 
 function gitAvailable() {

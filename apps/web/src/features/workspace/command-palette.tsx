@@ -28,6 +28,10 @@ import {
   consumePendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
 } from '@/features/workspace/open-command-palette';
+import {
+  sessionLastActivityAt,
+  sortSessionsByLastActivity,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -80,7 +84,6 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -437,15 +440,10 @@ export function CommandPalette() {
   );
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
-  // Pass the store the opts it needs, or `isVisible` hides every gateway model
-  // (unless its provider is connected) and resolves an empty "latest" set — the
-  // same "0 shown" bug the Manage-models tab had. See useModelStore's opts doc.
-  const { connectedProviders } = useConnectedProviders(projectId ?? '', open && !!projectId);
-  const connectedProviderIds = useMemo(
-    () => new Set(connectedProviders.map((provider) => provider.id)),
-    [connectedProviders],
-  );
-  const modelStore = useModelStore(allModels, { connectedProviderIds, catalogModels: allModels });
+  // Only for the persisted selection state (session agent, per-agent model,
+  // recents) — model visibility is the server's `enabled` flag on each model,
+  // never a store heuristic.
+  const modelStore = useModelStore(allModels);
 
   const currentAgentName = useMemo(() => {
     if (!currentSessionId) return undefined;
@@ -637,17 +635,12 @@ export function CommandPalette() {
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Same rule as the session picker: only what the project OFFERS
+    // (server-resolved `enabled`, `/model-picker`). Searching does not resurface
+    // a disabled model — "Manage models" is where the full catalog lives.
     return allModels
       .filter((m) => {
-        if (
-          !q &&
-          !modelStore.isVisible({
-            providerID: m.providerID,
-            modelID: m.modelID,
-            provider: m.provider,
-          })
-        )
-          return false;
+        if (m.enabled === false) return false;
         return (
           !q ||
           (m.modelName || '').toLowerCase().includes(q) ||
@@ -656,7 +649,7 @@ export function CommandPalette() {
         );
       })
       .sort((a, b) => (a.modelName || '').localeCompare(b.modelName || ''));
-  }, [allModels, query, modelStore]);
+  }, [allModels, query]);
 
   const groupedModels = useMemo(() => {
     const groups = new Map<
@@ -804,9 +797,7 @@ export function CommandPalette() {
   }, [sortedProjects, query]);
 
   const recentProjectSessions = useMemo(() => {
-    return [...(projectSessionsList ?? [])]
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      .slice(0, 5);
+    return sortSessionsByLastActivity(projectSessionsList ?? []).slice(0, 5);
   }, [projectSessionsList]);
 
   const recentProjects = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
@@ -821,9 +812,7 @@ export function CommandPalette() {
 
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(projectSessionsList ?? [])].sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    );
+    const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
       0,
       50,
@@ -1508,7 +1497,9 @@ export function CommandPalette() {
                             <MessageCircle className="size-4 flex-shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
                             <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(new Date(session.updated_at).getTime())}
+                              {formatRelativeTime(
+                                new Date(sessionLastActivityAt(session)).getTime(),
+                              )}
                             </span>
                           </CommandItem>
                         ))}
@@ -1641,7 +1632,9 @@ export function CommandPalette() {
                               <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
                             )}
                             <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(new Date(session.updated_at).getTime())}
+                              {formatRelativeTime(
+                                new Date(sessionLastActivityAt(session)).getTime(),
+                              )}
                             </span>
                           </CommandItem>
                         ))}
@@ -1985,7 +1978,7 @@ export function CommandPalette() {
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                        {formatRelativeTime(new Date(session.updated_at).getTime())}
+                        {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
                       </span>
                       {session.session_id === params?.sessionId && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />

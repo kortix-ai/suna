@@ -383,10 +383,24 @@ function applySkillsGovernance(
  */
 export async function resolveCompiledAgentConfigForSession(
   project: GitBackedProject,
+  /**
+   * The ref this SESSION runs on (`project_sessions.base_ref`), when it differs
+   * from the project default.
+   *
+   * Without it every session compiled from `defaultBranch`, so a session started
+   * on a feature branch ran main's agent config from its very first turn — you
+   * could edit an agent, push the branch, start a session on it, and watch the
+   * agent behave exactly as before. That reads as "the config never reloads",
+   * but nothing had gone stale: the branch's config was never read at all.
+   *
+   * Falls back to the default branch, which is what every caller got before.
+   */
+  baseRef?: string | null,
 ): Promise<string | null> {
+  const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -402,7 +416,7 @@ export async function resolveCompiledAgentConfigForSession(
       Object.keys(agents).map(async (name) => {
         const path = agentMarkdownPath(raw, name);
         try {
-          agentMdFiles[path] = await readRepoFile(project, path, project.defaultBranch);
+          agentMdFiles[path] = await readRepoFile(project, path, ref);
         } catch (err) {
           console.warn(
             `[compile-agent-config] project ${project.projectId}: failed to read agent "${name}"'s behavior file "${path}": ${(err as Error).message}`,

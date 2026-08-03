@@ -14,6 +14,10 @@ import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
 const READY_POLL_MS = 100
+/** How long the post-respawn turn finalize waits for opencode to answer again.
+ *  Generous next to a ~5-12s cold start, and bounded so cleanup cannot outlive
+ *  the problem it is cleaning up after. */
+const RESPAWN_FINALIZE_TIMEOUT_MS = 60_000
 const BOOT_READY_POLL_MS = 50
 const READY_TIMEOUT_MS = 20_000
 // Once opencode is READY, the readiness probe becomes a slow LIVENESS check.
@@ -908,6 +912,20 @@ export type Opencode = {
 
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
+  /**
+   * opencode died without anyone asking it to, and has just been respawned.
+   *
+   * A turn ends only when opencode emits `session.idle`/`session.error` over
+   * SSE. A killed process emits neither, so an in-flight turn is left with a
+   * part stuck "running" and the client streams it forever — the 57s spinner
+   * you get when an agent runs `kill <opencode pid>` from its own shell, and
+   * equally what an OOM or a crash produces.
+   *
+   * The supervisor cannot fix that itself: it knows nothing about sessions.
+   * It reports the fact and main.ts finalizes the orphaned turn, the same way
+   * boot already does when it adopts a root whose last turn never completed.
+   */
+  onUnplannedRespawn?: () => void
 }
 
 export function createOpencodeSupervisor(
@@ -1023,12 +1041,7 @@ export function createOpencodeSupervisor(
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
-      const delay = restartDelayMs
-      restartDelayMs = Math.min(restartDelayMs * 2, 30_000)
-      logger.info('[opencode] restarting', { delayMs: delay })
-      setTimeout(() => {
-        if (!stopping && binaryPath) void spawnChild(binaryPath)
-      }, delay)
+      scheduleUnplannedRespawn()
     })
 
     proc.on('error', (err) => {
@@ -1044,8 +1057,73 @@ export function createOpencodeSupervisor(
     restartDelayMs = 500
   }
 
+  /**
+   * Bring opencode back after it died on its own, and finalize the turn it took
+   * with it.
+   *
+   * Reschedules ITSELF on a failed spawn. `spawnChild` writes the config before
+   * spawning, so a full or read-only disk rejects before any process exists —
+   * and with no process there is no `exit` event, so relying on that to retry
+   * would leave opencode down permanently once the first attempt failed. The
+   * backoff is shared with the exit path, so a persistent failure backs off to
+   * 30s rather than spinning.
+   */
+  function scheduleUnplannedRespawn(): void {
+    if (stopping) return
+    const delay = restartDelayMs
+    restartDelayMs = Math.min(restartDelayMs * 2, 30_000)
+    logger.info('[opencode] restarting', { delayMs: delay })
+    setTimeout(() => {
+      if (stopping || !binaryPath) return
+      void spawnChild(binaryPath)
+        .then(() => {
+          if (!options.onUnplannedRespawn) return
+          // `spawnChild` resolving means the PROCESS started, not that opencode
+          // is listening — its HTTP server comes up seconds later. Firing the
+          // hook here would have it call `/message` against a dead port, read
+          // the failure as "no turn to finalize", and silently do nothing in
+          // exactly the case it exists for. Wait for the readiness probe.
+          return waitUntilReady(RESPAWN_FINALIZE_TIMEOUT_MS).then((ready) => {
+            if (!ready) {
+              logger.warn('[opencode] respawned but never became ready; orphaned turn left as-is')
+              return
+            }
+            try {
+              options.onUnplannedRespawn?.()
+            } catch (err) {
+              logger.warn('[opencode] unplanned-respawn hook threw', {
+                err: (err as Error).message,
+              })
+            }
+          })
+        })
+        .catch((err) => {
+          logger.error('[opencode] respawn failed; retrying', { err: (err as Error).message })
+          scheduleUnplannedRespawn()
+        })
+    }, delay)
+  }
+
   async function checkReady(): Promise<boolean> {
     return probeOpencodeSessionApi(`http://127.0.0.1:${currentCfg.opencodeInternalPort}`, currentCfg.projectTarget, 2_000)
+  }
+
+  /**
+   * Resolve once opencode is answering again, or false if it never does.
+   *
+   * Only the post-respawn turn finalize uses this. Bounded, because the caller
+   * is cleanup: a box that came back but stayed unhealthy has bigger problems
+   * than a stuck spinner, and a hook that waited forever would keep a timer
+   * alive across every subsequent restart.
+   */
+  async function waitUntilReady(timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (stopping) return false
+      if (state === 'ok' || (await checkReady())) return true
+      await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS))
+    }
+    return false
   }
 
   function scheduleReadinessProbe() {

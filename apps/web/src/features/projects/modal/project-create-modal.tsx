@@ -85,6 +85,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { RepositoryPicker } from './github-import-pickers';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
+import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
@@ -179,6 +180,16 @@ export const ProjectCreateModal = ({
   // right here via "Clone from a template" (`pickedTemplateId`). Once either
   // is set, the rest of the managed form behaves identically either way.
   const [pickedTemplateId, setPickedTemplateId] = useState<string | null>(null);
+  // The project's icon, owned here rather than by `ProjectIconField`. The
+  // field renders in whichever mode's form is mounted and never clears itself,
+  // so the modal is the one place that can both send the value with the create
+  // payload and drop it on close. `null` means "no icon picked" — the field
+  // shows its neutral face and the payloads omit both keys entirely.
+  //
+  // `ProjectIconValue` — the field's own union type — not two nullable slots:
+  // an emoji and a glyph can never both be set here, so `iconPayload` below
+  // can never spread both `icon` and `icon_glyph` into one request body.
+  const [icon, setIcon] = useState<ProjectIconValue>(null);
   const effectiveSourceItemId = sourceItemId ?? pickedTemplateId;
   const cloningFromSource = !!effectiveSourceItemId;
 
@@ -238,6 +249,7 @@ export const ProjectCreateModal = ({
     setSourceNameApplied(false);
     setPickedAccountId(null);
     setPickedTemplateId(null);
+    setIcon(null);
     setRepositorySearch('');
     managedForm.reset();
     githubForm.reset();
@@ -480,6 +492,13 @@ export const ProjectCreateModal = ({
     },
   });
 
+  // Spread, not `icon: icon ?? undefined`: the key is absent from the JSON
+  // entirely when nothing is picked, so the server's create paths keep their
+  // own "no icon" default instead of receiving an explicit null to interpret.
+  // Which key — `icon` or `icon_glyph` — comes straight from which side of
+  // the union `icon` holds, so this client can never send both.
+  const iconPayload = !icon ? {} : 'emoji' in icon ? { icon: icon.emoji } : { icon_glyph: icon.glyph };
+
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
     if (mode === 'github-create') {
@@ -491,6 +510,7 @@ export const ProjectCreateModal = ({
         private: true,
         starter_template: 'general-knowledge-worker',
         source_item_id: effectiveSourceItemId ?? undefined,
+        ...iconPayload,
       });
       return;
     }
@@ -499,6 +519,7 @@ export const ProjectCreateModal = ({
         account_id: effectiveAccountId,
         name: values.name,
         source_item_id: effectiveSourceItemId,
+        ...iconPayload,
       });
       return;
     }
@@ -507,6 +528,7 @@ export const ProjectCreateModal = ({
       name: values.name,
       starter_template: 'general-knowledge-worker',
       marketplace_items: [],
+      ...iconPayload,
     });
   }
 
@@ -518,6 +540,7 @@ export const ProjectCreateModal = ({
       installation_id: values.installationId,
       repo_full_name: values.repo,
       ...(trimmedName ? { name: trimmedName } : {}),
+      ...iconPayload,
     });
   }
 
@@ -644,16 +667,32 @@ export const ProjectCreateModal = ({
                             'componentsProjectsProjectCreateModal.line258JsxTextProjectName',
                           )}
                         </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="my-agi-company"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            autoFocus
-                            maxLength={PROJECT_NAME_MAX_LENGTH}
-                            {...field}
+                        {/* The icon trigger is a peer of the name input, not a
+                            field of its own: one row, one label, one thing the
+                            user is naming. `items-start` keeps the two aligned
+                            at the top of the row — both are 9 units tall today,
+                            so it reads the same as centring, and it stays
+                            correct if the input ever grows. */}
+                        <div className="flex items-start gap-2">
+                          <ProjectIconField
+                            value={icon}
+                            onChange={(emoji) => setIcon({ emoji })}
+                            onGlyphChange={(glyph) => setIcon({ glyph })}
+                            disabled={submitting}
                           />
-                        </FormControl>
+                          <div className="min-w-0 flex-1">
+                            <FormControl>
+                              <Input
+                                placeholder="my-agi-company"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                autoFocus
+                                maxLength={PROJECT_NAME_MAX_LENGTH}
+                                {...field}
+                              />
+                            </FormControl>
+                          </div>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -780,11 +819,25 @@ export const ProjectCreateModal = ({
               </ModalBody>
               <ModalFooter>
                 <Button
+                  type="button"
+                  variant="outline-ghost"
+                  className="w-full sm:w-auto"
+                  disabled={submitting}
+                  onClick={resetAndClose}
+                >
+                  Cancel
+                </Button>
+                <Button
                   type="submit"
                   className="w-full sm:w-auto"
                   disabled={
                     submitting ||
                     !effectiveAccountId ||
+                    // `watch` rather than a read off getValues: it subscribes
+                    // this render to the field, so the button enables on the
+                    // keystroke that makes the name non-empty instead of
+                    // waiting for some other state change to repaint it.
+                    !managedForm.watch('name').trim() ||
                     (mode === 'github-create' && !selectedInstallationId)
                   }
                 >
@@ -1017,16 +1070,29 @@ export const ProjectCreateModal = ({
                                 'componentsProjectsProjectCreateModal.line511JsxTextProjectName',
                               )}
                             </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={tHardcodedUi.raw(
-                                  'componentsProjectsProjectCreateModal.line516JsxAttrPlaceholderUseRepositoryName',
-                                )}
-                                autoCapitalize="none"
-                                autoCorrect="off"
-                                {...field}
+                            {/* Same row treatment as the managed form's name
+                                field — the icon belongs to the project, not to
+                                the way its repository was sourced. */}
+                            <div className="flex items-start gap-2">
+                              <ProjectIconField
+                                value={icon}
+                                onChange={(emoji) => setIcon({ emoji })}
+                                onGlyphChange={(glyph) => setIcon({ glyph })}
+                                disabled={submitting}
                               />
-                            </FormControl>
+                              <div className="min-w-0 flex-1">
+                                <FormControl>
+                                  <Input
+                                    placeholder={tHardcodedUi.raw(
+                                      'componentsProjectsProjectCreateModal.line516JsxAttrPlaceholderUseRepositoryName',
+                                    )}
+                                    autoCapitalize="none"
+                                    autoCorrect="off"
+                                    {...field}
+                                  />
+                                </FormControl>
+                              </div>
+                            </div>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1048,6 +1114,18 @@ export const ProjectCreateModal = ({
               </ModalBody>
 
               <ModalFooter>
+                <Button
+                  type="button"
+                  variant="outline-ghost"
+                  className="w-full sm:w-auto"
+                  disabled={submitting}
+                  onClick={resetAndClose}
+                >
+                  Cancel
+                </Button>
+                {/* No name gate here, unlike the managed footer: this form's
+                    name field is optional and falls back to the repository
+                    name, so gating on it would block a valid import. */}
                 <Button
                   type="submit"
                   disabled={

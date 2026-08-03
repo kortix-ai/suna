@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Pide acceso.",
+      "privateBody": "Solo los miembros pueden abrir este proyecto. Envía una nota y un gestor del proyecto podrá añadirte.",
+      "waitingHeading": "Esperando aprobación.",
+      "sentBody": "Tu solicitud está con los gestores del proyecto. Esta página se abrirá sola en cuanto uno de ellos la apruebe.",
+      "alreadyBody": "Ya pediste acceso antes. Un gestor del proyecto todavía tiene que aprobarlo.",
+      "notFoundHeading": "Este proyecto ya no existe.",
+      "notFoundBody": "Puede que el enlace sea incorrecto o que alguien haya eliminado el proyecto.",
+      "errorHeading": "Este proyecto no se cargó.",
+      "errorBody": "La solicitud falló antes de que pudiéramos comprobar tu acceso.",
+      "noteLabel": "Nota para el gestor del proyecto",
+      "notePlaceholder": "Por qué necesitas acceso (opcional)",
+      "requestAction": "Solicitar acceso",
+      "checkNowAction": "Comprobar ahora",
+      "tryAgainAction": "Intentar de nuevo",
+      "projectsAction": "Volver a proyectos",
+      "accountLabel": "Cuenta",
+      "projectLabel": "Proyecto",
+      "approvalNote": "Cualquiera que gestione este proyecto puede aprobar tu solicitud.",
+      "openAsAdmin": "Abrir como administrador",
+      "requestFailed": "No se pudo enviar la solicitud.",
+      "bypassFailed": "Falló el acceso como administrador.",
+      "thisAccount": "esta cuenta"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix para móvil",
       "line89JsxTextYourAiWorkerInYourPocket": "Tu trabajador de IA, en tu bolsillo.",
@@ -3899,6 +3923,11 @@
       "line1465JsxTextTrySearchFilesOrADifferentTerm": "Prueba “Buscar archivos” o un término diferente",
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "búsqueda de contenido"
+    },
+    "componentsCommonErrorBoundary": {
+      "reload": "Recargar",
+      "errorDetails": "Detalles del error",
+      "copyDetails": "Copiar detalles del error"
     },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "Vista previa del archivo:",
@@ -6811,7 +6840,6 @@
     "autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e": "kortix init",
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "Recopilando actualizaciones de la noche...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "Historial de puntos de control",
-    "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "Nombre del proyecto",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Proponer cambios",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Ver cambios",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Nueva sesión",
@@ -7867,8 +7895,10 @@
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "No hay vista previa disponible para este archivo.",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "Cerrar búsqueda",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "volver",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "Cambiar nombre del proyecto",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124": "Dale a este proyecto un nuevo nombre.",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextEditProjecta4dc3833": "Editar proyecto",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextChangeThise7a7a4b7": "Cambia el nombre y el icono de este proyecto.",
+    "autoFeaturesProjectsModalEditProjectModalJsxAttrPlaceholderProject25498193": "Nombre del proyecto",
+    "autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833": "Editar proyecto",
     "autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3": "Crear en",
     "autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89": "se muestra en el selector de modelo",
     "autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2": "Restablecer los valores predeterminados",

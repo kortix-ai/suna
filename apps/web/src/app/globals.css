@@ -175,6 +175,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-pane: var(--pane);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-roobert);
   --font-mono: var(--font-roobert-mono);
@@ -220,6 +221,73 @@
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
+     Six hues the picker rotates through so the hovered/keyboard-active cell is
+     never the same colour as the cell above it. They live here rather than as
+     raw hsl() in the component because raw palette values in app code are
+     against the design system, and because the light/dark pair belongs in one
+     place. light-dark() works because :root sets color-scheme: light and .dark
+     sets color-scheme: dark (see the base layer below) — so these need no
+     `dark:` variant at the call site.
+
+     Two families, paired by hue. The fill stays pale so the grid reads calm;
+     the 1px inset ring carries the contrast. That split exists because the
+     active cell is the only visible cue for which emoji is selected —
+     frimousse gives the buttons tabIndex={-1} and no focus ring — so the state
+     indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
+     cannot reach 3:1 on white at any saturation (it needs relative luminance
+     <= 0.30, i.e. roughly L <= 63%), so the ring is what meets the bar and the
+     fill is free to stay quiet. Measured ring ratios are 3.03–3.19:1. */
+  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
+  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
+  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
+  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
+  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
+  /* Glyph icon palette — a SEPARATE family from the emoji hues above.
+     The emoji hues are DERIVED from the glyph (see emoji-tint.ts) and must stay
+     stable, or every existing project changes colour. These eight are CHOSEN by
+     the user. Merging the two would have meant remapping the emoji six onto a
+     new eight; two palettes serving two masters is the honest model.
+
+     `light-dark()` works because :root sets color-scheme: light and .dark sets
+     color-scheme: dark — so these need no `dark:` variant anywhere.
+
+     The ring token paints BOTH the 1px inset ring and the glyph itself, so its
+     lightness has to clear 3:1 against the pale fill AND against --popover/
+     --card. Task 10 measured all 48 ring-vs-surface pairs (8 hues x 2 themes x
+     3 surfaces) against WCAG's 3:1 non-text threshold and tuned the L channel
+     only — hue and saturation are untouched, so all eight stay recognisable.
+     Light mode needed a small darkening on red/yellow/blue only (their L
+     started too close to the fill). Dark mode needed a much bigger lightening
+     across ALL EIGHT hues: the dark fills sit at L 24-27%, close enough to the
+     near-black --card/--popover (relative luminance ~0.007) that sRGB's gamma
+     curve compresses the ring-vs-fill gap far below 3:1 at the original
+     L 38-48%; every dark ring now sits at L 46-61% to clear it. See
+     .superpowers/sdd/2026-08-01-project-glyph-icons/task-10-report.md for the
+     full before/after table. */
+  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
+  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
+  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
+  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
+  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
+  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
+  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
+  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
+  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
+  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
+  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
+  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
+  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
+  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
   --text-xs: 0.8125rem;
@@ -539,7 +607,7 @@
     }
   }
 }
- 
+
 /*
  * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
  * Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never
@@ -552,6 +620,7 @@
  *
  *   role           dark        light
  *   canvas         #090909     #ffffff
+ *   base           #0c0c0c     #ffffff
  *   surface-1      #141414     #f4f4f4
  *   surface-2      #1c1c1c     #ececec
  *   ink            #ffffff     #000000
@@ -562,6 +631,7 @@
  */
 :root {
   --background: oklch(1 0 0); /* canvas */
+  --pane: oklch(1 0 0); /* #ffffff */
   --foreground: oklch(0 0 0); /* ink */
   --card: oklch(0.9672 0 0); /* surface-1 */
   --card-foreground: oklch(0 0 0);
@@ -624,6 +694,7 @@
 
 .dark {
   --background: oklch(0.1398 0 0); /* canvas #090909 */
+  --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
   --card-foreground: oklch(1 0 0);
@@ -760,6 +831,8 @@
       var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
       'Liberation Mono', 'Courier New', monospace, 'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR',
       'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
+    font-weight: 500;
+    line-height: 1.2;
   }
 }
 
@@ -912,7 +985,8 @@
 
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
+.kortix-markdown.streaming-active
+  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
 }
 

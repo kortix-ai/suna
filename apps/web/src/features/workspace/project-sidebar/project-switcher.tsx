@@ -200,60 +200,49 @@ export function ProjectSwitcher({
       <div
         data-slot="project-switcher"
         className={cn(
-          // One shell, two segments. Hover/press/open state lives on the shell,
-          // so touching either half lights the whole control — that is what
-          // makes the mark and the name read as one object rather than two
-          // buttons that happen to be adjacent.
-          'group/switcher flex h-8 w-fit min-w-0 items-center rounded-sm border border-transparent',
+          'group/switcher flex h-8 w-fit max-w-full min-w-0 items-center overflow-hidden rounded-sm border border-transparent',
           'transition-[background-color,border-color,transform] duration-150 ease-out',
           'hover:border-border/60 hover:bg-sidebar-accent/40',
           'has-data-[state=open]:border-border/60 has-data-[state=open]:bg-sidebar-accent/40',
-          // Pressing either segment scales the whole shell: one control, one
-          // press. 0.98 rather than 0.96 — the control is wide, and the same
-          // ratio reads as a bigger jump the wider the box gets.
           'has-[:active]:scale-[0.98]',
           className,
         )}
       >
-        {/* Force-closed while the menu is open. Radix Menu puts
-            `pointer-events: none` on the body, so the mark never receives the
-            pointerleave that would dismiss its tooltip — it hangs there behind
-            the menu until the next pointer event. `undefined` hands control
-            back, so hover still works normally. */}
         <Link
           href={homeHref}
           aria-label={homeLabel}
-          className="text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full w-7 shrink-0 items-center justify-center rounded-s-sm transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
+          className="text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full shrink-0 items-center justify-center rounded-s-sm px-2 transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
         >
           <Icon.Kortix className="size-4" />
         </Link>
-        {/* Seam. Absent at rest so the shell reads as one surface; drawn on
-            hover so the two hit areas are discoverable before they are
-            clicked, and never after the pointer has left. */}
-        <span
-          aria-hidden
-          className="bg-border/0 group-hover/switcher:bg-border h-full w-px shrink-0 transition-colors duration-150 ease-out"
-        />
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Switch project"
-            className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full w-fit min-w-0 cursor-pointer items-center gap-1.5 gap-2 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
-          >
-            {labelPending ? null : (
-              <span className="text-foreground w-fit min-w-0 flex-1 truncate text-sm font-medium tracking-tight">
-                {switcherLabel}
-              </span>
-            )}
-            <CaretUpDownIcon className="text-muted-foreground/50 group-hover/switcher:text-muted-foreground ml-auto size-3.5 shrink-0 transition-colors duration-150 ease-out" />
-          </button>
-        </DropdownMenuTrigger>
+        {!labelPending ? (
+          <>
+            {/* Seam. Absent at rest so the shell reads as one surface; drawn on
+                hover so the two hit areas are discoverable before they are
+                clicked, and never after the pointer has left. */}
+            <span
+              aria-hidden
+              className="bg-border/0 group-hover/switcher:bg-border/70 h-full w-px shrink-0 transition-colors duration-150 ease-out"
+            />
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Switch project"
+                className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
+              >
+                <span className="text-foreground min-w-0 truncate text-sm font-medium tracking-tight whitespace-nowrap">
+                  {switcherLabel}
+                </span>
+                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/switcher:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 ease-out" />
+              </button>
+            </DropdownMenuTrigger>
+          </>
+        ) : null}
       </div>
     );
 
-  // Sidebar: never blank the control while accounts load. The mark and the
-  // shell are known from first paint; only the name is not, and `labelPending`
-  // already places a skeleton exactly where the name will land.
+  // Sidebar: never blank the control while accounts load. The home link is
+  // known from first paint; the project switch trigger appears with its label.
   if (accountsQuery.isLoading && !activeAccount && variant === 'header') {
     return <Skeleton className={cn('h-8 w-36 rounded-md', className)} />;
   }
@@ -314,7 +303,7 @@ export function ProjectSwitcher({
                     onSelect={() => switchProject(project)}
                     className={cn('cursor-pointer', active && 'bg-muted/80')}
                   >
-                    <EntityAvatar label={project.name} size="sm" />
+                    <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
                     <div className="grid min-w-0 flex-1 leading-tight">
                       <span className="truncate text-sm font-medium">{project.name}</span>
                     </div>

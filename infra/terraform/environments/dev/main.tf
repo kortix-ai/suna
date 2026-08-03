@@ -6,7 +6,7 @@
 #
 # This ECS service is the always-warm FALLBACK behind dev-api.kortix.com: that
 # hostname is a Cloudflare Worker (infra/cloudflare/workers/api-router, env=dev)
-# that routes to EKS (dev-api-eks, primary) or here (dev-api-ecs-fargate) via its
+# that routes to Fargate via its
 # ACTIVE_BACKEND var. So this stack owns the dev-api-ecs-fargate name ONLY —
 # dev-api itself is the Worker's custom domain, NOT managed here.
 #

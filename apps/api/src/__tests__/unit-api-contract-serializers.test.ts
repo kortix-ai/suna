@@ -213,6 +213,11 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     );
     expect(placeholder.name).toBeNull();
 
+    const veyrisPlaceholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New agent' } })),
+    );
+    expect(veyrisPlaceholder.name).toBeNull();
+
     const real = ProjectSessionSchema.strict().parse(
       serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
     );

@@ -25,12 +25,10 @@ import {
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
 import type { Metadata } from 'next';
+import { marketingMetadata } from '@/lib/seo/metadata';
 import { headers } from 'next/headers';
 
-export const metadata: Metadata = {
-  title: 'Download Kortix',
-  description: 'Get Kortix for macOS, Windows, Linux, iOS, and Android.',
-};
+export const metadata: Metadata = marketingMetadata('/download');
 
 const DESKTOP_MARKS: Record<DesktopOs, CardRow['Mark']> = {
   macos: AppleMark,

@@ -13,7 +13,7 @@ import {
   EnvelopeSimpleIcon as EnvelopeIcon,
   MonitorIcon as Monitor,
   DeviceMobileIcon as Smartphone,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';

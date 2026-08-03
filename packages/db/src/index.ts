@@ -190,6 +190,7 @@ export {
   executorProjectPolicies,
   executorProjectSettings,
   executorExecutions,
+  executorAttachments,
   sessionToolApprovals,
   executorConnectorsRelations,
   executorConnectorActionsRelations,

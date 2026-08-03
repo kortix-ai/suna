@@ -18,7 +18,7 @@ import {
   PaperPlaneTiltIcon as Send,
   ShieldCheckIcon as ShieldCheckSolid,
   SparkleIcon as SparklesSolid,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { createElement, type ComponentType } from 'react';
 import type {

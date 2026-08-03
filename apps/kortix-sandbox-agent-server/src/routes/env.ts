@@ -18,6 +18,19 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
+  // Channel sessions can opt into the Executor MCP face after a deploy. This
+  // must restart OpenCode because MCP servers are registered only at spawn.
+  'KORTIX_EXECUTOR_MCP_ENABLED',
+  // The server-compiled agent config (agents, prompts, permissions, model) —
+  // apps/api's compile-agent-config.ts output.
+  //
+  // Until this was allowlisted it was the ONE piece of config with no way into
+  // a running box. It is compiled from git once, at provision, and handed down
+  // as an env var, so a restart re-read the daemon's unchanged env and rebuilt
+  // the same stale bytes: `git pull` updated the working tree, the agent's
+  // behaviour did not, and nothing short of a new session reconciled the two.
+  // Same mechanism as the model above — accept it, then restart.
+  'KORTIX_COMPILED_AGENT_CONFIG',
 ])
 
 function bearerToken(header: string | undefined): string | null {

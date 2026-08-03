@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Bitten Sie um Zugriff.",
+      "privateBody": "Nur Mitglieder können dieses Projekt öffnen. Senden Sie eine Nachricht, dann kann ein Projektmanager Sie hinzufügen.",
+      "waitingHeading": "Warten auf Genehmigung.",
+      "sentBody": "Ihre Anfrage liegt bei den Projektmanagern. Sobald einer von ihnen sie genehmigt, öffnet sich diese Seite von selbst.",
+      "alreadyBody": "Sie haben den Zugriff bereits angefragt. Ein Projektmanager muss ihn noch genehmigen.",
+      "notFoundHeading": "Dieses Projekt ist weg.",
+      "notFoundBody": "Der Link ist möglicherweise falsch, oder jemand hat das Projekt gelöscht.",
+      "errorHeading": "Dieses Projekt wurde nicht geladen.",
+      "errorBody": "Die Anfrage ist fehlgeschlagen, bevor wir Ihren Zugriff prüfen konnten.",
+      "noteLabel": "Nachricht an den Projektmanager",
+      "notePlaceholder": "Warum Sie Zugriff benötigen (optional)",
+      "requestAction": "Zugriff anfordern",
+      "checkNowAction": "Jetzt prüfen",
+      "tryAgainAction": "Erneut versuchen",
+      "projectsAction": "Zurück zu den Projekten",
+      "accountLabel": "Konto",
+      "projectLabel": "Projekt",
+      "approvalNote": "Jeder, der dieses Projekt verwaltet, kann Ihre Anfrage genehmigen.",
+      "openAsAdmin": "Als Admin öffnen",
+      "requestFailed": "Die Anfrage konnte nicht gesendet werden.",
+      "bypassFailed": "Admin-Bypass fehlgeschlagen.",
+      "thisAccount": "dieses Konto"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix für Mobilgeräte",
       "line89JsxTextYourAiWorkerInYourPocket": "Dein KI-Worker für die Hosentasche.",
@@ -3899,6 +3923,11 @@
       "line1465JsxTextTrySearchFilesOrADifferentTerm": "Versuche \"Dateien suchen\" oder einen anderen Begriff",
       "line1744JsxTextText": ">",
       "line1745JsxTextContentSearch": "Inhaltssuche"
+    },
+    "componentsCommonErrorBoundary": {
+      "reload": "Neu laden",
+      "errorDetails": "Fehlerdetails",
+      "copyDetails": "Fehlerdetails kopieren"
     },
     "componentsCommonFilePreviewDialog": {
       "line89JsxTextFilePreview": "Dateivorschau:",
@@ -6811,7 +6840,6 @@
     "autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e": "kortix init",
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "Updates der Nacht werden gesammelt...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "Checkpoint-Verlauf",
-    "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "Projektname",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Änderungen vorschlagen",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Änderungen anzeigen",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Neue Sitzung",
@@ -7867,8 +7895,10 @@
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "Für diese Datei ist keine Vorschau verfügbar.",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "Suche schließen",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "Geh zurück",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "Projekt umbenennen",
-    "autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124": "Geben Sie diesem Projekt einen neuen Namen.",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextEditProjecta4dc3833": "Projekt bearbeiten",
+    "autoFeaturesProjectsModalEditProjectModalJsxTextChangeThise7a7a4b7": "Ändern Sie den Namen und das Symbol dieses Projekts.",
+    "autoFeaturesProjectsModalEditProjectModalJsxAttrPlaceholderProject25498193": "Projektname",
+    "autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833": "Projekt bearbeiten",
     "autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3": "Erstellen Sie in",
     "autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89": "wird in der Modellauswahl angezeigt",
     "autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2": "Auf Standardeinstellungen zurücksetzen",

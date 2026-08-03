@@ -71,7 +71,7 @@ module "api" {
   image             = var.api_image
   container_name    = "api"
   container_port    = 8000
-  health_check_path = "/v1/health"
+  health_check_path = "/health/ready"
   certificate_arn   = module.certificate.certificate_arn
   environment = {
     KORTIX_VERSION = "0.10.14"

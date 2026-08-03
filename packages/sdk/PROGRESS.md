@@ -282,6 +282,9 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B40 | **`usage_update{size,used}` is projected but still not wired to the meter.** `AcpProjection.contextWindow`/`contextUsed` now carry the harness's own context report (dev `10533f77-…`: `size 200000, used 30470`). Nothing reads them: `TokenProgress` gets `messages`, not the projection, and `getContextLimit` still guesses from the client model catalog or defaults to 200000. 7 of 138 real sessions report a meter of 0 while `contextUsed` knows the answer (`17c78bef-…`: meter 0, `contextUsed` 12502, truth 12516) — usage that arrives before any assistant message exists is lost. Needs `contextWindow`/`contextUsed` plumbed from `useSession` to the composer. | OPEN |
 | B41 | **The two ACP folds disagree on message boundaries for harnesses that emit no `messageId`.** `bun /tmp` harness-agnostic check over 241 sessions: SDK `projection.ts` and API `compact-transcript.ts` agree on role sequence + tool count for 218, disagree for 23, unchanged by B38/B39. All disagreements are ±1 assistant message on Pi-style logs where every chunk is unnamed, so boundaries come from open-message heuristics that differ across an attach. Pre-existing at HEAD (23 there too). | OPEN |
 | B42 | **A prompt that errors renders as an unanswered user bubble with no explanation.** `applyAcpEnvelope`'s response branch clears the pending prompt and drops `envelope.error` unless a `promptDrafts` entry survives. Dev session `ecc2d856-a08d-4cda-98bb-b76a7c892e69`: six `session/prompt` calls all answered `-32603 Internal error: OpenCode service failure`, and the projection is six user messages and zero assistants. `AcpProjection` has no per-turn error surface for a renderer to show. | OPEN |
+| B43 | **Expose the emoji project icon on the SDK's typed project contract.** Tasks 1–3 of the project-emoji-icons plan added `icon` to the API request/response bodies (`packages/api-contract/src/index.ts:120`, `icon: z.string().nullable()`); the SDK declares its own independent types and had no `icon` field anywhere. | `KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carried no `icon` member; plan `docs/superpowers/plans/2026-07-31-project-emoji-icons.md`; spec `docs/superpowers/specs/2026-07-31-project-emoji-icons-design.md`; task brief `.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`. | **DONE 2026-07-31** — session `sdk-project-emoji-icon`; implementation `8f8db0d4f1`; full SDK gates green (see session log) |
+| B44 | **`ProjectInput` — the `updateProject` body — carries no `icon`, so a project's emoji is write-once.** B43 added `icon` to the CREATE inputs and to the response type only. `updateProject(projectId, input: Partial<ProjectInput>)` is the sole SDK path to `PATCH /v1/projects/:projectId`, and its input type declares `account_id`/`name`/`repo_url`/`default_branch`/`manifest_path` — so a host cannot change or remove an icon without an `as any` cast. The API's tri-state semantics need `string \| null`, not `string`: an absent key leaves the icon alone, an explicit `null` clears it. | `ProjectInput` (`packages/sdk/src/core/rest/projects-client/projects.ts:163`) has no `icon` member; `updateProject` at `:427`; API handler `apps/api/src/projects/routes/r5.ts` (tri-state `icon` landed in `c76c6f962`). | **DONE 2026-07-31** — session `sdk-project-edit-icon`; implementation `cc5c36dbc4`; typecheck exit 0, full suite 1365 pass / 0 fail across 116 files, packed-install smoke pass |
+| B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | **DONE 2026-08-01** — session `sdk-project-glyph-icon`; implementation `3ce3e5f1f`; typecheck exit 0, full suite 1374 pass / 0 fail across 116 files, packed-install smoke pass, both brief mutations killed via typecheck (see session log) |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -3757,6 +3760,20 @@ Final SDK gates:
 
 ---
 
+### 2026-08-01 — session `e2b-capacity-fast-fail` (claim)
+
+Claimed the additive provider-neutral session-start capacity failure contract.
+The API will stop retrying deterministic provider capacity errors.
+The SDK will expose the terminal failure without removing or renaming any public field.
+The web will preserve the pending prompt and show Retry, Copy Prompt, and Delete actions.
+
+Work follows RED -> GREEN -> REFACTOR.
+The full SDK typecheck, test, and packed-install smoke gates are required.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-07-29 — session `acp-runtime-adapters` multi-harness starter claim
 
 Claimed the additive `acp-multi-harness` starter input.
@@ -4232,9 +4249,30 @@ same RED, GREEN, and REFACTOR sequence directly.
 
 Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
-**Status:** IN PROGRESS.
+RED evidence:
 
-**SDK package shippable to production: NOT YET.**
+- The focused SDK test failed because `New agent` stopped the refresh loop.
+- The focused API tests failed because serializers and title generation treated
+  `New agent` as a real title.
+
+GREEN evidence:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1390 pass`, `0 fail`, and
+  `5971 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- API unit suite: `5074 pass`, `62 skip`, `0 fail`, and
+  `20505 expect() calls` across `500` files.
+- Focused real-PostgreSQL integration:
+  `11 pass`, `0 fail`, and `27 expect() calls`.
+
+No public field, type, export, or signature changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository code shippable to production: YES.**
 
 ---
 
@@ -4824,7 +4862,132 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
 **Status:** IN PROGRESS.
 
-**SDK package shippable to production: NOT YET.**
+**SDK package shippable to production: NOT YET.** (pre-existing —
+orphaned tail of the 2026-07-30 `ci-runtime-gates` CLI SDK-boundary
+restoration claim entry; that session ended mid-work with no completion
+entry. Left as-is; not this session's to resolve.)
+
+---
+
+### 2026-07-31 — session `sdk-project-emoji-icon` (B43 claim)
+
+Claimed the additive `icon` field on the SDK's typed project contract:
+`KortixProject`, `ProvisionProjectInput`, `CreateProjectRepoInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`) and
+`LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`).
+This mirrors the API-side `icon: z.string().nullable()` contract that Tasks 1–3
+of `docs/superpowers/plans/2026-07-31-project-emoji-icons.md` already shipped
+(`packages/api-contract/src/index.ts:120`). The SDK does not import that
+package — this is an independent, additive type declaration. Task brief:
+`.superpowers/sdd/2026-07-31-project-emoji-icons/task-4-brief.md`.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-31 — session `sdk-project-emoji-icon` (B43 completion)
+
+Added `icon?: string | null` to `KortixProject`, and `icon?: string` to
+`ProvisionProjectInput`, `CreateProjectRepoInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`), and
+`LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`).
+All four are additive optional members on already-exported interfaces — no new
+export, no rename, `version` untouched. Implementation `8f8db0d4f1`.
+
+RED proven via `typecheck`, not `bun test`: TypeScript excess-property checks
+are compile-time only, so the wire-serialization tests passed at runtime even
+before the fields existed. Before the implementation, `pnpm --filter @kortix/sdk
+typecheck` reported 7 `TS2353`/`TS2339` errors, all `'icon' does not exist on
+type '…'`, across the four interfaces touched. After adding the fields,
+`typecheck` exited 0.
+
+Appended to the existing `projects.test.ts` (its `beforeEach`/`fetch`-mock
+convention, no new file): two type-pin tests (`CreateProjectRepoInput`,
+`LinkRepositoryInput` each accept `icon`) and the two wire-contract tests from
+the task brief verbatim — `provisionProject` sends `icon` in the real POST
+body, and a real 200 response body's `icon` survives parsing onto
+`KortixProject`.
+
+**Final SDK gates:**
+
+```
+pnpm --filter @kortix/sdk typecheck        → exit 0
+pnpm --filter @kortix/sdk test             → 1354 pass, 0 fail, 2 skip, 116 files
+pnpm --filter @kortix/sdk run smoke:install → ✔ install smoke test passed
+bun test src/index.isomorphic.test.ts      → 67 pass, 0 fail (tripwire)
+bun test src/public-surface.test.ts src/package-exports.test.ts → 3 pass, 0 fail (snapshot unchanged)
+npx biome check <3 touched files>          → 2 pre-existing findings in github.ts
+                                              (import order + 4 formatter
+                                              suggestions), both confirmed via
+                                              `git diff -U0 HEAD -- github.ts`
+                                              and a biome run against the
+                                              pre-change blob — untouched by
+                                              this change's one-line diff
+                                              (interface field only)
+```
+
+**Cross-surface note:** `apps/web` was not touched — Tasks 7/8 of this plan
+consume `project.icon` there. `packages/api-contract` was not imported or
+modified, per the task brief's constraint.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-07-31 — session `sdk-project-emoji-icon` (B43 fix round 1)
+
+Review findings, both accepted:
+
+1. **`PROGRESS.md` tail read as one contradictory entry.** My B43 completion
+   entry (ending `YES`) was immediately followed, with no separator, by the
+   orphaned `NOT YET` line that was already the file's last line at
+   `d8b07337ff` — the incomplete tail of the `ci-runtime-gates` claim entry
+   above. Added a `---` separator plus an attribution note on the stale line
+   (see below); did not edit or delete the stale line itself.
+2. **`LinkRepositoryInput` type-pin test had no runtime teeth and lived in the
+   wrong file.** `projects.test.ts` type-pinned a type declared in `github.ts`
+   via a fresh cross-file `import type` — it could only fail if the field
+   declaration itself were reverted, never from a regression in
+   `linkRepository`'s body construction. Moved to `github.test.ts` as a real
+   wire test (`sends the icon in the request body when linking a repository`),
+   mocking `fetch` and asserting the real `JSON.parse(init.body)`, matching the
+   existing pattern at `sends the GitHub user proof when saving an
+   installation`. Dropped the cross-file type-pin and its import from
+   `projects.test.ts`. Kept the `CreateProjectRepoInput` type-pin as-is — it
+   lives in the same file already exercised at the wire level by the
+   `provisionProject` test.
+3. **Added, per the reviewer's request:** a test proving `icon` survives the
+   `backendApi`/`unwrap` parsing path (`getProjectDetail`) — the path
+   `getProject`, `createProject`, and `updateProject` also share.
+   `provisionProjectWithToken` (already covered) bypasses `backendApi` with its
+   own explicit-token `fetch`, so it does not exercise this path.
+
+```
+pnpm --filter @kortix/sdk exec bun test src/core/rest/projects-client/projects.test.ts \
+  src/core/rest/projects-client/github.test.ts
+  → 18 pass, 0 fail (projects.test.ts: 12 pass; github.test.ts: 6 pass)
+
+pnpm --filter @kortix/sdk typecheck    → exit 0
+pnpm --filter @kortix/sdk test         → 1357 pass, 0 fail, 116 files
+pnpm --filter @kortix/sdk run smoke:install → ✔ install smoke test passed
+
+npx biome check <4 touched files>      → projects.ts, projects.test.ts,
+                                          github.test.ts clean; github.ts
+                                          carries the same 2 pre-existing
+                                          findings as HEAD (confirmed via
+                                          git diff -U0 and a biome run
+                                          against the unmodified blob) —
+                                          none introduced by this round
+```
+
+Full-suite delta from the prior evidence (1354 pass / 2 skip / 0 fail / 116
+files): net +1 test (−1 cross-file type-pin, +1 backendApi/unwrap test in
+`projects.test.ts`, +1 wire test in `github.test.ts`) and 0 skips instead of 2
+on a re-run — reproduced twice at 1357/0/0-skip; the 2-skip count from the
+prior round was not reproduced and is not attributable to this change (no
+skip-related code touched).
+
+**SDK package shippable to production: YES.**
 
 ---
 
@@ -4899,6 +5062,319 @@ session event and agent action carried the same project and session identifiers.
 
 ---
 
+### 2026-07-31 — session `sdk-project-edit-icon` (B44 claim)
+
+Claimed `icon?: string | null` on `ProjectInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`) — the body type for
+`updateProject`, and therefore the only SDK path to `PATCH
+/v1/projects/:projectId`.
+
+B43 covered the CREATE inputs and the response type. It did not cover the
+UPDATE input, so a project's emoji was write-once from the SDK's point of view:
+a host could send one at create time and never change or remove it.
+
+`string | null`, not `string`. The API handler (`apps/api/src/projects/routes/r5.ts`,
+landed in `c76c6f962`) reads three states off the request body — key absent
+leaves the stored icon untouched, an explicit `null` clears it, a valid emoji
+sets it — so the type has to be able to express the clear.
+
+Additive optional member on an already-exported interface: no new export, no
+rename, no `version` edit, public-surface snapshot unchanged.
+
+**Status:** IN PROGRESS.
+
+---
+### 2026-07-31 — session `sdk-project-edit-icon` (B44 completion)
+
+Added `icon?: string | null` to `ProjectInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`) and documented the
+tri-state on `updateProject`. Additive optional member on an already-exported
+interface: no new export, no rename, `version` untouched, public-surface
+snapshot unchanged.
+
+**RED first.** `bun test` cannot see this contract — the SDK JSON-stringifies
+whatever it is handed, so the six new runtime tests were green before the
+implementation. The gate that owns a type contract is `tsc`, and it was red:
+
+```
+pnpm --filter @kortix/sdk typecheck
+src/core/rest/projects-client/projects.test.ts(285,38): error TS2353: Object literal may only specify known properties, and 'icon' does not exist in type 'Partial<ProjectInput>'.
+src/core/rest/projects-client/projects.test.ts(298,38): error TS2353: ... (x4)
+Exit status 2
+```
+
+The runtime tests read the body the mocked `fetch` was actually handed — the
+raw string, re-parsed — rather than the object passed in, because the failure
+mode this guards is a serializer that drops nullish members. Nine mutations,
+nine killed:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | strip nullish members before sending | 17 pass / 1 fail |
+| M2 | POST instead of PATCH | 17 / 1 |
+| M3 | send an empty body | 14 / 4 |
+| M4 | coerce a null icon to `''` | 17 / 1 |
+| M5 | always send `icon: null` | 17 / 1 |
+| M6 | drop `projectId` from the route | 17 / 1 |
+| M7 | narrow `ProjectInput.icon` to `string` | typecheck exit 1, 2 TS errors |
+| M8 | remove `ProjectInput.icon` entirely | typecheck exit 1, 4 TS errors |
+| M9 | narrow `KortixProject.icon` to `string` | typecheck exit 1, 1 TS error |
+
+M9 covers a gap this session FOUND rather than introduced: B43 added
+`KortixProject.icon?: string | null` with no compile-time pin on the
+nullability, and narrowing it to `string` left every runtime assertion green
+(`expect(x).toBeNull()` accepts any type). The clear is only useful if the
+caller can see that it happened, so the response half is now pinned with
+`const projectIconAcceptsNull: KortixProject['icon'] = null;` — a test-only
+addition, no source change to B43's declaration.
+
+**Gates**
+
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0
+
+pnpm --filter @kortix/sdk test
+→ 1365 pass, 0 fail, 5893 expect() calls, 116 files  (baseline before this change: 1359 / 0 / 116)
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+```
+
+The server side of this contract landed in `c76c6f962`
+(`apps/api/src/projects/routes/r5.ts`): 21 tests, 8 mutations killed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.** Verified: typecheck, the full
+suite, and the packed-install smoke, all pasted above; the tri-state is proven
+against the real API handler by that handler's own suite. Unverified: nothing
+here was exercised through the published CDN/IIFE bundle — this change adds no
+runtime code, only an optional interface member, so the bundle's behaviour is
+byte-identical.
+
+---
+### 2026-08-01 — session `sdk-project-glyph-icon` (B45 claim)
+
+Claimed the additive `icon_glyph?: ProjectGlyph | null` field across the SDK's
+typed project contract: `KortixProject`, `ProjectInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`),
+`ProvisionProjectInput`, `CreateProjectRepoInput` (same file), and
+`LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`).
+
+This is Task 6 of `docs/superpowers/plans/2026-08-01-project-glyph-icons.md` —
+the SDK-types twin of B43/B44, extended to the second glyph-icon shape
+(`{name, color}`) landed server-side by Tasks 1–5. `ProjectGlyph` is declared
+independently in the SDK — deliberately NOT imported from `@kortix/shared`,
+which exports a same-named type with literal-union `name`/`color` fields for
+the server-side catalogue. The SDK's dependencies stay exactly
+`@kortix/llm-catalog`, `@opencode-ai/sdk`, and `zustand`; adding a workspace
+dependency on `@kortix/shared` for a two-field interface would cost every
+downstream consumer for nothing. The two types are structurally compatible, so
+nothing needs converting at the boundary. Task brief:
+`.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`.
+
+**Status:** IN PROGRESS.
+
+---
+### 2026-08-01 — session `sdk-project-glyph-icon` (B45 completion)
+
+Added `ProjectGlyph` (`{ name: string; color: string }`) and
+`icon_glyph?: ProjectGlyph | null` to `KortixProject` and `ProjectInput`, and
+`icon_glyph?: ProjectGlyph` (non-null — create bodies have no clear-the-glyph
+case) to `ProvisionProjectInput` and `CreateProjectRepoInput`
+(`packages/sdk/src/core/rest/projects-client/projects.ts`), and the same
+`icon_glyph?: ProjectGlyph` to `LinkRepositoryInput`
+(`packages/sdk/src/core/rest/projects-client/github.ts`). All additive:
+one new exported interface, five new optional members on already-exported
+interfaces — no rename, no removal, `version` untouched.
+
+**Deliberately a SECOND `ProjectGlyph`.** `@kortix/shared` exports a
+same-named type with literal-union `name`/`color` fields for the server-side
+catalogue. The SDK does not import `@kortix/shared` — its dependencies stay
+exactly `@kortix/llm-catalog`, `@opencode-ai/sdk`, `zustand` — so this
+declares an independent, structurally-compatible `string`/`string` version.
+A literal union here would make every catalogue addition a breaking change
+for pinned consumers; the catalogue is a server-side concern that can grow
+without a package release.
+
+**Test conventions used.** The brief's snippet named `clientReturning` and
+`recordingClient` helpers that do not exist in this file. The real
+conventions (`projects.test.ts`/`github.test.ts`, both already used by
+B43/B44): `configureKortix` + a mocked `globalThis.fetch`, and the
+`captureUpdate(input: Partial<ProjectInput>)` helper B44 added for reading the
+literal wire body `updateProject` sent. Reused as-is, no new helpers invented.
+One correction to the brief's test snippet: `const omitted: ProjectInput = {}`
+does not typecheck — `ProjectInput.repo_url` is required — so the omitted/null
+pin test uses `Partial<ProjectInput>`, matching `updateProject`'s actual
+parameter type.
+
+Added 9 tests: `projects.test.ts` — a `CreateProjectRepoInput` type-pin, a
+read round-trip (`getProject`), a provision wire-body check, the
+omitted-vs-null type pin, three `captureUpdate`-based wire tests (explicit
+null on the wire, a glyph sent verbatim, a name-only update sends no
+`icon_glyph` key), and a compile-time response-nullability pin
+(`KortixProject['icon_glyph'] = null`) paired with its round-trip test, mirroring
+the `projectIconAcceptsNull` pin B44 added after finding that gap in `icon`.
+`github.test.ts` — one wire test for `LinkRepositoryInput.icon_glyph`.
+
+**RED, proven via typecheck, not `bun test`** — same shape as B43/B44: JSON
+object literals with an extra `icon_glyph` key are valid JS regardless of the
+TS interface, so the new tests already passed at runtime before the fields
+existed. Before the implementation:
+
+```
+pnpm --filter @kortix/sdk typecheck
+src/core/rest/projects-client/github.test.ts(110,5): error TS2353: 'icon_glyph' does not exist in type 'LinkRepositoryInput'.
+src/core/rest/projects-client/projects.test.ts(49,5): error TS2353: 'icon_glyph' does not exist in type 'CreateProjectRepoInput'.
+src/core/rest/projects-client/projects.test.ts(52,22): error TS2339: Property 'icon_glyph' does not exist on type 'CreateProjectRepoInput'.
+... (12 TS2353/TS2339 errors total, all "icon_glyph does not exist")
+Exit status 2
+
+bun test src/core/rest/projects-client/
+276 pass, 0 fail  (runtime — vacuously green, confirms the gap is type-only)
+```
+
+After implementation, `typecheck` exited 0.
+
+**Guardrail hit: the type-level public-surface snapshot.** `ProjectGlyph` is
+a brand-new exported interface (unlike B43/B44's plain field additions), so
+`src/public-type-surface.test.ts` — the TS-checker-based snapshot that sees
+`export interface`/`export type` bindings the runtime snapshot cannot — went
+red with a pure addition (`+ ProjectGlyph` on `.` and `./projects-client`,
+nothing removed or renamed). Regenerated deliberately:
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test src/public-type-surface.test.ts`.
+The runtime `public-surface.snapshot.json` is unchanged — `ProjectGlyph` is a
+pure interface, invisible at runtime, so it never reaches that snapshot. No
+new subpath was added, so `package.json` `exports`/`publishConfig.exports`
+and `SUBPATH_TIERS` needed no edits — `ProjectGlyph` reaches the root and
+`./projects-client` entry points through the existing `export * from
+'./projects'` wildcards, the same path every sibling type in this file uses.
+
+**Mutation table** (brief's table, both mutations confirmed applied by `grep`
+before reading a result, then reverted by `Edit` — never `git checkout`):
+
+| # | Mutation | Applied confirmed via | Result |
+|---|---|---|---|
+| M1 | Drop `\| null` from `ProjectInput.icon_glyph` | `grep -n "icon_glyph?:" projects.ts` showed line 240 as `ProjectGlyph` (no `\| null`) | **Killed — TYPECHECK**, not `bun test`. 3 × `TS2322: Type 'null' is not assignable to type 'ProjectGlyph \| undefined'` at the omitted/null pin, the `captureUpdate({icon_glyph:null})` wire test, and the null-response round-trip test. `bun test src/core/rest/projects-client/projects.test.ts` stayed **26 pass / 0 fail** — JS assigns `null` into any field regardless of the TS type, so only `tsc` catches this. |
+| M2 | Remove `icon_glyph` from `ProvisionProjectInput` | `grep -n "icon_glyph?:" projects.ts` showed only 3 matches (line 224 `ProvisionProjectInput` gone) | **Killed — TYPECHECK**, not `bun test`. `TS2353: Object literal may only specify known properties, and 'icon_glyph' does not exist in type 'ProvisionProjectInput'` at the provision wire test's call site. `bun test` stayed **26 pass / 0 fail** — `provisionProject` forwards `...input` verbatim regardless of its declared type, so the field still reaches the wire; only `tsc` catches the type-contract violation. |
+
+Both mutations are real kills, not survivors — but both are caught **only** by
+`typecheck`, never by the runtime test named in the brief's own table. This
+mirrors B44's M7/M8/M9 finding: for a pure additive-optional-field change,
+`bun test`'s JSON round-trip cannot distinguish "field exists on the type"
+from "field exists on the object", because JS erases the type before the test
+ever runs. `typecheck` is the gate that actually owns this contract; it is not
+optional here.
+
+**Final SDK gates:**
+
+```
+pnpm --filter @kortix/sdk typecheck        → exit 0
+pnpm --filter @kortix/sdk test             → 1374 pass, 0 fail, 5910 expect() calls, 116 files
+                                              (baseline before this change: 1365 pass / 0 fail / 116 files)
+pnpm --filter @kortix/sdk run smoke:install → ✔ install smoke test passed
+bun test src/index.isomorphic.test.ts      → tripwire green (included in the 1374/116 total above)
+bun test src/public-surface.test.ts src/package-exports.test.ts → 2 pass, 0 fail (runtime snapshot unchanged)
+bun test src/public-type-surface.test.ts   → 1 pass, 0 fail (type snapshot regenerated, additive-only diff)
+npx biome check <4 touched files>          → 2 NEW findings both fixed inline (an import-order
+                                              nit, a >100-char test line); remaining findings
+                                              (github.ts import order + 4 formatter suggestions,
+                                              projects.test.ts 2 × noNonNullAssertion) confirmed
+                                              pre-existing via `git diff HEAD~1` — none on a line
+                                              this change touched
+```
+
+**Cross-surface note:** `apps/web` was not touched — later tasks of this plan
+consume `project.icon_glyph` there. `packages/api-contract` and
+`@kortix/shared` were not imported or modified, per the task brief's
+constraint (decision 2: a second, independent `ProjectGlyph`).
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+- **Verified:** typecheck (exit 0), the full suite (1374/0/116, baseline
+  1365/0/116), the packed-install smoke test, both public-surface snapshots
+  (runtime unchanged, type-level regenerated additive-only), the isomorphic
+  tripwire, and both brief mutations killed (via typecheck).
+- **Unverified:** nothing here was exercised through the published CDN/IIFE
+  bundle or a real browser — this change adds no runtime code, only type
+  declarations, so the bundle's runtime behaviour is byte-identical to before.
+  `apps/web` consumption of `icon_glyph` (later tasks) is out of this task's
+  scope and unverified here.
+- **Risk:** none identified. This is a pure additive type change with no
+  runtime code path; the only way it could regress a consumer is if a future
+  edit narrows `icon_glyph` or removes it, both of which the type-surface
+  snapshot and `typecheck` will catch.
+
+Implementation commit: `3ce3e5f1f`.
+
+---
+### 2026-08-01 — session `model-enablement` (re-land server-side model enablement, display-only)
+
+Un-reverted `6c168ee2a` (#5932) minus the gateway-enforcement half. SDK changes:
+
+- Restored `model-enablement.ts` REST client + `useModelEnablement` hook +
+  `ProjectLlmCatalogResponse.{modelOverrides,usingDefaults,defaultModel}` and
+  the barrel exports; surface snapshots regenerated.
+- New export `isOfferedModel(models, key)` (`react/model-flatten.ts`) — THE
+  predicate for "may this key be offered?": in-catalog AND server `enabled !==
+  false`. Test-first (RED: missing export → GREEN).
+- `useOpenCodeLocal`: `isModelValid` now delegates to `isOfferedModel` instead
+  of `useModelStore.isVisible`; dropped the project-secrets query +
+  `connectedProviderIds`/`freeTier` store plumbing (the server already resolves
+  entitlement/connection into `enabled`); `local.model.visible` now returns the
+  server answer; removed the localStorage `setVisibility(model, true)` write on
+  pick. `UseOpenCodeLocalOptions.freeTier` kept but `@deprecated`/inert.
+- `useModelStore` keeps its full export surface (npm contract). Its visibility
+  half (`isVisible`, `setVisibility`, `resetVisibility`, `isLatest`,
+  `computeLatestSet`, `hasUsableModel`, `isDefaultVisible`, `userPrefs`) now has
+  ZERO repo consumers — backlog: deprecate + delete in the next breaking cycle.
+
+Second fix found by live UI verification: the session picker renders from the
+gateway provider list (`['project-providers', :id, 'gateway']`, staleTime
+Infinity + localStorage seed) — a SECOND cache of the `/model-picker` payload —
+so a toggle wrote through `['project-model-picker']` and the open composer
+never updated. New export `applyEnablementToProviderList(providers, overrides)`
+(`react/provider-selection.ts`, test-first) restamps `enabled` on that shape;
+`useModelEnablement` now optimistically updates + invalidates BOTH keys
+(rollback on error covers both). Verified live in Chromium: toggle off →
+picker hides the model (7 options), toggle on → reappears (8) with no reload.
+
+Gates: `typecheck` exit 0 · `bun test --isolate src` → **1367 pass, 2 skip,
+0 fail** · `smoke:install` OK.
+
+**SDK package shippable to production: YES.**
+
+---
+### 2026-08-01 — session `e2b-capacity-fast-fail` (completion)
+
+Added the provider-neutral `SessionStartFailure` contract.
+Added the durable `PendingSessionPrompt` create and warm-claim contract.
+Added `replayStartStash.onSuccess` for the runtime ACK callback.
+The web uses the callback to clear the durable prompt after delivery.
+
+The type-surface snapshot adds four entries.
+The root and `./projects-client` surfaces each add two types.
+No public field, type, or export was removed or renamed.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1389 pass`, `0 fail`,
+  and `5969 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+The PR, merge, Deploy Dev, and Essentia verification remain.
+
+---
 ### 2026-08-02 — session `cost-explorer-sdk-clients` (claim)
 
 Claiming Task 8 of the `2026-08-01-cost-explorer-ux` plan (spec/plan live under
@@ -4927,7 +5403,6 @@ task brief's instruction not to trust either stale figure.)
 **Status:** IN PROGRESS.
 
 ---
-
 ### 2026-08-02 — session `cost-explorer-sdk-clients` (completion)
 
 Implemented Task 8. TDD throughout, RED watched before any implementation code.
@@ -5029,7 +5504,6 @@ a pure string builder with no network call — the auth-attachment + Blob-downlo
 flow is a web-task concern per the brief's `costExportUrl` scope).
 
 ---
-
 ### 2026-08-02 — session `cost-explorer-sdk-clients` (fix round 1/5)
 
 Review: Spec ✅ / Approved, one Important finding, one Minor folded in, one
@@ -5143,3 +5617,24 @@ case, snapshot diff confirmed additive-only. Unverified/out of scope: live-API
 integration (Task 10+/16 territory) and the actual browser download trigger
 (save-as / anchor-click flow) around the `Blob` `fetchCostExportCsv` returns —
 that UI wiring belongs to the web task consuming this client.
+
+---
+
+### 2026-08-03 — session `session-title-source-of-truth` claim
+
+No **Now** task claimed. This is a narrow cross-host session-title bug fix.
+
+Scope:
+
+- Treat Veyris's historical `New agent` name as a Kortix placeholder.
+- Keep the SDK title-refresh loop active until Kortix replaces that placeholder.
+- Preserve all published names and signatures.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**

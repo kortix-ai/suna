@@ -7,10 +7,8 @@ name: Deploy Dev
 # `main` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
-#                   EKS via GitOps: the deploy-api job bumps
-#                   infra/k8s/envs/dev/values.yaml to :dev-<sha8> and Argo CD rolls
-#                   the Deployment (the workflow waits for it). dev-api.kortix.com
-#                   is a Cloudflare Worker routing to dev-api-eks
+#                   via ECS Fargate. dev-api.kortix.com
+#                   is a Cloudflare Worker routing to the ECS service
 #                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
 #                   self-hosters). dev.kortix.com itself is deployed by Vercel
@@ -258,11 +256,6 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
-  # ── Deploy the freshly-built image to the dev EKS cluster (GitOps) ──────────
-  # Bump infra/k8s/envs/dev/values.yaml to the immutable :dev-<sha8> tag and
-  # commit it to main ([skip ci] so this push doesn't re-trigger the workflow);
-  # Argo CD on the dev-eks cluster reconciles it → rolling Deployment. Then wait
-  # for the roll to finish on exactly that tag. (Replaces the old ECS roll.)
   migrate-db:
     name: Apply DB migrations to dev
     needs: [detect-changes, dev-version]
@@ -292,12 +285,6 @@ jobs:
           pnpm --filter @kortix/db migrate
 
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
-  # Runs in PARALLEL with the EKS GitOps deploy during the ECS↔EKS transition,
-  # so both runtimes stay on the same image and we can flip the Cloudflare router
-  # between them at will. The task-def is rendered from the kortix-dev-env
-  # Secrets Manager blob (the same blob external-secrets syncs into EKS), so the
-  # ECS and EKS env contracts can never drift. When EKS is retired, delete the
-  # deploy-api (EKS) job and this becomes the sole API deploy.
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
     needs: [detect-changes, dev-version, tag-api, migrate-db]
@@ -322,181 +309,14 @@ jobs:
       - name: Roll the dev ECS service onto the freshly-built image
         run: bash infra/scripts/ecs-deploy.sh dev "${{ needs.tag-api.outputs.image }}" --version "${{ needs.dev-version.outputs.version }}"
 
-  deploy-api:
-    name: Deploy API to dev (EKS / GitOps)
-    needs: [detect-changes, tag-api, migrate-db]
-    if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write # OIDC → read the dev cluster
-      contents: write # push the values-bump branch
-      pull-requests: write # open/merge the values-bump PR into protected main
-    env:
-      AWS_REGION: us-west-2
-      CLUSTER: kortix-dev-eks
-      NAMESPACE: kortix-dev
-      APP: kortix-api
-      API_HOST: dev-api-eks.kortix.com
-      VALUES: infra/k8s/envs/dev/values.yaml
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Bump dev image tag through GitOps PR
-        id: bump
-        run: |
-          set -euo pipefail
-          TAG="dev-${GITHUB_SHA::8}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-          verify_remote_tag() {
-            git fetch origin main --quiet
-            remote_tag="$(git show origin/main:"$VALUES" | yq '.image.tag')"
-            if [ "$remote_tag" != "$TAG" ]; then
-              echo "::error::GitOps source is still at '$remote_tag', expected '$TAG'. Refusing to watch old healthy pods."
-              return 1
-            fi
-            echo "GitOps source verified: origin/main:$VALUES image.tag=$TAG"
-          }
-
-          if [ "$(yq '.image.tag' "$VALUES")" = "$TAG" ]; then
-            echo "values already at $TAG — no commit needed."
-            verify_remote_tag
-          else
-            BR="chore/dev-eks-deploy-${TAG}"
-            TAG="$TAG" yq -i '.image.tag = strenv(TAG)' "$VALUES"
-            git config user.name  "kortix-ci[bot]"
-            git config user.email "kortix-ci[bot]@users.noreply.github.com"
-            git checkout -B "$BR"
-            git add "$VALUES"
-            git commit -m "chore(dev-eks): deploy ${TAG} [skip ci]"
-            git push -f origin "HEAD:$BR"
-
-            body="GitOps bump for the API image built by ${GITHUB_RUN_ID}: ${TAG}."
-            gh pr create --base main --head "$BR" \
-              --title "chore(dev-eks): deploy ${TAG} [skip ci]" \
-              --body "$body" || true
-            PR="$(gh pr view "$BR" --json number --jq '.number')"
-
-            # main is protected with "changes through PR"; merge the tiny GitOps
-            # bump as a PR so Argo has an auditable source-of-truth update. If
-            # this merge fails, fail here instead of polling old healthy pods for
-            # 15 minutes and making the rollout look ambiguous.
-            gh pr merge "$PR" --squash --delete-branch \
-              --subject "chore(dev-eks): deploy ${TAG} [skip ci]" \
-              --body "" \
-              || gh pr merge "$PR" --squash --delete-branch --admin \
-                --subject "chore(dev-eks): deploy ${TAG} [skip ci]" \
-                --body ""
-
-            verify_remote_tag
-          fi
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Guard — cluster exists
-        id: guard
-        run: |
-          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::dev-eks cluster not found — bump committed, skipping watch."
-          fi
-
-      - name: Update kubeconfig
-        if: steps.guard.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-
-      # Wait for Argo to reconcile the bump and the Deployment to finish rolling
-      # out exactly :dev-<sha8> — Argo applied the new spec (observedGeneration
-      # caught up) AND every replica is updated + available.
-      - name: Wait for Deployment rolled out @ ${{ steps.bump.outputs.tag }}
-        if: steps.guard.outputs.exists == 'true'
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set -uo pipefail
-          for i in $(seq 1 60); do
-            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
-            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
-            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
-            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
-            echo "($i/60) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
-            if printf '%s' "$img" | grep -q ":${TAG}$" \
-               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
-               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
-              echo "✓ EKS dev rolled out on :${TAG} (${avail}/${desired} ready)"; exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::dev Deployment did not roll out to :${TAG} within ~15m (Argo lag, stuck, or pods never Ready)."
-          exit 1
-
-      - name: Debug failed dev rollout
-        if: failure() && steps.guard.outputs.exists == 'true'
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set +e
-          echo "::group::Deployment"
-          kubectl -n "$NAMESPACE" get deploy "$APP" -o wide
-          kubectl -n "$NAMESPACE" describe deploy "$APP"
-          echo "::endgroup::"
-
-          echo "::group::ReplicaSets"
-          kubectl -n "$NAMESPACE" get rs -l app.kubernetes.io/name="$APP" -o wide
-          kubectl -n "$NAMESPACE" describe rs -l app.kubernetes.io/name="$APP"
-          echo "::endgroup::"
-
-          echo "::group::Pods"
-          kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o wide
-          kubectl -n "$NAMESPACE" describe pods -l app.kubernetes.io/name="$APP"
-          echo "::endgroup::"
-
-          echo "::group::Recent events"
-          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -120
-          echo "::endgroup::"
-
-          echo "::group::New image pod logs"
-          for pod in $(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.containers[0].image}{"\n"}{end}' | awk -v tag=":${TAG}" '$2 ~ tag {print $1}'); do
-            echo "### $pod"
-            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=200
-            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --previous --tail=200
-          done
-          echo "::endgroup::"
-
-      - name: Summary
-        if: always() && steps.guard.outputs.exists == 'true'
-        run: |
-          h="$(curl -s --max-time 10 "https://${API_HOST}/v1/health" || true)"
-          {
-            echo "### Deployed API → **dev** (EKS / Argo CD GitOps)"
-            echo "Image \`kortix/kortix-api:${{ steps.bump.outputs.tag }}\` → \`infra/k8s/envs/dev/values.yaml\` → Argo CD rolled the dev Deployment."
-            echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   # ── Move the self-host `:dev` channel tag onto the image that just deployed ─
   # `kortix self-host init/update --tag dev` (or `--channel dev` once that
   # lands) pulls `kortix/kortix-api:dev` — a MOVING tag self-hosters track for
   # the current dev environment (may break at any time). Re-tag by digest ONLY
-  # (docker buildx imagetools create — zero rebuild) and ONLY after BOTH dev
-  # backends (ECS active + EKS standby) report success, so `:dev` never points
-  # at a build that failed to actually reach the dev environment.
+  # (docker buildx imagetools create — zero rebuild).
   promote-dev-channel-api:
     name: Move :dev → this build (API)
-    needs: [detect-changes, tag-api, deploy-api, deploy-api-ecs]
+    needs: [detect-changes, tag-api, deploy-api-ecs]
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -514,8 +334,7 @@ jobs:
           echo "✓ kortix/kortix-api:dev → ${{ needs.tag-api.outputs.image }}"
 
   # ── Build + push the multi-arch gateway image ───────────────────────────────
-  # Standalone LLM gateway (apps/llm-gateway). Same dev-<sha8> versioning + GitOps
-  # roll as the API, into the SAME kortix-dev namespace (reuses kortix-api-env).
+  # Standalone LLM gateway (apps/llm-gateway). Same dev-<sha8> versioning as the API.
   build-gateway:
     name: Build gateway image (multi-arch)
     needs: [detect-changes, dev-version]
@@ -591,153 +410,21 @@ jobs:
             --service gateway \
             --version "${{ needs.dev-version.outputs.version }}"
 
-  deploy-gateway:
-    name: Deploy gateway to dev (EKS / GitOps)
-    needs: [detect-changes, tag-gateway]
-    if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write # OIDC → read the dev cluster
-      contents: write # push the values-bump branch
-      pull-requests: write # open/merge the GitOps bump PR into protected main
-    env:
-      AWS_REGION: us-west-2
-      CLUSTER: kortix-dev-eks
-      NAMESPACE: kortix-dev
-      APP: kortix-gateway
-      VALUES: infra/k8s/envs/dev/gateway-values.yaml
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # main is protected ("changes through PR"), so a direct `git push origin
-      # main` is silently rejected — which left gateway-values pinned at a stale
-      # tag while the watch span 40× on the old healthy pods. Bump through a PR
-      # exactly like the API job, then verify origin/main actually carries the
-      # new tag before watching (so a failed bump fails the job, loudly).
-      - name: Bump dev gateway image tag through GitOps PR
-        id: bump
-        run: |
-          set -euo pipefail
-          TAG="dev-${GITHUB_SHA::8}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-          verify_remote_tag() {
-            git fetch origin main --quiet
-            remote_tag="$(git show origin/main:"$VALUES" | yq '.image.tag')"
-            if [ "$remote_tag" != "$TAG" ]; then
-              echo "::error::GitOps source is still at '$remote_tag', expected '$TAG'. Refusing to watch old healthy pods."
-              return 1
-            fi
-            echo "GitOps source verified: origin/main:$VALUES image.tag=$TAG"
-          }
-
-          if [ "$(yq '.image.tag' "$VALUES")" = "$TAG" ]; then
-            echo "values already at $TAG — no commit needed."
-            verify_remote_tag
-          else
-            BR="chore/dev-eks-deploy-gateway-${TAG}"
-            TAG="$TAG" yq -i '.image.tag = strenv(TAG)' "$VALUES"
-            git config user.name  "kortix-ci[bot]"
-            git config user.email "kortix-ci[bot]@users.noreply.github.com"
-            git checkout -B "$BR"
-            git add "$VALUES"
-            git commit -m "chore(dev-eks): deploy gateway ${TAG} [skip ci]"
-            git push -f origin "HEAD:$BR"
-
-            body="GitOps bump for the gateway image built by ${GITHUB_RUN_ID}: ${TAG}."
-            gh pr create --base main --head "$BR" \
-              --title "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
-              --body "$body" || true
-            PR="$(gh pr view "$BR" --json number --jq '.number')"
-
-            gh pr merge "$PR" --squash --delete-branch \
-              --subject "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
-              --body "" \
-              || gh pr merge "$PR" --squash --delete-branch --admin \
-                --subject "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
-                --body ""
-
-            verify_remote_tag
-          fi
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Guard — cluster exists
-        id: guard
-        run: |
-          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Required dev EKS cluster '$CLUSTER' was not found."
-            exit 1
-          fi
-
-      - name: Update kubeconfig
-        if: steps.guard.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-
-      # Code is the first-class copy: keep the live Argo CD Application in lockstep
-      # with the committed manifest. On dev-eks these Applications are NOT owned by
-      # an app-of-apps, so a stale field — e.g. targetRevision left on the retired
-      # `gateway` branch — silently freezes the gateway on an old image while Argo
-      # reports Synced/Healthy against the dead branch. Re-applying the manifest
-      # every deploy means the cluster always derives from the repo. Best-effort:
-      # if the deploy role lacks argocd-namespace RBAC it warns (then grant it),
-      # but it never blocks the rollout watch below.
-      - name: Reconcile Argo CD Application from repo (code is source of truth)
-        if: steps.guard.outputs.exists == 'true'
-        continue-on-error: true
-        run: |
-          kubectl apply -f infra/k8s/argocd/applications/gateway-dev.yaml \
-            || echo "::warning::could not apply gateway-dev Application (argocd RBAC for the deploy role?) — live app may be drifted from the repo"
-          kubectl -n argocd annotate application kortix-gateway-dev \
-            argocd.argoproj.io/refresh=hard --overwrite 2>/dev/null || true
-
-      - name: Wait for gateway Deployment rolled out @ ${{ steps.bump.outputs.tag }}
-        if: steps.guard.outputs.exists == 'true'
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set -uo pipefail
-          for i in $(seq 1 40); do
-            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
-            echo "($i/40) image=${img:-?} available=${avail:-0}/${desired:-?}"
-            if printf '%s' "$img" | grep -q ":${TAG}$" && [ -n "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
-              echo "✓ EKS dev gateway rolled out on :${TAG}"; exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::dev EKS gateway did not roll out to :${TAG}."
-          exit 1
-
   verify-gateway-dev-parity:
     name: Verify gateway dev commit parity
-    needs: [detect-changes, dev-version, deploy-gateway-ecs, deploy-gateway]
+    needs: [detect-changes, dev-version, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ubuntu-latest
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
     steps:
-      - name: Require ECS, EKS, and public gateway parity
+      - name: Require ECS and public gateway parity
         run: |
           set -euo pipefail
           endpoints=(
             "public|https://gateway-dev.kortix.com/health/live"
             "ecs|https://gateway-dev-ecs-fargate.kortix.com/health/live"
-            "eks|https://gateway-dev-eks.kortix.com/health/live"
           )
           for attempt in $(seq 1 40); do
             all_match=true
@@ -753,7 +440,7 @@ jobs:
               fi
             done
             if [ "$all_match" = true ]; then
-              echo "ECS, EKS, and public gateway report ${EXPECTED_COMMIT}."
+              echo "ECS and public gateway report ${EXPECTED_COMMIT}."
               exit 0
             fi
             sleep 15
@@ -762,8 +449,6 @@ jobs:
           exit 1
 
   # ── Move the self-host `:dev` channel tag onto the verified image ───────────
-  # ECS, EKS, and the public gateway must report the same commit and version
-  # before this mutable channel tag moves.
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
     needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]

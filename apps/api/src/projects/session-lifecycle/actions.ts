@@ -7,6 +7,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { revokeSessionExecutorTokens } from '../../repositories/account-tokens';
 import { withProjectGitAuth } from '../lib/git';
+import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
@@ -374,6 +375,30 @@ export async function restartSession(input: {
           .update(projectSessions)
           .set({ status: 'running', updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sessionId));
+        // A restart is a stop/start of the SAME box: the provider hands back the
+        // env it was created with, so this used to cost a full boot and return
+        // byte-identical stale config. People restarted precisely to pick up a
+        // merged agent change and got the old agents back, which is most of why
+        // "there is no way to reload" felt true.
+        //
+        // Recompile from the session's ref and push. Best-effort and after the
+        // session is already marked running: a box that is up with old config
+        // beats one parked because a git read failed.
+        void pushSessionAgentConfigToSandbox({
+          projectId,
+          sessionId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        }).then((result) => {
+          if (!result.applied) {
+            logger.info('[projects] restart kept the existing agent config', {
+              session_id: sessionId,
+              reason: result.reason,
+            });
+          }
+        });
       } catch (err) {
         // Detached from the request (the 202 already went out) — a structured
         // error is the only trace the reboot died and the session was parked.

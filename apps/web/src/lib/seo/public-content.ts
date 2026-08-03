@@ -49,6 +49,7 @@ function loadContentTimestamps(): Record<string, string> {
 
 export const STATIC_PUBLIC_ROUTES = [
   '/',
+  '/a1o',
   '/about',
   '/agent-computer',
   '/agents-and-skills',
@@ -61,7 +62,10 @@ export const STATIC_PUBLIC_ROUTES = [
   '/contact',
   '/developers',
   '/docs',
+  '/download',
   '/enterprise',
+  '/help',
+  '/help/credits',
   '/integrations',
   '/legal',
   '/marketplace',
@@ -117,9 +121,64 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'developers',
     title: 'Kortix for developers',
-    description: siteMetadata.description,
+    description:
+      'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
     htmlPath: '/developers',
     markdownPath: '/markdown/developers.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'careers',
+    title: 'Careers at Kortix',
+    description:
+      'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+    htmlPath: '/careers',
+  },
+  {
+    kind: 'marketing',
+    slug: 'changelog',
+    title: 'Kortix Changelog',
+    description:
+      'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+    htmlPath: '/changelog',
+  },
+  {
+    kind: 'marketing',
+    slug: 'blog',
+    title: 'Kortix Blog',
+    description:
+      'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.',
+    htmlPath: '/blog',
+  },
+  {
+    kind: 'marketing',
+    slug: 'use-cases',
+    title: 'Kortix Use Cases',
+    description:
+      'How teams put a workforce of AI agents to work — the loops they engineer, the deliverables they ship, and the reviewed changes that make the company better every day.',
+    htmlPath: '/use-cases',
+  },
+  {
+    kind: 'marketing',
+    slug: 'download',
+    title: 'Download Kortix',
+    description: 'Get Kortix for macOS, Windows, Linux, iOS, and Android.',
+    htmlPath: '/download',
+  },
+  {
+    kind: 'marketing',
+    slug: 'help',
+    title: 'Kortix Help Center',
+    description: 'Guides for billing, credits, and everyday Kortix questions.',
+    htmlPath: '/help',
+  },
+  {
+    kind: 'marketing',
+    slug: 'help/credits',
+    title: 'Kortix credits explained',
+    description:
+      'What credits are, how Kortix sessions consume them, and how to manage your balance and subscription.',
+    htmlPath: '/help/credits',
   },
   {
     kind: 'marketing',

@@ -40,15 +40,16 @@ import {
   WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
   CheckIcon as Check,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
-  LinkIcon,
+  LinkSimpleIcon,
   ArrowsOutSimpleIcon as Maximize2,
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
-  ArrowClockwiseIcon as RefreshCw,
-  ArrowSquareOutIcon as TbExternalLink,
+  SparkleIcon as SparklesSolid,
+  WarningIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
@@ -88,6 +89,7 @@ export function AppPreview({
   shareContext,
   onClose,
   onAskForChanges,
+  onSendToAgent,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
@@ -101,6 +103,12 @@ export function AppPreview({
    *  detail (W12). Omitted entirely (not disabled) where there's no session
    *  composer to hand it to. */
   onAskForChanges?: () => void;
+  /** "Send to agent" — shown in the "Couldn't load" error state next to
+   *  Retry, in the merge-conflict "Solve with agent" style. Seeds the session
+   *  composer with a prompt asking the agent to bring the app back up. Omitted
+   *  entirely (not disabled) when there's no handler — the error screen then
+   *  shows only Retry, exactly as before. */
+  onSendToAgent?: () => void;
 }) {
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
@@ -373,7 +381,7 @@ export function AppPreview({
               window.open(previewUrl, '_blank', 'noopener,noreferrer');
             }}
           >
-            <TbExternalLink className="size-4" />
+            <ArrowSquareOutIcon className="size-4" />
           </Button>
         </Hint>
 
@@ -404,7 +412,7 @@ export function AppPreview({
                   {copied ? (
                     <Check className="text-kortix-green size-4" />
                   ) : (
-                    <LinkIcon className="size-4" />
+                    <LinkSimpleIcon className="size-4" />
                   )}
                 </motion.span>
               </AnimatePresence>
@@ -443,8 +451,8 @@ export function AppPreview({
         {hasError && !noApp && (
           <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-                <AlertTriangle className="text-kortix-orange size-5" />
+              <span className="bg-kortix-yellow/15 flex size-9 items-center justify-center rounded-md">
+                <WarningIcon className="text-kortix-yellow size-5" />
               </span>
               <div>
                 <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
@@ -458,10 +466,17 @@ export function AppPreview({
                       : 'The app may not be running yet.'}
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                <RefreshCw className="size-3.5 shrink-0" />
-                Retry
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
+                  Retry
+                </Button>
+                {onSendToAgent && (
+                  <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                    Send to agent
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

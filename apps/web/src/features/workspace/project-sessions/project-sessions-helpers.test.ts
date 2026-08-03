@@ -2,11 +2,17 @@ import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
+  availableProjectSessionsFilters,
   filterProjectSessions,
+  mapWithConcurrency,
   matchesProjectSessionsFilter,
   projectSessionsFilterCounts,
+  pruneSelection,
   sessionAccessMeta,
+  sessionDetailFields,
   sessionOwnerLabel,
+  summarizeBulkDelete,
+  toggleSelection,
 } from './project-sessions-helpers';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -33,6 +39,8 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   };
 }
 
+const FORMATTED = { created: 'Jul 20, 2026, 10:00 AM', updated: 'Jul 21, 2026, 11:00 AM' };
+
 describe('matchesProjectSessionsFilter', () => {
   test('groups every provisioning state with running sessions as active', () => {
     for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
@@ -43,16 +51,22 @@ describe('matchesProjectSessionsFilter', () => {
     );
   });
 
-  test('detects automation and viewer-relative shared sessions', () => {
-    const automated = makeSession({ metadata: { trigger_source: 'cron' } });
-    const shared = makeSession({ is_owner: false });
-
-    expect(matchesProjectSessionsFilter(automated, 'automated')).toBe(true);
-    expect(matchesProjectSessionsFilter(shared, 'shared')).toBe(true);
-    expect(matchesProjectSessionsFilter(makeSession(), 'shared')).toBe(false);
+  test('matches each source kind to its own filter', () => {
+    expect(
+      matchesProjectSessionsFilter(makeSession({ metadata: { source: 'slack' } }), 'slack'),
+    ).toBe(true);
+    expect(
+      matchesProjectSessionsFilter(
+        makeSession({ metadata: { trigger_source: 'cron', trigger_type: 'cron' } }),
+        'schedule',
+      ),
+    ).toBe(true);
+    expect(matchesProjectSessionsFilter(makeSession(), 'chat')).toBe(true);
+    expect(matchesProjectSessionsFilter(makeSession(), 'slack')).toBe(false);
   });
 
-  test('separates deleted and inaccessible sessions for inventory debugging', () => {
+  test('separates deleted, shared and inaccessible sessions', () => {
+    expect(matchesProjectSessionsFilter(makeSession({ is_owner: false }), 'shared')).toBe(true);
     expect(
       matchesProjectSessionsFilter(
         makeSession({ deleted_at: '2026-07-20T10:00:00.000Z' }),
@@ -62,6 +76,46 @@ describe('matchesProjectSessionsFilter', () => {
     expect(matchesProjectSessionsFilter(makeSession({ can_access: false }), 'inaccessible')).toBe(
       true,
     );
+  });
+});
+
+describe('availableProjectSessionsFilters', () => {
+  test('omits every zero-count option so the menu has no dead ends', () => {
+    const groups = availableProjectSessionsFilters([
+      makeSession({ status: 'running' }),
+      makeSession({ session_id: 'two', status: 'completed' }),
+    ]);
+
+    const values = groups.flatMap((group) => group.options.map((option) => option.value));
+    expect(values).toEqual(['active', 'completed', 'chat']);
+    expect(values).not.toContain('failed');
+    expect(values).not.toContain('deleted');
+  });
+
+  test('drops an axis entirely rather than rendering an empty section header', () => {
+    const groups = availableProjectSessionsFilters([makeSession({ status: 'running' })]);
+    expect(groups.map((group) => group.axis)).toEqual(['status', 'source']);
+  });
+
+  test('reports the count alongside each surviving option', () => {
+    const groups = availableProjectSessionsFilters([
+      makeSession({ metadata: { source: 'slack' } }),
+      makeSession({ session_id: 'two', metadata: { source: 'slack' } }),
+    ]);
+
+    const slack = groups
+      .flatMap((group) => group.options)
+      .find((option) => option.value === 'slack');
+    expect(slack).toMatchObject({ label: 'Slack', count: 2 });
+  });
+
+  test('keeps the active filter listed even after its last session disappears', () => {
+    const groups = availableProjectSessionsFilters([makeSession({ status: 'running' })], 'failed');
+    const failed = groups
+      .flatMap((group) => group.options)
+      .find((option) => option.value === 'failed');
+
+    expect(failed).toMatchObject({ count: 0 });
   });
 });
 
@@ -101,6 +155,220 @@ describe('session inventory identity and access labels', () => {
   });
 });
 
+describe('sessionDetailFields', () => {
+  test('never emits a placeholder formatted like real data', () => {
+    const bare = makeSession({
+      // Typed non-nullable, but the API returns empty strings before the
+      // branch and sandbox exist — which is why the old grid fell back to
+      // "Not created" / "Missing" here.
+      branch_name: '',
+      base_ref: '',
+      sandbox_id: '',
+      sandbox_provider: null,
+      agent_name: null,
+      runtime_status: null,
+      opencode_session_id: null,
+      created_by: null,
+      owner_type: undefined,
+    });
+
+    const values = sessionDetailFields(bare, FORMATTED).map((field) => field.value);
+    for (const placeholder of [
+      'Not created',
+      'Missing',
+      'Unattributed',
+      'Not synced',
+      'Not provisioned',
+      'Default branch',
+      'Project default',
+    ]) {
+      expect(values).not.toContain(placeholder);
+    }
+  });
+
+  test('omits trigger fields for a chat and includes them for a trigger fire', () => {
+    const chatLabels = sessionDetailFields(makeSession(), FORMATTED).map((field) => field.label);
+    expect(chatLabels).not.toContain('Trigger');
+    expect(chatLabels).not.toContain('Source');
+
+    const cron = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'nightly-audit' },
+    });
+    const cronFields = sessionDetailFields(cron, FORMATTED);
+    expect(cronFields).toContainEqual({ label: 'Source', value: 'Scheduled', mono: undefined });
+    expect(cronFields).toContainEqual({
+      label: 'Trigger',
+      value: 'nightly-audit',
+      mono: undefined,
+    });
+  });
+
+  test('drops a chat session from 18 fields to a readable handful', () => {
+    const fields = sessionDetailFields(
+      makeSession({
+        branch_name: '',
+        base_ref: '',
+        sandbox_id: '',
+        sandbox_provider: null,
+        agent_name: null,
+        runtime_status: null,
+        opencode_session_id: null,
+        created_by: null,
+        owner_type: undefined,
+      }),
+      FORMATTED,
+    );
+    expect(fields.length).toBeLessThanOrEqual(6);
+  });
+
+  test('prints a shared identifier once, not three times', () => {
+    // The platform sets sandbox_id == session_id and defaults branch to it.
+    const coincident = makeSession({
+      session_id: 'df4276b5-28b7',
+      sandbox_id: 'df4276b5-28b7',
+      branch_name: 'df4276b5-28b7',
+    });
+    const labels = sessionDetailFields(coincident, FORMATTED).map((f) => f.label);
+    expect(labels).toContain('Session ID');
+    expect(labels).not.toContain('Branch');
+    expect(labels).not.toContain('Sandbox ID');
+  });
+
+  test('still shows branch and sandbox when they genuinely differ', () => {
+    const distinct = makeSession({
+      session_id: 'ses-1',
+      sandbox_id: 'sbx-9',
+      branch_name: 'kx/nightly-audit',
+    });
+    const labels = sessionDetailFields(distinct, FORMATTED).map((f) => f.label);
+    expect(labels).toContain('Branch');
+    expect(labels).toContain('Sandbox ID');
+  });
+
+  test('hides "Can open" but surfaces a restricted access state', () => {
+    const open = sessionDetailFields(
+      makeSession({ can_access: true, runtime_status: 'active' }),
+      FORMATTED,
+    );
+    expect(open.map((field) => field.label)).not.toContain('Your access');
+
+    const restricted = sessionDetailFields(makeSession({ can_access: false }), FORMATTED);
+    expect(restricted).toContainEqual({
+      label: 'Your access',
+      value: 'Metadata only',
+      mono: undefined,
+    });
+  });
+
+  test('counts conversations only when the session has any', () => {
+    expect(sessionDetailFields(makeSession(), FORMATTED).map((f) => f.label)).not.toContain(
+      'Conversations',
+    );
+
+    const withConversations = makeSession({
+      opencode_sessions: [
+        { id: 'a', parent_id: null, archived_at: null },
+        { id: 'b', parent_id: 'a', archived_at: '2026-07-20T10:00:00.000Z' },
+      ] as ProjectSession['opencode_sessions'],
+    });
+    expect(sessionDetailFields(withConversations, FORMATTED)).toContainEqual({
+      label: 'Conversations',
+      value: '2 · 1 archived',
+    });
+  });
+});
+
+describe('selection', () => {
+  test('toggles an id on and off without mutating the previous set', () => {
+    const initial = new Set<string>();
+    const withOne = toggleSelection(initial, 'a');
+    expect(withOne.has('a')).toBe(true);
+    expect(initial.size).toBe(0);
+    expect(toggleSelection(withOne, 'a').has('a')).toBe(false);
+  });
+
+  test('prunes ids that scrolled out of the filtered view', () => {
+    const selected = new Set(['a', 'b', 'c']);
+    const pruned = pruneSelection(selected, [
+      makeSession({ session_id: 'a' }),
+      makeSession({ session_id: 'c' }),
+    ]);
+    expect([...pruned].sort()).toEqual(['a', 'c']);
+  });
+
+  test('returns the same reference when nothing was pruned, so React skips a render', () => {
+    const selected = new Set(['a']);
+    expect(pruneSelection(selected, [makeSession({ session_id: 'a' })])).toBe(selected);
+  });
+});
+
+describe('summarizeBulkDelete', () => {
+  test('reports a clean batch', () => {
+    expect(
+      summarizeBulkDelete([
+        { sessionId: 'a', ok: true },
+        { sessionId: 'b', ok: true },
+      ]).message,
+    ).toBe('Deleted 2 sessions');
+  });
+
+  test('singularises a batch of one', () => {
+    expect(summarizeBulkDelete([{ sessionId: 'a', ok: true }]).message).toBe('Deleted 1 session');
+  });
+
+  test('never claims success when part of the batch failed', () => {
+    const summary = summarizeBulkDelete([
+      { sessionId: 'a', ok: true },
+      { sessionId: 'b', ok: false },
+      { sessionId: 'c', ok: false },
+    ]);
+    expect(summary.message).toBe('Deleted 1 of 3. 2 failed.');
+    expect(summary.succeeded).toEqual(['a']);
+    expect(summary.failed).toEqual(['b', 'c']);
+  });
+
+  test('reports a total failure as a failure', () => {
+    expect(
+      summarizeBulkDelete([
+        { sessionId: 'a', ok: false },
+        { sessionId: 'b', ok: false },
+      ]).message,
+    ).toBe('Could not delete 2 sessions');
+  });
+});
+
+describe('mapWithConcurrency', () => {
+  test('preserves input order regardless of completion order', async () => {
+    const results = await mapWithConcurrency([30, 10, 20, 0], 2, async (delay) => {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return delay;
+    });
+    expect(results).toEqual([30, 10, 20, 0]);
+  });
+
+  test('never exceeds the concurrency limit', async () => {
+    let inFlight = 0;
+    let peak = 0;
+
+    await mapWithConcurrency(
+      Array.from({ length: 12 }, (_, i) => i),
+      3,
+      async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+      },
+    );
+
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  test('handles an empty batch', async () => {
+    expect(await mapWithConcurrency([], 4, async (x) => x)).toEqual([]);
+  });
+});
+
 describe('filterProjectSessions', () => {
   test('searches visible session fields and sorts by latest activity', () => {
     const older = makeSession({
@@ -113,7 +381,19 @@ describe('filterProjectSessions', () => {
       session_id: 'newer',
       name: 'Slack deploy',
       metadata: { source: 'slack' },
-      updated_at: '2026-07-21T10:00:00.000Z',
+      // Bookkeeping is older, but the conversation itself is newer.
+      updated_at: '2026-07-19T10:00:00.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-newer',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: null,
+          updated_at: Date.parse('2026-07-21T10:00:00.000Z'),
+          archived_at: null,
+        },
+      ],
     });
     const unrelated = makeSession({ session_id: 'third', name: 'Email report' });
 
@@ -140,7 +420,7 @@ describe('projectSessionsFilterCounts', () => {
       makeSession({
         session_id: 'three',
         status: 'completed',
-        metadata: { trigger_source: 'cron' },
+        metadata: { trigger_source: 'cron', trigger_type: 'cron' },
       }),
     ]);
 
@@ -150,7 +430,8 @@ describe('projectSessionsFilterCounts', () => {
       completed: 1,
       stopped: 0,
       failed: 1,
-      automated: 1,
+      schedule: 1,
+      chat: 2,
       shared: 1,
       deleted: 0,
       inaccessible: 1,

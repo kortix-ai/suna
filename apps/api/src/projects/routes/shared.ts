@@ -1,8 +1,13 @@
 import { pauseComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
-import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
+import type {
+  ProjectSessionSandbox,
+  SessionStartFailure,
+  SessionStartResult,
+} from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
+import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -491,6 +496,40 @@ export function serializeSandboxRow(
   };
 }
 
+export function sessionStartFailureFromSandbox(
+  row: typeof sessionSandboxes.$inferSelect,
+): SessionStartFailure | null {
+  if (row.status !== 'error') return null;
+  const metadata = sandboxMetadata(row);
+  const rawCategory = metadata.failureCategory;
+  const storedCategory =
+    rawCategory === 'provider-capacity' ||
+    rawCategory === 'git-auth' ||
+    rawCategory === 'sandbox-provider'
+      ? rawCategory
+      : 'sandbox-provider';
+  const rawProviderError =
+    typeof metadata.lastProvisioningError === 'string'
+      ? metadata.lastProvisioningError
+      : typeof metadata.provisioningError === 'string'
+        ? metadata.provisioningError
+        : null;
+  const inferredFailure = rawProviderError
+    ? classifySandboxProvisioningFailure(rawProviderError)
+    : null;
+  const inferredSpecificFailure =
+    storedCategory === 'sandbox-provider' && inferredFailure?.category !== 'sandbox-provider'
+      ? inferredFailure
+      : null;
+  const category = inferredSpecificFailure?.category ?? storedCategory;
+  const message =
+    inferredSpecificFailure?.userMessage ??
+    (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
+      ? metadata.errorMessage
+      : 'The sandbox provider could not start this session. Try again.');
+  return { category, message, retryable: true };
+}
+
 async function preserveEstablishedRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   visible: {
@@ -611,8 +650,9 @@ export async function openSession(args: {
         stage: visible.row.status === 'failed' ? 'failed' : 'stopped',
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
-        sandbox: null,
+        sandbox: row?.status === 'error' ? serializeSandboxRow(row) : null,
         opencode_session_id: null,
+        failure: row ? sessionStartFailureFromSandbox(row) : null,
       };
     }
     if (visible.row.status !== 'provisioning') {

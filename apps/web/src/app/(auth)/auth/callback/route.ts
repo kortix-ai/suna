@@ -8,6 +8,8 @@ import {
 } from '@/lib/auth/return-url';
 import {
   LAST_PROJECT_COOKIE,
+  POST_AUTH_INTENT_COOKIE,
+  POST_AUTH_INTENT_MAX_AGE,
   PROJECT_LANDING_PATH,
   parseLastProjectForUser,
   projectPathFromId,
@@ -269,6 +271,17 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
+
+      // Authentication just completed, and this redirect is about to land on
+      // the landing door with whatever referrer the magic link / IdP hop
+      // carried — usually a cross-origin one. The marker is what lets the door
+      // provision a first project anyway; without it a webmail signup is
+      // demoted to the projects list. See navigationMayCreateProject.
+      response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
+        maxAge: POST_AUTH_INTENT_MAX_AGE,
+        path: '/',
+        sameSite: 'lax',
+      });
 
       // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' });

@@ -1,5 +1,6 @@
 import { docsMdxComponents } from '@/components/markdown/docs-mdx-components';
 import { Button } from '@/components/ui/button';
+import { socialMetadata } from '@/lib/seo/metadata';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
 import { cn } from '@/lib/utils';
@@ -158,9 +159,12 @@ export async function generateMetadata(props: {
       ? `${pageTitle} – Kortix Docs`
       : 'Kortix Docs';
 
+  const description = page.data.description ?? 'Kortix developer documentation.';
+  const url = `${CANONICAL_ORIGIN}${page.url}`;
   return {
     title: { absolute: title },
-    description: page.data.description ?? 'Kortix developer documentation.',
-    alternates: { canonical: `${CANONICAL_ORIGIN}${page.url}` },
+    description,
+    alternates: { canonical: url },
+    ...socialMetadata(title, description, url),
   };
 }

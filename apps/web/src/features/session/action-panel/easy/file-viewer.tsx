@@ -19,10 +19,14 @@
  * side, so the actions never move.
  */
 
+import { HighlightedCode, PIERRE_THEME } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { Button } from '@/components/ui/button';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -416,30 +420,43 @@ function FileBody({
   }
 
   if (markdown) {
+    // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
+    // the raw file, markdown reads the block as prose: the opening `---` is a
+    // thematic break and the closing `---` is a setext underline, so an agent
+    // definition rendered as a stray horizontal rule followed by its entire
+    // metadata as one giant bold heading. Same split, same card as the chat's
+    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
+    // an agent file looks like.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
       <div className="p-10">
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={content} allowHtml={false} />
+        <DocMarkdown content={body} allowHtml={false} />
       </div>
     );
   }
 
-  // `CodeBlockCode`, not `CodeHighlight`: the latter wraps the code in a
-  // document-style block — a tinted card, a language chip, and its own copy
+  // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
+  // document-style card — a tinted surface, a language chip, and its own copy
   // button. That chrome is right for a snippet embedded IN prose. Here the code
   // IS the document, so the chrome just boxes the file inside a second box and
   // puts a second copy button next to the toolbar's. Plain highlighted text,
-  // filling the pane, is the whole job.
+  // filling the pane, is the whole job — which is exactly what HighlightedCode
+  // renders, so none of the old override classes are needed to strip it.
   //
-  // The padding goes on the <pre> itself, not a wrapper: the tinted background
-  // should run the full width of the pane, with the code inset inside it — a
-  // padded wrapper would inset the tint too and leave a white margin around it.
+  // `PIERRE_THEME` is load-bearing, not a preference: this pane sits beside the
+  // diff viewer and the CodeMirror editor, both of which render in Pierre (see
+  // lib/shiki-theme.ts). On the default markdown palette the file you are
+  // reading would not match the diff of it one pane over.
+  //
+  // Only the horizontal padding is dropped, not the vertical: the pane's own
+  // background should run edge to edge, so the code is inset from the bottom
+  // but flush to the sides.
   return (
-    <CodeBlockCode
-      code={content}
-      language={languageFor(fileName)}
-      className="[&_pre]:rounded-none [&_pre]:!bg-transparent [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
-    />
+    <div className="pb-4 [&_code]:text-[13px]">
+      <HighlightedCode code={content} language={languageFor(fileName)} theme={PIERRE_THEME} />
+    </div>
   );
 }

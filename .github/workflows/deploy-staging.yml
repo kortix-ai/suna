@@ -26,18 +26,16 @@ permissions:
 
 env:
   AWS_REGION: us-west-2
-  CLUSTER: kortix-dev-eks
   NAMESPACE: kortix-staging
   STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
   GATEWAY_APP: kortix-gateway
-  API_HOST: staging-api-eks.kortix.com
+  API_HOST: staging-api-ecs-fargate.kortix.com
   GATEWAY_HOST: gateway-staging.kortix.com
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
   VALUES: infra/k8s/envs/staging/values.yaml
   GATEWAY_VALUES: infra/k8s/envs/staging/gateway-values.yaml
-  ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-staging
 
 jobs:
   preflight:
@@ -97,6 +95,8 @@ jobs:
     name: Sync staging secret bundle
     needs: preflight
     runs-on: ubuntu-latest
+    env:
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
       - uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -185,8 +185,8 @@ jobs:
               ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
               KORTIX_WARM_SNAPSHOT_ENABLED: "false",
               # The staging Supabase database permits 60 connections. ECS can
-              # run 3 API tasks and EKS can run 4 API pods at the same time.
-              # Four app connections plus one leader connection per process
+              # run 3 API tasks. Four app connections plus one leader connection
+              # per process
               # leaves 12 slots for Supabase services, migrations, and QA.
               DB_POOL_MAX: "4"
             }')"
@@ -237,11 +237,8 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
-  # Roll staging ECS Fargate (api + gateway) alongside the EKS deploy, stamping
-  # the same staging version string the EKS values pin carries (kortixVersion)
-  # so both backends report identical versions — the same parity rule prod
-  # enforces. deploy-web `needs:` this job, so a broken ECS staging deploy fails
-  # the staging rollout loudly instead of silently drifting the standby.
+  # Roll staging ECS Fargate (api + gateway). deploy-web `needs:` this job,
+  # so a broken ECS staging deploy fails the staging rollout loudly.
   deploy-ecs:
     name: Deploy API + gateway to staging (ECS Fargate)
     needs: [preflight, sync-secret, migrate-db]
@@ -266,94 +263,8 @@ jobs:
           bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
           bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
 
-  deploy-k8s:
-    name: Deploy API and gateway to staging
-    needs: [preflight, sync-secret, migrate-db]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: staging
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.47.2/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-      - name: Pin staging GitOps image tags
-        env:
-          TAG: staging-${{ needs.preflight.outputs.sha8 }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git fetch origin staging:refs/remotes/origin/staging --quiet
-          git checkout -B staging origin/staging
-          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
-          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$GATEWAY_VALUES"
-          if git diff --quiet -- "$VALUES" "$GATEWAY_VALUES"; then
-            echo "staging GitOps values already pinned to ${TAG}."
-          else
-            git config user.name "kortix-ci[bot]"
-            git config user.email "kortix-ci[bot]@users.noreply.github.com"
-            git add "$VALUES" "$GATEWAY_VALUES"
-            git commit -m "chore(staging): deploy ${TAG} [skip ci]"
-            git push origin HEAD:staging
-          fi
-      - uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-      - name: Apply Argo CD staging applications
-        run: |
-          set -euo pipefail
-          kubectl apply -f infra/k8s/argocd/applications/staging.yaml
-          kubectl apply -f infra/k8s/argocd/applications/gateway-staging.yaml
-          kubectl -n argocd annotate application kortix-staging argocd.argoproj.io/refresh=hard --overwrite
-          kubectl -n argocd annotate application kortix-gateway-staging argocd.argoproj.io/refresh=hard --overwrite
-      - name: Wait for staging deployments
-        env:
-          TAG: staging-${{ needs.preflight.outputs.sha8 }}
-        run: |
-          set -euo pipefail
-          for i in $(seq 1 80); do
-            api_img="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gw_img="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            api_avail="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
-            gw_avail="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
-            api_desired="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            gw_desired="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            echo "($i/80) api=${api_img:-?} ${api_avail:-0}/${api_desired}; gateway=${gw_img:-?} ${gw_avail:-0}/${gw_desired}"
-            if printf '%s' "$api_img" | grep -q ":${TAG}$" \
-               && printf '%s' "$gw_img" | grep -q ":${TAG}$" \
-               && [ "${api_avail:-0}" = "$api_desired" ] \
-               && [ "${gw_avail:-0}" = "$gw_desired" ]; then
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::staging deployments did not roll out to ${TAG}."
-          kubectl -n "$NAMESPACE" get deploy,pods,externalsecret,ingress -o wide || true
-          exit 1
-      - name: Capture ALB hostnames
-        id: ing
-        run: |
-          set -euo pipefail
-          api_alb="$(kubectl -n "$NAMESPACE" get ingress "$API_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          gateway_alb="$(kubectl -n "$NAMESPACE" get ingress "$GATEWAY_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          [ -n "$api_alb" ] && [ -n "$gateway_alb" ]
-          echo "api_alb=$api_alb" >> "$GITHUB_OUTPUT"
-          echo "gateway_alb=$gateway_alb" >> "$GITHUB_OUTPUT"
-    outputs:
-      api_alb: ${{ steps.ing.outputs.api_alb }}
-      gateway_alb: ${{ steps.ing.outputs.gateway_alb }}
-
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
-    needs: deploy-k8s
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -365,43 +276,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: staging
-      - name: Upsert proxied CNAME records
-        env:
-          API_ALB: ${{ needs.deploy-k8s.outputs.api_alb }}
-          GATEWAY_ALB: ${{ needs.deploy-k8s.outputs.gateway_alb }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is required."; exit 1
-          fi
-          upsert() {
-            local name="$1" target="$2"
-            local existing
-            existing="$(curl -fsS \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
-            local id
-            id="$(printf '%s' "$existing" | jq -r '.result[0].id // empty')"
-            local body
-            body="$(jq -n --arg type CNAME --arg name "$name" --arg content "$target" \
-              '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')"
-            if [ -n "$id" ]; then
-              curl -fsS -X PUT \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${id}" \
-                --data "$body" >/dev/null
-            else
-              curl -fsS -X POST \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
-                --data "$body" >/dev/null
-            fi
-            echo "wired ${name}"
-          }
-          upsert "$API_HOST" "$API_ALB"
-          upsert "$GATEWAY_HOST" "$GATEWAY_ALB"
       - name: Deploy staging API router Worker
         working-directory: infra/cloudflare/workers/api-router
         env:
@@ -418,18 +292,15 @@ jobs:
             exit 1
           fi
 
-          # This REST deploy replaces all staging Worker bindings. Keep these
-          # values equal to the staging defaults in wrangler.toml. The API uses
-          # EKS. The gateway uses ECS Fargate.
+          # This REST deploy replaces all staging Worker bindings. The API
+          # and gateway both use ECS Fargate. EKS was decommissioned 2026-08-02.
           metadata="$(jq -cn '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: [
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
-              {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
-              {type:"plain_text", name:"GATEWAY_BACKEND_EKS", text:"https://gateway-staging-eks.kortix.com"},
               {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
             ]
           }')"
@@ -481,8 +352,7 @@ jobs:
 
   deploy-web:
     name: Deploy staging web to Vercel
-    # deploy-ecs in needs = ECS/EKS parity gates the staging rollout the same way
-    # verify-live-version gates prod: a failed ECS roll can't pass silently.
+    # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
     needs: [preflight, wire-cloudflare, deploy-ecs]
     runs-on: ubuntu-latest
     env:
@@ -544,7 +414,7 @@ jobs:
 
   verify:
     name: Verify live staging
-    needs: [preflight, deploy-k8s, wire-cloudflare, deploy-web]
+    needs: [preflight, wire-cloudflare, deploy-web]
     runs-on: ubuntu-latest
     steps:
       - name: Verify API, web TLS, and runtime config
@@ -579,7 +449,7 @@ jobs:
             echo "### Staging verified"
             echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
             echo "- Web: https://${WEB_HOST} serves staging runtime config"
-            echo "- GitOps: API ALB ${{ needs.deploy-k8s.outputs.api_alb }}"
+            echo "- GitOps: API ALB via ECS Fargate"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Move the self-host `:staging` channel tag onto the images just verified ─

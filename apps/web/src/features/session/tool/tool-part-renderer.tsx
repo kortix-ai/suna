@@ -140,7 +140,7 @@ export function ToolPartRenderer({
       <BoundActivateContext.Provider value={boundActivate}>
         <ToolDurationContext.Provider value={toolDurationMs}>
           <BasicTool
-            icon={<CircleAlert />}
+            icon={<CircleAlert className="text-muted-foreground size-4" />}
             trigger={{
               title: display,
               subtitle: 'failed',
@@ -148,9 +148,7 @@ export function ToolPartRenderer({
             }}
             badge="error"
           >
-            <div className="p-0">
-              <ToolError error={errorStr} toolName={part.tool} />
-            </div>
+            <ToolError error={errorStr} toolName={part.tool} />
           </BasicTool>
         </ToolDurationContext.Provider>
       </BoundActivateContext.Provider>

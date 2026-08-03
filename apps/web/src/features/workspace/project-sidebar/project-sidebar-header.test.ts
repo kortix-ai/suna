@@ -34,6 +34,7 @@ describe('project sidebar header', () => {
   // the project name and search that looked clickable and was not.
   test('the control takes the row, so there is no dead strip beside it', () => {
     expect(header).toContain('className="min-w-0 flex-1"');
+    expect(header).not.toContain('max-w-full');
     expect(header).not.toContain('w-fit');
   });
 

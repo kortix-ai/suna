@@ -11,18 +11,13 @@
  * - Variant persistence via useModelStore
  */
 
-import { flattenModels, type FlatModel } from './model-flatten';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
-import { listProjectSecrets } from '../core/rest/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useKortixRouteProjectId } from './route-project';
 import { createAgentSelectionScope } from './agent-selection-scope';
-import {
-  connectedGatewayProviderIdsFromSecretNames,
-  normalizeProviderList,
-} from './provider-selection';
+import { useKortixRouteProjectId } from './route-project';
+import { normalizeProviderList } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -49,9 +44,10 @@ export interface UseOpenCodeLocalOptions {
    */
   defaultAgentName?: string | null;
   /**
-   * Free-tier gate for model visibility, threaded straight into `useModelStore`.
-   * A host that doesn't have a billing/account concept can omit it (default
-   * `false` — nothing is gated).
+   * @deprecated Inert. Entitlement is resolved server-side into each model's
+   * `enabled` flag by `/model-picker` (`freeManagedOnly` drops managed models
+   * for free-tier accounts before the catalog is even served), so there is
+   * nothing left to gate client-side.
    */
   freeTier?: boolean;
   /**
@@ -254,7 +250,6 @@ export function useOpenCodeLocal({
   sessionId,
   boundAgentName,
   defaultAgentName,
-  freeTier,
   resolveServerDefault,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
   // ---- Flatten models from providers (shared with the chat input, so the
@@ -262,35 +257,19 @@ export function useOpenCodeLocal({
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const projectId = useKortixRouteProjectId();
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
-  const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && providerMode === 'gateway',
-    staleTime: 10_000,
-  });
-  const connectedProviderIds = useMemo(() => {
-    if (providerMode !== 'gateway') return undefined;
-    const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : (data?.items ?? []);
-    return connectedGatewayProviderIdsFromSecretNames(
-      new Set(items.map((secret: { name: string }) => secret.name)),
-    );
-  }, [providerMode, secretsQuery.data]);
 
-  // ---- Model store (persisted: visibility, recent, variant) ----
-  const modelStore = useModelStore(flatModels, {
-    connectedProviderIds,
-    freeTier: providerMode === 'gateway' && !!freeTier,
-  });
+  // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
+  const modelStore = useModelStore(flatModels);
 
-  // ---- Model validation: a model is valid only if it's in the flattened list,
-  // which is already filtered to connected + gateway-only providers. This keeps
-  // default/recent resolution from ever selecting a native (bypass) model. ----
+  // ---- Model validation: a model is valid only if it's in the flattened list
+  // (already filtered to connected + gateway-only providers, so default/recent
+  // resolution can never select a native bypass model) AND the server hasn't
+  // turned it off for this project (`enabled`, stamped by `/model-picker`).
+  // The SAME predicate the session picker renders with — a second, client-only
+  // visibility rule here is what let a hidden model stay resolvable. ----
   const isModelValid = useCallback(
-    (model: ModelKey): boolean =>
-      flatModels.some((m) => m.providerID === model.providerID && m.modelID === model.modelID) &&
-      modelStore.isVisible(model),
-    [flatModels, modelStore],
+    (model: ModelKey): boolean => isOfferedModel(flatModels, model),
+    [flatModels],
   );
 
   // ---- First valid model from a list of fallback sources ----
@@ -311,11 +290,6 @@ export function useOpenCodeLocal({
     (key: ModelKey): FlatModel | undefined =>
       flatModels.find((m) => m.modelID === key.modelID && m.providerID === key.providerID),
     [flatModels],
-  );
-
-  const isModelDefaultVisible = useCallback(
-    (model: ModelKey): boolean => modelStore.isVisible(model),
-    [modelStore],
   );
 
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
@@ -433,17 +407,17 @@ export function useOpenCodeLocal({
         const configured = defaults[p.id];
         if (configured) {
           const key = { providerID: p.id, modelID: configured };
-          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
+          if (isModelValid(key)) return key;
         }
         for (const modelID of Object.keys(p.models)) {
           const key = { providerID: p.id, modelID };
-          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
+          if (isModelValid(key)) return key;
         }
       }
     }
 
     return undefined;
-  }, [config?.model, modelStore.recent, providers, isModelValid, isModelDefaultVisible]);
+  }, [config?.model, modelStore.recent, providers, isModelValid]);
 
   // ---- Explicit per-conversation/per-agent picks (highest priority, localStorage) ----
   const explicitModelKey = useMemo<ModelKey | undefined>(
@@ -534,9 +508,6 @@ export function useOpenCodeLocal({
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
         modelStore.setSessionModel(scopedSessionModelKey, next);
-      }
-      if (model) {
-        modelStore.setVisibility(model, true);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -702,7 +673,10 @@ export function useOpenCodeLocal({
       recent: recentModels,
       list: flatModels,
       set: setModel,
-      visible: modelStore.isVisible,
+      // The server's enablement answer, not the localStorage heuristic — the
+      // one predicate every surface (picker list, stash replay, default
+      // resolution) agrees on.
+      visible: isModelValid,
       setVisibility: modelStore.setVisibility,
       cycle: cycleModel,
       hasSessionModel,

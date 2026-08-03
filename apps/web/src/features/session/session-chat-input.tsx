@@ -3,6 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import { searchWorkspaceFiles } from '@/features/files';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import type {
   Agent,
   Command,
@@ -11,34 +15,29 @@ import type {
   Session,
 } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { isImageFile } from '@/lib/utils/file-utils';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
   ArrowUpLeftIcon as ArrowUpLeft,
   ClockIcon as Clock,
   ArrowBendUpLeftIcon as Reply,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
-import { AttachmentPreview } from './composer/attachment-preview';
-import { ComposerToolbar } from './composer/composer-toolbar';
-import { MentionPopover } from './composer/mention-popover';
-import { SlashCommandPopover } from './composer/slash-command-popover';
-import { TodoChip } from './composer/todo-chip';
-import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
 import { resolveComposerResetOnSend } from './composer-reset';
+import { AttachmentPreview } from './composer/attachment-preview';
+import { ComposerToolbar } from './composer/composer-toolbar';
+import { MentionPopover } from './composer/mention-popover';
+import { SlashCommandPopover } from './composer/slash-command-popover';
+import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
@@ -53,8 +52,8 @@ import { useModelConnectionGate } from './use-model-connection-gate';
 // `./composer/agent-selector`, but is a public export of this module (see
 // e.g. `channels-view.tsx`, `schedule-view.tsx`).
 export { AgentSelector } from './composer/agent-selector';
-export type { ProviderListResponse };
 export type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
+export type { ProviderListResponse };
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -78,7 +77,7 @@ function formatRelativeTime(timestamp: number): string {
 // working.
 import type { FlatModel } from './model-flatten';
 
-export { type FlatModel, flattenModels } from './model-flatten';
+export { flattenModels, type FlatModel } from './model-flatten';
 
 export interface SessionChatInputProps {
   onSend: (
@@ -1166,7 +1165,6 @@ function SessionChatInputImpl({
                   </span>
                 </button>
               )}
-              {sessionId && <TodoChip sessionId={sessionId} />}
               {inputSlot}
             </div>
           )}

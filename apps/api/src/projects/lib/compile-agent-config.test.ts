@@ -10,11 +10,19 @@ import { parseManifestText } from '@kortix/manifest-schema';
 let manifestFile: { path: string; content: string } | null = null;
 let mdFileContent: Record<string, string> = {};
 let readRepoFileCalls: string[] = [];
+// Which git ref each read asked for. The compiler used to read the project's
+// DEFAULT branch even for a session on another ref, so a feature-branch session
+// ran main's agents; recording the ref is what makes that visible.
+let refsRead: string[] = [];
 
 mock.module('../git', () => ({
-  readManifestFromRepo: async () => manifestFile,
-  readRepoFile: async (_project: unknown, path: string) => {
+  readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
+    refsRead.push(ref);
+    return manifestFile;
+  },
+  readRepoFile: async (_project: unknown, path: string, ref: string) => {
     readRepoFileCalls.push(path);
+    refsRead.push(ref);
     if (!(path in mdFileContent)) throw new Error(`no such file: ${path}`);
     return mdFileContent[path];
   },
@@ -521,5 +529,49 @@ agents:
       '.kortix/opencode/agents/support.md': supportMd('mode: bogus', 'Body.'),
     };
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
+  });
+});
+
+describe('resolveCompiledAgentConfigForSession — the ref it compiles from', () => {
+  test("compiles from the SESSION's ref, not the project default", async () => {
+    // The bug this covers: a session started on a feature branch compiled main's
+    // manifest and main's agent .md files, so editing an agent, pushing the
+    // branch and starting a session on it changed nothing. It read as "config
+    // never reloads" when in truth the branch was never read.
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': 'Support body.',
+      '.kortix/opencode/agents/pr-bot.md': 'PR bot body.',
+    };
+    refsRead = [];
+
+    await resolveCompiledAgentConfigForSession(PROJECT, 'feature/new-agent');
+
+    expect(new Set(refsRead)).toEqual(new Set(['feature/new-agent']));
+    expect(refsRead).not.toContain('main');
+  });
+
+  test('falls back to the default branch when the session names no ref', async () => {
+    // Every caller before this took the default branch; omitting the argument
+    // must stay byte-identical to that.
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'x', '.kortix/opencode/agents/pr-bot.md': 'y' };
+    refsRead = [];
+
+    await resolveCompiledAgentConfigForSession(PROJECT);
+
+    expect(new Set(refsRead)).toEqual(new Set(['main']));
+  });
+
+  test('a blank ref is treated as absent, not as a ref named ""', async () => {
+    // `base_ref` is a plain text column; an empty string would otherwise ask git
+    // for a ref that cannot exist and drop the whole agent config to null.
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'x', '.kortix/opencode/agents/pr-bot.md': 'y' };
+    refsRead = [];
+
+    await resolveCompiledAgentConfigForSession(PROJECT, '   ');
+
+    expect(new Set(refsRead)).toEqual(new Set(['main']));
   });
 });

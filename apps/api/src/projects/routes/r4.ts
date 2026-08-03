@@ -8,22 +8,24 @@ import {
 import {
   executorConnectionProfiles,
   executorConnectors,
+  projectSessionConnectorBindings,
   projectSessions,
   projectTriggerRuntime,
   projects,
   sessionSandboxes,
-  projectSessionConnectorBindings,
 } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import {
+  agentMailProvisioningClientIds,
   agentMailUpstreamStatus,
   createAgentMailInbox,
   createAgentMailWebhook,
   isAgentMailInboxLimitError,
   resolveAgentMailApiKey,
 } from '../../channels/agentmail-api';
+import { compileEmailSenderRegex } from '../../channels/email/sender-policy-regex';
 import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
@@ -58,8 +60,6 @@ import {
   relayTurnStep,
 } from '../../channels/turn-relay';
 import { setProjectBotName } from '../../channels/voice-identity';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { config } from '../../config';
 import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
 import { revokeProfileOAuth2 } from '../../executor/oauth2-store';
@@ -73,36 +73,43 @@ import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
+import {
+  getProjectRoutingPolicy,
+  setProjectModelOverrides,
+} from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
+import { loadProjectAgents } from '../agents';
 import {
   assertProjectCapability,
   loadProjectForUser,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import { callerKortixSessionId } from '../lib/caller-session';
 import {
-  connectorAuthorizationMatchesStrategy,
-  isTrustedManagedChannelAuthorization,
   type ConnectorAuthorizationOwnerType,
   type ConnectorAuthorizationStrategy,
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
 } from '../lib/connector-authorization-strategy';
+import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -125,6 +132,7 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
 import { listProjectSecretsSnapshot } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
@@ -1886,6 +1894,8 @@ projectsApp.openapi(
       display_name?: string;
       displayName?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
+      agent_name?: string | null;
+      agentName?: string | null;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -1900,6 +1910,27 @@ projectsApp.openapi(
 
     const connectorSlug =
       (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const requestedAgent = body.agent_name ?? body.agentName;
+    const agentName =
+      typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent.trim() : null;
+    if (requestedAgent !== undefined && requestedAgent !== null && !agentName) {
+      return c.json({ error: 'agent_name cannot be blank', code: 'invalid_agent' }, 400);
+    }
+    if (agentName) {
+      const loadedAgents = await loadProjectAgents(loaded.row, {
+        forceRefresh: true,
+        rethrowReadErrors: true,
+      });
+      if (!loadedAgents.specs.some((agent) => agent.enabled && agent.name === agentName)) {
+        return c.json(
+          {
+            error: `Agent "${agentName}" is not declared or is disabled`,
+            code: 'invalid_agent',
+          },
+          400,
+        );
+      }
+    }
     const displayName = (
       body.display_name ??
       body.displayName ??
@@ -1923,7 +1954,7 @@ projectsApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
-    const clientId = `kortix-project-${projectId}`;
+    const clientIds = agentMailProvisioningClientIds(projectId, connectorSlug);
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
     if (existingInboxId && existingEmail) {
@@ -1949,7 +1980,7 @@ projectsApp.openapi(
           username,
           domain,
           displayName,
-          clientId,
+          clientId: clientIds.inbox,
           metadata: {
             provider: 'kortix',
             project_id: projectId,
@@ -1971,7 +2002,7 @@ projectsApp.openapi(
         apiKey,
         inboxId: inbox.inbox_id,
         url: `${agentMailWebhookBaseUrl(c.req.url)}/v1/webhooks/email/agentmail`,
-        clientId: `kortix-email-${projectId}`,
+        clientId: clientIds.webhook,
       });
       webhookId = webhook.webhook_id;
       webhookSecret = webhook.secret;
@@ -1992,6 +2023,7 @@ projectsApp.openapi(
       webhookId,
       webhookSecret,
       senderPolicy,
+      agentName,
     });
     await reconcileChannelConnectors(projectId);
     return c.json({
@@ -2112,33 +2144,11 @@ function normalizeAgentMailUsername(input: string | null | undefined): string | 
   return trimmed || null;
 }
 
-// Small static check for the classic catastrophic-backtracking shapes —
-// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
-// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
-// persisted and later run against every inbound email sender.
-const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
-const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
-
-function hasCatastrophicBacktracking(pattern: string): boolean {
-  return NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern);
-}
-
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
   const policy = normalizeSenderPolicy(input);
-  if (policy.allowedRegex) {
-    try {
-      new RegExp(policy.allowedRegex);
-    } catch {
-      throw new Error('Email sender regex is invalid');
-    }
-    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
-      throw new Error(
-        'Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)',
-      );
-    }
-  }
+  if (policy.allowedRegex) compileEmailSenderRegex(policy.allowedRegex);
   return policy;
 }
 
@@ -2752,6 +2762,11 @@ projectsApp.openapi(
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
+    // What `auto` resolves to for this project. Served below so the client can
+    // LOCK its switch instead of offering a toggle that always 409s.
+    const effectiveDefault = toWireModel(
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
+    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
@@ -2765,7 +2780,104 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    return c.json({ models });
+    // Server-owned per-project enablement, resolved HERE and stamped onto each
+    // model so every client renders the same answer. The session picker shows
+    // the enabled ones; "Manage models" shows them all and switches on this
+    // flag. Neither re-derives it. Display-only: the gateway never refuses a
+    // request over enablement (that 400'd in-use models — the #5932 revert).
+    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
+    return c.json({
+      models: Object.fromEntries(
+        Object.entries(models).map(([id, model]) => [
+          id,
+          { ...model, enabled: enabled.get(id) ?? true },
+        ]),
+      ),
+      // The stored EXCEPTIONS, so a client toggling one model can PUT the
+      // merged map back without having to reconstruct it by diffing the
+      // resolved flags against a default it would have to recompute.
+      modelOverrides: routing?.modelOverrides ?? {},
+      // The model `auto` resolves to. It cannot be turned off (that would break
+      // every default request — the PUT refuses it with 409), so the client
+      // renders its switch as locked rather than letting the user click into an
+      // error.
+      defaultModel: effectiveDefault || undefined,
+      // True while the project has made no exceptions at all — the only thing
+      // "reset to defaults" has left to act on, and not derivable from the
+      // `enabled` flags alone (they look identical either way).
+      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
+// Replace the project's EXCEPTIONS to the default model set (the newest model
+// per family). Display-only: it decides what the pickers OFFER, never what the
+// gateway serves. An empty object restores the pure default. Refuses to turn
+// off the project's own default model (the picker would hide what `auto`
+// resolves to).
+const modelEnablementBody = z.object({
+  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
+});
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/model-enablement',
+    tags: ['projects'],
+    summary: 'PUT /:projectId/model-enablement',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: modelEnablementBody } } },
+    },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+    const accountId = loaded.row.accountId as string;
+    const userId = c.get('userId') as string;
+
+    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+    }
+    const modelOverrides: Record<string, boolean> = {};
+    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
+      const wire = toWireModel(model.trim());
+      if (wire) modelOverrides[wire] = enabled;
+    }
+
+    // A project must never turn off the model its own `auto` resolves to. Only
+    // an explicit `false` can do that — omitting it leaves the default in
+    // charge, which always offers the current one.
+    const defaults = await getAccountModelDefaults(accountId, projectId);
+    const effectiveDefault =
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId();
+    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
+      return c.json(
+        {
+          error: 'Cannot disable the project default model — change the default first.',
+          code: 'cannot_disable_default',
+        },
+        409,
+      );
+    }
+
+    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
+    return c.json({ ok: true, modelOverrides });
   },
 );
 

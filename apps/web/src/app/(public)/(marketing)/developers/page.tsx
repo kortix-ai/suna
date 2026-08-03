@@ -2,8 +2,8 @@
 
 import { CliDemo } from '@/components/home/cli-demo';
 import { Reveal } from '@/components/home/reveal';
+import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
@@ -134,11 +134,10 @@ function CodeFile({ name, code, language }: { name: string; code: string; langua
   const tab = name.split('/').pop() ?? name;
   return (
     <CodeWindowFrame tab={tab} className="px-0">
-      <CodeBlockCode
-        code={code.trim()}
-        language={language}
-        className="p-0 text-sm *:p-0 [&_pre]:!rounded-none [&_pre]:!bg-transparent [&_pre]:p-0 [&_span]:p-0"
-      />
+      {/* No wrapper classes: the frame already supplies the scroller, the
+          vertical padding, and `font-mono text-sm`. Every class this call used
+          to pass existed only to switch off the old card. */}
+      <HighlightedCode code={code.trim()} language={language} />
     </CodeWindowFrame>
   );
 }
@@ -533,11 +532,7 @@ function HeroWorkspace() {
           </span>
         </div>
         <div className="text-foreground overflow-x-auto text-sm">
-          <CodeBlockCode
-            code={KORTIX_YAML}
-            language="yaml"
-            className="[&_pre]:rounded-none [&_pre]:px-0"
-          />
+          <HighlightedCode code={KORTIX_YAML} language="yaml" />
         </div>
       </div>
     </div>

@@ -438,6 +438,12 @@ projectsApp.openapi(
         sessionId,
         agentName: normalizeString(body.agent_name) ?? undefined,
         sandboxSlug: normalizeString(body.sandbox_slug) ?? undefined,
+        pendingPrompt:
+          body.pending_prompt &&
+          typeof body.pending_prompt === 'object' &&
+          !Array.isArray(body.pending_prompt)
+            ? (body.pending_prompt as Record<string, unknown>)
+            : undefined,
       });
       return c.json(
         serializeSession(claimed, {

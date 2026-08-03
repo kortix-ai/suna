@@ -31,7 +31,7 @@ const helpData = {
       items: [
         {
           title: 'What are Credits?',
-          url: '/credits-explained',
+          url: '/help/credits',
         },
       ],
     },

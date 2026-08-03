@@ -15,6 +15,7 @@ import {
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
+import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 /**
@@ -209,6 +210,8 @@ export async function syncSandboxEnvForPrompt(args: {
    *  grant is resolved from THIS, not from the session's create-time agent —
    *  see resolveOwnerRawEnv. Null/'default' means "the session's own agent". */
   requestedAgent?: string | null;
+  /** Runtime env the daemon applies before the prompt reaches OpenCode. */
+  opencodeEnv?: Record<string, string | null>;
 }): Promise<void> {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(
@@ -224,6 +227,7 @@ export async function syncSandboxEnvForPrompt(args: {
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
+    opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
@@ -410,6 +414,86 @@ async function runBounded<T>(
  * Returns whether a live box actually took it, so the caller can tell the user
  * whether the change is in effect NOW or only from the next turn.
  */
+/**
+ * Recompile this session's agent config from git and deliver it to the running box.
+ *
+ * The compiled agent config — agents, their prompts, permissions, model — is the
+ * one part of a session's configuration with no runtime source. It is compiled
+ * once at provision and handed down as `KORTIX_COMPILED_AGENT_CONFIG`, so a
+ * session merged past days ago keeps running the agents it booted with. Pulling
+ * the branch inside the sandbox does not help (the compiled bytes never came
+ * from the working tree) and neither did restarting opencode (the daemon's env
+ * was unchanged, so a respawn rebuilt the same config).
+ *
+ * Recompiles from `baseRef` — the ref the SESSION runs on, which is not always
+ * the project default.
+ *
+ * Costs an opencode restart, because opencode reads its config only at spawn.
+ * Callers that are already restarting the box pay nothing extra; a caller doing
+ * this mid-session is interrupting a turn and must say so.
+ */
+export async function pushSessionAgentConfigToSandbox(input: {
+  projectId: string;
+  sessionId: string;
+  repoUrl: string;
+  defaultBranch: string;
+  manifestPath?: string | null;
+  baseRef?: string | null;
+}): Promise<{ applied: boolean; reason?: string }> {
+  try {
+    const compiled = await resolveCompiledAgentConfigForSession(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      input.baseRef,
+    );
+    // `null` is a v1 project or an unreadable manifest. Pushing an empty value
+    // would DELETE the agent config the box is running — a v1 project has none
+    // to begin with, and for a transient read failure that would be a silent
+    // downgrade to no agents at all. Leave the box as it is.
+    if (!compiled) return { applied: false, reason: 'no compiled agent config' };
+
+    const [row] = await db
+      .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
+      .from(sessionSandboxes)
+      .where(
+        and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
+      )
+      .limit(1);
+    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+
+    const config = (row.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+
+    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
+
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: SANDBOX_SERVICE_PORT,
+      transport: 'http',
+    });
+    await postEnvToDaemon({
+      previewUrl: url,
+      providerHeaders: headers,
+      serviceKey,
+      snapshot,
+      opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG: compiled },
+      // Restarts opencode so it rebuilds its config against the new agents.
+      refreshModels: true,
+    });
+    return { applied: true };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);
+    return { applied: false, reason };
+  }
+}
+
 export async function pushSessionModelToSandbox(input: {
   projectId: string;
   sessionId: string;

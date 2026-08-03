@@ -10,6 +10,7 @@ describe('track event registry (W5)', () => {
       'deliverable_opened',
       'deliverable_downloaded',
       'ask_for_changes_clicked',
+      'app_send_to_agent_clicked',
       'present_opened',
       'app_opened_new_tab',
       'app_link_copied',

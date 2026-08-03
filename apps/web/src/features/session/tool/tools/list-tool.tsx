@@ -11,6 +11,7 @@ import {
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
@@ -48,20 +49,25 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {hasResults ? (
-        <div data-scrollable className="max-h-72 overflow-auto">
+        <ToolResultCard>
           <InlineFileList
             paths={filePaths}
             onFileClick={(fp) => openFileWithList(fp, filePaths)}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />
-        </div>
+        </ToolResultCard>
       ) : isNoResults ? (
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
-          )}
-        />
+        // "Empty" is still a result the tool returned, so it keeps the same
+        // card the file list gets. Bare, the sentence floated with no edge and
+        // an empty directory read as a rendering failure rather than an answer.
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
+            )}
+          />
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="list" />
       ) : null}

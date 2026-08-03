@@ -1,13 +1,12 @@
 /**
- * Single source of truth for the Shiki code-highlighting theme used across
- * the app — markdown code blocks, file viewers, diff renderers, thumbnails.
+ * The Pierre palette: Pierre Dark / Pierre Light, shared by `@pierre/diffs`
+ * (which uses the same names internally), the CodeMirror theme in
+ * `lib/codemirror-pierre-theme.ts`, and — through `PIERRE_THEME` in
+ * `components/markdown/code` — the easy-panel file viewer, so panes that sit
+ * side by side agree. Markdown code uses its own pair and does not come here.
  *
- * Pierre Dark / Pierre Light pair with `@pierre/diffs` (which uses the same
- * names internally) so every code surface — markdown fences, file content,
- * diff hunks — renders with one consistent palette.
- *
- * Pierre's themes are TextMate-style JSON objects; Shiki accepts them
- * directly when passed to `getSingletonHighlighter({ themes: [...] })`.
+ * These are TextMate-style JSON objects; Shiki keys them by their `.name`,
+ * so a call site passes the object to load it and the name to reference it.
  */
 import pierreDark from '@pierre/theme/pierre-dark';
 import pierreLight from '@pierre/theme/pierre-light';
