@@ -52,31 +52,41 @@ describe('summarizeConnectorActions', () => {
 describe('describeConnectorActionCounts', () => {
   test('read only, singular', () => {
     expect(describeConnectorActionCounts({ readCount: 1, writeCount: 0, sampleNames: [] })).toBe(
-      '1 read action.',
+      '1 read tool.',
     );
   });
 
   test('read only, plural', () => {
     expect(describeConnectorActionCounts({ readCount: 3, writeCount: 0, sampleNames: [] })).toBe(
-      '3 read actions.',
+      '3 read tools.',
     );
   });
 
   test('write only, singular', () => {
     expect(describeConnectorActionCounts({ readCount: 0, writeCount: 1, sampleNames: [] })).toBe(
-      '1 write action.',
+      '1 write tool.',
     );
   });
 
   test('write only, plural', () => {
     expect(describeConnectorActionCounts({ readCount: 0, writeCount: 4, sampleNames: [] })).toBe(
-      '4 write actions.',
+      '4 write tools.',
     );
   });
 
   test('read and write together, each pluralized independently', () => {
     expect(describeConnectorActionCounts({ readCount: 1, writeCount: 2, sampleNames: [] })).toBe(
-      '1 read action, 2 write actions.',
+      '1 read tool, 2 write tools.',
     );
+  });
+
+  // `ConnectorAction` is the SDK's TYPE name. It is not what the rest of the
+  // connector surface calls the thing: the modal header prints `19 tools`, the
+  // card summary `19 tools · OPENAPI`, the Permissions search `Search 19
+  // tools`. This line was the one place the type name reached the user.
+  test('the copy says "tools" — one word for one concept, on one screen', () => {
+    const line = describeConnectorActionCounts({ readCount: 12, writeCount: 7, sampleNames: [] });
+    expect(line).toBe('12 read tools, 7 write tools.');
+    expect(line).not.toContain('action');
   });
 });

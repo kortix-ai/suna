@@ -17,7 +17,6 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
 import { CommandIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -25,7 +24,9 @@ import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid } from '../catalog-grid';
+import { CatalogNoMatch } from '../catalog-no-match';
 import { EntityDetailModal } from '../entity-modal';
+import { projectDetailQuery } from '../project-detail-query';
 import { filterCommands } from './command-filter';
 
 /**
@@ -41,7 +42,8 @@ import { filterCommands } from './command-filter';
  * the clicked command. `selectedPath` is looked up against the unfiltered
  * `commands` list, not `filtered` — so typing into search while the modal is
  * open can't yank it shut out from under the user.
- * "New" and the empty state's create path reuse `useConfigureThread` /
+ * "New" in the header and "Create a command" in the empty state are the SAME
+ * control under two labels (`createButton`), reusing `useConfigureThread` /
  * `newConfigPrompt('command')` unchanged — creation still happens by an agent
  * editing the repo on a branch, not a form here.
  */
@@ -52,11 +54,7 @@ export function CommandsPage({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
-  });
+  const detailQuery = useQuery(projectDetailQuery(projectId));
 
   const commands = useMemo(() => {
     const raw = detailQuery.data?.config.commands;
@@ -78,27 +76,31 @@ export function CommandsPage({ projectId }: { projectId: string }) {
   // points at the wrong fix (clear the search, not create a command).
   const emptyKind = catalogEmptyKind(commands.length, filtered.length);
 
-  const newButton = canWrite ? (
-    <Button
-      size="sm"
-      variant="secondary"
-      onClick={() => configure.start(newConfigPrompt('command'))}
-      disabled={configure.pending}
-    >
-      {configure.pending ? (
-        <Loading className="size-4 shrink-0" />
-      ) : (
-        <PlusIcon className="size-4" />
-      )}
-      New
-    </Button>
-  ) : null;
+  // One control, two labels. The header has a title beside it and can be terse;
+  // the empty state is the whole screen and has to name what it creates. Both
+  // start the same configure thread, so they cannot drift apart.
+  const createButton = (label: string) =>
+    canWrite ? (
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => configure.start(newConfigPrompt('command'))}
+        disabled={configure.pending}
+      >
+        {configure.pending ? (
+          <Loading className="size-4 shrink-0" />
+        ) : (
+          <PlusIcon className="size-4" />
+        )}
+        {label}
+      </Button>
+    ) : null;
 
   return (
     <CapabilityPageShell
       title="Commands"
       description="Slash actions people and agents can run in a session."
-      action={newButton}
+      action={createButton('New')}
       search={
         <InputGroupSearch>
           <InputGroupSearchIcon>
@@ -121,15 +123,17 @@ export function CommandsPage({ projectId }: { projectId: string }) {
         isEmpty={emptyKind !== null}
         empty={
           emptyKind === 'no-match' ? (
-            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              No matches for <span className="text-foreground font-mono">{query.trim()}</span>.
-            </p>
+            <CatalogNoMatch query={query} />
           ) : (
             <EmptyState
               icon={CommandIcon}
               size="sm"
               title="No commands yet"
               description="Create a command to give agents reusable slash actions."
+              // The description invites an action; without this the screen was
+              // a dead end and the only way to create anything was the header
+              // button the user has already scrolled past.
+              action={createButton('Create a command')}
             />
           )
         }

@@ -205,6 +205,25 @@ function EntityModalBody({
                 ))}
               </nav>
             ) : null}
+
+            {/* A failed listing and a single-file entity both render no tree,
+                which made a 403/500 look like "this skill is one file". No
+                skeleton (see above) precisely because absence is normal here —
+                so the failure has to say so in words, with its own Retry. It
+                is a line, not an `ErrorState`: the file pane beside it still
+                works, and this rail is 256px wide. */}
+            {filesQuery.isError ? (
+              <p className="text-muted-foreground text-[11px] text-pretty">
+                Couldn’t list the other files here.{' '}
+                <button
+                  type="button"
+                  onClick={() => void filesQuery.refetch()}
+                  className="text-foreground underline underline-offset-2"
+                >
+                  Retry
+                </button>
+              </p>
+            ) : null}
           </div>
 
           {/* Right — the selected file's content. */}

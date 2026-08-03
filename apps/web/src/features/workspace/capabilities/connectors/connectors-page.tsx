@@ -1,6 +1,6 @@
 'use client';
 
-import { getProjectDetail, listConnectors, type DiscoverIntegration } from '@kortix/sdk';
+import { listConnectors, type AdminConnector, type DiscoverIntegration } from '@kortix/sdk';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +41,8 @@ import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid } from '../catalog-grid';
+import { CatalogNoMatch } from '../catalog-no-match';
+import { projectDetailQuery } from '../project-detail-query';
 import {
   ALL_CATEGORIES,
   CategorySelect,
@@ -48,6 +50,7 @@ import {
   useDiscoverBrowse,
 } from './connector-browse';
 import {
+  connectorDisplayName,
   connectorSummary,
   defaultConnectorScope,
   filterConnectors,
@@ -156,17 +159,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     queryFn: () => listConnectors(projectId),
     staleTime: 10_000,
   });
-  const projectQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 60_000,
-  });
+  const projectQuery = useQuery(projectDetailQuery(projectId));
 
   const connectors = useMemo(
     () => connectorsQuery.data?.connectors ?? [],
     [connectorsQuery.data],
   );
   const existingSlugs = useMemo(() => connectors.map((c) => c.slug), [connectors]);
+
+  // What the card actually shows, handed to the search so typing a word the
+  // user can read on screen matches the card carrying it.
+  const describeConnector = useCallback(
+    (connector: AdminConnector) =>
+      connectorSummary(connector, providerLabel(connector.provider)),
+    [],
+  );
 
   const experimental = projectQuery.data?.project?.experimental;
   const browseEnabled = experimental?.connectors_api_discover === true;
@@ -213,6 +220,23 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [connectors],
   );
 
+  // Both queries gate what this page can offer, so both have to be able to
+  // report a failure and both have to be retried.
+  //
+  // `projectQuery` supplies `experimental`, and every flag read off it FAILS
+  // CLOSED: a 500 leaves `browseEnabled` and `emailChannelEnabled` false, which
+  // silently removes the Browse chip, `AddAppPanel`'s Discover tab and its
+  // Channels tab. `settled` does not save us — react-query drops `isLoading`
+  // once a query has exhausted its retries, so on failure the page rendered as
+  // fully loaded and three capabilities were simply gone. Naming only
+  // `connectorsQuery` here also meant the one Retry on screen refetched the
+  // query that had not failed.
+  const isError = connectorsQuery.isError || projectQuery.isError;
+  const retry = useCallback(() => {
+    if (connectorsQuery.isError) void connectorsQuery.refetch();
+    if (projectQuery.isError) void projectQuery.refetch();
+  }, [connectorsQuery, projectQuery]);
+
   // Browse exists only where `connectors_api_discover` is on; Needs attention
   // only while something is unhealthy — an always-visible zero-count filter is
   // noise.
@@ -238,15 +262,25 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const scope: ConnectorScope = visibleScopes.includes(rawScope) ? rawScope : 'project';
 
   const filtered = useMemo(
-    () => filterConnectors(connectors, { scope, query }),
-    [connectors, scope, query],
+    () => filterConnectors(connectors, { scope, query, describe: describeConnector }),
+    [connectors, scope, query, describeConnector],
   );
+  // Same `describe` as the grid, or a tab could report a hit the grid does not
+  // show.
   const counts = useMemo(
     () => ({
-      project: filterConnectors(connectors, { scope: 'project', query }).length,
-      attention: filterConnectors(connectors, { scope: 'attention', query }).length,
+      project: filterConnectors(connectors, {
+        scope: 'project',
+        query,
+        describe: describeConnector,
+      }).length,
+      attention: filterConnectors(connectors, {
+        scope: 'attention',
+        query,
+        describe: describeConnector,
+      }).length,
     }),
-    [connectors, query],
+    [connectors, query, describeConnector],
   );
 
   const browse = useDiscoverBrowse(projectId, query, browseEnabled && scope === 'browse');
@@ -356,18 +390,19 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           // too. Gating on the connector list alone let a flagged project with
           // no connectors flash "No connectors yet" for one render before the
           // flag arrived and moved it to Browse. Same gate as the filter row.
+          //
+          // `isError`/`retry` cover BOTH queries for the same reason — see
+          // their definition above.
           isLoading={!settled}
-          isError={connectorsQuery.isError}
-          onRetry={() => connectorsQuery.refetch()}
+          isError={isError}
+          onRetry={retry}
           isEmpty={emptyKind !== null}
           empty={
             emptyKind === 'no-match' ? (
               // The scope is deliberately not named here — "in In project"
               // does not read as English, and the per-scope counts on the tabs
               // above already show the user which scope does have a hit.
-              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                No matches for <span className="text-foreground font-mono">{query.trim()}</span>.
-              </p>
+              <CatalogNoMatch query={query} />
             ) : (
               <EmptyState
                 icon={PlugIcon}
@@ -399,8 +434,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               // column (55.68px) is what drives `CATALOG_CARD_HEIGHT_CLASSNAME`,
               // not a 36.8px tile.
               leading={<ConnectorAppIcon connector={connector} size="lg" />}
-              title={connector.name?.trim() || connector.slug}
-              description={connectorSummary(connector, providerLabel(connector.provider))}
+              title={connectorDisplayName(connector)}
+              description={describeConnector(connector)}
               badges={<ConnectorStatusBadge connector={connector} />}
               onClick={() => setDetailSlug(connector.slug)}
             />
@@ -414,11 +449,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         existingSlugs={existingSlugs}
         canWrite={canWrite}
         onClose={() => setBrowseTarget(null)}
+        // Byte-for-byte the handler `AddAppPanel` gets below, because the two
+        // run the same journey and used to end differently: on a partial
+        // failure (manifest written, sync failed) `DiscoverAddFlow` passed the
+        // slug and this opened the detail modal on a connector `listConnectors`
+        // may not return yet — leaving `?c=<slug>` stranded in the URL to pop
+        // the modal open unbidden on a later refetch. `AddAppPanel` omits the
+        // slug in that case (`connectors-view.tsx:3813`, `:3982`, `:4704`), and
+        // that is now the one contract.
         onAdded={(slug) => {
           setBrowseTarget(null);
           invalidate();
-          setScopeChoice('project');
-          setDetailSlug(slug);
+          if (slug) {
+            setScopeChoice('project');
+            setDetailSlug(slug);
+          }
         }}
       />
 

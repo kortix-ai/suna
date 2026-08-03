@@ -62,10 +62,23 @@ export function AuthorizationStrategyField({
    * directly above it (the connector Settings rung's "Who it connects as") —
    * so the two do not stack and repeat the same fact in two vocabularies.
    * Defaults to `false`; every other caller is unaffected.
+   *
+   * It never leaves the control unnamed. In the interactive branch the
+   * suppressed `FieldLabel htmlFor` was the select's ONLY name source, so
+   * `hideLabel` alone would have shipped a form control with no accessible
+   * name (WCAG 4.1.2) — invisible to `tsc`, to eslint and to every test here.
+   * That combination is one line away: `rung-settings.tsx` today passes both
+   * `hideLabel` and a `lockedReason`, and its own comment says re-enabling
+   * editing means deleting `lockedReason`. So the two props are coupled below
+   * rather than documented apart — documenting it was tried, twice, and this
+   * still surprised a reviewer.
    */
   hideLabel?: boolean;
 }) {
   const id = `${idPrefix}-authorization-strategy`;
+  /** The name the `<FieldLabel>` would have carried, moved onto the control
+   *  itself whenever that label is suppressed. */
+  const suppressedLabel = hideLabel ? 'Authorization owner' : undefined;
 
   // Settled connectors get a STATEMENT, not a dead input. A disabled select
   // still looks operable — it keeps the chevron, the focus ring and the hover —
@@ -118,7 +131,7 @@ export function AuthorizationStrategyField({
         disabled={disabled || pending}
         onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
       >
-        <SelectTrigger id={id}>
+        <SelectTrigger id={id} aria-label={suppressedLabel}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

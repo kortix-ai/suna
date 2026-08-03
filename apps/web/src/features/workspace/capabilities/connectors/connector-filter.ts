@@ -36,6 +36,18 @@ export function defaultConnectorScope(
 }
 
 /**
+ * What a connector is called on screen.
+ *
+ * The grid card, the detail modal header and every string derived from either
+ * have to agree, so the fallback lives here rather than being retyped at each
+ * site. A connector's `name` is optional and may be whitespace; the slug is
+ * the only field guaranteed to be present and non-empty.
+ */
+export function connectorDisplayName(connector: Pick<AdminConnector, 'name' | 'slug'>): string {
+  return connector.name?.trim() || connector.slug;
+}
+
+/**
  * A connector card's one-line description: `12 tools · MCP`.
  *
  * `providerLabel` is passed in rather than imported. It lives in
@@ -52,15 +64,36 @@ export function connectorSummary(
   return `${count} ${count === 1 ? 'tool' : 'tools'} · ${providerLabel}`;
 }
 
+/**
+ * `describe` is the card's own visible description — the page passes
+ * `connectorSummary(...)`, which is what the user is actually reading. Without
+ * it, typing `openapi` reported "No matches for openapi" while every card on
+ * screen ended in that exact word. Skills (`skill-scope.ts`) and Commands
+ * (`command-filter.ts`) already match name + description; this is the same
+ * contract.
+ *
+ * It is a callback rather than a field because the description is composed
+ * from `providerLabel`, which lives in `connectors-view.tsx` — a 5,200-line
+ * client component this framework-free module must not import. Omitting it
+ * narrows the search to slug + name; it never widens it.
+ */
 export function filterConnectors(
   connectors: readonly AdminConnector[],
-  opts: { scope: ConnectorScope; query: string },
+  opts: {
+    scope: ConnectorScope;
+    query: string;
+    describe?: (connector: AdminConnector) => string;
+  },
 ): AdminConnector[] {
   if (opts.scope === 'browse') return [];
   const q = opts.query.trim().toLowerCase();
   return connectors.filter((c) => {
     if (opts.scope === 'attention' && !connectorNeedsAttention(c)) return false;
     if (!q) return true;
-    return c.slug.toLowerCase().includes(q) || (c.name ?? '').toLowerCase().includes(q);
+    return (
+      c.slug.toLowerCase().includes(q) ||
+      (c.name ?? '').toLowerCase().includes(q) ||
+      (opts.describe?.(c) ?? '').toLowerCase().includes(q)
+    );
   });
 }

@@ -56,6 +56,11 @@ import { ConnectorProfileModal } from '@/features/workspace/customize/sections/c
  * duplication left here is the create mutation and the surface-picker markup.
  * This flow also carries no Pipedream branch — the browse grid is catalog
  * integrations only, so managed OAuth stays in the Add-connector modal.
+ *
+ * The one thing that HAS to match, and once did not, is `onAdded`: same
+ * `(slug?: string)` signature, and the slug omitted on a sync failure. The two
+ * had diverged there, so the same partial failure opened the detail modal from
+ * Browse and not from Add connector, on one page.
  */
 /** A surface the user picked, narrowed to the ones that carry a template. */
 interface VariantTarget {
@@ -77,7 +82,14 @@ export function DiscoverAddFlow({
   existingSlugs: readonly string[];
   canWrite: boolean;
   onClose: () => void;
-  onAdded: (slug: string) => void;
+  /**
+   * The connector was created. The slug is OMITTED when the manifest write
+   * succeeded but synchronization did not — the caller must not navigate to a
+   * connector the list may not carry yet. Same signature and same rule as
+   * `AddAppPanel`'s `onAdded` (`connectors-view.tsx:3645`), which is the other
+   * half of this journey.
+   */
+  onAdded: (slug?: string) => void;
 }) {
   // The variant the user picked, held separately so the surface list can close
   // before the profile form opens (two stacked modals would trap focus twice).
@@ -137,7 +149,9 @@ export function DiscoverAddFlow({
         warningToast(
           `Added ${name} to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
         );
-        onAdded(slug);
+        // No slug: see `onAdded`'s contract above. `discover-catalogue.tsx:197`
+        // and the three `AddAppPanel` create paths do the same.
+        onAdded();
         return;
       }
       successToast(`Added ${name}`);

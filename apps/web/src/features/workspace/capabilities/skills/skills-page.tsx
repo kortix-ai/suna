@@ -19,7 +19,6 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -31,7 +30,9 @@ import { CapabilityPageShell } from '../capability-page-shell';
 import { CatalogCard } from '../catalog-card';
 import { catalogEmptyKind } from '../catalog-empty';
 import { CatalogGrid } from '../catalog-grid';
+import { CatalogEmptyNote, CatalogNoMatch } from '../catalog-no-match';
 import { EntityDetailModal } from '../entity-modal';
+import { projectDetailQuery } from '../project-detail-query';
 import { filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
@@ -52,9 +53,11 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * the clicked skill. `selectedPath` is looked up against the unfiltered
  * `skills` list, not `filtered` — so typing into search while the modal is
  * open can't yank it shut out from under the user.
- * "New" and the empty state's create path reuse `useConfigureThread` /
+ * "New" in the header and "Create a skill" in the empty state are the SAME
+ * control under two labels (`createButton`), reusing `useConfigureThread` /
  * `newConfigPrompt('skill')` unchanged — creation still happens by an agent
- * editing the repo on a branch, not a form here.
+ * editing the repo on a branch, not a form here. The empty state adds Docs as
+ * its secondary, which is all a reader without write permission gets.
  */
 export function SkillsPage({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE).allowed === true;
@@ -64,11 +67,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
-  });
+  const detailQuery = useQuery(projectDetailQuery(projectId));
 
   const skills = useMemo(() => {
     const raw = detailQuery.data?.config.skills;
@@ -104,27 +103,31 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const emptyKind = catalogEmptyKind(skills.length, filtered.length);
   const scopeLabel = SCOPE_FILTERS.find((filter) => filter.value === scope)?.label ?? 'All';
 
-  const newButton = canWrite ? (
-    <Button
-      size="sm"
-      variant="secondary"
-      onClick={() => configure.start(newConfigPrompt('skill'))}
-      disabled={configure.pending}
-    >
-      {configure.pending ? (
-        <Loading className="size-4 shrink-0" />
-      ) : (
-        <PlusIcon className="size-4" />
-      )}
-      New
-    </Button>
-  ) : null;
+  // One control, two labels. The header has a title beside it and can be terse;
+  // the empty state is the whole screen and has to name what it creates. Both
+  // start the same configure thread, so they cannot drift apart.
+  const createButton = (label: string) =>
+    canWrite ? (
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => configure.start(newConfigPrompt('skill'))}
+        disabled={configure.pending}
+      >
+        {configure.pending ? (
+          <Loading className="size-4 shrink-0" />
+        ) : (
+          <PlusIcon className="size-4" />
+        )}
+        {label}
+      </Button>
+    ) : null;
 
   return (
     <CapabilityPageShell
       title="Skills"
       description="Reusable instructions your agents load on demand."
-      action={newButton}
+      action={createButton('New')}
       search={
         <InputGroupSearch>
           <InputGroupSearchIcon>
@@ -161,22 +164,22 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         isEmpty={emptyKind !== null}
         empty={
           emptyKind === 'no-match' ? (
-            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              {query.trim() ? (
-                <>
-                  No matches for <span className="text-foreground font-mono">{query}</span>.
-                </>
-              ) : (
-                <>No matches in {scopeLabel}.</>
-              )}
-            </p>
+            query.trim() ? (
+              <CatalogNoMatch query={query} />
+            ) : (
+              <CatalogEmptyNote>No matches in {scopeLabel}.</CatalogEmptyNote>
+            )
           ) : (
             <EmptyState
               icon={SparkleIcon}
               size="sm"
               title="No skills yet"
               description="Create a skill to give agents reusable capabilities."
-              action={
+              // The copy invites an action, so the action is here — not only in
+              // the header. Docs stays as the secondary, for the reader who has
+              // no write permission and gets no primary at all.
+              action={createButton('Create a skill')}
+              secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a href="https://opencode.ai/docs/skills/" target="_blank" rel="noopener noreferrer">
                     Docs

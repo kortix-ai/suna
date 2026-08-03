@@ -29,7 +29,7 @@ export interface RungSettingsProps {
  * connectors, so neither is re-checked here.
  *
  * Capability #1 (rename) is deliberately NOT here. It lived on this rung until
- * the JAY-270 review: a `computer` connector has no Settings rung, but the old
+ * the whole-branch review: a `computer` connector has no Settings rung, but the old
  * `ConnectorDetail` panel let it be renamed, so a rung placement silently
  * dropped a capability `computer` connectors have today. Rename now lives in
  * the modal header (`HeaderName`, `connector-modal.tsx`), decoupled from
@@ -37,7 +37,7 @@ export interface RungSettingsProps {
  *
  * Capability #8 (`ConnectionSection` / `ChannelConnectionSection`) is also NOT
  * here, and that is deliberate too. The Capability Inventory files it under
- * Settings, and the JAY-270 review asked Task 12 to SPLIT it: the credential
+ * Settings, and the whole-branch review asked Task 12 to SPLIT it: the credential
  * row (`onSetCredential`) is an Accounts concern, `HeadersEditor` and the
  * URL/config fields are Settings concerns. That split needs a prop on
  * `ConnectionSection` to render one half without the other, or two components

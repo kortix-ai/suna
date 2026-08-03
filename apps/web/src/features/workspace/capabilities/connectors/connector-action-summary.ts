@@ -40,15 +40,23 @@ export function summarizeConnectorActions(
   };
 }
 
-/** "1 read action, 2 write actions." — each half pluralized on its own count,
- *  and only the halves with at least one action, joined by a comma. */
+/**
+ * "1 read tool, 2 write tools." — each half pluralized on its own count, and
+ * only the halves with at least one, joined by a comma.
+ *
+ * **Tool, not action.** `ConnectorAction` is the SDK's type name, and it leaked
+ * into user-facing copy here and nowhere else: the modal header two rows above
+ * this line prints `19 tools`, the card summary prints `19 tools · OPENAPI`,
+ * the Permissions search says `Search 19 tools`, and every bulk-confirm string
+ * counts tools. One concept, one word.
+ */
 export function describeConnectorActionCounts(summary: ConnectorActionSummary): string {
   const parts: string[] = [];
   if (summary.readCount > 0) {
-    parts.push(`${summary.readCount} read ${summary.readCount === 1 ? 'action' : 'actions'}`);
+    parts.push(`${summary.readCount} read ${summary.readCount === 1 ? 'tool' : 'tools'}`);
   }
   if (summary.writeCount > 0) {
-    parts.push(`${summary.writeCount} write ${summary.writeCount === 1 ? 'action' : 'actions'}`);
+    parts.push(`${summary.writeCount} write ${summary.writeCount === 1 ? 'tool' : 'tools'}`);
   }
   return `${parts.join(', ')}.`;
 }

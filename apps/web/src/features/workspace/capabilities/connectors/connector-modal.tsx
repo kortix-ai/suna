@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   authorizationOwnerTypeForStrategy,
   connectorAuthorizationUpdateIsPending,
@@ -37,6 +38,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
+import { connectorDisplayName } from './connector-filter';
 import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connector-rungs';
 import { RungAccounts } from './rung-accounts';
 import { RungOverview } from './rung-overview';
@@ -135,7 +137,7 @@ function ConnectorModalBody({
   const isComputer = connector.provider === 'computer';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const connected = usesProjectAuthorization && connector.secretSet;
-  const displayName = connector.name?.trim() || connector.slug;
+  const displayName = connectorDisplayName(connector);
   const toolCount = connector.actions.length;
 
   const rungs = visibleRungs(connector, { canWrite });
@@ -361,18 +363,45 @@ function ConnectorModalBody({
               />
             ) : null}
             {rung === 'accounts' ? (
-              <RungAccounts
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                canWrite={canWrite}
-                canManageProfiles={canManageProfiles}
-                strategyUpdating={strategyUpdating}
-                onChanged={onChanged}
-                onRemoved={onRemoved}
-                onStartSession={startPrivateSession}
-                onSetCredential={() => setCredOpen(true)}
-              />
+              // A 500 on `listConnectionProfiles` used to render this rung as
+              // an empty list and the nav badge as absent — indistinguishable
+              // from "this connector has no accounts", which is the opposite
+              // of the truth and invites the user to add a duplicate. The rung
+              // that depends on the query is where the failure belongs, with a
+              // Retry that refetches the query that actually failed.
+              profilesQuery.isError ? (
+                <ErrorState
+                  size="sm"
+                  title="Couldn’t load connections"
+                  description={
+                    profilesQuery.error instanceof Error
+                      ? profilesQuery.error.message
+                      : 'The accounts stored for this connector could not be read.'
+                  }
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void profilesQuery.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  }
+                />
+              ) : (
+                <RungAccounts
+                  projectId={projectId}
+                  connector={connector}
+                  displayName={displayName}
+                  canWrite={canWrite}
+                  canManageProfiles={canManageProfiles}
+                  strategyUpdating={strategyUpdating}
+                  onChanged={onChanged}
+                  onRemoved={onRemoved}
+                  onStartSession={startPrivateSession}
+                  onSetCredential={() => setCredOpen(true)}
+                />
+              )
             ) : null}
             {rung === 'permissions' ? (
               <RungPermissions

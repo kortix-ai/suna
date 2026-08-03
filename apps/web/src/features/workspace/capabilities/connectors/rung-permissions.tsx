@@ -56,6 +56,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
+import { CatalogNoMatch } from '../catalog-no-match';
+import {
+  draftToRules,
+  type PatternDraftRow,
+  seedPatternDraft,
+  signPatternRules,
+} from './pattern-rule-draft';
 import { filterActions, groupToolsByRisk, type ToolGroup, toolRowText } from './tool-groups';
 import {
   applyBulkPolicy,
@@ -96,17 +103,8 @@ interface PolicyWrite {
   choice?: PolicyChoice;
 }
 
-interface PatternDraftRow {
-  id: string;
-  match: string;
-  action: ConnectorPolicyAction;
-}
-
 let patternRowSeq = 0;
 const nextPatternRowId = () => `pattern-${++patternRowSeq}`;
-
-const signPatternRules = (rules: readonly { match: string; action: string }[]) =>
-  rules.map((rule) => `${rule.match}=${rule.action}`).join('\n');
 
 export interface RungPermissionsProps {
   projectId: string;
@@ -271,23 +269,20 @@ export function RungPermissions({
   // Reseed only when the SERVER's pattern set actually changes. A per-tool
   // write invalidates the same query, and reseeding on every refetch would
   // wipe a half-typed rule out from under the user.
+  //
+  // `signPatternRules` normalizes through `orderPolicyRules` before comparing,
+  // because the optimistic write at `onMutate` reorders the very array this
+  // guard reads. Without that, one click on any per-tool segment moved the
+  // rules, changed the signature, and reseeded — see `pattern-rule-draft.ts`.
   const seededSignature = useRef<string | null>(null);
   useEffect(() => {
     if (!policiesQuery.data) return;
     if (seededSignature.current === advancedSignature) return;
     seededSignature.current = advancedSignature;
-    setDraft(
-      advancedRules.map((rule) => ({
-        id: nextPatternRowId(),
-        match: rule.match,
-        action: rule.action,
-      })),
-    );
+    setDraft(seedPatternDraft(advancedRules, nextPatternRowId));
   }, [policiesQuery.data, advancedSignature, advancedRules]);
 
-  const draftSignature = signPatternRules(
-    draft.filter((row) => row.match.trim()).map((row) => ({ ...row, match: row.match.trim() })),
-  );
+  const draftSignature = signPatternRules(draftToRules(draft));
   const advancedDirty = draftSignature !== advancedSignature;
 
   const [advancedOpen, setAdvancedOpen] = useState(connector.actions.length === 0);
@@ -296,14 +291,7 @@ export function RungPermissions({
   }, [advancedRules.length]);
 
   const savePatternRules = () =>
-    writePolicies.mutate({
-      rules: [
-        ...toolRules,
-        ...draft
-          .filter((row) => row.match.trim())
-          .map((row) => ({ match: row.match.trim(), action: row.action })),
-      ],
-    });
+    writePolicies.mutate({ rules: [...toolRules, ...draftToRules(draft)] });
 
   if (!canWrite) {
     return (
@@ -378,9 +366,10 @@ export function RungPermissions({
           description={`${displayName} hasn’t reported any tools. Once it syncs, each one gets its own Default · Block · Ask · Allow control here.`}
         />
       ) : groups.length === 0 ? (
-        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-          No tools match “{query.trim()}”.
-        </p>
+        // The same line the four catalogs render, from the same component.
+        // What was searched is unambiguous here — the box above says "Search
+        // 19 tools" — so a second wording for one outcome bought nothing.
+        <CatalogNoMatch query={query} />
       ) : (
         groups.map((group) => (
           <section key={group.key} className="space-y-2">
@@ -603,15 +592,7 @@ export function RungPermissions({
                       variant="outline-ghost"
                       className="h-8 text-xs"
                       disabled={busy}
-                      onClick={() =>
-                        setDraft(
-                          advancedRules.map((rule) => ({
-                            id: nextPatternRowId(),
-                            match: rule.match,
-                            action: rule.action,
-                          })),
-                        )
-                      }
+                      onClick={() => setDraft(seedPatternDraft(advancedRules, nextPatternRowId))}
                     >
                       Discard
                     </Button>

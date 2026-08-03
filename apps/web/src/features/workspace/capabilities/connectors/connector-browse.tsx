@@ -20,6 +20,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 import { CatalogCard } from '../catalog-card';
 import { CatalogGrid, GRID_CLASSNAME } from '../catalog-grid';
+import { CatalogNoMatch } from '../catalog-no-match';
 import { CATEGORY_ROW_CAP, groupByCategory, humanizeCategory } from './connector-categories';
 
 /**
@@ -202,9 +203,7 @@ export function ConnectorBrowse({
           // is not consulted in this branch. It could only ever answer
           // `'empty'`.
           searching ? (
-            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              No matches for <span className="text-foreground font-mono">{activeQuery}</span>.
-            </p>
+            <CatalogNoMatch query={activeQuery} />
           ) : (
             <EmptyState
               icon={GlobeIcon}

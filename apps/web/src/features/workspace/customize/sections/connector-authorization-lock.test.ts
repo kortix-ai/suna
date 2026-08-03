@@ -66,4 +66,24 @@ describe('connector authorization owner is locked after creation', () => {
       '{hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}',
     );
   });
+
+  // The hazard `hideLabel` opens: in the editable branch the suppressed
+  // `<FieldLabel htmlFor={id}>` is the `<Select>`'s ONLY name source. Deleting
+  // `lockedReason` — which `rung-settings.tsx:107` explicitly describes as the
+  // way to re-enable editing — would have rendered a combobox with no
+  // accessible name. Coupled here rather than documented, because two comments
+  // already documented it and it still surprised a reviewer.
+  test('hideLabel never leaves the Select without an accessible name', () => {
+    expect(MODAL).toContain("const suppressedLabel = hideLabel ? 'Authorization owner' : undefined");
+    expect(MODAL).toContain('<SelectTrigger id={id} aria-label={suppressedLabel}>');
+  });
+
+  test('the locked branch reads out its value, so it needs no aria-label', () => {
+    // Belt and braces on the coupling: the fallback exists for the ONE control
+    // that has no other name source. A second copy on the read-only block
+    // would announce a heading over text that already says "Project"/"User".
+    const lockedBranch = MODAL.indexOf('if (lockedReason) {');
+    const editableBranch = MODAL.indexOf('<SelectTrigger');
+    expect(MODAL.slice(lockedBranch, editableBranch)).not.toContain('aria-label');
+  });
 });

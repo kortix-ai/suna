@@ -46,6 +46,17 @@ describe('rung-permissions write path', () => {
     expect(callers).toEqual(['connectors/rung-permissions.tsx']);
   });
 
+  // The reseed guard reads the SAME array the optimistic write reorders, so
+  // its signature has to be the order-normalized one. Rebuilding it inline
+  // from `advancedRules` would compile, pass every behavioural test, and wipe
+  // a half-typed pattern rule on the next per-tool click
+  // (`pattern-rule-draft.test.ts` reproduces exactly that).
+  test('the reseed guard keys on the order-normalized signature', () => {
+    expect(source).toContain('const advancedSignature = useMemo(() => signPatternRules(');
+    expect(source).toContain('if (seededSignature.current === advancedSignature) return;');
+    expect(source.match(/signPatternRules\(/g)).toHaveLength(2);
+  });
+
   test('rules reach the wire through applyBulkPolicy, never hand-built', () => {
     // Hand-building a rule array would bypass both the case-insensitive
     // replacement and the pattern-preservation guarantee.
