@@ -28,6 +28,7 @@ import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { RESERVED_CONNECTOR_SLUGS } from '../projects/connectors';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
   type ExecutorAttachmentStore,
@@ -35,6 +36,8 @@ import {
   type StageExecutorAttachmentInput,
 } from './attachments';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
+import type { ConnectComposioToolkitResult } from './composio-connect';
+import type { ComposioToolkitsPage, ComposioToolsPage } from './composio';
 import type { ExecutorAuth } from './execute';
 import { type GatewayDeps, handleCall } from './gateway';
 
@@ -364,6 +367,23 @@ export interface ExecutorRouterDeps {
     nextCursor?: string;
     hasMore: boolean;
   }>;
+  /** Browse the Composio toolkit catalogue. */
+  listComposioToolkits?(input: {
+    q?: string;
+    cursor?: string;
+  }): Promise<ComposioToolkitsPage>;
+  /** Browse tools for one Composio toolkit. */
+  listComposioTools?(input: {
+    toolkitSlug: string;
+    q?: string;
+    cursor?: string;
+  }): Promise<ComposioToolsPage>;
+  /** Create a project-owned Composio Tool Router MCP connector. */
+  connectComposioToolkit?(
+    projectId: string,
+    accountId: string,
+    input: { toolkitSlug: string; connectorSlug: string; name: string },
+  ): Promise<ConnectComposioToolkitResult>;
   /** Browse the direct integrations.sh catalogue. */
   listDiscoverIntegrations?(input: {
     q?: string;
@@ -1157,6 +1177,184 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const configured = !!deps.listPipedreamApps;
       return c.json({ configured, provider: configured ? 'pipedream' : null });
+    },
+  );
+
+  // ── Whether the Composio tools catalogue is configured on this deployment ─
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/composio/status',
+      tags: ['executor'],
+      summary: 'Whether the Composio tools catalogue is configured on this deployment',
+      ...auth,
+      responses: {
+        200: json(
+          z.object({ configured: z.boolean(), provider: z.string().nullable() }),
+          'Composio provider status',
+        ),
+        ...errors(401),
+      },
+    }),
+    async (c: any) => {
+      const configured = !!deps.listComposioToolkits;
+      return c.json({ configured, provider: configured ? 'composio' : null });
+    },
+  );
+
+  // ── Admin: browse the Composio toolkit catalogue ─────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/composio/toolkits',
+      tags: ['executor'],
+      summary: 'Browse the Composio toolkit catalogue',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Composio toolkits page'),
+        ...errors(401, 403, 501, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) {
+        const principal = await deps.resolvePrincipal(c);
+        return principal
+          ? c.json({ error: 'forbidden' }, 403)
+          : c.json({ error: 'unauthorized' }, 401);
+      }
+      if (!deps.listComposioToolkits) return featureNotSupportedResponse(c, 'composio_toolkits');
+      try {
+        const result = await deps.listComposioToolkits({
+          q: c.req.query('q') || undefined,
+          cursor: c.req.query('cursor') || undefined,
+        });
+        return c.json(result);
+      } catch {
+        return c.json({ error: 'Composio catalogue unavailable' }, 502);
+      }
+    },
+  );
+
+  // ── Admin: browse tools for one Composio toolkit ─────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/composio/toolkits/{slug}/tools',
+      tags: ['executor'],
+      summary: 'Browse tools for one Composio toolkit',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Composio tools page'),
+        ...errors(401, 403, 501, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) {
+        const principal = await deps.resolvePrincipal(c);
+        return principal
+          ? c.json({ error: 'forbidden' }, 403)
+          : c.json({ error: 'unauthorized' }, 401);
+      }
+      if (!deps.listComposioTools) return featureNotSupportedResponse(c, 'composio_tools');
+      try {
+        const result = await deps.listComposioTools({
+          toolkitSlug: decodeURIComponent(c.req.param('slug')),
+          q: c.req.query('q') || undefined,
+          cursor: c.req.query('cursor') || undefined,
+        });
+        return c.json(result);
+      } catch {
+        return c.json({ error: 'Composio catalogue unavailable' }, 502);
+      }
+    },
+  );
+
+  // ── Admin: connect one Composio toolkit as an authenticated MCP server ──
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/composio/toolkits/{slug}/connect',
+      tags: ['executor'],
+      summary: 'Connect a Composio toolkit as a project-owned MCP connector',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Composio connector state'),
+        ...errors(400, 401, 403, 409, 501, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) {
+        const principal = await deps.resolvePrincipal(c);
+        return principal
+          ? c.json({ error: 'forbidden' }, 403)
+          : c.json({ error: 'unauthorized' }, 401);
+      }
+      if (!deps.connectComposioToolkit) {
+        return featureNotSupportedResponse(c, 'composio_connect');
+      }
+
+      let body: any;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      const connectorSlug =
+        typeof body?.connectorSlug === 'string' ? body.connectorSlug.trim() : '';
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!SLUG_RE.test(connectorSlug)) {
+        return c.json({ error: '`connectorSlug` must be a valid connector slug' }, 400);
+      }
+      if (RESERVED_CONNECTOR_SLUGS.has(connectorSlug)) {
+        return c.json(
+          { error: '`connectorSlug` is reserved; use a namespaced connector slug' },
+          400,
+        );
+      }
+      if (!name || name.length > 120) {
+        return c.json({ error: '`name` must contain between 1 and 120 characters' }, 400);
+      }
+
+      let toolkitSlug: string;
+      try {
+        toolkitSlug = decodeURIComponent(c.req.param('slug')).trim();
+      } catch {
+        return c.json({ error: 'invalid toolkit slug' }, 400);
+      }
+      if (!toolkitSlug || toolkitSlug.length > 200) {
+        return c.json({ error: 'invalid toolkit slug' }, 400);
+      }
+
+      try {
+        const result = await deps.connectComposioToolkit(projectId, admin.accountId, {
+          toolkitSlug,
+          connectorSlug,
+          name,
+        });
+        return result.ok
+          ? c.json(result)
+          : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      } catch {
+        return c.json({ error: 'Composio connection unavailable' }, 502);
+      }
     },
   );
 

@@ -20,6 +20,7 @@
     "test:all": "bash scripts/test.sh && bash scripts/test.sh integration"
   },
   "dependencies": {
+    "@composio/core": "^0.14.1",
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/api-contract": "workspace:*",

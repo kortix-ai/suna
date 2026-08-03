@@ -824,6 +824,104 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   );
 }
 
+export interface ComposioStatus {
+  configured: boolean;
+  provider: 'composio' | null;
+}
+
+export interface ComposioToolkit {
+  slug: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  authRequired: boolean;
+  toolsCount: number | null;
+  categories: string[];
+  mcpUrl: string | null;
+}
+
+export interface ComposioTool {
+  slug: string;
+  name: string;
+  description: string | null;
+  toolkitSlug: string;
+  authRequired: boolean;
+}
+
+export interface ComposioToolkitsPage {
+  toolkits: ComposioToolkit[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface ComposioToolsPage {
+  tools: ComposioTool[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export async function getComposioStatus(): Promise<ComposioStatus> {
+  return unwrap(await backendApi.get<ComposioStatus>('/executor/composio/status'));
+}
+
+export async function listComposioToolkits(
+  projectId: string,
+  q?: string,
+  cursor?: string,
+): Promise<ComposioToolkitsPage> {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ComposioToolkitsPage>(
+      `/executor/projects/${projectId}/composio/toolkits${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function listComposioTools(
+  projectId: string,
+  toolkitSlug: string,
+  q?: string,
+  cursor?: string,
+): Promise<ComposioToolsPage> {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ComposioToolsPage>(
+      `/executor/projects/${projectId}/composio/toolkits/${encodeURIComponent(toolkitSlug)}/tools${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function connectComposioToolkit(
+  projectId: string,
+  toolkitSlug: string,
+  input: { connectorSlug: string; name: string },
+): Promise<{
+  ok: true;
+  connectorSlug: string;
+  connected: boolean;
+  authorizationUrl: string | null;
+  sync: ConnectorSyncResult;
+}> {
+  return unwrap(
+    await backendApi.post<{
+      ok: true;
+      connectorSlug: string;
+      connected: boolean;
+      authorizationUrl: string | null;
+      sync: ConnectorSyncResult;
+    }>(
+      `/executor/projects/${projectId}/composio/toolkits/${encodeURIComponent(toolkitSlug)}/connect`,
+      input,
+    ),
+  );
+}
+
 export type DiscoverIntegrationKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
 
 export interface DiscoverIntegration {

@@ -116,6 +116,7 @@ import {
   discoverConnectionProfileOAuth2,
   discoverConnectorAuth,
   ensureProjectConnectorProfile,
+  getComposioStatus,
   getConnectorConfig,
   getConnectorPolicies,
   getConnectStatus,
@@ -146,6 +147,7 @@ import {
   syncConnectors,
   updateConnectorAuthorizationCredential,
 } from '@kortix/sdk';
+import { ComposioToolsCatalogue } from './composio-tools-catalogue';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -3657,6 +3659,12 @@ function AddAppPanel({
     staleTime: 5 * 60_000,
     enabled: connectorsEnabled,
   });
+  const composioStatus = useQuery({
+    queryKey: ['composio-status'],
+    queryFn: getComposioStatus,
+    staleTime: 5 * 60_000,
+  });
+  const [selectedTab, setSelectedTab] = useState<string | undefined>();
   if (!canWrite) {
     return (
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -3670,17 +3678,25 @@ function AddAppPanel({
   }
   const easyConnectHidden = !connectorsEnabled;
   const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
+  const composioConfigured = composioStatus.data?.configured === true;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
-  const defaultTab = !easyConnectDisabled ? 'apps' : discoverEnabled ? 'discover' : 'channels';
+  const defaultTab = composioConfigured
+    ? 'tools'
+    : !easyConnectDisabled
+      ? 'apps'
+      : discoverEnabled
+        ? 'discover'
+        : 'channels';
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
-      <Tabs defaultValue={defaultTab}>
+      <Tabs value={selectedTab ?? defaultTab} onValueChange={setSelectedTab}>
         <TabsList type="underline">
+          {composioConfigured && <TabsTrigger value="tools">Tools</TabsTrigger>}
           {easyConnectHidden ? null : easyConnectDisabled ? (
             <Hint
               label={tI18nHardcoded.raw(
@@ -3706,6 +3722,15 @@ function AddAppPanel({
         {discoverEnabled && (
           <TabsContent value="discover" className="mt-4">
             <DiscoverCatalogue
+              projectId={projectId}
+              existingSlugs={existingSlugs}
+              onAdded={onAdded}
+            />
+          </TabsContent>
+        )}
+        {composioConfigured && (
+          <TabsContent value="tools" className="mt-4">
+            <ComposioToolsCatalogue
               projectId={projectId}
               existingSlugs={existingSlugs}
               onAdded={onAdded}

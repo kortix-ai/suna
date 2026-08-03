@@ -118,6 +118,13 @@ export function proposeConnectorProfileSlug(
   }
 }
 
+export function proposeComposioConnectorSlug(
+  toolkitSlug: string,
+  existingSlugs: readonly string[],
+): string {
+  return proposeConnectorProfileSlug(`composio-${toolkitSlug}`, existingSlugs);
+}
+
 export function connectorProfileSlugAfterNameChange({
   displayName,
   currentSlug,

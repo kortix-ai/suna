@@ -96,6 +96,15 @@ import {
   verifyWebhookSig,
 } from './pipedream';
 import {
+  authorizeComposioToolkitSession,
+  composioConfigured,
+  createComposioToolkitSession,
+  deleteComposioSession,
+  listComposioToolkits,
+  listComposioTools,
+} from './composio';
+import { connectComposioToolkitConnector } from './composio-connect';
+import {
   type DefaultMode,
   type EffectiveResolveResult,
   type Policy,
@@ -1430,6 +1439,34 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     : undefined,
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
+    : undefined,
+  listComposioToolkits: composioConfigured() ? (input) => listComposioToolkits(input) : undefined,
+  listComposioTools: composioConfigured() ? (input) => listComposioTools(input) : undefined,
+  connectComposioToolkit: composioConfigured()
+    ? (projectId, accountId, input) =>
+        connectComposioToolkitConnector(
+          {
+            projectId,
+            accountId,
+            ...input,
+            callbackUrl: `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${encodeURIComponent(projectId)}/customize/connectors`,
+            apiKey: config.COMPOSIO_API_KEY!,
+          },
+          {
+            createSession: createComposioToolkitSession,
+            authorizeSession: authorizeComposioToolkitSession,
+            deleteSession: deleteComposioSession,
+            createConnector: upsertConnectorInManifest,
+            setCredential: setConnectorCredentialShared,
+            syncConnectors: async (syncProjectId, syncAccountId) => {
+              invalidateProjectMirror(syncProjectId);
+              return syncProjectConnectors(syncProjectId, syncAccountId, {
+                force: true,
+              });
+            },
+            deleteConnector: deleteConnectorFromManifest,
+          },
+        )
     : undefined,
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverIntegrations: (input) => listIntegrationCatalog(input),

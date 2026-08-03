@@ -3,12 +3,14 @@ import { configureKortix } from '../../http/config';
 import {
   activateConnectionProfile,
   activateConnectorAuthorization,
+  connectComposioToolkit,
   createConnector,
   deleteConnector,
   discoverConnectionProfileOAuth2,
   discoverConnectorAuth,
   ensureProjectConnectorAuthorization,
   ensureProjectConnectorProfile,
+  getComposioStatus,
   getConnectStatus,
   getConnectionPolicies,
   getConnectionProfileOAuth2Application,
@@ -16,6 +18,8 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   getDiscoverIntegration,
+  listComposioToolkits,
+  listComposioTools,
   listConnectionProfiles,
   listConnectorAuthorizations,
   listConnectors,
@@ -491,6 +495,68 @@ test('getConnectStatus GETs the deployment-wide connect-status endpoint', async 
   expect(last().url).toContain('/executor/connect-status');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ configured: true, provider: 'pipedream' });
+});
+
+test('getComposioStatus GETs the deployment-wide composio status endpoint', async () => {
+  nextResponse = {
+    status: 200,
+    body: { configured: true, provider: 'composio' },
+  };
+  const result = await getComposioStatus();
+  expect(last().url).toContain('/executor/composio/status');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ configured: true, provider: 'composio' });
+});
+
+test('listComposioToolkits GETs a searchable cursor page', async () => {
+  nextResponse = {
+    status: 200,
+    body: { toolkits: [], nextCursor: 'cursor-2', hasMore: true },
+  };
+  const result = await listComposioToolkits('P1', 'google drive', 'cursor-1');
+  expect(last().url).toContain('/executor/projects/P1/composio/toolkits?');
+  expect(last().url).toContain('q=google+drive');
+  expect(last().url).toContain('cursor=cursor-1');
+  expect(last().method).toBe('GET');
+  expect(result.nextCursor).toBe('cursor-2');
+});
+
+test('listComposioTools encodes toolkit slug and query params', async () => {
+  nextResponse = {
+    status: 200,
+    body: { tools: [], hasMore: false },
+  };
+  await listComposioTools('P1', 'GOOGLE/DRIVE', 'files list', 'next/page');
+  expect(last().url).toContain('/executor/projects/P1/composio/toolkits/GOOGLE%2FDRIVE/tools?');
+  expect(last().url).toContain('q=files+list');
+  expect(last().url).toContain('cursor=next%2Fpage');
+  expect(last().method).toBe('GET');
+});
+
+test('connectComposioToolkit POSTs an encoded toolkit and unwraps the connection state', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      ok: true,
+      connectorSlug: 'google-drive',
+      connected: false,
+      authorizationUrl: 'https://accounts.composio.dev/connect/ca_123',
+      sync: { synced: 1, errors: [] },
+    },
+  };
+
+  const result = await connectComposioToolkit('P1', 'GOOGLE/DRIVE', {
+    connectorSlug: 'google-drive',
+    name: 'Google Drive',
+  });
+
+  expect(last()).toEqual({
+    url: 'http://test.local/executor/projects/P1/composio/toolkits/GOOGLE%2FDRIVE/connect',
+    method: 'POST',
+    body: { connectorSlug: 'google-drive', name: 'Google Drive' },
+  });
+  expect(result.connected).toBe(false);
+  expect(result.authorizationUrl).toBe('https://accounts.composio.dev/connect/ca_123');
 });
 
 test('setConnectorCredential PUTs { value }', async () => {

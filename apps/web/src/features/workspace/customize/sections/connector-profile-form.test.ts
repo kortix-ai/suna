@@ -14,6 +14,7 @@ import {
   createOnlyConnectorDraft,
   isConnectorProfileSlugAvailable,
   normalizeConnectorProfileSlug,
+  proposeComposioConnectorSlug,
   proposeConnectorProfileSlug,
 } from './connector-profile-form';
 
@@ -69,6 +70,26 @@ describe('connector profile slug proposal', () => {
   test('rejects an existing project slug', () => {
     expect(isConnectorProfileSlugAvailable('sales-primary', ['sales-primary'])).toBe(false);
     expect(isConnectorProfileSlugAvailable('sales-secondary', ['sales-primary'])).toBe(true);
+  });
+});
+
+describe('Composio connector slug proposal', () => {
+  test('namespaces Slack and GitHub by their stable toolkit slugs', () => {
+    expect(proposeComposioConnectorSlug('slack', [])).toBe('composio-slack');
+    expect(proposeComposioConnectorSlug('github', [])).toBe('composio-github');
+  });
+
+  test('normalizes toolkit slugs and keeps the manifest length limit', () => {
+    expect(proposeComposioConnectorSlug('Google/Drive Enterprise', [])).toBe(
+      'composio-google-drive-enterprise',
+    );
+    expect(proposeComposioConnectorSlug('a'.repeat(129), [])).toHaveLength(128);
+  });
+
+  test('uses the first available suffix after a namespaced collision', () => {
+    expect(proposeComposioConnectorSlug('slack', ['composio-slack', 'composio-slack-1'])).toBe(
+      'composio-slack-2',
+    );
   });
 });
 

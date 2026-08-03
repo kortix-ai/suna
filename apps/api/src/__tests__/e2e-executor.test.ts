@@ -229,6 +229,32 @@ const deps: ExecutorRouterDeps = {
     hasMore: false,
   }),
   getDiscoverIntegration: async (id) => ({ item: { id }, variants: [] }),
+  listComposioToolkits: async ({ q, cursor }) => ({
+    toolkits: [
+      {
+        slug: 'github',
+        name: q ?? 'GitHub',
+        description: 'Repository automation',
+        iconUrl: 'https://example.com/github.png',
+        authRequired: true,
+        toolsCount: 42,
+        categories: ['devtools'],
+        mcpUrl: null,
+      },
+    ],
+    nextCursor: cursor,
+    hasMore: false,
+  }),
+  connectComposioToolkit: async (_projectId, _accountId, input) => {
+    world.connectorDrafts.push(input);
+    return {
+      ok: true,
+      connectorSlug: input.connectorSlug,
+      connected: false,
+      authorizationUrl: 'https://accounts.composio.dev/connect/ca_123',
+      sync: { synced: 1, errors: [] },
+    };
+  },
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
   discoverConnectorAuth: async () => detectedBearer,
   createConnector: async (_projectId, _accountId, draft) => {
@@ -282,6 +308,85 @@ describe('gateway auth', () => {
   test('401 without token', async () => {
     expect((await req('/connectors')).status).toBe(401);
     expect((await req('/call', { method: 'POST', body: '{}' })).status).toBe(401);
+  });
+});
+
+describe('Composio connector routes', () => {
+  test('reports configured false when the Composio catalogue dependency is absent', async () => {
+    const unconfiguredApp = createExecutorRouter({
+      ...deps,
+      listComposioToolkits: undefined,
+      connectComposioToolkit: undefined,
+    });
+    const res = await unconfiguredApp.fetch(
+      new Request('http://x/composio/status', { headers: { 'x-test-user': ALICE } }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, provider: null });
+  });
+
+  test('passes catalogue search and cursor values through the admin route', async () => {
+    const res = await req(`/projects/${PROJECT}/composio/toolkits?q=git&cursor=c1`, {
+      headers: { 'x-test-admin': ALICE },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      toolkits: [
+        {
+          slug: 'github',
+          name: 'git',
+          description: 'Repository automation',
+          iconUrl: 'https://example.com/github.png',
+          authRequired: true,
+          toolsCount: 42,
+          categories: ['devtools'],
+          mcpUrl: null,
+        },
+      ],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+  });
+
+  test('rejects reserved Slack before invoking the Composio connection dependency', async () => {
+    const callsBefore = world.connectorDrafts.length;
+    const res = await req(`/projects/${PROJECT}/composio/toolkits/slack/connect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-admin': ALICE },
+      body: JSON.stringify({ connectorSlug: 'slack', name: 'Slack' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: '`connectorSlug` is reserved; use a namespaced connector slug',
+    });
+    expect(world.connectorDrafts).toHaveLength(callsBefore);
+  });
+
+  test('starts managed Slack authorization with a namespaced connector and no credential leak', async () => {
+    const res = await req(`/projects/${PROJECT}/composio/toolkits/slack/connect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-admin': ALICE },
+      body: JSON.stringify({ connectorSlug: 'composio-slack', name: 'Slack' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      ok: true,
+      connectorSlug: 'composio-slack',
+      connected: false,
+      authorizationUrl: 'https://accounts.composio.dev/connect/ca_123',
+      sync: { synced: 1, errors: [] },
+    });
+    expect(world.connectorDrafts.at(-1)).toEqual({
+      toolkitSlug: 'slack',
+      connectorSlug: 'composio-slack',
+      name: 'Slack',
+    });
+    expect(JSON.stringify(body)).not.toContain('apiKey');
   });
 });
 

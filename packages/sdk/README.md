@@ -220,6 +220,30 @@ await project.sessions.create({
 });
 ```
 
+Composio catalogue and Tool Router methods are exported from the package root.
+The API keeps `COMPOSIO_API_KEY` and the Tool Router MCP credential server-side.
+
+```ts
+import {
+  connectComposioToolkit,
+  getComposioStatus,
+  listComposioToolkits,
+  listComposioTools,
+} from '@kortix/sdk';
+
+const status = await getComposioStatus();
+const page = await listComposioToolkits(projectId, 'github');
+const toolkit = page.toolkits[0];
+const tools = await listComposioTools(projectId, toolkit.slug);
+const connection = await connectComposioToolkit(projectId, toolkit.slug, {
+  connectorSlug: 'composio-github',
+  name: toolkit.name,
+});
+```
+
+`connection.authorizationUrl` is non-null when managed authorization is
+required. The response never contains the Composio API key or MCP credential.
+
 Member profiles are owner-only even for project managers, and sessions using
 one must remain private. Project defaults remain shared; external/agent/subject
 profiles remain operator-managed. Every profile is project/connector scoped

@@ -101,6 +101,36 @@ Run `kortix channels disconnect` to remove the connection. See the
 Connecting Slack adds a `channel` [connector](/docs/connect/connectors) entry
 to `kortix.yaml` for you. You never write this entry by hand.
 
+### Local development
+
+If the local API has no shared Slack app configured, open **Add connector →
+Channels → Slack → Use custom Slack app**. Copy the generated manifest into
+Slack, install the app, then enter its Bot User OAuth Token and Signing Secret.
+This creates the native `kortix_slack` connector. The generated manifest uses
+the current public development tunnel for Slack callbacks.
+
+A managed native install requires valid `SLACK_CLIENT_ID`,
+`SLACK_CLIENT_SECRET`, and `SLACK_SIGNING_SECRET` values on the API. The Slack
+app must also contain the matching callback URLs. An `Invalid client_id` page
+means the configured native Slack app is invalid or no longer exists. Use the
+custom-app flow until the managed app configuration is valid. Never expose
+these credentials through `NEXT_PUBLIC_*` variables.
+
+### Composio Slack tools
+
+To let an agent call Slack actions, open **Add connector → Tools → Slack →
+Connect toolkit**. Complete Composio's
+[managed authorization](https://docs.composio.dev/toolkits/managed-auth) flow,
+then grant `composio-slack` to the agent.
+
+This connection does not read the native `SLACK_*` credentials. It creates a
+separate MCP connector for Slack actions. The two connectors can exist in the
+same project:
+
+- `composio-slack` provides agent-callable Slack read and write actions.
+- `kortix_slack` receives mentions and slash commands, then sends threaded
+  agent replies.
+
 ## Use Slack
 
 Mention the bot with a task, in any channel it has joined, or open a direct

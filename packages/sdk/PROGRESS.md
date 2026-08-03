@@ -3760,6 +3760,36 @@ Final SDK gates:
 
 ---
 
+### 2026-08-03 — session `composio-slack` claim
+
+Claimed the additive Composio catalogue and Tool Router connector contract.
+
+Scope:
+
+- Add status, toolkit, tool, and connection methods without changing existing signatures.
+- Keep Composio and MCP credentials behind the API boundary.
+- Add only namespaced dashboard connector slugs such as `composio-slack`.
+- Preserve all existing Pipedream, custom, and native connector behavior.
+
+RED was recorded before implementation in `connectors.test.ts` for the missing
+Composio methods and in the public-surface tests for the new additive exports.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src/core/rest/projects-client/connectors.test.ts src/public-surface.test.ts src/public-type-surface.test.ts`: `37` pass, `0` fail, `138` assertions.
+- `pnpm --filter @kortix/sdk test` with CI Bun `1.3.14`: `1413` pass, `2` declared skips, `0` fail, `6040` assertions across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed, installed, imported, and constructed the package successfully.
+- Runtime and type surface snapshots contain only the additive Composio methods and types.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-01 — session `e2b-capacity-fast-fail` (claim)
 
 Claimed the additive provider-neutral session-start capacity failure contract.

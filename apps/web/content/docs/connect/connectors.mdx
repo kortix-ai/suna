@@ -49,6 +49,31 @@ A connector profile uses one provider type:
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
 
+## Add connectors from the dashboard
+
+When the API has Composio configured, **Add connector → Tools** is the primary
+catalogue for agent-callable integrations. Search for a toolkit, inspect its
+tools, and select **Connect toolkit**. Kortix creates a namespaced connector
+such as `composio-github` and opens Composio authorization when the toolkit
+requires it.
+
+The remaining tabs keep their existing roles:
+
+- **Channels** connects native inbound Slack, Teams, email, and voice flows.
+- **Custom** connects OpenAPI, MCP, GraphQL, OAuth2, and static credentials.
+- **Easy Connect** keeps existing Pipedream integrations available as a
+  fallback.
+
+Composio does not migrate or modify existing Pipedream or custom connectors.
+Set `COMPOSIO_API_KEY` only on the API service. Never expose it through a
+`NEXT_PUBLIC_*` variable. The API stores the Tool Router MCP credential and
+does not return it to the browser or SDK caller.
+
+Composio Slack and the native Slack channel are separate connections. A
+Composio Slack connector, such as `composio-slack`, provides agent-callable
+Slack actions. The native Slack channel appears as `kortix_slack` and handles
+mentions, slash commands, and threaded replies.
+
 ## Authentication and policy
 
 An authorization authenticates with:

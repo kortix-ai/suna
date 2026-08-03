@@ -801,6 +801,7 @@ app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1]
   const { executorApp } = await import('./executor');
   app.use('/v1/executor/projects/*', combinedAuth);
   app.use('/v1/executor/connect-status', combinedAuth); // deployment capability flag (authed)
+  app.use('/v1/executor/composio/status', combinedAuth); // deployment capability flag (authed)
   app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 
