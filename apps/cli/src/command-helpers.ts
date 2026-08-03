@@ -11,6 +11,16 @@ interface ProjectContextOpts {
   projectArg?: string;
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
+  /**
+   * Do not print "No project linked" when nothing resolves.
+   *
+   * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
+   * scan the host's other accounts, and usually finds the session. Printing a
+   * red ✗ first announces a failure that has not happened yet: the command then
+   * succeeds, but anyone reading the output (or piping it through `head`)
+   * concludes it failed. The fallback prints its own error if it runs dry.
+   */
+  quietWhenUnresolved?: boolean;
 }
 
 /**
@@ -65,14 +75,17 @@ export async function resolveProjectContext(
     // non-TTY it degrades to a hint and the error below.)
     const outcome = await ensureDefaultProjectBinding(auth, {
       promptTitle: 'No project bound — pick one for this command',
+      quiet: opts.quietWhenUnresolved,
     });
     projectId = outcome.project?.project_id ?? null;
   }
   if (!projectId) {
-    process.stderr.write(
-      `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
-        `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
-    );
+    if (!opts.quietWhenUnresolved) {
+      process.stderr.write(
+        `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
+          `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
+      );
+    }
     return null;
   }
   return { client: clientFromAuth(auth), projectId, auth };
@@ -135,7 +148,9 @@ export async function locateSessionAnywhere(
   // either — resolveProjectContext already explained that below.
   const hostPinnedButLoggedOut = Boolean(opts.hostArg) && !loadAuthForHost(opts.hostArg!)?.token;
 
-  const ctx = await resolveProjectContext(opts);
+  // Quiet: the cross-account scan below is the real answer for a user whose
+  // active account holds no projects, and it usually finds the session.
+  const ctx = await resolveProjectContext({ ...opts, quietWhenUnresolved: true });
   if (ctx) {
     const probed = await probeSession(ctx.client, ctx.projectId, sessionId);
     if (probed !== false && !(probed instanceof ApiError)) {

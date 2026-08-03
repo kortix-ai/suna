@@ -40,7 +40,21 @@ function bindableAccountId(auth: Auth): string | undefined {
  */
 export async function ensureDefaultProjectBinding(
   auth: Auth,
-  opts: { promptTitle?: string } = {},
+  opts: {
+    promptTitle?: string;
+    /**
+     * Say nothing on ANY path that ends without a bound project — an empty
+     * account, a failed list, a declined picker, a non-TTY with several to
+     * choose from.
+     *
+     * For a caller that has a FALLBACK — `locateSessionAnywhere` scans the
+     * account's siblings next — the "no projects here" note is not the
+     * outcome, it is a step. Printing it announces a failure that is about to
+     * be recovered from, which reads as the command having failed even when it
+     * goes on to succeed.
+     */
+    quiet?: boolean;
+  } = {},
 ): Promise<BindOutcome> {
   const existing = defaultProject();
   if (existing) return { project: existing, bound: false };
@@ -51,16 +65,23 @@ export async function ensureDefaultProjectBinding(
       ProjectSummary[]
     >('/projects');
   } catch (err) {
-    process.stderr.write(
-      `${C.dim}Could not list projects to bind a default: ${(err as Error).message}${C.reset}\n`,
-    );
+    if (!opts.quiet) {
+      process.stderr.write(
+        `${C.dim}Could not list projects to bind a default: ${(err as Error).message}${C.reset}\n`,
+      );
+    }
     return { project: null, bound: false };
   }
 
   if (projects.length === 0) {
-    process.stderr.write(
-      `${C.dim}No projects in this account yet — create your first with ${C.reset}${C.cyan}kortix init <name>${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}.${C.reset}\n`,
-    );
+    // "in this account" matters: the user may well have projects, just under a
+    // different account on the same host. Telling them to create their first
+    // one would be wrong, and this message used to say exactly that.
+    if (!opts.quiet) {
+      process.stderr.write(
+        `${C.dim}No projects in this account — create one with ${C.reset}${C.cyan}kortix init <name>${C.reset}${C.dim}, or switch accounts with ${C.reset}${C.cyan}kortix accounts use${C.reset}${C.dim}.${C.reset}\n`,
+      );
+    }
     return { project: null, bound: false };
   }
 
@@ -73,15 +94,19 @@ export async function ensureDefaultProjectBinding(
       items: projects.map((p) => ({ value: p, label: p.name, sublabel: p.project_id })),
     });
     if (!picked) {
-      process.stderr.write(
-        `${C.dim}Skipped. Bind one any time with ${C.reset}${C.cyan}kortix projects use${C.reset}${C.dim}.${C.reset}\n`,
-      );
+      if (!opts.quiet) {
+        process.stderr.write(
+          `${C.dim}Skipped. Bind one any time with ${C.reset}${C.cyan}kortix projects use${C.reset}${C.dim}.${C.reset}\n`,
+        );
+      }
       return { project: null, bound: false };
     }
   } else {
-    process.stderr.write(
-      `${C.dim}No default project bound. Run ${C.reset}${C.cyan}kortix projects use${C.reset}${C.dim} to pick one.${C.reset}\n`,
-    );
+    if (!opts.quiet) {
+      process.stderr.write(
+        `${C.dim}No default project bound. Run ${C.reset}${C.cyan}kortix projects use${C.reset}${C.dim} to pick one.${C.reset}\n`,
+      );
+    }
     return { project: null, bound: false };
   }
 
