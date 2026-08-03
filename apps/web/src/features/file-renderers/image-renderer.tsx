@@ -470,7 +470,7 @@ export function ImageRenderer({
           // these are not UI chrome picking up the theme, they are the literal
           // white and black the user asked to see the artwork against.
           !showBackdrop || backdrop === 'transparent'
-            ? 'text-foreground bg-background'
+            ? 'text-foreground bg-secondary'
             : backdrop === 'white'
               ? 'bg-white'
               : 'bg-black',

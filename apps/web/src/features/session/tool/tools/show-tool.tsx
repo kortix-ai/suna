@@ -1,7 +1,5 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
@@ -34,17 +32,27 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { CaretRightIcon as CaretRight, GlobeIcon as Globe } from '@phosphor-icons/react';
+import { GlobeIcon as Globe } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+
+// Concave corner that joins a raised tab into the strip behind it.
+// Same path as the marketing web-panel / interactive-demo scallops.
+function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
+  const path = side === 'right' ? 'M0 0C0 32 16 64 38 64L0 64Z' : 'M38 0C38 32 22 64 0 64L38 64Z';
+  return (
+    <svg
+      viewBox="0 0 38 64"
+      fill="none"
+      preserveAspectRatio="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      className="text-secondary mt-auto h-full w-3.5 shrink-0 self-stretch overflow-visible"
+    >
+      <path d={path} fill="currentColor" />
+    </svg>
+  );
+}
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.
@@ -58,29 +66,12 @@ function CarouselServicePreview({ url, label }: { url: string; label?: string })
   return <InlineServicePreview url={url} label={label} />;
 }
 
-export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, locked }: ToolProps) {
+export function ShowTool({ part, sessionId }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
 
   const fill = useContext(ToolSurfaceContext) === 'panel';
-
-  // Inline disclosure state. `BasicTool` used to own this; the two behaviours
-  // it enforced are kept verbatim — `forceOpen` pins the body open, and
-  // `locked` refuses the collapse half of a toggle.
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    if (forceOpen) setOpen(true);
-  }, [forceOpen]);
-
-  const handleOpenChange = useCallback(
-    (value: boolean) => {
-      if (locked && !value) return;
-      setOpen(value);
-    },
-    [locked],
-  );
 
   const title = (input.title as string) || '';
   const description = (input.description as string) || '';
@@ -89,7 +80,6 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   const url = (input.url as string) || '';
   const content = (input.content as string) || '';
   const aspectRatio = (input.aspect_ratio as string) || '';
-  const theme = (input.theme as string) || 'default';
   const language = (input.language as string) || '';
 
   const items = useMemo<ShowCarouselItem[] | null>(() => {
@@ -133,6 +123,9 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
    * `ShowContentRenderer` routes them to each viewer's native toolbar slot, or
    * supplies the row itself for the viewers that ship none. There is never a
    * second header stacked above the viewer.
+   *
+   * On the inline (chat) surface the scallop shell owns the toolbar tab, so
+   * these stay out of the renderer there and only land in the right tab.
    */
   const fileActions =
     !isWebsitePreview && activePath ? (
@@ -164,12 +157,20 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
+  // Inline shell owns the toolbar in its right scallop tab. Panel keeps the
+  // actions inside the renderer / website header as before.
+  const inlineToolbar = isWebsitePreview ? (
+    <ServicePreviewActions preview={preview} />
+  ) : (
+    fileActions
+  );
+  const hasInlineToolbar = !!inlineToolbar;
+
   let body: ReactNode;
 
   if (running && !type && !items) {
     // Only the panel surface (no trigger button) still needs the bespoke
-    // loading card. Inline, the trigger button already carries the running
-    // spinner — rendering the card too would double up the indicators.
+    // loading card. Inline, the left scallop tab carries the running spinner.
     body = fill ? (
       <div className="bg-card flex h-full items-center justify-center overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
@@ -219,13 +220,10 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
     );
   } else {
     body = (
-      <div
-        className={cn(
-          'overflow-hidden',
-          fill ? 'flex h-full flex-col' : cn('border-border rounded-md border'),
-        )}
-      >
-        {isWebsitePreview && (
+      <div className={cn('overflow-hidden', fill ? 'flex h-full flex-col' : 'min-h-0 flex-1')}>
+        {/* Panel website header stays; inline moves these actions into the
+            right scallop tab so the shell is the only chrome. */}
+        {isWebsitePreview && fill && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
@@ -245,7 +243,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
                 fill={fill}
-                toolbarActions={fileActions}
+                toolbarActions={fill ? fileActions : undefined}
               />
             </ActiveServicePreviewContext.Provider>
           ) : isWebsitePreview ? (
@@ -265,7 +263,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
-                  toolbarActions={fileActions}
+                  toolbarActions={fill ? fileActions : undefined}
                 />
               </div>
               {description && !title && (
@@ -285,44 +283,52 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   // filling the pane with no shell wrapper.
   if (fill) return body;
 
-  // Inline (chat) surface: a `w-fit` accent button reveals the payload in
-  // place. Its label is the payload's RESOLVED title (`displayTitle`) — never a
-  // raw path or URL, which is what the `safeHttpUrl` gate above guarantees. The
-  // button hugs its content instead of spanning the column: `show` is one action
-  // in the transcript, and a full-bleed row reads as a section header for
-  // everything under it.
+  // Inline (chat) surface: scalloped panel shell — left tab is the file name,
+  // right tab is the toolbar. Content always visible; no disclosure.
   return (
-    <Disclosure open={open} onOpenChange={handleOpenChange} className="group/show">
-      <DisclosureTrigger>
-        <Button
-          type="button"
-          variant="accent"
-          size="sm"
-          data-component="tool-trigger"
-          className="border-border w-fit max-w-full justify-start gap-2 border font-normal"
+    <div data-component="tool-trigger" className="flex w-full flex-col">
+      {/* `items-stretch` + matching `py-1` keep left/right tabs one height.
+          `items-center` + asymmetric padding floated them off the shared
+          baseline (toolbar buttons are taller than the title text). */}
+      <div className="shadow-custom flex w-full items-stretch justify-between overflow-hidden">
+        <span
+          aria-current="page"
+          className="text-foreground relative flex min-w-0 shrink items-stretch"
         >
-          {/* `Loading`'s base sets `in-data-[slot=button]:text-background`, which
-              is invisible on the subtle accent surface. The same trailing-`!`
-              override the auth buttons use puts the color back. */}
-          {running ? (
-            <Loading className="text-muted-foreground! size-4 shrink-0" />
-          ) : (
-            showTypeIcon(headerIcon)
-          )}
-          <span className="min-w-0 truncate" title={displayTitle}>
-            {displayTitle}
-          </span>
-          <CaretRight
-            className={cn(
-              'text-muted-foreground/50 size-3 shrink-0 transition-transform',
-              'group-data-[state=open]/show:rotate-90',
+          <span className="bg-secondary relative z-10 flex h-full min-w-0 items-center gap-2 rounded-t-lg px-3.5 py-0.5 text-xs [&>svg]:size-4">
+            {running && !type && !items ? (
+              <Loading className="text-muted-foreground size-4 shrink-0" />
+            ) : (
+              showTypeIcon(headerIcon)
             )}
-          />
-        </Button>
-      </DisclosureTrigger>
+            <span className="min-w-0 truncate" title={displayTitle}>
+              {displayTitle}
+            </span>
+          </span>
+          <TabScallopEdge side="right" />
+        </span>
 
-      <DisclosureContent contentClassName="pt-2 text-xs">{body}</DisclosureContent>
-    </Disclosure>
+        {hasInlineToolbar && (
+          <span className="text-foreground relative flex shrink-0 items-stretch">
+            <TabScallopEdge side="left" />
+            <span className="bg-secondary relative z-10 flex h-full items-center gap-1 rounded-t-lg px-2 py-0.5">
+              {inlineToolbar}
+            </span>
+          </span>
+        )}
+      </div>
+
+      <div
+        className={cn(
+          'bg-secondary flex min-h-0 w-full flex-col overflow-hidden rounded-b-lg',
+          // Left tab covers top-left. Without a right toolbar tab the
+          // top-right of the content plane is exposed — round it.
+          !hasInlineToolbar && 'rounded-tr-lg',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">{body}</div>
+      </div>
+    </div>
   );
 }
 ToolRegistry.register('show', ShowTool);

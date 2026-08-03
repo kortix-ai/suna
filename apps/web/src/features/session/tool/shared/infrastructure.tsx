@@ -243,7 +243,6 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
         <Button
           type="button"
           onClick={navigateToPreviewTab}
-          variant="secondary"
           size="xs"
           disabled={!navigationEnabled || !proxy}
         >
@@ -308,7 +307,7 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
 
   return (
     <div
-      className={cn('relative w-full overflow-hidden bg-white', fill ? 'h-full' : 'aspect-video')}
+      className={cn('relative w-full overflow-hidden bg-secondary', fill ? 'h-full' : 'aspect-video')}
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
@@ -326,7 +325,7 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
           key={refreshKey}
           src={previewUrl}
           title={displayLabel}
-          className="absolute inset-0 h-full w-full border-0 bg-white"
+          className="absolute inset-0 h-full w-full border-0 bg-secondary"
           sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={onLoad}
           onError={onError}

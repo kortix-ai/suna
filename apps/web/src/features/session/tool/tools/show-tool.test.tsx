@@ -1,3 +1,4 @@
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
@@ -38,20 +39,18 @@ function withProviders(node: ReactNode) {
   const queryClient = new QueryClient();
   return (
     <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>{node}</TooltipProvider>
+      </QueryClientProvider>
     </NextIntlClientProvider>
   );
 }
 
-// show/show-user drives its INLINE (chat) surface with `Disclosure`: a `w-fit`
-// outline Button is the trigger, and the payload renders in
-// `DisclosureContent`. The PANEL surface keeps its bespoke fill-the-pane
-// rendering byte-for-byte — tool-part-renderer.tsx:122 special-cases
-// show/show-user as `fillsPanel` because the preview IS the payload there.
-//
-// `renderToStaticMarkup` runs no effects, so `forceOpen` (a `useEffect`) can't
-// open the disclosure in this harness — the open-state tests drive the
-// synchronous `defaultOpen` prop instead.
+// show/show-user drives its INLINE (chat) surface with a scalloped panel
+// shell: left tab = file name, right tab = toolbar, content always visible.
+// The PANEL surface keeps its bespoke fill-the-pane rendering byte-for-byte —
+// tool-part-renderer.tsx special-cases show/show-user as `fillsPanel` because
+// the preview IS the payload there.
 
 function makePart(input: Record<string, unknown>): ToolPart {
   return {
@@ -73,34 +72,27 @@ const PART = makePart({
   content: 'Hello from the payload.',
 });
 
-describe('ShowTool drives its inline surface with Disclosure; panel stays visually identical', () => {
-  test('inline surface renders a w-fit accent button as the disclosure trigger', () => {
+describe('ShowTool drives its inline surface with a scalloped panel; panel stays visually identical', () => {
+  test('inline surface renders the scalloped shell with the title tab and payload visible', () => {
     const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
 
-    // Grammar: the trigger is a real <button>, still tagged `tool-trigger` so
-    // activity-step.tsx's descendant size overrides keep applying.
+    // Still tagged `tool-trigger` so activity-step.tsx's descendant size
+    // overrides keep applying.
     expect(html).toContain('data-component="tool-trigger"');
-    expect(html).toContain('<button');
-    expect(html).toContain('aria-expanded="false"');
 
-    // Accent variant, hugging its content — not a full-bleed row.
-    expect(html).toContain('bg-foreground/5');
-    expect(html).toContain('border');
-    expect(html).toContain('w-fit');
+    // Scalloped shell chrome — outer strip + concentric inner radius.
+    expect(html).toContain('bg-border');
+    expect(html).toContain('rounded-xl');
+    expect(html).toContain('rounded-t-xl');
 
-    // The label is the payload's resolved title (mirrors `showLabel`-style
+    // Left tab label is the payload's resolved title (mirrors `showLabel`-style
     // precedence: title > description > basename/domain, never a raw path/URL).
     expect(html).toContain('Quarterly Report Draft');
+    expect(html).toContain('aria-current="page"');
 
-    // Collapsed by default: the payload lives behind the trigger.
-    expect(html).not.toContain('Hello from the payload.');
-  });
-
-  test('an open disclosure renders the payload in its content region', () => {
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} defaultOpen />));
-
-    expect(html).toContain('aria-expanded="true"');
+    // Always open: the payload lives in the content plane, not behind a disclosure.
     expect(html).toContain('Hello from the payload.');
+    expect(html).not.toContain('aria-expanded');
   });
 
   test('panel surface fills the pane exactly as before — no shell wrapper', () => {
@@ -119,9 +111,10 @@ describe('ShowTool drives its inline surface with Disclosure; panel stays visual
     expect(html).toContain('flex min-h-0 flex-1 flex-col');
     expect(html).toContain('min-h-0 flex-1 overflow-hidden');
 
-    // No disclosure shell on the panel surface — the preview still fills the
+    // No scallop shell on the panel surface — the preview still fills the
     // pane directly, unwrapped.
     expect(html).not.toContain('data-component="tool-trigger"');
+    expect(html).not.toContain('aria-current="page"');
 
     expect(html).toContain('Hello from the payload.');
   });
@@ -171,47 +164,64 @@ describe('ShowTool drives its inline surface with Disclosure; panel stays visual
       ),
     );
 
-    // The trigger button carries the running indicator itself, so the bespoke
-    // panel loading card must not render a second one inline.
+    // The left scallop tab carries the running indicator itself, so the
+    // bespoke panel loading card must not render a second one inline.
     expect(html).toContain('data-component="tool-trigger"');
     expect(html).toContain('animate-spinner-orbit');
     expect(html).not.toContain('bg-card');
     expect(html).not.toContain('px-5 py-4');
   });
 
-  test('a title-less unsafe url never leaks into the row subtitle', () => {
+  test('a title-less unsafe url never leaks into the left tab label', () => {
     const part = makePart({
       type: 'url',
       url: '/internal/session/abc?token=secret123',
     });
 
-    // Collapsed, so the whole markup IS the trigger button.
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
     // showDomain() echoes unparseable input verbatim; the safeHttpUrl gate
-    // must degrade a relative/non-http(s) url to the literal 'Link' instead.
+    // must degrade a relative/non-http(s) url to the literal 'Link' instead
+    // on the always-visible left tab — never the raw path or token.
     expect(html).toContain('title="Link"');
-    expect(html).not.toContain('token=secret123');
-    expect(html).not.toContain('/internal/session/abc');
+    expect(html).toMatch(/title="Link"[^>]*>Link</);
+    // The tab's title attr is the safe label; a raw relative URL must not be
+    // the tab's `title=` value (body content may still render the url string
+    // via ShowContentRenderer — that is a separate surface).
+    expect(html).not.toContain('title="/internal/session/abc?token=secret123"');
   });
 
   test('a show whose content failed to load still renders a fallback row (never disappears)', () => {
     forceShowContentUnavailable = true;
     try {
       const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
-      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} defaultOpen />));
+      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
       expect(html).toContain('Preview unavailable');
       // Pre-Task-6 behavior returned null here (empty markup) — this is the
       // exact regression this task fixes: a completed `show` never vanishes.
       expect(html).not.toBe('');
 
-      // Collapsed, the trigger still holds the tool's place in the transcript.
-      const collapsed = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
-      expect(collapsed).toContain('data-component="tool-trigger"');
-      expect(collapsed).toContain('Report');
+      // The shell still holds the tool's place in the transcript with the title.
+      expect(html).toContain('data-component="tool-trigger"');
+      expect(html).toContain('Report');
     } finally {
       forceShowContentUnavailable = false;
     }
+  });
+
+  test('file-backed inline show places toolbar actions in the right scallop tab', () => {
+    const part = makePart({
+      type: 'file',
+      path: '/workspace/report.pdf',
+      title: 'Report',
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    // Left tab: title. Right tab: file actions (Refresh / Full screen / Open).
+    expect(html).toContain('Report');
+    expect(html).toContain('aria-label="Refresh"');
+    // Two scallop SVGs — one on each tab edge.
+    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(2);
   });
 });

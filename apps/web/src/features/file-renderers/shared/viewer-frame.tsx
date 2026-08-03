@@ -38,7 +38,7 @@ export function ViewerFrame({
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', className)}>
-      <div className="bg-background flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+      <div className="bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <span className="text-foreground/80 min-w-0 flex-1 truncate text-xs font-medium">
           {label}
         </span>
