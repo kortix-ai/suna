@@ -7,6 +7,7 @@ import {
   DESKTOP_ROWS,
   MOBILE_CARD,
   MOBILE_ROWS,
+  MOBILE_STATUS,
   hero,
 } from '@/features/marketing/download/content';
 import type { DesktopOs, MobileOs, Platform } from '@/features/marketing/download/detect-os';
@@ -72,8 +73,7 @@ export default async function DownloadPage({
     id: os,
     label: MOBILE_ROWS[os].label,
     meta: MOBILE_ROWS[os].hint,
-    href: MOBILE_ROWS[os].href,
-    external: true,
+    status: MOBILE_STATUS,
     Mark: MOBILE_MARKS[os],
   }));
 
@@ -97,7 +97,10 @@ export default async function DownloadPage({
       title={MOBILE_CARD.title}
       description={MOBILE_CARD.description}
       rows={mobileRows}
-      filled={onPhone ? detected : null}
+      // Nothing to fill: neither row has a button while both apps are unreleased.
+      // A phone visitor therefore sees no solid button anywhere on the page,
+      // which is accurate — there is nothing here they can install today.
+      filled={null}
     />
   );
 
