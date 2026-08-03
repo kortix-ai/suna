@@ -97,10 +97,9 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
-  // Optional MCP compatibility face. The agent-facing default is the
-  // `kortix executor` CLI, so we only inject this MCP server when explicitly
-  // enabled. In proxy mode its KORTIX_API_URL points at the local executor proxy
-  // with a placeholder token; otherwise it receives the real session token.
+  // The agent receives the Executor MCP by default. In proxy mode its
+  // KORTIX_API_URL points at the local executor proxy with a placeholder token;
+  // otherwise it receives the real session token.
   const executorProxyUrl = env.KORTIX_EXECUTOR_PROXY_URL
   const executorProxyMode = !!executorProxyUrl
   const executorMcpSetting = (env.KORTIX_EXECUTOR_MCP_ENABLED ?? '').trim().toLowerCase()
