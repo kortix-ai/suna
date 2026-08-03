@@ -592,7 +592,17 @@ export async function createProjectSession(input: {
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
   // owner's profile), so unlike secrets it is NOT origin-gated.
-  let inheritUnbound = body.inherit_unbound === true;
+  //
+  // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
+  // connectors keeps the project-default fallback for the rest unless the caller
+  // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
+  // composer's "I picked these specific connections, turn the others off"
+  // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
+  // deliberately never flips this flag on a scope save. Before this, a caller
+  // sending `connector_bindings: {...}` without `inherit_unbound` left it
+  // `false`, hiding EVERY unbound connector from `kortix executor connectors`
+  // / `kortix executor call` — the whole catalog went empty.
+  let inheritUnbound = body.inherit_unbound !== false;
   const connectorBindingsConfigured = body.connector_bindings !== undefined;
   const requireConnectors: string[] = Array.isArray(body.require_connectors)
     ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
