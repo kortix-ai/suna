@@ -100,7 +100,6 @@ import {
   stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -1580,7 +1579,6 @@ export function SessionChat({
   // every open and close of a panel beside it for a value it no longer reads.
   // The action panel column owns its own flag and subscribes to it itself.
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   // ---- Hooks ----
   // runtimeReady gates the session query (it's disabled until the sandbox
@@ -3547,7 +3545,6 @@ export function SessionChat({
                         text={optimisticPrompt || ''}
                         agentNames={agentNames}
                         onFileClick={openFileInComputer}
-                        onFilePreview={openPreview}
                       />
                     )}
 

@@ -554,7 +554,11 @@ function AttachmentImage({
  * branch turned a 15-attachment message into 15 filename-width rows stacked
  * against the right edge — roughly 700px of staircase.
  */
-function MessageAttachments({
+/**
+ * Shared attachment strip — used by the real user turn and the optimistic turn
+ * so the shell → chat crossfade never swaps card chrome for tile chrome.
+ */
+export function MessageAttachments({
   attachments,
   pending,
 }: {

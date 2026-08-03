@@ -17,7 +17,6 @@ import type { Command } from '@kortix/sdk/react';
 import { readStartStash, useRuntimeAgents, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
@@ -69,13 +68,12 @@ export function InstantSessionShell({
   // switch on.
   const ready = stage === 'ready';
 
-  // The optimistic turn's two click targets, taken from the same global stores
-  // SessionChat reads them from. Passing them here rather than leaving them
-  // undefined is what keeps the bubble byte-identical across the crossfade — an
-  // unclickable mention renders as a plain span, and it would visibly gain an
-  // underline the moment the real chat took over.
+  // File-mention clicks come from the same store SessionChat reads. Passing the
+  // handler here rather than leaving it undefined keeps the bubble identical
+  // across the crossfade — an unclickable mention renders as a plain span and
+  // would visibly gain an underline the moment the real chat took over.
+  // Attachment clicks live inside MessageAttachments (computer store / lightbox).
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Same reason: an `@agent` mention only renders as an agent chip when the
   // renderer can recognise the name. Without this list it would fall through to
   // "file" and pick up an underline the real chat does not give it. The catalog
@@ -245,15 +243,14 @@ export function InstantSessionShell({
               <div className="flex min-w-0 flex-col">
                 {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
-                    difference the shell is entitled to: there is no sandbox yet
-                    to serve a thumbnail from. The waiting row underneath says
-                    "Thinking" at every boot stage, exactly as it will once the
-                    real chat takes over. */}
+                    difference the shell is entitled to: there is no sandbox yet,
+                    so MessageAttachments paints every tile as pending. The
+                    waiting row underneath says "Thinking" at every boot stage,
+                    exactly as it will once the real chat takes over. */}
                 <OptimisticTurn
                   text={buildOptimisticPromptTextWithUploads(submission.text, submission.files)}
                   agentNames={agentNames}
                   onFileClick={openFileInComputer}
-                  onFilePreview={openPreview}
                   deferPreview
                 />
               </div>
