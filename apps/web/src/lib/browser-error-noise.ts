@@ -2873,8 +2873,8 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
 
 
   // Browser-native <img> / next/image load failures can surface as this exact
-  // message through window.onerror. Keep this exact: pptx-react-viewer throws
-  // actionable errors such as "Failed to load image for colour change
+  // message through window.onerror. Keep this exact: the old pptx-react-viewer
+  // threw actionable errors such as "Failed to load image for colour change
   // processing", which must still reach error tracking.
   if (isBareImageLoadNoiseMessage(message)) {
     return true;

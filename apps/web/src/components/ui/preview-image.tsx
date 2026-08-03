@@ -1,6 +1,5 @@
 'use client';
 
-import { MinusIcon as Minus, PlusIcon as Plus } from '@phosphor-icons/react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import Image from 'next/image';
@@ -9,7 +8,6 @@ import * as React from 'react';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
-import { ButtonGroup } from './button-group';
 
 const PreviewImage = DialogPrimitive.Root;
 
@@ -25,10 +23,7 @@ const PreviewImageOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      'bg-primary/[0.99] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-background/[0.99] fixed inset-0 z-50',
-      className,
-    )}
+    className={cn('fixed inset-0 z-50 bg-black/40', className)}
     {...props}
   />
 ));
@@ -122,7 +117,7 @@ const PreviewImageContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-[99999] grid h-full w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-4 shadow-lg duration-200 sm:rounded-lg',
+          'fixed top-[50%] left-[50%] z-[99999] grid h-full w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-4 shadow-lg duration-200 sm:rounded-lg',
           className,
         )}
         {...props}
@@ -132,39 +127,9 @@ const PreviewImageContent = React.forwardRef<
         </VisuallyHidden.Root>
 
         <div
-          className="absolute top-2 right-2 z-[60] flex gap-1"
+          className="absolute top-3 right-3 z-[60] flex gap-1"
           onClick={(event) => event.stopPropagation()}
         >
-          <ButtonGroup>
-            <Button
-              size="icon"
-              type="button"
-              onClick={zoomOut}
-              className="text-background disabled:opacity-100"
-              aria-label="Zoom out image"
-              disabled={zoomLevel <= MIN_ZOOM}
-            >
-              <Minus className="size-4" />
-            </Button>
-            <Button
-              size="magic-sm"
-              type="button"
-              onClick={toggleZoom}
-              className="text-background h-8 font-mono text-sm"
-            >
-              {zoomPercent}%
-            </Button>
-            <Button
-              size="icon"
-              type="button"
-              className="text-background disabled:opacity-100"
-              onClick={zoomIn}
-              aria-label="Zoom in image"
-              disabled={zoomLevel >= MAX_ZOOM}
-            >
-              <Plus className="size-4" />
-            </Button>
-          </ButtonGroup>
           <PreviewImageClose asChild>
             <Button
               size="icon"

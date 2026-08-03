@@ -11,9 +11,10 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { stripAnsi } from '@/ui';
-import { TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -86,15 +87,18 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="pty_read" />
       ) : parsed.content ? (
-        <div data-scrollable className="max-h-96 overflow-auto">
+        // `ToolResultCard` already owns the capped scroll container, so the
+        // local `data-scrollable max-h-96` wrapper is gone — two nested scroll
+        // areas would trap the wheel in the inner one.
+        <ToolResultCard>
           <PreWithPaths
             text={parsed.content}
-            className="text-foreground/80 px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap"
+            className="text-foreground/80 px-2 py-1.5 font-mono text-xs leading-relaxed whitespace-pre-wrap"
           />
           {parsed.bufferInfo && (
-            <div className="text-muted-foreground/50 px-3 pb-2 text-xs">{parsed.bufferInfo}</div>
+            <div className="text-muted-foreground/50 px-2 pb-1.5 text-xs">{parsed.bufferInfo}</div>
           )}
-        </div>
+        </ToolResultCard>
       ) : null}
     </BasicTool>
   );

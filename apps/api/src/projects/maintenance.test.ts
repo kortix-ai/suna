@@ -8,6 +8,9 @@ import { describe, expect, mock, test } from 'bun:test';
 // to let the module load in isolation.
 mock.module('../config', () => ({ config: {} }));
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
+mock.module('../executor/attachments', () => ({
+  cleanupExpiredExecutorAttachments: async () => ({ deleted: 0, errors: 0 }),
+}));
 // sweepExpiredSessionBranches() (unlike the other maintenance subtasks) isn't
 // wrapped in its own .catch() and makes a real chained db.select(...) call —
 // give it an empty-result chain so runProjectMaintenance can complete.

@@ -152,17 +152,31 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
   role = aws_iam_role.gha_ecs_deploy.id
   # ecs-deploy.sh reads the per-env blob to render every key into the task-def
   # as a container secret. Region-wildcarded like the ECS statements; the `-*`
-  # tail matches Secrets Manager's random ARN suffix.
+  # tail matches Secrets Manager's random ARN suffix. The staging deployment
+  # also refreshes kortix-staging-env from GitHub's staging-only data-plane
+  # secrets. Keep that write grant limited to the staging blob.
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret",
-      ]
-      Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
-    }]
+    Statement = [
+      {
+        Sid    = "ReadKortixEnvironmentSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
+      },
+      {
+        Sid    = "WriteStagingSecret"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+        ]
+        Resource = "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*"
+      },
+    ]
   })
 }
 

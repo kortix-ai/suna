@@ -12,7 +12,7 @@ const DEFAULT_TITLE_REFRESH_DELAYS_MS = [0, 5_000, 5_000, 10_000, 10_000, 15_000
 
 function readRealTitle(value: unknown): string | null {
   const title = typeof value === 'string' ? value.trim() : '';
-  if (!title || /^new session\b/i.test(title)) return null;
+  if (!title || /^new (?:session|agent)\b/i.test(title)) return null;
   return title;
 }
 

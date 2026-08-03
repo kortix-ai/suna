@@ -57,6 +57,22 @@ export interface SlackEnvelope {
   event?: SlackEvent;
 }
 
+export interface SlackFile {
+  id: string;
+  created: number;
+  timestamp: number;
+  mimetype: string;
+  filetype: string;
+  pretty_type: string;
+  user: string;
+  size: number;
+  mode: string;
+  url_private: string;
+  url_private_download: string;
+  name?: string;
+  title?: string;
+}
+
 export interface SlackEvent {
   type: string;
   user?: string;
@@ -64,6 +80,7 @@ export interface SlackEvent {
   channel?: string;
   channel_type?: string;
   text?: string;
+  files?: SlackFile[];
   ts?: string;
   thread_ts?: string;
   subtype?: string;

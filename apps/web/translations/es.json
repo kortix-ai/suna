@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Pide acceso.",
+      "privateBody": "Solo los miembros pueden abrir este proyecto. Envía una nota y un gestor del proyecto podrá añadirte.",
+      "waitingHeading": "Esperando aprobación.",
+      "sentBody": "Tu solicitud está con los gestores del proyecto. Esta página se abrirá sola en cuanto uno de ellos la apruebe.",
+      "alreadyBody": "Ya pediste acceso antes. Un gestor del proyecto todavía tiene que aprobarlo.",
+      "notFoundHeading": "Este proyecto ya no existe.",
+      "notFoundBody": "Puede que el enlace sea incorrecto o que alguien haya eliminado el proyecto.",
+      "errorHeading": "Este proyecto no se cargó.",
+      "errorBody": "La solicitud falló antes de que pudiéramos comprobar tu acceso.",
+      "noteLabel": "Nota para el gestor del proyecto",
+      "notePlaceholder": "Por qué necesitas acceso (opcional)",
+      "requestAction": "Solicitar acceso",
+      "checkNowAction": "Comprobar ahora",
+      "tryAgainAction": "Intentar de nuevo",
+      "projectsAction": "Volver a proyectos",
+      "accountLabel": "Cuenta",
+      "projectLabel": "Proyecto",
+      "approvalNote": "Cualquiera que gestione este proyecto puede aprobar tu solicitud.",
+      "openAsAdmin": "Abrir como administrador",
+      "requestFailed": "No se pudo enviar la solicitud.",
+      "bypassFailed": "Falló el acceso como administrador.",
+      "thisAccount": "esta cuenta"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix para móvil",
       "line89JsxTextYourAiWorkerInYourPocket": "Tu trabajador de IA, en tu bolsillo.",

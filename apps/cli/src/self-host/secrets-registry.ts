@@ -260,9 +260,6 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   PLATINUM_TEMPLATE: ['kortix-api'],
   PLATINUM_WEBHOOK_SECRET: ['kortix-api'],
 
-  // Frontend runtime configuration
-  KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED: ['frontend'],
-
   // Managed git
   MANAGED_GIT_GITHUB_OWNER: ['kortix-api'],
   MANAGED_GIT_GITHUB_TOKEN: ['kortix-api'],

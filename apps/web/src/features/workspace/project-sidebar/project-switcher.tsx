@@ -211,37 +211,38 @@ export function ProjectSwitcher({
         <Link
           href={homeHref}
           aria-label={homeLabel}
-          className="text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full w-7 shrink-0 items-center justify-center rounded-s-sm transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
+          className="text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full shrink-0 items-center justify-center rounded-s-sm px-2 transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
         >
           <Icon.Kortix className="size-4" />
         </Link>
-        {/* Seam. Absent at rest so the shell reads as one surface; drawn on
-            hover so the two hit areas are discoverable before they are
-            clicked, and never after the pointer has left. */}
-        <span
-          aria-hidden
-          className="bg-border/0 group-hover/switcher:bg-border/70 h-full w-px shrink-0 transition-colors duration-150 ease-out"
-        />
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Switch project"
-            className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
-          >
-            {labelPending ? null : (
-              <span className="text-foreground min-w-0 truncate text-sm font-medium tracking-tight whitespace-nowrap">
-                {switcherLabel}
-              </span>
-            )}
-            <CaretUpDownIcon className="text-muted-foreground/50 group-hover/switcher:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 ease-out" />
-          </button>
-        </DropdownMenuTrigger>
+        {!labelPending ? (
+          <>
+            {/* Seam. Absent at rest so the shell reads as one surface; drawn on
+                hover so the two hit areas are discoverable before they are
+                clicked, and never after the pointer has left. */}
+            <span
+              aria-hidden
+              className="bg-border/0 group-hover/switcher:bg-border/70 h-full w-px shrink-0 transition-colors duration-150 ease-out"
+            />
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Switch project"
+                className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
+              >
+                <span className="text-foreground min-w-0 truncate text-sm font-medium tracking-tight whitespace-nowrap">
+                  {switcherLabel}
+                </span>
+                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/switcher:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 ease-out" />
+              </button>
+            </DropdownMenuTrigger>
+          </>
+        ) : null}
       </div>
     );
 
-  // Sidebar: never blank the control while accounts load. The mark and the
-  // shell are known from first paint; only the name is not, and `labelPending`
-  // already places a skeleton exactly where the name will land.
+  // Sidebar: never blank the control while accounts load. The home link is
+  // known from first paint; the project switch trigger appears with its label.
   if (accountsQuery.isLoading && !activeAccount && variant === 'header') {
     return <Skeleton className={cn('h-8 w-36 rounded-md', className)} />;
   }

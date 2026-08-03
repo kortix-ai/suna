@@ -34,11 +34,11 @@ import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
+import { HighlightedCode } from '@/components/markdown/code';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -781,11 +781,13 @@ function CodeSnippet({
         className,
       )}
     >
-      <CodeBlockCode
-        code={code}
-        language={language}
-        className="text-xs [&_pre]:!rounded-none [&_pre]:!bg-transparent [&_pre]:!p-3"
-      />
+      {/* The card's own padding and type size ride on this wrapper now. A
+          `[&_code]:` selector is one specificity step above HighlightedCode's
+          own `text-sm`, so the smaller type wins without `!important`. The
+          parent already scrolls, so the code element just overflows into it. */}
+      <div className="p-3 [&_code]:text-xs">
+        <HighlightedCode code={code} language={language} />
+      </div>
     </div>
   );
 }

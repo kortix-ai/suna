@@ -23,11 +23,15 @@ export const metadata: Metadata = {
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
     url: `${CANONICAL_ORIGIN}/changelog`,
+    siteName: 'Kortix',
+    type: 'website',
+    images: [{ url: '/banner.png', width: 1200, height: 630, alt: 'Kortix Changelog' }],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
+    images: ['/banner.png'],
   },
   alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
 };

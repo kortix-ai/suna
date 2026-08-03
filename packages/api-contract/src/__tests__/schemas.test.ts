@@ -17,6 +17,8 @@ import {
   ProjectSessionSchema,
   ReconcileConnectionProfileInputSchema,
   SecretSchema,
+  SecretDeliveryStrategySchema,
+  UpdateSecretStrategyInputSchema,
   ConnectorAuthorizationRequiredErrorSchema,
   ConnectorAuthorizationRequiredProfileSchema,
   SessionConnectorBindingInputSchema,
@@ -212,6 +214,13 @@ function secretFixture(overrides: Record<string, unknown> = {}) {
     mine: null,
     effective_source: 'shared',
     can_manage_shared: true,
+    strategy: 'runtime',
+    consumer: 'sandbox',
+    delivery_status: 'available',
+    egress_policy: null,
+    strategy_locked: false,
+    last_rotated_at: null,
+    requires_rotation: false,
     ...overrides,
   };
 }
@@ -524,6 +533,22 @@ describe('SecretSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('accepts every delivery strategy and rejects unknown values', () => {
+    for (const strategy of ['runtime', 'egress', 'broker', 'denied'] as const) {
+      expect(SecretDeliveryStrategySchema.parse(strategy)).toBe(strategy);
+    }
+    expect(SecretDeliveryStrategySchema.safeParse('env').success).toBe(false);
+  });
+
+  test('accepts only a strategy in the update input', () => {
+    expect(UpdateSecretStrategyInputSchema.parse({ strategy: 'denied' })).toEqual({
+      strategy: 'denied',
+    });
+    expect(
+      UpdateSecretStrategyInputSchema.safeParse({ strategy: 'runtime', value: 'secret' }).success,
+    ).toBe(false);
   });
 });
 

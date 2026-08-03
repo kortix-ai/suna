@@ -54,6 +54,7 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { executorAttachmentStore } from './attachments';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import {
@@ -472,6 +473,7 @@ const nodeFetch: FetchImpl = async (url, init) => {
 
 export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
   return {
+    attachmentStore: executorAttachmentStore,
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
         .select()
@@ -1222,6 +1224,7 @@ async function getConnectorConfig(
 }
 
 export const dbExecutorRouterDeps: ExecutorRouterDeps = {
+  attachmentStore: executorAttachmentStore,
   resolvePrincipal,
   resolveProjectPrincipal,
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),

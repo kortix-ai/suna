@@ -3,6 +3,8 @@ import { ReviewCenter } from '@/features/review-center/review-center';
 export const metadata = {
   title: 'Review Center',
   description: 'Review changes, approvals, agent outputs and questions in one place.',
+  // Clickable prototype with mock data — shareable, not indexable.
+  robots: { index: false, follow: false },
 };
 
 /**

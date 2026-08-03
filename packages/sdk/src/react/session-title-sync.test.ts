@@ -54,6 +54,17 @@ describe('reconcileHydratedSessionTitle', () => {
     ]);
   });
 
+  test("keeps refetching Veyris's historical New agent placeholder", async () => {
+    const { client, refetched } = titleQueryClient('New agent');
+
+    const resolved = await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, {
+      delaysMs: [0],
+    });
+
+    expect(resolved).toBe(true);
+    expect(refetched).toHaveLength(2);
+  });
+
   test('does not poll an empty conversation or a session that already has a title', async () => {
     const empty = titleQueryClient(null);
     const titled = titleQueryClient('Existing Title');

@@ -52,6 +52,25 @@ interface KortixComputerState {
   shouldOpenPanel: boolean;
   isSidePanelOpen: boolean;
   _panelOpenBySession: Record<string, boolean>;
+  /**
+   * The FLOATING action panel — the Outputs/Context/Preview cards overlaying
+   * the chat, anchored top right. Entirely separate from `isSidePanelOpen`,
+   * which governs the right-hand DETAIL panel (terminal / browser / files /
+   * file preview).
+   *
+   * The two must never move together. Before the split they were one flag,
+   * because the cards and the details lived in the same `ResizablePanel` —
+   * opening the cards WAS opening the panel. Now: this flag is written by the
+   * chat's chevron and by nothing else, while `isSidePanelOpen` is
+   * written only by things that produce a detail to look at. Any future action
+   * that writes both is the bug this split exists to remove.
+   *
+   * Deliberately carries none of the width state (`panelSplit`/`panelAspect`/
+   * `isExpanded`/`detailOpen`): those describe how wide an open DOCUMENT wants
+   * the split to be, and a fixed-width floating overlay has no split to size.
+   */
+  isActionPanelOpen: boolean;
+  _actionPanelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
   isExpanded: boolean;
   // Easy mode only — the side panel's requested share of the split, as a
@@ -145,6 +164,10 @@ interface KortixComputerState {
   // Panel control
   clearShouldOpenPanel: () => void;
   setIsSidePanelOpen: (open: boolean) => void;
+  /** The floating action panel. Writes `isActionPanelOpen` and that session's
+   *  entry in `_actionPanelOpenBySession` — never any side-panel state. */
+  setIsActionPanelOpen: (open: boolean) => void;
+  toggleActionPanel: () => void;
   /** Call when a session tab becomes active — restores that session's panel state */
   setActiveSession: (sessionId: string | null) => void;
   openSidePanel: () => void;
@@ -200,6 +223,8 @@ const initialState = {
   shouldOpenPanel: false,
   isSidePanelOpen: false,
   _panelOpenBySession: {} as Record<string, boolean>,
+  isActionPanelOpen: false,
+  _actionPanelOpenBySession: {} as Record<string, boolean>,
   _activeSessionId: null as string | null,
   isExpanded: false,
   panelSplit: null as number | null,
@@ -296,8 +321,8 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
         if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
-        // Every REAL close path routes through here (chat header toggle, ⌘I,
-        // mobile drawer dismiss) — reset the width states or a stale
+        // Every REAL close path routes through here (the detail's own close
+        // button/Escape, mobile drawer dismiss) — reset the width states or a stale
         // `panelSplit`/`isExpanded` survives into the next open. Snap, not
         // glide: the panel is disappearing; animating widths under a hidden
         // panel is pointless, and the next open's resize effect must read
@@ -316,6 +341,35 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set(update);
       },
 
+      setIsActionPanelOpen: (open: boolean) => {
+        const sessionId = get()._activeSessionId;
+        const update: Partial<KortixComputerState> = { isActionPanelOpen: open };
+        // The ready chip's dot lives on the chevron that drives this flag, so
+        // opening the floating panel is what dismisses it. Note this is an
+        // ADDITIONAL clear, not a moved one: the side-panel actions still clear
+        // it too, because opening the deliverable itself also counts as having
+        // seen it. Only THIS session's announcement — session B opening its
+        // panel must not destroy session A's unseen chip (same rule as
+        // `setIsSidePanelOpen`/`focusToolCall`/`openSidePanel`).
+        if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        // No width state touched on close, unlike `setIsSidePanelOpen`:
+        // `panelSplit`/`panelAspect`/`isExpanded`/`detailOpen` belong to the
+        // detail panel's split, which this overlay is not part of. Clearing
+        // them here would collapse an open detail's width from an unrelated
+        // surface's toggle.
+        if (sessionId) {
+          update._actionPanelOpenBySession = {
+            ...get()._actionPanelOpenBySession,
+            [sessionId]: open,
+          };
+        }
+        set(update);
+      },
+
+      toggleActionPanel: () => {
+        get().setIsActionPanelOpen(!get().isActionPanelOpen);
+      },
+
       setActiveSession: (sessionId: string | null) => {
         // A quick-view is an intent about the session it was made in — it must
         // not replay when some other session mounts later. Cleared even on the
@@ -327,17 +381,25 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         }
         const prev = get()._activeSessionId;
         if (prev === sessionId) return;
-        // Save current panel state for the previous session
+        // Save current panel state for the previous session. Both surfaces are
+        // remembered independently — a user who left session A with the cards
+        // up and the detail panel closed must come back to exactly that, not
+        // to whichever state session B happened to leave behind.
         const panelMap = { ...get()._panelOpenBySession };
+        const actionPanelMap = { ...get()._actionPanelOpenBySession };
         if (prev) {
           panelMap[prev] = get().isSidePanelOpen;
+          actionPanelMap[prev] = get().isActionPanelOpen;
         }
         // Restore panel state for the new session (default to false if unseen)
         const restored = sessionId ? (panelMap[sessionId] ?? false) : false;
+        const restoredActionPanel = sessionId ? (actionPanelMap[sessionId] ?? false) : false;
         set({
           _activeSessionId: sessionId,
           _panelOpenBySession: panelMap,
           isSidePanelOpen: restored,
+          _actionPanelOpenBySession: actionPanelMap,
+          isActionPanelOpen: restoredActionPanel,
           // Reset expanded/split/detail state when switching sessions
           isExpanded: false,
           panelSplit: null,
@@ -484,6 +546,15 @@ export const useIsSidePanelOpen = () => useKortixComputerStore((state) => state.
 
 export const useSetIsSidePanelOpen = () =>
   useKortixComputerStore((state) => state.setIsSidePanelOpen);
+
+// Floating action panel (the cards over the chat) — deliberately its own pair
+// of hooks, so a component reaching for one surface can never accidentally
+// subscribe to, or write, the other.
+export const useIsActionPanelOpen = () =>
+  useKortixComputerStore((state) => state.isActionPanelOpen);
+
+export const useToggleActionPanel = () =>
+  useKortixComputerStore((state) => state.toggleActionPanel);
 
 export const useIsExpanded = () => useKortixComputerStore((state) => state.isExpanded);
 

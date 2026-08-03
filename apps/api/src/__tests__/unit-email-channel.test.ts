@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import {
   AgentMailApiError,
+  agentMailProvisioningClientIds,
   createAgentMailInbox,
   createAgentMailWebhook,
   isAgentMailInboxLimitError,
@@ -182,6 +183,23 @@ describe('AgentMail webhook verification', () => {
       });
       expect(invalidSignature.status).toBe(401);
 
+      const standardId = 'msg_standard_123';
+      const standardTimestamp = String(Math.floor(Date.now() / 1000));
+      const standardSignature = createHmac('sha256', Buffer.from('test-signing-key'))
+        .update(`${standardId}.${standardTimestamp}.${rawBody}`)
+        .digest('base64');
+      const standardHeaders = await emailWebhookApp.request('/agentmail', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'webhook-id': standardId,
+          'webhook-timestamp': standardTimestamp,
+          'webhook-signature': `v1,${standardSignature}`,
+        },
+        body: rawBody,
+      });
+      expect(standardHeaders.status).toBe(200);
+
       // A malformed unsigned body (missing event_type/inbox_id) must NOT be
       // acked with 200 — that let an unauthenticated caller poison ack/monitoring
       // with `{}` -> 200 ok. Now rejected with 400 before any signature check.
@@ -213,6 +231,22 @@ describe('AgentMail credential resolution', () => {
     } finally {
       (config as { AGENTMAIL_API_KEY: string | undefined }).AGENTMAIL_API_KEY = original;
     }
+  });
+});
+
+describe('AgentMail provisioning idempotency', () => {
+  test('scopes inbox and webhook client ids to the project profile tuple', () => {
+    const alpha = agentMailProvisioningClientIds('project-1', 'veyris_email_alpha');
+    const alphaRetry = agentMailProvisioningClientIds('project-1', 'VEYRIS_EMAIL_ALPHA');
+    const beta = agentMailProvisioningClientIds('project-1', 'veyris_email_beta');
+    const otherProject = agentMailProvisioningClientIds('project-2', 'veyris_email_alpha');
+
+    expect(alphaRetry).toEqual(alpha);
+    expect(beta.inbox).not.toBe(alpha.inbox);
+    expect(beta.webhook).not.toBe(alpha.webhook);
+    expect(otherProject.inbox).not.toBe(alpha.inbox);
+    expect(alpha.inbox).toMatch(/^kortix-inbox-[a-f0-9]{40}$/);
+    expect(alpha.webhook).toMatch(/^kortix-webhook-[a-f0-9]{40}$/);
   });
 });
 

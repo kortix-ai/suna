@@ -6,6 +6,7 @@ import {
   listProjectSecrets,
   pollProjectProviderOAuth,
   setPersonalProjectSecret,
+  setProjectSecretStrategy,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
   upsertProjectSecret,
@@ -72,6 +73,25 @@ test('upsertProjectSecret includes an explicit identifier when given', async () 
   nextResponse = { status: 200, body: { name: 'FOO' } };
   await upsertProjectSecret('P1', { name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
   expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
+});
+
+test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      identifier: 'API/key',
+      name: 'API_KEY',
+      strategy: 'denied',
+      delivery_status: 'disabled',
+    },
+  };
+
+  const result = await setProjectSecretStrategy('P1', 'API/key', 'denied');
+
+  expect(last().url).toContain('/projects/P1/secrets/API%2Fkey/strategy');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ strategy: 'denied' });
+  expect(result.strategy).toBe('denied');
 });
 
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {

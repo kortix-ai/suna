@@ -13,6 +13,7 @@ import {
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
@@ -85,7 +86,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
       {isError ? (
         <ToolOutputFallback output={output} toolName="apply_patch" />
       ) : files.length > 0 ? (
-        <div data-scrollable className="max-h-[480px] overflow-auto">
+        <ToolResultCard bodyClassName="max-h-[480px]">
           {files.map((file, i) => {
             const relPath = file.relativePath || file.filePath || '';
             const name = getFilename(relPath) || relPath;
@@ -97,21 +98,26 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
               file.before != null || file.after != null || !!file.patch || !!file.diff;
 
             return (
-              <div key={i} className={cn(i > 0 && 'border-border/30 border-t')}>
+              <div key={i}>
+                {/* Same row grammar as the file and source lists: leading
+								    glyph, name taking the free space, secondary detail parked
+								    right. The separator rules between files are gone — inside a
+								    bordered card, hairlines between every row read as a table
+								    nobody asked for; hover does the separating. */}
                 <button
                   type="button"
-                  className="hover:bg-muted/40 flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-left transition-colors"
+                  className="hover:bg-muted flex w-full min-w-0 items-center gap-2.5 rounded-sm px-2 py-2 text-left transition-colors duration-150"
                   onClick={() => (hasDiff ? setExpanded(isOpen ? null : i) : undefined)}
                 >
                   {hasDiff ? (
                     <ChevronRight
                       className={cn(
-                        'text-muted-foreground/50 size-3 flex-shrink-0 transition-transform',
+                        'text-muted-foreground/60 size-3.5 flex-shrink-0 transition-transform',
                         isOpen && 'rotate-90',
                       )}
                     />
                   ) : (
-                    <span className="w-3" />
+                    <span className="w-3.5 flex-shrink-0" />
                   )}
                   <Badge
                     variant={typeMeta.tone}
@@ -121,7 +127,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     {typeMeta.label}
                   </Badge>
                   <span
-                    className="text-foreground hover:text-primary flex-shrink-0 cursor-pointer truncate font-mono text-xs"
+                    className="text-foreground hover:text-primary min-w-0 flex-1 cursor-pointer truncate font-mono text-sm"
                     title={relPath}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -132,7 +138,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   </span>
                   {dir && (
                     <span
-                      className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs"
+                      className="text-muted-foreground max-w-[35%] flex-shrink-0 truncate font-mono text-sm"
                       title={dir}
                     >
                       {dir}
@@ -141,12 +147,12 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   <DiffStat
                     additions={file.additions}
                     deletions={file.deletions}
-                    className="ml-auto flex-shrink-0 text-xs"
+                    className="flex-shrink-0 text-sm tabular-nums"
                   />
                 </button>
 
                 {isOpen && hasDiff && (
-                  <div className="bg-muted/20">
+                  <div className="border-border/60 bg-muted/20 mt-1 mb-1 overflow-hidden rounded-sm border">
                     {file.before != null && file.after != null ? (
                       <InlineDiffView
                         oldValue={file.before}
@@ -164,7 +170,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
               </div>
             );
           })}
-        </div>
+        </ToolResultCard>
       ) : isStreaming ? (
         <div className="px-3 py-2 text-xs">
           <TextShimmer duration={1} spread={2} className="text-xs italic">

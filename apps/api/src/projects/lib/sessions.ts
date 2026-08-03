@@ -298,13 +298,20 @@ export async function buildSessionSandboxEnvVars(input: {
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
   if (input.defaultBranch) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    }).catch(() => null);
+    compiledAgentConfig = await resolveCompiledAgentConfigForSession(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      // Compile from the ref this session actually runs on. It used to compile
+      // from the default branch regardless, so a session started on a feature
+      // branch ran main's agents from its first turn — you could edit an agent,
+      // push, start a session on that branch, and see no change at all.
+      input.baseRef,
+    ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent

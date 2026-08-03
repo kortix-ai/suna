@@ -78,7 +78,7 @@ flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/r
 // /v1 forms both wired so either can be the chart's livenessPath. Under normal
 // load `event_loop_lag_ms` stays well under the 5000ms default threshold, so a
 // live run should always see {status:"ok", event_loop_lag_ms}.
-flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /health/live", "GET /v1/health/live"] }, async (ctx) => {
+flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /health/live", "GET /v1/health/live", "GET /health/ready", "GET /v1/health/ready"] }, async (ctx) => {
   await ctx.step("GET /health/live", async () => {
     const r = await ctx.client.get("/health/live");
     r.status(200).body().has("$.status", "ok").exists("$.event_loop_lag_ms");
@@ -86,6 +86,14 @@ flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   await ctx.step("GET /v1/health/live", async () => {
     const r = await ctx.client.get("/v1/health/live");
     r.status(200).body().has("$.status", "ok").exists("$.event_loop_lag_ms");
+  });
+  await ctx.step("GET /health/ready", async () => {
+    const r = await ctx.client.get("/health/ready");
+    r.status([200, 503]);
+  });
+  await ctx.step("GET /v1/health/ready", async () => {
+    const r = await ctx.client.get("/v1/health/ready");
+    r.status([200, 503]);
   });
 });
 

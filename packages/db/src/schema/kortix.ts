@@ -4555,6 +4555,57 @@ export const executorExecutions = kortixSchema.table(
 );
 
 /**
+ * Private, short-lived files staged for one Executor email call.
+ *
+ * The sandbox receives only `attachment_id`. Raw bytes remain in private
+ * object storage. Ownership fields are checked again when the email gateway
+ * claims the row, after any approval wait and immediately before provider
+ * execution. `claim_token` makes provider ingestion single-flight. Successful
+ * calls mark rows consumed before the signed-URL grace window and object
+ * deletion, so retries cannot replay an attachment while AgentMail completes
+ * provider-side ingestion. Account/project ids intentionally are not foreign
+ * keys: deleting either owner must not cascade away the only object-storage
+ * key before the expiry sweeper can remove the private blob.
+ */
+export const executorAttachments = kortixSchema.table(
+  'executor_attachments',
+  {
+    attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    sessionId: text('session_id'),
+    userId: uuid('user_id').notNull(),
+    objectPath: text('object_path').notNull().unique(),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    contentDisposition: varchar('content_disposition', { length: 16 })
+      .default('attachment')
+      .notNull(),
+    contentId: text('content_id'),
+    sizeBytes: integer('size_bytes').notNull(),
+    status: varchar('status', { length: 16 }).default('uploaded').notNull(),
+    claimToken: uuid('claim_token'),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'executor_attachments_disposition_check',
+      sql`${table.contentDisposition} IN ('attachment', 'inline')`,
+    ),
+    check(
+      'executor_attachments_status_check',
+      sql`${table.status} IN ('uploaded', 'claimed', 'consumed')`,
+    ),
+    check('executor_attachments_size_check', sql`${table.sizeBytes} > 0`),
+    index('idx_executor_attachments_scope').on(table.projectId, table.sessionId, table.userId),
+    index('idx_executor_attachments_expiry').on(table.expiresAt),
+  ],
+);
+
+/**
  * "Allow for this session" decisions on `require_approval` connector calls. When
  * a human approves a gated action and picks "allow for the rest of this
  * session", (session, connector, action) is recorded here; the executor gateway

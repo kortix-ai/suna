@@ -2,38 +2,39 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
-import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   WarningIcon as AlertTriangle,
+  ArrowBendUpLeftIcon,
   ArrowDownIcon as ArrowDown,
-  BrainIcon as Brain,
-  CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
+  CheckIcon,
   CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
-  FileTextIcon as FileText,
-  GlobeIcon as Globe,
-  ImageIcon,
   StackIcon as Layers,
-  PencilSimpleIcon,
-  ArrowBendUpLeftIcon as Reply,
   ArrowCounterClockwiseIcon as RotateCcw,
-  ScissorsIcon as Scissors,
-  MagnifyingGlassIcon as Search,
-  TerminalIcon as Terminal,
-  TimerIcon as Timer,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  SystemNotificationCard,
+  parseSystemNotifications,
+  stripSystemPtyText,
+} from './message-parsing';
+import { ActivityBurst } from './turn/activity-burst';
+import { planAnchorMessageId } from './turn/plan-anchor';
+import { segmentTurn } from './turn/segment-turn';
+import { ThrottledMarkdown } from './turn/throttled-markdown';
+import { UserMessage } from './turn/user-message';
 
+import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
@@ -46,24 +47,15 @@ import {
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
 import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
-import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  normalizeActivityToolName,
-  shellActivityGroupLabel,
-  writeActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
+import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import {
   type AttachedFile,
   SessionChatInput,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { GridFileCard } from './grid-file-card';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { SessionTurnMeta } from './session-turn-meta';
 import {
@@ -72,24 +64,18 @@ import {
   sessionTurnSpan,
 } from './session-turn-meta-rows';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
-import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+import { OptimisticTurn } from '@/features/session/optimistic-turn';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
@@ -130,21 +116,17 @@ import {
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
-  type AgentPart,
   type Command,
-  type FilePart,
   type MessageWithParts,
   type Part,
   type PermissionRequest,
   type QuestionRequest,
-  type ReasoningPart,
   type TextPart,
   type ToolPart,
   type Turn,
   collectTurnParts,
   findLastTextPart,
   formatDuration,
-  getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
@@ -157,17 +139,11 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isCompactionPart,
-  isFilePart,
   isLastUserMessage,
-  isPatchPart,
   isReasoningPart,
-  isSnapshotPart,
   isTextPart,
   isToolPart,
-  isToolPartHidden,
   shouldShowToolPart,
-  splitUserParts,
 } from '@/ui';
 import { updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -208,6 +184,7 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
+import { Icon } from '../icon/icon';
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
@@ -426,383 +403,8 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 }
 
 // ============================================================================
-// Highlight @mentions in plain text (for optimistic & user messages)
+// Message parsing exported to message-parsing.tsx
 // ============================================================================
-
-function HighlightMentions({
-  text,
-  agentNames,
-  onFileClick,
-}: {
-  text: string;
-  agentNames?: string[];
-  onFileClick?: (path: string) => void;
-}) {
-  // Strip every ref block (project/file/agent/session) before processing
-  // inline @ mentions so the visible text never shows raw XML.
-  const { cleanText, sessions } = useMemo(() => {
-    const a = parseProjectReferences(text);
-    const b = parseFileMentionReferences(a.cleanText);
-    const c = parseAgentMentionReferences(b.cleanText);
-    const d = parseSessionReferences(c.cleanText);
-    return {
-      cleanText: d.cleanText,
-      sessions: d.sessions,
-    };
-  }, [text]);
-
-  const segments = useMemo(() => {
-    type MentionType = 'file' | 'agent' | 'session';
-    if (!cleanText) return [{ text: cleanText, type: undefined as MentionType | undefined }];
-
-    // Detect session @mentions first (titles can contain spaces)
-    const sessionDetected: { start: number; end: number; type: MentionType }[] = [];
-    for (const s of sessions) {
-      const needle = `@${s.title}`;
-      const idx = cleanText.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: MentionType }[] = [...sessionDetected];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(cleanText)) !== null) {
-      const mStart = match.index;
-      // Skip if overlaps with a session mention
-      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end)) continue;
-      const name = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: MentionType = name.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(name)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
-      });
-    }
-    if (detected.length === 0) return [{ text: cleanText, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: MentionType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: cleanText.slice(lastIndex, ref.start) });
-      result.push({
-        text: cleanText.slice(ref.start, ref.end),
-        type: ref.type,
-      });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < cleanText.length) result.push({ text: cleanText.slice(lastIndex) });
-    return result;
-  }, [cleanText, agentNames, sessions]);
-
-  // Uniform monochrome mention style — Kortix brand is strictly neutral, so
-  // every mention kind (file / agent / session) renders identically
-  // as an underlined foreground chip. Kind is distinguished by click target.
-  const mentionClass =
-    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-  const mentionClassStatic = 'font-medium text-foreground';
-
-  return (
-    <>
-      {segments.map((seg, i) =>
-        seg.type === 'file' && onFileClick ? (
-          <button
-            key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFileClick(seg.text.replace(/^@/, ''));
-            }}
-          >
-            {seg.text}
-          </button>
-        ) : seg.type === 'session' ? (
-          <button
-            key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              const raw = seg.text.replace(/^@/, '');
-              // Direct session ID (ses_...) — navigate without title lookup
-              if (raw.startsWith('ses_')) {
-                openTabAndNavigate({
-                  id: raw,
-                  title: 'Session',
-                  type: 'session',
-                  href: `/sessions/${raw}`,
-                });
-                return;
-              }
-              const ref = sessions.find((s) => s.title === raw);
-              if (ref) {
-                openTabAndNavigate({
-                  id: ref.id,
-                  title: ref.title || 'Session',
-                  type: 'session',
-                  href: `/sessions/${ref.id}`,
-                });
-              }
-            }}
-          >
-            {seg.text}
-          </button>
-        ) : (
-          <span
-            key={i}
-            className={cn((seg.type === 'file' || seg.type === 'agent') && mentionClassStatic)}
-          >
-            {seg.text}
-          </span>
-        ),
-      )}
-    </>
-  );
-}
-
-// ============================================================================
-// Parse <file> XML references from uploaded file text parts
-// ============================================================================
-
-interface ParsedFileRef {
-  path: string;
-  mime: string;
-  filename: string;
-}
-
-const FILE_TAG_REGEX =
-  /<file\s+path="([^"]*?)"\s+mime="([^"]*?)"\s+filename="([^"]*?)">\s*[\s\S]*?<\/file>/g;
-
-// Fixed third-party brand colors for channel-source cards. These are the
-// platforms' own brand hues (not themeable), so they live as named
-// constants rather than as inline hex literals.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: '#29B6F6',
-  Slack: '#E91E63',
-} as const;
-
-function parseFileReferences(text: string): {
-  cleanText: string;
-  files: ParsedFileRef[];
-} {
-  const files: ParsedFileRef[] = [];
-  const cleanText = text
-    .replace(FILE_TAG_REGEX, (_, path, mime, filename) => {
-      files.push({ path, mime, filename });
-      return '';
-    })
-    .trim();
-  return { cleanText, files };
-}
-
-// ============================================================================
-// Parse <session_ref> XML tags from session mention text parts
-// ============================================================================
-
-interface ParsedSessionRef {
-  id: string;
-  title: string;
-}
-
-function parseSessionReferences(text: string): {
-  cleanText: string;
-  sessions: ParsedSessionRef[];
-} {
-  const sessions: ParsedSessionRef[] = [];
-  let cleaned = text.replace(
-    /<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g,
-    (_, id, title) => {
-      sessions.push({ id, title });
-      return '';
-    },
-  );
-  // Strip the instruction header text
-  cleaned = cleaned
-    .replace(
-      /\n*Referenced sessions \(use the session_context tool to fetch details when needed\):\n?/g,
-      '',
-    )
-    .trim();
-  return { cleanText: cleaned, sessions };
-}
-
-// ============================================================================
-// Parse <project_ref> XML references from project mentions / selector
-// ============================================================================
-
-export interface ParsedProjectRef {
-  id?: string;
-  name: string;
-  path?: string;
-  description?: string;
-}
-
-function unescapeAttr(v: string): string {
-  return v.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-}
-
-function parseProjectReferences(text: string): {
-  cleanText: string;
-  projects: ParsedProjectRef[];
-} {
-  // Historical messages may contain <project_ref/> blocks. Projects are no
-  // longer a user-facing/runtime concept, so strip the metadata without
-  // rendering project chips or passing project refs forward.
-  let cleaned = text.replace(/<project_ref\b([\s\S]*?)\/>/g, '');
-  // Strip the instruction header (description uses [^)]* which is safe
-  // because the header never contains a literal `)` before its closing one).
-  cleaned = cleaned.replace(/\n*Referenced projects \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, projects: [] };
-}
-
-// ============================================================================
-// Parse <file_ref> + <agent_ref> XML tags from @ mentions in chat input
-// ============================================================================
-//
-// Uploaded files still use the existing <file path="..." mime="..." ...>
-// tag (parseFileReferences). These new tags only cover @-mention-style refs
-// to existing workspace files and agents, so the agent sees structured
-// metadata and the renderer strips them out of the visible text.
-
-export interface ParsedFileMentionRef {
-  path: string;
-  name: string;
-}
-export interface ParsedAgentMentionRef {
-  name: string;
-}
-
-function parseFileMentionReferences(text: string): {
-  cleanText: string;
-  files: ParsedFileMentionRef[];
-} {
-  const files: ParsedFileMentionRef[] = [];
-  let cleaned = text.replace(/<file_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
-    const pick = (key: string): string | undefined => {
-      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-      return m ? unescapeAttr(m[1]) : undefined;
-    };
-    const path = pick('path');
-    const name = pick('name') ?? path;
-    if (path) files.push({ path, name: name || path });
-    return '';
-  });
-  cleaned = cleaned.replace(/\n*Referenced files \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, files };
-}
-
-function parseAgentMentionReferences(text: string): {
-  cleanText: string;
-  agents: ParsedAgentMentionRef[];
-} {
-  const agents: ParsedAgentMentionRef[] = [];
-  let cleaned = text.replace(/<agent_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
-    const pick = (key: string): string | undefined => {
-      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-      return m ? unescapeAttr(m[1]) : undefined;
-    };
-    const name = pick('name');
-    if (name) agents.push({ name });
-    return '';
-  });
-  cleaned = cleaned.replace(/\n*Referenced agents \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, agents };
-}
-
-// ============================================================================
-// Parse <reply_context> XML from select-and-reply feature
-// ============================================================================
-
-function parseReplyContext(text: string): {
-  cleanText: string;
-  replyContext: string | null;
-} {
-  const match = text.match(/<reply_context>([\s\S]*?)<\/reply_context>/);
-  if (!match) return { cleanText: text, replyContext: null };
-  const replyContext = match[1].trim();
-  const cleanText = text.replace(/<reply_context>[\s\S]*?<\/reply_context>\s*/, '').trim();
-  return { cleanText, replyContext };
-}
-
-// ============================================================================
-// Parse <dcp-notification> XML tags from DCP plugin messages
-// ============================================================================
-
-interface DCPPrunedItem {
-  tool: string;
-  description: string;
-}
-
-interface DCPNotification {
-  type: 'prune' | 'compress';
-  tokensSaved: number;
-  batchSaved: number;
-  prunedCount: number;
-  extractedTokens: number;
-  reason?: string;
-  items: DCPPrunedItem[];
-  distilled?: string;
-  // compress-specific
-  messagesCount?: number;
-  toolsCount?: number;
-  topic?: string;
-  summary?: string;
-}
-
-const DCP_TAG_REGEX = /<dcp-notification\s+([^>]*)>([\s\S]*?)<\/dcp-notification>/g;
-const DCP_ITEM_REGEX = /<dcp-item\s+tool="([^"]*?)"\s+description="([^"]*?)"\s*\/>/g;
-const DCP_DISTILLED_REGEX = /<dcp-distilled>([\s\S]*?)<\/dcp-distilled>/;
-const DCP_SUMMARY_REGEX = /<dcp-summary>([\s\S]*?)<\/dcp-summary>/;
-
-function unescapeXml(str: string): string {
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
-
-function parseAttr(attrs: string, name: string): string | undefined {
-  const re = new RegExp(`${name}="([^"]*?)"`);
-  const m = attrs.match(re);
-  return m ? unescapeXml(m[1]) : undefined;
-}
-
-// Legacy DCP format: "▣ DCP | ~12.5K tokens saved total" (pre-XML version)
-const DCP_LEGACY_REGEX = /^▣ DCP \| ~([\d.]+K?) tokens saved total/;
-const DCP_LEGACY_PRUNING_REGEX =
-  /▣ Pruning \(~([\d.]+K?) tokens(?:, distilled ([\d.]+K?) tokens)?\)(?:\s*—\s*(.+))?/;
-const DCP_LEGACY_ITEM_REGEX = /→\s+(\S+?):\s+(.+)/g;
-
-// ── Generic XML notification parsing ──────────────────────────────────
-//
-// Matches any XML block: <tag_name>...content...</tag_name>
-// No hardcoded tag names. Runs LAST in the parsing pipeline so all
-// other XML subsystems (file refs, session refs, reply context, DCP,
-// kortix_system) have already consumed their tags. Whatever remains
-// is a system notification.
-const XML_BLOCK_REGEX = /<([a-z][a-z0-9_-]*)>([\s\S]*?)<\/\1>/gi;
-
-interface SystemNotification {
-  tag: string;
-  label: string;
-  fields: [string, string][];
-  body: string;
-}
 
 /** A message typed while the agent was busy, held client-side until a safe boundary. */
 interface QueuedMessage {
@@ -810,394 +412,6 @@ interface QueuedMessage {
   text: string;
   files?: AttachedFile[];
   mentions?: TrackedMention[];
-}
-
-/** Parse all remaining XML blocks from text as system notifications. */
-function parseSystemNotifications(text: string): {
-  cleanText: string;
-  notifications: SystemNotification[];
-} {
-  const notifications: SystemNotification[] = [];
-  const cleanText = text
-    .replace(XML_BLOCK_REGEX, (_full, tag: string, rawBody: string) => {
-      const fields: [string, string][] = [];
-      const bodyLines: string[] = [];
-      let pastHeader = false;
-
-      for (const line of rawBody.trim().split('\n')) {
-        if (pastHeader) {
-          bodyLines.push(line);
-          continue;
-        }
-        if (line.trim() === '') {
-          pastHeader = true;
-          continue;
-        }
-        const m = line.match(/^([A-Za-z][\w\s]*?):\s*(.+)$/);
-        if (m) {
-          fields.push([m[1].trim(), m[2].trim()]);
-        } else {
-          pastHeader = true;
-          bodyLines.push(line);
-        }
-      }
-
-      notifications.push({
-        tag: tag.toLowerCase(),
-        label: tag.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-        fields,
-        body: bodyLines.join('\n').trim(),
-      });
-      return '';
-    })
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  return { cleanText, notifications };
-}
-
-function stripSystemPtyText(text: string): string {
-  if (!text) return '';
-  // Only strip kortix_system tags (backend-internal metadata).
-  // Notification XML is stripped later by parseSystemNotifications()
-  // which runs last in the parsing pipeline.
-  return stripKortixSystemTags(text)
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function parseLegacyDCPNotification(text: string): DCPNotification | null {
-  const headerMatch = text.match(DCP_LEGACY_REGEX);
-  if (!headerMatch) return null;
-
-  const tokenStr = headerMatch[1];
-  const tokensSaved = tokenStr.endsWith('K')
-    ? Math.round(Number.parseFloat(tokenStr.slice(0, -1)) * 1000)
-    : Number.parseInt(tokenStr, 10);
-
-  const pruningMatch = text.match(DCP_LEGACY_PRUNING_REGEX);
-  let batchSaved = 0;
-  let extractedTokens = 0;
-  let reason: string | undefined;
-  if (pruningMatch) {
-    const batchStr = pruningMatch[1];
-    batchSaved = batchStr.endsWith('K')
-      ? Math.round(Number.parseFloat(batchStr.slice(0, -1)) * 1000)
-      : Number.parseInt(batchStr, 10);
-    if (pruningMatch[2]) {
-      const extStr = pruningMatch[2];
-      extractedTokens = extStr.endsWith('K')
-        ? Math.round(Number.parseFloat(extStr.slice(0, -1)) * 1000)
-        : Number.parseInt(extStr, 10);
-    }
-    reason = pruningMatch[3]?.trim();
-  }
-
-  const items: DCPPrunedItem[] = [];
-  let itemMatch;
-  DCP_LEGACY_ITEM_REGEX.lastIndex = 0;
-  while ((itemMatch = DCP_LEGACY_ITEM_REGEX.exec(text)) !== null) {
-    items.push({ tool: itemMatch[1], description: itemMatch[2].trim() });
-  }
-
-  // Check for compress format
-  const isCompress = text.includes('▣ Compressing');
-
-  return {
-    type: isCompress ? 'compress' : 'prune',
-    tokensSaved,
-    batchSaved,
-    prunedCount: items.length,
-    extractedTokens,
-    reason,
-    items,
-  };
-}
-
-function parseDCPNotifications(text: string): {
-  cleanText: string;
-  notifications: DCPNotification[];
-} {
-  const notifications: DCPNotification[] = [];
-
-  // First try XML format
-  const cleanText = text
-    .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
-      const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
-      const tokensSaved = Number.parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
-      const batchSaved = Number.parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
-      const prunedCount = Number.parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = Number.parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
-      const reason = parseAttr(attrs, 'reason');
-
-      // Parse items
-      const items: DCPPrunedItem[] = [];
-      let itemMatch;
-      DCP_ITEM_REGEX.lastIndex = 0;
-      while ((itemMatch = DCP_ITEM_REGEX.exec(body)) !== null) {
-        items.push({
-          tool: unescapeXml(itemMatch[1]),
-          description: unescapeXml(itemMatch[2]),
-        });
-      }
-
-      // Parse distilled
-      const distilledMatch = body.match(DCP_DISTILLED_REGEX);
-      const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
-
-      // Compress-specific
-      const messagesCount =
-        Number.parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount = Number.parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
-      const topic = parseAttr(attrs, 'topic');
-      const summaryMatch = body.match(DCP_SUMMARY_REGEX);
-      const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
-
-      notifications.push({
-        type,
-        tokensSaved,
-        batchSaved,
-        prunedCount,
-        extractedTokens,
-        reason,
-        items,
-        distilled,
-        messagesCount,
-        toolsCount,
-        topic,
-        summary,
-      });
-      return '';
-    })
-    .trim();
-
-  // If no XML notifications found, try legacy format
-  if (notifications.length === 0 && cleanText) {
-    const legacy = parseLegacyDCPNotification(cleanText);
-    if (legacy) {
-      notifications.push(legacy);
-      return { cleanText: '', notifications };
-    }
-  }
-
-  return { cleanText, notifications };
-}
-
-// ============================================================================
-// DCP Notification Card — styled component for pruning/compress events
-// ============================================================================
-
-const DCP_REASON_LABELS: Record<string, string> = {
-  completion: 'Task Complete',
-  noise: 'Noise Removal',
-  extraction: 'Extraction',
-};
-
-function formatDCPTokens(tokens: number): string {
-  if (tokens >= 1000) {
-    const k = (tokens / 1000).toFixed(1).replace('.0', '');
-    return `${k}K`;
-  }
-  return tokens.toString();
-}
-
-function DCPNotificationCard({ notification }: { notification: DCPNotification }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [expanded, setExpanded] = useState(false);
-  const isPrune = notification.type === 'prune';
-  const hasItems = notification.items.length > 0;
-  const hasDetails = hasItems || notification.distilled || notification.summary;
-
-  return (
-    <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
-      {/* Header */}
-      <Button
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        variant="ghost"
-        className={cn(
-          'border-border/40 bg-muted/30 flex h-auto w-full items-center justify-start gap-2 rounded-none border-b px-3 py-2',
-          !hasDetails && 'pointer-events-none',
-        )}
-      >
-        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
-        <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-          {isPrune ? 'Context Pruned' : 'Context Compressed'}
-        </span>
-
-        {/* Stats pills */}
-        <div className="ml-auto flex items-center gap-1.5">
-          {notification.reason && (
-            <Badge variant="muted" size="sm">
-              {DCP_REASON_LABELS[notification.reason] || notification.reason}
-            </Badge>
-          )}
-          {isPrune && notification.prunedCount > 0 && (
-            <Badge variant="warning" size="sm">
-              {notification.prunedCount} pruned
-            </Badge>
-          )}
-          {!isPrune && notification.messagesCount && notification.messagesCount > 0 && (
-            <Badge variant="info" size="sm">
-              {notification.messagesCount} msgs
-            </Badge>
-          )}
-          {notification.batchSaved > 0 && (
-            <Badge variant="success" size="sm">
-              -{formatDCPTokens(notification.batchSaved)} tokens
-            </Badge>
-          )}
-          <Badge variant="muted" size="sm">
-            {formatDCPTokens(notification.tokensSaved)} saved
-          </Badge>
-          {hasDetails && (
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground/50 size-3 transition-transform',
-                expanded && 'rotate-180',
-              )}
-            />
-          )}
-        </div>
-      </Button>
-
-      {/* Expandable details */}
-      {expanded && hasDetails && (
-        <div className="space-y-2 px-3 py-2">
-          {/* Pruned items list */}
-          {hasItems && (
-            <div className="space-y-0.5">
-              {notification.items.map((item, i) => (
-                <div key={i} className="text-muted-foreground/80 flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground/40">
-                    {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
-                  </span>
-                  <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
-                    {item.tool}
-                  </span>
-                  {item.description && (
-                    <span className="max-w-[300px] truncate">{item.description}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Compress topic */}
-          {notification.topic && (
-            <div className="text-muted-foreground/80 text-xs">
-              <span className="text-muted-foreground/50">Topic:</span>{' '}
-              <span>{notification.topic}</span>
-            </div>
-          )}
-
-          {/* Distilled content */}
-          {notification.distilled && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Distilled
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
-                {notification.distilled}
-              </div>
-            </div>
-          )}
-
-          {/* Compress summary */}
-          {notification.summary && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Summary
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
-                {notification.summary}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SystemNotificationCard({ notification }: { notification: SystemNotification }) {
-  const [open, setOpen] = useState(false);
-
-  // Show first 1-2 short field values inline as muted detail
-  const inlineDetail = notification.fields
-    .slice(0, 2)
-    .map(([, v]) => v)
-    .filter((v) => v.length < 40)
-    .join(' · ');
-
-  // Expandable when there's a body, >2 fields, or any long values
-  const hasExpandable =
-    !!notification.body ||
-    notification.fields.length > 2 ||
-    notification.fields.some(([, v]) => v.length >= 40);
-
-  const isError = notification.tag.includes('failed') || notification.tag.includes('blocker');
-  const isWarning = notification.tag.includes('stopped');
-
-  const iconColor = isError
-    ? 'text-destructive/50'
-    : isWarning
-      ? STATUS_TEXT.warning
-      : 'text-muted-foreground/50';
-
-  const trigger = (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5',
-        'bg-muted/20 border-border/40 border',
-        'max-w-full text-xs select-none',
-        hasExpandable && 'hover:bg-muted/40 cursor-pointer transition-colors',
-      )}
-    >
-      <Terminal className={cn('size-3.5 flex-shrink-0', iconColor)} />
-      <span className="text-muted-foreground/70 truncate">
-        {notification.label}
-        {inlineDetail && (
-          <span className="text-muted-foreground/40 ml-1.5 font-mono">{inlineDetail}</span>
-        )}
-      </span>
-      {hasExpandable && (
-        <ChevronRight
-          className={cn(
-            'text-muted-foreground/30 ml-auto size-3 flex-shrink-0 transition-transform',
-            open && 'rotate-90',
-          )}
-        />
-      )}
-    </div>
-  );
-
-  if (!hasExpandable) return trigger;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>{trigger}</CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="border-border/40 bg-muted/10 space-y-1 rounded-b-lg border border-t-0 px-3 py-2 text-xs">
-          {notification.fields.length > 0 && (
-            <div className="space-y-0.5">
-              {notification.fields.map(([key, value], i) => (
-                <div key={i} className="flex min-w-0 gap-2">
-                  <span className="text-muted-foreground/40 flex-shrink-0">{key}:</span>
-                  <span className="text-muted-foreground/60 font-mono text-xs break-all">
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {notification.body && (
-            <div className="text-muted-foreground/50 max-h-48 overflow-y-auto font-mono text-xs break-all whitespace-pre-wrap">
-              {notification.body.slice(0, 2000)}
-            </div>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
 }
 
 // ============================================================================
@@ -1244,970 +458,6 @@ function NotificationTurn({ turn }: { turn: Turn }) {
         <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
       ))}
     </div>
-  );
-}
-
-// ============================================================================
-// Edit Part Dialog — inline editing for text parts
-// ============================================================================
-
-// ============================================================================
-// User Message Row
-// ============================================================================
-
-function UserMessageRow({
-  message,
-  agentNames,
-  commandInfo,
-  commands,
-}: {
-  message: MessageWithParts;
-  agentNames?: string[];
-  commandInfo?: { name: string; args?: string };
-  commands?: Command[];
-}) {
-  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const { attachments, stickyParts } = useMemo(
-    () => splitUserParts(message.parts),
-    [message.parts],
-  );
-
-  // Extract text from sticky parts, parse out <file> and <session_ref> XML references
-  // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts
-    .filter(isTextPart)
-    .filter(
-      (p) => (p as TextPart).text?.trim() && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-  const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
-  const rawText = stripSystemPtyText(rawVisibleText);
-  const { cleanText: textAfterReply, replyContext } = useMemo(
-    () => parseReplyContext(rawText),
-    [rawText],
-  );
-  const { cleanText: textAfterFiles, files: uploadedFiles } = useMemo(
-    () => parseFileReferences(textAfterReply),
-    [textAfterReply],
-  );
-  const { cleanText: textAfterProjects } = useMemo(
-    () => parseProjectReferences(textAfterFiles),
-    [textAfterFiles],
-  );
-  const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
-    () => parseFileMentionReferences(textAfterProjects),
-    [textAfterProjects],
-  );
-  const { cleanText: textAfterAgentMentions, agents: agentMentionRefs } = useMemo(
-    () => parseAgentMentionReferences(textAfterFileMentions),
-    [textAfterFileMentions],
-  );
-  const { cleanText: textAfterSessions, sessions: sessionRefs } = useMemo(
-    () => parseSessionReferences(textAfterAgentMentions),
-    [textAfterAgentMentions],
-  );
-  // System notification XML — parsed LAST so all other XML subsystems
-  // (file refs, session refs, reply context, etc.) consume their tags first.
-  // Whatever XML blocks remain are system notifications.
-  const { cleanText: text, notifications: systemNotifications } = useMemo(
-    () => parseSystemNotifications(textAfterSessions),
-    [textAfterSessions],
-  );
-  // Silence unused-variable warnings — these parsed refs are currently only
-  // consumed as stripping side-effects.
-  void fileMentionRefs;
-  void agentMentionRefs;
-
-  // Resolve effective command info: use runtime-tracked info or fall back to template matching
-  const effectiveCommandInfo = useMemo(
-    () => commandInfo ?? detectCommandFromText(rawText, commands),
-    [commandInfo, rawText, commands],
-  );
-
-  // Detect channel message (Telegram/Slack) in user message
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const context = headerMatch[2].trim();
-    const userName = headerMatch[3].trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(
-      /\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/,
-    );
-    const messageText =
-      instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, context, userName, messageText };
-  }, [rawText]);
-
-  // Detect trigger_event in user message
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]);
-      const promptText = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt: promptText };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
-
-  // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
-  const ignoredTextParts = stickyParts
-    .filter(isTextPart)
-    .filter((p) => (p as any).ignored && (p as TextPart).text?.trim());
-  const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
-  const dcpNotifications = useMemo(() => {
-    if (!ignoredRawText) return [];
-    return parseDCPNotifications(ignoredRawText).notifications;
-  }, [ignoredRawText]);
-
-  // Check if any text part was edited
-  const isEdited = visibleTextParts.some((p) => (p as any).metadata?.edited);
-
-  // Inline file references
-  const inlineFiles = stickyParts.filter(isFilePart) as FilePart[];
-  const filesWithSource = inlineFiles.filter(
-    (f) => f.source?.text?.start !== undefined && f.source?.text?.end !== undefined,
-  );
-
-  // Agent mentions
-  const agentParts = stickyParts.filter(isAgentPart) as AgentPart[];
-
-  const [expanded, setExpanded] = useState(false);
-  const [canExpand, setCanExpand] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const textRef = useRef<HTMLDivElement>(null);
-
-  // Use ResizeObserver + rAF to reliably detect overflow after layout settles
-  useEffect(() => {
-    const el = textRef.current;
-    if (!el || expanded) return;
-
-    const measure = () => {
-      setCanExpand(el.scrollHeight > el.clientHeight + 2);
-    };
-
-    // Measure after next frame to ensure layout is computed
-    const rafId = requestAnimationFrame(measure);
-
-    // Also observe resize changes (font loads, container resize, etc.)
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      ro.disconnect();
-    };
-  }, [text, expanded]);
-
-  const handleCopy = async () => {
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Build highlighted text segments
-  const segments = useMemo(() => {
-    if (!text) return [];
-    type SegType = 'file' | 'agent' | 'session';
-
-    // Detect session @mentions first (titles can contain spaces, so indexOf is used)
-    const sessionDetected: { start: number; end: number; type: SegType }[] = [];
-    for (const s of sessionRefs) {
-      const needle = `@${s.title}`;
-      const idx = text.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    // Collect server-provided source refs (file/agent), filtering out any that
-    // overlap with a session mention (the server sees @Title as a file mention
-    // for the first word only — the session range is more accurate).
-    const serverRefs = [
-      ...filesWithSource.map((f) => ({
-        start: f.source!.text!.start,
-        end: f.source!.text!.end,
-        type: 'file' as SegType,
-      })),
-      ...agentParts
-        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
-        .map((a) => ({
-          start: a.source!.start,
-          end: a.source!.end,
-          type: 'agent' as SegType,
-        })),
-    ].filter((r) => !sessionDetected.some((s) => r.start >= s.start && r.start < s.end));
-
-    // Merge session + server refs
-    const allRefs = [...sessionDetected, ...serverRefs];
-
-    if (allRefs.length > 0) {
-      allRefs.sort((a, b) => a.start - b.start || b.end - a.end);
-      const result: { text: string; type?: SegType }[] = [];
-      let lastIndex = 0;
-      for (const ref of allRefs) {
-        if (ref.start < lastIndex) continue;
-        if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-        result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-        lastIndex = ref.end;
-      }
-      if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-      return result;
-    }
-
-    // Fallback: detect @mentions from text using regex
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: SegType }[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(text)) !== null) {
-      const mStart = match.index;
-      const token = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: SegType = token.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(token)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
-      });
-    }
-
-    if (detected.length === 0) return [{ text, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: SegType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-    return result;
-  }, [text, filesWithSource, agentParts, agentNames, sessionRefs]);
-
-  // If the message is purely notifications (no real user content), render only the cards
-  const hasUserContent = !!(
-    text ||
-    replyContext ||
-    uploadedFiles.length > 0 ||
-    sessionRefs.length > 0 ||
-    systemNotifications.length > 0 ||
-    attachments.length > 0
-  );
-
-  if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
-    return (
-      <div className="flex w-full flex-col gap-1.5">
-        {systemNotifications.map((n, i) => (
-          <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
-        ))}
-        {dcpNotifications.map((n, i) => (
-          <DCPNotificationCard key={i} notification={n} />
-        ))}
-      </div>
-    );
-  }
-
-  // Channel messages (Telegram/Slack): render as a branded card with user name
-  if (channelMessageInfo) {
-    const isTelegram = channelMessageInfo.platform === 'Telegram';
-    const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill={brandColor}>
-              {isTelegram ? (
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
-              ) : (
-                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
-              )}
-            </svg>
-            <span className="text-xs font-medium" style={{ color: brandColor }}>
-              {channelMessageInfo.platform}
-            </span>
-            <span className="text-muted-foreground text-xs">·</span>
-            <span className="text-foreground text-sm font-medium">
-              {channelMessageInfo.userName}
-            </span>
-          </div>
-          {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm break-words">
-              {channelMessageInfo.messageText}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Trigger event messages: render as a right-aligned card
-  if (triggerEventInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Timer className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">
-              {triggerEventInfo.data?.trigger || 'Scheduled Task'}
-            </span>
-            {triggerEventInfo.data?.data?.manual && (
-              <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-xs font-medium">
-                Manual
-              </span>
-            )}
-          </div>
-          {triggerEventInfo.prompt && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {triggerEventInfo.prompt}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Command messages: render as a right-aligned card instead of the raw template text
-  if (effectiveCommandInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
-          </div>
-          {effectiveCommandInfo.args && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {effectiveCommandInfo.args}
-            </div>
-          )}
-        </div>
-        {/* DCP notifications from ignored parts */}
-        {dcpNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {dcpNotifications.map((n, i) => (
-              <DCPNotificationCard key={i} notification={n} />
-            ))}
-          </div>
-        )}
-        {systemNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {systemNotifications.map((n, i) => (
-              <SystemNotificationCard key={`cmd-${n.tag}-${i}`} notification={n} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div
-        className={cn(
-          'bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border',
-          canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
-        )}
-        role={canExpand ? 'button' : undefined}
-        tabIndex={canExpand ? 0 : undefined}
-        aria-expanded={canExpand ? expanded : undefined}
-        onClick={() => canExpand && setExpanded(!expanded)}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (!canExpand) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setExpanded(!expanded);
-          }
-        }}
-      >
-        {/* Attachment thumbnails (images/PDFs) */}
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {attachments.map((file) => (
-              <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
-                {file.mime?.startsWith('image/') && file.url ? (
-                  <SandboxImage
-                    src={file.url}
-                    alt={file.filename ?? 'Attachment'}
-                    className="max-h-32 max-w-48 object-cover"
-                    preview
-                  />
-                ) : file.mime === 'application/pdf' ? (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <FileText className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'PDF'}</span>
-                  </div>
-                ) : (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <ImageIcon className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'File'}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Uploaded file references (from <file> XML tags) */}
-        {uploadedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {uploadedFiles.map((f, i) => (
-              <div key={i} onClick={(e) => e.stopPropagation()}>
-                <GridFileCard
-                  filePath={f.path}
-                  fileName={f.path.split('/').pop() || f.path}
-                  onClick={() => openPreview(f.path)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Project references — compact neutral chips, one per referenced project */}
-        {/* Reply context banner */}
-        {replyContext && (
-          <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-            <Reply className="text-primary/60 size-3 flex-shrink-0" />
-            <span className="text-muted-foreground truncate text-xs">
-              {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
-            </span>
-          </div>
-        )}
-
-        {/* Text content */}
-        {text && (
-          <div className="group relative px-4 py-3">
-            <div
-              ref={textRef}
-              className={cn(
-                'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
-                !expanded && 'max-h-[200px] overflow-hidden',
-              )}
-            >
-              {segments.length > 0 ? (
-                segments.map((seg, i) => {
-                  const mentionClass =
-                    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-                  return seg.type === 'file' ? (
-                    <button
-                      key={i}
-                      type="button"
-                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFileInComputer(seg.text.replace(/^@/, ''));
-                      }}
-                    >
-                      {seg.text}
-                    </button>
-                  ) : seg.type === 'session' ? (
-                    <button
-                      key={i}
-                      type="button"
-                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const raw = seg.text.replace(/^@/, '');
-                        // Direct session ID (ses_...) — navigate without title lookup
-                        if (raw.startsWith('ses_')) {
-                          openTabAndNavigate({
-                            id: raw,
-                            title: 'Session',
-                            type: 'session',
-                            href: `/sessions/${raw}`,
-                          });
-                          return;
-                        }
-                        const ref = sessionRefs.find((s) => s.title === raw);
-                        if (ref) {
-                          openTabAndNavigate({
-                            id: ref.id,
-                            title: ref.title || 'Session',
-                            type: 'session',
-                            href: `/sessions/${ref.id}`,
-                          });
-                        }
-                      }}
-                    >
-                      {seg.text}
-                    </button>
-                  ) : (
-                    <span
-                      key={i}
-                      className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
-                    >
-                      {seg.text}
-                    </span>
-                  );
-                })
-              ) : (
-                <span>{text}</span>
-              )}
-            </div>
-
-            {/* Gradient fade overlay for collapsed long messages */}
-            {canExpand && !expanded && (
-              <div className="from-card pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
-            )}
-
-            {/* Expand/collapse indicator */}
-            {canExpand && (
-              <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
-
-      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
-      {dcpNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {dcpNotifications.map((n, i) => (
-            <DCPNotificationCard key={i} notification={n} />
-          ))}
-        </div>
-      )}
-      {systemNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {systemNotifications.map((n, i) => (
-            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Throttled Markdown — limits re-renders during streaming (~30fps)
-// ============================================================================
-
-/**
- * Strip the incomplete trailing table row while streaming so the markdown
- * parser doesn't render broken borders / pipe characters.
- *
- * A markdown table row must start with `|` and end with `|` followed by a
- * newline. If the last line of the content looks like an incomplete row
- * (starts with `|` but doesn't end with `|`), we trim it. We also trim a
- * trailing separator row that is still being typed (e.g. `| --- | --`).
- */
-function trimIncompleteTableRow(text: string): string {
-  // Fast path: no pipe at all → nothing to trim
-  if (!text.includes('|')) return text;
-
-  const lines = text.split('\n');
-  // Walk backwards and remove incomplete table lines from the end.
-  // A table row must start AND end with `|` to be considered complete.
-  while (lines.length > 0) {
-    const last = lines[lines.length - 1];
-    const trimmed = last.trim();
-    // Empty trailing line — stop
-    if (trimmed === '') break;
-    // A complete table row/separator ends with `|`
-    if (trimmed.startsWith('|') && !trimmed.endsWith('|')) {
-      lines.pop();
-    } else {
-      break;
-    }
-  }
-  return lines.join('\n');
-}
-
-function closeUnterminatedCodeFence(text: string): string {
-  if (!text) return text;
-  const lines = text.split('\n');
-  let fenceCount = 0;
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      fenceCount++;
-    }
-  }
-  if (fenceCount % 2 === 0) return text;
-  return `${text}\n\n\`\`\``;
-}
-
-function ThrottledMarkdown({ content, isStreaming }: { content: string; isStreaming: boolean }) {
-  // During streaming, only close unterminated code fences (safe — just
-  // appends closing backticks). Do NOT trim table rows — that strips
-  // real content mid-stream and causes garbled text until completion.
-  // The reference (opencode PacedMarkdown) does zero content modification.
-  const displayContent = isStreaming
-    ? closeUnterminatedCodeFence(content)
-    : trimIncompleteTableRow(content);
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
-}
-
-/**
- * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
- */
-function GroupedReasoningCard({
-  parts,
-  isStreaming,
-}: {
-  parts: ReasoningPart[];
-  isStreaming: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [streamSeconds, setStreamSeconds] = useState(0);
-
-  // Determine if the last part is still streaming
-  const lastPart = parts[parts.length - 1];
-  const lastEnd = (lastPart as any).time?.end;
-  const reasoningStreaming = isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
-
-  // Find the earliest start across all parts for the live timer
-  const earliestStart = useMemo(() => {
-    let earliest: number | undefined;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      if (typeof s === 'number' && (earliest === undefined || s < earliest)) earliest = s;
-    }
-    return earliest;
-  }, [parts]);
-
-  useEffect(() => {
-    if (!reasoningStreaming || typeof earliestStart !== 'number') {
-      setStreamSeconds(0);
-      return;
-    }
-    const update = () =>
-      setStreamSeconds(Math.max(0, Math.round((Date.now() - earliestStart) / 1000)));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [reasoningStreaming, earliestStart]);
-
-  // Aggregate total duration from all completed parts
-  const totalDuration = useMemo(() => {
-    let total = 0;
-    let any = false;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      const e = (p as any).time?.end;
-      if (typeof s === 'number' && typeof e === 'number' && e > s) {
-        total += e - s;
-        any = true;
-      }
-    }
-    return any ? total : undefined;
-  }, [parts]);
-
-  // Build a one-line preview from the first reasoning block
-  const preview = useMemo(() => {
-    for (const p of parts) {
-      const t = p.text?.trim();
-      if (t) {
-        // Extract the first bold heading or first sentence
-        const boldMatch = t.match(/\*\*(.+?)\*\*/);
-        if (boldMatch) return boldMatch[1];
-        const firstLine = t.split('\n')[0].replace(/^#+\s*/, '');
-        return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
-      }
-    }
-    return '';
-  }, [parts]);
-
-  const nonEmptyParts = useMemo(() => parts.filter((p) => p.text?.trim()), [parts]);
-
-  if (nonEmptyParts.length === 0) return null;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/reasoning max-w-full transition-colors',
-          )}
-        >
-          <Brain
-            className={cn(
-              'text-muted-foreground/50 size-3.5 flex-shrink-0',
-              reasoningStreaming && 'animate-pulse-heartbeat',
-            )}
-          />
-
-          <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
-          {reasoningStreaming && (
-            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
-          )}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
-          <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
-            {nonEmptyParts.map((p, i) => (
-              <div key={p.id ?? i}>
-                <ThrottledMarkdown content={p.text!} isStreaming={false} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-/**
- * Unified "activity" card that collapses any run of agent-side work —
- * reasoning + tool calls, in original order — into a single compact shelf.
- * Text parts (and other user-facing dividers) break the run.
- *
- * Auto-opens while anything is still streaming/running; collapses once the
- * burst settles. Respects manual user toggles thereafter.
- */
-/**
- * Folded Tier-1 "exploration" card.
- *
- * Holds a run of reasoning + Tier-1 tool calls and renders:
- *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
- *     Verb comes from the run's categories (e.g. "Searched", "Read",
- *     "Explored"), not a generic "N actions".
- *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
- *     existing ToolPartRenderer, which itself is expandable for full output).
- *
- * Auto-opens while anything is streaming; collapses once settled. Respects
- * manual user toggles after the first click.
- */
-/**
- * Same-tool group: collapses 2+ consecutive calls of the same tool into
- * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
- * one-liners per call with individual durations.
- */
-function SameToolGroup({
-  toolName,
-  entries,
-  sessionId,
-  disableNavigation,
-  busy,
-}: {
-  toolName: string;
-  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
-  sessionId: string;
-  disableNavigation?: boolean;
-  busy?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const anyRunning = useMemo(
-    () =>
-      !!busy &&
-      entries.some(
-        ({ part }) =>
-          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
-      ),
-    [busy, entries],
-  );
-
-  const totalDurationMs = useMemo(() => {
-    let earliest = Number.POSITIVE_INFINITY;
-    let latest = 0;
-    for (const { part } of entries) {
-      const s = (part.state as any)?.time?.start;
-      const e = (part.state as any)?.time?.end;
-      if (typeof s === 'number' && s < earliest) earliest = s;
-      if (typeof e === 'number' && e > latest) latest = e;
-    }
-    return latest > earliest ? latest - earliest : 0;
-  }, [entries]);
-
-  const durationLabel =
-    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
-
-  const isContext = toolName === '__context__';
-  const isResearch = toolName === '__research__';
-  const isShell = useMemo(() => {
-    return isShellActivityTool(entries[0]?.part.tool);
-  }, [entries]);
-  const isWrite = useMemo(
-    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
-    [entries],
-  );
-
-  const headerLabel = useMemo(() => {
-    if (isContext) {
-      const s = contextToolSummary(entries.map((e) => e.part));
-      const items: string[] = [];
-      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
-      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
-      return summary ? `${prefix} · ${summary}` : prefix;
-    }
-
-    if (isResearch) {
-      let searches = 0;
-      let fetches = 0;
-      let scrapes = 0;
-      for (const { part } of entries) {
-        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
-        if (n === 'web_search' || n === 'websearch') searches++;
-        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
-        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
-      }
-      const items: string[] = [];
-      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
-      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
-      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Researching' : 'Researched';
-      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
-    }
-
-    if (isShell) {
-      return shellActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    if (isWrite) {
-      return writeActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    const t = contextToolTrigger(entries[0].part);
-    return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/grp max-w-full transition-colors',
-          )}
-        >
-          {isResearch ? (
-            <Globe
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : isShell ? (
-            <Terminal
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : (
-            <Search
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          )}
-          <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
-          {durationLabel && (
-            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-              {durationLabel}
-            </span>
-          )}
-          {anyRunning && <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
-          {isContext
-            ? entries.map(({ part }) => {
-                const t = contextToolTrigger(part);
-                const running =
-                  (part.state as any)?.status === 'pending' ||
-                  (part.state as any)?.status === 'running';
-                const s = (part.state as any)?.time?.start;
-                const e = (part.state as any)?.time?.end;
-                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
-                return (
-                  <div
-                    key={part.id}
-                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
-                  >
-                    <span className="flex-shrink-0">{t.title}</span>
-                    {!running && t.subtitle && (
-                      <span
-                        className="min-w-0 flex-1 truncate font-mono opacity-70"
-                        title={t.subtitle}
-                      >
-                        {t.subtitle}
-                      </span>
-                    )}
-                    {!running && dur >= 1000 && (
-                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
-                        {Math.round(dur / 1000)}s
-                      </span>
-                    )}
-                    {running && (
-                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
-                    )}
-                  </div>
-                );
-              })
-            : entries.map(({ part }) => (
-                // Same-tool, non-context groups (e.g. 3x web_search) render
-                // each call with its full ToolPartRenderer so users see real
-                // results — answers, sources, images — not just the input arg.
-                // Sits inside the rail's left padding (no negative margin) so
-                // each row aligns under the group header label, matching the
-                // reasoning block's nested treatment.
-                <div key={part.id}>
-                  <ToolPartRenderer
-                    part={part}
-                    sessionId={sessionId}
-                    disableNavigation={disableNavigation}
-                  />
-                </div>
-              ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   );
 }
 
@@ -2328,7 +578,6 @@ function SessionTurn({
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
-  const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
 
@@ -2355,6 +604,12 @@ function SessionTurn({
   );
   const isLast = useMemo(
     () => isLastUserMessage(turn.userMessage.info.id, allMessages),
+    [turn.userMessage.info.id, allMessages],
+  );
+  // The plan belongs to the turn that WROTE it, not to whichever turn happens
+  // to be last — see turn/plan-anchor.ts.
+  const ownsPlan = useMemo(
+    () => planAnchorMessageId(allMessages) === turn.userMessage.info.id,
     [turn.userMessage.info.id, allMessages],
   );
   // A turn is "working" when:
@@ -2458,23 +713,6 @@ function SessionTurn({
   const nextPermission = useMemo(
     () => permissions.filter((p) => p.sessionID === sessionId)[0],
     [permissions, sessionId],
-  );
-
-  // Question matching for this turn (used to pass to ToolPartRenderer for forceOpen/locked state)
-  const nextQuestion = useMemo(() => {
-    const sessionQuestions = questions.filter((q) => q.sessionID === sessionId);
-    if (sessionQuestions.length === 0) return undefined;
-    const turnMessageIds = new Set(turn.assistantMessages.map((m) => m.info.id));
-    const matched = sessionQuestions.find((q) => q.tool && turnMessageIds.has(q.tool.messageID));
-    if (matched) return matched;
-    if (isLast) return sessionQuestions[0];
-    return undefined;
-  }, [questions, sessionId, turn.assistantMessages, isLast]);
-
-  // Hidden tool parts (when permission/question is active)
-  const hidden = useMemo(
-    () => getHiddenToolParts(nextPermission, nextQuestion),
-    [nextPermission, nextQuestion],
   );
 
   // Answered question parts — shown inline alongside streamed text.
@@ -2727,26 +965,6 @@ function SessionTurn({
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
-  const rewindPromptText = useMemo(() => {
-    if (commandForTurn) {
-      return `/${commandForTurn.name}${commandForTurn.args ? ` ${commandForTurn.args}` : ''}`;
-    }
-    const withoutReply = parseReplyContext(userMessageText).cleanText;
-    const withoutUploads = parseFileReferences(withoutReply).cleanText;
-    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
-    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
-    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
-    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
-    return stripKortixSystemTags(withoutSessions).trim();
-  }, [commandForTurn, userMessageText]);
-
-  const handleCopyUser = async () => {
-    if (!userMessageText) return;
-    await navigator.clipboard.writeText(userMessageText);
-    setUserCopied(true);
-    setTimeout(() => setUserCopied(false), 2000);
-  };
-
   // ---- Status throttling (2.5s) ----
   const lastStatusChangeRef = useRef(Date.now());
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -2824,6 +1042,33 @@ function SessionTurn({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Parts with a pending permission need a visible, actionable surface — they
+  // must never fold into a collapsed burst. Answered questions get the same
+  // standalone treatment for a different reason: they record a decision the
+  // USER made, not agent activity, so the "collapse the agent's work into one
+  // row" goal doesn't apply to them (they render via AnsweredQuestionCard, not
+  // ToolPartRenderer — see the standalone branch below). Pending/dismissed
+  // questions are deliberately NOT standalone: the real, actionable prompt for
+  // a pending question lives in the composer (SessionChatInput's questionSlot),
+  // which has the answer-reply plumbing this component doesn't; surfacing an
+  // inert, answer-less card here would only be a confusing duplicate. Those
+  // are filtered out of the turn body entirely below, matching the old
+  // behaviour of rendering nothing for them in the steps list.
+  // Computed before the early-return branches below so this hook always
+  // runs in the same order, regardless of which branch this render takes.
+  const standaloneCallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const permission of permissions) {
+      if (permission.sessionID === sessionId && permission.tool?.callID) {
+        ids.add(permission.tool.callID);
+      }
+    }
+    for (const { part } of answeredQuestionParts) {
+      ids.add(part.callID);
+    }
+    return ids;
+  }, [permissions, answeredQuestionParts, sessionId]);
+
   // ============================================================================
   // Shell mode — short-circuit rendering
   // ============================================================================
@@ -2897,7 +1142,7 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="group/turn space-y-3">
+    <div className="group/turn space-y-2.5">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
@@ -2924,314 +1169,97 @@ function SessionTurn({
 			    (e.g. background task notification with only synthetic parts). */}
       {hasVisibleUserContent && (
         <div>
-          <UserMessageRow
+          <UserMessage
             message={turn.userMessage}
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
-          />
-          {userMessageText && (
-            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-              <Hint label="Edit from here" side="top" align="center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Edit message and rewind session"
-                  disabled={rewindDisabled}
-                  onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
-                >
-                  <PencilSimpleIcon className="size-3.5" />
-                </Button>
-              </Hint>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
-                    {userCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Kortix logo header */}
-      {(working || hasSteps || hasReasoning) && (
-        <div className="mt-3 flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/kortix-logomark-white.svg"
-            alt="Kortix"
-            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+            sessionId={sessionId}
+            ownsPlan={ownsPlan}
+            onRewind={onRewind}
+            rewindDisabled={rewindDisabled}
           />
         </div>
       )}
 
       {/* ── Assistant parts content ──
-			  Renders ALL parts from all assistant messages,
-			  EXCEPT: the response part (last text) is hidden when not working
-			  (it renders separately below as the Response section). */}
+			  Segments the turn into bursts (collapsed activity), standalone
+			  parts (deliverables, sub-agents, and any part with a pending
+			  permission or an active question), and text (prose between
+			  bursts). Replaces the old same-tool / reasoning grouping — see
+			  features/session/turn/segment-turn.ts.
+			  Two part kinds are filtered out before segmentation:
+			    - `todowrite` — the plan card beneath the user message is now
+			      the single canonical todo surface; showing the same checklist
+			      again inside a burst would just duplicate it.
+			    - `question`: only answered questions are kept. Pending and
+			      dismissed questions are dropped entirely. Additionally,
+			      answered questions are dropped when rendering inline content
+			      (below), since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-2">
-          {(() => {
-            // Same-tool grouping: consecutive calls of the SAME tool
-            // (e.g. 5 reads, 3 greps) fold into one collapsible.
-            // Singles stay individual. Reasoning groups separately.
-            // ALL tool rows get a left border rail for visual separation.
-            type ToolEntry = { part: ToolPart; message: MessageWithParts };
-            type RenderItem =
-              | { type: 'part'; part: Part; message: MessageWithParts }
-              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
-              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
-              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
-
-            const items: RenderItem[] = [];
-            let pendingReasoning: ReasoningPart[] = [];
-            let pendingTools: ToolEntry[] = [];
-            let pendingToolName: string | null = null;
-
-            const flushReasoning = () => {
-              if (pendingReasoning.length > 0) {
-                items.push({
-                  type: 'reasoning-group',
-                  parts: pendingReasoning,
-                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
-                });
-                pendingReasoning = [];
-              }
-            };
-
-            const flushTools = () => {
-              if (pendingTools.length >= 2 && pendingToolName) {
-                items.push({
-                  type: 'tool-group',
-                  toolName: pendingToolName,
-                  entries: pendingTools,
-                  key: `tg-${pendingTools[0].part.id}`,
-                });
-              } else if (pendingTools.length === 1) {
-                items.push({
-                  type: 'tool-single',
-                  part: pendingTools[0].part,
-                  message: pendingTools[0].message,
-                });
-              }
-              pendingTools = [];
-              pendingToolName = null;
-            };
-
-            // Normalize tool name for grouping.
-            //   __context__ — read/glob/grep/list collapse into one
-            //                "Gathered context" pile (compact one-liners).
-            //   __research__ — web_search / webfetch / scrape collapse into
-            //                  one "Research" pile (full results expanded).
-            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
-            // by their normalized tool name and render full per-call results.
-            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
-            const RESEARCH_SET = new Set([
-              'web_search',
-              'websearch',
-              'webfetch',
-              'web_fetch',
-              'scrape',
-              'scrape_webpage',
-            ]);
-            const norm = (t: string) => {
-              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-              if (CONTEXT_SET.has(n)) return '__context__';
-              if (RESEARCH_SET.has(n)) return '__research__';
-              return n;
-            };
-
-            for (const { part, message } of allParts) {
-              if (isReasoningPart(part)) {
-                if (part.text?.trim()) {
-                  flushTools();
-                  pendingReasoning.push(part);
+          {segmentTurn(
+            allParts
+              .map(({ part }) => part)
+              .filter((part) => {
+                if (isToolPart(part) && part.tool === 'todowrite') return false;
+                if (isToolPart(part) && part.tool === 'question') {
+                  // Keep only answered questions, and only if not rendering inline
+                  return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
                 }
-                continue;
-              }
-              // Render-nothing parts (blank text, internal snapshot/patch
-              // bookkeeping) must not split a run of groupable tools — otherwise
-              // consecutive shells fragment into inconsistent singles instead of
-              // one "Ran N commands" group.
-              if (isInvisibleActivityPart(part)) continue;
-              flushReasoning();
-
-              if (isToolPart(part)) {
-                const tp = part as ToolPart;
-                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
-                const groupable =
-                  shouldShowToolPart(tp) &&
-                  tp.tool !== 'todowrite' &&
-                  tp.tool !== 'question' &&
-                  !isNoGroupActivityTool(tp.tool) &&
-                  !hasPermission &&
-                  !isToolPartHidden(tp, message.info.id, hidden);
-
-                if (groupable) {
-                  const n = norm(tp.tool);
-                  if (pendingToolName === n) {
-                    pendingTools.push({ part: tp, message });
-                  } else {
-                    flushTools();
-                    pendingToolName = n;
-                    pendingTools = [{ part: tp, message }];
-                  }
-                  continue;
-                }
-              }
-
-              flushTools();
-              items.push({ type: 'part', part, message });
+                return true;
+              }),
+            { standaloneCallIds },
+          ).map((segment, index, segments) => {
+            if (segment.kind === 'burst') {
+              return (
+                <ActivityBurst
+                  key={`burst-${segment.parts[0]?.id ?? index}`}
+                  parts={segment.parts}
+                  sessionId={sessionId}
+                  working={working}
+                  isTrailing={index === segments.length - 1}
+                  disableNavigation={disableToolNavigation}
+                />
+              );
             }
-            flushReasoning();
-            flushTools();
 
-            const reasoningActive = working && permissions.length === 0 && questions.length === 0;
-
-            return items.map((item) => {
-              // Reasoning group
-              if (item.type === 'reasoning-group') {
-                return (
-                  <div key={item.key}>
-                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
-                  </div>
-                );
+            if (segment.kind === 'standalone') {
+              if (!shouldShowToolPart(segment.part)) return null;
+              // Render answered questions via AnsweredQuestionCard instead of
+              // ToolPartRenderer to avoid the "Question(s)" label and badge
+              // from QuestionTool; answered cards show "Questions · N answered" instead.
+              // Use the part from the map (may contain optimistically-cached answers).
+              if (answeredQuestionPartsById.has(segment.part.id)) {
+                const part = answeredQuestionPartsById.get(segment.part.id)!;
+                return <AnsweredQuestionCard key={segment.part.id} part={part} />;
               }
+              return (
+                <ToolPartRenderer
+                  key={segment.part.id}
+                  part={segment.part}
+                  sessionId={sessionId}
+                  disableNavigation={disableToolNavigation}
+                  permission={getPermissionForTool(permissions, segment.part.callID)}
+                  onPermissionReply={onPermissionReply}
+                />
+              );
+            }
 
-              // Same-tool group (2+ consecutive)
-              if (item.type === 'tool-group') {
-                return (
-                  <div key={item.key}>
-                    <SameToolGroup
-                      toolName={item.toolName}
-                      entries={item.entries}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      busy={working}
-                    />
-                  </div>
-                );
-              }
-
-              // Single tool (with left rail)
-              if (item.type === 'tool-single') {
-                if (!shouldShowToolPart(item.part)) return null;
-                const perm = getPermissionForTool(permissions, item.part.callID);
-                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
-                return (
-                  <div key={item.part.id}>
-                    <ToolPartRenderer
-                      part={item.part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              const { part, message } = item;
-
-              // When inline content rendering is active (text + answered questions in order),
-              // hide ALL text parts from steps since they render in the inline section
-              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
-
-              // Text parts (intermediate + streaming response while working)
-              if (isTextPart(part)) {
-                if (!part.text?.trim()) return null;
-                // Text response rendering for no-step turns is handled below in
-                // the dedicated response section to avoid duplicate output.
-                if (!hasSteps) return null;
-                return (
-                  <div key={part.id} className="min-w-0 text-sm">
-                    <ThrottledMarkdown content={part.text} isStreaming={working} />
-                  </div>
-                );
-              }
-
-              // Compaction indicator
-              if (isCompactionPart(part)) {
-                return (
-                  <div key={part.id} className="flex items-center gap-2 py-2.5">
-                    <div className="bg-border h-px flex-1" />
-                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                      <Layers className="text-muted-foreground size-3" />
-                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                        Compaction
-                      </span>
-                    </div>
-                    <div className="bg-border h-px flex-1" />
-                  </div>
-                );
-              }
-
-              // Tool parts
-              if (isToolPart(part)) {
-                if (!shouldShowToolPart(part)) return null;
-                if (part.tool === 'todowrite') return null;
-                if (part.tool === 'question') {
-                  // When inline content rendering is active, answered questions
-                  // render in the inline content section — skip here to avoid duplicates.
-                  if (shouldUseInlineContent) return null;
-                  // Render answered questions inline at their natural position
-                  // so they appear exactly where the user answered them.
-                  const answeredPart = answeredQuestionPartsById.get(part.id);
-                  if (answeredPart) {
-                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
-                  }
-                  // Unanswered/dismissed questions: don't render in steps;
-                  // dismissed ones show via the turnError banner.
-                  return null;
-                }
-
-                const perm = getPermissionForTool(permissions, part.callID);
-
-                // Hide tool parts that have active permission
-                if (isToolPartHidden(part, message.info.id, hidden)) return null;
-
-                return (
-                  <div key={part.id}>
-                    <ToolPartRenderer
-                      part={part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
-              if (isSnapshotPart(part) || isPatchPart(part)) {
-                return null;
-              }
-
-              return null;
-            });
-          })()}
+            // Text segments render as prose between bursts. Text rendering
+            // for no-step turns is handled below in the dedicated response
+            // section, to avoid duplicate output.
+            if (!hasSteps) return null;
+            const text = segment.part.text?.trim();
+            if (!text) return null;
+            return (
+              <div key={segment.part.id} className="min-w-0 text-sm">
+                <ThrottledMarkdown content={text} isStreaming={working} />
+              </div>
+            );
+          })}
         </div>
       )}
-
-      {/* Kortix logo — shown when there are no steps and not working (otherwise logo is already above the steps trigger) */}
-      {!hasSteps &&
-        !hasReasoning &&
-        !working &&
-        (response || answeredQuestionParts.length > 0 || turnError) && (
-          <div className="mt-3 mb-3 flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/kortix-logomark-white.svg"
-              alt="Kortix"
-              className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-            />
-          </div>
-        )}
 
       {/* ── Screen reader ── */}
       <div className="sr-only" aria-live="polite">
@@ -3342,7 +1370,6 @@ function SessionTurn({
                   )
                 : undefined
             }
-            elapsed={liveDuration}
           />
         </div>
       )}
@@ -3355,24 +1382,37 @@ function SessionTurn({
       {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
-          {/* Copy leads, overflow trails. The numbers used to sit LEFT of the action
-              as `2m 15s · $0.45 · 46.2kt` — three unlabelled values of three
-              different kinds on one dot-separated line, which reads as a list of
-              comparable things and is not one. They are a labelled list inside
-              `SessionTurnMeta` now. `focus-within` because a keyboard user could
-              otherwise tab into — and open — a control at `opacity-0`. The
-              `data-state=open` case is the pointer one: the popover is portalled
-              and takes focus, so without it the ⋯ would fade out from under its
-              own open panel the moment the pointer left the turn. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
-          </Tooltip>
-          <SessionTurnMeta endedAt={turnEndedAt} durationMs={turnDurationMs} cost={costInfo} />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleCopy}
+            aria-label={copied ? 'Copied' : 'Copy response'}
+          >
+            <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={copied ? 'check' : 'copy'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {copied ? (
+                    <CheckIcon className="text-foreground size-4" />
+                  ) : (
+                    <Icon.Copy className="size-4" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </Button>
+          <SessionTurnMeta
+            endedAt={turnEndedAt}
+            durationMs={turnDurationMs}
+            cost={costInfo}
+            className="flex items-center justify-center"
+          />
         </div>
       )}
 
@@ -3535,13 +1575,12 @@ export function SessionChat({
   }, [selectionPopup]);
 
   // ---- KortixComputer side panel ----
-  const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
-  const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
+  // No `isSidePanelOpen` subscription here any more. The header's toggle was
+  // the only thing that needed it, and the chat was re-rendering in full on
+  // every open and close of a panel beside it for a value it no longer reads.
+  // The action panel column owns its own flag and subscribes to it itself.
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const handleTogglePanel = useCallback(() => {
-    setIsSidePanelOpen(!isSidePanelOpen);
-  }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   // ---- Hooks ----
   // runtimeReady gates the session query (it's disabled until the sandbox
@@ -3676,7 +1715,7 @@ export function SessionChat({
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
   }, [sessionPrefill, sessionId]);
-  // Map of user message IDs → command info, so UserMessageRow can render
+  // Map of user message IDs → command info, so UserMessage can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
   // Stash the pending command info so we can associate it with the user message
@@ -3823,6 +1862,7 @@ export function SessionChat({
         });
       },
       onSuccess: () => {
+        if (!projectId || !projectSessionId) return;
         void updateProjectSession(projectId, projectSessionId, {
           metadata: { pending_prompt: null },
         }).catch((error) => {
@@ -4145,7 +2185,7 @@ export function SessionChat({
   // Clear pending user message when we can confirm the message is in cache
   // (by ID), or when new messages arrive (fallback for command sends).
   // When a command was pending, associate the newest user message with the
-  // command info so UserMessageRow can render a nice pill instead of raw template text.
+  // command info so UserMessage can render a nice pill instead of raw template text.
   const prevMsgLenRef = useRef(messages?.length || 0);
   useEffect(() => {
     if (!pendingUserMessage) return;
@@ -4637,7 +2677,7 @@ export function SessionChat({
       const attachedFiles = files ?? [];
 
       // Build optimistic text that includes session ref XML so that
-      // HighlightMentions / UserMessageRow can detect multi-word session
+      // HighlightMentions / UserMessage can detect multi-word session
       // mentions (e.g. "@Intro message") before the server echoes back.
       const sessionMentionsForOptimistic =
         mentions?.filter((m) => m.kind === 'session' && m.value) ?? [];
@@ -5431,8 +3471,6 @@ export function SessionChat({
         <SessionSiteHeader
           sessionId={sessionId}
           sessionTitle={session?.title || 'Untitled'}
-          onToggleSidePanel={handleTogglePanel}
-          isSidePanelOpen={isSidePanelOpen}
           leadingAction={headerLeadingAction}
         />
       )}
@@ -5447,427 +3485,384 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
-      {/* Content area — loading, not-found, or actual messages. The single
-          session loader (SessionStartingLoader) carries through here on its
-          "Connecting" phase so there's never a second, different loader. */}
-      {isNotFound ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <div className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-              } catch {}
-              if (typeof window !== 'undefined') window.location.assign('/');
-            }}
-            className="text-primary text-sm hover:underline"
-          >
-            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
-          </button>
-        </div>
-      ) : (
-        <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
-          <div
-            ref={scrollContainerCallbackRef}
-            className={cn(
-              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
-              shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
-            )}
-            onMouseUp={handleChatMouseUp}
-            onMouseDown={handleChatMouseDown}
-            onScroll={handleChatScroll}
-          >
-            <div
-              ref={contentRef}
-              role="log"
-              className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
-            >
-              <div className="flex min-w-0 flex-col">
-                {/* Optimistic user message */}
-                {showOptimistic && (
-                  <div data-turn-id="optimistic" className="mt-12 first:mt-0">
-                    <div className="flex justify-end">
-                      <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
-                        {(() => {
-                          const { cleanText: afterReply, replyContext: optReply } =
-                            parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
-                          const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
-                          const { cleanText: afterFileMentions } =
-                            parseFileMentionReferences(afterProjects);
-                          const { cleanText: afterAgentMentions } =
-                            parseAgentMentionReferences(afterFileMentions);
-                          const { cleanText } = parseSessionReferences(afterAgentMentions);
-                          return (
-                            <>
-                              {optReply && (
-                                <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
-                                  <span className="text-muted-foreground truncate text-xs">
-                                    {optReply.length > 150
-                                      ? `${optReply.slice(0, 150)}...`
-                                      : optReply}
-                                  </span>
-                                </div>
-                              )}
-                              {files.length > 0 && (
-                                <div className="flex flex-wrap gap-2 p-3 pb-0">
-                                  {files.map((f, i) => (
-                                    <div key={i} onClick={(e) => e.stopPropagation()}>
-                                      <GridFileCard
-                                        filePath={f.path}
-                                        fileName={f.path.split('/').pop() || f.path}
-                                        onClick={() => openPreview(f.path)}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {cleanText && (
-                                <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-                                  <HighlightMentions
-                                    text={cleanText}
-                                    agentNames={agentNames}
-                                    onFileClick={openFileInComputer}
-                                  />
-                                </p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                    <AssistantPendingRow className="mt-6" />
-                  </div>
+      {/* Chat and the action panel share one row. The panel is a real column,
+          not an overlay: opening it takes width from this row, and the chat
+          column below re-centers its own content in what is left. That is the
+          whole reason for this wrapper — an absolutely positioned panel
+          floated over the transcript instead of moving it. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {/* Content area — loading, not-found, or actual messages. The single
+              session loader (SessionStartingLoader) carries through here on its
+              "Connecting" phase so there's never a second, different loader. */}
+          {isNotFound ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <div className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
                 )}
-
-                {isOptimisticCompacting && !hasCompactionTurn && (
-                  <div className="mt-12 space-y-3">
-                    <div className="my-3 flex items-center gap-3 py-4">
-                      <div className="bg-border h-px flex-1" />
-                      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                        <Layers className="text-muted-foreground size-3.5" />
-                        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                          Compaction
-                        </span>
-                      </div>
-                      <div className="bg-border h-px flex-1" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src="/kortix-logomark-white.svg"
-                        alt="Kortix"
-                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                  if (typeof window !== 'undefined') window.location.assign('/');
+                }}
+                className="text-primary text-sm hover:underline"
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </button>
+            </div>
+          ) : (
+            <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
+              <div
+                ref={scrollContainerCallbackRef}
+                className={cn(
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
+                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                )}
+                onMouseUp={handleChatMouseUp}
+                onMouseDown={handleChatMouseDown}
+                onScroll={handleChatScroll}
+              >
+                <div
+                  ref={contentRef}
+                  role="log"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
+                >
+                  <div className="flex min-w-0 flex-col">
+                    {/* Optimistic turn — the user's message plus the waiting row,
+                        shared verbatim with InstantSessionShell so the shell → chat
+                        crossfade has nothing to drift on (see OptimisticTurn). */}
+                    {showOptimistic && (
+                      <OptimisticTurn
+                        text={optimisticPrompt || ''}
+                        agentNames={agentNames}
+                        onFileClick={openFileInComputer}
+                        onFilePreview={openPreview}
                       />
-                      <div className="text-muted-foreground text-sm">
-                        {tHardcodedUi.raw(
-                          'componentsSessionSessionChat.line5954JsxTextCompactingSession',
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                    )}
 
-                {/* Turn-based message rendering.
-                    ToolActivateContext makes inline tool rows open the side
-                    panel (Actions) focused on that tool, instead of expanding. */}
-                {hasOlder && (
-                  <div className="mb-6 flex flex-col items-center gap-2">
-                    {/* Sentinel: crossing into view pulls the previous page.
-                        Sits above the spinner so it clears the viewport as
-                        soon as the prepended turns render. */}
-                    <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
-                    {isLoadingOlder && <Loading />}
-                    {olderPullFailed && !isLoadingOlder && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground text-xs">
-                          Couldn&apos;t load older messages.
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline-ghost"
-                          size="sm"
-                          onClick={() => void handleLoadOlder()}
-                        >
-                          Retry
-                        </Button>
+                    {isOptimisticCompacting && !hasCompactionTurn && (
+                      <div className="mt-12 space-y-3">
+                        <div className="my-3 flex items-center gap-3 py-4">
+                          <div className="bg-border h-px flex-1" />
+                          <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                            <Layers className="text-muted-foreground size-3.5" />
+                            <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                              Compaction
+                            </span>
+                          </div>
+                          <div className="bg-border h-px flex-1" />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src="/kortix-logomark-white.svg"
+                            alt="Kortix"
+                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                          />
+                          <div className="text-muted-foreground text-sm">
+                            {tHardcodedUi.raw(
+                              'componentsSessionSessionChat.line5954JsxTextCompactingSession',
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
-                <ToolActivateContext.Provider value={toolActivate}>
-                  {turns.map((turn, turnIndex) => {
-                    // Check if this turn is a compaction summary
-                    const hasCompaction =
-                      turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-                      turn.assistantMessages.some((msg) =>
-                        msg.parts.some((p) => p.type === 'compaction'),
-                      );
 
-                    // Notification-only early-return removed: it rendered the
-                    // user's pty_* card but skipped turn.assistantMessages,
-                    // hiding every subsequent assistant response in that turn.
-                    // Fall through to the normal turn renderer instead.
-
-                    return (
-                      <div
-                        key={turn.userMessage.info.id}
-                        data-turn-id={turn.userMessage.info.id}
-                        className={cn(
-                          '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
-                          turnIndex === 0 ? '' : 'mt-12',
-                        )}
-                      >
-                        {/* Compaction divider — shown before the first turn after compaction */}
-                        {hasCompaction && (
-                          <div className="my-3 flex items-center gap-3 py-4">
-                            <div className="bg-border h-px flex-1" />
-                            <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                              <Layers className="text-muted-foreground size-3.5" />
-                              <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                                Compaction
-                              </span>
-                            </div>
-                            <div className="bg-border h-px flex-1" />
+                    {/* Turn-based message rendering.
+                    ToolActivateContext makes inline tool rows open the side
+                    panel (Actions) focused on that tool, instead of expanding. */}
+                    {hasOlder && (
+                      <div className="mb-6 flex flex-col items-center gap-2">
+                        {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                        <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                        {isLoadingOlder && <Loading />}
+                        {olderPullFailed && !isLoadingOlder && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground text-xs">
+                              Couldn&apos;t load older messages.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline-ghost"
+                              size="sm"
+                              onClick={() => void handleLoadOlder()}
+                            >
+                              Retry
+                            </Button>
                           </div>
                         )}
-                        <SessionTurn
-                          turn={turn}
-                          allMessages={messages!}
-                          sessionId={sessionId}
-                          sessionStatus={sessionStatus}
-                          permissions={pendingPermissions}
-                          questions={pendingQuestions}
-                          agentNames={agentNames}
-                          isFirstTurn={turnIndex === 0}
-                          isBusy={isBusy}
-                          isCompaction={hasCompaction}
-                          providers={providers}
-                          commandMessages={commandMessagesRef.current}
-                          commands={commands}
-                          disableToolNavigation={disableToolNavigation}
-                          onPermissionReply={handlePermissionReply}
-                          onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
-                          rewindDisabled={
-                            !!readOnly || !sessionState || isBusy || sessionState.rewindPending
-                          }
-                        />
                       </div>
-                    );
-                  })}
-                </ToolActivateContext.Provider>
+                    )}
+                    <ToolActivateContext.Provider value={toolActivate}>
+                      {turns.map((turn, turnIndex) => {
+                        // Check if this turn is a compaction summary
+                        const hasCompaction =
+                          turn.assistantMessages.some(
+                            (msg) => (msg.info as any).summary === true,
+                          ) ||
+                          turn.assistantMessages.some((msg) =>
+                            msg.parts.some((p) => p.type === 'compaction'),
+                          );
 
-                {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
-                {/* A turn refused for a missing connector renders HERE — after
+                        // Notification-only early-return removed: it rendered the
+                        // user's pty_* card but skipped turn.assistantMessages,
+                        // hiding every subsequent assistant response in that turn.
+                        // Fall through to the normal turn renderer instead.
+
+                        return (
+                          <div
+                            key={turn.userMessage.info.id}
+                            data-turn-id={turn.userMessage.info.id}
+                            className={cn(
+                              '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
+                              turnIndex === 0 ? '' : 'mt-12',
+                            )}
+                          >
+                            {/* Compaction divider — shown before the first turn after compaction */}
+                            {hasCompaction && (
+                              <div className="my-3 flex items-center gap-3 py-4">
+                                <div className="bg-border h-px flex-1" />
+                                <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                  <Layers className="text-muted-foreground size-3.5" />
+                                  <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                                    Compaction
+                                  </span>
+                                </div>
+                                <div className="bg-border h-px flex-1" />
+                              </div>
+                            )}
+                            <SessionTurn
+                              turn={turn}
+                              allMessages={messages!}
+                              sessionId={sessionId}
+                              sessionStatus={sessionStatus}
+                              permissions={pendingPermissions}
+                              questions={pendingQuestions}
+                              agentNames={agentNames}
+                              isFirstTurn={turnIndex === 0}
+                              isBusy={isBusy}
+                              isCompaction={hasCompaction}
+                              providers={providers}
+                              commandMessages={commandMessagesRef.current}
+                              commands={commands}
+                              disableToolNavigation={disableToolNavigation}
+                              onPermissionReply={handlePermissionReply}
+                              onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                              rewindDisabled={
+                                !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                    </ToolActivateContext.Provider>
+
+                    {/* Busy indicator when no turns yet but session is busy */}
+                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                    {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a
                     button that fixes it. */}
-                <ConnectorRequiredNotice
-                  error={sessionState?.sendError}
-                  projectId={projectId}
-                  resend={
-                    sessionState && lastSubmittedRef.current
-                      ? () => {
-                          const last = lastSubmittedRef.current;
-                          if (!last) return;
-                          void sessionState.sendParts(
-                            last.parts as Parameters<typeof sessionState.sendParts>[0],
-                            last.options as Parameters<typeof sessionState.sendParts>[1],
-                          );
-                        }
-                      : undefined
-                  }
-                  className="mt-2"
-                />
-                {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
-              </div>
-              {/* Spacer — ensures the last message can scroll to the top of
+                    <ConnectorRequiredNotice
+                      error={sessionState?.sendError}
+                      projectId={projectId}
+                      resend={
+                        sessionState && lastSubmittedRef.current
+                          ? () => {
+                              const last = lastSubmittedRef.current;
+                              if (!last) return;
+                              void sessionState.sendParts(
+                                last.parts as Parameters<typeof sessionState.sendParts>[0],
+                                last.options as Parameters<typeof sessionState.sendParts>[1],
+                              );
+                            }
+                          : undefined
+                      }
+                      className="mt-2"
+                    />
+                    {/* Busy with no turn to attach it to yet — the same waiting row
+                        the optimistic turn and every live turn use, so it never
+                        changes shape as the first turn materialises. */}
+                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
+                  </div>
+                  {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
 						    only brings the last message to the bottom of the screen.
 						    Height is dynamically measured from the scroll container so
 						    the newest message appears flush at the top. */}
-              <div ref={spacerElRef} />
-            </div>
-          </div>
+                  <div ref={spacerElRef} />
+                </div>
+              </div>
 
-          {/* Selection "Reply" popup — floats near selected text */}
-          {selectionPopup && (
-            <div
-              data-reply-popup
-              className="absolute z-50"
-              style={{
-                left: `${selectionPopup.x}px`,
-                top: `${selectionPopup.y}px`,
-                transform: 'translate(-50%, -100%)',
-              }}
-            >
-              <Button
-                onClick={handleSelectionReply}
-                size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
-              >
-                Reply
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  color="currentColor"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  className="size-4"
+              {/* Selection "Reply" popup — floats near selected text */}
+              {selectionPopup && (
+                <div
+                  data-reply-popup
+                  className="absolute z-50"
+                  style={{
+                    left: `${selectionPopup.x}px`,
+                    top: `${selectionPopup.y}px`,
+                    transform: 'translate(-50%, -100%)',
+                  }}
                 >
-                  <path d="M3.99219 10H11.9922C13.8521 10 14.7821 10 15.5451 10.2044C17.6157 10.7592 19.2329 12.3765 19.7877 14.4471C19.9922 15.2101 19.9922 16.1401 19.9922 18"></path>
-                  <path
-                    d="M7.99219 6L6.83839 6.87652C4.94092 8.31801 3.99219 9.03875 3.99219 10C3.99219 10.9612 4.94092 11.682 6.83839 13.1235L7.99219 14"
-                    strokeLinejoin="round"
-                  ></path>
-                </svg>
-              </Button>
+                  <Button
+                    onClick={handleSelectionReply}
+                    size="sm"
+                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                  >
+                    Reply
+                    <ArrowBendUpLeftIcon className="size-4 shrink-0" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Chat Minimap */}
+              <ChatMinimap
+                turns={turns}
+                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                contentRef={contentRef as React.RefObject<HTMLDivElement>}
+              />
+
+              {/* Scroll to bottom FAB */}
+              <div
+                className={cn(
+                  'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
+                  showScrollButton
+                    ? 'translate-y-0 scale-100 opacity-100'
+                    : 'pointer-events-none translate-y-4 scale-95 opacity-0',
+                )}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
+                  onClick={smoothScrollToAbsoluteBottom}
+                >
+                  <ArrowDown className="mr-1 size-3" />
+                  {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Chat Minimap */}
-          <ChatMinimap
-            turns={turns}
-            scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-            contentRef={contentRef as React.RefObject<HTMLDivElement>}
-          />
-
-          {/* Scroll to bottom FAB */}
-          <div
-            className={cn(
-              'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
-              showScrollButton
-                ? 'translate-y-0 scale-100 opacity-100'
-                : 'pointer-events-none translate-y-4 scale-95 opacity-0',
-            )}
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
-              onClick={smoothScrollToAbsoluteBottom}
-            >
-              <ArrowDown className="mr-1 size-3" />
-              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Input — hidden in read-only mode (sub-session modal) */}
-      {!readOnly && (
-        <>
-          <SessionChatInput
-            onSend={async (text, files, mentions) => {
-              await handleSend(text, files, mentions);
-              if (failedStartDraft) {
-                clearStartStash(sessionId);
-                usePendingFilesStore.getState().consumePendingFiles();
-                setFailedStartDraft(null);
-              }
-            }}
-            prefill={
-              rewindDraft
-                ? {
-                    text: rewindDraft.text,
-                    id: rewindDraft.id,
-                    mode: 'replace',
+          {/* Input — hidden in read-only mode (sub-session modal) */}
+          {!readOnly && (
+            <>
+              <SessionChatInput
+                onSend={async (text, files, mentions) => {
+                  await handleSend(text, files, mentions);
+                  if (failedStartDraft) {
+                    clearStartStash(sessionId);
+                    usePendingFilesStore.getState().consumePendingFiles();
+                    setFailedStartDraft(null);
                   }
-                : failedStartDraft
-                  ? {
-                      text: failedStartDraft.text,
-                      files: failedStartDraft.files,
-                      id: failedStartDraft.id,
-                      mode: 'merge',
-                    }
-                  : sessionPrefill
-                    ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                    : null
-            }
-            isBusy={isBusy}
-            queuedMessages={queuedMessages}
-            onQueueMessage={handleQueueMessage}
-            onRemoveQueuedMessage={handleRemoveQueuedMessage}
-            onStop={handleStop}
-            escCount={escCount}
-            agents={local.agent.list}
-            selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-            onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-            agentSelectorLocked={!!lockedAgentName}
-            commands={chatCommands}
-            onCommand={handleCommand}
-            models={local.model.list}
-            selectedModel={local.model.currentKey ?? null}
-            onModelChange={handleModelChange}
-            modelDefaultControls={chatModelDefaultControls}
-            variants={local.model.variant.list}
-            selectedVariant={local.model.variant.current ?? null}
-            onVariantChange={handleVariantChange}
-            messages={messages}
-            sessionId={sessionId}
-            projectId={projectId}
-            onFileSearch={handleFileSearch}
-            providers={providers}
-            modelRequired
-            modelsLoading={providersLoading}
-            threadContext={threadContext}
-            onContextClick={handleContextClick}
-            replyTo={replyTo}
-            onClearReply={handleClearReply}
-            // Only lock the input into question-answer mode while the session is
-            // actually busy (a live question keeps the run busy). If a question
-            // chip is ever showing while the session is idle — e.g. a dead /
-            // abandoned question the agent left behind — the input stays unlocked
-            // so a typed message is sent to the agent instead of being swallowed
-            // as a custom answer.
-            lockForQuestion={!!renderedQuestion && isBusy}
-            // Same dead-prompt guard as questions: only lock while the agent is
-            // actually paused on the decision (isBusy), so a stale card can't
-            // swallow the composer on an idle session.
-            lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-            onCustomAnswer={handleCustomAnswer}
-            questionButtonLabel={renderedQuestion ? questionAction.label : null}
-            questionCanAct={questionAction.canAct}
-            onQuestionAction={handleQuestionAction}
-            inputSlot={chatInputSlot}
-            toolbarSlot={chatToolbarSlot}
-            // The shell can now render on a cached transcript alone, i.e. before
-            // the sandbox answers — so sending has to be gated separately from
-            // reading. See sessionComposerReadiness.
-            disabled={composerReadiness.disabled}
-            placeholder={composerReadiness.placeholder}
-          />
-          <ConfirmDialog
-            open={!!rewindTarget}
-            onOpenChange={(open) => !open && setRewindTarget(null)}
-            title="Edit from this message?"
-            description={
-              <>
-                <p>This rewinds the same session and restores its files to this message.</p>
-                <p className="mt-2">
-                  You can restore the removed path until you send a replacement prompt.
-                </p>
-              </>
-            }
-            confirmLabel="Rewind session"
-            confirmVariant="destructive"
-            confirmIcon={<RotateCcw className="size-3.5" />}
-            isPending={sessionState?.rewindPending}
-            onConfirm={() => void handleConfirmRewind()}
-          />
-        </>
-      )}
+                }}
+                prefill={
+                  rewindDraft
+                    ? {
+                        text: rewindDraft.text,
+                        id: rewindDraft.id,
+                        mode: 'replace',
+                      }
+                    : failedStartDraft
+                      ? {
+                          text: failedStartDraft.text,
+                          files: failedStartDraft.files,
+                          id: failedStartDraft.id,
+                          mode: 'merge',
+                        }
+                      : sessionPrefill
+                        ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                        : null
+                }
+                isBusy={isBusy}
+                queuedMessages={queuedMessages}
+                onQueueMessage={handleQueueMessage}
+                onRemoveQueuedMessage={handleRemoveQueuedMessage}
+                onStop={handleStop}
+                escCount={escCount}
+                agents={local.agent.list}
+                selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+                onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+                agentSelectorLocked={!!lockedAgentName}
+                commands={chatCommands}
+                onCommand={handleCommand}
+                models={local.model.list}
+                selectedModel={local.model.currentKey ?? null}
+                onModelChange={handleModelChange}
+                modelDefaultControls={chatModelDefaultControls}
+                variants={local.model.variant.list}
+                selectedVariant={local.model.variant.current ?? null}
+                onVariantChange={handleVariantChange}
+                messages={messages}
+                sessionId={sessionId}
+                projectId={projectId}
+                onFileSearch={handleFileSearch}
+                providers={providers}
+                modelRequired
+                modelsLoading={providersLoading}
+                threadContext={threadContext}
+                onContextClick={handleContextClick}
+                replyTo={replyTo}
+                onClearReply={handleClearReply}
+                // Only lock the input into question-answer mode while the session is
+                // actually busy (a live question keeps the run busy). If a question
+                // chip is ever showing while the session is idle — e.g. a dead /
+                // abandoned question the agent left behind — the input stays unlocked
+                // so a typed message is sent to the agent instead of being swallowed
+                // as a custom answer.
+                lockForQuestion={!!renderedQuestion && isBusy}
+                // Same dead-prompt guard as questions: only lock while the agent is
+                // actually paused on the decision (isBusy), so a stale card can't
+                // swallow the composer on an idle session.
+                lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+                onCustomAnswer={handleCustomAnswer}
+                questionButtonLabel={renderedQuestion ? questionAction.label : null}
+                questionCanAct={questionAction.canAct}
+                onQuestionAction={handleQuestionAction}
+                inputSlot={chatInputSlot}
+                toolbarSlot={chatToolbarSlot}
+                // The shell can now render on a cached transcript alone, i.e. before
+                // the sandbox answers — so sending has to be gated separately from
+                // reading. See sessionComposerReadiness.
+                disabled={composerReadiness.disabled}
+                placeholder={composerReadiness.placeholder}
+              />
+              <ConfirmDialog
+                open={!!rewindTarget}
+                onOpenChange={(open) => !open && setRewindTarget(null)}
+                title="Edit from this message?"
+                description={
+                  <>
+                    <p>This rewinds the same session and restores its files to this message.</p>
+                    <p className="mt-2">
+                      You can restore the removed path until you send a replacement prompt.
+                    </p>
+                  </>
+                }
+                confirmLabel="Rewind session"
+                confirmVariant="destructive"
+                confirmIcon={<RotateCcw className="size-3.5" />}
+                isPending={sessionState?.rewindPending}
+                onConfirm={() => void handleConfirmRewind()}
+              />
+            </>
+          )}
+        </div>
+
+        {/* The action panel column — a sibling of the chat, so it pushes
+            rather than covers. Self-gates to null on mobile and outside a
+            SessionPanelProvider (the read-only sub-session modal renders this
+            component with no panel around it). */}
+        {!hideHeader && !readOnly && <SessionActionPanelColumn />}
+      </div>
     </div>
   );
 }

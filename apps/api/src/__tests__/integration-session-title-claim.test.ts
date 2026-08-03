@@ -92,6 +92,10 @@ describe('persistTitle — compare-and-set', () => {
     await persistTitle(row, 'Generated Title');
     expect((await metadataOf(row.sessionId)).name).toBe('Generated Title');
 
+    const veyris = await seed({ name: 'New agent' });
+    await persistTitle(veyris, 'Generated Veyris Title');
+    expect((await metadataOf(veyris.sessionId)).name).toBe('Generated Veyris Title');
+
     // …but a real title that merely starts with the word "New" is not.
     const near = await seed({ name: 'New sessions of work' });
     await persistTitle(near, 'Generated Title');

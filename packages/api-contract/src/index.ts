@@ -969,6 +969,52 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
  * no per-secret member/group sharing and no resource-side agent allow-list
  * (both retired); every project member with read access sees every secret.
  */
+export const SecretDeliveryStrategySchema = z.enum(['runtime', 'egress', 'broker', 'denied']);
+export type SecretDeliveryStrategy = z.infer<typeof SecretDeliveryStrategySchema>;
+
+export const SecretConsumerSchema = z.enum([
+  'sandbox',
+  'llm_gateway',
+  'executor',
+  'git_proxy',
+  'http_broker',
+  'network',
+]);
+export type SecretConsumer = z.infer<typeof SecretConsumerSchema>;
+
+export const SecretDeliveryStatusSchema = z.enum(['available', 'unavailable', 'disabled']);
+export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
+
+export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
+  z.object({ kind: z.literal('query'), name: z.string() }),
+  z.object({ kind: z.literal('json_body_field'), path: z.string() }),
+]);
+
+export const SecretEgressPolicySchema = z.object({
+  backend: z.enum(['llm_gateway', 'executor', 'git_proxy', 'kortix_fetch']).optional(),
+  base_url_env: z.string().optional(),
+  rules: z.array(
+    z.object({
+      host: z.string(),
+      methods: z.array(z.string()).optional(),
+      path: z.string().optional(),
+      inject: SecretInjectionSlotSchema.optional(),
+    }),
+  ),
+  inject: SecretInjectionSlotSchema,
+  on_no_match: z.enum(['deny', 'observe']).optional(),
+  tls: z.enum(['terminate', 'tunnel']).optional(),
+});
+export type SecretEgressPolicy = z.infer<typeof SecretEgressPolicySchema>;
+
+export const UpdateSecretStrategyInputSchema = z
+  .object({
+    strategy: SecretDeliveryStrategySchema,
+  })
+  .strict();
+export type UpdateSecretStrategyInput = z.infer<typeof UpdateSecretStrategyInputSchema>;
+
 export const SecretSchema = z.object({
   /** Unique per project. The handle an agent's `secrets` grant references. */
   identifier: z.string(),
@@ -992,5 +1038,12 @@ export const SecretSchema = z.object({
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
+  strategy: SecretDeliveryStrategySchema,
+  consumer: SecretConsumerSchema.nullable(),
+  delivery_status: SecretDeliveryStatusSchema,
+  egress_policy: SecretEgressPolicySchema.nullable(),
+  strategy_locked: z.boolean(),
+  last_rotated_at: z.string().nullable(),
+  requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;

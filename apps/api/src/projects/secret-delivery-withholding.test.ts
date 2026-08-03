@@ -52,6 +52,18 @@ describe('withholdUndeliverable', () => {
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   });
 
+  test.each(['broker', 'egress'] as const)(
+    '%s is withheld with a session until its delivery adapter exists',
+    (strategy) => {
+      const rows = [row('provider', 'PROVIDER_KEY', { strategy })];
+      const env = envFor(rows);
+
+      withholdUndeliverable(rows, env, 'sess-1');
+
+      expect(env.PROVIDER_KEY).toBeUndefined();
+    },
+  );
+
   test('THE SHARED KEY: a live runtime row keeps the KEY its denied sibling shares', () => {
     // Two identifiers may resolve to ONE env KEY — deliberate, so an agent can be
     // granted one specific value among several candidates for the same variable.
