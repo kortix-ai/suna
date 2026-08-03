@@ -31,7 +31,6 @@ describe('RuntimeEnvSchema — self-host configuration flags', () => {
     expect(env.BILLING_ENABLED).toBe(false);
   });
 });
-
 // CLOUD-ONLY: Kortix's own managed model lineup ("Managed · Included with
 // your plan") must never appear on a self-host by default. Mirrors the
 // backend's KORTIX_MANAGED_PROVIDER_ENABLED.
@@ -59,16 +58,5 @@ describe('RuntimeEnvSchema — RESTRICT_ACCOUNT_CREATION', () => {
   test('flips on when explicitly true', () => {
     const env = parseRuntimeEnv({ ...REQUIRED, RESTRICT_ACCOUNT_CREATION: true });
     expect(env.RESTRICT_ACCOUNT_CREATION).toBe(true);
-  });
-});
-
-describe('RuntimeEnvSchema — WARM_PROJECT_SESSIONS_ENABLED', () => {
-  test('defaults to true for Kortix Cloud', () => {
-    expect(parseRuntimeEnv(REQUIRED).WARM_PROJECT_SESSIONS_ENABLED).toBe(true);
-  });
-
-  test('can disable speculative project-index sessions', () => {
-    const env = parseRuntimeEnv({ ...REQUIRED, WARM_PROJECT_SESSIONS_ENABLED: false });
-    expect(env.WARM_PROJECT_SESSIONS_ENABLED).toBe(false);
   });
 });

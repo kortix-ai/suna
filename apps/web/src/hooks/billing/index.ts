@@ -51,6 +51,9 @@ export {
   useSessionCosts,
 } from './use-session-costs';
 
+// Project -> sessions cost explorer (account-wide summary and rollup)
+export { COST_PAGE_SIZE, useCostByProject, useCostSummary } from './use-cost-explorer';
+
 // Download restriction for free tier
 export { useDownloadRestriction } from './use-download-restriction';
 

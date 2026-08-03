@@ -1,5 +1,6 @@
 import { WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
+import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
 type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
@@ -28,35 +29,6 @@ function errorMessage(error: unknown): string {
 function isSnapshotStillBuilding(error: unknown): boolean {
   return /snapshot .+ is building/i.test(errorMessage(error));
 }
-
-/**
- * Provider is temporarily at capacity (no compute runners free in our region,
- * org-wide rate limit, etc.). These clear on their own in ~30s–2min, so the
- * right move is to keep the session in `provisioning` and quietly poll instead
- * of bouncing it to `error` after 3 fast retries.
- *
- * Recognized signals (case-insensitive substring match on the error message):
- *   - "no available runners"      — Daytona infra at capacity
- *   - "capacity"                  — generic provider capacity errors
- *   - "rate limit" / "ratelimit"  — quota / throttling
- *   - "too many requests"         — HTTP 429 style
- */
-function isProviderCapacityLimited(error: unknown): boolean {
-  const m = errorMessage(error).toLowerCase();
-  return (
-    m.includes('no available runner') ||
-    m.includes('no runners available') ||
-    m.includes('out of capacity') ||
-    m.includes('capacity exceeded') ||
-    m.includes('rate limit') ||
-    m.includes('ratelimit') ||
-    m.includes('too many requests')
-  );
-}
-
-/** Number of attempts + base delay for capacity-limited retries (~5 min window). */
-const PROVIDER_CAPACITY_MAX_ATTEMPTS = 30;
-const PROVIDER_CAPACITY_RETRY_DELAY_MS = 10_000;
 
 export function deriveSandboxInitStatus(
   lifecycleStatus: string | null | undefined,
@@ -206,7 +178,7 @@ export async function retrySandboxProvisionCreate(
 ): Promise<{ result: ProvisionResult; attempts: number }> {
   let lastError: unknown;
   // Outer bound is the longest patience-window we'd extend for any retry class.
-  const HARD_CAP = Math.max(SNAPSHOT_BUILDING_MAX_ATTEMPTS, PROVIDER_CAPACITY_MAX_ATTEMPTS);
+  const HARD_CAP = SNAPSHOT_BUILDING_MAX_ATTEMPTS;
   let currentMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
   for (let attempt = 1; attempt <= HARD_CAP; attempt++) {
     await hooks.onAttemptStart?.(attempt, currentMaxAttempts);
@@ -227,25 +199,22 @@ export async function retrySandboxProvisionCreate(
         throw error;
       }
       const snapshotStillBuilding = isSnapshotStillBuilding(error);
-      const capacityLimited = !snapshotStillBuilding && isProviderCapacityLimited(error);
+      const capacityLimited =
+        !snapshotStillBuilding && classifySandboxProvisioningFailure(error).isCapacity;
       const maxAttempts = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_MAX_ATTEMPTS
         : capacityLimited
-          ? PROVIDER_CAPACITY_MAX_ATTEMPTS
+          ? 1
           : SANDBOX_INIT_MAX_ATTEMPTS;
       currentMaxAttempts = maxAttempts;
       const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry, maxAttempts);
       if (!willRetry) throw error;
-      // Generic retries use exponential backoff from RETRY_DELAY_BASE_MS,
-      // capped at RETRY_DELAY_MAX_MS. Snapshot-building and provider-capacity
-      // keep their long fixed windows since they're "wait for an external
-      // condition," not "retry a flaky call."
+      // Snapshot-building keeps its separate long polling window. Deterministic
+      // provider capacity is terminal and never reaches this delay branch.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
-        : capacityLimited
-          ? PROVIDER_CAPACITY_RETRY_DELAY_MS
-          : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
+        : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
       await sleep(delay);
     }
   }

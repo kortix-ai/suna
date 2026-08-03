@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -25,20 +24,24 @@ import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/r
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
-import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import { useReadyChip, type QuickView } from '@/stores/kortix-computer-store';
+import {
+  type QuickView,
+  useIsActionPanelOpen,
+  useReadyChip,
+  useToggleActionPanel,
+} from '@/stores/kortix-computer-store';
 import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
+  CaretDoubleLeftIcon,
   CodeSimpleIcon as Code2,
+  DotsThreeOutlineIcon,
   FileArrowDownIcon as FileDown,
   FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
   HouseIcon,
   StackIcon as Layers,
-  DotsThreeIcon as MoreHorizontal,
   SidebarSimpleIcon as PanelLeft,
-  SidebarSimpleIcon as PanelRight,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
@@ -67,8 +70,6 @@ const DEV_TOOLS: {
 interface SessionSiteHeaderProps {
   sessionId: string;
   sessionTitle: string;
-  onToggleSidePanel: () => void;
-  isSidePanelOpen?: boolean;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
 }
@@ -76,8 +77,6 @@ interface SessionSiteHeaderProps {
 export function SessionSiteHeader({
   sessionId,
   sessionTitle,
-  onToggleSidePanel,
-  isSidePanelOpen = false,
   isMobileView,
   leadingAction,
 }: SessionSiteHeaderProps) {
@@ -157,6 +156,9 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
+  // Mobile-only action-panel toggle — see its render site below.
+  const isActionPanelOpen = useIsActionPanelOpen();
+  const toggleActionPanel = useToggleActionPanel();
   const readyChip = useReadyChip();
 
   return (
@@ -214,6 +216,93 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[28px]',
             )}
           >
+            
+
+            <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            <div className="hidden items-center gap-1.5 lg:flex">
+              {DEV_TOOLS.map(({ view, label, Icon }) => (
+                <Hint key={view} side="bottom" sideOffset={4} delayDuration={300} label={label}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={label}
+                    onClick={() => openSessionQuickView(view, 'header')}
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                  >
+                    <Icon className="h-4 w-4" />
+                  </Button>
+                </Hint>
+              ))}
+            </div>
+
+            <DropdownMenu>
+              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Developer tools"
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96] lg:hidden"
+                  >
+                    <Code2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </Hint>
+
+              <DropdownMenuContent align="end" className="w-44">
+                {DEV_TOOLS.map(({ view, label, Icon }) => (
+                  <DropdownMenuItem
+                    key={view}
+                    className="cursor-pointer"
+                    onClick={() => openSessionQuickView(view, 'header')}
+                  >
+                    <Icon />
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* The DETAIL panel's toggle used to sit here and is gone on
+                purpose: that panel opens with content (a terminal, a browser, a
+                file) and closes with its own X or Escape, so a control that
+                opened it empty had nothing to show.
+
+                This one is the ACTION panel's, and mobile-only. On desktop the
+                cards are a column beside the chat with their own chevron; below
+                768px there is no room for a column, so the cards live in the
+                bottom drawer and need a way in from here. Gated on
+                `useIsMobile()` — the same 768px breakpoint the column and the
+                drawer both use, so exactly one control exists at any width and
+                the two can never both show. */}
+            {isMobileViewport && (
+              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Show panel">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Show panel"
+                  aria-expanded={isActionPanelOpen}
+                  onClick={toggleActionPanel}
+                  className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                >
+                  <span className="relative inline-flex">
+                    <CaretDoubleLeftIcon className="size-4" />
+                    {/* Badge, not a tag: attached to this control and purely
+                        informational. `setIsActionPanelOpen` clears it. */}
+                    {readyChip?.sessionId === sessionId && !isActionPanelOpen && (
+                      <span
+                        className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+                        aria-hidden
+                      />
+                    )}
+                  </span>
+                </Button>
+              </Hint>
+            )}
+
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -230,7 +319,7 @@ export function SessionSiteHeader({
                     )}
                     className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
-                    <MoreHorizontal />
+                    <DotsThreeOutlineIcon weight="fill" className="size-4 rotate-90" />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
@@ -326,101 +415,6 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Resting header, non-technical default: identity (left, not
-                ours) + these two indicators (self-hide via `return null`
-                until there's something to see) + the panel toggle. Every
-                icon-only control below carries a Hint label — nothing here
-                is legible from the icon alone. */}
-            <SessionChangesIndicator sessionId={sessionId} />
-
-            <SessionPendingApprovalsIndicator sessionId={sessionId} />
-
-            {/* Terminal / Browser / Files (grows to 4-5). Desktop (lg+):
-                individual icon buttons for one-click access. Below lg: they
-                collapse into a single dropdown so the header stays compact.
-                Both fire the same openSessionQuickView(view, 'header') — one
-                DEV_TOOLS list drives both, so a fourth/fifth tool is a
-                one-line add. */}
-            <div className="hidden items-center gap-1.5 lg:flex">
-              {DEV_TOOLS.map(({ view, label, Icon }) => (
-                <Hint key={view} side="bottom" sideOffset={4} delayDuration={300} label={label}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={label}
-                    onClick={() => openSessionQuickView(view, 'header')}
-                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
-                  >
-                    <Icon className="h-4 w-4" />
-                  </Button>
-                </Hint>
-              ))}
-            </div>
-
-            <DropdownMenu>
-              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Developer tools"
-                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96] lg:hidden"
-                  >
-                    <Code2 className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </Hint>
-
-              <DropdownMenuContent align="end" className="w-44">
-                {DEV_TOOLS.map(({ view, label, Icon }) => (
-                  <DropdownMenuItem
-                    key={view}
-                    className="cursor-pointer"
-                    onClick={() => openSessionQuickView(view, 'header')}
-                  >
-                    <Icon />
-                    {label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Hint
-              side="bottom"
-              sideOffset={4}
-              delayDuration={300}
-              label={
-                <span className="flex items-center gap-1.5">
-                  {isSidePanelOpen ? 'Close' : 'Open'} panel
-                  <KbdGroup>
-                    <Kbd className="font-mono">
-                      {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
-                    </Kbd>
-                  </KbdGroup>
-                </span>
-              }
-            >
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (!isSidePanelOpen) track('panel_opened', { source: 'toggle' });
-                  onToggleSidePanel();
-                }}
-                className={cn('text-foreground cursor-pointer transition-colors')}
-              >
-                <span className="relative inline-flex">
-                  <PanelRight className="h-4 w-4" mirrored />
-                  {readyChip?.sessionId === sessionId && !isSidePanelOpen && (
-                    <span
-                      className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
-                      aria-hidden
-                    />
-                  )}
-                </span>
-              </Button>
-            </Hint>
           </div>
         </div>
       </div>

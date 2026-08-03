@@ -6,6 +6,7 @@ import {
   type KortixProject,
   type ListSessionCostsOptions,
   type SessionCostDetail,
+  type SessionCostSort,
   type SessionCostsPage,
 } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
@@ -32,6 +33,11 @@ export interface SessionCostsListInput {
   projectId?: string | null;
   limit: number;
   offset: number;
+  from?: string;
+  to?: string;
+  sort?: SessionCostSort;
+  /** Filter to sessions owned by this user/service-account id. */
+  ownerId?: string;
 }
 
 export interface SessionCostDetailInput {
@@ -49,10 +55,18 @@ export function buildSessionCostsListQuery(
     projectId: input.projectId ?? null,
     limit: input.limit,
     offset: input.offset,
+    from: input.from,
+    to: input.to,
+    sort: input.sort,
+    ownerId: input.ownerId,
   };
   const options: ListSessionCostsOptions = {
     accountId: input.accountId,
     projectId: input.projectId ?? undefined,
+    ownerId: input.ownerId,
+    sort: input.sort,
+    from: input.from,
+    to: input.to,
     limit: input.limit,
     offset: input.offset,
   };
@@ -60,6 +74,7 @@ export function buildSessionCostsListQuery(
   return {
     queryKey: ['session-costs', 'list', keyInput] as const,
     queryFn: () => sources.list(options),
+    enabled: Boolean(input.accountId),
     staleTime: SESSION_COST_STALE_TIME_MS,
   };
 }
@@ -85,7 +100,16 @@ export function buildSessionCostDetailQuery(
         projectId: input.projectId ?? undefined,
       });
     },
-    enabled: Boolean(input.sessionId),
+    // Requires an account id too, not just a session id: getSessionCostRecord's
+    // scope options (`appendScopeOptions` in the SDK) only set `account_id` when
+    // truthy, and the API's session-costs detail route falls back to
+    // resolveScopedAccountId -> the caller's PRIMARY account when the query
+    // omits it. Firing before useBillingAccountId() resolves would silently
+    // query the wrong account (a 404 today, since getSessionCostRecord ANDs
+    // accountId with sessionId server-side — but relying on that AND as a
+    // safety net is fragile, and it still means a spurious "not found" flash
+    // for the exact session the user is looking at).
+    enabled: Boolean(input.sessionId) && Boolean(input.accountId),
     staleTime: SESSION_COST_STALE_TIME_MS,
   };
 }
@@ -113,6 +137,10 @@ export function useSessionCosts(input: {
   projectId: string | null;
   limit?: number;
   offset: number;
+  from?: string;
+  to?: string;
+  sort?: SessionCostSort;
+  ownerId?: string;
 }) {
   const accountId = useBillingAccountId();
   return useQuery(
@@ -121,6 +149,10 @@ export function useSessionCosts(input: {
       projectId: input.projectId,
       limit: input.limit ?? SESSION_COST_PAGE_SIZE,
       offset: input.offset,
+      from: input.from,
+      to: input.to,
+      sort: input.sort,
+      ownerId: input.ownerId,
     }),
   );
 }

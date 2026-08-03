@@ -24,7 +24,7 @@ import {
   CodeSimpleIcon as Code2,
   PlugIcon as Plug,
   MagnifyingGlassIcon as Search,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';

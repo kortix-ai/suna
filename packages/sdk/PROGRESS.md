@@ -3760,6 +3760,20 @@ Final SDK gates:
 
 ---
 
+### 2026-08-01 — session `e2b-capacity-fast-fail` (claim)
+
+Claimed the additive provider-neutral session-start capacity failure contract.
+The API will stop retrying deterministic provider capacity errors.
+The SDK will expose the terminal failure without removing or renaming any public field.
+The web will preserve the pending prompt and show Retry, Copy Prompt, and Delete actions.
+
+Work follows RED -> GREEN -> REFACTOR.
+The full SDK typecheck, test, and packed-install smoke gates are required.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-07-29 — session `acp-runtime-adapters` multi-harness starter claim
 
 Claimed the additive `acp-multi-harness` starter input.
@@ -4235,9 +4249,30 @@ same RED, GREEN, and REFACTOR sequence directly.
 
 Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
-**Status:** IN PROGRESS.
+RED evidence:
 
-**SDK package shippable to production: NOT YET.**
+- The focused SDK test failed because `New agent` stopped the refresh loop.
+- The focused API tests failed because serializers and title generation treated
+  `New agent` as a real title.
+
+GREEN evidence:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1390 pass`, `0 fail`, and
+  `5971 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- API unit suite: `5074 pass`, `62 skip`, `0 fail`, and
+  `20505 expect() calls` across `500` files.
+- Focused real-PostgreSQL integration:
+  `11 pass`, `0 fail`, and `27 expect() calls`.
+
+No public field, type, export, or signature changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository code shippable to production: YES.**
 
 ---
 
@@ -5049,7 +5084,6 @@ rename, no `version` edit, public-surface snapshot unchanged.
 **Status:** IN PROGRESS.
 
 ---
-
 ### 2026-07-31 — session `sdk-project-edit-icon` (B44 completion)
 
 Added `icon?: string | null` to `ProjectInput`
@@ -5121,7 +5155,6 @@ runtime code, only an optional interface member, so the bundle's behaviour is
 byte-identical.
 
 ---
-
 ### 2026-08-01 — session `sdk-project-glyph-icon` (B45 claim)
 
 Claimed the additive `icon_glyph?: ProjectGlyph | null` field across the SDK's
@@ -5145,7 +5178,6 @@ nothing needs converting at the boundary. Task brief:
 **Status:** IN PROGRESS.
 
 ---
-
 ### 2026-08-01 — session `sdk-project-glyph-icon` (B45 completion)
 
 Added `ProjectGlyph` (`{ name: string; color: string }`) and
@@ -5280,7 +5312,6 @@ constraint (decision 2: a second, independent `ProjectGlyph`).
 Implementation commit: `3ce3e5f1f`.
 
 ---
-
 ### 2026-08-01 — session `model-enablement` (re-land server-side model enablement, display-only)
 
 Un-reverted `6c168ee2a` (#5932) minus the gateway-enforcement half. SDK changes:
@@ -5314,5 +5345,343 @@ picker hides the model (7 options), toggle on → reappears (8) with no reload.
 
 Gates: `typecheck` exit 0 · `bun test --isolate src` → **1367 pass, 2 skip,
 0 fail** · `smoke:install` OK.
+
+**SDK package shippable to production: YES.**
+
+---
+### 2026-08-01 — session `e2b-capacity-fast-fail` (completion)
+
+Added the provider-neutral `SessionStartFailure` contract.
+Added the durable `PendingSessionPrompt` create and warm-claim contract.
+Added `replayStartStash.onSuccess` for the runtime ACK callback.
+The web uses the callback to clear the durable prompt after delivery.
+
+The type-surface snapshot adds four entries.
+The root and `./projects-client` surfaces each add two types.
+No public field, type, or export was removed or renamed.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1389 pass`, `0 fail`,
+  and `5969 expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+The PR, merge, Deploy Dev, and Essentia verification remain.
+
+---
+### 2026-08-02 — session `cost-explorer-sdk-clients` (claim)
+
+Claiming Task 8 of the `2026-08-01-cost-explorer-ux` plan (spec/plan live under
+`.superpowers/sdd/2026-08-01-cost-explorer-ux/`, not under `docs/superpowers/` —
+this plan predates and is unrelated to the OpenCode ACP canary NOW table above,
+so this is logged here rather than inserted into that table).
+
+Scope: `packages/sdk/src/core/rest/projects-client/session-costs.ts` (+ test) and
+its barrel `index.ts` — add `listCostByProject`, `getCostSummary`,
+`costExportUrl`, and extend `ListSessionCostsOptions` with `from`/`to`/`sort`/
+`ownerId`. Wraps `GET /v1/usage/cost-by-project`, `GET /v1/usage/cost-summary`,
+and the extended `GET /v1/usage/session-costs` (Tasks 4–7, already merged to this
+branch). Purely additive — no existing export renamed or removed.
+
+Measured baseline before any change:
+
+```
+pnpm --filter @kortix/sdk test
+→ 1357 pass, 2 skip, 0 fail, 5873 expect() calls, across 116 files [16.84s]
+```
+
+(Neither of the two baseline numbers this file cites elsewhere — 1069, 1046 —
+matches what actually runs today. Recording the real measured number per the
+task brief's instruction not to trust either stale figure.)
+
+**Status:** IN PROGRESS.
+
+---
+### 2026-08-02 — session `cost-explorer-sdk-clients` (completion)
+
+Implemented Task 8. TDD throughout, RED watched before any implementation code.
+
+**Added** to `packages/sdk/src/core/rest/projects-client/session-costs.ts`
+(barrel `index.ts` already does `export * from './session-costs'` — no barrel
+edit needed, name collision-checked against the whole `projects-client/` dir
+and the rest of `src/`, none found):
+
+- `interface CostWindowOptions { from?; to? }`
+- `type SessionCostSort = 'total_desc' | 'total_asc' | 'recent'`
+- `type ProjectCostSort = SessionCostSort | 'name_asc'`
+- `ListSessionCostsOptions` gains `from?`, `to?`, `sort?: SessionCostSort`,
+  `ownerId?` (all optional — widening, not narrowing)
+- `interface ProjectCostRow`, `interface ProjectCostPage`,
+  `interface ListCostByProjectOptions`
+- `listCostByProject(options?): Promise<ProjectCostPage>` →
+  `GET /usage/cost-by-project`
+- `interface CostSummaryTotals`, `CostSeriesPoint`, `CostModelRow`,
+  `CostSummary`, `GetCostSummaryOptions`
+- `getCostSummary(options?): Promise<CostSummary>` → `GET /usage/cost-summary`
+- `interface CostExportOptions`, `costExportUrl(kind, options?): string` — pure
+  URL builder (never calls `fetch`; the CSV routes require a Bearer token with
+  no query-token fallback, so the caller attaches auth itself, same pattern as
+  `fetchProjectArchive` in `./files.ts`)
+
+**Type shapes verified against the real API**, not the plan:
+`apps/api/src/shared/cost-rollups.ts` (`ProjectCostRow`/`ProjectCostPage`/
+`CostSummaryTotals`/`CostSeriesPoint`/`CostModelRow`/`CostSummary`) and
+`apps/api/src/router/routes/usage.ts` (query param names, route paths,
+`SESSION_COST_SORTS`/`PROJECT_COST_SORTS`). Confirmed by grep that no response
+anywhere in the API carries an `unassigned` field — `ProjectCostPage` does not
+have one, matching the brief's warning, and `CostSummary` doesn't either
+(unattributable compute/LLM spend is folded into the account-wide totals, not
+surfaced as a synthetic field).
+
+RED — `bun test src/core/rest/projects-client/session-costs.test.ts` failed
+with `SyntaxError: Export named 'costExportUrl' not found in module`, before
+any implementation code existed, for the expected reason.
+
+GREEN:
+
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0 (tsc --noEmit + tsc --noEmit -p examples/tsconfig.json)
+
+pnpm --filter @kortix/sdk test
+→ 1370 pass, 0 fail, 5908 expect() calls, across 116 files [16.58s]
+   (post-change run; two SSE-related tests are environment-conditionally
+   skipped in some runs and not in others — pre-existing, unrelated to this
+   change, and total test count (1370) is stable across both)
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+```
+
+Baseline was 1357 pass / 1359 total; post-change is 1370 total (+11, exactly
+the 11 new `test()` calls added), 0 regressions.
+
+**Mutation checks** (each applied to the restored, working implementation,
+then reverted — file diffed byte-identical to pre-mutation afterward):
+
+1. Dropped `appendWindow(query, options)` from `listCostByProject` → the exact
+   URL assertion in `listCostByProject targets the rollup route with account,
+   window, sort and paging` failed (`from=…&to=…` missing from the URL). 13
+   pass / 1 fail.
+2. Renamed `owner_id` → `owner` in `listSessionCosts` → the exact URL assertion
+   in `listSessionCosts forwards window, sort and owner as query params` failed
+   (`owner=user-9` instead of `owner_id=user-9`). 13 pass / 1 fail.
+
+Both mutations were caught by exactly one test each, as intended — the tests
+assert the literal URL string, not merely that a request happened.
+
+**Absent-optional coverage:** `listSessionCosts({ accountId })`,
+`listCostByProject()`, `getCostSummary()`, and `costExportUrl(kind)` (no
+options) each assert the exact resulting URL carries no stray `from=`, `to=`,
+`sort=`, or `owner_id=` param.
+
+**Public-surface snapshot diff** (`public-surface.snapshot.json` +
+`public-type-surface.snapshot.json`, re-recorded with
+`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1` after visually
+confirming every line): 6 new value exports
+(`costExportUrl`/`getCostSummary`/`listCostByProject`, each listed once for `.`
+and once for `./projects-client`) and 30 new type-level exports (12 new
+type/interface names × the same two subpaths, plus the 6 value names repeated
+at the type level). **Every line in both diffs is a `+` addition. Zero
+removals, zero renames.** The type-surface test's own drift report labelled
+every one of the 30 entries `← added — additive, fine`.
+
+**Status:** DONE.
+
+**SDK package shippable to production: YES**, for this change. Verified:
+typecheck, full test suite (0 regressions, 11 new passing tests), packed-install
+smoke test, and 2/2 mutation checks caught. Unverified/out of scope for Task 8:
+end-to-end wiring against a running API (web consumption is Task 10+), and
+`costExportUrl`'s download flow was not exercised against a live server (it is
+a pure string builder with no network call — the auth-attachment + Blob-download
+flow is a web-task concern per the brief's `costExportUrl` scope).
+
+---
+### 2026-08-02 — session `cost-explorer-sdk-clients` (fix round 1/5)
+
+Review: Spec ✅ / Approved, one Important finding, one Minor folded in, one
+DRY cleanup requested. All three addressed. Commit `f78f79da7`.
+
+**Important — the `fetchProjectArchive` precedent claim was backwards.** The
+prior completion entry said `costExportUrl` mirrors `fetchProjectArchive` "in
+leaving the caller responsible for attaching the token." Re-reading
+`./files.ts:78-99` shows the opposite: `fetchProjectArchive` calls
+`getSupabaseAccessTokenWithRetry()` itself, attaches the `Authorization`
+header itself, fetches itself, and returns a `Blob`. As shipped,
+`costExportUrl` was a bare URL string with no auth story — a consumer
+treating it like a plain link (`<a href>`, `window.open`) gets a silent
+`401`, and the architecture rule ("hosts never raw-fetch the Kortix API")
+would force Task 16 to hand-roll authenticated fetch-to-Blob logic in
+`apps/web` instead.
+
+Fix: added `fetchCostExportCsv(kind, options): Promise<CostExportResult>`
+(`{ blob: Blob; rowCap: number | null }`), built the way
+`fetchProjectArchive` actually is — resolves the token via
+`getSupabaseAccessTokenWithRetry()`, attaches
+`Authorization: Bearer <token>`, fetches, throws with the response body on a
+non-OK response. It delegates to `costExportUrl` for the URL itself (kind is
+narrowed to a literal in each branch first, since an overloaded function
+can't be called with a non-narrowed union argument), so the two functions
+cannot diverge. `costExportUrl` is unchanged in behavior and stays exported —
+removing it would break a name this task already published.
+
+Deviated from the literal `Promise<Blob>` suggested in the review: also
+surfaces the `x-kortix-row-cap` response header (parsed to `number | null`)
+because Task 16 needs it to warn when the 10,000-row CSV cap truncates a
+finance export, and that header isn't present anywhere in either route's JSON
+response schema — a caller genuinely cannot get it any other way. Judged
+`{ blob, rowCap }` as not "awkward" (a small named result type is a standard
+ergonomic pattern), so implemented it rather than leaving the header
+unreachable.
+
+**Minor (folded in) — `CostExportOptions.sort` accepted `name_asc` for both
+kinds.** Split into `ProjectCostExportOptions` (`sort?: ProjectCostSort`) and
+`SessionCostExportOptions` (`sort?: SessionCostSort`, no `projectId`/
+`ownerId`), with a discriminated overload on both `costExportUrl` and
+`fetchCostExportCsv`. `costExportUrl('sessions', { sort: 'name_asc' })` and
+`costExportUrl('projects', { projectId: … })` are now compile errors instead
+of a runtime 400 / silently-ignored field. `CostExportOptions` stays exported
+as `export type CostExportOptions = ProjectCostExportOptions |
+SessionCostExportOptions` — same name, no removal, now precise instead of a
+flat bag. Proved by 5 `@ts-expect-error` assertions in a dedicated test,
+checked by `tsc --noEmit` (bun strips types and does not evaluate the
+directive; an *unused* `@ts-expect-error` is itself a typecheck error, so the
+test only stays green if every line genuinely fails to compile — confirmed by
+a clean `pnpm typecheck` with all 5 directives present).
+
+**Minor 1 — duplicated `suffix` ternary.** Extracted
+`function suffix(query: URLSearchParams): string` and applied it at all four
+call sites in the file (`listSessionCosts`, `getSessionCostRecord`,
+`listCostByProject`, `getCostSummary`) — including the pre-existing
+`getSessionCostRecord` occurrence the review didn't explicitly name, for full
+consistency within the same file. Left `costExportUrl`'s own query assembly
+duplicated with `fetchCostExportCsv`'s call into it, per "not to fix."
+
+**RED** (before the fetcher/overloads existed):
+```
+bun test src/core/rest/projects-client/session-costs.test.ts
+→ SyntaxError: Export named 'fetchCostExportCsv' not found in module '.../session-costs.ts'
+→ 0 pass, 1 fail, 1 error
+```
+
+**GREEN:**
+```
+pnpm --filter @kortix/sdk typecheck
+→ exit 0
+
+pnpm --filter @kortix/sdk test
+→ 1374 pass, 0 fail, 5926 expect() calls, across 116 files [16.62s]
+
+pnpm --filter @kortix/sdk run smoke:install
+→ OK: @kortix/sdk imports and constructs from a packed tarball
+→ ✔ install smoke test passed
+
+bun test src/index.isomorphic.test.ts
+→ 67 pass, 0 fail, 2947 expect() calls
+```
+
+Test count: 1370 (prior completion) → **1374** (+4: the `@ts-expect-error`
+type-safety test, plus 3 `fetchCostExportCsv` behavior tests).
+
+**Mutation check (required by this fix round) — removed the `Authorization`
+header from `fetchCostExportCsv`:**
+```
+bun test src/core/rest/projects-client/session-costs.test.ts
+→ (fail) fetchCostExportCsv requests the export URL with a Bearer token and
+  parses the row cap — expected {"Authorization": "Bearer tok"}, got {}
+→ 17 pass, 1 fail
+```
+Caught. Reverted; file diffed byte-identical to the pre-mutation copy
+afterward.
+
+**Public-surface snapshot diff** — re-recorded, reviewed line by line before
+accepting: 4 new type-level names (`CostExportResult`,
+`ProjectCostExportOptions`, `SessionCostExportOptions`, `fetchCostExportCsv`,
+each × 2 subpaths). `CostExportOptions` itself has **zero** diff lines —
+its shape changed (interface → type alias) but the exported *name* didn't,
+so the name-only snapshot shows no change for it. Every line in both diffs is
+a `+`. Zero removals, zero renames.
+
+**Status:** DONE.
+
+**SDK package shippable to production: YES.** All three gates green
+post-fix, mutation check on the new fetcher caught the missing-auth-header
+case, snapshot diff confirmed additive-only. Unverified/out of scope: live-API
+integration (Task 10+/16 territory) and the actual browser download trigger
+(save-as / anchor-click flow) around the `Blob` `fetchCostExportCsv` returns —
+that UI wiring belongs to the web task consuming this client.
+
+---
+
+### 2026-08-03 — session `session-title-source-of-truth` claim
+
+No **Now** task claimed. This is a narrow cross-host session-title bug fix.
+
+Scope:
+
+- Treat Veyris's historical `New agent` name as a Kortix placeholder.
+- Keep the SDK title-refresh loop active until Kortix replaces that placeholder.
+- Preserve all published names and signatures.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-03 — session `secret-delivery-control-plane` claim
+
+No **Now** task claimed. This is the first public secret-delivery control-plane
+slice defined in `docs/SECRET_DELIVERY_CONTROL_PLANE.md`.
+
+Scope:
+
+- Expose stored secret delivery metadata through the project secrets API.
+- Add an admin-only route for delivery-strategy changes.
+- Expose the additive contract through `@kortix/sdk`.
+- Record central audit events for secret administration without secret values.
+- Keep `broker` and `egress` unavailable until their adapters exist.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-03 — session `secret-delivery-control-plane` completion
+
+Added delivery strategy, consumer, status, rotation, and egress-policy metadata
+to the project secret contract. Added `setProjectSecretStrategy()` and
+`kortix.project(id).secrets.setStrategy()` without removing or renaming a
+published export.
+
+The type-surface snapshot adds eight entries. The runtime-surface snapshot adds
+two entries. All changes are additive.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1391 pass`, `0 fail`, and `5975 expect()`
+  calls across `117` files.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**

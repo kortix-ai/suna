@@ -487,7 +487,7 @@ import {
   KanbanIcon as SquareKanban,
   StopCircleIcon as StopCircle,
   TagIcon as Tags,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
   TrashIcon as Trash2,
   TextTIcon as Type,
   VideoCameraIcon as Video,

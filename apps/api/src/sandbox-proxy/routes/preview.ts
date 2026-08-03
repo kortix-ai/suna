@@ -484,7 +484,9 @@ async function connectorGateRefusal(
       // 503, never 409. We failed to ESTABLISH the answer; saying "connect your
       // Gmail" off a transient git read would be a confident lie, and the client
       // retries a 503 while it never retries a 4xx.
-      console.warn(`[PREVIEW] Connector pre-flight unresolved for ${record.sessionId}: ${err.message}`);
+      console.warn(
+        `[PREVIEW] Connector pre-flight unresolved for ${record.sessionId}: ${err.message}`,
+      );
       return jsonProxyError(
         { error: err.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' },
         503,
@@ -673,16 +675,14 @@ function principalUserId(access: PreviewProxyAccess): string {
 // block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
 // subject to the SAME protection as a direct :8000 request — the reroute changes
 // reachability, never the auth/control surface.
-const SANDBOX_AGENT_PORT = 8000;
-
 /**
  * Should the data-path proxy WAKE a stopped box instead of 503ing it?
  *
  * Two cases, and the difference between them is the whole point:
  *
- *  - A real user (principal) hitting the OpenCode daemon (port 8000). Always
- *    resumes, as it always has — that is what lets the runtime path auto-resume
- *    like `/start`.
+ *  - A real user mutating OpenCode session data. A POST/PUT/PATCH/DELETE is an
+ *    explicit action. A GET/HEAD/OPTIONS can be transcript hydration, cache
+ *    warming, polling, or a background reconnect and must never resume a box.
  *  - A real user LOADING A PREVIEW PAGE. `browserNavigation` is the load-bearing
  *    condition: a top-level document / iframe load is a human explicitly opening
  *    the app, which is the same class of intent as clicking into the session. An
@@ -700,11 +700,18 @@ export function shouldAutoResumeStoppedSandbox(
   status: string,
   upstreamPort: number,
   accessKind: string,
-  opts: { sandboxAuthored?: boolean; browserNavigation?: boolean } = {},
+  opts: {
+    sandboxAuthored?: boolean;
+    browserNavigation?: boolean;
+    method?: string;
+  } = {},
 ): boolean {
   if (status !== 'stopped' || accessKind !== 'principal') return false;
   if (opts.sandboxAuthored) return false;
-  if (upstreamPort === SANDBOX_AGENT_PORT) return true;
+  if (carriesSessionData(upstreamPort)) {
+    const method = opts.method?.toUpperCase();
+    return Boolean(method && !['GET', 'HEAD', 'OPTIONS'].includes(method));
+  }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
 }
 export async function forwardToSandbox(
@@ -813,20 +820,16 @@ export async function forwardToSandbox(
     if (refusal) return refusal;
   }
   if (record.status !== 'active') {
-    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
-    // (port 8000, principal) should wake in place — the same resume `/start` does —
-    // rather than dead-end with a manual-Restart card. This closes the stale-ready
-    // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
-    // next runtime call used to 503 forever. resumeStoppedSandboxByExternalId is
-    // idempotent and its DB conditional lock de-dupes the concurrent session.list
-    // retries (one provider start). A human LOADING a preview page resumes too —
-    // otherwise a parked dev server could only be recovered by prompting the agent
-    // — while passive asset/XHR traffic still 503s, so nothing is resurrected by a
-    // background tab. See shouldAutoResumeStoppedSandbox.
+    // A stopped-but-resumable box wakes only on explicit user intent. Session
+    // mutations and top-level preview navigation qualify. Transcript reads,
+    // cache hydration, polling, and background reconnects return 503. The normal
+    // session page calls `/start` before reading the runtime, so navigation still
+    // resumes deterministically without making every authenticated GET wake-capable.
     if (
       shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind, {
         sandboxAuthored,
         browserNavigation: isBrowserNavigation(incomingHeaders),
+        method,
       })
     ) {
       const resumeExternalId = record.externalId;

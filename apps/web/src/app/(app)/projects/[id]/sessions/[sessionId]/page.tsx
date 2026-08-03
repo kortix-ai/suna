@@ -8,11 +8,18 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
-import { provisioningFailurePresentation } from '@/features/session/provisioning-failure';
+import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
+import {
+  pendingSessionPromptFromMetadata,
+  provisioningFailurePresentation,
+  startStashFromPendingSessionPrompt,
+} from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -33,9 +40,10 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
-import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
@@ -64,6 +72,7 @@ import {
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
+  writeStartStash,
 } from '@kortix/sdk/react';
 
 /**
@@ -116,6 +125,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -152,6 +163,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
+  const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
+  const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -192,6 +205,24 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const handleRestart = () => {
     setResumeAttempts(0);
     restart.restart();
+  };
+  const handleProvisioningRetry = () => {
+    if (pendingPrompt) {
+      writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
+    }
+    handleRestart();
+  };
+  const copyPendingPrompt = async () => {
+    if (!pendingPrompt) {
+      errorToast('No saved prompt is available.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pendingPrompt.text);
+      successToast('Prompt copied');
+    } catch {
+      errorToast('Could not copy the prompt.');
+    }
   };
   useEffect(() => {
     if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
@@ -368,20 +399,45 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     submitted: shellSubmitted,
   });
 
-  // `sandbox_id` is nullable on the wire: the `/start` path always serves a
-  // non-null id (it serializes the `session_sandboxes` uuid PK), but the
-  // optimistic cache seed (`projectSessionStartSeed`, fed by the
-  // `project_sessions` row) can carry a `null` `sandbox_id` — e.g. a legacy
-  // Suna-migration session whose `project_sessions.sandbox_id` was minted null
-  // and never back-filled by provisioning (which only writes `sandbox_url`).
-  // The `SessionCacheWarmer` seeds that into React Query, so `useSession` can
-  // hand us a truthy `sandbox` whose `sandbox_id` is null; guard the `.slice`
-  // so a null id degrades to the bare label instead of crashing the page
-  // (Better Stack pattern e6d0e044 — `Cannot read properties of null (reading
-  // 'slice')` on this exact line).
+  // `sandbox_id` was nullable on legacy project-session inventory rows. Keep
+  // this render guard even though the current `/start` response serializes the
+  // non-null `session_sandboxes` primary key. A malformed cached response must
+  // degrade to the bare label instead of crashing the page (Better Stack pattern
+  // e6d0e044 — `Cannot read properties of null (reading 'slice')`).
   const sandboxLabel = sandbox?.sandbox_id
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
+  const sessionMissing = session.startError?.status === 404 && !sandbox;
+  const recoverableFailure = (() => {
+    if (sessionMissing) return null;
+    const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
+    if (session.failure) {
+      return provisioningFailurePresentation(
+        {
+          ...metadata,
+          failureCategory: session.failure.category,
+          errorMessage: session.failure.message,
+        },
+        sandboxLabel ?? 'session',
+      );
+    }
+    if (sandbox?.status === 'error') {
+      return provisioningFailurePresentation(metadata, sandboxLabel ?? 'session');
+    }
+    if (unmaterializedFailure) {
+      return provisioningFailurePresentation({}, sandboxLabel ?? 'session');
+    }
+    if (session.startError) {
+      return provisioningFailurePresentation(
+        {
+          failureCategory: 'sandbox-provider',
+          errorMessage: session.startError.message,
+        },
+        sandboxLabel ?? 'session',
+      );
+    }
+    return null;
+  })();
   const inner = (() => {
     if (sessionSwitchLoading) {
       return (
@@ -431,27 +487,30 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (session.startError) {
-      const sessionMissing = session.startError.status === 404;
+    if (sessionMissing) {
       return (
         <InlineSessionError
           title="Couldn't start session"
-          message={
-            sessionMissing
-              ? 'This session is no longer available, or you do not have access to it.'
-              : session.startError.message
-          }
+          message="This session is no longer available, or you do not have access to it."
         />
       );
     }
 
-    if (unmaterializedFailure) {
+    if (recoverableFailure) {
       return (
         <InlineSessionError
-          title="Couldn't start session"
-          message="Provisioning this session's computer failed. Restart the session to try again."
+          title={recoverableFailure.title}
+          message={recoverableFailure.message}
           detail={restart.errorMessage ?? undefined}
-          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
+          action={
+            <ProviderFailureRecovery
+              pendingPrompt={pendingPrompt}
+              isRetrying={restart.isPending}
+              onRetry={handleProvisioningRetry}
+              onCopy={() => void copyPendingPrompt()}
+              onDelete={() => setDeleteOpen(true)}
+            />
+          }
         />
       );
     }
@@ -472,21 +531,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     }
 
     if (fatal) {
-      const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
-      if (sandbox?.status === 'error') {
-        const failure = provisioningFailurePresentation(meta, sandboxLabel ?? 'session');
-        return (
-          <InlineSessionError
-            title={failure.title}
-            message={failure.message}
-            action={
-              failure.retryable ? (
-                <RestartSessionButton restart={restart} onRestart={handleRestart} />
-              ) : undefined
-            }
-          />
-        );
-      }
       // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
@@ -562,7 +606,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     );
   })();
 
-  return <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>;
+  return (
+    <>
+      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      <SessionDeleteModal
+        projectId={projectId}
+        sessionId={sessionId}
+        sessionLabel={
+          currentProjectSession ? sessionDisplayLabel(currentProjectSession) : 'Failed session'
+        }
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => router.push(`/projects/${projectId}`)}
+      />
+    </>
+  );
 }
 
 function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {

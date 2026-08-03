@@ -28,7 +28,7 @@ export default function HelpCenterPage() {
             )}
           </p>
 
-          <Link href="/help/credits-explained">
+          <Link href="/help/credits">
             <Card className="hover:bg-muted/50 cursor-pointer transition-colors">
               <CardHeader>
                 <div className="flex items-center gap-3">

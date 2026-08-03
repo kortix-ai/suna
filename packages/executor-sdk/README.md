@@ -86,6 +86,38 @@ That shape is the right starting point for reusable skills: keep the natural
 language guidance in `SKILL.md`, put non-trivial connector logic in a script,
 and have the skill tell the agent when to run that script.
 
+## Email Attachments
+
+Upload raw bytes first. The API stores them privately and returns an opaque,
+project/session/user-scoped handle. Pass that handle to the email action. Do not
+put base64 content in `call()` arguments.
+
+```ts
+const bytes = await Bun.file('/workspace/output/memo.pdf').bytes();
+const attachment = await executor.uploadAttachment(bytes, {
+  filename: 'Investment Memo.pdf',
+  contentType: 'application/pdf',
+});
+
+await executor.call('kortix_email', 'send_message', {
+  to: ['investor@example.com'],
+  subject: 'Investment memo',
+  text: 'Attached.',
+  attachments: [
+    {
+      filename: attachment.filename,
+      content_type: attachment.content_type,
+      content_disposition: attachment.content_disposition,
+      attachment_id: attachment.attachment_id,
+    },
+  ],
+});
+```
+
+Handles expire after 24 hours. The gateway resolves each handle to a five-minute
+private URL only after policy approval. A successful provider call consumes the
+handle, so it cannot be replayed.
+
 ## API
 
 - `connectors()` - connector catalog this principal can use.
@@ -93,6 +125,8 @@ and have the skill tell the agent when to run that script.
 - `discover(query, { limit })` - simple intent search over the visible catalog.
 - `describe(tool)` - one tool's schema, risk, and description.
 - `call(connector, action, args)` - execute one gateway call.
+- `uploadAttachment(bytes, metadata)` - stage raw bytes and return an opaque
+  email attachment handle.
 
 `projectId` is optional. When set, the client uses project-explicit gateway
 routes that accept a normal user token or a session token. When omitted, it uses

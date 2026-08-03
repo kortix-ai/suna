@@ -73,6 +73,7 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { sessionChannelEnvFromMetadata } from './session-channel-env';
 import {
   TITLE_SOURCE_MAX_CHARS,
   generateSessionTitleFromFirstPrompt,
@@ -100,6 +101,24 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
     c.header(key, value);
   }
   return c.json(error.body, error.status as any);
+}
+
+/**
+ * Resolve the concrete agent stored on a new session.
+ *
+ * A v2 manifest is durable project truth. `project.metadata.default_agent` is
+ * only a read mirror and can lag an external git push, so it must never
+ * override the manifest value. The mirror remains the legacy fallback for v1
+ * projects, whose manifests do not declare a top-level default.
+ */
+export function resolveSessionAgentName(input: {
+  requestedAgent: string | null;
+  manifestDefaultAgent: string | null;
+  mirroredDefaultAgent: string | null;
+}): string {
+  const explicit =
+    input.requestedAgent && input.requestedAgent !== 'default' ? input.requestedAgent : null;
+  return explicit ?? input.manifestDefaultAgent ?? input.mirroredDefaultAgent ?? 'default';
 }
 
 export async function countActiveProjectSessions(accountId: string): Promise<number> {
@@ -204,11 +223,7 @@ export async function checkConcurrentSessionCap(
 
 export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
-/**
- * Re-derive a session's chat-channel env (SLACK_*) from its persisted binding so
- * any (re)provision restores it. Best-effort: a non-channel session (no
- * metadata.slack) returns {}, and a read failure never blocks provisioning.
- */
+/** Re-derive persisted channel env so every cold reprovision restores it. */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
   try {
     const [row] = await db
@@ -216,14 +231,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    const slack = (row?.metadata as { slack?: Record<string, unknown> } | null)?.slack;
-    if (!slack) return {};
-    const env: Record<string, string> = {};
-    if (typeof slack.team_id === 'string') env.SLACK_TEAM_ID = slack.team_id;
-    if (typeof slack.channel === 'string') env.SLACK_CHANNEL_ID = slack.channel;
-    if (typeof slack.thread_ts === 'string') env.SLACK_THREAD_TS = slack.thread_ts;
-    if (typeof slack.user === 'string') env.SLACK_USER_ID = slack.user;
-    return env;
+    return sessionChannelEnvFromMetadata(row?.metadata);
   } catch (err) {
     console.warn('[session-env] failed to restore channel binding', {
       sessionId,
@@ -290,13 +298,20 @@ export async function buildSessionSandboxEnvVars(input: {
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
   if (input.defaultBranch) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    }).catch(() => null);
+    compiledAgentConfig = await resolveCompiledAgentConfigForSession(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      // Compile from the ref this session actually runs on. It used to compile
+      // from the default branch regardless, so a session started on a feature
+      // branch ran main's agents from its first turn — you could edit an agent,
+      // push, start a session on that branch, and see no change at all.
+      input.baseRef,
+    ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -584,7 +599,17 @@ export async function createProjectSession(input: {
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
   // owner's profile), so unlike secrets it is NOT origin-gated.
-  let inheritUnbound = body.inherit_unbound === true;
+  //
+  // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
+  // connectors keeps the project-default fallback for the rest unless the caller
+  // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
+  // composer's "I picked these specific connections, turn the others off"
+  // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
+  // deliberately never flips this flag on a scope save. Before this, a caller
+  // sending `connector_bindings: {...}` without `inherit_unbound` left it
+  // `false`, hiding EVERY unbound connector from `kortix executor connectors`
+  // / `kortix executor call` — the whole catalog went empty.
+  let inheritUnbound = body.inherit_unbound !== false;
   const connectorBindingsConfigured = body.connector_bindings !== undefined;
   const requireConnectors: string[] = Array.isArray(body.require_connectors)
     ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
@@ -658,20 +683,22 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  const loadedAgents = await loadProjectAgents(project, {
+    forceRefresh: true,
+    rethrowReadErrors: true,
+  });
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
   const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
-  const projectDefaultAgent = normalizeString(
+  const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
-  const agentName =
-    (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
-    projectDefaultAgent ??
-    'default';
-  const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: true,
-    rethrowReadErrors: true,
+  const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
+  const agentName = resolveSessionAgentName({
+    requestedAgent,
+    manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
+    mirroredDefaultAgent,
   });
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
@@ -988,6 +1015,13 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const pendingPrompt =
+    body.pending_prompt &&
+    typeof body.pending_prompt === 'object' &&
+    !Array.isArray(body.pending_prompt) &&
+    typeof (body.pending_prompt as Record<string, unknown>).text === 'string'
+      ? (body.pending_prompt as Record<string, unknown>)
+      : null;
   const sessionName = normalizeString(body.name);
   // An explicit `title_source` means the baked prompt is a rendered envelope
   // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
@@ -1001,6 +1035,7 @@ export async function createProjectSession(input: {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(pendingPrompt ? { pending_prompt: pendingPrompt } : {}),
     ...(explicitTitleSource
       ? { title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS) }
       : {}),

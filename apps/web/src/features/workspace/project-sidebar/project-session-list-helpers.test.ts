@@ -53,19 +53,31 @@ describe('shouldPollProjectSessions', () => {
 });
 
 describe('session last activity', () => {
-  test('uses updated_at for a reused session', () => {
+  test('uses the latest OpenCode conversation activity, not row bookkeeping', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: '2026-01-08T08:00:00.000Z',
+      updated_at: '2026-01-08T08:00:09.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-1',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: Date.parse('2026-01-01T00:00:00.000Z'),
+          updated_at: Date.parse('2026-01-03T04:05:06.000Z'),
+          archived_at: null,
+        },
+      ],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-08T08:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe('2026-01-03T04:05:06.000Z');
   });
 
-  test('falls back to created_at when updated_at is absent', () => {
+  test('falls back to created_at when conversation activity is absent', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: undefined,
+      updated_at: '2026-01-08T08:00:09.000Z',
+      opencode_sessions: [],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-01T00:00:00.000Z');
@@ -75,17 +87,40 @@ describe('session last activity', () => {
     const oldest = makeSession({
       session_id: 'a',
       created_at: '2026-01-03T00:00:00.000Z',
-      updated_at: '2026-01-03T00:00:00.000Z',
+      updated_at: '2026-01-09T00:00:00.000Z',
+      opencode_sessions: [],
     });
     const middle = makeSession({
       session_id: 'b',
       created_at: '2026-01-02T00:00:00.000Z',
-      updated_at: '2026-01-05T00:00:00.000Z',
+      updated_at: '2026-01-10T00:00:00.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-b',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: null,
+          updated_at: Date.parse('2026-01-05T00:00:00.000Z'),
+          archived_at: null,
+        },
+      ],
     });
     const newest = makeSession({
       session_id: 'c',
       created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: '2026-01-06T00:00:00.000Z',
+      updated_at: '2026-01-08T00:00:00.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-c',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: null,
+          updated_at: Date.parse('2026-01-06T00:00:00.000Z'),
+          archived_at: null,
+        },
+      ],
     });
 
     const result = sortSessionsByLastActivity([oldest, newest, middle]);

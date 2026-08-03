@@ -1,8 +1,8 @@
 import type { Context, Next } from 'hono';
-import { auditEvents } from '@kortix/db';
+import { auditEvents, type Database } from '@kortix/db';
 import { getRequestContext } from '../lib/request-context';
 import { db } from './db';
-import { dispatchAuditEvent } from './audit-webhooks';
+import { dispatchAuditEvent, type AuditWebhookPayload } from './audit-webhooks';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);
@@ -136,9 +136,15 @@ function uuidOrNull(value: string | null | undefined): string | null {
   return value && UUID_RE.test(value) ? value : null;
 }
 
-export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+type AuditInsertClient = Pick<Database, 'insert'>;
+type AuditTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+async function insertAuditEvent(
+  client: AuditInsertClient,
+  input: AuditEventInput,
+): Promise<AuditWebhookPayload | null> {
   const request = getRequestContext();
-  const [row] = await db
+  const [row] = await client
     .insert(auditEvents)
     .values({
       accountId: uuidOrNull(input.accountId || request?.accountId),
@@ -164,35 +170,52 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
     })
     .returning();
 
-  if (row && row.accountId) {
-    dispatchAuditEvent({
-      schema_version: 1,
-      event: {
-        event_id: row.eventId,
-        occurred_at: row.occurredAt.toISOString(),
-        account_id: row.accountId,
-        project_id: row.projectId,
-        session_id: row.sessionId,
-        actor_user_id: row.actorUserId,
-        actor_type: row.actorType,
-        source: row.source,
-        outcome: row.outcome,
-        action: row.action,
-        resource_type: row.resourceType,
-        resource_id: row.resourceId,
-        http_status: row.httpStatus,
-        duration_ms: row.durationMs,
-        request_id: row.requestId,
-        trace_id: row.traceId,
-        correlation_id: row.correlationId,
-        before: row.before,
-        after: row.after,
-        ip: row.ip,
-        user_agent: row.userAgent,
-        metadata: row.metadata ?? {},
-      },
-    });
-  }
+  if (!row?.accountId) return null;
+  return {
+    schema_version: 1,
+    event: {
+      event_id: row.eventId,
+      occurred_at: row.occurredAt.toISOString(),
+      account_id: row.accountId,
+      project_id: row.projectId,
+      session_id: row.sessionId,
+      actor_user_id: row.actorUserId,
+      actor_type: row.actorType,
+      source: row.source,
+      outcome: row.outcome,
+      action: row.action,
+      resource_type: row.resourceType,
+      resource_id: row.resourceId,
+      http_status: row.httpStatus,
+      duration_ms: row.durationMs,
+      request_id: row.requestId,
+      trace_id: row.traceId,
+      correlation_id: row.correlationId,
+      before: row.before,
+      after: row.after,
+      ip: row.ip,
+      user_agent: row.userAgent,
+      metadata: row.metadata ?? {},
+    },
+  };
+}
+
+export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+  const payload = await insertAuditEvent(db, input);
+  if (payload) dispatchAuditEvent(payload);
+}
+
+export async function runAuditedTransaction<T>(
+  operation: (tx: AuditTransaction) => Promise<T>,
+  event: (result: T) => AuditEventInput,
+): Promise<T> {
+  const committed = await db.transaction(async (tx) => {
+    const result = await operation(tx);
+    const payload = await insertAuditEvent(tx, event(result));
+    return { result, payload };
+  });
+  if (committed.payload) dispatchAuditEvent(committed.payload);
+  return committed.result;
 }
 
 export async function auditApiRequest(c: Context, next: Next): Promise<void> {

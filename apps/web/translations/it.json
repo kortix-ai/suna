@@ -1217,6 +1217,30 @@
     }
   },
   "hardcodedUi": {
+    "projectAccessBoundary": {
+      "privateHeading": "Chiedi l'accesso.",
+      "privateBody": "Solo i membri possono aprire questo progetto. Invia una nota e un project manager potrà aggiungerti.",
+      "waitingHeading": "In attesa di approvazione.",
+      "sentBody": "La tua richiesta è nelle mani dei project manager. Questa pagina si aprirà da sola non appena uno di loro la approverà.",
+      "alreadyBody": "Hai già chiesto l'accesso in precedenza. Un project manager deve ancora approvarlo.",
+      "notFoundHeading": "Questo progetto non esiste più.",
+      "notFoundBody": "Il collegamento potrebbe essere errato oppure qualcuno ha eliminato il progetto.",
+      "errorHeading": "Questo progetto non si è caricato.",
+      "errorBody": "La richiesta non è riuscita prima che potessimo verificare il tuo accesso.",
+      "noteLabel": "Nota per il project manager",
+      "notePlaceholder": "Perché ti serve l'accesso (facoltativo)",
+      "requestAction": "Richiedi l'accesso",
+      "checkNowAction": "Controlla ora",
+      "tryAgainAction": "Riprova",
+      "projectsAction": "Torna ai progetti",
+      "accountLabel": "Account",
+      "projectLabel": "Progetto",
+      "approvalNote": "Chiunque gestisca questo progetto può approvare la tua richiesta.",
+      "openAsAdmin": "Apri come amministratore",
+      "requestFailed": "Impossibile inviare la richiesta.",
+      "bypassFailed": "Bypass amministratore non riuscito.",
+      "thisAccount": "questo account"
+    },
     "appHomeAppPage": {
       "line86JsxTextKortixForMobile": "Kortix per dispositivi mobili",
       "line89JsxTextYourAiWorkerInYourPocket": "Il tuo worker IA, sempre in tasca.",

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PRELOAD_LANGS } from './code/shiki-highlighter';
 import {
+  LANGUAGE_ALIASES,
   isInternalUrl,
   isLinkSafeHref,
   languageLabel,
@@ -44,6 +46,43 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('Rust')).toBe('rust');
     expect(normalizeLanguage('go')).toBe('go');
   });
+
+  test('every alias resolves to a preloaded grammar so highlightSync can hit', () => {
+    const preloaded = new Set<string>(PRELOAD_LANGS);
+    const stranded = Object.entries(LANGUAGE_ALIASES)
+      .filter(([, target]) => !preloaded.has(target))
+      .map(([alias, target]) => `${alias} -> ${target}`);
+    expect(stranded).toEqual([]);
+  });
+
+  test('resolves hints shiki has no grammar or alias for', () => {
+    expect(normalizeLanguage('golang')).toBe('go');
+    expect(normalizeLanguage('env')).toBe('dotenv');
+    expect(normalizeLanguage('patch')).toBe('diff');
+    expect(normalizeLanguage('svg')).toBe('xml');
+    expect(normalizeLanguage('psql')).toBe('sql');
+  });
+
+  test('folds shiki aliases onto the preloaded id they stand for', () => {
+    expect(normalizeLanguage('plaintext')).toBe('text');
+    expect(normalizeLanguage('rs')).toBe('rust');
+    expect(normalizeLanguage('kt')).toBe('kotlin');
+    expect(normalizeLanguage('cs')).toBe('csharp');
+    expect(normalizeLanguage('c++')).toBe('cpp');
+    expect(normalizeLanguage('ps1')).toBe('powershell');
+    expect(normalizeLanguage('docker')).toBe('dockerfile');
+    expect(normalizeLanguage('make')).toBe('makefile');
+    expect(normalizeLanguage('tf')).toBe('terraform');
+    expect(normalizeLanguage('gql')).toBe('graphql');
+    expect(normalizeLanguage('protobuf')).toBe('proto');
+  });
+
+  test('new aliases are case-insensitive like the original set', () => {
+    expect(normalizeLanguage('Golang')).toBe('go');
+    expect(normalizeLanguage('RS')).toBe('rust');
+    expect(normalizeLanguage('C++')).toBe('cpp');
+    expect(normalizeLanguage('PS1')).toBe('powershell');
+  });
 });
 
 describe('languageLabel', () => {
@@ -59,6 +98,23 @@ describe('languageLabel', () => {
     expect(languageLabel('js')).toBe('javascript');
     expect(languageLabel('TS')).toBe('typescript');
     expect(languageLabel('rust')).toBe('rust');
+  });
+
+  test('expands the newly aliased hints to the name a reader recognises', () => {
+    expect(languageLabel('rs')).toBe('rust');
+    expect(languageLabel('kt')).toBe('kotlin');
+    expect(languageLabel('golang')).toBe('go');
+    expect(languageLabel('ps1')).toBe('powershell');
+    expect(languageLabel('gql')).toBe('graphql');
+    expect(languageLabel('tf')).toBe('terraform');
+    expect(languageLabel('env')).toBe('dotenv');
+    expect(languageLabel('txt')).toBe('text');
+  });
+
+  test('keeps the spelling a reader typed when it is already the known name', () => {
+    expect(languageLabel('c++')).toBe('c++');
+    expect(languageLabel('c#')).toBe('c#');
+    expect(languageLabel('dockerfile')).toBe('dockerfile');
   });
 });
 

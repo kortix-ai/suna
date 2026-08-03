@@ -13,6 +13,7 @@ describe('classifySandboxProvisioningFailure', () => {
     'too many sandboxes starting on this node',
     'No available runners can satisfy the request',
     '429 Too Many Requests',
+    '500: Failed to place sandbox',
   ])('maps provider capacity text to one provider-neutral contract: %s', (message) => {
     expect(classifySandboxProvisioningFailure(new Error(message))).toEqual({
       category: 'provider-capacity',

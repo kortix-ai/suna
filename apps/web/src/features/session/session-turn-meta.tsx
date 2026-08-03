@@ -16,8 +16,8 @@
  * gives for free.
  */
 
+import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DotsThreeIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -78,7 +78,7 @@ export function SessionTurnMeta({
           data-testid="session-turn-meta-trigger"
           className={className}
         >
-          <DotsThreeIcon className="size-3.5" />
+          <DotsThreeOutlineIcon weight="fill" className="size-4 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent

@@ -54,6 +54,8 @@ const tabsTriggerTextVariants = cva('font-medium', {
 
 type TabsTriggerSize = 'xs' | 'sm' | 'default' | 'md';
 type TabsSize = TabsTriggerSize | 'lg';
+/** `default` is the filled pill; `outline` is a bordered active chip. */
+type TabsTriggerVariant = 'default' | 'outline';
 
 const tabsListHeightClasses: Record<TabsSize, string> = {
   default: 'h-9',
@@ -187,22 +189,27 @@ function TabsList({
 function TabsTrigger({
   className,
   size: sizeProp,
+  variant = 'default',
   value,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
   size?: TabsTriggerSize;
+  variant?: TabsTriggerVariant;
 }) {
   const listType = React.useContext(TabsListTypeContext);
   const animate = React.useContext(TabsAnimateContext);
   const listSize = React.useContext(TabsSizeContext);
   const size = resolveTabsTriggerSize(sizeProp, listSize);
   const isUnderlineList = listType === 'underline';
-  const useSlidingIndicator = !isUnderlineList && animate === 'fluid';
+  const isOutline = !isUnderlineList && variant === 'outline';
+  // Outline paints its own border; the sliding pill fill would fight it.
+  const useSlidingIndicator = !isUnderlineList && !isOutline && animate === 'fluid';
 
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       data-sliding-tab={useSlidingIndicator ? value : undefined}
+      data-variant={variant}
       value={value}
       className={cn(
         "focus-visible:ring-kortix-blue duration-normal ease-default inline-flex flex-1 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-2.5px)] border border-transparent whitespace-nowrap transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -215,11 +222,16 @@ function TabsTrigger({
         // indicator paints the pill behind the trigger, so the trigger itself
         // stays transparent; otherwise the trigger paints its own.
         !isUnderlineList &&
+          !isOutline &&
           'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground relative z-10 data-[state=inactive]:bg-transparent',
         !isUnderlineList &&
+          !isOutline &&
           (useSlidingIndicator
             ? 'data-[state=active]:bg-transparent'
             : 'data-[state=active]:bg-input'),
+        // Outline: bordered active chip — matches Button `outline` (border + transparent fill).
+        isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground relative z-10 bg-transparent data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         className,
       )}
       {...props}
@@ -305,18 +317,23 @@ function TabsListCompact({
 /** Compact Radix TabsTrigger — use inside <Tabs> root for smaller contexts. */
 function TabsTriggerCompact({
   className,
+  variant = 'default',
   value,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
+  variant?: TabsTriggerVariant;
+}) {
   const listType = React.useContext(TabsListTypeContext);
   const animate = React.useContext(TabsAnimateContext);
   const isUnderlineList = listType === 'underline';
-  const useSlidingIndicator = !isUnderlineList && animate === 'fluid';
+  const isOutline = !isUnderlineList && variant === 'outline';
+  const useSlidingIndicator = !isUnderlineList && !isOutline && animate === 'fluid';
 
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       data-sliding-tab={useSlidingIndicator ? value : undefined}
+      data-variant={variant}
       value={value}
       className={cn(
         'focus-visible:ring-kortix-blue relative z-10 inline-flex flex-1 cursor-pointer items-center justify-center border border-transparent text-xs font-medium whitespace-nowrap focus-visible:ring-[0.6px] focus-visible:outline-none',
@@ -327,11 +344,15 @@ function TabsTriggerCompact({
         // Default: a secondary-coloured pill — see TabsTrigger for why the
         // active fill is conditional on the sliding indicator.
         !isUnderlineList &&
+          !isOutline &&
           'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-[calc(var(--radius)-3px)] transition-colors duration-150 data-[state=inactive]:bg-transparent',
         !isUnderlineList &&
+          !isOutline &&
           (useSlidingIndicator
             ? 'data-[state=active]:bg-transparent'
             : 'data-[state=active]:bg-input'),
+        isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-150 data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         'disabled:pointer-events-none disabled:opacity-50',
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -390,4 +411,4 @@ export {
   tabsTriggerTextVariants,
 };
 
-export type { TabsListType, TabsSize, TabsTriggerSize };
+export type { TabsListType, TabsSize, TabsTriggerSize, TabsTriggerVariant };

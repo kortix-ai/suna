@@ -3,6 +3,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
+import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
@@ -15,7 +16,8 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
+import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
@@ -407,7 +409,18 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
       },
     responses: {
-        200: json(z.array(SecretSchema), 'Secrets'),
+        200: json(
+          z.object({
+            items: z.array(SecretSchema),
+            required: z.array(z.string()),
+            optional: z.array(z.string()),
+            can_manage: z.boolean(),
+            manifest_status: z.enum(['loaded', 'missing', 'error']),
+            manifest_path: z.string(),
+            manifest_error: z.string().optional(),
+          }),
+          'Secret configuration metadata',
+        ),
         ...errors(404),
     },
   }),
@@ -444,41 +457,19 @@ projectsApp.openapi(
   }
 
   // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
-  // it's granted (mirrors the env-injection narrowing), so it can't enumerate
-  // secrets outside its allowlist. No-op for non-agent tokens / 'all' / null
-  // grants. This is the ONLY gate — every project member with read access sees
-  // every secret; there is no per-secret member/group sharing.
+  // in its standing agent grant. A session secretsAllowlist is a delivery
+  // policy, not a configuration-plane read policy. Applying it here made a
+  // session with `secrets_allowlist: []` accept a shared write and then hide the
+  // written row from the same caller. Runtime materialization still intersects
+  // the agent grant with the session allowlist in sandbox-env-sync.ts.
+  //
+  // This route returns metadata only. It never returns a secret value. The
+  // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
-
-  // KaaB per-session narrowing: a session-bound token (the executor PAT carries
-  // sessionId) must not ENUMERATE identifiers its session allowlist hides —
-  // otherwise the narrowing that scrubs those secrets from $ENV still leaks
-  // their names/metadata here. Mirror the env-injection intersection.
-  const boundSessionId = c.get('sessionId') as string | undefined;
-  let sessionAllowUpper: Set<string> | null = null;
-  if (boundSessionId) {
-    const [sessionRow] = await db
-      .select({ secretsAllowlist: projectSessions.secretsAllowlist })
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.sessionId, boundSessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
-      )
-      .limit(1);
-    // Any non-null allowlist narrows the enumeration — including the empty array
-    // (`[]` = enumerate ZERO secrets). Guard on `!= null`, not truthiness alone,
-    // to make that intent explicit (an empty Set filters everything out below).
-    if (sessionRow?.secretsAllowlist != null) {
-      sessionAllowUpper = new Set(sessionRow.secretsAllowlist.map((id) => id.toUpperCase()));
-    }
-  }
 
   const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
     .filter((item) => !item.system)
-    .filter((item) => agentMayUseEnv(agentGrant, item.identifier))
-    .filter((item) => !sessionAllowUpper || sessionAllowUpper.has(item.identifier.toUpperCase()));
+    .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
   return c.json({
     items,
@@ -545,7 +536,11 @@ projectsApp.openapi(
   // doesn't force re-entering the value. Creating a brand-new secret still
   // requires a value.
   const [existing] = await db
-    .select({ secretId: projectSecrets.secretId, name: projectSecrets.name })
+    .select({
+      secretId: projectSecrets.secretId,
+      name: projectSecrets.name,
+      strategy: projectSecrets.strategy,
+    })
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
@@ -566,38 +561,63 @@ projectsApp.openapi(
   }
 
   const now = new Date();
-  let secretId: string;
-  if (value !== null) {
-    const [row] = await db
-      .insert(projectSecrets)
-      .values({
-        projectId,
-        identifier,
-        name,
-        valueEnc: encryptProjectSecret(projectId, value),
-        createdBy: loaded.userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        // The shared row is unique on (project, identifier) WHERE owner_user_id IS NULL.
-        target: [projectSecrets.projectId, projectSecrets.identifier],
-        targetWhere: isNull(projectSecrets.ownerUserId),
-        set: {
-          valueEnc: encryptProjectSecret(projectId, value),
-          updatedAt: now,
-        },
-      })
-      .returning({ secretId: projectSecrets.secretId });
-    secretId = row.secretId;
-  } else {
-    // No value change (identifier/name unchanged) — nothing to do besides
-    // touching updatedAt so the list reflects the write.
-    await db
-      .update(projectSecrets)
-      .set({ updatedAt: now })
-      .where(eq(projectSecrets.secretId, existing!.secretId));
-    secretId = existing!.secretId;
-  }
+  const actorType =
+    c.get('authType') === 'service_account'
+      ? 'service_account'
+      : getAgentGrant(c)
+        ? 'agent'
+        : 'human';
+  await runAuditedTransaction(
+    async (tx) => {
+      if (value !== null) {
+        const [row] = await tx
+          .insert(projectSecrets)
+          .values({
+            projectId,
+            identifier,
+            name,
+            valueEnc: encryptProjectSecret(projectId, value),
+            createdBy: loaded.userId,
+            rotatedAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [projectSecrets.projectId, projectSecrets.identifier],
+            targetWhere: isNull(projectSecrets.ownerUserId),
+            set: {
+              valueEnc: encryptProjectSecret(projectId, value),
+              rotatedAt: now,
+              updatedAt: now,
+            },
+          })
+          .returning({ secretId: projectSecrets.secretId });
+        return row.secretId;
+      }
+
+      await tx
+        .update(projectSecrets)
+        .set({ updatedAt: now })
+        .where(eq(projectSecrets.secretId, existing!.secretId));
+      return existing!.secretId;
+    },
+    (resourceId) => ({
+      accountId: loaded.row.accountId,
+      projectId,
+      actorUserId: loaded.userId,
+      actorType,
+      source: inferAuditSource(c, actorType),
+      action: existing ? 'secret.updated' : 'secret.created',
+      resourceType: 'project_secret',
+      resourceId,
+      before: existing ? { configured: true, strategy: existing.strategy } : null,
+      after: {
+        configured: true,
+        strategy: existing?.strategy ?? 'runtime',
+        rotated: value !== null,
+      },
+      metadata: { identifier, name },
+    }),
+  );
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
@@ -615,8 +635,142 @@ projectsApp.openapi(
 
   const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
   const view = views.find((v) => v.identifier === identifier);
-  return c.json(view ?? { identifier, name }, 200);
+  if (!view) {
+    throw new Error(`Secret view not found after upsert: ${identifier}`);
+  }
+  return c.json(view, 200);
 },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/secrets/{identifier}/strategy',
+    tags: ['secrets'],
+    summary: 'PUT /:projectId/secrets/:identifier/strategy',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), identifier: z.string() }),
+      body: { content: { 'application/json': { schema: UpdateSecretStrategyInputSchema } } },
+    },
+    responses: {
+      200: json(SecretSchema, 'Updated secret delivery strategy'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const identifier = c.req.param('identifier')?.trim();
+    const parsed = UpdateSecretStrategyInputSchema.safeParse(await readBody(c));
+    if (!identifier || !isValidIdentifier(identifier)) {
+      return c.json({ error: 'Invalid secret identifier' }, 400);
+    }
+    if (!parsed.success) {
+      return c.json({ error: 'strategy must be runtime, egress, broker, or denied' }, 400);
+    }
+
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+    );
+    if (getAgentGrant(c)) {
+      return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
+    }
+    if (isSystemProjectSecretName(identifier)) {
+      return c.json({ error: `${identifier} is managed by Kortix` }, 403);
+    }
+    if (parsed.data.strategy === 'broker' || parsed.data.strategy === 'egress') {
+      return c.json(
+        {
+          error: `${parsed.data.strategy} delivery is unavailable until its adapter is enabled`,
+          code: 'secret_delivery_unavailable',
+        },
+        409,
+      );
+    }
+
+    const [existing] = await db
+      .select({
+        secretId: projectSecrets.secretId,
+        name: projectSecrets.name,
+        strategy: projectSecrets.strategy,
+        rotatedAt: projectSecrets.rotatedAt,
+        updatedAt: projectSecrets.updatedAt,
+        strategyLocked: projectSecrets.strategyLocked,
+      })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.identifier, identifier),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      )
+      .limit(1);
+    if (!existing) return c.json({ error: 'Not found' }, 404);
+    if (existing.strategyLocked && existing.strategy !== parsed.data.strategy) {
+      return c.json(
+        { error: 'This secret delivery strategy is locked', code: 'secret_strategy_locked' },
+        409,
+      );
+    }
+    if (
+      parsed.data.strategy === 'runtime' &&
+      existing.strategy !== 'runtime' &&
+      (!existing.rotatedAt || existing.rotatedAt < existing.updatedAt)
+    ) {
+      return c.json(
+        {
+          error: 'Rotate the secret before restoring runtime delivery',
+          code: 'secret_rotation_required',
+        },
+        409,
+      );
+    }
+
+    if (existing.strategy !== parsed.data.strategy) {
+      const actorType =
+        c.get('authType') === 'service_account' ? 'service_account' : 'human';
+      await runAuditedTransaction(
+        async (tx) => {
+          await tx
+            .update(projectSecrets)
+            .set({ strategy: parsed.data.strategy, updatedAt: new Date() })
+            .where(eq(projectSecrets.secretId, existing.secretId));
+        },
+        () => ({
+          accountId: loaded.row.accountId,
+          projectId,
+          actorUserId: loaded.userId,
+          actorType,
+          source: inferAuditSource(c, actorType),
+          action: 'secret.strategy.changed',
+          resourceType: 'project_secret',
+          resourceId: existing.secretId,
+          before: { strategy: existing.strategy },
+          after: {
+            strategy: parsed.data.strategy,
+            requires_rotation: parsed.data.strategy !== 'runtime',
+          },
+          metadata: { identifier, name: existing.name },
+        }),
+      );
+      await propagateProjectSecretsToActiveSandboxes(projectId, {
+        refreshModels: isGatewayManagedEnv(existing.name),
+      });
+    }
+
+    const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+    const view = views.find((item) => item.identifier === identifier);
+    if (!view) return c.json({ error: 'Not found' }, 404);
+
+    return c.json(view, 200);
+  },
 );
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
@@ -1000,17 +1154,64 @@ projectsApp.openapi(
     return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
   }
 
-  // Only the shared row — members' personal overrides for this identifier are
-  // theirs to remove (via the /personal route) and are left intact.
-  await db
-    .delete(projectSecrets)
+  const [existing] = await db
+    .select({
+      secretId: projectSecrets.secretId,
+      name: projectSecrets.name,
+      strategy: projectSecrets.strategy,
+    })
+    .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
       eq(projectSecrets.identifier, identifier),
       isNull(projectSecrets.ownerUserId),
-    ));
+    ))
+    .limit(1);
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(identifier) });
+  if (existing) {
+    const actorType =
+      c.get('authType') === 'service_account'
+        ? 'service_account'
+        : getAgentGrant(c)
+        ? 'agent'
+        : 'human';
+    await runAuditedTransaction(
+      async (tx) => {
+        await tx
+          .delete(projectSecrets)
+          .where(and(
+            eq(projectSecrets.projectId, projectId),
+            eq(projectSecrets.identifier, identifier),
+            isNull(projectSecrets.ownerUserId),
+          ));
+      },
+      () => ({
+        accountId: loaded.row.accountId,
+        projectId,
+        actorUserId: loaded.userId,
+        actorType,
+        source: inferAuditSource(c, actorType),
+        action: 'secret.deleted',
+        resourceType: 'project_secret',
+        resourceId: existing.secretId,
+        before: { configured: true, strategy: existing.strategy },
+        after: { configured: false },
+        metadata: { identifier, name: existing.name },
+      }),
+    );
+  } else {
+    await db
+      .delete(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.identifier, identifier),
+        isNull(projectSecrets.ownerUserId),
+      ));
+  }
+
+  void propagateProjectSecretsToActiveSandboxes(projectId, {
+    refreshModels: existing ? isGatewayManagedEnv(existing.name) : false,
+  });
 
   return c.json({ ok: true });
 },

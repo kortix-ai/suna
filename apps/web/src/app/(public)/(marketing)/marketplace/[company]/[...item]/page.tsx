@@ -9,6 +9,8 @@ import {
   listPublicMarketplaces,
 } from '@/lib/marketplace-public';
 import { pathPartsToItemId } from '@/lib/marketplace-slug';
+import { socialMetadata } from '@/lib/seo/metadata';
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
 // The root layout (app/layout.tsx) forces the whole app into per-request dynamic
 // rendering via `connection()`/`headers()` (so self-host Docker images read env
@@ -34,16 +36,19 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { company, item } = await params;
   const id = pathPartsToItemId(company, item);
+  const pathname = `/marketplace/${company}/${item.map(encodeURIComponent).join('/')}`;
   try {
     const detail = await getPublicMarketplaceItem(id);
     const description = detail.description ?? `${detail.title} on the Kortix Marketplace.`;
+    const title = `${detail.title} — Kortix Marketplace`;
     return {
-      title: `${detail.title} — Kortix Marketplace`,
+      title: { absolute: title },
       description,
-      openGraph: { title: `${detail.title} — Kortix Marketplace`, description },
+      alternates: { canonical: `${CANONICAL_ORIGIN}${pathname}` },
+      ...socialMetadata(title, description, `${CANONICAL_ORIGIN}${pathname}`),
     };
   } catch {
-    return { title: 'Marketplace — Kortix' };
+    return { title: 'Marketplace — Kortix', robots: { index: false, follow: false } };
   }
 }
 

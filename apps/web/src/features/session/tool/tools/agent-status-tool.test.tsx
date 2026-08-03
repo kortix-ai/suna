@@ -42,10 +42,13 @@ describe('AgentStatusTool joins the shared BasicTool shell', () => {
     // Title comes from the shared trigger, not a hand-rolled <Layers> header.
     expect(html).toContain('Agent status');
 
-    // The task count renders as a Badge chip (variant="muted"), not a
-    // hand-rolled `bg-muted rounded px-1.5 py-0.5` span.
-    expect(html).toContain('2 tasks');
-    expect(html).toContain('bg-muted/50');
+    // The inline row is the label alone. The trailing metadata cluster
+    // (duration, badge, accessory) was removed from the inline surface: in a
+    // chain of activity steps it read as chrome hanging off the right edge
+    // rather than information. The badge still renders on the panel surface —
+    // asserted in the panel test below, so the "Badge chip, not hand-rolled
+    // span" guarantee is still covered.
+    expect(html).not.toContain('2 tasks');
   });
 
   test('panel surface renders the standard sticky large header', () => {
@@ -61,6 +64,12 @@ describe('AgentStatusTool joins the shared BasicTool shell', () => {
     expect(html).toContain('pb-3');
     expect(html).toContain('text-sm font-medium');
     expect(html).toContain('Agent status');
+
+    // The task count renders as a Badge chip (variant="muted"), not a
+    // hand-rolled `bg-muted rounded px-1.5 py-0.5` span. The panel header is
+    // where this metadata lives now that the inline row carries the label only.
+    expect(html).toContain('2 tasks');
+    expect(html).toContain('bg-muted/50');
 
     // Body content (the task rows) is preserved, not dropped by the shell.
     expect(html).toContain('Write the report');

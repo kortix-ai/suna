@@ -12,7 +12,7 @@ import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { requestRuntimeReconnect } from '@kortix/sdk/react';
-import { PlusIcon as Plus, TerminalIcon as Terminal } from '@phosphor-icons/react';
+import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useRef } from 'react';

@@ -37,13 +37,13 @@ import {
   WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
   LinkSimpleIcon as Link2,
   DotsThreeIcon as MoreHorizontal,
   ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
-  ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -576,7 +576,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-32">
             <DropdownMenuItem onClick={handleOpenExternal}>
-              <TbExternalLink />
+              <ArrowSquareOutIcon />
               {tHardcodedUi.raw(
                 'autoComponentsTabsPreviewTabContentJsxAttrTitleOpenPrivate087e249c',
               )}

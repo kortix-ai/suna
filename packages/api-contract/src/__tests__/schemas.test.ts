@@ -17,6 +17,8 @@ import {
   ProjectSessionSchema,
   ReconcileConnectionProfileInputSchema,
   SecretSchema,
+  SecretDeliveryStrategySchema,
+  UpdateSecretStrategyInputSchema,
   ConnectorAuthorizationRequiredErrorSchema,
   ConnectorAuthorizationRequiredProfileSchema,
   SessionConnectorBindingInputSchema,
@@ -212,6 +214,13 @@ function secretFixture(overrides: Record<string, unknown> = {}) {
     mine: null,
     effective_source: 'shared',
     can_manage_shared: true,
+    strategy: 'runtime',
+    consumer: 'sandbox',
+    delivery_status: 'available',
+    egress_policy: null,
+    strategy_locked: false,
+    last_rotated_at: null,
+    requires_rotation: false,
     ...overrides,
   };
 }
@@ -392,6 +401,22 @@ describe('SessionStartResultSchema', () => {
     expect(parsed.sandbox?.provider).toBe('platinum');
   });
 
+  test('accepts a typed provider-neutral terminal capacity failure', () => {
+    const parsed = SessionStartResultSchema.strict().parse({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      sandbox: sandboxFixture({ status: 'error' }),
+      opencode_session_id: null,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
+    expect(parsed.failure?.category).toBe('provider-capacity');
+  });
+
   test('rejects an unknown stage', () => {
     expect(() =>
       SessionStartResultSchema.parse({
@@ -401,6 +426,43 @@ describe('SessionStartResultSchema', () => {
         sandbox: null,
         opencode_session_id: null,
       }),
+    ).toThrow();
+  });
+});
+
+describe('pending session prompt contract', () => {
+  test('accepts a durable prompt draft on normal create and warm claim', () => {
+    const pendingPrompt = {
+      text: 'Map the flood risk for this parcel.',
+      agent: 'kortix',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+    expect(
+      ClaimWarmProjectSessionInputSchema.strict().parse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        pending_prompt: pendingPrompt,
+      }).pending_prompt,
+    ).toEqual(pendingPrompt);
+  });
+
+  test('accepts a file-only draft with an empty text field', () => {
+    const pendingPrompt = {
+      text: '',
+      attachment_names: ['parcel.geojson'],
+    };
+
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+
+    expect(() =>
+      SessionCreateInputSchema.strict().parse({ pending_prompt: { text: '' } }),
     ).toThrow();
   });
 });
@@ -471,6 +533,22 @@ describe('SecretSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('accepts every delivery strategy and rejects unknown values', () => {
+    for (const strategy of ['runtime', 'egress', 'broker', 'denied'] as const) {
+      expect(SecretDeliveryStrategySchema.parse(strategy)).toBe(strategy);
+    }
+    expect(SecretDeliveryStrategySchema.safeParse('env').success).toBe(false);
+  });
+
+  test('accepts only a strategy in the update input', () => {
+    expect(UpdateSecretStrategyInputSchema.parse({ strategy: 'denied' })).toEqual({
+      strategy: 'denied',
+    });
+    expect(
+      UpdateSecretStrategyInputSchema.safeParse({ strategy: 'runtime', value: 'secret' }).success,
+    ).toBe(false);
   });
 });
 

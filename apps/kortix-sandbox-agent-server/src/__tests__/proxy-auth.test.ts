@@ -61,6 +61,13 @@ function fakeOpencode(
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
     restart: async () => hooks.restart?.(),
+    // The env route calls reloadConfig now, which applies config in place via
+    // dispose and falls back to restart. Both land here so a test counting
+    // "was the new config applied" keeps counting exactly that.
+    reloadConfig: async () => {
+      hooks.restart?.()
+      return 'restarted' as const
+    },
   } as unknown as Opencode
 }
 
@@ -942,6 +949,60 @@ describe('daemon proxy auth gate', () => {
       else process.env.KORTIX_LLM_API_KEY = previousLlmKey
       if (previousLlmBase === undefined) delete process.env.KORTIX_LLM_BASE_URL
       else process.env.KORTIX_LLM_BASE_URL = previousLlmBase
+    }
+  })
+
+  it('enables Executor MCP in a running session and restarts opencode once', async () => {
+    let restartCalls = 0
+    const previous = process.env.KORTIX_EXECUTOR_MCP_ENABLED
+    delete process.env.KORTIX_EXECUTOR_MCP_ENABLED
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    const request = () =>
+      app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-email-mcp',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+        }),
+      })
+
+    try {
+      const enabled = await request()
+      expect(enabled.status).toBe(200)
+      expect(await enabled.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_EXECUTOR_MCP_ENABLED'],
+      })
+      expect(process.env.KORTIX_EXECUTOR_MCP_ENABLED as string | undefined).toBe('1')
+      expect(restartCalls).toBe(1)
+
+      const replay = await request()
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: false,
+        opencode_env_names: [],
+      })
+      expect(restartCalls).toBe(1)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_EXECUTOR_MCP_ENABLED
+      else process.env.KORTIX_EXECUTOR_MCP_ENABLED = previous
     }
   })
 

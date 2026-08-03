@@ -18,6 +18,23 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
+  // Channel sessions can opt into the Executor MCP face after a deploy. This
+  // must restart OpenCode because MCP servers are registered only at spawn.
+  'KORTIX_EXECUTOR_MCP_ENABLED',
+  // The server-compiled agent config (agents, prompts, permissions, model) —
+  // apps/api's compile-agent-config.ts output.
+  //
+  // Until this was allowlisted it was the ONE piece of config with no way into
+  // a running box. It is compiled from git once, at provision, and handed down
+  // as an env var, so a restart re-read the daemon's unchanged env and rebuilt
+  // the same stale bytes: `git pull` updated the working tree, the agent's
+  // behaviour did not, and nothing short of a new session reconciled the two.
+  // Same mechanism as the model above — accept it, then restart.
+  'KORTIX_COMPILED_AGENT_CONFIG',
+  // Its content hash, echoed by /kortix/health so a client can ask what this box
+  // is really running. Pushed with the config; allowlisted so the two cannot
+  // drift apart on a live update.
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
 ])
 
 function bearerToken(header: string | undefined): string | null {
@@ -158,12 +175,23 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           writeAgentEnvFile(projectEnv)
         }
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
-          logger.info('[env] model-affecting env changed; restarting opencode', {
+          // reloadConfig, not restart: opencode re-reads its config file in
+          // place via /global/dispose in ~51ms, against ~8s for a respawn
+          // (measured on the pinned 1.17.11). It falls back to a restart on its
+          // own if dispose is unavailable, so this is never less correct — only
+          // faster, and it does not sever an in-flight turn when dispose wins.
+          // A change to the spawn-time deny-list cannot be applied by a
+          // dispose — see reloadConfig. Anything else lives in the config file
+          // and takes the fast path.
+          const mustRespawn = opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')
+          const how = await opencode.reloadConfig({ mustRespawn })
+          logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
             opencodeEnvNames,
+            how,
+            mustRespawn,
           })
-          await opencode.restart()
         }
 
         return c.json({

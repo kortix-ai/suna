@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
+import { opencodeTurnInFlight } from '../opencode-turn-state'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -67,7 +68,8 @@ export type SandboxBootState = {
  *     static_web_port: number | null,  // bound static-web port, null if down
  *     repo: string | null,    // remote URL of the materialized repo, if any
  *     branch: string | null,
- *     commit_sha: string | null
+ *     commit_sha: string | null,
+ *     agent_config_etag: string | null
  *   }
  *
  * Always returns 200 even when opencode is down — this is the daemon's own
@@ -126,6 +128,24 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
+      // The content hash of the compiled agent config THIS opencode spawned
+      // with. Not derivable from commit_sha: a warm-workspace refresh advances
+      // the commit while deliberately skipping the restart, so a box can report
+      // the newest commit and still be running config compiled days ago. Read
+      // from the live process env, so it tracks a hot push as well as a boot.
+      agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+      // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
+      // polled as a liveness check every few seconds on every idle box. Only the
+      // reload gate asks — it must not restart the runtime out from under a turn
+      // that is still running.
+      ...(c.req.query('turn') === '1'
+        ? {
+            turn_in_flight: await opencodeTurnInFlight(
+              opencode.getInternalUrl(),
+              process.env.KORTIX_WORKSPACE || '/workspace',
+            ),
+          }
+        : {}),
       boot_error: bootState.repoMaterializationError ?? initialSessionError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,

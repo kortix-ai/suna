@@ -1,4 +1,4 @@
-import { chatInstalls, projectSecrets } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
@@ -94,6 +94,8 @@ export interface AgentMailInstallInput {
   webhookId?: string | null;
   webhookSecret?: string | null;
   senderPolicy?: AgentMailSenderPolicy | null;
+  /** Concrete agent for inbound messages. Null inherits the project default. */
+  agentName?: string | null;
 }
 
 function agentMailProfileSuffix(profileSlug?: string | null): string {
@@ -215,6 +217,16 @@ export async function saveAgentMailInstall(
   }
   if (previous?.inboxId) {
     await db
+      .delete(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'email'),
+          eq(chatChannelBindings.projectId, projectId),
+          eq(chatChannelBindings.workspaceId, previous.inboxId),
+          eq(chatChannelBindings.channelId, profileSlug),
+        ),
+      );
+    await db
       .delete(chatInstalls)
       .where(
         and(
@@ -244,6 +256,24 @@ export async function saveAgentMailInstall(
     .onConflictDoNothing({
       target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
     });
+  await db
+    .insert(chatChannelBindings)
+    .values({
+      platform: 'email',
+      workspaceId: input.inboxId,
+      channelId: profileSlug,
+      projectId,
+      channelName: input.email,
+      channelType: 'inbox',
+      agentName: input.agentName ?? null,
+    })
+    .onConflictDoNothing({
+      target: [
+        chatChannelBindings.platform,
+        chatChannelBindings.workspaceId,
+        chatChannelBindings.channelId,
+      ],
+    });
   return {
     profileSlug,
     inboxId: input.inboxId,
@@ -268,6 +298,19 @@ export async function deleteAgentMailInstall(
   }
   if (install?.inboxId) {
     await db
+      .delete(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'email'),
+          eq(chatChannelBindings.projectId, projectId),
+          eq(chatChannelBindings.workspaceId, install.inboxId),
+          eq(
+            chatChannelBindings.channelId,
+            (profileSlug || 'kortix_email').trim() || 'kortix_email',
+          ),
+        ),
+      );
+    await db
       .delete(chatInstalls)
       .where(
         and(
@@ -277,6 +320,14 @@ export async function deleteAgentMailInstall(
         ),
       );
   } else if (!profileSlug || profileSlug === 'kortix_email') {
+    await db
+      .delete(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'email'),
+          eq(chatChannelBindings.projectId, projectId),
+        ),
+      );
     await db
       .delete(chatInstalls)
       .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.projectId, projectId)));

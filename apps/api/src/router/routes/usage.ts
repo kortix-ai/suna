@@ -8,14 +8,19 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
+import { CSV_ROW_CAP, toCsv } from '../../shared/cost-csv';
+import { getCostSummary, listCostByProject } from '../../shared/cost-rollups';
+import {
+  type CostSort,
+  type CostWindow,
+  InvalidCostQueryError,
+  parseCostPagination,
+  parseCostSort,
+  parseCostWindow,
+} from '../../shared/cost-window';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import {
-  InvalidSessionCostQueryError,
-  getSessionCostRecord,
-  listSessionCosts,
-  parseSessionCostListQuery,
-} from '../../shared/session-costs';
+import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
 import type { AppEnv } from '../../types';
 import {
   InvalidUsageQueryError,
@@ -24,6 +29,13 @@ import {
   mapUsageTotals,
   parseUsageQuery,
 } from './usage-query';
+
+// The route's allowed sorts. Deliberately excludes `name_asc`: CostSort is
+// shared with the project-level rollup, but a session page has no name to
+// sort on and sessionCostSortKey throws for it by design. Keeping it out of
+// this list is what makes that a clean 400 (rejected by parseCostSort before
+// listSessionCosts ever runs) instead of a 500.
+export const SESSION_COST_SORTS: readonly CostSort[] = ['total_desc', 'total_asc', 'recent'];
 
 const usageApp = makeOpenApiApp<AppEnv>();
 
@@ -221,8 +233,13 @@ const SessionCostListQuerySchema = z
   .object({
     account_id: z.string().optional(),
     project_id: z.string().optional(),
+    owner_id: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    sort: z.enum(['total_desc', 'total_asc', 'recent']).optional(),
     limit: z.string().optional(),
     offset: z.string().optional(),
+    format: z.enum(['csv']).optional(),
   })
   .openapi('SessionCostListQuery');
 
@@ -232,6 +249,75 @@ const SessionCostDetailQuerySchema = z
     project_id: z.string().optional(),
   })
   .openapi('SessionCostDetailQuery');
+
+const ProjectCostRowSchema = z
+  .object({
+    project_id: z.string(),
+    project_name: z.string(),
+    session_count: z.number(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    last_activity_at: z.string().nullable(),
+  })
+  .openapi('ProjectCostRow');
+
+const ProjectCostPageSchema = z
+  .object({
+    projects: z.array(ProjectCostRowSchema),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+    next_offset: z.number().nullable(),
+  })
+  .openapi('ProjectCostPage');
+
+// The route's allowed sorts — all four CostSort members. Unlike
+// SESSION_COST_SORTS, this includes name_asc: a project rollup has a name to
+// sort on, so sortProjectRows never hits its `never`-typed default branch.
+// `as const` (not `: readonly CostSort[]`) so the same array satisfies both
+// z.enum()'s non-empty-tuple requirement below and parseCostSort()'s
+// `readonly CostSort[]` parameter.
+const PROJECT_COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
+
+const CostSummaryTotalsSchema = z
+  .object({
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    request_count: z.number(),
+    compute_seconds: z.number(),
+    session_count: z.number(),
+    project_count: z.number(),
+  })
+  .openapi('CostSummaryTotals');
+
+const CostSeriesPointSchema = z
+  .object({
+    day: z.string(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+  })
+  .openapi('CostSeriesPoint');
+
+const CostModelRowSchema = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    cost: z.number(),
+    request_count: z.number(),
+  })
+  .openapi('CostModelRow');
+
+const CostSummarySchema = z
+  .object({
+    totals: CostSummaryTotalsSchema,
+    previous: z.object({ total_cost: z.number() }).openapi('CostSummaryPrevious'),
+    series: z.array(CostSeriesPointSchema),
+    models: z.array(CostModelRowSchema),
+  })
+  .openapi('CostSummary');
 
 usageApp.openapi(
   createRoute({
@@ -350,37 +436,106 @@ usageApp.openapi(
     tags: ['usage'],
     summary: 'List session costs for one account',
     description:
-      'Lists every project session, including zero-cost sessions, with LLM and billed compute totals.',
+      'Lists every project session, including zero-cost sessions, with LLM and billed ' +
+      'compute totals over a date window. LLM cost is windowed on request time ' +
+      '(created_at); compute cost is windowed on the billing window start (started_at). ' +
+      'Bounds are half-open [from, to) and always UTC; an absent from/to defaults to the ' +
+      'trailing 30 days. ' +
+      '`reconciliation` covers spend the account cannot attribute to any session in the ' +
+      'same window: per-session totals attribute LLM cost by session_id, but ' +
+      '`reconciliation` attributes it by the nullable gateway_request_logs.project_id, ' +
+      'because by definition no session_id match exists. A project-scoped ' +
+      'reconciliation figure and the per-session table beside it can therefore ' +
+      'legitimately disagree.',
     ...auth,
     request: { query: SessionCostListQuerySchema },
     responses: {
-      200: json(SessionCostListResponseSchema, 'Paginated session cost summaries'),
+      200: {
+        description:
+          'Paginated session cost summaries, or (format=csv) the same filtered rows as a ' +
+          'CSV attachment capped at CSV_ROW_CAP.',
+        content: {
+          'application/json': { schema: SessionCostListResponseSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
       ...errors(400, 401, 403),
     },
   }),
   async (c) => {
-    let pagination: { limit: number; offset: number };
+    let parsed: {
+      window: CostWindow;
+      sort: CostSort;
+      limit: number;
+      offset: number;
+    };
     try {
-      pagination = parseSessionCostListQuery({
-        limit: c.req.query('limit'),
-        offset: c.req.query('offset'),
-      });
+      parsed = {
+        window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
+        sort: parseCostSort(c.req.query('sort'), SESSION_COST_SORTS, 'total_desc'),
+        ...parseCostPagination({ limit: c.req.query('limit'), offset: c.req.query('offset') }),
+      };
     } catch (error) {
-      if (error instanceof InvalidSessionCostQueryError) {
+      if (error instanceof InvalidCostQueryError) {
         throw new HTTPException(400, { message: error.message });
       }
       throw error;
     }
 
     const projectId = c.req.query('project_id') || undefined;
+    const ownerId = c.req.query('owner_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
-    return c.json(
-      await listSessionCosts({
+
+    if (c.req.query('format') === 'csv') {
+      // Same filtered query as the JSON branch (accountId, projectId, ownerId,
+      // window, sort) — only limit/offset differ, because a CSV export wants
+      // up to CSV_ROW_CAP rows in one shot, not one paginated page of it.
+      const page = await listSessionCosts({
         accountId,
         projectId,
-        ...pagination,
-      }),
-    );
+        ownerId,
+        window: parsed.window,
+        sort: parsed.sort,
+        limit: CSV_ROW_CAP,
+        offset: 0,
+      });
+      const body = toCsv(
+        [
+          'session_id',
+          'project_name',
+          'owner',
+          'status',
+          'requests',
+          'llm_cost_usd',
+          'compute_cost_usd',
+          'total_cost_usd',
+          'last_activity_at',
+        ],
+        page.sessions.map((row) => [
+          row.session_id,
+          row.project_name,
+          // owner_name is the resolved display label (it already falls back
+          // to owner_email when a user has no name set — see
+          // resolveSessionOwnerIdentities), so one "owner" column reuses it
+          // instead of the route picking its own fallback across
+          // owner_name/owner_email/owner_id.
+          row.owner_name,
+          row.status,
+          row.request_count,
+          row.llm_cost,
+          row.compute_cost,
+          row.total_cost,
+          row.last_activity_at,
+        ]),
+      );
+      return c.body(body, 200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="kortix-session-costs.csv"',
+        'x-kortix-row-cap': String(CSV_ROW_CAP),
+      });
+    }
+
+    return c.json(await listSessionCosts({ accountId, projectId, ownerId, ...parsed }));
   },
 );
 
@@ -414,6 +569,166 @@ usageApp.openapi(
       throw new HTTPException(404, { message: 'Session not found' });
     }
     return c.json(detail);
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-by-project',
+    tags: ['usage'],
+    summary: 'Roll up spend by project over a date window',
+    description:
+      'Groups LLM and billed compute spend by project. LLM is windowed on request time ' +
+      '(created_at); compute is windowed on the billing window start (started_at). Bounds ' +
+      'are half-open [from, to) and always UTC; an absent from/to defaults to the trailing ' +
+      '30 days. Paging happens in memory: an account has tens to hundreds of projects, not ' +
+      'the tens of thousands a session list can reach.',
+    ...auth,
+    request: {
+      query: z
+        .object({
+          account_id: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+          sort: z.enum(PROJECT_COST_SORTS).optional(),
+          limit: z.string().optional(),
+          offset: z.string().optional(),
+          format: z.enum(['csv']).optional(),
+        })
+        .openapi('ProjectCostQuery'),
+    },
+    responses: {
+      200: {
+        description:
+          'Project spend rollup, or (format=csv) the same filtered rows as a CSV ' +
+          'attachment capped at CSV_ROW_CAP.',
+        content: {
+          'application/json': { schema: ProjectCostPageSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c) => {
+    let accountId: string;
+    let window: CostWindow;
+    let sort: CostSort;
+    let limit: number;
+    let offset: number;
+    try {
+      // accountId resolves FIRST, exactly as it did before format=csv existed
+      // — resolveScopedAccountId can throw HTTPException(403), which this
+      // catch block does not intercept (it only maps InvalidCostQueryError to
+      // 400) and lets propagate as-is. Parsing window/sort/pagination first
+      // would let an invalid window on a request the caller cannot access
+      // surface as 400 instead of 403 — telling an unauthorized caller which
+      // of their parameters was malformed. Authorization must be decided
+      // before input validation, not after.
+      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+      window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
+      sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
+      ({ limit, offset } = parseCostPagination({
+        limit: c.req.query('limit'),
+        offset: c.req.query('offset'),
+      }));
+    } catch (error) {
+      if (error instanceof InvalidCostQueryError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+
+    if (c.req.query('format') === 'csv') {
+      // Same filtered query as the JSON branch (accountId, window, sort) —
+      // only limit/offset differ, because a CSV export wants up to
+      // CSV_ROW_CAP rows in one shot, not one paginated page of it.
+      const page = await listCostByProject({
+        accountId,
+        window,
+        sort,
+        limit: CSV_ROW_CAP,
+        offset: 0,
+      });
+      const body = toCsv(
+        [
+          'project_id',
+          'project_name',
+          'sessions',
+          'llm_cost_usd',
+          'compute_cost_usd',
+          'total_cost_usd',
+          'last_activity_at',
+        ],
+        page.projects.map((row) => [
+          row.project_id,
+          row.project_name,
+          row.session_count,
+          row.llm_cost,
+          row.compute_cost,
+          row.total_cost,
+          row.last_activity_at,
+        ]),
+      );
+      return c.body(body, 200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="kortix-cost-by-project.csv"',
+        'x-kortix-row-cap': String(CSV_ROW_CAP),
+      });
+    }
+
+    return c.json(await listCostByProject({ accountId, window, sort, limit, offset }));
+  },
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-summary',
+    tags: ['usage'],
+    summary: 'Spend totals, daily series and model breakdown over a date window',
+    description:
+      'Scoped to the account, or to one project or session when project_id / session_id is ' +
+      'supplied. LLM is windowed on request time (created_at); compute is windowed on the ' +
+      'billing window start (started_at), never last_billed_at. Bounds are half-open ' +
+      '[from, to) and always UTC; an absent from/to defaults to the trailing 30 days. Day ' +
+      'buckets in `series` are UTC and gap days are zero-filled, never omitted. `previous` ' +
+      'covers the equally long window immediately before [from, to). The account-scoped ' +
+      '(no project_id / session_id) `totals.total_cost` covers ALL account spend in the ' +
+      'window, including compute cost not attributable to any project.',
+    ...auth,
+    request: {
+      query: z
+        .object({
+          account_id: z.string().optional(),
+          project_id: z.string().optional(),
+          session_id: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+        })
+        .openapi('CostSummaryQuery'),
+    },
+    responses: { 200: json(CostSummarySchema, 'Cost summary'), ...errors(400, 401, 403) },
+  }),
+  async (c) => {
+    try {
+      const projectId = c.req.query('project_id') || undefined;
+      const accountId = await resolveSessionCostAccountId(c, projectId);
+      return c.json(
+        await getCostSummary({
+          accountId,
+          projectId,
+          sessionId: c.req.query('session_id') || undefined,
+          window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof InvalidCostQueryError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
   },
 );
 

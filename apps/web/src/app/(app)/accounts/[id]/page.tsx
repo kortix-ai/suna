@@ -473,7 +473,7 @@ export default function AccountSettingsPage() {
             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            className="max-w-3xl min-w-0"
+            className={cn('min-w-0', activeSection === 'transactions' ? 'max-w-6xl' : 'max-w-3xl')}
           >
             {paneMeta ? (
               <div className="mb-6 space-y-1">

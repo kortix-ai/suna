@@ -868,6 +868,8 @@ export function useSession(
     retriable: startData?.retriable ?? false,
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
+    /** Typed provider-neutral terminal provisioning failure. */
+    failure: startData?.failure ?? null,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
     isBusy: sync.isBusy || !!pending,
