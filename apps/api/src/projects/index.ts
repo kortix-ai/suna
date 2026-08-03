@@ -34,6 +34,7 @@ import './routes/r10';
 import './routes/r11';
 import './routes/agent-scope';
 import './routes/agent-config';
+import './routes/project-skills';
 import './routes/gateway';
 import './routes/channel-bindings';
 

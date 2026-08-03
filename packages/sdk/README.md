@@ -245,6 +245,31 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
+Project skill imports accept a `SKILL.md`, any Markdown file containing valid
+skill frontmatter, a `.skill` archive, or a ZIP archive. ZIPs can contain a
+root-level skill, a wrapped skill folder, or several skill folders. Each skill
+root must contain its own `SKILL.md`. Companion files remain byte-exact under
+that skill root, including scripts, images, PDFs, templates, and empty files.
+
+```ts
+import { importProjectSkill } from '@kortix/sdk';
+
+const result = await importProjectSkill(projectId, {
+  fileName: 'support-skills.zip',
+  dataBase64: zipBytes.toString('base64'),
+});
+
+console.log(result.change_request.number);
+console.log(result.skills[0]?.files);
+// [{ path: '.kortix/opencode/skills/triage/SKILL.md', size: 312 }, ...]
+```
+
+The API creates one branch, one commit, and one reviewable change request. ZIP
+uploads are limited to 10 MB compressed, 20 MB expanded, 2 MB per file, and 100
+preserved files. The response reports paths and byte sizes. It does not echo
+file contents. Archive symlinks, unsafe paths, duplicate skill slugs, and files
+outside every skill root are rejected.
+
 `session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive

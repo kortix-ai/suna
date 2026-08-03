@@ -26,6 +26,14 @@ import type { GitBackedProject, GitBranchInfo } from './types';
 // hash-object` subprocesses per commit.
 const HASH_CONCURRENCY = 8;
 
+export type GitFileMode = '100644' | '100755';
+
+export interface GitFileWrite {
+  path: string;
+  content: string | Uint8Array;
+  mode?: GitFileMode;
+}
+
 export interface ExpectedFileRevision {
   path: string;
   sha: string | null;
@@ -83,10 +91,10 @@ async function readRemoteBranchTip(
  * order (downstream index construction must stay deterministic).
  */
 export async function hashBlobs(
-  files: Array<{ path: string; content: string }>,
+  files: GitFileWrite[],
   tempDir: string,
   repoPath: string,
-): Promise<Array<{ path: string; sha: string }>> {
+): Promise<Array<{ path: string; sha: string; mode: GitFileMode }>> {
   return mapLimit(
     files.map((file, i) => ({ file, i })),
     HASH_CONCURRENCY,
@@ -95,7 +103,7 @@ export async function hashBlobs(
       await writeFile(blobFile, file.content, { flag: 'wx' });
       const sha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
       if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('git hash-object did not return a blob SHA');
-      return { path: file.path, sha };
+      return { path: file.path, sha, mode: file.mode ?? '100644' };
     },
   );
 }
@@ -354,7 +362,7 @@ export async function commitFileToBranch(
 export async function commitMultipleFilesToBranch(
   project: GitBackedProject,
   opts: {
-    files?: Array<{ path: string; content: string }>;
+    files?: GitFileWrite[];
     /** Repo-relative paths to remove from the tree in the same commit. */
     deletes?: string[];
     message: string;
@@ -365,8 +373,12 @@ export async function commitMultipleFilesToBranch(
   },
 ): Promise<{ commitSha: string; branch: string; fileCount: number }> {
   const files = (opts.files ?? [])
-    .map((f) => ({ path: normalizeTreePath(f.path), content: f.content }))
-    .filter((f): f is { path: string; content: string } => Boolean(f.path));
+    .map((f) => ({
+      path: normalizeTreePath(f.path),
+      content: f.content,
+      mode: f.mode ?? ('100644' as const),
+    }))
+    .filter((f): f is GitFileWrite & { mode: GitFileMode } => Boolean(f.path));
   const deletes = (opts.deletes ?? [])
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => Boolean(p));
@@ -448,7 +460,7 @@ export async function commitMultipleFilesToBranch(
     else await runGit(['read-tree', '--empty'], repoPath, false, null, indexEnv);
     for (const b of blobs) {
       await runGit(
-        ['update-index', '--add', '--cacheinfo', `100644,${b.sha},${b.path}`],
+        ['update-index', '--add', '--cacheinfo', `${b.mode},${b.sha},${b.path}`],
         repoPath,
         false,
         null,

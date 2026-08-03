@@ -5685,3 +5685,32 @@ SDK gates:
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-03 — session `binary-safe-project-skill-import` completion
+
+Added the project skill import SDK contract for complete binary-safe ZIP bundles.
+
+Scope:
+
+- Added `importProjectSkill(projectId, input)` without changing the request shape.
+- Added metadata-only project skill import result types.
+- Documented root, wrapped, and batch ZIP layouts plus binary preservation and limits.
+- Kept the package version unchanged.
+
+RED:
+
+- `project-skills.test.ts` failed before `importProjectSkill` existed.
+- Public-surface tests reported the intended additive exports before snapshot regeneration.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1412 pass`, `0 fail`, and `6075 expect()`
+  calls across `118` files.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**

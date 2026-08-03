@@ -6,7 +6,10 @@ import {
 } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
+import { SparkleIcon as Sparkles, UploadSimpleIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
+
+import { SkillImportModal } from './skill-import-modal';
 
 type Skill = ConfigEntity;
 
@@ -27,26 +30,33 @@ function groupForSkill(skill: Skill): string {
 
 export function SkillsView({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE).allowed === true;
+  const [importOpen, setImportOpen] = useState(false);
   return (
-    <ConfigEntityView<Skill>
-      projectId={projectId}
-      kind="skill"
-      noun="skill"
-      layout="grid"
-      canWrite={canWrite}
-      title="Skills"
-      searchPlaceholder="Search skills"
-      emptyIcon={Sparkles}
-      emptyTitle="No skills yet"
-      emptyDescription="Create a skill to give agents reusable capabilities."
-      emptyDocsHref="https://opencode.ai/docs/skills/"
-      emptyBodyLabel="Skill body is empty. Add content below the frontmatter."
-      select={(config) => config.skills}
-      groupBy={groupForSkill}
-      groupOrder={[PROJECT_GROUP, KORTIX_GROUP]}
-      collapsedGroups={[KORTIX_GROUP]}
-      renderTriggerLabel={(skill) => skill.name}
-      renderDetailTitle={(skill) => skill.name}
-    />
+    <>
+      <ConfigEntityView<Skill>
+        projectId={projectId}
+        kind="skill"
+        noun="skill"
+        layout="grid"
+        canWrite={canWrite}
+        onCreate={() => setImportOpen(true)}
+        createLabel="Upload"
+        createIcon={UploadSimpleIcon}
+        title="Skills"
+        searchPlaceholder="Search skills"
+        emptyIcon={Sparkles}
+        emptyTitle="No skills yet"
+        emptyDescription="Create a skill to give agents reusable capabilities."
+        emptyDocsHref="https://opencode.ai/docs/skills/"
+        emptyBodyLabel="Skill body is empty. Add content below the frontmatter."
+        select={(config) => config.skills}
+        groupBy={groupForSkill}
+        groupOrder={[PROJECT_GROUP, KORTIX_GROUP]}
+        collapsedGroups={[KORTIX_GROUP]}
+        renderTriggerLabel={(skill) => skill.name}
+        renderDetailTitle={(skill) => skill.name}
+      />
+      <SkillImportModal projectId={projectId} open={importOpen} onOpenChange={setImportOpen} />
+    </>
   );
 }

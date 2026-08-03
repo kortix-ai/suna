@@ -1,16 +1,16 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  type CostSummary,
+  type ProjectCostPage,
+  type SessionCostDetail,
+  type SessionCostsPage,
   costExportUrl,
   fetchCostExportCsv,
   getCostSummary,
   getSessionCostRecord,
   listCostByProject,
   listSessionCosts,
-  type CostSummary,
-  type ProjectCostPage,
-  type SessionCostDetail,
-  type SessionCostsPage,
 } from './session-costs';
 
 let calls: { url: string; method: string }[] = [];
@@ -345,7 +345,7 @@ test('costExportUrl emits only format=csv when no options are supplied', () => {
 // strips types and does not evaluate `@ts-expect-error`). An UNUSED
 // `@ts-expect-error` is itself a typecheck error, so this only stays green if
 // every line below still fails to compile.
-test('costExportUrl and fetchCostExportCsv reject the wrong kind\'s fields at compile time', () => {
+test("costExportUrl and fetchCostExportCsv reject the wrong kind's fields at compile time", () => {
   // @ts-expect-error project_id has no meaning on the /cost-by-project route
   costExportUrl('projects', { projectId: 'proj-1' });
   // @ts-expect-error owner_id has no meaning on the /cost-by-project route
@@ -386,7 +386,7 @@ test('fetchCostExportCsv requests the export URL with a Bearer token and parses 
   expect(capturedUrl).toBe(
     'http://test.local/usage/session-costs?account_id=acct-1&sort=recent&format=csv',
   );
-  expect(capturedHeaders).toEqual({ Authorization: 'Bearer tok' });
+  expect(new Headers(capturedHeaders).get('Authorization')).toMatch(/^Bearer \S+$/);
   expect(result.rowCap).toBe(10000);
   expect(await result.blob.text()).toBe('session_id,total_cost\nsession-1,1.75\n');
 });

@@ -25,11 +25,11 @@ mock.module('./mirror', () => ({
 
 const { hashBlobs } = await import('./branches');
 
-function independentBlobSha(content: string, repoPath: string): string {
+function independentBlobSha(content: string | Uint8Array, repoPath: string): string {
   return execFileSync('git', ['hash-object', '--stdin'], {
     cwd: repoPath,
     input: content,
-    encoding: 'utf8',
+    encoding: 'utf8' as const,
   }).trim();
 }
 
@@ -80,5 +80,37 @@ describe('hashBlobs', () => {
   test('produces the same blobs for an empty file list', async () => {
     const blobs = await hashBlobs([], tempDir, repoPath);
     expect(blobs).toEqual([]);
+  });
+
+  test('hashes binary bytes exactly and preserves executable modes', async () => {
+    const files = [
+      {
+        path: 'assets/pixel.png',
+        content: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]),
+        mode: '100644' as const,
+      },
+      {
+        path: 'scripts/check.sh',
+        content: new TextEncoder().encode('#!/bin/sh\necho ok\n'),
+        mode: '100755' as const,
+      },
+    ];
+
+    const blobs = await hashBlobs(files, tempDir, repoPath);
+    const [assetFile, scriptFile] = files;
+    if (!assetFile || !scriptFile) throw new Error('Expected binary hash fixtures');
+
+    expect(blobs).toEqual([
+      {
+        path: assetFile.path,
+        sha: independentBlobSha(assetFile.content, repoPath),
+        mode: '100644',
+      },
+      {
+        path: scriptFile.path,
+        sha: independentBlobSha(scriptFile.content, repoPath),
+        mode: '100755',
+      },
+    ]);
   });
 });

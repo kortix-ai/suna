@@ -20,6 +20,7 @@ export * from './model-defaults';
 export * from './model-enablement';
 export * from './agent-scope';
 export * from './agent-config';
+export * from './project-skills';
 export * from './billing';
 export * from './session-costs';
 export * from './channels';

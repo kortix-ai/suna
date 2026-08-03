@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { access, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -62,6 +62,27 @@ afterEach(async () => {
 });
 
 describe('manifest file compare-and-swap', () => {
+  test('commits binary bytes and executable modes without changing the payload', async () => {
+    const binary = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+    await commitMultipleFilesToBranch(project, {
+      files: [
+        { path: 'assets/pixel.png', content: binary },
+        {
+          path: 'scripts/check.sh',
+          content: new TextEncoder().encode('#!/bin/sh\necho ok\n'),
+          mode: '100755',
+        },
+      ],
+      message: 'add binary skill files',
+    });
+
+    const stored = execFileSync('git', ['--git-dir', remotePath, 'show', 'main:assets/pixel.png']);
+    expect(Array.from(stored)).toEqual(Array.from(binary));
+    expect(
+      await git(['--git-dir', remotePath, 'ls-tree', 'main', '--', 'scripts/check.sh']),
+    ).toMatch(/^100755 blob [0-9a-f]{40}\tscripts\/check\.sh$/);
+  });
+
   test('rejects a stale manifest revision without overwriting the winning write', async () => {
     const original = await readManifest(project);
     expect(original?.revision).toMatch(/^[0-9a-f]{40}$/);

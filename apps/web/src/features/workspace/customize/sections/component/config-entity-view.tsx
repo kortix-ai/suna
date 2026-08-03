@@ -95,6 +95,11 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   /** Section-level context rendered above the search (e.g. kortix.yaml manifest). */
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
+  /** Optional direct create handler. Omit to keep the generic configure-thread flow. */
+  onCreate?: () => void;
+  createLabel?: string;
+  createIcon?: LucideIcon;
+
   /**
    * Bucket rows under collapsible group headers in the `split` sidebar. Return
    * the group label for an entity. Omit for a flat list (agents, commands).
@@ -153,6 +158,9 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     renderDetailExtra,
     emptyBodyLabel,
     renderContext,
+    onCreate,
+    createLabel = 'New',
+    createIcon: CreateIcon = Plus,
     layout = 'accordion',
     canWrite = true,
     className,
@@ -190,6 +198,11 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   }, [entities, query, matches]);
 
   const configure = useConfigureThread(projectId);
+  const createPending = !onCreate && configure.pending;
+  const handleCreate = () => {
+    if (onCreate) onCreate();
+    else configure.start(newConfigPrompt(kind));
+  };
 
   // Master-detail selection (split layout). The right pane follows this; falls
   // back to the first visible entity so there's always something previewed.
@@ -319,15 +332,15 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={() => configure.start(newConfigPrompt(kind))}
-              disabled={configure.pending}
+              onClick={handleCreate}
+              disabled={createPending}
             >
-              {configure.pending ? (
+              {createPending ? (
                 <Loading className="size-3.5 shrink-0" />
               ) : (
-                <Plus className="size-3.5 shrink-0" />
+                <CreateIcon className="size-3.5 shrink-0" />
               )}
-              Create {noun}
+              {createLabel === 'New' ? `Create ${noun}` : createLabel}
             </Button>
           ) : null}
           {emptyDocsHref ? (
@@ -620,18 +633,13 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
           {canWrite ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => configure.start(newConfigPrompt(kind))}
-              disabled={configure.pending}
-            >
-              {configure.pending ? (
+            <Button size="sm" variant="secondary" onClick={handleCreate} disabled={createPending}>
+              {createPending ? (
                 <Loading className="size-4 shrink-0" />
               ) : (
-                <Plus className="size-4" />
+                <CreateIcon className="size-4" />
               )}
-              New
+              {createLabel}
             </Button>
           ) : null}
         </div>
