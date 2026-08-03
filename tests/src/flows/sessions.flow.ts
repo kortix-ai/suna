@@ -768,7 +768,10 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.sharedSeededProject();
+    // Warm-session availability is project-wide mutable state. An isolated
+    // seeded project keeps another flow's warm pool from making this flow's
+    // first ensure look like a reuse.
+    const p = await ctx.fixtures.project({ seed: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
 
