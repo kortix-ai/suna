@@ -10,14 +10,20 @@
  * "Done" step so the rail terminates instead of trailing off.
  */
 
-import { CaretRightIcon, CheckCircleIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import {
+  CaretRightIcon,
+  CheckCircleIcon,
+  ClockCounterClockwiseIcon,
+  WarningIcon,
+} from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { partOutcome, ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
-import { isReasoningPart, type Part } from '@/ui';
+import { isReasoningPart, isToolPart, type Part } from '@/ui';
 import { ActivityStep } from './activity-step';
 import { burstTitle } from './burst-title';
 import { flattenThought, mergeBurstSteps } from './merge-steps';
@@ -38,16 +44,28 @@ export function burstIsRunning(parts: ReadonlyArray<Part>, working: boolean): bo
 }
 
 /**
- * True when the chain gets its closing "Done" step.
+ * True when the chain gets its closing step.
  *
  * Two clauses, both about not lying to the reader:
  *   - A running burst has no cap. The open end IS the signal that more is
  *     coming; capping it would claim the work finished while it is mid-flight.
  *   - An empty chain has no cap. When every part was plumbing the body renders
- *     nothing, and a lone "Done" with no steps above it terminates nothing.
+ *     nothing, and a lone cap with no steps above it terminates nothing.
  */
-export function showsDoneStep(stepCount: number, running: boolean): boolean {
+export function showsClosingStep(stepCount: number, running: boolean): boolean {
   return stepCount > 0 && !running;
+}
+
+/**
+ * How many tool calls in this burst failed or half-failed.
+ *
+ * The cap used to read "Done" for every settled burst, including one whose only
+ * step was a dead host — so the chain closed by asserting success over a
+ * failure the reader had to expand a card to find. Reasoning parts are not
+ * counted: a thought has no verdict to report.
+ */
+export function burstFailureCount(parts: ReadonlyArray<Part>): number {
+  return parts.filter((part) => isToolPart(part) && partOutcome(part) !== 'ok').length;
 }
 
 export function ActivityBurst({
@@ -74,6 +92,7 @@ export function ActivityBurst({
 
   const steps = useMemo(() => mergeBurstSteps(parts, (p) => stepLabel(p).tier), [parts]);
   const title = useMemo(() => burstTitle(parts, running), [parts, running]);
+  const failures = useMemo(() => (running ? 0 : burstFailureCount(parts)), [parts, running]);
 
   if (parts.length === 0) return null;
 
@@ -101,6 +120,18 @@ export function ActivityBurst({
           )}
         >
           <span className="min-w-0 truncate">{title}</span>
+          {/* A settled burst collapses itself, so without this mark a failed
+					    step is reachable only by a reader who happens to expand a line
+					    that reads "Scraped 1 page". The glyph is the same one the failed
+					    row carries inside; it sits before the caret so the caret keeps
+					    its job as the affordance. */}
+          {failures > 0 && (
+            <WarningIcon
+              weight="fill"
+              aria-label={failures === 1 ? '1 step failed' : `${failures} steps failed`}
+              className={cn('size-3.5 flex-none', STATUS_TEXT.destructive)}
+            />
+          )}
           <CaretRightIcon
             className={cn(
               'text-muted-foreground/40 size-3.5 flex-none',
@@ -149,17 +180,34 @@ export function ActivityBurst({
               {/* The closing step. It is a step, not a footer, so `ChainOfThought`
 							    hands it `isLast` and the rail above it finally has somewhere to
 							    land — the chain reads as terminated rather than trailing off.
-							    Monochrome, at the same scale as every other row: the cap is
+							    Success is monochrome, at the same scale as every row: the cap is
 							    punctuation, and a success-green check would out-weigh the work it
-							    closes on every burst the reader opens. */}
-              {showsDoneStep(steps.length, running) && (
+							    closes on every burst the reader opens.
+								    Failure is the one thing that earns colour here. "Done" over a
+								    burst that lost a page is a false summary of the chain it
+								    terminates, and it is the LAST line the reader sees. */}
+              {showsClosingStep(steps.length, running) && (
                 <ChainOfThoughtStep key="done">
                   <div className="flex min-w-0 items-center gap-3">
-                    <CheckCircleIcon
-                      weight="fill"
-                      className="text-muted-foreground size-4 flex-none"
-                    />
-                    <span className="text-muted-foreground text-sm leading-[1.5]">Done</span>
+                    {failures > 0 ? (
+                      <>
+                        <WarningIcon
+                          weight="fill"
+                          className={cn('size-4 flex-none', STATUS_TEXT.destructive)}
+                        />
+                        <span className="text-muted-foreground text-sm leading-[1.5]">
+                          {failures === 1 ? '1 step failed' : `${failures} steps failed`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircleIcon
+                          weight="fill"
+                          className="text-muted-foreground size-4 flex-none"
+                        />
+                        <span className="text-muted-foreground text-sm leading-[1.5]">Done</span>
+                      </>
+                    )}
                   </div>
                 </ChainOfThoughtStep>
               )}

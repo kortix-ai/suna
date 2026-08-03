@@ -3,19 +3,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
- * There is no ⌘I / Ctrl+I shortcut. Owner direction: each panel is opened by
- * its own control and by nothing else.
+ * ⌘I / Ctrl+I toggles the action-panel column beside the chat.
  *
- * It used to toggle the right-hand panel. That panel is content-driven now — it
- * opens because something gave it a terminal, a browser, a file or a step to
- * show, and closes with its own X or Escape, so there is no "open it empty"
- * state for a key to reach. The floating action panel has its chevron in the
- * chat. Neither needs a hotkey, and a hotkey that opened one of them would be a
- * second, invisible way to reach a surface that already has a visible one.
+ * It used to toggle the right-hand detail panel. That panel is content-driven
+ * now — it opens because something gave it a terminal, a browser, a file or a
+ * step to show — so the binding moved to the action panel, which still has an
+ * empty-open state the chevron (and this key) can reach.
  *
  * Source assertions rather than a mounted layout: `session-layout.tsx` needs the
- * whole session runtime to render, and what is worth pinning is that no binding
- * exists at all. Same approach, and same reason, as
+ * whole session runtime to render, and what is worth pinning is where the
+ * binding lives. Same approach, and same reason, as
  * `header/session-site-header.test.tsx`.
  */
 const layout = readFileSync(
@@ -27,26 +24,33 @@ const column = readFileSync(
   'utf8',
 );
 
-describe('no panel keyboard shortcut', () => {
-  test('the layout binds no i-key handler', () => {
+describe('⌘I toggles the action panel column', () => {
+  test('the column binds mod+i and registers a keydown listener', () => {
+    expect(column).toContain("e.key === 'i'");
+    expect(column).toContain("e.key === 'I'");
+    expect(column).toContain('shouldHandleHotkey');
+    expect(column).toContain("addEventListener('keydown'");
+    expect(column).toContain('toggle()');
+  });
+
+  test('only the active session tab owns the shortcut', () => {
+    expect(column).toContain('isInTabSystem ? isActiveTab : true');
+    expect(column).toContain('useTabStore');
+  });
+
+  test('the layout does not also bind the same key', () => {
     expect(layout).not.toContain("e.key === 'i'");
     expect(layout).not.toContain("e.key === 'I'");
     expect(layout).not.toContain('shouldHandleHotkey');
-  });
-
-  test('the layout registers no keydown listener at all', () => {
     expect(layout).not.toContain("addEventListener('keydown'");
   });
 
-  test('nothing advertises a shortcut on either panel control', () => {
-    // The Advanced-mode panel header used to render a `⌘I` Kbd beside its
-    // "Open/Close panel" tooltip, and the chevron briefly carried one too.
-    expect(layout).not.toContain('<Kbd');
-    expect(layout).not.toContain('line185JsxTextI');
-    expect(column).not.toContain('<Kbd');
+  test('the chevron advertises the shortcut', () => {
+    expect(column).toContain('<Kbd');
+    expect(column).toContain('modSymbol');
   });
 
-  test('the chevron is the floating panel only opener', () => {
+  test('the chevron still toggles the floating panel', () => {
     expect(column).toContain('useToggleActionPanel');
     expect(column).toContain('CaretDoubleLeftIcon');
     expect(column).toContain('CaretDoubleRightIcon');

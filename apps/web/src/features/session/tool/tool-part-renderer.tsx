@@ -7,10 +7,12 @@ import { GenericTool } from '@/features/session/tool/generic-tool';
 import {
   BasicTool,
   BoundActivateContext,
+  partOutcome,
   StalePendingContext,
   ToolActivateContext,
   ToolDurationContext,
   ToolNavigationContext,
+  ToolOutcomeContext,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
@@ -23,7 +25,6 @@ import {
   type QuestionRequest,
   type ToolPart,
 } from '@/ui';
-import { WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -124,6 +125,12 @@ export function ToolPartRenderer({
   const surface = useContext(ToolSurfaceContext);
   const fillsPanel = surface === 'panel' && (part.tool === 'show' || part.tool === 'show-user');
 
+  // One verdict per part, computed once here and read by every BasicTool below
+  // it. See `partOutcome` — a tool that RETURNS its error looks identical to a
+  // tool that threw as far as the reader is concerned, so it must look
+  // identical on the row too.
+  const outcome = useMemo(() => partOutcome(part), [part]);
+
   if (part.tool === 'todoread') return null;
 
   if (part.state.status === 'error' && 'error' in part.state) {
@@ -136,21 +143,25 @@ export function ToolPartRenderer({
       return { display: d, server: s };
     })();
 
+    // No `icon` prop: the outcome context supplies the same warning triangle a
+    // tool that returned its error gets. A thrown call and a returned error are
+    // the same event to the reader, so they must not be two different marks.
     return (
       <BoundActivateContext.Provider value={boundActivate}>
-        <ToolDurationContext.Provider value={toolDurationMs}>
-          <BasicTool
-            icon={<CircleAlert className="text-muted-foreground size-4" />}
-            trigger={{
-              title: display,
-              subtitle: 'failed',
-              args: server ? [server] : undefined,
-            }}
-            badge="error"
-          >
-            <ToolError error={errorStr} toolName={part.tool} />
-          </BasicTool>
-        </ToolDurationContext.Provider>
+        <ToolOutcomeContext.Provider value={outcome}>
+          <ToolDurationContext.Provider value={toolDurationMs}>
+            <BasicTool
+              trigger={{
+                title: display,
+                subtitle: 'failed',
+                args: server ? [server] : undefined,
+              }}
+              badge="error"
+            >
+              <ToolError error={errorStr} toolName={part.tool} />
+            </BasicTool>
+          </ToolDurationContext.Provider>
+        </ToolOutcomeContext.Provider>
       </BoundActivateContext.Provider>
     );
   }
@@ -184,31 +195,33 @@ export function ToolPartRenderer({
   return (
     <ToolNavigationContext.Provider value={!disableNavigation}>
       <ToolRunningContext.Provider value={isRunning}>
-        <ToolDurationContext.Provider value={toolDurationMs}>
-          <StalePendingContext.Provider value={isStalePending}>
-            <BoundActivateContext.Provider value={boundActivate}>
-              <div className={cn('relative', fillsPanel && 'h-full')}>
-                {toolElement}
+        <ToolOutcomeContext.Provider value={outcome}>
+          <ToolDurationContext.Provider value={toolDurationMs}>
+            <StalePendingContext.Provider value={isStalePending}>
+              <BoundActivateContext.Provider value={boundActivate}>
+                <div className={cn('relative', fillsPanel && 'h-full')}>
+                  {toolElement}
 
-                {permission && onPermissionReply && (
-                  <div className="mt-1.5">
-                    <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
-                  </div>
-                )}
+                  {permission && onPermissionReply && (
+                    <div className="mt-1.5">
+                      <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                    </div>
+                  )}
 
-                {question && onQuestionReply && onQuestionReject && (
-                  <div className="mt-1.5">
-                    <QuestionPrompt
-                      request={question}
-                      onReply={onQuestionReply}
-                      onReject={onQuestionReject}
-                    />
-                  </div>
-                )}
-              </div>
-            </BoundActivateContext.Provider>
-          </StalePendingContext.Provider>
-        </ToolDurationContext.Provider>
+                  {question && onQuestionReply && onQuestionReject && (
+                    <div className="mt-1.5">
+                      <QuestionPrompt
+                        request={question}
+                        onReply={onQuestionReply}
+                        onReject={onQuestionReject}
+                      />
+                    </div>
+                  )}
+                </div>
+              </BoundActivateContext.Provider>
+            </StalePendingContext.Provider>
+          </ToolDurationContext.Provider>
+        </ToolOutcomeContext.Provider>
       </ToolRunningContext.Provider>
     </ToolNavigationContext.Provider>
   );
