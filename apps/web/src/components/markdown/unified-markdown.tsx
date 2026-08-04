@@ -11,7 +11,7 @@ import {
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
-import { isInternalUrl, isLinkSafeHref } from '@/components/markdown/unified-markdown-utils';
+import { isInternalUrl, shouldUseNextLink } from '@/components/markdown/unified-markdown-utils';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -122,10 +122,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             '[overflow-wrap:anywhere]',
           );
 
-          // A malformed absolute href (e.g. `http://:` from an unsubstituted
-          // `${HOST}:${PORT}` template in content) must not reach next/link —
-          // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).
-          if (!isLinkSafeHref(resolvedHref)) {
+          // Markdown can contain arbitrary same-origin absolute URLs. Next.js
+          // treats those as app routes and prefetches them, including typos such
+          // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
+          // the app router; every other href stays a plain anchor.
+          if (!shouldUseNextLink(resolvedHref)) {
             return (
               <a
                 href={resolvedHref}
