@@ -193,11 +193,6 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         {filtered.map((skill) => (
           <CatalogCard
             key={skill.path}
-            leading={
-              <span className="bg-primary/[0.06] flex size-9 shrink-0 items-center justify-center rounded-sm">
-                <SparkleIcon className="size-5" />
-              </span>
-            }
             title={skill.name}
             description={skill.description}
             onClick={() => setSelectedPath(skill.path)}

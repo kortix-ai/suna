@@ -750,7 +750,7 @@ export function ConnectorAppIcon({
           referrerPolicy="no-referrer"
           fill
           sizes={size === 'lg' ? '40px' : '28px'}
-          className="object-contain p-1"
+          className="object-contain"
           unoptimized
         />
       </span>

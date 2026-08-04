@@ -1,6 +1,18 @@
 import type { AdminConnector } from '@kortix/sdk';
 
-export type ConnectorScope = 'project' | 'browse' | 'attention';
+/**
+ * The three tabs.
+ *
+ * Two used to be here and are gone for the same reason: a tab that hides part
+ * of the list makes the list you are looking at never the whole list.
+ *
+ * `attention` became a sort key inside `connected` (`compareConnectors`) plus
+ * a badge on the card — a connector that needs setting up is still one of your
+ * connectors. `available` was the catalogue minus what the project already
+ * has, which only ever removed cards the other tabs already mark `✓`; see
+ * `SCOPES` in `connectors-page.tsx`.
+ */
+export type ConnectorScope = 'discover' | 'all' | 'connected';
 
 /**
  * A connector the user has to act on: the server flagged it, or it declares a
@@ -13,26 +25,18 @@ export function connectorNeedsAttention(c: AdminConnector): boolean {
 }
 
 /**
- * Land on what the user most likely came for: their own connectors if they have
- * any, the catalog if the project is empty. Perplexity always opens on Discover,
- * which buries the list for every project past its first day.
+ * Land on what the user most likely came for: their own connectors if they
+ * have any, the catalogue if the project is empty.
  *
- * `browseEnabled` mirrors the project's `connectors_api_discover` flag. Browse
- * reads an experimental catalog, so a project without the flag has no Browse
- * tab at all — and therefore cannot default to it. Such a project lands on its
- * own list instead, which is empty and invites "Add connector". That is
- * truthful: discovery really is off for them.
- *
- * This **fails closed**: `browse` requires an explicit `browseEnabled: true`.
- * An omitted or unknown flag means no browse. Gating an experimental surface
- * is not something a caller should get by forgetting an argument.
+ * Unlike the scope model this replaces, the fallback is NOT gated on an
+ * experimental flag. `useCatalog` always resolves to a populated source —
+ * Discover where `connectors_api_discover` is on, Easy Connect everywhere else
+ * — so `discover` is a safe landing for every project rather than a tab that
+ * may not exist. Perplexity always opens on its catalogue, which buries the
+ * list for every project past its first day; this does not.
  */
-export function defaultConnectorScope(
-  connectors: readonly AdminConnector[],
-  opts: { browseEnabled?: boolean } = {},
-): ConnectorScope {
-  if (connectors.length > 0) return 'project';
-  return opts.browseEnabled === true ? 'browse' : 'project';
+export function defaultConnectorScope(connectors: readonly AdminConnector[]): ConnectorScope {
+  return connectors.length > 0 ? 'connected' : 'discover';
 }
 
 /**
@@ -65,30 +69,47 @@ export function connectorSummary(
 }
 
 /**
+ * Anything the user has to act on floats to the top; everything else is
+ * alphabetical.
+ *
+ * This is what replaced the Needs-attention tab. A tab hid the healthy
+ * connectors from the broken ones and vice versa, and forced a choice about
+ * which list you were reading. Sorting keeps one list and still puts the
+ * broken ones where the eye lands first, next to the badge that says why.
+ *
+ * `localeCompare` rather than `<`, so `Ärendehantering` sorts next to `A…`
+ * instead of after `Z…`.
+ */
+export function compareConnectors(a: AdminConnector, b: AdminConnector): number {
+  const attention = Number(connectorNeedsAttention(b)) - Number(connectorNeedsAttention(a));
+  if (attention !== 0) return attention;
+  return connectorDisplayName(a).localeCompare(connectorDisplayName(b));
+}
+
+/**
+ * The project's own connectors, narrowed by the search box and ordered by
+ * `compareConnectors`.
+ *
+ * There is no `scope` parameter any more. The three catalogue tabs are served
+ * by `useCatalog`, which searches server-side across the whole catalogue —
+ * only this list is filtered on the client, because it is fully loaded.
+ *
  * `describe` is the card's own visible description — the page passes
  * `connectorSummary(...)`, which is what the user is actually reading. Without
  * it, typing `openapi` reported "No matches for openapi" while every card on
  * screen ended in that exact word. Skills (`skill-scope.ts`) and Commands
  * (`command-filter.ts`) already match name + description; this is the same
- * contract.
- *
- * It is a callback rather than a field because the description is composed
- * from `providerLabel`, which lives in `connectors-view.tsx` — a 5,200-line
- * client component this framework-free module must not import. Omitting it
- * narrows the search to slug + name; it never widens it.
+ * contract. Omitting it narrows the search to slug + name; it never widens it.
  */
 export function filterConnectors(
   connectors: readonly AdminConnector[],
   opts: {
-    scope: ConnectorScope;
     query: string;
     describe?: (connector: AdminConnector) => string;
   },
 ): AdminConnector[] {
-  if (opts.scope === 'browse') return [];
   const q = opts.query.trim().toLowerCase();
-  return connectors.filter((c) => {
-    if (opts.scope === 'attention' && !connectorNeedsAttention(c)) return false;
+  const matched = connectors.filter((c) => {
     if (!q) return true;
     return (
       c.slug.toLowerCase().includes(q) ||
@@ -96,4 +117,5 @@ export function filterConnectors(
       (opts.describe?.(c) ?? '').toLowerCase().includes(q)
     );
   });
+  return matched.sort(compareConnectors);
 }

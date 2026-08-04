@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
 import type { AdminConnector } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import {
+  compareConnectors,
   connectorNeedsAttention,
   connectorSummary,
   defaultConnectorScope,
@@ -41,25 +42,14 @@ describe('connectorNeedsAttention', () => {
 
 describe('defaultConnectorScope', () => {
   test('lands on the project list when the project has connectors', () => {
-    expect(defaultConnectorScope([conn()])).toBe('project');
+    expect(defaultConnectorScope([conn()])).toBe('connected');
   });
-  // `connectors_api_discover` is off by default, and the catalog Browse reads
-  // is an experimental surface. With no Browse tab to land on, an empty
-  // project lands on its own (empty) list, which invites "Add connector".
-  test('lands on browse when the project has none and browse is available', () => {
-    expect(defaultConnectorScope([], { browseEnabled: true })).toBe('browse');
-  });
-  test('falls back to the project list when browse is unavailable', () => {
-    expect(defaultConnectorScope([], { browseEnabled: false })).toBe('project');
-  });
-  // Fails CLOSED. Gating an experimental surface must not be something a
-  // caller gets by forgetting an argument.
-  test('an omitted flag means no browse, not browse', () => {
-    expect(defaultConnectorScope([])).toBe('project');
-    expect(defaultConnectorScope([], {})).toBe('project');
-  });
-  test('a project with connectors is unaffected by the browse flag', () => {
-    expect(defaultConnectorScope([conn()], { browseEnabled: false })).toBe('project');
+  // No flag argument any more. `useCatalog` always resolves to a populated
+  // source — Discover where `connectors_api_discover` is on, Easy Connect
+  // everywhere else — so Discover is a safe landing for every project. The
+  // old signature had to fail closed because the tab it named might not exist.
+  test('an empty project lands on the catalogue, unconditionally', () => {
+    expect(defaultConnectorScope([])).toBe('discover');
   });
 });
 
@@ -79,23 +69,51 @@ describe('connectorSummary', () => {
   });
 });
 
+describe('compareConnectors', () => {
+  const healthy = conn({ slug: 'asana', name: 'Asana' });
+  const broken = conn({ slug: 'zoom', name: 'Zoom', status: 'error' });
+
+  // The whole reason the Needs-attention tab could be deleted: the signal it
+  // carried survives as position. If this stops holding, a broken connector
+  // sinks to the bottom of a long list and the tab has to come back.
+  test('anything needing attention sorts before anything healthy', () => {
+    expect([healthy, broken].sort(compareConnectors).map((c) => c.slug)).toEqual(['zoom', 'asana']);
+  });
+  test('two connectors in the same state sort by display name', () => {
+    const linear = conn({ slug: 'a', name: 'Linear' });
+    const gmail = conn({ slug: 'b', name: 'Gmail' });
+    expect([linear, gmail].sort(compareConnectors).map((c) => c.name)).toEqual(['Gmail', 'Linear']);
+  });
+  // `connectorDisplayName` falls back to the slug, so a nameless connector
+  // still has something to sort on rather than collapsing to ''.
+  test('a connector with no name sorts on its slug', () => {
+    const named = conn({ slug: 'a', name: 'Zoom' });
+    const nameless = conn({ slug: 'gmail', name: '' });
+    expect([named, nameless].sort(compareConnectors).map((c) => c.slug)).toEqual(['gmail', 'a']);
+  });
+});
+
 describe('filterConnectors', () => {
   const all = [conn(), conn({ slug: 'gmail', name: 'Gmail', status: 'error' })];
 
-  test('project scope returns every added connector', () => {
-    expect(filterConnectors(all, { scope: 'project', query: '' })).toHaveLength(2);
+  // There is no `scope` any more — this list is only ever the project's own
+  // connectors, and it is never partitioned.
+  test('returns every added connector, healthy or not', () => {
+    expect(filterConnectors(all, { query: '' })).toHaveLength(2);
   });
-  test('attention scope returns only the unhealthy ones', () => {
-    expect(filterConnectors(all, { scope: 'attention', query: '' }).map((c) => c.slug)).toEqual([
-      'gmail',
-    ]);
+  test('orders by compareConnectors, not by input order', () => {
+    expect(filterConnectors(all, { query: '' }).map((c) => c.slug)).toEqual(['gmail', 'linear']);
   });
   test('query matches name and slug, case-insensitively', () => {
-    expect(filterConnectors(all, { scope: 'project', query: 'GMA' }).map((c) => c.slug)).toEqual([
-      'gmail',
-    ]);
+    expect(filterConnectors(all, { query: 'GMA' }).map((c) => c.slug)).toEqual(['gmail']);
   });
-  test('browse scope returns nothing from the added list', () => {
-    expect(filterConnectors(all, { scope: 'browse', query: '' })).toHaveLength(0);
+  test('query matches the description the card actually shows', () => {
+    const describe_ = (c: AdminConnector) => connectorSummary(c, 'OpenAPI');
+    expect(filterConnectors(all, { query: 'openapi', describe: describe_ })).toHaveLength(2);
+  });
+  test('does not mutate the caller’s array', () => {
+    const input = [...all];
+    filterConnectors(input, { query: '' });
+    expect(input.map((c) => c.slug)).toEqual(['linear', 'gmail']);
   });
 });

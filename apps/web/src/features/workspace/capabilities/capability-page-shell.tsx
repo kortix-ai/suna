@@ -5,11 +5,9 @@ import type { ReactNode } from 'react';
 interface CapabilityPageShellProps {
   title: string;
   description: string;
-  /** Primary page-level action (e.g. "New"), rendered in the header row
-   *  beside the title/description — same treatment as
-   *  `CustomizeSectionWrapper`'s `action` prop (`mt-2 shrink-0 sm:mt-0`,
-   *  opposite the heading). Optional: omitting it renders the header exactly
-   *  as before this prop existed. */
+  /** Page-level action(s) — a single button, or a cluster of them. Rendered
+   *  in the header's right-hand group, **after** `search`. Pass several by
+   *  wrapping them in one element; the shell does not space them for you. */
   action?: ReactNode;
   search?: ReactNode;
   filters?: ReactNode;
@@ -22,6 +20,11 @@ interface CapabilityPageShellProps {
  * `CustomizeSectionWrapper`'s `max-w-2xl` — a 3-up card grid does not fit in
  * `max-w-2xl`. These are standalone routed pages, not Customize sections; do
  * not reuse or edit `section-wrapper.tsx` for them.
+ *
+ * This element — not the window — is the page's scroll container. Nothing
+ * observes it today; if something ever needs to, it has to be handed this
+ * element rather than the viewport, because the `(capabilities)` layout wraps
+ * it in `overflow-hidden` and a clipped target intersects nothing.
  */
 export function CapabilityPageShell({
   title,
@@ -39,8 +42,16 @@ export function CapabilityPageShell({
             <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
             <p className="text-muted-foreground text-sm text-balance">{description}</p>
           </div>
-          {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
-          {search ? <div className="w-full shrink-0 sm:max-w-xs">{search}</div> : null}
+          {/* Search and action are ONE right-hand group, search first. As three
+              loose children of a `justify-between` row, `action` was pushed to
+              the middle of the header — visually detached from both the
+              heading it did not belong to and the search it sat next to. */}
+          {search || action ? (
+            <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+              {search ? <div className="min-w-0 flex-1 sm:w-64 sm:flex-none">{search}</div> : null}
+              {action}
+            </div>
+          ) : null}
         </header>
         {filters ? (
           <div className="flex flex-wrap items-center justify-between gap-2">{filters}</div>
