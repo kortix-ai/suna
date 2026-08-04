@@ -9,45 +9,41 @@ import React, { useEffect, useState } from 'react';
 import {
   highlightAsync,
   highlightSync,
-  MARKDOWN_THEME,
   SHIKI_RESET,
-  type CodeTheme,
+  SHIKI_THEME_DARK,
+  SHIKI_THEME_LIGHT,
+  type CodeThemeName,
 } from './shiki-highlighter';
 
 export function HighlightedCode({
   code,
   language,
-  theme = MARKDOWN_THEME,
   children = code,
 }: {
   code: string;
   language: string;
-  /** Palette. Defaults to MARKDOWN_THEME. */
-  theme?: CodeTheme;
   /** Plain-text fallback before the grammar is ready. Defaults to `code`. */
   children?: React.ReactNode;
 }) {
   const { resolvedTheme } = useTheme();
-  // The half of the pair the engine resolves to a name — the engine keys its
-  // cache and its `codeToHtml` call by that name, and loads the registration
-  // object behind it on demand.
-  const themeInput = resolvedTheme === 'dark' ? theme.dark : theme.light;
-  const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, themeInput));
+  // Which half of the one palette to draw. There is no third option.
+  const theme: CodeThemeName = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
+  const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, theme));
 
   useEffect(() => {
-    const sync = highlightSync(code, language, themeInput);
+    const sync = highlightSync(code, language, theme);
     if (sync) {
       setHtml(sync);
       return;
     }
     let alive = true;
-    highlightAsync(code, language, themeInput).then((result) => {
+    highlightAsync(code, language, theme).then((result) => {
       if (alive && result) setHtml(result);
     });
     return () => {
       alive = false;
     };
-  }, [code, language, themeInput]);
+  }, [code, language, theme]);
 
   if (html) {
     return <code className={SHIKI_RESET} dangerouslySetInnerHTML={{ __html: html }} />;
@@ -101,18 +97,15 @@ export function CodeBlock({
 export function CodeHighlight({
   code,
   language,
-  theme,
   className,
 }: {
   code: string;
   language: string;
-  /** Palette. Defaults to MARKDOWN_THEME. */
-  theme?: CodeTheme;
   className?: string;
 }) {
   return (
     <CodeBlock code={code} language={language} className={cn('my-0', className)}>
-      <HighlightedCode code={code} language={language} theme={theme} />
+      <HighlightedCode code={code} language={language} />
     </CodeBlock>
   );
 }

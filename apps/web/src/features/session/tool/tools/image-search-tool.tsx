@@ -8,6 +8,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { ImageIcon } from '@phosphor-icons/react';
@@ -111,8 +112,8 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       {status === 'completed' && isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="image_search" />
       ) : imageResults.length > 0 ? (
-        <div data-scrollable className="scrollbar-hide max-h-80 overflow-auto p-2">
-          <div className="grid grid-cols-3 gap-1.5">
+        <ToolResultCard>
+          <div className="grid grid-cols-3 gap-1.5 p-1">
             {imageResults.slice(0, 9).map((img: any, i: number) => {
               const imgUrl = safeHttpUrl(img.url || img.imageUrl || img.image_url || '');
               if (!imgUrl) return null;
@@ -123,7 +124,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
                   href={imgUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group relative aspect-square overflow-hidden"
+                  className="group relative aspect-square overflow-hidden rounded-sm"
                   title={title}
                 >
                   <img
@@ -141,7 +142,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
               );
             })}
           </div>
-        </div>
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback
           output={output.slice(0, 3000)}

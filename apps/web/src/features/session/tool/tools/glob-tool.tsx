@@ -102,11 +102,14 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </ToolResultCard>
       ) : isNoResults ? (
+        <ToolResultCard>
+
         <ToolEmptyState
           message={tHardcodedUi.raw(
             'componentsSessionToolRenderers.line3420JsxAttrMessageNoMatchingFilesFound',
           )}
-        />
+          />
+          </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="glob" />
       ) : null}

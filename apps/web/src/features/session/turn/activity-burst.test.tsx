@@ -1,6 +1,6 @@
 import type { Part, ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
-import { burstIsRunning, showsDoneStep } from './activity-burst';
+import { burstFailureCount, burstIsRunning, showsClosingStep } from './activity-burst';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
   return {
@@ -64,19 +64,87 @@ describe('burstIsRunning', () => {
   });
 });
 
-describe('showsDoneStep', () => {
-  test('a settled chain with steps closes on Done', () => {
-    expect(showsDoneStep(1, false)).toBe(true);
-    expect(showsDoneStep(9, false)).toBe(true);
+describe('showsClosingStep', () => {
+  test('a settled chain with steps gets a cap', () => {
+    expect(showsClosingStep(1, false)).toBe(true);
+    expect(showsClosingStep(9, false)).toBe(true);
   });
 
   test('a running chain is never capped — the open end means work continues', () => {
-    expect(showsDoneStep(3, true)).toBe(false);
+    expect(showsClosingStep(3, true)).toBe(false);
   });
 
-  test('an empty chain is never capped — Done alone terminates nothing', () => {
+  test('an empty chain is never capped — a cap alone terminates nothing', () => {
     // Every part was plumbing, so mergeBurstSteps returned no rows.
-    expect(showsDoneStep(0, false)).toBe(false);
-    expect(showsDoneStep(0, true)).toBe(false);
+    expect(showsClosingStep(0, false)).toBe(false);
+    expect(showsClosingStep(0, true)).toBe(false);
+  });
+});
+
+describe('burstFailureCount', () => {
+  const SCRAPE_PARTIAL = JSON.stringify({
+    total: 3,
+    successful: 2,
+    failed: 1,
+    results: [
+      { url: 'https://a.test', success: true, content: 'ok' },
+      { url: 'https://b.test', success: true, content: 'ok' },
+      { url: 'https://example.invalid', success: false, error: 'ENOTFOUND' },
+    ],
+  });
+
+  test('a clean burst has no failures', () => {
+    const parts: Part[] = [
+      tool('1', 'read', {
+        status: 'completed',
+        output: 'file contents',
+        time: { start: 1, end: 2 },
+      }),
+    ];
+    expect(burstFailureCount(parts)).toBe(0);
+  });
+
+  test('counts a thrown call', () => {
+    const parts: Part[] = [tool('1', 'bash', { status: 'error', error: 'Error: boom' })];
+    expect(burstFailureCount(parts)).toBe(1);
+  });
+
+  test('counts a call that RETURNED its error — the case the cap used to call Done', () => {
+    const parts: Part[] = [
+      tool('1', 'scrape_webpage', {
+        status: 'completed',
+        output: 'Error: DNS lookup failed for example.invalid (ENOTFOUND).',
+        time: { start: 1, end: 2 },
+      }),
+    ];
+    expect(burstFailureCount(parts)).toBe(1);
+  });
+
+  test('counts a batch where one of three URLs died', () => {
+    const parts: Part[] = [
+      tool('1', 'scrape_webpage', {
+        status: 'completed',
+        output: SCRAPE_PARTIAL,
+        time: { start: 1, end: 2 },
+      }),
+    ];
+    expect(burstFailureCount(parts)).toBe(1);
+  });
+
+  test('a reasoning part has no verdict and is never counted', () => {
+    const parts: Part[] = [
+      {
+        id: 'r',
+        type: 'reasoning',
+        text: 'thinking',
+        time: { start: 1, end: 2 },
+      } as unknown as Part,
+    ];
+    expect(burstFailureCount(parts)).toBe(0);
+  });
+
+  test('an in-flight call is not a failure yet', () => {
+    const parts: Part[] = [tool('1', 'bash', { status: 'running' })];
+    expect(burstFailureCount(parts)).toBe(0);
   });
 });

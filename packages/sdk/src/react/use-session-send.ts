@@ -209,6 +209,10 @@ export type SendAndRecoverResult =
  */
 export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndRecoverResult> {
   try {
+    // The message is now the server's problem too. Until this point it was
+    // `pending`, and `hydrate` refuses to let a pending message be superseded
+    // by an ordinal match — see `markOptimisticDispatched`.
+    useSyncStore.getState().markOptimisticDispatched(args.sessionId, args.messageId);
     await promptOpenCodeMessage({
       sessionId: args.sessionId,
       parts: args.parts,
@@ -405,6 +409,7 @@ export function replayStartStash<TReady>(
         return;
       }
       try {
+        useSyncStore.getState().markOptimisticDispatched(sessionId, prepared.messageId);
         await promptOpenCodeMessage({ sessionId, parts, options: prepared.sendOptions });
         if (!cancelled) onSuccess?.(stash);
       } catch (err) {

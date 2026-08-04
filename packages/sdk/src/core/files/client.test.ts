@@ -174,3 +174,111 @@ test('every op accepts an explicit trailing baseUrl, overriding the module-globa
   await F.findFiles('foo', undefined, 'http://other-sandbox.test');
   expect(last().url).toContain('http://other-sandbox.test/find/file?query=foo');
 });
+
+// ── upload: timeouts are not transient ──────────────────────────────────────
+//
+// `Upload failed: signal timed out` on a real attachment. The network-throw
+// path retried EVERYTHING, so a body large enough to blow the 30s deadline
+// blew it on all three attempts and the user waited ~3x the timeout to be told
+// it failed. A timeout is not transient the way a 503 is: re-sending the
+// identical body against the identical budget cannot succeed.
+
+/** What `AbortSignal.timeout()` throws — DOMException, name `TimeoutError`. */
+function timeoutError(): Error {
+  const err = new Error('signal timed out');
+  err.name = 'TimeoutError';
+  return err;
+}
+
+test('an upload that times out fails after ONE attempt, not three', async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async () => {
+    attempts += 1;
+    throw timeoutError();
+  }) as unknown as typeof fetch;
+
+  await expect(F.uploadFile(new Blob(['x']), '/workspace/uploads', 'a.zip')).rejects.toBeInstanceOf(
+    ApiError,
+  );
+  expect(attempts).toBe(1);
+});
+
+test('an aborted upload is not retried either', async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async () => {
+    attempts += 1;
+    const err = new Error('The operation was aborted.');
+    err.name = 'AbortError';
+    throw err;
+  }) as unknown as typeof fetch;
+
+  await expect(F.uploadFile(new Blob(['x']), '/workspace/uploads', 'a.zip')).rejects.toThrow();
+  expect(attempts).toBe(1);
+});
+
+test('a genuinely transient network throw is still retried', async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async () => {
+    attempts += 1;
+    if (attempts < 3) throw new TypeError('fetch failed');
+    return new Response(JSON.stringify([{ path: 'a.zip' }]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await F.uploadFile(new Blob(['x']), '/workspace/uploads', 'a.zip');
+  expect(attempts).toBe(3);
+});
+
+test('a transient STATUS is still retried — the status path was already correct', async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async () => {
+    attempts += 1;
+    if (attempts < 2) {
+      return new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify([{ path: 'a.zip' }]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await F.uploadFile(new Blob(['x']), '/workspace/uploads', 'a.zip');
+  expect(attempts).toBe(2);
+});
+
+// ── upload: the deadline scales with the body ───────────────────────────────
+
+test('a large upload gets a longer deadline than the flat 30s default', async () => {
+  const signals: Array<AbortSignal | null | undefined> = [];
+  globalThis.fetch = mock(async (_input: unknown, init: RequestInit = {}) => {
+    signals.push(init.signal);
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  // 30 MB — comfortably past anything a flat 30s budget can move on a slow link.
+  const big = new Blob([new Uint8Array(30 * 1024 * 1024)]);
+  await F.uploadFile(big, '/workspace/uploads', 'big.zip');
+
+  expect(signals).toHaveLength(1);
+  expect(F.uploadTimeoutMsForBytes(big.size)).toBeGreaterThan(30_000);
+});
+
+test('the deadline is bounded at both ends', () => {
+  // A tiny file must not get a shorter budget than the platform default...
+  expect(F.uploadTimeoutMsForBytes(1)).toBeGreaterThanOrEqual(30_000);
+  // ...and an enormous one must not wedge a handler forever.
+  expect(F.uploadTimeoutMsForBytes(50 * 1024 * 1024 * 1024)).toBeLessThanOrEqual(15 * 60_000);
+  // Monotonic in between.
+  expect(F.uploadTimeoutMsForBytes(100 * 1024 * 1024)).toBeGreaterThan(
+    F.uploadTimeoutMsForBytes(1024 * 1024),
+  );
+});
+
+test('an unknown-size body still gets a usable deadline', () => {
+  expect(F.uploadTimeoutMsForBytes(undefined)).toBeGreaterThanOrEqual(30_000);
+});
