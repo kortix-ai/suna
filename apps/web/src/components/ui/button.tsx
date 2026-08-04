@@ -63,8 +63,9 @@ const buttonVariants = cva(
         icon: 'size-7 ',
         'icon-xs': 'size-6 rounded-sm',
         'icon-sm': 'size-7',
+        'icon-base': 'size-8 rounded-md',
         'icon-md': 'size-9',
-        'icon-lg': 'size-10',
+        'icon-lg': 'size-10 rounded-md',
         'magic-sm': 'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
 
         toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",

@@ -1,4 +1,8 @@
 import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
+import {
+  probeFileAvailability,
+  resetFileAvailability,
+} from '@/features/session/file-availability';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -126,12 +130,49 @@ describe('MarkdownCode — inline code', () => {
     expect(markup).not.toContain('href');
   });
 
-  test('a relative file path is shown as unopenable rather than as a preview target', () => {
+  test('a relative file path is a preview target too — the panel takes that form', () => {
+    // It used to render `cursor-not-allowed` with a `role="button"` wired to
+    // `undefined`: an element announcing itself as a button while doing
+    // nothing. The panel has always accepted project-relative paths — it is
+    // exactly what `useOcFileOpen` hands it — so the affordance was wrong,
+    // not the path.
     const markup = render({ children: 'src/app.ts' });
 
     expect(markup).toContain('role="button"');
-    expect(markup).toContain('relative path (cannot open)');
-    expect(markup).toContain('cursor-not-allowed');
+    expect(markup).toContain('Click to preview src/app.ts');
+    expect(markup).toContain('cursor-pointer');
+    expect(markup).not.toContain('cursor-not-allowed');
+  });
+
+  test('a path is keyboard-reachable, not mouse-only', () => {
+    const markup = render({ children: '/workspace/src/app.ts' });
+
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).toContain('focus-visible:ring-2');
+  });
+
+  test('a path the runtime cannot produce loses its affordance entirely', async () => {
+    // The reported bug: the agent deleted build_comp_xlsx.py, the row
+    // announcing the deletion still painted it hover-blue and `role="button"`,
+    // and clicking it dead-ended the viewer on "This file couldn't be opened".
+    // Seed the verdict the way a hover probe would, then render.
+    resetFileAvailability();
+    await probeFileAvailability('/workspace/build_comp_xlsx.py', {
+      resolve: async (p) => p,
+      read: async () => {
+        throw new Error('ENOENT');
+      },
+    });
+
+    const markup = render({ children: '/workspace/build_comp_xlsx.py' });
+
+    expect(markup).not.toContain('role="button"');
+    expect(markup).not.toContain('cursor-pointer');
+    expect(markup).not.toContain('Click to preview');
+    expect(markup).toContain('not available in this session');
+    expect(markup).toContain('text-muted-foreground');
+
+    resetFileAvailability();
   });
 
   test('a URL becomes a link that opens in a new tab', () => {

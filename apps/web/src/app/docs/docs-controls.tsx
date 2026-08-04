@@ -8,9 +8,9 @@ import {
   SidebarSimpleIcon as PanelLeftIcon,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import type { PageTree } from 'fumadocs-core/server';
-import { SidebarSeparator } from 'fumadocs-ui/components/layout/sidebar';
-import { useSearchContext, useSidebar } from 'fumadocs-ui/provider';
+import type * as PageTree from 'fumadocs-core/page-tree';
+import { SidebarSeparator, useSidebar } from 'fumadocs-ui/components/sidebar/base';
+import { useSearchContext } from 'fumadocs-ui/contexts/search';
 
 // App-Button replacements for fumadocs' built-in sidebar chrome (search
 // toggles, collapse trigger, collapsed floating control) so the docs share

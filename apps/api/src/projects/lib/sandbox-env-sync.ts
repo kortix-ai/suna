@@ -269,7 +269,11 @@ export async function propagateProjectSecretsToActiveSandboxes(
       .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
 
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
-    if (targets.length === 0) return;
+    if (targets.length === 0) {
+      console.info('[env-sync] propagate: no active sandboxes found', { projectId, totalRows: rows.length });
+      return;
+    }
+    console.info('[env-sync] propagate: pushing to sandboxes', { projectId, targetCount: targets.length });
 
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const config = (row.config || {}) as Record<string, unknown>;
