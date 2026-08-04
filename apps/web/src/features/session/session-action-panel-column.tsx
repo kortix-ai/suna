@@ -26,10 +26,12 @@
  * session is the chat plus the one thing being looked at. No state is written
  * for that — closing the detail brings the column back as it was.
  *
- * The chevron is the only way to open it — there is no keyboard shortcut.
+ * ⌘I / Ctrl+I toggles it — same binding the old right-hand panel used, now
+ * aimed at this column. The chevron stays as the visible control.
  */
 
 import Hint from '@/components/ui/hint';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ActionPanel } from '@/features/session/action-panel';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -40,13 +42,19 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
+import { useTabStore } from '@/stores/tab-store';
 import { CaretDoubleLeftIcon, CaretDoubleRightIcon } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
+import { useEffect } from 'react';
 
 /** The panel's open width. The inner content is pinned to it so the cards keep
  *  their true width while the container widens — they slide into view rather
  *  than reflowing from squashed to correct on every frame. */
 const PANEL_WIDTH = 380;
+
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 /**
  * Motion. This is the one place in this work that animates a LAYOUT property,
@@ -74,13 +82,32 @@ export function SessionActionPanelColumn() {
   // this flag is true exactly when one of those is on screen.
   const detailPanelOpen = useIsSidePanelOpen();
 
+  const sessionId = panel?.sessionId;
+  const isInTabSystem = useTabStore((s) => (sessionId ? !!s.tabs[sessionId] : false));
+  const isActiveTab = useTabStore((s) => (sessionId ? s.activeTabId === sessionId : false));
+  // Inactive session tabs stay mounted. Only the visible tab may own ⌘I, or
+  // every background layout would flip the shared `isActionPanelOpen` flag.
+  const shouldHandleHotkey =
+    !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
+
+  useEffect(() => {
+    if (!shouldHandleHotkey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        toggle();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shouldHandleHotkey, toggle]);
+
   // No provider means no panel to render: `SessionChat` also renders read-only
   // inside `sub-session-modal.tsx`, outside `SessionLayout`. Mobile has no
   // column either — at 375px a side column is the whole screen, so the cards
   // stay in the bottom drawer they have always used.
   if (!panel || isMobile) return null;
 
-  const sessionId = panel.sessionId;
   const showReadyDot = readyChip?.sessionId === sessionId && !isOpen;
   const label = isOpen ? 'Collapse pane' : 'Expand pane';
 
@@ -105,7 +132,20 @@ export function SessionActionPanelColumn() {
       )}
       data-testid="session-action-panel"
     >
-      <Hint side="left" sideOffset={4} delayDuration={300} label={label}>
+      <Hint
+        side="left"
+        sideOffset={4}
+        delayDuration={300}
+        label={
+          <span className="flex items-center gap-1.5">
+            {label}
+            <KbdGroup>
+              <Kbd className="font-mono">{modSymbol}</Kbd>
+              <Kbd className="font-mono">I</Kbd>
+            </KbdGroup>
+          </span>
+        }
+      >
         <button
           type="button"
           aria-label={label}

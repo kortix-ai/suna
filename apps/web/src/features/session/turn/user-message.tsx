@@ -379,7 +379,7 @@ const BUBBLE_TEXT = cn(
 );
 
 const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
 );
 
 export interface NormalizedAttachment {
@@ -554,7 +554,11 @@ function AttachmentImage({
  * branch turned a 15-attachment message into 15 filename-width rows stacked
  * against the right edge — roughly 700px of staircase.
  */
-function MessageAttachments({
+/**
+ * Shared attachment strip — used by the real user turn and the optimistic turn
+ * so the shell → chat crossfade never swaps card chrome for tile chrome.
+ */
+export function MessageAttachments({
   attachments,
   pending,
 }: {
@@ -1247,7 +1251,7 @@ export function UserMessage({
               {/* Gradient fade for collapsed long messages. Keyed to `muted`
                   so it dissolves into the bubble it sits on, not the old card. */}
               {canExpand && !expanded && (
-                <div className="from-sidebar pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+                <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
               )}
 
               {/* Expand/collapse indicator */}

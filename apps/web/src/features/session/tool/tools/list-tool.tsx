@@ -58,9 +58,6 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </ToolResultCard>
       ) : isNoResults ? (
-        // "Empty" is still a result the tool returned, so it keeps the same
-        // card the file list gets. Bare, the sentence floated with no edge and
-        // an empty directory read as a rendering failure rather than an answer.
         <ToolResultCard>
           <ToolEmptyState
             message={tHardcodedUi.raw(

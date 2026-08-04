@@ -212,6 +212,34 @@ export interface KortixSendError {
 const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
 
 
+/**
+ * Flip the optimistic message these parts belong to from `pending` to
+ * `dispatched`, resolved by part id.
+ *
+ * A host owns its own optimistic add and therefore its own message id, so
+ * `sendParts` never sees one. It does see the client-generated part ids, which
+ * hosts already send with the prompt so the server's echo updates the same
+ * part — the exact key `hydrate` correlates on. Reusing it here means the two
+ * halves of the handshake agree by construction instead of by convention.
+ *
+ * A no-op when the parts carry no ids or belong to no optimistic message.
+ */
+function markDispatchedForPartIds(sessionId: string, parts: PromptPart[]): void {
+  const partIds = new Set(
+    parts
+      .map((p) => (p as { id?: unknown }).id)
+      .filter((id): id is string => typeof id === 'string' && !!id),
+  );
+  if (partIds.size === 0) return;
+
+  const store = useSyncStore.getState();
+  for (const message of store.messages[sessionId] ?? []) {
+    if (message.role !== 'user') continue;
+    const owns = (store.parts[message.id] ?? []).some((p) => partIds.has(p.id));
+    if (owns) store.markOptimisticDispatched(sessionId, message.id);
+  }
+}
+
 /** The error body, wherever the transport parked it. */
 function errorBody(error: unknown): Record<string, unknown> | null {
   if (!error || typeof error !== 'object') return null;
@@ -725,6 +753,15 @@ export function useSession(
       ...(variant ? { variant } : {}),
       ...(override?.directory ? { directory: override.directory } : {}),
     };
+    // The prompt is going out, so the optimistic message stops being `pending`.
+    // Hosts own the optimistic add (they build the message id themselves), so
+    // this resolves it the same way `hydrate` correlates an echo: by the
+    // client-generated part ids that ride along with the prompt. Until this
+    // lands, `hydrate` refuses to supersede the message on an ordinal match —
+    // which is what keeps it on screen for the whole of a slow upload instead
+    // of being deleted by a rehydrate that only carries older turns.
+    markDispatchedForPartIds(ocSessionId, parts);
+
     await sendRestPromptWithObservation(
       ocSessionId,
       sandbox?.external_id ?? undefined,

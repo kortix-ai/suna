@@ -209,10 +209,9 @@ export const SessionLayout = memo(function SessionLayout({
       }
     };
   }, [transient, isVisibleLayout, sessionId, setActivePanelSession]);
-  // No ⌘I / Ctrl+I binding. The shortcut used to toggle the right-hand panel;
-  // that panel is content-driven now and has no "open it empty" state worth a
-  // key, and the floating action panel has its chevron in the chat. Owner
-  // direction: the panels are opened by their own controls, not by a hotkey.
+  // ⌘I / Ctrl+I lives on `SessionActionPanelColumn` — it toggles the action
+  // panel beside the chat. The right-hand detail panel stays content-driven
+  // (no empty-open state, no hotkey).
 
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -440,8 +439,8 @@ export const SessionLayout = memo(function SessionLayout({
   // title, no view tabs, no mode button, no border. The mode is switched from
   // Settings → Appearance and the command palette. Nothing here is a dead end:
   // the detail card carries its own close button and Escape, which is the only
-  // way this panel closes now — the header toggle is gone and there is no
-  // keyboard shortcut for either panel.
+  // way this panel closes now — the header toggle is gone. ⌘I / Ctrl+I
+  // toggles the action-panel column beside the chat, not this detail panel.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
@@ -625,9 +624,8 @@ function PanelHeaderSwitcher({
       side="bottom"
       sideOffset={4}
       delayDuration={300}
-      // No keyboard hint here any more: there is no panel shortcut at all
-      // (see the note where the ⌘I effect used to live). This button is the
-      // only way to toggle the detail panel in Advanced mode.
+      // No ⌘I hint here: that shortcut toggles the action-panel column, not
+      // this Advanced-mode detail toggle.
       label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
     >
       <Button

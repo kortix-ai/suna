@@ -9,7 +9,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
-  ArrowDownIcon as ArrowDown,
+  CaretDownIcon,
   CheckCircleIcon as CheckCircle,
   CheckIcon,
   CaretDownIcon as ChevronDown,
@@ -100,7 +100,6 @@ import {
   stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -1580,7 +1579,6 @@ export function SessionChat({
   // every open and close of a panel beside it for a value it no longer reads.
   // The action panel column owns its own flag and subscribes to it itself.
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   // ---- Hooks ----
   // runtimeReady gates the session query (it's disabled until the sandbox
@@ -2242,6 +2240,7 @@ export function SessionChat({
     scrollToEnd,
     scrollToAbsoluteBottom,
     smoothScrollToAbsoluteBottom,
+    anchorTurn,
   } = useAutoScroll({
     working: isBusy && !hasActiveQuestion,
     hasContent: messageCount > 0,
@@ -2722,12 +2721,17 @@ export function SessionChat({
       // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
       beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
 
-      // Scroll so the new user message appears at the top of the viewport.
-      // MutationObserver recalcs spacer automatically when the new turn renders.
-      // Fire twice: early (before DOM update) to reset scroll state so the RAF
-      // auto-scroll loop is unblocked, and again after the turn likely rendered.
-      scrollToBottom();
-      setTimeout(() => scrollToBottom(), 100);
+      // Anchor the new user message at the top of the viewport.
+      //
+      // This used to be `scrollToBottom()` plus a second one on a 100ms timer,
+      // "after the turn likely rendered". Both fired at send time and both
+      // targeted the LAST `[data-turn-id]`, so until the new turn committed
+      // they anchored the previous one — and on a slow render the real turn
+      // landed afterwards and moved the viewport unprompted. `anchorTurn`
+      // waits for THIS turn's element instead of guessing, gives up rather
+      // than firing late, and abandons on any wheel/touch so it never yanks a
+      // reader who has scrolled away. See `turn-anchor.ts`.
+      anchorTurn(messageID);
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;
@@ -2904,7 +2908,7 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
-      scrollToBottom,
+      anchorTurn,
       replyTo,
       messages,
       sessionState,
@@ -3530,7 +3534,7 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6"
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Optimistic turn — the user's message plus the waiting row,
@@ -3541,7 +3545,6 @@ export function SessionChat({
                         text={optimisticPrompt || ''}
                         agentNames={agentNames}
                         onFileClick={openFileInComputer}
-                        onFilePreview={openPreview}
                       />
                     )}
 
@@ -3730,23 +3733,28 @@ export function SessionChat({
                 contentRef={contentRef as React.RefObject<HTMLDivElement>}
               />
 
-              {/* Scroll to bottom FAB */}
               <div
                 className={cn(
-                  'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
+                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2',
+                  'transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)]',
+                  'motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-[opacity]',
                   showScrollButton
-                    ? 'translate-y-0 scale-100 opacity-100'
-                    : 'pointer-events-none translate-y-4 scale-95 opacity-0',
+                    ? 'translate-y-0 scale-100 opacity-100 duration-150'
+                    : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
                 )}
               >
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
+                  variant="secondary"
+                  size="icon-md"
+                  aria-hidden={!showScrollButton}
+                  tabIndex={showScrollButton ? undefined : -1}
+                  className={cn(
+                    'hit-area-2 shadow-xs',
+                    'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
+                  )}
                   onClick={smoothScrollToAbsoluteBottom}
                 >
-                  <ArrowDown className="mr-1 size-3" />
-                  {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
+                  <CaretDownIcon className="size-4" />
                 </Button>
               </div>
             </div>

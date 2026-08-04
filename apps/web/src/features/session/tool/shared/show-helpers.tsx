@@ -30,12 +30,12 @@ import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
-  ArrowClockwiseIcon as GrRefresh,
   CodeSimpleIcon as Code2,
   ArrowSquareOutIcon as ExternalLink,
   FileIcon,
   FileTextIcon as FileText,
   GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
   ImageIcon,
   ArrowsOutSimpleIcon as Maximize2,
   MusicNotesIcon as Music,
@@ -98,9 +98,7 @@ export function useShowOpenInTab(props: {
 
   const isHtmlFilePath =
     !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
-  const htmlStaticUrl = isHtmlFilePath
-    ? buildStaticFileLocalUrl(path)
-    : '';
+  const htmlStaticUrl = isHtmlFilePath ? buildStaticFileLocalUrl(path) : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 
   return useCallback(() => {
@@ -251,13 +249,7 @@ export function ShowFileActions({
 
       {!inPanel && (
         <Hint label="Open in the panel" side="top">
-          <Button
-            type="button"
-            onClick={openInPanel}
-            variant="secondary"
-            size="xs"
-            className="active:scale-[0.96]"
-          >
+          <Button type="button" onClick={openInPanel} size="xs" className="active:scale-[0.96]">
             Preview
           </Button>
         </Hint>
