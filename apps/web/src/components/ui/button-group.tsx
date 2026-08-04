@@ -41,7 +41,7 @@ function ButtonGroupText({
   className,
   asChild = false,
   ...props
-}: React.ComponentProps<"div"> & {
+}: Omit<React.ComponentProps<"div">, "onChange"> & {
   asChild?: boolean
 }) {
   const cls = cn(
@@ -49,15 +49,15 @@ function ButtonGroupText({
     className
   )
 
-  // Not the `ref`-cleanup-branding pattern seen elsewhere in this change:
-  // Slot.Root's prop type declares `onChange` as `ChangeEventHandler<HTMLElement>`
-  // (element-generic) while native `"div"` declares it as
-  // `FormEventHandler<HTMLDivElement>` — incompatible in both directions,
-  // so no cast can unify a single shared `Comp` variable without erasing
-  // checking. Branch instead so each arm is checked against the props it
-  // actually receives. The Slot.Root arm below still reports a real
-  // `tsc` error on `onChange` (`ComponentProps<"div">` accepts it,
-  // `Slot.Root` doesn't) — known, unresolved, not a fresh regression.
+  // The two arms below declare `onChange` with incompatible element
+  // generics (Slot.Root: `ChangeEventHandler<HTMLElement>`; native `"div"`:
+  // `FormEventHandler<HTMLDivElement>`), so it's omitted from this
+  // component's props above — a text label has no meaningful change event.
+  // Branch instead of a shared `Comp` variable so each arm is checked
+  // against the props it actually receives. `onChangeCapture` (the
+  // capture-phase sibling of `onChange`) has the identical incompatibility
+  // and is still a live, unresolved `tsc` error on the Slot.Root arm below
+  // — not fixed here; needs the same kind of decision `onChange` got.
   if (asChild) return <Slot.Root className={cls} {...props} />
   return <div className={cls} {...props} />
 }
